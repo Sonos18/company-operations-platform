@@ -54,10 +54,10 @@ The implementation will expose these values through Tailwind/Nuxt UI semantic to
 ### Typography
 
 - **Manrope Variable 700–800:** project titles, stage titles, prominent counts, and calls to action.
-- **Be Vietnam Pro Variable 400–600:** Vietnamese body copy, labels, controls, and supporting content.
+- **Be Vietnam Pro 400–600:** Vietnamese body copy, labels, controls, and supporting content.
 - **JetBrains Mono Variable 500–600:** project codes, stage codes, dates, and compact operational metadata.
 
-The two new families are added through Fontsource variable packages. Existing fonts remain installed while unmigrated screens still reference them. The journey page must not synthesize unsupported weights.
+Manrope is added through `@fontsource-variable/manrope@5.3.0`. Be Vietnam Pro does not publish a Fontsource variable package, so it uses `@fontsource/be-vietnam-pro@5.3.0` with explicit 400, 500, and 600 weight imports. Existing fonts remain installed while unmigrated screens still reference them. The journey page must not synthesize unsupported weights.
 
 ### Shape, spacing, and elevation
 
@@ -312,6 +312,7 @@ Implementation changes are limited to:
 
 - `package.json` and `pnpm-lock.yaml`
 - `app/app.config.ts` (new)
+- `app/app.vue`
 - `app/assets/css/main.css`
 - `app/pages/projects/[projectId]/index.vue`
 - `app/components/journey/ProjectJourneyCarousel.vue`
