@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Mục tiêu thiết kế phòng khách</title><desc id="desc">Minh họa không gian phòng khách hoàn thiện theo thiết kế đã chốt.</desc>
+  <rect width="1600" height="1000" fill="#e7e1d7"/><rect y="710" width="1600" height="290" fill="#b8946f"/>
+  <rect x="90" y="90" width="610" height="540" fill="#b9c9c0"/><rect x="125" y="125" width="540" height="470" fill="#779181"/>
+  <rect x="810" y="130" width="600" height="410" fill="#f5f0e8"/><rect x="900" y="210" width="420" height="220" fill="#d6c3aa"/>
+  <rect x="500" y="610" width="720" height="180" rx="18" fill="#efebe3"/><rect x="585" y="755" width="32" height="120" fill="#574b40"/>
+  <rect x="1080" y="755" width="32" height="120" fill="#574b40"/><ellipse cx="860" cy="830" rx="270" ry="80" fill="#8f6e51"/>
+  <circle cx="1420" cy="590" r="110" fill="#65816d"/><rect x="1402" y="620" width="36" height="210" fill="#5b493a"/>
+  <text x="90" y="950" fill="#1a3c2b" font-family="Arial" font-size="34" font-weight="700">PHƯƠNG ÁN KHÁCH HÀNG ĐÃ CHỐT · V1</text>
+</svg>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Nhà phố Thảo Điền</title><desc id="desc">Minh họa kiến trúc nhà phố hiện đại với cây xanh.</desc>
+  <rect width="1600" height="1000" fill="#d9ddd4"/><rect y="720" width="1600" height="280" fill="#b9b3a5"/>
+  <rect x="330" y="170" width="940" height="620" fill="#f5f0e7"/><rect x="330" y="170" width="940" height="34" fill="#1a3c2b"/>
+  <rect x="430" y="280" width="300" height="440" fill="#284c3c"/><rect x="780" y="280" width="380" height="205" fill="#9db3aa"/>
+  <rect x="780" y="515" width="380" height="205" fill="#c4a88a"/><circle cx="225" cy="655" r="145" fill="#688273"/>
+  <circle cx="1360" cy="690" r="120" fill="#7d9079"/><rect x="190" y="690" width="65" height="210" fill="#6c5644"/>
+  <text x="90" y="105" fill="#1a3c2b" font-family="Arial" font-size="38" font-weight="700">VQH · NHÀ PHỐ THẢO ĐIỀN</text>
+</svg>

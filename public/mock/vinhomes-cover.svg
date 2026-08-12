@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Căn hộ Vinhomes Central Park</title><desc id="desc">Minh họa căn hộ hiện đại nhìn ra thành phố.</desc>
+  <rect width="1600" height="1000" fill="#d6ddd9"/><rect y="720" width="1600" height="280" fill="#b08c67"/>
+  <rect x="90" y="100" width="610" height="540" fill="#88a2a0"/><path d="M120 590L260 260L390 590L530 190L670 590" fill="#718d8a"/>
+  <rect x="790" y="190" width="650" height="450" fill="#f0ece4"/><rect x="870" y="270" width="490" height="270" fill="#c7b49b"/>
+  <rect x="560" y="650" width="610" height="160" rx="18" fill="#e8e4dc"/><ellipse cx="880" cy="850" rx="260" ry="75" fill="#806348"/>
+  <text x="90" y="940" fill="#1a3c2b" font-family="Arial" font-size="36" font-weight="700">VQH · CĂN HỘ VINHOMES CENTRAL PARK</text>
+</svg>

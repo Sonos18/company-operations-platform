@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Bản vẽ phối cảnh phòng khách v2</title><desc id="desc">Minh họa bản vẽ kỹ thuật phiên bản hai có cập nhật chiếu sáng.</desc>
+  <rect width="1600" height="1000" fill="#f2efe7"/><rect x="70" y="70" width="1460" height="860" fill="none" stroke="#1a3c2b" stroke-width="5"/>
+  <path d="M210 220H1380V720H210ZM360 220V720M1020 220V720M210 500H1380" fill="none" stroke="#54705f" stroke-width="8"/>
+  <path d="M430 340H900V610H430ZM1110 335H1280V605H1110" fill="none" stroke="#ff8c69" stroke-width="6"/>
+  <circle cx="500" cy="275" r="24" fill="#f4d35e"/><circle cx="700" cy="275" r="24" fill="#f4d35e"/><circle cx="900" cy="275" r="24" fill="#f4d35e"/>
+  <path d="M500 275L700 420L900 275" fill="none" stroke="#d4a91b" stroke-width="5" stroke-dasharray="16 12"/>
+  <text x="90" y="125" fill="#1a3c2b" font-family="Arial" font-size="34" font-weight="700">PC-NT-01 · PHÒNG KHÁCH · V2</text>
+  <text x="1190" y="885" fill="#ff6f4d" font-family="Arial" font-size="28">CHỜ PHÁT HÀNH</text>
+</svg>

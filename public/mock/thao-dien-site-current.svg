@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Hiện trạng thi công phòng khách</title><desc id="desc">Minh họa công trường đang hoàn thiện trần và hệ điện.</desc>
+  <rect width="1600" height="1000" fill="#c9c5bb"/><rect y="745" width="1600" height="255" fill="#9c958a"/>
+  <path d="M0 115H1600V180H0ZM120 220H1480V250H120ZM120 360H1480V390H120Z" fill="#555b57"/>
+  <path d="M230 115V630M540 115V630M850 115V630M1160 115V630M1420 115V630" stroke="#686d69" stroke-width="24"/>
+  <rect x="160" y="600" width="420" height="180" fill="#b58b5f"/><rect x="1040" y="570" width="330" height="210" fill="#d3b98e"/>
+  <path d="M300 220C340 380 690 330 740 530S1130 500 1190 650" fill="none" stroke="#ff8c69" stroke-width="18"/>
+  <circle cx="390" cy="540" r="52" fill="#f4d35e"/><circle cx="1280" cy="515" r="52" fill="#f4d35e"/>
+  <text x="80" y="930" fill="#1a3c2b" font-family="Arial" font-size="34" font-weight="700">CẬP NHẬT CÔNG TRƯỜNG · 12.08.2026 · ANH HIẾU</text>
+</svg>
