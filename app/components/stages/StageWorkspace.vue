@@ -1,11 +1,26 @@
 <script setup lang="ts">
 import type { ProjectStage } from '../../features/journey/journey.types'
+import type { ProjectMedia } from '../../features/media/media.types'
 import type { ProjectDetail } from '../../features/projects/project.types'
+import SiteVisualComparison from '../media/SiteVisualComparison.vue'
 
-defineProps<{
+const props = defineProps<{
   project: ProjectDetail
   stage: ProjectStage
 }>()
+
+const repositories = useRepositories()
+const media = ref<ProjectMedia[]>([])
+
+watch(
+  () => props.stage.id,
+  async (stageId) => {
+    media.value = props.stage.visualKind === 'construction_comparison'
+      ? await repositories.media.listByStage(stageId)
+      : []
+  },
+  { immediate: true },
+)
 
 const statusLabel: Record<ProjectStage['status'], string> = {
   completed: 'Đã hoàn thành',
@@ -29,6 +44,12 @@ function formatTime(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+function mediaType(mediaItem: ProjectMedia) {
+  if (mediaItem.kind === 'evidence') return 'Ảnh hồ sơ — giữ bản gốc'
+  if (mediaItem.kind === 'design_target') return 'Mục tiêu thiết kế đã chốt'
+  return 'Ảnh tối ưu'
 }
 </script>
 
@@ -94,13 +115,14 @@ function formatTime(value: string) {
       <section class="workspace-panel related-panel">
         <p class="eyebrow">Nội dung liên quan</p>
         <h2>{{ stage.visualKind === 'drawing' ? 'Bản vẽ và phương án' : stage.visualKind === 'construction_comparison' ? 'Hiện trạng và mục tiêu' : 'Hồ sơ giai đoạn' }}</h2>
-        <img :src="stage.imageUrl" :alt="`Minh họa ${stage.name}`">
+        <SiteVisualComparison v-if="stage.visualKind === 'construction_comparison'" :media="media" />
+        <img v-else :src="stage.imageUrl" :alt="`Minh họa ${stage.name}`">
         <NuxtLink v-if="stage.visualKind === 'drawing'" :to="`/projects/${project.id}/stages/${stage.id}/drawings`" class="primary-link">
           Mở bản vẽ <UIcon name="i-lucide-arrow-up-right" aria-hidden="true" />
         </NuxtLink>
-        <NuxtLink v-else-if="stage.visualKind === 'construction_comparison'" :to="`/projects/${project.id}/stages/${stage.id}/site-media`" class="primary-link">
+        <a v-else-if="stage.visualKind === 'construction_comparison'" href="#media-history" class="primary-link">
           Xem hiện trạng công trình <UIcon name="i-lucide-arrow-up-right" aria-hidden="true" />
-        </NuxtLink>
+        </a>
         <p v-else class="related-note">Tài liệu của giai đoạn được tập hợp tại đây để truy xuất thống nhất.</p>
       </section>
 
@@ -112,6 +134,16 @@ function formatTime(value: string) {
             <div><strong>{{ activity.actorName }}</strong><p>{{ activity.description }}</p><time :datetime="activity.at">{{ formatTime(activity.at) }}</time></div>
           </li>
         </ol>
+      </section>
+
+      <section v-if="stage.visualKind === 'construction_comparison'" id="media-history" class="workspace-panel media-history-panel">
+        <div class="panel-heading"><div><p class="eyebrow">Ảnh theo thời gian</p><h2>Toàn bộ lịch sử hiện trạng</h2></div><span>{{ media.length }} ảnh</span></div>
+        <div class="media-grid">
+          <article v-for="mediaItem in media" :key="mediaItem.id">
+            <img :src="mediaItem.url" :alt="mediaItem.description">
+            <div><span>{{ mediaType(mediaItem) }}</span><strong>{{ mediaItem.description }}</strong><p>{{ mediaItem.workArea }}</p><small>{{ mediaItem.photographerName }} · {{ formatTime(mediaItem.capturedAt) }}</small></div>
+          </article>
+        </div>
       </section>
     </div>
   </div>
@@ -128,5 +160,6 @@ function formatTime(value: string) {
 .missing-badge { padding: 5px 8px; background: color-mix(in srgb,var(--coral) 18%,white); color: #923a24; font-size: .68rem; font-weight: 750; }.record-list li { display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 8px; padding: 11px 0; border-top: 1px solid var(--line); }.record-list li > span { display: grid; }.record-list small { color: var(--ink-muted); font-size: .64rem; text-transform: uppercase; }.record-list em { padding: 4px 7px; color: var(--ink-muted); background: var(--paper); font-size: .65rem; font-style: normal; }.record-list em.is-ready { color: var(--forest); background: color-mix(in srgb,var(--mint) 25%,white); }.record-list em.is-missing { color: #923a24; background: color-mix(in srgb,var(--coral) 18%,white); }
 .related-panel { display: grid; align-content: start; gap: 10px; }.related-panel img { width: 100%; aspect-ratio: 16/8; margin-top: 6px; object-fit: cover; }.primary-link { display: flex; align-items: center; justify-content: space-between; min-height: 40px; padding: 0 12px; background: var(--forest); color: white; font-weight: 750; }.related-note { color: var(--ink-muted); font-size: .78rem; line-height: 1.5; }
 .activity-list li { display: grid; grid-template-columns: 12px 1fr; gap: 10px; padding: 10px 0; }.activity-list li > span { width: 8px; height: 8px; margin-top: 5px; border: 2px solid white; border-radius: 50%; outline: 1px solid var(--forest); background: var(--mint); }.activity-list div { display: grid; gap: 2px; }.activity-list p { color: var(--ink-muted); font-size: .75rem; }.activity-list time { color: var(--ink-muted); font-family: 'JetBrains Mono Variable',monospace; font-size: .6rem; }
-@media (max-width: 900px) { .stage-heading { align-items: stretch; flex-direction: column; }.stage-owner { min-width: 0; }.workspace-grid { grid-template-columns: 1fr; }.step-list li > div { grid-template-columns: 45px 1fr; }.step-list li > div > span { grid-column: 2; } }
+.media-history-panel { grid-column: 1/-1; scroll-margin-top: 86px; }.media-history-panel .panel-heading > span { color: var(--ink-muted); font-size: .7rem; }.media-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }.media-grid article { min-width: 0; border: 1px solid var(--line); background: var(--paper); }.media-grid img { width: 100%; aspect-ratio: 16/9; object-fit: cover; }.media-grid article > div { display: grid; gap: 2px; padding: 10px; }.media-grid span { width: fit-content; margin-bottom: 4px; padding: 3px 5px; background: white; color: var(--forest); font-size: .58rem; font-weight: 800; }.media-grid p,.media-grid small { color: var(--ink-muted); font-size: .65rem; }
+@media (max-width: 900px) { .stage-heading { align-items: stretch; flex-direction: column; }.stage-owner { min-width: 0; }.workspace-grid { grid-template-columns: 1fr; }.step-list li > div { grid-template-columns: 45px 1fr; }.step-list li > div > span { grid-column: 2; }.media-grid { grid-template-columns: 1fr; } }
 </style>

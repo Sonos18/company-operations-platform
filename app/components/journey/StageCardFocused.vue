@@ -1,17 +1,33 @@
 <script setup lang="ts">
 import type { ProjectStage } from '../../features/journey/journey.types'
+import type { ProjectMedia } from '../../features/media/media.types'
+import SiteVisualComparison from '../media/SiteVisualComparison.vue'
 
-defineProps<{
+const props = defineProps<{
   stage: ProjectStage
   isActualCurrent: boolean
   projectId: string
 }>()
+
+const repositories = useRepositories()
+const media = ref<ProjectMedia[]>([])
+
+watch(
+  () => props.stage.id,
+  async (stageId) => {
+    media.value = props.stage.visualKind === 'construction_comparison'
+      ? await repositories.media.listByStage(stageId)
+      : []
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
   <article class="stage-card-focused" data-testid="stage-focused">
     <div class="stage-card-focused__visual">
-      <img :src="stage.imageUrl" :alt="`Minh họa giai đoạn ${stage.name}`">
+      <SiteVisualComparison v-if="stage.visualKind === 'construction_comparison'" :media="media" compact />
+      <img v-else :src="stage.imageUrl" :alt="`Minh họa giai đoạn ${stage.name}`">
       <div class="visual-topline">
         <span class="stage-number">GIAI ĐOẠN {{ stage.code }}</span>
         <span v-if="isActualCurrent" class="current-chip">ĐANG THỰC HIỆN</span>
