@@ -13,6 +13,13 @@ const focusedStage = computed(() => props.project.stages[focusedIndex.value] ?? 
 const previousStage = computed(() => props.project.stages[focusedIndex.value - 1] ?? null)
 const nextStage = computed(() => props.project.stages[focusedIndex.value + 1] ?? null)
 const actualStage = computed(() => props.project.stages.find(stage => stage.id === props.project.currentStageId)!)
+const statusLabel = {
+  completed: 'Đã hoàn thành',
+  active: 'Đang thực hiện',
+  upcoming: 'Sắp thực hiện',
+  incomplete: 'Chưa đầy đủ',
+  not_applicable: 'Không áp dụng',
+} as const
 
 function handleKeyboard(event: KeyboardEvent) {
   if (event.key === 'ArrowLeft') journey.focusPrevious()
@@ -51,6 +58,21 @@ function handleKeyboard(event: KeyboardEvent) {
       <div v-else />
     </div>
 
+    <ol class="mobile-stage-list" data-testid="mobile-stage-list" aria-label="Danh sách các giai đoạn dự án">
+      <li v-for="stage in project.stages" :key="stage.id" :class="{ 'is-current': stage.id === actualStage.id }">
+        <NuxtLink :to="`/projects/${project.id}/stages/${stage.id}`">
+          <img :src="stage.imageUrl" :alt="`Minh họa ${stage.name}`">
+          <div class="mobile-stage-copy">
+            <span>Giai đoạn {{ stage.code }} · {{ statusLabel[stage.status] }}</span>
+            <strong>{{ stage.name }}</strong>
+            <p>{{ stage.completedCount }}/{{ stage.totalCount }} bước · {{ stage.missingRecordCount }} hồ sơ còn thiếu</p>
+          </div>
+          <span v-if="stage.id === actualStage.id" class="mobile-current-marker">Hiện tại</span>
+          <UIcon v-else name="i-lucide-chevron-right" aria-hidden="true" />
+        </NuxtLink>
+      </li>
+    </ol>
+
     <JourneyFooter :stage="focusedStage" />
   </section>
 </template>
@@ -63,6 +85,7 @@ function handleKeyboard(event: KeyboardEvent) {
 .actual-stage-status { display: flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono Variable', monospace; font-size: 0.6rem; font-weight: 750; letter-spacing: 0.06em; }.actual-stage-status span { width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mint) 40%, transparent); }
 .journey-carousel__track { display: grid; grid-template-columns: 18% 3% 58% 3% 18%; align-items: center; height: calc(100% - 88px - 220px); overflow: hidden; background: #e9ebe5; }
 .carousel-control { display: grid; width: 100%; height: 54px; place-items: center; border: 0; background: var(--forest); color: white; cursor: pointer; }.carousel-control:disabled { visibility: hidden; }
+.mobile-stage-list { display: none; }
 @media (max-width: 900px) { .stage-card-focused :deep(.stage-stats) { display: none; } }
-@media (max-width: 767px) { .journey-dashboard { height: auto; min-height: 0; overflow: visible; }.journey-heading { height: auto; align-items: start; }.actual-stage-context strong { max-width: 130px; text-align: right; }.journey-carousel__track { grid-template-columns: 1fr; height: 520px; padding: 12px; }.journey-carousel__track > *:not(.stage-card-focused) { display: none; }.journey-footer { grid-template-columns: 1fr; height: auto; }.journey-footer :deep(section) { min-height: 150px; } }
+@media (max-width: 767px) { .journey-dashboard { height: auto; min-height: 0; overflow: visible; border: 0; background: transparent; }.journey-heading { height: auto; align-items: start; padding: 12px 0 16px; background: transparent; }.actual-stage-context strong { max-width: 130px; text-align: right; }.journey-carousel__track { display: none; }.mobile-stage-list { display: grid; gap: 8px; padding: 0; margin: 0; list-style: none; }.mobile-stage-list li { overflow: hidden; border: 1px solid var(--line); background: white; }.mobile-stage-list li.is-current { border: 2px solid var(--forest); }.mobile-stage-list a { display: grid; grid-template-columns: 76px minmax(0,1fr) auto; align-items: center; gap: 10px; min-height: 92px; padding: 8px 10px 8px 8px; }.mobile-stage-list img { width: 76px; height: 74px; object-fit: cover; }.mobile-stage-copy { display: grid; min-width: 0; gap: 3px; }.mobile-stage-copy > span { color: var(--ink-muted); font-family: 'JetBrains Mono Variable',monospace; font-size: .55rem; }.mobile-stage-copy strong { color: var(--forest-deep); font-size: .78rem; }.mobile-stage-copy p { color: var(--ink-muted); font-size: .61rem; }.mobile-current-marker { padding: 4px 5px; background: var(--mint); color: var(--forest-deep); font-size: .55rem; font-weight: 800; }.journey-footer { display: none; } }
 </style>

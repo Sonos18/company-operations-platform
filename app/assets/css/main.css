@@ -94,3 +94,11 @@ select {
   white-space: nowrap;
   border: 0;
 }
+
+@media (max-width: 767px) {
+  button,
+  [role='button'] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
