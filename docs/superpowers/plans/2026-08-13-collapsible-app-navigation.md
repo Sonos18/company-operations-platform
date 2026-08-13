@@ -667,7 +667,7 @@ Run:
 pnpm exec playwright test tests/e2e/app-shell-navigation.spec.ts
 ```
 
-Expected: 11 tests PASS because Tasks 1 and 2 already define `transition: none` under reduced motion, hide both desktop toggles below `768px`, reset the mobile header height, keep layout-local state during client navigation, and initialize both refs to `false` after a reload.
+Expected: 13 tests PASS because Tasks 1 and 2 already define `transition: none` under reduced motion, hide both desktop toggles below `768px`, reset the mobile header height, keep layout-local state during client navigation, and initialize both refs to `false` after a reload.
 
 - [ ] **Step 5: Run focused mobile and accessibility regressions**
 
