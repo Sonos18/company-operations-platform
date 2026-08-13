@@ -13,6 +13,17 @@ test('keeps journey previous and next controls touch-sized', async ({ page }) =>
   }
 })
 
+test('keeps the focused-stage action touch-sized', async ({ page }) => {
+  await page.setViewportSize({ width: 639, height: 844 })
+  await page.goto('/projects/project-thao-dien')
+
+  const focused = page.locator('[data-testid="journey-stage-card"][data-focused="true"]')
+  const box = await focused.getByRole('link', { name: 'Mở không gian giai đoạn' }).boundingBox()
+  expect(box).not.toBeNull()
+  expect(box!.width).toBeGreaterThanOrEqual(44)
+  expect(box!.height).toBeGreaterThanOrEqual(44)
+})
+
 test('uses a swipeable journey without horizontal page overflow', async ({ page }) => {
   await page.goto('/projects/project-thao-dien')
 

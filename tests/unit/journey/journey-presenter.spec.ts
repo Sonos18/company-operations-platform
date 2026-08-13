@@ -52,6 +52,14 @@ describe('journey presenter', () => {
     })
   })
 
+  it.each(['upcoming', 'incomplete'] as const)('counts %s workflow steps as open', (status) => {
+    const stage = makeStage('active', 0)
+    stage.subStages = [{ id: status, code: '01.1', name: 'Bước mở', status, ownerName: 'Anh Long' }]
+    const project = { completedStageCount: 0, totalStageCount: 1, stages: [stage] } as ProjectDetail
+
+    expect(summarizeProjectJourney(project).openSteps).toBe(1)
+  })
+
   it('returns a safe percentage for empty and populated stages', () => {
     expect(getStageProgress({ completedCount: 1, totalCount: 2 } as ProjectStage)).toBe(50)
     expect(getStageProgress({ completedCount: 0, totalCount: 0 } as ProjectStage)).toBe(0)

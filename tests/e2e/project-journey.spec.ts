@@ -38,6 +38,8 @@ test('supports direct rail and keyboard navigation at journey boundaries', async
 test('updates contextual footer content with the focused stage', async ({ page }) => {
   const footer = page.getByTestId('journey-footer')
   await expect(footer).toContainText('Thi công & giám sát')
+  await expect(footer).toContainText('Cập nhật gần nhất')
+  await expect(footer).toContainText('09:30 12 thg 8, 2026')
 
   await page.getByRole('button', { name: 'Giai đoạn trước' }).click()
   await expect(footer).toContainText('Hợp đồng & chuẩn bị thi công')

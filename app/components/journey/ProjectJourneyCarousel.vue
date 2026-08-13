@@ -129,12 +129,12 @@ watch(focusedIndex, (index) => {
 .project-journey { display: grid; gap: 20px; max-width: 1480px; padding: 20px; margin: 0 auto; border-radius: var(--journey-radius); background: var(--journey-canvas); }
 .journey-header { display: grid; gap: 16px; }
 .journey-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; }
-.journey-code { color: var(--journey-muted); font-family: var(--font-journey-mono); font-size: .7rem; font-weight: 750; letter-spacing: .05em; }
-.journey-heading h1 { margin-top: 4px; font-size: clamp(1.5rem, 2.6vw, 2.3rem); line-height: 1.1; }
+.journey-code { color: var(--journey-muted); font-family: var(--font-journey-mono); font-size: .7rem; font-weight: 600; letter-spacing: .05em; }
+.journey-heading h1 { margin-top: 4px; font-size: clamp(1.5rem, 2.6vw, 2.3rem); font-weight: 800; line-height: 1.1; }
 .actual-stage-context { display: grid; justify-items: end; gap: 6px; }
 .journey-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .journey-summary :deep([data-slot='root']) { display: grid; gap: 5px; border-color: var(--journey-border); background: var(--journey-surface); }
-.journey-summary strong { color: var(--journey-primary); font-family: var(--font-journey-display); font-size: 1.4rem; }
+.journey-summary strong { color: var(--journey-primary); font-family: var(--font-journey-display); font-size: 1.4rem; font-weight: 800; }
 .journey-summary span { color: var(--journey-muted); font-size: .7rem; }
 .carousel-shell { display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; align-items: center; gap: 10px; min-width: 0; }
 .carousel-shell > :deep(.button) { height: 48px; }

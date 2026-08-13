@@ -16,6 +16,11 @@ interface FooterPanel {
 }
 
 const props = defineProps<{ stage: ProjectStage }>()
+const lastActivityFormatter = new Intl.DateTimeFormat('vi-VN', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+  timeZone: 'Asia/Bangkok',
+})
 
 const panels = computed<FooterPanel[]>(() => [
   {
@@ -40,10 +45,16 @@ const panels = computed<FooterPanel[]>(() => [
     value: 'milestone',
     label: 'Mốc gần nhất',
     icon: 'i-lucide-calendar-clock',
-    entries: [{
-      title: props.stage.dueAt ? new Intl.DateTimeFormat('vi-VN').format(new Date(props.stage.dueAt)) : 'Chưa đặt hạn',
-      description: props.stage.name,
-    }],
+    entries: [
+      {
+        title: props.stage.dueAt ? new Intl.DateTimeFormat('vi-VN').format(new Date(props.stage.dueAt)) : 'Chưa đặt hạn',
+        description: props.stage.name,
+      },
+      {
+        title: 'Cập nhật gần nhất',
+        description: lastActivityFormatter.format(new Date(props.stage.lastActivityAt)),
+      },
+    ],
     empty: 'Chưa có mốc thời gian.',
   },
 ])
@@ -86,7 +97,7 @@ const panels = computed<FooterPanel[]>(() => [
 .journey-footer { border-top: 1px solid var(--journey-border); }
 .journey-footer__desktop { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .journey-footer__panel { min-width: 0; border-color: var(--journey-border); background: var(--journey-surface); }
-.journey-footer__panel h3 { display: flex; align-items: center; gap: 8px; color: var(--journey-foreground); font-size: .8rem; }
+.journey-footer__panel h3 { display: flex; align-items: center; gap: 8px; color: var(--journey-foreground); font-size: .8rem; font-weight: 700; }
 .footer-entries { display: grid; gap: 8px; }
 .footer-entries p { display: grid; gap: 3px; padding-bottom: 8px; border-bottom: 1px solid var(--journey-border); }
 .footer-entries p:last-child { padding-bottom: 0; border-bottom: 0; }

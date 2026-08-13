@@ -55,7 +55,7 @@ watch(
 .journey-stage-rail button { position: relative; z-index: 1; display: grid; justify-items: center; width: 100%; min-height: 76px; gap: 6px; color: var(--journey-muted); text-align: center; }
 .rail-node { display: grid; width: 34px; height: 34px; place-items: center; border: 3px solid var(--journey-canvas); border-radius: 50%; background: var(--journey-surface); box-shadow: 0 0 0 1px var(--journey-border); }
 .rail-copy { display: grid; max-width: 140px; gap: 2px; }
-.rail-copy small,.rail-copy em { font-family: var(--font-journey-mono); font-size: .58rem; font-style: normal; }
+.rail-copy small,.rail-copy em { font-family: var(--font-journey-mono); font-size: .58rem; font-style: normal; font-weight: 600; }
 .rail-copy strong { overflow: hidden; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
 .journey-stage-rail button[aria-current='step'] { color: var(--journey-primary); }
 .journey-stage-rail button[aria-current='step'] .rail-node { background: var(--journey-mint); box-shadow: 0 0 0 1px var(--journey-primary); }
