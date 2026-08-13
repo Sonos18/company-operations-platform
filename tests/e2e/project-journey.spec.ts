@@ -19,3 +19,15 @@ test('centers the current stage and keeps project state while browsing', async (
   expect(Math.abs(neighborBox!.height - track!.height * 0.54)).toBeLessThanOrEqual(2)
   expect(footerBox!.height).toBe(220)
 })
+
+test('jumps directly to a stage from the journey rail', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/projects/project-thao-dien')
+
+  const rail = page.getByTestId('journey-stage-rail')
+  await expect(rail).toBeVisible()
+  await rail.getByRole('button', { name: 'Xem giai đoạn 04: Phối cảnh 3D & chốt phương án' }).click()
+
+  await expect(page.getByTestId('stage-focused')).toContainText('Phối cảnh 3D & chốt phương án')
+  await expect(rail.getByRole('button', { name: 'Xem giai đoạn 04: Phối cảnh 3D & chốt phương án' })).toHaveAttribute('aria-current', 'step')
+})

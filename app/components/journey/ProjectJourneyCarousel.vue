@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { ProjectDetail } from '../../features/projects/project.types'
 import { createJourneyState } from '../../composables/useProjectJourney'
 import JourneyFooter from './JourneyFooter.vue'
+import JourneyStageRail from './JourneyStageRail.vue'
 import StageCardFocused from './StageCardFocused.vue'
 import StageCardNeighbor from './StageCardNeighbor.vue'
 
@@ -41,6 +42,13 @@ function handleKeyboard(event: KeyboardEvent) {
         <button v-if="focusedStage.id !== actualStage.id" type="button" @click="journey.returnToCurrent">Quay về giai đoạn hiện tại</button>
       </div>
     </header>
+
+    <JourneyStageRail
+      :stages="project.stages"
+      :focused-stage-id="focusedStage.id"
+      :actual-current-stage-id="actualStage.id"
+      @select="journey.focusStage"
+    />
 
     <div
       class="journey-carousel__track"
