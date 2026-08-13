@@ -19,4 +19,10 @@ describe('project journey focus', () => {
     state.focusNext()
     expect(state.focusedStageId.value).toBe('design')
   })
+
+  it('ignores an unknown stage id', () => {
+    const state = createJourneyState(['survey', 'design'], 'survey')
+    state.focusStage('missing')
+    expect(state.focusedStageId.value).toBe('survey')
+  })
 })
