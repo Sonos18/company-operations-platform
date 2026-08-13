@@ -72,7 +72,7 @@ const { resetting, resetPrototype } = usePrototypeReset()
   padding: 0 20px;
   border-bottom: 1px solid color-mix(in srgb, var(--forest) 15%, transparent);
   background: color-mix(in srgb, var(--paper) 96%, white);
-  transition: all 200ms ease;
+  transition: height 200ms ease, padding 200ms ease;
 }
 
 .brand,

@@ -88,7 +88,7 @@ function isActive(to: string) {
   padding: 24px 16px 18px;
   border-right: 1px solid var(--line);
   background: #f1f2ed;
-  transition: all 200ms ease;
+  transition: width 200ms ease, top 200ms ease, padding 200ms ease;
 }
 
 .sidebar-main { display: grid; gap: 12px; }

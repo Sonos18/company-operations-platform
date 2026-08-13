@@ -128,9 +128,11 @@ test('uses 200ms shell transitions with normal motion', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.goto('/projects')
 
-  await expect.poll(async () => page.getByTestId('app-header').evaluate(element => getComputedStyle(element).transitionDuration)).toBe('0.2s')
-  await expect.poll(async () => page.getByTestId('app-sidebar').evaluate(element => getComputedStyle(element).transitionDuration)).toBe('0.2s')
-  await expect.poll(async () => page.getByTestId('app-main').evaluate(element => getComputedStyle(element).transitionDuration)).toBe('0.2s')
+  for (const testId of ['app-header', 'app-sidebar', 'app-main']) {
+    const durations = await page.getByTestId(testId).evaluate(element => getComputedStyle(element).transitionDuration.split(',').map(duration => duration.trim()))
+    expect(durations.length).toBeGreaterThan(0)
+    expect(durations.every(duration => duration === '0.2s')).toBe(true)
+  }
 })
 
 test('preserves the mobile header and bottom navigation', async ({ page }) => {
