@@ -280,7 +280,7 @@ Add these rules to the scoped header styles while keeping all existing visual ru
 Run:
 
 ```bash
-pnpm exec playwright test tests/e2e/app-shell-navigation.spec.ts --grep "collapses and expands the header"
+pnpm exec playwright test tests/e2e/app-shell-navigation.spec.ts --grep "header"
 ```
 
 Expected: PASS.

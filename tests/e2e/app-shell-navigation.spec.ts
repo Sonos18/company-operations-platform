@@ -65,13 +65,16 @@ test('collapses the sidebar without changing compact header geometry', async ({ 
   await expect.poll(async () => (await header.boundingBox())?.height).toBe(44)
 })
 
-test('keeps icon-only sidebar links accessible', async ({ page }) => {
+test('keeps icon-only sidebar links accessible and keyboard navigable', async ({ page }) => {
   await page.goto('/projects')
   await page.getByRole('button', { name: 'Thu gọn thanh điều hướng bên trái' }).click()
 
-  const projectsLink = page.getByRole('link', { name: 'Dự án', exact: true })
-  await expect(projectsLink).toBeVisible()
-  await expect(projectsLink).toHaveAttribute('title', 'Dự án')
+  const myWorkLink = page.getByRole('link', { name: 'Công việc của tôi', exact: true })
+  await expect(myWorkLink).toBeVisible()
+  await expect(myWorkLink).toHaveAttribute('title', 'Công việc của tôi')
+  await myWorkLink.focus()
+  await page.keyboard.press('Enter')
+  await expect(page).toHaveURL(/\/my-work$/)
 })
 
 test('expands the sidebar back to its original geometry', async ({ page }) => {
@@ -128,10 +131,21 @@ test('uses 200ms shell transitions with normal motion', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.goto('/projects')
 
-  for (const testId of ['app-header', 'app-sidebar', 'app-main']) {
-    const durations = await page.getByTestId(testId).evaluate(element => getComputedStyle(element).transitionDuration.split(',').map(duration => duration.trim()))
-    expect(durations.length).toBeGreaterThan(0)
-    expect(durations.every(duration => duration === '0.2s')).toBe(true)
+  for (const { testId, properties } of [
+    { testId: 'app-header', properties: ['height', 'padding'] },
+    { testId: 'app-sidebar', properties: ['width', 'top', 'padding'] },
+    { testId: 'app-main', properties: ['padding'] },
+  ]) {
+    const transition = await page.getByTestId(testId).evaluate(element => {
+      const styles = getComputedStyle(element)
+      return {
+        durations: styles.transitionDuration.split(',').map(duration => duration.trim()),
+        properties: styles.transitionProperty.split(',').map(property => property.trim()),
+      }
+    })
+    expect(transition.properties).toEqual(properties)
+    expect(transition.durations.length).toBeGreaterThan(0)
+    expect(transition.durations.every(duration => duration === '0.2s')).toBe(true)
   }
 })
 
