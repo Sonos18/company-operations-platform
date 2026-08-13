@@ -2,6 +2,11 @@
 const props = defineProps<{
   companyName: string
   shortName: string
+  collapsed: boolean
+}>()
+
+const emit = defineEmits<{
+  toggle: []
 }>()
 
 const brandMark = computed(() => props.shortName
@@ -15,14 +20,31 @@ const { resetting, resetPrototype } = usePrototypeReset()
 </script>
 
 <template>
-  <header class="app-header">
-    <NuxtLink to="/projects" class="brand" aria-label="Về danh sách dự án">
-      <span class="brand__mark" aria-hidden="true">{{ brandMark }}</span>
-      <span class="brand__copy">
-        <strong>{{ shortName }}</strong>
-        <small>{{ companyName }}</small>
-      </span>
-    </NuxtLink>
+  <header
+    id="app-header"
+    class="app-header"
+    :class="{ 'app-header--collapsed': collapsed }"
+    data-testid="app-header"
+  >
+    <div class="app-header__primary">
+      <NuxtLink to="/projects" class="brand" aria-label="Về danh sách dự án">
+        <span class="brand__mark" aria-hidden="true">{{ brandMark }}</span>
+        <span class="brand__copy">
+          <strong>{{ shortName }}</strong>
+          <small>{{ companyName }}</small>
+        </span>
+      </NuxtLink>
+      <button
+        class="navigation-toggle"
+        type="button"
+        aria-controls="app-header"
+        :aria-expanded="!collapsed"
+        :aria-label="collapsed ? 'Mở rộng thanh điều hướng phía trên' : 'Thu gọn thanh điều hướng phía trên'"
+        @click="emit('toggle')"
+      >
+        <UIcon :name="collapsed ? 'i-lucide-panel-top-open' : 'i-lucide-panel-top-close'" aria-hidden="true" />
+      </button>
+    </div>
 
     <div class="app-header__context">
       <span class="prototype-pill"><span /> Prototype nội bộ</span>
@@ -46,10 +68,11 @@ const { resetting, resetPrototype } = usePrototypeReset()
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: var(--header-height);
+  height: var(--shell-header-height);
   padding: 0 20px;
   border-bottom: 1px solid color-mix(in srgb, var(--forest) 15%, transparent);
   background: color-mix(in srgb, var(--paper) 96%, white);
+  transition: height 200ms ease, padding 200ms ease;
 }
 
 .brand,
@@ -58,8 +81,32 @@ const { resetting, resetPrototype } = usePrototypeReset()
   align-items: center;
 }
 
+.app-header__primary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .brand { gap: 12px; }
 .app-header__context { gap: 10px; }
+
+.navigation-toggle {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  border: 1px solid #d6d8d1;
+  border-radius: var(--radius-md);
+  background: white;
+  color: var(--forest);
+  cursor: pointer;
+}
+
+.navigation-toggle :deep(svg) {
+  width: 19px;
+  height: 19px;
+}
 
 .brand__mark {
   display: grid;
@@ -107,11 +154,34 @@ const { resetting, resetPrototype } = usePrototypeReset()
 .header-action { color: var(--forest); cursor: pointer; font-size: 1.05rem; }
 .avatar { border-color: var(--forest); background: var(--forest); color: white; font-size: 0.72rem; font-weight: 750; }
 
+.app-header--collapsed {
+  padding-inline: 10px;
+}
+
+.app-header--collapsed .brand__copy,
+.app-header--collapsed .app-header__context {
+  display: none;
+}
+
+.app-header--collapsed .brand__mark {
+  width: 32px;
+  height: 32px;
+}
+
 @media (max-width: 767px) {
   .app-header { padding: 0 14px; }
+  .navigation-toggle { display: none; }
+  .app-header--collapsed { padding: 0 14px; }
+  .app-header--collapsed .brand__copy { display: grid; }
+  .app-header--collapsed .app-header__context { display: flex; }
+  .app-header--collapsed .brand__mark { width: 38px; height: 38px; }
   .brand__copy small,
   .prototype-pill,
   .reset-action span { display: none; }
   .reset-action { width: 38px; padding: 0; justify-content: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-header { transition: none; }
 }
 </style>

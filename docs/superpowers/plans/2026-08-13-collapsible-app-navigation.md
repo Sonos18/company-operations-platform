@@ -52,7 +52,7 @@ import { expect, test } from '@playwright/test'
 
 test.use({ viewport: { width: 1280, height: 900 } })
 
-test('collapses and expands the header while releasing content height', async ({ page }) => {
+test('collapses the header and releases content height', async ({ page }) => {
   await page.goto('/projects')
 
   const header = page.getByTestId('app-header')
@@ -70,6 +70,15 @@ test('collapses and expands the header while releasing content height', async ({
   await expect(page.getByRole('button', { name: 'Mở rộng thanh điều hướng phía trên' })).toHaveAttribute('aria-expanded', 'false')
   await expect(header.getByText('Việt Quốc Huy', { exact: true })).toBeHidden()
 
+})
+
+test('expands the header back to its original geometry', async ({ page }) => {
+  await page.goto('/projects')
+
+  const header = page.getByTestId('app-header')
+  const main = page.getByTestId('app-main')
+
+  await page.getByRole('button', { name: 'Thu gọn thanh điều hướng phía trên' }).click()
   await page.getByRole('button', { name: 'Mở rộng thanh điều hướng phía trên' }).click()
 
   await expect.poll(async () => (await header.boundingBox())?.height).toBe(64)
@@ -82,7 +91,7 @@ test('collapses and expands the header while releasing content height', async ({
 Run:
 
 ```bash
-pnpm exec playwright test tests/e2e/app-shell-navigation.spec.ts --grep "collapses and expands the header"
+pnpm exec playwright test tests/e2e/app-shell-navigation.spec.ts --grep "header"
 ```
 
 Expected: FAIL because the header toggle and `app-header`/`app-main` test IDs do not exist.
@@ -271,7 +280,7 @@ Add these rules to the scoped header styles while keeping all existing visual ru
 Run:
 
 ```bash
-pnpm exec playwright test tests/e2e/app-shell-navigation.spec.ts --grep "collapses and expands the header"
+pnpm exec playwright test tests/e2e/app-shell-navigation.spec.ts --grep "header"
 ```
 
 Expected: PASS.
@@ -301,7 +310,7 @@ git commit -m "feat: add collapsible application header"
 Append to `tests/e2e/app-shell-navigation.spec.ts`:
 
 ```ts
-test('collapses the sidebar independently and keeps icon links usable', async ({ page }) => {
+test('collapses the sidebar without changing compact header geometry', async ({ page }) => {
   await page.goto('/projects')
 
   const header = page.getByTestId('app-header')
@@ -320,15 +329,27 @@ test('collapses the sidebar independently and keeps icon links usable', async ({
   await expect.poll(async () => main.evaluate(element => Number.parseFloat(getComputedStyle(element).paddingLeft))).toBe(88)
   await expect.poll(async () => (await header.boundingBox())?.height).toBe(44)
 
+})
+
+test('keeps icon-only sidebar links accessible', async ({ page }) => {
+  await page.goto('/projects')
+  await page.getByRole('button', { name: 'Thu gọn thanh điều hướng bên trái' }).click()
+
   const projectsLink = page.getByRole('link', { name: 'Dự án', exact: true })
   await expect(projectsLink).toBeVisible()
   await expect(projectsLink).toHaveAttribute('title', 'Dự án')
+})
 
+test('expands the sidebar back to its original geometry', async ({ page }) => {
+  await page.goto('/projects')
+
+  const sidebar = page.getByTestId('app-sidebar')
+  const main = page.getByTestId('app-main')
+
+  await page.getByRole('button', { name: 'Thu gọn thanh điều hướng bên trái' }).click()
   await page.getByRole('button', { name: 'Mở rộng thanh điều hướng bên trái' }).click()
-
   await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(224)
   await expect.poll(async () => main.evaluate(element => Number.parseFloat(getComputedStyle(element).paddingLeft))).toBe(248)
-  await expect.poll(async () => (await header.boundingBox())?.height).toBe(44)
 })
 ```
 
@@ -337,7 +358,7 @@ test('collapses the sidebar independently and keeps icon links usable', async ({
 Run:
 
 ```bash
-pnpm exec playwright test tests/e2e/app-shell-navigation.spec.ts --grep "collapses the sidebar independently"
+pnpm exec playwright test tests/e2e/app-shell-navigation.spec.ts --grep "sidebar"
 ```
 
 Expected: FAIL because the sidebar toggle and `app-sidebar` test ID do not exist.
@@ -528,7 +549,7 @@ Run:
 pnpm exec playwright test tests/e2e/app-shell-navigation.spec.ts
 ```
 
-Expected: 2 tests PASS.
+Expected: 5 tests PASS.
 
 - [ ] **Step 6: Commit the sidebar rail**
 
@@ -548,24 +569,32 @@ git commit -m "feat: add collapsible sidebar rail"
 - Consumes: both toggle accessible names, both `aria-expanded` values, both shell test IDs, and the existing `.mobile-nav` navigation.
 - Produces: complete regression coverage for the specification with no new production interface.
 
-- [ ] **Step 1: Add keyboard and reduced-motion tests**
+- [ ] **Step 1: Add focused keyboard and reduced-motion tests**
 
 Append:
 
 ```ts
-test('supports keyboard toggles and removes motion when requested', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' })
+test('toggles the header from the keyboard', async ({ page }) => {
   await page.goto('/projects')
 
   const headerToggle = page.getByRole('button', { name: 'Thu gọn thanh điều hướng phía trên' })
   await headerToggle.focus()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('button', { name: 'Mở rộng thanh điều hướng phía trên' })).toHaveAttribute('aria-expanded', 'false')
+})
+
+test('toggles the sidebar from the keyboard', async ({ page }) => {
+  await page.goto('/projects')
 
   const sidebarToggle = page.getByRole('button', { name: 'Thu gọn thanh điều hướng bên trái' })
   await sidebarToggle.focus()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('button', { name: 'Mở rộng thanh điều hướng bên trái' })).toHaveAttribute('aria-expanded', 'false')
+})
+
+test('removes shell transitions when reduced motion is requested', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/projects')
 
   await expect.poll(async () => page.getByTestId('app-header').evaluate(element => getComputedStyle(element).transitionDuration)).toBe('0s')
   await expect.poll(async () => page.getByTestId('app-sidebar').evaluate(element => getComputedStyle(element).transitionDuration)).toBe('0s')
@@ -578,7 +607,7 @@ test('supports keyboard toggles and removes motion when requested', async ({ pag
 Append:
 
 ```ts
-test('preserves the mobile header and bottom navigation contract', async ({ page }) => {
+test('preserves the mobile header and bottom navigation', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/projects')
 
@@ -586,6 +615,11 @@ test('preserves the mobile header and bottom navigation contract', async ({ page
   await expect(page.getByRole('button', { name: /thanh điều hướng bên trái/ })).toHaveCount(0)
   await expect(page.locator('.mobile-nav')).toBeVisible()
   await expect.poll(async () => (await page.getByTestId('app-header').boundingBox())?.height).toBe(64)
+})
+
+test('avoids horizontal overflow on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/projects')
 
   const dimensions = await page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,
@@ -595,12 +629,12 @@ test('preserves the mobile header and bottom navigation contract', async ({ page
 })
 ```
 
-- [ ] **Step 3: Add the route-lifetime and reload-reset test**
+- [ ] **Step 3: Add focused route-lifetime and reload-reset tests**
 
 Append:
 
 ```ts
-test('keeps compact state during client navigation and resets it on reload', async ({ page }) => {
+test('keeps compact state during client navigation', async ({ page }) => {
   await page.goto('/projects')
 
   await page.getByRole('button', { name: 'Thu gọn thanh điều hướng phía trên' }).click()
@@ -610,6 +644,13 @@ test('keeps compact state during client navigation and resets it on reload', asy
   await expect(page).toHaveURL(/\/my-work$/)
   await expect(page.getByRole('button', { name: 'Mở rộng thanh điều hướng phía trên' })).toHaveAttribute('aria-expanded', 'false')
   await expect(page.getByRole('button', { name: 'Mở rộng thanh điều hướng bên trái' })).toHaveAttribute('aria-expanded', 'false')
+})
+
+test('resets compact state after a full reload', async ({ page }) => {
+  await page.goto('/projects')
+
+  await page.getByRole('button', { name: 'Thu gọn thanh điều hướng phía trên' }).click()
+  await page.getByRole('button', { name: 'Thu gọn thanh điều hướng bên trái' }).click()
 
   await page.reload()
 
@@ -626,7 +667,7 @@ Run:
 pnpm exec playwright test tests/e2e/app-shell-navigation.spec.ts
 ```
 
-Expected: 5 tests PASS because Tasks 1 and 2 already define `transition: none` under reduced motion, hide both desktop toggles below `768px`, reset the mobile header height, keep layout-local state during client navigation, and initialize both refs to `false` after a reload.
+Expected: 13 tests PASS because Tasks 1 and 2 already define `transition: none` under reduced motion, hide both desktop toggles below `768px`, reset the mobile header height, keep layout-local state during client navigation, and initialize both refs to `false` after a reload.
 
 - [ ] **Step 5: Run focused mobile and accessibility regressions**
 
