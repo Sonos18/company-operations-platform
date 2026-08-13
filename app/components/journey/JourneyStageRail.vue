@@ -60,4 +60,5 @@ watch(
 .journey-stage-rail button[aria-current='step'] { color: var(--journey-primary); }
 .journey-stage-rail button[aria-current='step'] .rail-node { background: var(--journey-mint); box-shadow: 0 0 0 1px var(--journey-primary); }
 .journey-stage-rail .is-completed::after { background: var(--journey-mint); }
+@media (prefers-reduced-motion: reduce) { .journey-stage-rail { scroll-behavior: auto; transition-duration: .01ms; animation-duration: .01ms; } }
 </style>

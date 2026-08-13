@@ -2,9 +2,25 @@ import { expect, test } from '@playwright/test'
 
 test.use({ viewport: { width: 390, height: 844 } })
 
-test('uses a vertical stage list on mobile', async ({ page }) => {
+test('uses a swipeable journey without horizontal page overflow', async ({ page }) => {
   await page.goto('/projects/project-thao-dien')
-  await expect(page.getByTestId('mobile-stage-list')).toBeVisible()
-  await expect(page.getByTestId('desktop-journey-carousel')).toBeHidden()
-  await expect(page.getByTestId('journey-stage-rail')).toBeHidden()
+
+  await expect(page.getByTestId('journey-carousel')).toBeVisible()
+  await expect(page.getByTestId('mobile-stage-list')).toHaveCount(0)
+  await expect(page.locator('[data-testid="journey-stage-card"][data-focused="true"]')).toContainText('Thi công & giám sát')
+
+  const dimensions = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    content: document.documentElement.scrollWidth,
+  }))
+  expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
+
+  const carouselViewport = page.getByTestId('journey-carousel').locator('[data-slot="viewport"]')
+  const box = await carouselViewport.boundingBox()
+  expect(box).not.toBeNull()
+  await page.mouse.move(box!.x + box!.width * .75, box!.y + box!.height * .5)
+  await page.mouse.down()
+  await page.mouse.move(box!.x + box!.width * .25, box!.y + box!.height * .5, { steps: 8 })
+  await page.mouse.up()
+  await expect(page.locator('[data-testid="journey-stage-card"][data-focused="true"]')).toContainText('Nghiệm thu & bàn giao')
 })

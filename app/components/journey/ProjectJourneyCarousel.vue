@@ -1,100 +1,151 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ProjectDetail } from '../../features/projects/project.types'
+import { summarizeProjectJourney } from '../../features/journey/journey.presenter'
 import { createJourneyState } from '../../composables/useProjectJourney'
 import JourneyFooter from './JourneyFooter.vue'
 import JourneyStageRail from './JourneyStageRail.vue'
 import JourneyStageCard from './JourneyStageCard.vue'
 
+interface JourneyCarouselRef {
+  emblaApi?: {
+    selectedScrollSnap: () => number
+    scrollTo: (index: number) => void
+  }
+}
+
 const props = defineProps<{ project: ProjectDetail }>()
 const journey = createJourneyState(props.project.stages.map(stage => stage.id), props.project.currentStageId)
+const carousel = ref<JourneyCarouselRef | null>(null)
+const reducedMotion = ref(false)
+let reducedMotionQuery: MediaQueryList | null = null
+
 const focusedIndex = computed(() => props.project.stages.findIndex(stage => stage.id === journey.focusedStageId.value))
 const focusedStage = computed(() => props.project.stages[focusedIndex.value] ?? props.project.stages[0]!)
-const previousStage = computed(() => props.project.stages[focusedIndex.value - 1] ?? null)
-const nextStage = computed(() => props.project.stages[focusedIndex.value + 1] ?? null)
 const actualStage = computed(() => props.project.stages.find(stage => stage.id === props.project.currentStageId)!)
-const statusLabel = {
-  completed: 'Đã hoàn thành',
-  active: 'Đang thực hiện',
-  upcoming: 'Sắp thực hiện',
-  incomplete: 'Chưa đầy đủ',
-  not_applicable: 'Không áp dụng',
-} as const
+const actualStageIndex = computed(() => props.project.stages.findIndex(stage => stage.id === props.project.currentStageId))
+const summary = computed(() => summarizeProjectJourney(props.project))
 
-function handleKeyboard(event: KeyboardEvent) {
-  if (event.key === 'ArrowLeft') journey.focusPrevious()
-  if (event.key === 'ArrowRight') journey.focusNext()
+function syncReducedMotion() {
+  reducedMotion.value = reducedMotionQuery?.matches ?? false
 }
+
+onMounted(() => {
+  reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+  syncReducedMotion()
+  reducedMotionQuery.addEventListener('change', syncReducedMotion)
+})
+
+onBeforeUnmount(() => {
+  reducedMotionQuery?.removeEventListener('change', syncReducedMotion)
+})
+
+function selectStage(stageId: string) {
+  journey.focusStage(stageId)
+}
+
+function handleCarouselSelect(index: number) {
+  const stage = props.project.stages[index]
+  if (stage && stage.id !== journey.focusedStageId.value) journey.focusStage(stage.id)
+}
+
+watch(focusedIndex, (index) => {
+  if (index >= 0 && carousel.value?.emblaApi?.selectedScrollSnap() !== index) {
+    carousel.value?.emblaApi?.scrollTo(index)
+  }
+})
 </script>
 
 <template>
-  <section class="creative-momentum journey-dashboard">
-    <header class="journey-heading">
-      <div>
-        <NuxtLink to="/projects" class="back-link"><UIcon name="i-lucide-arrow-left" /> Tất cả dự án</NuxtLink>
-        <p class="eyebrow">{{ project.code }} · {{ project.location }}</p>
-        <h1>{{ project.name }}</h1>
-      </div>
-      <div class="actual-stage-context">
-        <span class="actual-stage-status"><span /> ĐANG THỰC HIỆN</span>
-        <strong>{{ actualStage.name }}</strong>
-        <button v-if="focusedStage.id !== actualStage.id" type="button" @click="journey.returnToCurrent">Quay về giai đoạn hiện tại</button>
+  <section class="creative-momentum project-journey" data-testid="project-journey">
+    <header class="journey-header">
+      <UBreadcrumb :items="[{ label: 'Dự án', to: '/projects' }, { label: project.name }]" />
+      <div class="journey-heading">
+        <div>
+          <p class="journey-code">{{ project.code }} · {{ project.location }}</p>
+          <h1>{{ project.name }}</h1>
+        </div>
+        <div class="actual-stage-context">
+          <UBadge color="success" variant="subtle">Giai đoạn hiện tại: {{ actualStage.name }}</UBadge>
+          <UButton v-if="focusedStage.id !== actualStage.id" color="neutral" variant="ghost" @click="journey.returnToCurrent">
+            Quay về giai đoạn hiện tại
+          </UButton>
+        </div>
       </div>
     </header>
+
+    <div class="journey-summary" data-testid="journey-summary">
+      <UCard><strong>{{ summary.completedStages }}/{{ summary.totalStages }}</strong><span>giai đoạn hoàn tất</span><UProgress :model-value="summary.completedStages" :max="summary.totalStages" /></UCard>
+      <UCard><strong>{{ summary.openSteps }}</strong><span>bước đang mở</span></UCard>
+      <UCard><strong>{{ summary.missingRecords }}</strong><span>hồ sơ còn thiếu</span></UCard>
+    </div>
 
     <JourneyStageRail
       :stages="project.stages"
       :focused-stage-id="focusedStage.id"
       :actual-current-stage-id="actualStage.id"
-      @select="journey.focusStage"
+      @select="selectStage"
     />
 
-    <div
-      class="journey-carousel__track"
-      data-testid="desktop-journey-carousel"
-      tabindex="0"
-      aria-label="Hành trình các giai đoạn dự án"
-      @keydown="handleKeyboard"
-    >
-      <JourneyStageCard v-if="previousStage" :stage="previousStage" :project-id="project.id" :focused="false" :actual-current="previousStage.id === actualStage.id" @focus="journey.focusStage" />
-      <div v-else />
-      <button type="button" class="carousel-control" :disabled="!previousStage" aria-label="Giai đoạn trước" @click="journey.focusPrevious"><UIcon name="i-lucide-chevron-left" /></button>
-      <div data-testid="stage-focused">
-        <JourneyStageCard :stage="focusedStage" :project-id="project.id" focused :actual-current="focusedStage.id === actualStage.id" @focus="journey.focusStage" />
-      </div>
-      <button type="button" class="carousel-control" :disabled="!nextStage" aria-label="Giai đoạn sau" @click="journey.focusNext"><UIcon name="i-lucide-chevron-right" /></button>
-      <JourneyStageCard v-if="nextStage" :stage="nextStage" :project-id="project.id" :focused="false" :actual-current="nextStage.id === actualStage.id" @focus="journey.focusStage" />
-      <div v-else />
+    <div class="carousel-shell">
+      <UButton icon="i-lucide-chevron-left" aria-label="Giai đoạn trước" :disabled="focusedIndex === 0" @click="journey.focusPrevious" />
+      <UCarousel
+        ref="carousel"
+        data-testid="journey-carousel"
+        :items="project.stages"
+        :start-index="actualStageIndex"
+        :loop="false"
+        :duration="reducedMotion ? 0 : 28"
+        align="center"
+        :ui="{
+          container: 'items-stretch -ms-3',
+          item: 'ps-3 basis-[92%] md:basis-[74%] xl:basis-[58%]',
+        }"
+        aria-label="Hành trình các giai đoạn dự án"
+        @select="handleCarouselSelect"
+      >
+        <template #default="{ item: stage }">
+          <JourneyStageCard
+            :stage="stage"
+            :project-id="project.id"
+            :focused="stage.id === focusedStage.id"
+            :actual-current="stage.id === actualStage.id"
+            @focus="selectStage"
+          />
+        </template>
+      </UCarousel>
+      <UButton icon="i-lucide-chevron-right" aria-label="Giai đoạn sau" :disabled="focusedIndex === project.stages.length - 1" @click="journey.focusNext" />
     </div>
 
-    <ol class="mobile-stage-list" data-testid="mobile-stage-list" aria-label="Danh sách các giai đoạn dự án">
-      <li v-for="stage in project.stages" :key="stage.id" :class="{ 'is-current': stage.id === actualStage.id }">
-        <NuxtLink :to="`/projects/${project.id}/stages/${stage.id}`">
-          <img :src="stage.imageUrl" :alt="`Minh họa ${stage.name}`">
-          <div class="mobile-stage-copy">
-            <span>Giai đoạn {{ stage.code }} · {{ statusLabel[stage.status] }}</span>
-            <strong>{{ stage.name }}</strong>
-            <p>{{ stage.completedCount }}/{{ stage.totalCount }} bước · {{ stage.missingRecordCount }} hồ sơ còn thiếu</p>
-          </div>
-          <span v-if="stage.id === actualStage.id" class="mobile-current-marker">Hiện tại</span>
-          <UIcon v-else name="i-lucide-chevron-right" aria-hidden="true" />
-        </NuxtLink>
-      </li>
-    </ol>
+    <p class="sr-only" aria-live="polite">
+      Đang xem giai đoạn {{ focusedStage.code }}: {{ focusedStage.name }}{{ focusedStage.id === actualStage.id ? ', đây là giai đoạn hiện tại' : '' }}.
+    </p>
 
     <JourneyFooter :stage="focusedStage" />
   </section>
 </template>
 
 <style scoped>
-.journey-dashboard { height: calc(100dvh - var(--header-height) - 48px); min-height: 610px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-md); background: white; }
-.journey-heading { display: flex; align-items: end; justify-content: space-between; height: 88px; padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--paper); }
-.journey-heading h1 { margin-top: 2px; font-size: clamp(1.4rem, 2.6vw, 2.2rem); line-height: 1; }.back-link { display: flex; align-items: center; gap: 5px; margin-bottom: 7px; color: var(--forest); font-size: 0.67rem; font-weight: 700; }
-.actual-stage-context { display: grid; justify-items: end; gap: 2px; }.actual-stage-context strong { color: var(--forest-deep); font-size: 0.8rem; }.actual-stage-context button { border: 0; background: transparent; color: var(--forest); cursor: pointer; font-size: 0.66rem; font-weight: 750; text-decoration: underline; }
-.actual-stage-status { display: flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono Variable', monospace; font-size: 0.6rem; font-weight: 750; letter-spacing: 0.06em; }.actual-stage-status span { width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mint) 40%, transparent); }
-.journey-carousel__track { display: grid; grid-template-columns: 18% 3% 58% 3% 18%; align-items: center; height: calc(100% - 88px - 86px - 220px); overflow: hidden; background: #e9ebe5; }.journey-carousel__track > [data-testid='stage-focused'] { display: grid; height: 100%; place-items: center; }
-.carousel-control { display: grid; width: 100%; height: 54px; place-items: center; border: 0; background: var(--forest); color: white; cursor: pointer; }.carousel-control:disabled { visibility: hidden; }
-.mobile-stage-list { display: none; }
-@media (max-width: 900px) { .journey-stage-card :deep(.stage-meta) { display: none; } }
-@media (max-width: 767px) { .journey-dashboard { height: auto; min-height: 0; overflow: visible; border: 0; background: transparent; }.journey-heading { height: auto; align-items: start; padding: 12px 0 16px; background: transparent; }.actual-stage-context strong { max-width: 130px; text-align: right; }.journey-stage-rail,.journey-carousel__track { display: none; }.mobile-stage-list { display: grid; gap: 8px; padding: 0; margin: 0; list-style: none; }.mobile-stage-list li { overflow: hidden; border: 1px solid var(--line); background: white; }.mobile-stage-list li.is-current { border: 2px solid var(--forest); }.mobile-stage-list a { display: grid; grid-template-columns: 76px minmax(0,1fr) auto; align-items: center; gap: 10px; min-height: 92px; padding: 8px 10px 8px 8px; }.mobile-stage-list img { width: 76px; height: 74px; object-fit: cover; }.mobile-stage-copy { display: grid; min-width: 0; gap: 3px; }.mobile-stage-copy > span { color: var(--ink-muted); font-family: 'JetBrains Mono Variable',monospace; font-size: .55rem; }.mobile-stage-copy strong { color: var(--forest-deep); font-size: .78rem; }.mobile-stage-copy p { color: var(--ink-muted); font-size: .61rem; }.mobile-current-marker { padding: 4px 5px; background: var(--mint); color: var(--forest-deep); font-size: .55rem; font-weight: 800; }.journey-footer { display: none; } }
+.project-journey { display: grid; gap: 20px; max-width: 1480px; padding: 20px; margin: 0 auto; border-radius: var(--journey-radius); background: var(--journey-canvas); }
+.journey-header { display: grid; gap: 16px; }
+.journey-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; }
+.journey-code { color: var(--journey-muted); font-family: var(--font-journey-mono); font-size: .7rem; font-weight: 750; letter-spacing: .05em; }
+.journey-heading h1 { margin-top: 4px; font-size: clamp(1.5rem, 2.6vw, 2.3rem); line-height: 1.1; }
+.actual-stage-context { display: grid; justify-items: end; gap: 6px; }
+.journey-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.journey-summary :deep([data-slot='root']) { display: grid; gap: 5px; border-color: var(--journey-border); background: var(--journey-surface); }
+.journey-summary strong { color: var(--journey-primary); font-family: var(--font-journey-display); font-size: 1.4rem; }
+.journey-summary span { color: var(--journey-muted); font-size: .7rem; }
+.carousel-shell { display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; align-items: center; gap: 10px; min-width: 0; }
+.carousel-shell > :deep(.button) { height: 48px; }
+.carousel-shell :deep([data-slot='root']) { min-width: 0; }
+
+@media (max-width: 639px) {
+  .project-journey { gap: 16px; padding: 14px; border-radius: 0; }
+  .journey-heading { align-items: start; flex-direction: column; }
+  .actual-stage-context { justify-items: start; }
+  .journey-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .journey-summary > :first-child { grid-column: 1 / -1; }
+  .carousel-shell { grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 4px; }
+}
 </style>
