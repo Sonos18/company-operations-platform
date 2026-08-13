@@ -55,6 +55,21 @@ test('focuses the visible next-stage card when its preview is selected', async (
   await expect(focused).toContainText('Nghiệm thu & bàn giao')
 })
 
+test('keeps the focused-stage action inside the card at tablet width', async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 1024 })
+  await page.goto('/projects/project-thao-dien')
+
+  const focused = page.locator('[data-testid="journey-stage-card"][data-focused="true"]')
+  const action = focused.getByRole('link', { name: 'Mở không gian giai đoạn' })
+  await expect(action).toBeVisible()
+
+  const [cardBox, actionBox] = await Promise.all([focused.boundingBox(), action.boundingBox()])
+  expect(cardBox).not.toBeNull()
+  expect(actionBox).not.toBeNull()
+  expect(actionBox!.y).toBeGreaterThanOrEqual(cardBox!.y)
+  expect(actionBox!.y + actionBox!.height).toBeLessThanOrEqual(cardBox!.y + cardBox!.height)
+})
+
 test('shows a designed not-found state after an unknown project resolves', async ({ page }) => {
   await page.goto('/projects/project-does-not-exist')
   await expect(page.getByTestId('journey-not-found')).toBeVisible()
