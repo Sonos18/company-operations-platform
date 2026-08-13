@@ -2,6 +2,17 @@ import { expect, test } from '@playwright/test'
 
 test.use({ viewport: { width: 390, height: 844 } })
 
+test('keeps journey previous and next controls touch-sized', async ({ page }) => {
+  await page.goto('/projects/project-thao-dien')
+
+  for (const name of ['Giai đoạn trước', 'Giai đoạn sau']) {
+    const box = await page.getByRole('button', { name }).boundingBox()
+    expect(box).not.toBeNull()
+    expect(box!.width).toBeGreaterThanOrEqual(44)
+    expect(box!.height).toBeGreaterThanOrEqual(44)
+  }
+})
+
 test('uses a swipeable journey without horizontal page overflow', async ({ page }) => {
   await page.goto('/projects/project-thao-dien')
 
