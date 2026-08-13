@@ -32,3 +32,26 @@ test('shows the journey loading skeleton during project navigation', async ({ pa
   await expect(page.getByTestId('journey-loading')).toBeVisible({ timeout: 1_000 })
   await expect(page.getByTestId('project-journey')).toBeVisible()
 })
+
+test('loads the approved project cover imagery', async ({ page }) => {
+  await page.goto('/projects')
+
+  const expectedCovers = [
+    '/mock/journey/thao-dien-04-design-approved.webp',
+    '/mock/journey/vinhomes-03-design.webp',
+  ]
+  const covers = page.locator('.project-card__visual img')
+  await expect(covers).toHaveCount(2)
+  const loaded = await covers.evaluateAll(images => images.map((image) => {
+    const element = image as HTMLImageElement
+    return {
+      complete: element.complete,
+      width: element.naturalWidth,
+      height: element.naturalHeight,
+      pathname: new URL(element.currentSrc).pathname,
+    }
+  }))
+
+  expect(loaded.map(image => image.pathname)).toEqual(expectedCovers)
+  expect(loaded.every(image => image.complete && image.width === 1600 && image.height === 900)).toBe(true)
+})

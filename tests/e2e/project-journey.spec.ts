@@ -95,3 +95,30 @@ test('removes nonessential card motion when reduced motion is requested', async 
   )
   expect(transforms.every(transform => transform === 'none')).toBe(true)
 })
+
+for (const project of [
+  { id: 'project-thao-dien', stageCount: 7, visualCount: 8 },
+  { id: 'project-vinhomes', stageCount: 4, visualCount: 4 },
+] as const) {
+  test(`loads distinct optimized imagery for ${project.id}`, async ({ page }) => {
+    await page.goto(`/projects/${project.id}`)
+    await expect(page.getByTestId('journey-stage-card')).toHaveCount(project.stageCount)
+
+    const visuals = page.getByTestId('journey-carousel').locator('img')
+    await expect(visuals).toHaveCount(project.visualCount)
+    const loaded = await visuals.evaluateAll(images => images.map((image) => {
+      const element = image as HTMLImageElement
+      return {
+        complete: element.complete,
+        width: element.naturalWidth,
+        height: element.naturalHeight,
+        pathname: new URL(element.currentSrc).pathname,
+      }
+    }))
+
+    expect(loaded.every(image => image.complete)).toBe(true)
+    expect(loaded.every(image => image.width === 1600 && image.height === 900)).toBe(true)
+    expect(new Set(loaded.map(image => image.pathname)).size).toBe(project.visualCount)
+    expect(loaded.every(image => image.pathname.startsWith('/mock/journey/'))).toBe(true)
+  })
+}

@@ -44,20 +44,20 @@ function makeStage(input: {
 }
 
 const thaoDienStages: ProjectStage[] = [
-  makeStage({ id: 'stage-intake', code: '01', name: 'Tiếp nhận yêu cầu', purpose: 'Ghi nhận nhu cầu, phạm vi và kỳ vọng ban đầu của khách hàng.', status: 'completed', ownerDepartment: 'Ban lãnh đạo', imageUrl: '/mock/thao-dien-cover.svg' }),
-  makeStage({ id: 'stage-survey', code: '02', name: 'Khảo sát hiện trạng', purpose: 'Đo đạc, ghi nhận điều kiện công trình và các ràng buộc thực tế.', status: 'completed', ownerDepartment: 'Thi công – Hiện trường', imageUrl: '/mock/thao-dien-site-current.svg' }),
-  makeStage({ id: 'stage-design-2d', code: '03', name: 'Thiết kế mặt bằng 2D', purpose: 'Chốt công năng, luồng sử dụng và mặt bằng bố trí.', status: 'completed', ownerDepartment: 'Thiết kế – Kỹ thuật', imageUrl: '/mock/drawing-livingroom-v1.svg', visualKind: 'drawing' }),
-  makeStage({ id: 'stage-design-3d', code: '04', name: 'Phối cảnh 3D & chốt phương án', purpose: 'Phát triển hình ảnh không gian và lưu mốc phương án khách hàng đã chốt.', status: 'completed', ownerDepartment: 'Thiết kế – Kỹ thuật', imageUrl: '/mock/thao-dien-design-target.svg', visualKind: 'drawing' }),
-  makeStage({ id: 'stage-contract', code: '05', name: 'Hợp đồng & chuẩn bị thi công', purpose: 'Hoàn thiện phạm vi, hồ sơ thương mại và điều kiện triển khai.', status: 'completed', ownerDepartment: 'Kế toán – Tài chính', imageUrl: '/mock/thao-dien-cover.svg' }),
-  makeStage({ id: 'stage-construction', code: '06', name: 'Thi công & giám sát', purpose: 'Theo dõi hiện trạng, chất lượng, công việc và hồ sơ tại công trình.', status: 'active', ownerDepartment: 'Thi công – Hiện trường', imageUrl: '/mock/thao-dien-site-current.svg', visualKind: 'construction_comparison', missing: 1 }),
-  makeStage({ id: 'stage-handover', code: '07', name: 'Nghiệm thu & bàn giao', purpose: 'Hoàn tất kiểm tra, khắc phục, nghiệm thu và bàn giao hồ sơ.', status: 'upcoming', ownerDepartment: 'Kiểm soát chất lượng', imageUrl: '/mock/thao-dien-design-target.svg' }),
+  makeStage({ id: 'stage-intake', code: '01', name: 'Tiếp nhận yêu cầu', purpose: 'Ghi nhận nhu cầu, phạm vi và kỳ vọng ban đầu của khách hàng.', status: 'completed', ownerDepartment: 'Ban lãnh đạo', imageUrl: '/mock/journey/thao-dien-01-intake.webp' }),
+  makeStage({ id: 'stage-survey', code: '02', name: 'Khảo sát hiện trạng', purpose: 'Đo đạc, ghi nhận điều kiện công trình và các ràng buộc thực tế.', status: 'completed', ownerDepartment: 'Thi công – Hiện trường', imageUrl: '/mock/journey/thao-dien-02-survey.webp' }),
+  makeStage({ id: 'stage-design-2d', code: '03', name: 'Thiết kế mặt bằng 2D', purpose: 'Chốt công năng, luồng sử dụng và mặt bằng bố trí.', status: 'completed', ownerDepartment: 'Thiết kế – Kỹ thuật', imageUrl: '/mock/journey/thao-dien-03-floor-plan.webp', visualKind: 'drawing' }),
+  makeStage({ id: 'stage-design-3d', code: '04', name: 'Phối cảnh 3D & chốt phương án', purpose: 'Phát triển hình ảnh không gian và lưu mốc phương án khách hàng đã chốt.', status: 'completed', ownerDepartment: 'Thiết kế – Kỹ thuật', imageUrl: '/mock/journey/thao-dien-04-design-approved.webp', visualKind: 'drawing' }),
+  makeStage({ id: 'stage-contract', code: '05', name: 'Hợp đồng & chuẩn bị thi công', purpose: 'Hoàn thiện phạm vi, hồ sơ thương mại và điều kiện triển khai.', status: 'completed', ownerDepartment: 'Kế toán – Tài chính', imageUrl: '/mock/journey/thao-dien-05-preconstruction.webp' }),
+  makeStage({ id: 'stage-construction', code: '06', name: 'Thi công & giám sát', purpose: 'Theo dõi hiện trạng, chất lượng, công việc và hồ sơ tại công trình.', status: 'active', ownerDepartment: 'Thi công – Hiện trường', imageUrl: '/mock/journey/thao-dien-06-site-current.webp', visualKind: 'construction_comparison', missing: 1 }),
+  makeStage({ id: 'stage-handover', code: '07', name: 'Nghiệm thu & bàn giao', purpose: 'Hoàn tất kiểm tra, khắc phục, nghiệm thu và bàn giao hồ sơ.', status: 'upcoming', ownerDepartment: 'Kiểm soát chất lượng', imageUrl: '/mock/journey/thao-dien-07-handover.webp' }),
 ]
 
 const vinhomesStages: ProjectStage[] = [
-  makeStage({ id: 'vh-stage-intake', code: '01', name: 'Tiếp nhận yêu cầu', purpose: 'Ghi nhận yêu cầu cải tạo căn hộ.', status: 'completed', ownerDepartment: 'Ban lãnh đạo', imageUrl: '/mock/vinhomes-cover.svg' }),
-  makeStage({ id: 'vh-stage-survey', code: '02', name: 'Khảo sát hiện trạng', purpose: 'Đo đạc căn hộ và quy định tòa nhà.', status: 'completed', ownerDepartment: 'Thi công – Hiện trường', imageUrl: '/mock/vinhomes-cover.svg' }),
-  makeStage({ id: 'vh-stage-design', code: '03', name: 'Thiết kế phương án', purpose: 'Phát triển và chốt phương án thiết kế.', status: 'active', ownerDepartment: 'Thiết kế – Kỹ thuật', imageUrl: '/mock/drawing-livingroom-v2.svg', visualKind: 'drawing', missing: 1 }),
-  makeStage({ id: 'vh-stage-construction', code: '04', name: 'Thi công', purpose: 'Triển khai thi công sau khi đủ điều kiện.', status: 'upcoming', ownerDepartment: 'Thi công – Hiện trường', imageUrl: '/mock/vinhomes-cover.svg' }),
+  makeStage({ id: 'vh-stage-intake', code: '01', name: 'Tiếp nhận yêu cầu', purpose: 'Ghi nhận yêu cầu cải tạo căn hộ.', status: 'completed', ownerDepartment: 'Ban lãnh đạo', imageUrl: '/mock/journey/vinhomes-01-intake.webp' }),
+  makeStage({ id: 'vh-stage-survey', code: '02', name: 'Khảo sát hiện trạng', purpose: 'Đo đạc căn hộ và quy định tòa nhà.', status: 'completed', ownerDepartment: 'Thi công – Hiện trường', imageUrl: '/mock/journey/vinhomes-02-survey.webp' }),
+  makeStage({ id: 'vh-stage-design', code: '03', name: 'Thiết kế phương án', purpose: 'Phát triển và chốt phương án thiết kế.', status: 'active', ownerDepartment: 'Thiết kế – Kỹ thuật', imageUrl: '/mock/journey/vinhomes-03-design.webp', visualKind: 'drawing', missing: 1 }),
+  makeStage({ id: 'vh-stage-construction', code: '04', name: 'Thi công', purpose: 'Triển khai thi công sau khi đủ điều kiện.', status: 'upcoming', ownerDepartment: 'Thi công – Hiện trường', imageUrl: '/mock/journey/vinhomes-04-construction.webp' }),
 ]
 
 export const INITIAL_MOCK_STATE: MockState = {
@@ -79,7 +79,7 @@ export const INITIAL_MOCK_STATE: MockState = {
     {
       ...scope,
       id: 'project-thao-dien', code: 'VQH-2607', name: 'Nhà phố Thảo Điền', clientName: 'Anh Minh & chị Hà',
-      location: 'Thảo Điền, TP. Thủ Đức', coverUrl: '/mock/thao-dien-cover.svg', currentStageId: 'stage-construction', currentStageName: 'Thi công & giám sát',
+      location: 'Thảo Điền, TP. Thủ Đức', coverUrl: '/mock/journey/thao-dien-04-design-approved.webp', currentStageId: 'stage-construction', currentStageName: 'Thi công & giám sát',
       completedStageCount: 5, totalStageCount: 7, ownerDepartments: ['Thiết kế – Kỹ thuật', 'Thi công – Hiện trường'], lastActivityAt: '2026-08-12T09:30:00+07:00',
       workflowSnapshot: { ...scope, templateId: 'workflow-design-build-v1', version: 1, enforcementMode: 'advisory', applicabilityNote: 'Prototype minh họa — điều kiện chỉ hướng dẫn, không khóa giai đoạn.' },
       stages: thaoDienStages,
@@ -87,7 +87,7 @@ export const INITIAL_MOCK_STATE: MockState = {
     {
       ...scope,
       id: 'project-vinhomes', code: 'VQH-2608', name: 'Căn hộ Vinhomes Central Park', clientName: 'Chị Phương',
-      location: 'Bình Thạnh, TP.HCM', coverUrl: '/mock/vinhomes-cover.svg', currentStageId: 'vh-stage-design', currentStageName: 'Thiết kế phương án',
+      location: 'Bình Thạnh, TP.HCM', coverUrl: '/mock/journey/vinhomes-03-design.webp', currentStageId: 'vh-stage-design', currentStageName: 'Thiết kế phương án',
       completedStageCount: 2, totalStageCount: 4, ownerDepartments: ['Thiết kế – Kỹ thuật'], lastActivityAt: '2026-08-11T14:20:00+07:00',
       workflowSnapshot: { ...scope, templateId: 'workflow-design-build-v2', version: 2, enforcementMode: 'advisory', applicabilityNote: 'Dự án cải tạo căn hộ — không áp dụng bước thiết kế kết cấu.' },
       stages: vinhomesStages,
@@ -103,10 +103,10 @@ export const INITIAL_MOCK_STATE: MockState = {
     { ...scope, id: 'drawing-lighting-supplement', drawingGroupId: 'drawing-group-livingroom', stageId: 'stage-design-3d', code: 'PC-NT-01-BS', category: 'Chi tiết bổ sung', versionNumber: 3, originalFilename: 'bo-sung-chieu-sang.pdf', url: '/mock/drawing-livingroom-v2.svg', uploadedAt: '2026-07-21T09:00:00+07:00', uploadedByName: 'Anh Long', effectiveFrom: '2026-07-21T09:00:00+07:00', effectiveTo: null, isCurrent: false, customerApproved: false, parentFileId: 'drawing-livingroom-v1', relationship: 'supplement' },
   ],
   media: [
-    { ...scope, id: 'media-design-target', stageId: 'stage-construction', kind: 'design_target', url: '/mock/thao-dien-design-target.svg', description: 'Phòng khách theo phương án khách hàng đã chốt', workArea: 'Tầng trệt · Phòng khách', capturedAt: '2026-07-18T15:30:00+07:00', photographerName: 'Chị Nhi', retainsOriginal: true },
-    { ...scope, id: 'media-site-older', stageId: 'stage-construction', kind: 'progress', url: '/mock/thao-dien-site-current.svg', description: 'Hoàn thiện hệ khung trần', workArea: 'Tầng trệt · Phòng khách', capturedAt: '2026-08-10T16:10:00+07:00', photographerName: 'Anh Long', retainsOriginal: false },
-    { ...scope, id: 'media-site-current', stageId: 'stage-construction', kind: 'progress', url: '/mock/thao-dien-site-current.svg', description: 'Cập nhật thi công trần và hệ điện', workArea: 'Tầng trệt · Phòng khách', capturedAt: '2026-08-12T08:15:00+07:00', photographerName: 'Anh Hiếu', retainsOriginal: false },
-    { ...scope, id: 'media-evidence', stageId: 'stage-construction', kind: 'evidence', url: '/mock/thao-dien-site-current.svg', description: 'Ảnh hồ sơ nghiệm thu hệ điện âm trần', workArea: 'Tầng trệt · Phòng khách', capturedAt: '2026-08-11T14:00:00+07:00', photographerName: 'Anh Hiếu', retainsOriginal: true },
+    { ...scope, id: 'media-design-target', stageId: 'stage-construction', kind: 'design_target', url: '/mock/journey/thao-dien-06-design-target.webp', description: 'Phòng khách theo phương án khách hàng đã chốt', workArea: 'Tầng trệt · Phòng khách', capturedAt: '2026-07-18T15:30:00+07:00', photographerName: 'Chị Nhi', retainsOriginal: true },
+    { ...scope, id: 'media-site-older', stageId: 'stage-construction', kind: 'progress', url: '/mock/journey/thao-dien-06-site-current.webp', description: 'Hoàn thiện hệ khung trần', workArea: 'Tầng trệt · Phòng khách', capturedAt: '2026-08-10T16:10:00+07:00', photographerName: 'Anh Long', retainsOriginal: false },
+    { ...scope, id: 'media-site-current', stageId: 'stage-construction', kind: 'progress', url: '/mock/journey/thao-dien-06-site-current.webp', description: 'Cập nhật thi công trần và hệ điện', workArea: 'Tầng trệt · Phòng khách', capturedAt: '2026-08-12T08:15:00+07:00', photographerName: 'Anh Hiếu', retainsOriginal: false },
+    { ...scope, id: 'media-evidence', stageId: 'stage-construction', kind: 'evidence', url: '/mock/journey/thao-dien-06-site-current.webp', description: 'Ảnh hồ sơ nghiệm thu hệ điện âm trần', workArea: 'Tầng trệt · Phòng khách', capturedAt: '2026-08-11T14:00:00+07:00', photographerName: 'Anh Hiếu', retainsOriginal: true },
   ],
   tasks: [
     { ...scope, id: 'task-01', projectId: 'project-thao-dien', projectName: 'Nhà phố Thảo Điền', stageId: 'stage-construction', stageName: 'Thi công & giám sát', title: 'Bổ sung ảnh hệ điện âm trần', ownerName: 'Anh Hiếu', status: 'open', priority: 'high', dueAt: '2026-08-11T17:00:00+07:00', assignmentSource: 'director', relatedRecordLabel: 'Nhật ký công trình' },
