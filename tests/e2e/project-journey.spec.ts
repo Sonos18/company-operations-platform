@@ -53,6 +53,9 @@ test('removes nonessential card motion when reduced motion is requested', async 
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/projects/project-thao-dien')
 
+  const viewportScrollBehavior = await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior)
+  expect(viewportScrollBehavior).toBe('auto')
+
   const durations = await page.locator('[data-testid="journey-stage-card"]').first().evaluate((element) =>
     getComputedStyle(element).transitionDuration.split(',').map(value => Number.parseFloat(value)),
   )
