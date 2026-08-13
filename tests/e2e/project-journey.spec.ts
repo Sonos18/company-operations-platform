@@ -14,10 +14,12 @@ test('centers the current stage and keeps project state while browsing', async (
   const focusedBox = await focused.boundingBox()
   const neighborBox = await page.getByTestId('stage-neighbor').first().boundingBox()
   const footerBox = await page.getByTestId('journey-footer').boundingBox()
+  const dashboardBox = await page.locator('.journey-dashboard').boundingBox()
   expect(Math.abs(focusedBox!.width - track!.width * 0.58)).toBeLessThanOrEqual(2)
   expect(Math.abs(focusedBox!.height - track!.height * 0.84)).toBeLessThanOrEqual(2)
   expect(Math.abs(neighborBox!.height - track!.height * 0.54)).toBeLessThanOrEqual(2)
   expect(footerBox!.height).toBe(220)
+  expect(footerBox!.y + footerBox!.height).toBeLessThanOrEqual(dashboardBox!.y + dashboardBox!.height)
 })
 
 test('jumps directly to a stage from the journey rail', async ({ page }) => {
