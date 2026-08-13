@@ -44,3 +44,44 @@ test('aligns the sidebar with the collapsed header', async ({ page }) => {
 
   await expect.poll(async () => (await sidebar.boundingBox())?.y).toBe(44)
 })
+
+test('collapses the sidebar without changing compact header geometry', async ({ page }) => {
+  await page.goto('/projects')
+
+  const header = page.getByTestId('app-header')
+  const sidebar = page.getByTestId('app-sidebar')
+  const main = page.getByTestId('app-main')
+
+  await page.getByRole('button', { name: 'Thu gọn thanh điều hướng phía trên' }).click()
+  await expect.poll(async () => (await header.boundingBox())?.height).toBe(44)
+
+  await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(224)
+  await expect.poll(async () => main.evaluate(element => Number.parseFloat(getComputedStyle(element).paddingLeft))).toBe(248)
+
+  await page.getByRole('button', { name: 'Thu gọn thanh điều hướng bên trái' }).click()
+
+  await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(64)
+  await expect.poll(async () => main.evaluate(element => Number.parseFloat(getComputedStyle(element).paddingLeft))).toBe(88)
+  await expect.poll(async () => (await header.boundingBox())?.height).toBe(44)
+})
+
+test('keeps icon-only sidebar links accessible', async ({ page }) => {
+  await page.goto('/projects')
+  await page.getByRole('button', { name: 'Thu gọn thanh điều hướng bên trái' }).click()
+
+  const projectsLink = page.getByRole('link', { name: 'Dự án', exact: true })
+  await expect(projectsLink).toBeVisible()
+  await expect(projectsLink).toHaveAttribute('title', 'Dự án')
+})
+
+test('expands the sidebar back to its original geometry', async ({ page }) => {
+  await page.goto('/projects')
+
+  const sidebar = page.getByTestId('app-sidebar')
+  const main = page.getByTestId('app-main')
+
+  await page.getByRole('button', { name: 'Thu gọn thanh điều hướng bên trái' }).click()
+  await page.getByRole('button', { name: 'Mở rộng thanh điều hướng bên trái' }).click()
+  await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(224)
+  await expect.poll(async () => main.evaluate(element => Number.parseFloat(getComputedStyle(element).paddingLeft))).toBe(248)
+})
