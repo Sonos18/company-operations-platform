@@ -28,7 +28,7 @@ function handleKeyboard(event: KeyboardEvent) {
 </script>
 
 <template>
-  <section class="journey-dashboard">
+  <section class="creative-momentum journey-dashboard">
     <header class="journey-heading">
       <div>
         <NuxtLink to="/projects" class="back-link"><UIcon name="i-lucide-arrow-left" /> Tất cả dự án</NuxtLink>
