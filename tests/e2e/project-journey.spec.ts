@@ -5,6 +5,30 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/projects/project-thao-dien')
 })
 
+test('places the complete summary after the stage banners without a stage rail', async ({ page }) => {
+  const summary = page.getByTestId('journey-summary')
+  const metrics = summary.locator(':scope > [data-slot="root"]')
+
+  await expect(page.getByTestId('journey-stage-card')).toHaveCount(7)
+  await expect(page.getByTestId('journey-stage-rail')).toHaveCount(0)
+  await expect(metrics).toHaveCount(3)
+  await expect(metrics.nth(0)).toContainText('5/7')
+  await expect(metrics.nth(0)).toContainText('giai đoạn hoàn tất')
+  await expect(metrics.nth(1)).toContainText('5')
+  await expect(metrics.nth(1)).toContainText('bước đang mở')
+  await expect(metrics.nth(2)).toContainText('1')
+  await expect(metrics.nth(2)).toContainText('hồ sơ còn thiếu')
+
+  const summaryFollowsCarousel = await page.getByTestId('project-journey').evaluate((journey) => {
+    const carousel = journey.querySelector('[data-testid="journey-carousel"]')
+    const summaryElement = journey.querySelector('[data-testid="journey-summary"]')
+    if (!carousel || !summaryElement) return false
+
+    return Boolean(carousel.compareDocumentPosition(summaryElement) & Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+  expect(summaryFollowsCarousel).toBe(true)
+})
+
 test('centers the actual current stage and preserves workflow state while browsing', async ({ page }) => {
   const focused = page.locator('[data-testid="journey-stage-card"][data-focused="true"]')
   await expect(page.getByTestId('journey-stage-card')).toHaveCount(7)
@@ -19,20 +43,23 @@ test('centers the actual current stage and preserves workflow state while browsi
   await expect(focused).toContainText('Thi công & giám sát')
 })
 
-test('supports direct rail and keyboard navigation at journey boundaries', async ({ page }) => {
+test('supports previous, next, and keyboard navigation at journey boundaries', async ({ page }) => {
   const carousel = page.getByTestId('journey-carousel')
   const focused = page.locator('[data-testid="journey-stage-card"][data-focused="true"]')
+  const previous = page.getByRole('button', { name: 'Giai đoạn trước' })
+  const next = page.getByRole('button', { name: 'Giai đoạn sau' })
 
-  await page.getByTestId('journey-stage-rail').getByRole('button', { name: 'Xem giai đoạn 01: Tiếp nhận yêu cầu' }).click()
+  for (let index = 0; index < 5; index += 1) await previous.click()
   await expect(focused).toContainText('Tiếp nhận yêu cầu')
-  await expect(page.getByRole('button', { name: 'Giai đoạn trước' })).toBeDisabled()
+  await expect(previous).toBeDisabled()
 
   await carousel.focus()
   await page.keyboard.press('ArrowRight')
   await expect(focused).toContainText('Khảo sát hiện trạng')
 
-  await page.getByTestId('journey-stage-rail').getByRole('button', { name: 'Xem giai đoạn 07: Nghiệm thu & bàn giao' }).click()
-  await expect(page.getByRole('button', { name: 'Giai đoạn sau' })).toBeDisabled()
+  for (let index = 0; index < 5; index += 1) await next.click()
+  await expect(focused).toContainText('Nghiệm thu & bàn giao')
+  await expect(next).toBeDisabled()
 })
 
 test('updates contextual footer content with the focused stage', async ({ page }) => {

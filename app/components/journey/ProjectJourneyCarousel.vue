@@ -4,7 +4,6 @@ import type { ProjectDetail } from '../../features/projects/project.types'
 import { summarizeProjectJourney } from '../../features/journey/journey.presenter'
 import { createJourneyState } from '../../composables/useProjectJourney'
 import JourneyFooter from './JourneyFooter.vue'
-import JourneyStageRail from './JourneyStageRail.vue'
 import JourneyStageCard from './JourneyStageCard.vue'
 
 interface JourneyCarouselRef {
@@ -74,19 +73,6 @@ watch(focusedIndex, (index) => {
       </div>
     </header>
 
-    <div class="journey-summary" data-testid="journey-summary">
-      <UCard><strong>{{ summary.completedStages }}/{{ summary.totalStages }}</strong><span>giai đoạn hoàn tất</span><UProgress :model-value="summary.completedStages" :max="summary.totalStages" /></UCard>
-      <UCard><strong>{{ summary.openSteps }}</strong><span>bước đang mở</span></UCard>
-      <UCard><strong>{{ summary.missingRecords }}</strong><span>hồ sơ còn thiếu</span></UCard>
-    </div>
-
-    <JourneyStageRail
-      :stages="project.stages"
-      :focused-stage-id="focusedStage.id"
-      :actual-current-stage-id="actualStage.id"
-      @select="selectStage"
-    />
-
     <div class="carousel-shell">
       <UButton icon="i-lucide-chevron-left" aria-label="Giai đoạn trước" :disabled="focusedIndex === 0" @click="journey.focusPrevious" />
       <UCarousel
@@ -115,6 +101,12 @@ watch(focusedIndex, (index) => {
         </template>
       </UCarousel>
       <UButton icon="i-lucide-chevron-right" aria-label="Giai đoạn sau" :disabled="focusedIndex === project.stages.length - 1" @click="journey.focusNext" />
+    </div>
+
+    <div class="journey-summary" data-testid="journey-summary">
+      <UCard><strong>{{ summary.completedStages }}/{{ summary.totalStages }}</strong><span>giai đoạn hoàn tất</span><UProgress :model-value="summary.completedStages" :max="summary.totalStages" /></UCard>
+      <UCard><strong>{{ summary.openSteps }}</strong><span>bước đang mở</span></UCard>
+      <UCard><strong>{{ summary.missingRecords }}</strong><span>hồ sơ còn thiếu</span></UCard>
     </div>
 
     <p class="sr-only" aria-live="polite">
