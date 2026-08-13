@@ -73,7 +73,7 @@ const stageStatusIcon = {
 </template>
 
 <style scoped>
-.journey-stage-card { width: 100%; min-height: 440px; overflow: hidden; border: 1px solid var(--journey-border); border-radius: var(--journey-radius); background: var(--journey-surface); color: var(--journey-foreground); transition: transform var(--journey-motion), opacity 200ms ease, box-shadow var(--journey-motion); }
+.journey-stage-card { display: grid; width: 100%; min-height: 440px; overflow: hidden; border: 1px solid var(--journey-border); border-radius: var(--journey-radius); background: var(--journey-surface); color: var(--journey-foreground); transition: transform var(--journey-motion), opacity 200ms ease, box-shadow var(--journey-motion); }
 .journey-stage-card:not(.is-focused) { transform: scale(.94); opacity: .68; }
 .journey-stage-card.is-focused { transform: translateY(-4px) scale(1.015); opacity: 1; box-shadow: 0 18px 36px color-mix(in srgb, var(--journey-primary) 22%, transparent); }
 .journey-stage-card :deep([data-slot='body']) { height: 100%; padding: 0; }

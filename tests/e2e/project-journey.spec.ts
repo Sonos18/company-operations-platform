@@ -43,6 +43,18 @@ test('updates contextual footer content with the focused stage', async ({ page }
   await expect(footer).toContainText('Hợp đồng & chuẩn bị thi công')
 })
 
+test('focuses the visible next-stage card when its preview is selected', async ({ page }) => {
+  const focused = page.locator('[data-testid="journey-stage-card"][data-focused="true"]')
+  const nextStagePreview = page
+    .getByTestId('journey-carousel')
+    .getByRole('button', { name: 'Xem giai đoạn 07: Nghiệm thu & bàn giao' })
+
+  await expect(nextStagePreview).toBeVisible()
+  await nextStagePreview.click()
+
+  await expect(focused).toContainText('Nghiệm thu & bàn giao')
+})
+
 test('shows a designed not-found state after an unknown project resolves', async ({ page }) => {
   await page.goto('/projects/project-does-not-exist')
   await expect(page.getByTestId('journey-not-found')).toBeVisible()
@@ -60,4 +72,9 @@ test('removes nonessential card motion when reduced motion is requested', async 
     getComputedStyle(element).transitionDuration.split(',').map(value => Number.parseFloat(value)),
   )
   expect(durations.every(duration => duration <= 0.01)).toBe(true)
+
+  const transforms = await page.locator('[data-testid="journey-stage-card"]').evaluateAll(elements =>
+    elements.map(element => getComputedStyle(element).transform),
+  )
+  expect(transforms.every(transform => transform === 'none')).toBe(true)
 })
