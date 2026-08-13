@@ -85,3 +85,75 @@ test('expands the sidebar back to its original geometry', async ({ page }) => {
   await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(224)
   await expect.poll(async () => main.evaluate(element => Number.parseFloat(getComputedStyle(element).paddingLeft))).toBe(248)
 })
+
+test('toggles the header from the keyboard', async ({ page }) => {
+  await page.goto('/projects')
+
+  const headerToggle = page.getByRole('button', { name: 'Thu gọn thanh điều hướng phía trên' })
+  await headerToggle.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: 'Mở rộng thanh điều hướng phía trên' })).toHaveAttribute('aria-expanded', 'false')
+})
+
+test('toggles the sidebar from the keyboard', async ({ page }) => {
+  await page.goto('/projects')
+
+  const sidebarToggle = page.getByRole('button', { name: 'Thu gọn thanh điều hướng bên trái' })
+  await sidebarToggle.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: 'Mở rộng thanh điều hướng bên trái' })).toHaveAttribute('aria-expanded', 'false')
+})
+
+test('removes shell transitions when reduced motion is requested', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/projects')
+
+  await expect.poll(async () => page.getByTestId('app-header').evaluate(element => getComputedStyle(element).transitionDuration)).toBe('0s')
+  await expect.poll(async () => page.getByTestId('app-sidebar').evaluate(element => getComputedStyle(element).transitionDuration)).toBe('0s')
+  await expect.poll(async () => page.getByTestId('app-main').evaluate(element => getComputedStyle(element).transitionDuration)).toBe('0s')
+})
+
+test('preserves the mobile header and bottom navigation', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/projects')
+
+  await expect(page.getByRole('button', { name: /thanh điều hướng phía trên/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /thanh điều hướng bên trái/ })).toHaveCount(0)
+  await expect(page.locator('.mobile-nav')).toBeVisible()
+  await expect.poll(async () => (await page.getByTestId('app-header').boundingBox())?.height).toBe(64)
+})
+
+test('avoids horizontal overflow on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/projects')
+
+  const dimensions = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    content: document.documentElement.scrollWidth,
+  }))
+  expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
+})
+
+test('keeps compact state during client navigation', async ({ page }) => {
+  await page.goto('/projects')
+
+  await page.getByRole('button', { name: 'Thu gọn thanh điều hướng phía trên' }).click()
+  await page.getByRole('button', { name: 'Thu gọn thanh điều hướng bên trái' }).click()
+  await page.getByRole('link', { name: 'Công việc của tôi' }).click()
+
+  await expect(page).toHaveURL(/\/my-work$/)
+  await expect(page.getByRole('button', { name: 'Mở rộng thanh điều hướng phía trên' })).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByRole('button', { name: 'Mở rộng thanh điều hướng bên trái' })).toHaveAttribute('aria-expanded', 'false')
+})
+
+test('resets compact state after a full reload', async ({ page }) => {
+  await page.goto('/projects')
+
+  await page.getByRole('button', { name: 'Thu gọn thanh điều hướng phía trên' }).click()
+  await page.getByRole('button', { name: 'Thu gọn thanh điều hướng bên trái' }).click()
+
+  await page.reload()
+
+  await expect(page.getByRole('button', { name: 'Thu gọn thanh điều hướng phía trên' })).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByRole('button', { name: 'Thu gọn thanh điều hướng bên trái' })).toHaveAttribute('aria-expanded', 'true')
+})
