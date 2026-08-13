@@ -1,8 +1,80 @@
 @import '@fontsource-variable/space-grotesk';
 @import '@fontsource-variable/dm-sans';
 @import '@fontsource-variable/jetbrains-mono';
+@import '@fontsource-variable/manrope/wght.css';
+@import '@fontsource/be-vietnam-pro/400.css';
+@import '@fontsource/be-vietnam-pro/500.css';
+@import '@fontsource/be-vietnam-pro/600.css';
 @import 'tailwindcss';
 @import '@nuxt/ui';
+
+@theme {
+  --color-creative-50: #f2fcf8;
+  --color-creative-100: #d9f4ec;
+  --color-creative-200: #b7e6d9;
+  --color-creative-300: #80cdbb;
+  --color-creative-400: #4aab96;
+  --color-creative-500: #103d38;
+  --color-creative-600: #0e3733;
+  --color-creative-700: #0c302c;
+  --color-creative-800: #092724;
+  --color-creative-900: #071f1d;
+  --color-creative-950: #041311;
+
+  --color-mint-50: #ecfff9;
+  --color-mint-100: #cff8ec;
+  --color-mint-200: #a2eed9;
+  --color-mint-300: #6fe3c4;
+  --color-mint-400: #2fd6a3;
+  --color-mint-500: #20b98a;
+  --color-mint-600: #168f6b;
+  --color-mint-700: #147258;
+  --color-mint-800: #135b49;
+  --color-mint-900: #114b3d;
+  --color-mint-950: #072b23;
+
+  --color-coral-50: #fff4f1;
+  --color-coral-100: #ffe4de;
+  --color-coral-200: #ffc9be;
+  --color-coral-300: #ffa493;
+  --color-coral-400: #ff8b73;
+  --color-coral-500: #ff7a63;
+  --color-coral-600: #e85f49;
+  --color-coral-700: #c74a38;
+  --color-coral-800: #a43e31;
+  --color-coral-900: #87372e;
+  --color-coral-950: #491914;
+
+  --font-journey-display: 'Manrope Variable', sans-serif;
+  --font-journey-body: 'Be Vietnam Pro', sans-serif;
+  --font-journey-mono: 'JetBrains Mono Variable', monospace;
+}
+
+.creative-momentum {
+  --journey-canvas: #f2fcf8;
+  --journey-surface: #ffffff;
+  --journey-foreground: #153a37;
+  --journey-muted: #56706a;
+  --journey-border: #d5e9e3;
+  --journey-primary: #103d38;
+  --journey-mint: #2fd6a3;
+  --journey-coral: #ff7a63;
+  --journey-radius: 14px;
+  --journey-motion: 360ms cubic-bezier(0.16, 1, 0.3, 1);
+  color: var(--journey-foreground);
+  font-family: var(--font-journey-body);
+}
+
+.creative-momentum h1,
+.creative-momentum h2,
+.creative-momentum h3,
+.creative-momentum h4 {
+  font-family: var(--font-journey-display);
+}
+
+.creative-momentum :focus-visible {
+  outline-color: var(--journey-coral);
+}
 
 :root {
   --paper: #f7f7f5;

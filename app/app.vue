@@ -1,5 +1,9 @@
+<script setup lang="ts">
+import { vi } from '@nuxt/ui/locale'
+</script>
+
 <template>
-  <UApp>
+  <UApp :locale="vi">
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
