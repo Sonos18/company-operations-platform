@@ -34,3 +34,13 @@ test('expands the header back to its original geometry', async ({ page }) => {
   await expect.poll(async () => (await header.boundingBox())?.height).toBe(64)
   await expect.poll(async () => main.evaluate(element => Number.parseFloat(getComputedStyle(element).paddingTop))).toBe(88)
 })
+
+test('aligns the sidebar with the collapsed header', async ({ page }) => {
+  await page.goto('/projects')
+
+  const sidebar = page.locator('.app-sidebar')
+
+  await page.getByRole('button', { name: 'Thu gọn thanh điều hướng phía trên' }).click()
+
+  await expect.poll(async () => (await sidebar.boundingBox())?.y).toBe(44)
+})

@@ -43,7 +43,7 @@ function isActive(to: string) {
 .app-sidebar {
   position: fixed;
   z-index: 40;
-  inset: var(--header-height) auto 0 0;
+  inset: var(--shell-header-height) auto 0 0;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -51,6 +51,7 @@ function isActive(to: string) {
   padding: 24px 16px 18px;
   border-right: 1px solid var(--line);
   background: #f1f2ed;
+  transition: inset 200ms ease;
 }
 .sidebar-label { padding: 0 10px 10px; }
 .sidebar-nav { display: grid; gap: 6px; }
@@ -72,5 +73,9 @@ function isActive(to: string) {
   .mobile-nav a { display: grid; place-items: center; align-content: center; gap: 2px; border-radius: 4px; color: #b9c8c0; font-size: 0.67rem; font-weight: 650; }
   .mobile-nav a :deep(svg) { width: 19px; height: 19px; }
   .mobile-nav a.active { background: white; color: var(--forest); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar { transition: none; }
 }
 </style>
