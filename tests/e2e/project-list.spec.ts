@@ -9,3 +9,26 @@ test('lists only VQH projects and opens the selected project', async ({ page }) 
   await page.getByRole('link', { name: /Mở dự án Nhà phố Thảo Điền/ }).click()
   await expect(page).toHaveURL(/\/projects\/project-thao-dien$/)
 })
+
+test('shows the journey loading skeleton during project navigation', async ({ page }) => {
+  await page.addInitScript(() => {
+    const clone = window.structuredClone.bind(window)
+
+    window.structuredClone = ((value: unknown, options?: StructuredSerializeOptions) => {
+      const result = clone(value, options)
+      const project = value as { id?: unknown, stages?: unknown }
+
+      if (project?.id === 'project-thao-dien' && Array.isArray(project.stages)) {
+        return new Promise(resolve => window.setTimeout(() => resolve(result), 1_500))
+      }
+
+      return result
+    }) as typeof window.structuredClone
+  })
+
+  await page.goto('/projects')
+  await page.getByRole('link', { name: /Mở dự án Nhà phố Thảo Điền/ }).click({ noWaitAfter: true })
+
+  await expect(page.getByTestId('journey-loading')).toBeVisible({ timeout: 1_000 })
+  await expect(page.getByTestId('project-journey')).toBeVisible()
+})

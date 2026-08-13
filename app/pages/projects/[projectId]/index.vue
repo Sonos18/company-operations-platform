@@ -4,7 +4,7 @@ import ProjectJourneyCarousel from '../../../components/journey/ProjectJourneyCa
 const route = useRoute()
 const repositories = useRepositories()
 const projectId = computed(() => String(route.params.projectId))
-const { data: project, status } = await useAsyncData(
+const { data: project, status } = useLazyAsyncData(
   () => `project-${projectId.value}`,
   () => repositories.projects.getById(projectId.value),
   { watch: [projectId] },
