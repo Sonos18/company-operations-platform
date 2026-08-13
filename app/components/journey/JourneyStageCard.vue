@@ -18,6 +18,14 @@ const { media, pending: mediaPending, error: mediaError } = useStageMedia(
   toRef(props, 'focused'),
   repositories.media,
 )
+
+const stageStatusIcon = {
+  completed: 'i-lucide-circle-check',
+  active: 'i-lucide-circle-play',
+  upcoming: 'i-lucide-clock-3',
+  incomplete: 'i-lucide-triangle-alert',
+  not_applicable: 'i-lucide-circle-minus',
+} as const
 </script>
 
 <template>
@@ -25,7 +33,7 @@ const { media, pending: mediaPending, error: mediaError } = useStageMedia(
     <template v-if="focused">
       <div class="stage-visual">
         <USkeleton v-if="mediaPending" class="size-full rounded-none" />
-        <UAlert v-else-if="mediaError" color="error" variant="subtle" icon="i-lucide-image-off" :description="mediaError" />
+        <UAlert v-else-if="mediaError" role="alert" color="error" variant="subtle" icon="i-lucide-image-off" :description="mediaError" />
         <SiteVisualComparison v-else-if="stage.visualKind === 'construction_comparison'" :media="media" compact />
         <img v-else :src="stage.imageUrl" :alt="`Minh họa giai đoạn ${stage.name}`">
       </div>
@@ -34,7 +42,8 @@ const { media, pending: mediaPending, error: mediaError } = useStageMedia(
         <div class="stage-card-topline">
           <span>Giai đoạn {{ stage.code }}</span>
           <UBadge :color="actualCurrent ? 'success' : 'secondary'" variant="subtle">
-            {{ actualCurrent ? 'Hiện tại' : 'Đang xem lại' }}
+            <UIcon :name="stageStatusIcon[stage.status]" aria-hidden="true" />
+            {{ actualCurrent ? 'Hiện tại' : stageStatusLabel[stage.status] }}
           </UBadge>
         </div>
         <h2>{{ stage.name }}</h2>
@@ -71,6 +80,6 @@ const { media, pending: mediaPending, error: mediaError } = useStageMedia(
 .journey-stage-card.is-focused :deep([data-slot='body']) { display: grid; grid-template-rows: minmax(0, 60%) minmax(0, 40%); }
 .stage-visual { position: relative; min-height: 0; overflow: hidden; background: var(--journey-border); }.stage-visual > img,.stage-visual > :deep(.site-comparison),.stage-visual > :deep(.skeleton) { width: 100%; height: 100%; object-fit: cover; }.stage-visual > :deep(.alert) { height: 100%; border-radius: 0; }
 .stage-card-copy { display: grid; grid-template-columns: 1fr auto; align-content: start; gap: 8px 14px; min-height: 0; padding: 13px 16px; }.stage-card-copy h2,.stage-card-copy p,.stage-card-copy > :deep(.progress),.stage-meta { grid-column: 1 / -1; }.stage-card-copy h2 { color: var(--journey-foreground); font-family: var(--font-journey-display); font-size: clamp(1rem, 1.7vw, 1.6rem); line-height: 1.08; }.stage-card-copy p { color: var(--journey-muted); font-size: clamp(.67rem, .8vw, .78rem); line-height: 1.35; }.stage-card-topline { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--journey-primary); font-family: var(--font-journey-mono); font-size: .59rem; font-weight: 750; letter-spacing: .05em; }.stage-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--journey-muted); font-size: .6rem; }.stage-card-copy > :deep(.button) { min-height: 30px; font-size: .65rem; }
-.neighbor-trigger { position: relative; display: block; width: 100%; height: 100%; min-height: 0; padding: 0; overflow: hidden; border: 0; background: var(--journey-primary); color: var(--journey-surface); cursor: pointer; text-align: left; }.neighbor-trigger > img,.neighbor-scrim { position: absolute; inset: 0; width: 100%; height: 100%; }.neighbor-trigger > img { object-fit: cover; }.neighbor-scrim { background: linear-gradient(180deg, color-mix(in srgb, var(--journey-primary) 16%, transparent), color-mix(in srgb, var(--journey-primary) 84%, transparent)); }.neighbor-copy { position: absolute; z-index: 1; right: 14px; bottom: 15px; left: 14px; display: grid; gap: 5px; }.neighbor-copy small { width: fit-content; padding: 4px 6px; background: var(--journey-mint); color: var(--journey-foreground); font-family: var(--font-journey-mono); font-size: .58rem; font-weight: 750; text-transform: uppercase; }.neighbor-copy strong { font-family: var(--font-journey-display); font-size: clamp(.75rem, 1.2vw, 1rem); line-height: 1.18; }.neighbor-copy > span { color: color-mix(in srgb, var(--journey-surface) 78%, transparent); font-size: .66rem; }
+.neighbor-trigger { position: relative; display: block; width: 100%; height: 100%; min-height: 0; padding: 0; overflow: hidden; border: 0; background: var(--journey-primary); color: var(--journey-surface); cursor: pointer; text-align: left; }.neighbor-trigger:focus-visible { outline: 3px solid var(--journey-coral); outline-offset: -5px; }.neighbor-trigger > img,.neighbor-scrim { position: absolute; inset: 0; width: 100%; height: 100%; }.neighbor-trigger > img { object-fit: cover; }.neighbor-scrim { background: linear-gradient(180deg, color-mix(in srgb, var(--journey-primary) 16%, transparent), color-mix(in srgb, var(--journey-primary) 84%, transparent)); }.neighbor-copy { position: absolute; z-index: 1; right: 14px; bottom: 15px; left: 14px; display: grid; gap: 5px; }.neighbor-copy small { width: fit-content; padding: 4px 6px; background: var(--journey-mint); color: var(--journey-foreground); font-family: var(--font-journey-mono); font-size: .58rem; font-weight: 750; text-transform: uppercase; }.neighbor-copy strong { font-family: var(--font-journey-display); font-size: clamp(.75rem, 1.2vw, 1rem); line-height: 1.18; }.neighbor-copy > span { color: color-mix(in srgb, var(--journey-surface) 78%, transparent); font-size: .66rem; }
 @media (prefers-reduced-motion: reduce) { .journey-stage-card,.neighbor-trigger { transform: none !important; transition-duration: .01ms; animation-duration: .01ms; } }
 </style>

@@ -34,3 +34,27 @@ test('supports direct rail and keyboard navigation at journey boundaries', async
   await page.getByTestId('journey-stage-rail').getByRole('button', { name: 'Xem giai đoạn 07: Nghiệm thu & bàn giao' }).click()
   await expect(page.getByRole('button', { name: 'Giai đoạn sau' })).toBeDisabled()
 })
+
+test('updates contextual footer content with the focused stage', async ({ page }) => {
+  const footer = page.getByTestId('journey-footer')
+  await expect(footer).toContainText('Thi công & giám sát')
+
+  await page.getByRole('button', { name: 'Giai đoạn trước' }).click()
+  await expect(footer).toContainText('Hợp đồng & chuẩn bị thi công')
+})
+
+test('shows a designed not-found state after an unknown project resolves', async ({ page }) => {
+  await page.goto('/projects/project-does-not-exist')
+  await expect(page.getByTestId('journey-not-found')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Quay lại danh sách dự án' })).toBeVisible()
+})
+
+test('removes nonessential card motion when reduced motion is requested', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/projects/project-thao-dien')
+
+  const durations = await page.locator('[data-testid="journey-stage-card"]').first().evaluate((element) =>
+    getComputedStyle(element).transitionDuration.split(',').map(value => Number.parseFloat(value)),
+  )
+  expect(durations.every(duration => duration <= 0.01)).toBe(true)
+})
