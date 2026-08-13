@@ -113,6 +113,26 @@ test('removes shell transitions when reduced motion is requested', async ({ page
   await expect.poll(async () => page.getByTestId('app-main').evaluate(element => getComputedStyle(element).transitionDuration)).toBe('0s')
 })
 
+test('keeps desktop shell controls and geometry at 768px', async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 900 })
+  await page.goto('/projects')
+
+  await expect(page.getByRole('button', { name: 'Thu gọn thanh điều hướng phía trên' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Thu gọn thanh điều hướng bên trái' })).toBeVisible()
+  await expect(page.locator('.mobile-nav')).toBeHidden()
+  await expect.poll(async () => (await page.getByTestId('app-header').boundingBox())?.height).toBe(64)
+  await expect.poll(async () => (await page.getByTestId('app-sidebar').boundingBox())?.width).toBe(224)
+})
+
+test('uses 200ms shell transitions with normal motion', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.goto('/projects')
+
+  await expect.poll(async () => page.getByTestId('app-header').evaluate(element => getComputedStyle(element).transitionDuration)).toBe('0.2s')
+  await expect.poll(async () => page.getByTestId('app-sidebar').evaluate(element => getComputedStyle(element).transitionDuration)).toBe('0.2s')
+  await expect.poll(async () => page.getByTestId('app-main').evaluate(element => getComputedStyle(element).transitionDuration)).toBe('0.2s')
+})
+
 test('preserves the mobile header and bottom navigation', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/projects')
