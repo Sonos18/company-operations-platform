@@ -18,27 +18,29 @@ docker version
 ```powershell
 pnpm install
 pnpm supabase:start
-Copy-Item .env.example .env
+Copy-Item .env.example .env.local
 pnpm exec supabase status
 ```
 
-Copy the API URL and anon key printed by `pnpm exec supabase status` into `.env` before starting Nuxt. Do not commit `.env` or add a service-role key; application request paths use only the public URL and anon key.
+Copy only the local API URL and local anon key printed by `pnpm exec supabase status` into `.env.local` before starting Nuxt. Do not commit `.env.local` or add a service-role key; application request paths use only the public URL and anon key.
 
 Then prepare the local database and start the app:
 
 ```powershell
-pnpm db:reset
-pnpm db:types
+pnpm db:local:reset
+pnpm db:local:types
 pnpm dev
 ```
+
+Only `pnpm dev` passes `--dotenv .env.local`; `pnpm build` ignores `.env.local` and receives its public Supabase values from the deploy environment.
 
 ## Database workflow
 
 ```powershell
 pnpm exec supabase migration new descriptive_name
-pnpm db:reset
-pnpm db:test
-pnpm db:types
+pnpm db:local:reset
+pnpm db:local:test
+pnpm db:local:types
 ```
 
 Never edit `shared/types/database.types.ts` manually.

@@ -38,6 +38,14 @@ Mở `http://127.0.0.1:3000`. Dữ liệu mẫu nằm trong browser local storag
 
 Backend local cần Docker Desktop và Supabase CLI. Xem [Local backend development](docs/development/backend-local.md) để khởi động, reset migration, chạy RLS test và generate database types.
 
+## Môi trường Supabase
+
+- Development app: Supabase local through `.env.local`.
+- Database delivery: local Supabase CLI linked to the VQH Cloud project.
+- Production app: Supabase Cloud variables supplied by Vercel Production.
+
+See [Local backend development](docs/development/backend-local.md) and [Supabase Cloud and Vercel production](docs/deployment/supabase-cloud-vercel.md).
+
 ## Kiểm thử và build
 
 ```bash
