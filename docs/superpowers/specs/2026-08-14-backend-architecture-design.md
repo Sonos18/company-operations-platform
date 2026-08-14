@@ -2,7 +2,7 @@
 
 **Ngày:** 2026-08-14
 
-**Trạng thái:** Đã thống nhất hướng kiến trúc, chờ duyệt tài liệu
+**Trạng thái:** Đã duyệt
 
 **Phạm vi đầu tiên:** Đưa VQH vào vận hành production
 
