@@ -58,7 +58,7 @@ Nút **Khôi phục dữ liệu mẫu** trên header xóa mọi thay đổi cụ
 
 Đã có danh sách dự án, dashboard hành trình, không gian chi tiết giai đoạn, lịch sử bản vẽ, ảnh mục tiêu so với hiện trạng, công việc xuyên dự án, mobile layout và reset dữ liệu.
 
-Chưa triển khai backend/API, đăng nhập thật, phân quyền production, database Supabase, object storage, thông báo, đồng bộ realtime hoặc APK. Kiến trúc backend đã được chốt nhưng chưa có production code. Form upload hiện chỉ mô phỏng việc lưu URL và metadata; không nhập hồ sơ, hợp đồng, ảnh hay bản vẽ thật.
+Đã có nền tảng backend local: migration Supabase cho tenant/company membership, RLS và pgTAP; cùng Nitro API cho health, bearer authentication, session và company context. Frontend hiện vẫn dùng mock repositories. Chưa triển khai tích hợp frontend với dữ liệu production, UI đăng nhập/session, object storage, thông báo, đồng bộ realtime hoặc APK. Form upload hiện chỉ mô phỏng việc lưu URL và metadata; không nhập hồ sơ, hợp đồng, ảnh hay bản vẽ thật.
 
 ## Đường chuyển sang production
 

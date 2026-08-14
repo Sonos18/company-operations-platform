@@ -19,12 +19,18 @@ docker version
 pnpm install
 pnpm supabase:start
 Copy-Item .env.example .env
+pnpm exec supabase status
+```
+
+Copy the API URL and anon key printed by `pnpm exec supabase status` into `.env` before starting Nuxt. Do not commit `.env` or add a service-role key; application request paths use only the public URL and anon key.
+
+Then prepare the local database and start the app:
+
+```powershell
 pnpm db:reset
 pnpm db:types
 pnpm dev
 ```
-
-Copy the API URL and anon key printed by `pnpm exec supabase status` into `.env`. Do not commit `.env` or add a service-role key; application request paths use only the public URL and anon key.
 
 ## Database workflow
 
