@@ -107,5 +107,8 @@ for select to authenticated using (user_id = (select auth.uid()));
 create policy audit_events_select_company_member on public.audit_events
 for select to authenticated using (public.is_company_member(tenant_id, company_id));
 
+revoke all on table public.tenants, public.companies, public.tenant_memberships,
+  public.company_memberships, public.audit_events from anon, authenticated;
+
 grant select on public.tenants, public.companies, public.tenant_memberships,
   public.company_memberships, public.audit_events to authenticated;
