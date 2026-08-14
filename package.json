@@ -7,7 +7,7 @@
     "node": "24.x"
   },
   "scripts": {
-    "dev": "nuxt dev",
+    "dev": "nuxt dev --dotenv .env.local",
     "build": "nuxt build",
     "typecheck": "nuxt typecheck",
     "lint": "eslint .",
@@ -16,10 +16,13 @@
     "test": "pnpm test:unit && pnpm test:e2e",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
-    "db:reset": "supabase db reset",
-    "db:test": "supabase test db",
-    "db:types": "supabase gen types typescript --local > shared/types/database.types.ts",
-    "verify:backend": "pnpm db:reset && pnpm db:test && pnpm db:types && pnpm test:unit && pnpm typecheck && pnpm lint && pnpm build"
+    "db:local:reset": "supabase db reset --local",
+    "db:local:test": "supabase test db --local",
+    "db:local:types": "supabase gen types typescript --local > shared/types/database.types.ts",
+    "db:cloud:status": "supabase migration list --linked",
+    "db:cloud:dry-run": "supabase db push --linked --dry-run",
+    "db:cloud:push": "supabase db push --linked",
+    "verify:backend": "pnpm db:local:reset && pnpm db:local:test && pnpm db:local:types && pnpm test:unit && pnpm typecheck && pnpm lint && pnpm build"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "5.3.0",
