@@ -40,7 +40,7 @@ describe('tenancy service', () => {
       listCompanyAccess: vi.fn(),
       findCompanyAccess: vi.fn().mockResolvedValue(null),
     }
-    await expect(createTenancyService(reader).resolveCompanyContext('user-vqh', 'other'))
+    await expect(createTenancyService(reader).resolveCompanyContext('user-vqh', '10000000-0000-4000-8000-000000000099'))
       .rejects.toMatchObject({ statusCode: 403, code: 'COMPANY_FORBIDDEN' })
   })
 })
