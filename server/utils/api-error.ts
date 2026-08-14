@@ -1,5 +1,5 @@
 import type { H3Event } from 'h3'
-import { createError } from 'h3'
+import { setResponseStatus } from 'h3'
 import type { ApiErrorBody, ApiErrorCode } from '../../shared/schemas/api-error'
 
 export class AppApiError extends Error {
@@ -38,15 +38,12 @@ export function toApiErrorBody(error: unknown, requestId: string): ApiErrorBody 
 export async function runApiRoute<T>(
   event: H3Event,
   handler: () => Promise<T>,
-): Promise<T> {
+): Promise<T | ApiErrorBody> {
   try {
     return await handler()
   } catch (error) {
     const body = toApiErrorBody(error, event.context.requestId)
-    throw createError({
-      statusCode: error instanceof AppApiError ? error.statusCode : 500,
-      statusMessage: body.error.code,
-      data: body,
-    })
+    setResponseStatus(event, error instanceof AppApiError ? error.statusCode : 500)
+    return body
   }
 }
