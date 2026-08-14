@@ -18,7 +18,8 @@
     "supabase:stop": "supabase stop",
     "db:reset": "supabase db reset",
     "db:test": "supabase test db",
-    "db:types": "supabase gen types typescript --local > shared/types/database.types.ts"
+    "db:types": "supabase gen types typescript --local > shared/types/database.types.ts",
+    "verify:backend": "pnpm db:reset && pnpm db:test && pnpm db:types && pnpm test:unit && pnpm typecheck && pnpm lint && pnpm build"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "5.3.0",

@@ -36,6 +36,8 @@ pnpm dev
 
 Mở `http://127.0.0.1:3000`. Dữ liệu mẫu nằm trong browser local storage và được giới hạn trong phạm vi công ty VQH.
 
+Backend local cần Docker Desktop và Supabase CLI. Xem [Local backend development](docs/development/backend-local.md) để khởi động, reset migration, chạy RLS test và generate database types.
+
 ## Kiểm thử và build
 
 ```bash
