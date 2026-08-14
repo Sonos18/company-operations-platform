@@ -4,6 +4,12 @@ export default defineNuxtConfig({
   modules: ["@nuxt/ui", "@nuxt/eslint"],
   css: ["~/assets/css/main.css"],
   devtools: { enabled: true },
+  runtimeConfig: {
+    public: {
+      supabaseUrl: process.env.NUXT_PUBLIC_SUPABASE_URL ?? '',
+      supabaseAnonKey: process.env.NUXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
+    },
+  },
   typescript: {
     strict: true,
     typeCheck: true,
