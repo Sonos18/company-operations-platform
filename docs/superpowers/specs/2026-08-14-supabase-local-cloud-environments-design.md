@@ -1,6 +1,6 @@
 # Thiết kế kết nối Supabase local và Cloud
 
-**Trạng thái:** Chờ duyệt tài liệu  
+**Trạng thái:** Đã duyệt
 **Ngày:** 2026-08-14
 
 ## Mục tiêu
@@ -86,4 +86,3 @@ Không tạo script `db reset --linked`. Không dùng `--include-seed` với Clo
 - Các script Cloud dùng đúng linked project và có dry-run trước push.
 - Runbook mô tả đầy đủ cách lấy local key, link Cloud, cấu hình Vercel và triển khai migration mà không chứa secret.
 - Toàn bộ unit test, typecheck, lint, build và database test hiện có vẫn xanh.
-
