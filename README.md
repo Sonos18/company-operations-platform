@@ -11,6 +11,21 @@ Prototype frontend tương tác cho nền tảng quản trị vận hành đa c�
 - Playwright + axe-core cho E2E, mobile và accessibility
 - Node.js 24.x, pnpm 10.29.3
 
+## Kiến trúc backend đã chọn
+
+Giai đoạn production đầu tiên cho VQH sẽ dùng TypeScript end-to-end:
+
+- Nuxt Nitro server routes làm API/BFF và giữ một backend deployment
+- Supabase PostgreSQL, Auth và Row Level Security
+- Zod tại request/response boundary
+- Supabase Storage private bucket cho giai đoạn VQH
+- Supabase Realtime có chọn lọc cho task/activity
+- Vitest, Supabase local và Playwright cho unit, integration/RLS và E2E
+
+Backend được tổ chức như modular monolith. Domain service không phụ thuộc trực tiếp vào Nitro để có thể tách sang NestJS khi mobile/public API, background job hoặc nhu cầu deploy độc lập xuất hiện. Go, Rust, microservices, Kubernetes, Kafka và Redis chưa thuộc giai đoạn đầu.
+
+Thiết kế đầy đủ nằm tại [Backend architecture design](docs/superpowers/specs/2026-08-14-backend-architecture-design.md).
+
 ## Cài đặt và chạy
 
 ```bash
@@ -41,7 +56,7 @@ Nút **Khôi phục dữ liệu mẫu** trên header xóa mọi thay đổi cụ
 
 Đã có danh sách dự án, dashboard hành trình, không gian chi tiết giai đoạn, lịch sử bản vẽ, ảnh mục tiêu so với hiện trạng, công việc xuyên dự án, mobile layout và reset dữ liệu.
 
-Chưa có backend/API, đăng nhập thật, phân quyền production, database Supabase, tải file lên Cloudflare R2, thông báo, đồng bộ realtime hoặc APK. Form upload hiện chỉ mô phỏng việc lưu URL và metadata; không nhập hồ sơ, hợp đồng, ảnh hay bản vẽ thật.
+Chưa triển khai backend/API, đăng nhập thật, phân quyền production, database Supabase, object storage, thông báo, đồng bộ realtime hoặc APK. Kiến trúc backend đã được chốt nhưng chưa có production code. Form upload hiện chỉ mô phỏng việc lưu URL và metadata; không nhập hồ sơ, hợp đồng, ảnh hay bản vẽ thật.
 
 ## Đường chuyển sang production
 
@@ -49,9 +64,9 @@ Chưa có backend/API, đăng nhập thật, phân quyền production, database 
 Mock repositories now       → HTTP repositories later
 Fixed VQH CompanyContext    → Authenticated membership context later
 VQH CompanyConfig           → Tenant/company configuration service later
-Metadata URL simulation     → R2 signed upload later
+Metadata URL simulation     → Supabase Storage signed upload first
 Mock user                   → Supabase Auth later
 Advisory gate               → Configurable blocking gate later
 ```
 
-Các component chỉ phụ thuộc repository contracts. Khi dựng backend, thay implementation của repository mà không cần viết lại luồng UI đã được mọi người góp ý.
+Các component chỉ phụ thuộc repository contracts. Khi dựng backend, thay implementation của repository mà không cần viết lại luồng UI đã được mọi người góp ý. Cloudflare R2 vẫn là lựa chọn sau storage interface khi dung lượng hoặc chi phí egress tạo ra lợi ích đo được.
