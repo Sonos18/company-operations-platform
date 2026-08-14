@@ -1,0 +1,14 @@
+begin;
+select plan(10);
+select has_table('public', 'tenants', 'tenants exists');
+select has_table('public', 'companies', 'companies exists');
+select has_table('public', 'tenant_memberships', 'tenant memberships exists');
+select has_table('public', 'company_memberships', 'company memberships exists');
+select has_table('public', 'audit_events', 'audit events exists');
+select has_column('public', 'companies', 'tenant_id', 'company has tenant scope');
+select has_column('public', 'company_memberships', 'company_id', 'membership has company scope');
+select has_column('public', 'audit_events', 'request_id', 'audit has request ID');
+select has_function('public', 'is_tenant_member', array['uuid'], 'tenant helper exists');
+select has_function('public', 'is_company_member', array['uuid', 'uuid'], 'company helper exists');
+select * from finish();
+rollback;
