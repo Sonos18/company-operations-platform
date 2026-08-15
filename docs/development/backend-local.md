@@ -22,19 +22,19 @@ Fill only `NUXT_PUBLIC_SUPABASE_URL` and `NUXT_PUBLIC_SUPABASE_ANON_KEY` with th
 Run this once from the repository root after creating the dedicated Cloud DEV project:
 
 ```powershell
-pnpm exec supabase login
-$devProjectRef = Read-Host 'Supabase Cloud DEV project ref'
-pnpm exec supabase link --project-ref $devProjectRef
-Remove-Variable devProjectRef
+pnpm db:dev:login
+node scripts/run-supabase-dev.mjs link --project-ref ykrurrumqlsxnqfqunjc
 pnpm db:dev:status
 ```
 
-The CLI link metadata under `supabase/.temp/` is ignored. Keep the access token and database password outside Git.
+`db:dev:login` always uses the dedicated `SUPABASE_HOME` for this project: `%LOCALAPPDATA%\SupabaseCLI\company-operations-dev` on Windows, with an XDG/HOME state-directory fallback on other platforms. This keeps the Cloud DEV login separate from the default machine-wide CLI session; do not use `--profile`. The CLI link metadata under `supabase/.temp/` is ignored. Keep the access token and database password outside Git.
+
+Every `db:dev:*` linked command starts with the canonical DEV target guard. It fails closed unless the tracked DEV ref `ykrurrumqlsxnqfqunjc`, ignored `supabase/.temp/project-ref`, and the project ref in `NUXT_PUBLIC_SUPABASE_URL` agree; it does not print the URL or key.
 
 ## Daily database workflow
 
 ```powershell
-pnpm exec supabase migration new descriptive_name
+node scripts/run-supabase-dev.mjs migration new descriptive_name
 pnpm db:dev:status
 pnpm db:dev:dry-run
 pnpm db:dev:push
@@ -43,6 +43,10 @@ pnpm verify:app
 ```
 
 Never edit `shared/types/database.types.ts` manually. `pnpm dev` reads `.env.local`; deployment builds receive their public Supabase values from the deploy environment.
+
+## Read-only VQH RLS smoke check
+
+After the DEV administrator has been onboarded, run `pnpm db:dev:rls-smoke`. It is no-Docker, runs only after the canonical target guard passes, performs member and synthetic non-member visibility assertions inside a rolled-back transaction, and outputs no identity data.
 
 ## Optional Docker-backed pgTAP check
 

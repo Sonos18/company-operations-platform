@@ -7,17 +7,21 @@
 3. Authenticate and link from the repository root:
 
 ```powershell
-pnpm exec supabase login
-pnpm exec supabase link --project-ref <cloud-dev-project-ref>
+pnpm db:dev:login
+node scripts/run-supabase-dev.mjs link --project-ref ykrurrumqlsxnqfqunjc
 pnpm db:dev:status
 ```
 
+The Cloud DEV CLI session is isolated in `SUPABASE_HOME` at `%LOCALAPPDATA%\SupabaseCLI\company-operations-dev` on Windows, with an XDG/HOME state-directory fallback on other platforms. Use `pnpm db:dev:login` instead of the default CLI login and never use `--profile`.
+
 The CLI is linked to Cloud DEV; không dùng project DEV hoặc link hiện tại để triển khai Vercel Production. The access token and database password must stay outside Git, and the CLI link metadata under `supabase/.temp/` is ignored.
+
+Every `db:dev:*` linked command starts with the canonical DEV target guard. It fails closed unless the tracked DEV ref `ykrurrumqlsxnqfqunjc`, ignored CLI link state, and the local public Supabase URL agree; it never prints the URL or key.
 
 ## Deliver a Cloud DEV database migration
 
 ```powershell
-pnpm exec supabase migration new descriptive_name
+node scripts/run-supabase-dev.mjs migration new descriptive_name
 pnpm db:dev:status
 pnpm db:dev:dry-run
 pnpm db:dev:push

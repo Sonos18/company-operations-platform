@@ -69,18 +69,19 @@ describe('Supabase environment wiring', () => {
   })
 
   it('exposes an explicit linked DEV workflow and an isolated local fallback', () => {
-    expect(packageJson.scripts['db:dev:status']).toBe('supabase migration list --linked')
-    expect(packageJson.scripts['db:dev:dry-run']).toBe('supabase db push --linked --dry-run')
-    expect(packageJson.scripts['db:dev:push']).toBe('supabase db push --linked')
-    expect(packageJson.scripts['db:dev:test']).toBe('supabase test db --linked')
+    expect(packageJson.scripts['db:dev:login']).toBe('node scripts/run-supabase-dev.mjs login --agent no')
+    expect(packageJson.scripts['db:dev:status']).toBe('pnpm db:dev:target && node scripts/run-supabase-dev.mjs migration list --linked')
+    expect(packageJson.scripts['db:dev:dry-run']).toBe('pnpm db:dev:target && node scripts/run-supabase-dev.mjs db push --linked --dry-run')
+    expect(packageJson.scripts['db:dev:push']).toBe('pnpm db:dev:target && node scripts/run-supabase-dev.mjs db push --linked')
+    expect(packageJson.scripts['db:dev:test']).toBe('pnpm db:dev:target && node scripts/run-supabase-dev.mjs test db --linked')
     expect(packageJson.scripts['db:dev:types']).toBe(
-      'supabase gen types typescript --linked > shared/types/database.types.ts',
+      'pnpm db:dev:target && node scripts/run-supabase-dev.mjs gen types typescript --linked > shared/types/database.types.ts',
     )
     expect(packageJson.scripts['verify:app']).toBe(
       'pnpm test:unit && pnpm typecheck && pnpm lint && pnpm build',
     )
     expect(packageJson.scripts['verify:dev']).toBe(
-      'pnpm db:dev:status && pnpm db:dev:test && pnpm db:dev:types && pnpm verify:app',
+      'pnpm db:dev:status && pnpm db:dev:dry-run && pnpm db:dev:types && pnpm verify:app',
     )
     expect(packageJson.scripts['verify:backend:local']).toContain('pnpm db:local:reset')
   })
@@ -138,13 +139,15 @@ In `package.json`, keep the existing app/test scripts and set the Supabase/verif
   "db:local:reset": "supabase db reset --local",
   "db:local:test": "supabase test db --local",
   "db:local:types": "supabase gen types typescript --local > shared/types/database.types.ts",
-  "db:dev:status": "supabase migration list --linked",
-  "db:dev:dry-run": "supabase db push --linked --dry-run",
-  "db:dev:push": "supabase db push --linked",
-  "db:dev:test": "supabase test db --linked",
-  "db:dev:types": "supabase gen types typescript --linked > shared/types/database.types.ts",
+  "db:dev:target": "node scripts/assert-cloud-dev-target.mjs",
+  "db:dev:login": "node scripts/run-supabase-dev.mjs login --agent no",
+  "db:dev:status": "pnpm db:dev:target && node scripts/run-supabase-dev.mjs migration list --linked",
+  "db:dev:dry-run": "pnpm db:dev:target && node scripts/run-supabase-dev.mjs db push --linked --dry-run",
+  "db:dev:push": "pnpm db:dev:target && node scripts/run-supabase-dev.mjs db push --linked",
+  "db:dev:test": "pnpm db:dev:target && node scripts/run-supabase-dev.mjs test db --linked",
+  "db:dev:types": "pnpm db:dev:target && node scripts/run-supabase-dev.mjs gen types typescript --linked > shared/types/database.types.ts",
   "verify:app": "pnpm test:unit && pnpm typecheck && pnpm lint && pnpm build",
-  "verify:dev": "pnpm db:dev:status && pnpm db:dev:test && pnpm db:dev:types && pnpm verify:app",
+  "verify:dev": "pnpm db:dev:status && pnpm db:dev:dry-run && pnpm db:dev:types && pnpm verify:app",
   "verify:backend:local": "pnpm db:local:reset && pnpm db:local:test && pnpm db:local:types && pnpm verify:app"
 }
 ```
@@ -332,7 +335,7 @@ describe('Supabase Cloud DEV runbooks', () => {
   it('makes Cloud DEV the default local-app backend without requiring Docker', () => {
     expect(readme).toContain('Supabase Cloud DEV')
     expect(development).toContain('pnpm db:dev:dry-run')
-    expect(development).toContain('pnpm db:dev:test')
+    expect(development).toContain('## Optional Docker-backed pgTAP check')
     expect(development).not.toContain('Docker Desktop running')
     expect(development).not.toContain('pnpm supabase:start')
   })
@@ -420,24 +423,23 @@ Update `docs/development/backend-local.md` with these sections and commands:
 3. `One-time DEV link`:
 
 ```powershell
-pnpm exec supabase login
-$devProjectRef = Read-Host 'Supabase Cloud DEV project ref'
-pnpm exec supabase link --project-ref $devProjectRef
-Remove-Variable devProjectRef
+pnpm db:dev:login
+node scripts/run-supabase-dev.mjs link --project-ref ykrurrumqlsxnqfqunjc
 pnpm db:dev:status
 ```
 
 4. `Daily database workflow`:
 
 ```powershell
-pnpm exec supabase migration new descriptive_name
+node scripts/run-supabase-dev.mjs migration new descriptive_name
 pnpm db:dev:status
 pnpm db:dev:dry-run
 pnpm db:dev:push
-pnpm db:dev:test
 pnpm db:dev:types
 pnpm verify:app
 ```
+
+`pnpm db:dev:test` is an optional Docker/container-capable pgTAP check and is outside this daily no-Docker workflow and `verify:dev`.
 
 5. `Onboard the DEV administrator`: create the login-capable user in Dashboard Auth, open `docs/development/sql/onboard-vqh-dev-admin.sql`, replace only the sentinel email, run it once in SQL Editor, then restore the committed file if it was edited locally.
 6. `CI/fallback`: document that `db:local:*`, `supabase:start`, and `supabase:stop` exist only for an isolated CI/fallback environment and are not invoked by `verify:dev`.
@@ -604,11 +606,8 @@ Expected: one success message and no URL/key in terminal output. If validation f
 Run:
 
 ```powershell
-pnpm exec supabase login
-$devProjectRef = Read-Host 'Supabase Cloud DEV project ref'
-if ($devProjectRef -notmatch '^[a-z0-9]+$') { throw 'Invalid DEV project ref format' }
-pnpm exec supabase link --project-ref $devProjectRef
-Remove-Variable devProjectRef
+pnpm db:dev:login
+node scripts/run-supabase-dev.mjs link --project-ref ykrurrumqlsxnqfqunjc
 ```
 
 Let the user complete browser authentication and type the database password only into the CLI prompt. Never pass the database password with `--password` and never persist it in `.env.local`.

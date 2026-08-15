@@ -7,14 +7,16 @@ const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8
   scripts: Record<string, string>
 }
 const envExample = readFileSync(resolve(root, '.env.example'), 'utf8')
+const gitignore = readFileSync(resolve(root, '.gitignore'), 'utf8')
 const nuxtConfig = readFileSync(resolve(root, 'nuxt.config.ts'), 'utf8')
 
 describe('Supabase environment wiring', () => {
   it('loads an ignored Cloud DEV environment for local Nuxt development', () => {
     expect(packageJson.scripts.dev).toBe('nuxt dev --dotenv .env.local')
     expect(envExample).toContain('# Supabase Cloud DEV')
-    expect(envExample).toContain('NUXT_PUBLIC_SUPABASE_URL=')
-    expect(envExample).toContain('NUXT_PUBLIC_SUPABASE_ANON_KEY=')
+    expect(envExample).toMatch(/^NUXT_PUBLIC_SUPABASE_URL=$/m)
+    expect(envExample).toMatch(/^NUXT_PUBLIC_SUPABASE_ANON_KEY=$/m)
+    expect(gitignore).toMatch(/^\.env\.local$/m)
     expect(envExample).not.toContain('127.0.0.1')
   })
 
@@ -26,12 +28,17 @@ describe('Supabase environment wiring', () => {
   })
 
   it('exposes an explicit linked DEV workflow and an isolated local fallback', () => {
-    expect(packageJson.scripts['db:dev:status']).toBe('supabase migration list --linked')
-    expect(packageJson.scripts['db:dev:dry-run']).toBe('supabase db push --linked --dry-run')
-    expect(packageJson.scripts['db:dev:push']).toBe('supabase db push --linked')
-    expect(packageJson.scripts['db:dev:test']).toBe('supabase test db --linked')
+    expect(packageJson.scripts['db:dev:target']).toBe('node scripts/assert-cloud-dev-target.mjs')
+    expect(packageJson.scripts['db:dev:login']).toBe('node scripts/run-supabase-dev.mjs login --agent no')
+    expect(packageJson.scripts['db:dev:status']).toBe('pnpm db:dev:target && node scripts/run-supabase-dev.mjs migration list --linked')
+    expect(packageJson.scripts['db:dev:dry-run']).toBe('pnpm db:dev:target && node scripts/run-supabase-dev.mjs db push --linked --dry-run')
+    expect(packageJson.scripts['db:dev:push']).toBe('pnpm db:dev:target && node scripts/run-supabase-dev.mjs db push --linked')
+    expect(packageJson.scripts['db:dev:test']).toBe('pnpm db:dev:target && node scripts/run-supabase-dev.mjs test db --linked')
     expect(packageJson.scripts['db:dev:types']).toBe(
-      'supabase gen types typescript --linked > shared/types/database.types.ts',
+      'pnpm db:dev:target && node scripts/run-supabase-dev.mjs gen types typescript --linked > shared/types/database.types.ts',
+    )
+    expect(packageJson.scripts['db:dev:rls-smoke']).toBe(
+      'pnpm db:dev:target && node scripts/run-vqh-rls-smoke.mjs',
     )
     expect(packageJson.scripts['verify:app']).toBe(
       'pnpm test:unit && pnpm typecheck && pnpm lint && pnpm build',
