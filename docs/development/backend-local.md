@@ -1,64 +1,58 @@
-# Local backend development
+# Cloud DEV backend development
 
 ## Prerequisites
 
 - Node.js 24.x
 - pnpm 10.29.3
-- Docker Desktop running
+- A dedicated Supabase Cloud DEV project
+- Supabase CLI authentication
 
-If Docker Desktop was just installed for the current Windows user, open a new terminal so its CLI path is picked up. If `docker version` is still not found, add Docker Desktop's per-user CLI directory for the current PowerShell session:
+Docker is not required for the daily workflow. The local application and its database commands use the linked Supabase Cloud DEV project.
 
-```powershell
-$env:Path = "$env:LOCALAPPDATA\Programs\DockerDesktop\resources\bin;$env:Path"
-docker version
-```
-
-## First startup
+## Prepare `.env.local`
 
 ```powershell
-pnpm install
-pnpm supabase:start
 Copy-Item .env.example .env.local
-pnpm exec supabase status
 ```
 
-Copy only the local API URL and local anon key printed by `pnpm exec supabase status` into `.env.local` before starting Nuxt. Do not commit `.env.local` or add a service-role key; application request paths use only the public URL and anon key.
+Fill only `NUXT_PUBLIC_SUPABASE_URL` and `NUXT_PUBLIC_SUPABASE_ANON_KEY` with the Cloud DEV URL and public/anon key. Never add a database password, access token, or service-role key to `.env.local`. Do not commit this file.
 
-Then prepare the local database and start the app:
+## One-time DEV link
+
+Run this once from the repository root after creating the dedicated Cloud DEV project:
 
 ```powershell
-pnpm db:local:reset
-pnpm db:local:types
-pnpm dev
+pnpm exec supabase login
+$devProjectRef = Read-Host 'Supabase Cloud DEV project ref'
+pnpm exec supabase link --project-ref $devProjectRef
+Remove-Variable devProjectRef
+pnpm db:dev:status
 ```
 
-Only `pnpm dev` passes `--dotenv .env.local`; `pnpm build` ignores `.env.local` and receives its public Supabase values from the deploy environment.
+The CLI link metadata under `supabase/.temp/` is ignored. Keep the access token and database password outside Git.
 
-## Database workflow
+## Daily database workflow
 
 ```powershell
 pnpm exec supabase migration new descriptive_name
-pnpm db:local:reset
-pnpm db:local:test
-pnpm db:local:types
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:test
+pnpm db:dev:types
+pnpm verify:app
 ```
 
-Never edit `shared/types/database.types.ts` manually.
+Never edit `shared/types/database.types.ts` manually. `pnpm dev` reads `.env.local`; deployment builds receive their public Supabase values from the deploy environment.
 
-## Verification
+## Onboard the DEV administrator
 
-Start local Supabase before the release gate. `pnpm verify:backend` intentionally does not start or stop containers, so it can fail clearly when the local database is unavailable.
+Create the login-capable user in Dashboard Auth first. Then open `docs/development/sql/onboard-vqh-dev-admin.sql`, replace only the sentinel email, and run it once in Supabase SQL Editor. If the committed file was edited locally, restore it after the operator run.
 
-```powershell
-pnpm supabase:start
-pnpm verify:backend
-git diff --exit-code -- shared/types/database.types.ts
-```
+## CI/fallback
 
-## Shutdown
+`db:local:*`, `supabase:start`, and `supabase:stop` exist only for an isolated CI/fallback environment. They are not invoked by `verify:dev` and are not part of the daily Cloud DEV workflow.
 
-```powershell
-pnpm supabase:stop
-```
+## Safety
 
-The frontend remains on mock repositories in this phase. The next plan consumes the authenticated session and company-context APIs.
+Never use remote reset, seed, `migration repair`, or service-role/public variables without a separate diagnosis and an explicit decision.
