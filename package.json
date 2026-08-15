@@ -19,10 +19,14 @@
     "db:local:reset": "supabase db reset --local",
     "db:local:test": "supabase test db --local",
     "db:local:types": "supabase gen types typescript --local > shared/types/database.types.ts",
-    "db:cloud:status": "supabase migration list --linked",
-    "db:cloud:dry-run": "supabase db push --linked --dry-run",
-    "db:cloud:push": "supabase db push --linked",
-    "verify:backend": "pnpm db:local:reset && pnpm db:local:test && pnpm db:local:types && pnpm test:unit && pnpm typecheck && pnpm lint && pnpm build"
+    "db:dev:status": "supabase migration list --linked",
+    "db:dev:dry-run": "supabase db push --linked --dry-run",
+    "db:dev:push": "supabase db push --linked",
+    "db:dev:test": "supabase test db --linked",
+    "db:dev:types": "supabase gen types typescript --linked > shared/types/database.types.ts",
+    "verify:app": "pnpm test:unit && pnpm typecheck && pnpm lint && pnpm build",
+    "verify:dev": "pnpm db:dev:status && pnpm db:dev:test && pnpm db:dev:types && pnpm verify:app",
+    "verify:backend:local": "pnpm db:local:reset && pnpm db:local:test && pnpm db:local:types && pnpm verify:app"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "5.3.0",
