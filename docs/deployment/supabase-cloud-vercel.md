@@ -21,9 +21,10 @@ pnpm exec supabase migration new descriptive_name
 pnpm db:dev:status
 pnpm db:dev:dry-run
 pnpm db:dev:push
-pnpm db:dev:test
 pnpm db:dev:types
 ```
+
+This daily Cloud DEV migration path is no-Docker and deliberately excludes `pnpm db:dev:test`. The Supabase CLI pgTAP runner requires a Docker/container-capable environment even for a linked project, so it is an optional check outside this workflow. Task 4 or any future Cloud DEV bootstrap guidance must not describe remote pgTAP as a no-Docker check.
 
 Never run a remote reset or seed against Cloud DEV without a separate diagnosis and explicit decision.
 

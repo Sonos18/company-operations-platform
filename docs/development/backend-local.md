@@ -38,12 +38,15 @@ pnpm exec supabase migration new descriptive_name
 pnpm db:dev:status
 pnpm db:dev:dry-run
 pnpm db:dev:push
-pnpm db:dev:test
 pnpm db:dev:types
 pnpm verify:app
 ```
 
 Never edit `shared/types/database.types.ts` manually. `pnpm dev` reads `.env.local`; deployment builds receive their public Supabase values from the deploy environment.
+
+## Optional Docker-backed pgTAP check
+
+`pnpm db:dev:test` runs the Supabase CLI pgTAP runner and requires a Docker/container-capable environment, even when it targets the linked Cloud DEV project. It is optional and must not be added to the daily no-Docker workflow or `pnpm verify:dev`. Run it only after making that separate container requirement explicit for the operator.
 
 ## Onboard the DEV administrator
 

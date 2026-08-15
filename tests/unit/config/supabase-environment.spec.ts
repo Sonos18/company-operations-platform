@@ -37,8 +37,9 @@ describe('Supabase environment wiring', () => {
       'pnpm test:unit && pnpm typecheck && pnpm lint && pnpm build',
     )
     expect(packageJson.scripts['verify:dev']).toBe(
-      'pnpm db:dev:status && pnpm db:dev:test && pnpm db:dev:types && pnpm verify:app',
+      'pnpm db:dev:status && pnpm db:dev:dry-run && pnpm db:dev:types && pnpm verify:app',
     )
+    expect(packageJson.scripts['verify:dev']).not.toContain('pnpm db:dev:test')
     expect(packageJson.scripts['verify:backend:local']).toContain('pnpm db:local:reset')
   })
 

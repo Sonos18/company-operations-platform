@@ -25,7 +25,7 @@
     "db:dev:test": "supabase test db --linked",
     "db:dev:types": "supabase gen types typescript --linked > shared/types/database.types.ts",
     "verify:app": "pnpm test:unit && pnpm typecheck && pnpm lint && pnpm build",
-    "verify:dev": "pnpm db:dev:status && pnpm db:dev:test && pnpm db:dev:types && pnpm verify:app",
+    "verify:dev": "pnpm db:dev:status && pnpm db:dev:dry-run && pnpm db:dev:types && pnpm verify:app",
     "verify:backend:local": "pnpm db:local:reset && pnpm db:local:test && pnpm db:local:types && pnpm verify:app"
   },
   "dependencies": {

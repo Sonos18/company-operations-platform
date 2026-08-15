@@ -8,12 +8,28 @@ const readme = read('README.md')
 const development = read('docs/development/backend-local.md')
 const deployment = read('docs/deployment/supabase-cloud-vercel.md')
 const onboarding = read('docs/development/sql/onboard-vqh-dev-admin.sql')
+const commandsIn = (section: string) => section.match(/```powershell\s*([\s\S]*?)```/)?.[1] ?? ''
+const dailyWorkflow = development.slice(
+  development.indexOf('## Daily database workflow'),
+  development.indexOf('## Optional Docker-backed pgTAP check'),
+)
+const deploymentWorkflow = deployment.slice(
+  deployment.indexOf('## Deliver a Cloud DEV database migration'),
+  deployment.indexOf('## Configure Vercel Production'),
+)
+const dailyCommands = commandsIn(dailyWorkflow)
+const deploymentCommands = commandsIn(deploymentWorkflow)
 
 describe('Supabase Cloud DEV runbooks', () => {
   it('makes Cloud DEV the default local-app backend without requiring Docker', () => {
     expect(readme).toContain('Supabase Cloud DEV')
+    expect(readme).toContain('optional Docker-backed pgTAP check')
     expect(development).toContain('pnpm db:dev:dry-run')
+    expect(development).toContain('## Optional Docker-backed pgTAP check')
     expect(development).toContain('pnpm db:dev:test')
+    expect(development).toContain('Docker/container-capable environment')
+    expect(dailyCommands).not.toContain('pnpm db:dev:test')
+    expect(deploymentCommands).not.toContain('pnpm db:dev:test')
     expect(development).not.toContain('Docker Desktop running')
     expect(development).not.toContain('pnpm supabase:start')
   })

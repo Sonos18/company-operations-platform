@@ -36,7 +36,7 @@ pnpm dev
 
 Mở `http://127.0.0.1:3000`. Dữ liệu mẫu nằm trong browser local storage và được giới hạn trong phạm vi công ty VQH.
 
-Daily development uses Supabase Cloud DEV and does not require Docker. `.env.local` points to Cloud DEV; see [Cloud DEV backend development](docs/development/backend-local.md) for the daily database workflow and [Supabase Cloud and Vercel Production](docs/deployment/supabase-cloud-vercel.md) for the DEV/Production boundary.
+Daily development uses Supabase Cloud DEV and does not require Docker. `.env.local` points to Cloud DEV; see [Cloud DEV backend development](docs/development/backend-local.md) for the daily database workflow and [Supabase Cloud and Vercel Production](docs/deployment/supabase-cloud-vercel.md) for the DEV/Production boundary. `pnpm db:dev:test` is an optional Docker-backed pgTAP check, not part of the daily no-Docker workflow or `pnpm verify:dev`.
 
 ## Môi trường Supabase
 
