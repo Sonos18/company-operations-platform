@@ -8,6 +8,7 @@ const readme = read('README.md')
 const development = read('docs/development/backend-local.md')
 const deployment = read('docs/deployment/supabase-cloud-vercel.md')
 const onboarding = read('docs/development/sql/onboard-vqh-dev-admin.sql')
+const implementationPlan = read('docs/superpowers/plans/2026-08-15-supabase-cloud-dev-workflow.md')
 const commandsIn = (section: string) => section.match(/```powershell\s*([\s\S]*?)```/)?.[1] ?? ''
 const dailyWorkflow = development.slice(
   development.indexOf('## Daily database workflow'),
@@ -19,6 +20,17 @@ const deploymentWorkflow = deployment.slice(
 )
 const dailyCommands = commandsIn(dailyWorkflow)
 const deploymentCommands = commandsIn(deploymentWorkflow)
+const task4Plan = implementationPlan.slice(
+  implementationPlan.indexOf('### Task 4:'),
+)
+const task4OptionalPgtap = task4Plan.slice(
+  task4Plan.indexOf('### Optional Docker/container-capable pgTAP verification'),
+  task4Plan.indexOf('- [ ] **Step 11:'),
+)
+const task4ReleaseGate = task4Plan.slice(
+  task4Plan.indexOf('- [ ] **Step 13:'),
+  task4Plan.indexOf('- [ ] **Step 14:'),
+)
 
 describe('Supabase Cloud DEV runbooks', () => {
   it('makes Cloud DEV the default local-app backend without requiring Docker', () => {
@@ -39,6 +51,15 @@ describe('Supabase Cloud DEV runbooks', () => {
     expect(deployment).toContain('Vercel Production')
     expect(deployment).toContain('không dùng project DEV')
     expect(deployment).not.toContain('pnpm db:cloud:')
+  })
+
+  it('keeps Task 4 pgTAP optional and outside the no-Docker release gate', () => {
+    expect(task4OptionalPgtap).toContain('pnpm db:dev:test')
+    expect(task4OptionalPgtap).toContain('Docker/container-capable environment')
+    expect(task4OptionalPgtap).toContain('optional')
+    expect(commandsIn(task4ReleaseGate)).not.toContain('pnpm db:dev:test')
+    expect(task4ReleaseGate).not.toContain('pgTAP, unit tests')
+    expect(task4ReleaseGate).toContain('Docker remains stopped')
   })
 
   it('provides a guarded, idempotent VQH admin onboarding snippet', () => {

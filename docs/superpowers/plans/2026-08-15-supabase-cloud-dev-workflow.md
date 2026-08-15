@@ -635,14 +635,25 @@ Expected: both local migrations appear applied remotely and there is no pending 
 
 - [ ] **Step 10: Run Cloud database verification and advisors**
 
+### Optional Docker/container-capable pgTAP verification
+
+`pnpm db:dev:test` runs the Supabase CLI pgTAP runner in a Docker/container-capable environment, even when it targets the linked Cloud DEV project. It is optional and must not be treated as part of the required no-Docker verification or release gate.
+
 ```powershell
 pnpm db:dev:test
+```
+
+Expected when this optional check is run in a suitable container-capable environment: all pgTAP files PASS and roll back their fixtures.
+
+### Required linked Cloud verification and advisors
+
+```powershell
 pnpm db:dev:types
 pnpm exec supabase db advisors --linked --type security --level warn --fail-on error
 pnpm exec supabase db advisors --linked --type performance --level warn --fail-on error
 ```
 
-Expected: all pgTAP files PASS and roll back their fixtures; type generation exits 0; neither advisor reports an error-level finding introduced by these migrations. Record warning-level findings for review rather than silently ignoring them.
+Expected: type generation exits 0; neither advisor reports an error-level finding introduced by these migrations. Record warning-level findings for review rather than silently ignoring them.
 
 - [ ] **Step 11: Query Cloud DEV for the approved data boundary**
 
@@ -686,7 +697,7 @@ pnpm test:e2e
 git diff --check
 ```
 
-Expected: both Node commands report `v24.19.0`; linked migration status is synchronized; pgTAP, unit tests, typecheck, lint, build, and E2E PASS; generated types and diff check are clean. Docker remains stopped.
+Expected: both Node commands report `v24.19.0`; linked migration status and dry-run succeed; type generation, unit tests, typecheck, lint, build, and E2E PASS; generated types and diff check are clean. Docker remains stopped.
 
 - [ ] **Step 14: Prove no secret or CLI link state can be committed**
 
