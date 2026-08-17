@@ -4,12 +4,14 @@ import {
   BrowserStateStore,
   type StorageLike,
 } from '../../../app/repositories/mock/state-store'
+import { validateMockState } from '../../../app/repositories/mock/schemas'
 
 const CANONICAL_KEY = 'taskovia:tenant-vqh:company-vqh:prototype:v1'
 const LEGACY_KEY = 'company-operations-platform:tenant-vqh:company-vqh:prototype:v1'
 
 class TestStorage implements StorageLike {
   private readonly values = new Map<string, string>()
+  readonly writes: Array<{ key: string; value: string }> = []
   readonly removedKeys: string[] = []
 
   constructor(
@@ -28,6 +30,7 @@ class TestStorage implements StorageLike {
 
   setItem(key: string, value: string): void {
     if (key === this.failOnSetKey) throw new Error('storage write failed')
+    this.writes.push({ key, value })
     this.values.set(key, value)
   }
 
@@ -39,6 +42,8 @@ class TestStorage implements StorageLike {
 }
 
 const serializedState = JSON.stringify(INITIAL_MOCK_STATE)
+const validatedInitialState = validateMockState(INITIAL_MOCK_STATE)
+const serializedValidatedState = JSON.stringify(validatedInitialState)
 
 describe('BrowserStateStore TASKOVIA namespace', () => {
   it('writes new state under the TASKOVIA namespace', () => {
@@ -61,16 +66,16 @@ describe('BrowserStateStore TASKOVIA namespace', () => {
     const state = new BrowserStateStore(storage).read()
 
     expect(state?.companies[0]?.name).toBe('Canonical company')
-    expect(storage.getItem(LEGACY_KEY)).toBe(serializedState)
+    expect(storage.getItem(LEGACY_KEY)).toBeNull()
   })
 
   it('migrates valid legacy data and removes the old key after writing', () => {
-    const storage = new TestStorage({ [LEGACY_KEY]: serializedState })
+    const storage = new TestStorage({ [LEGACY_KEY]: serializedValidatedState })
 
     const state = new BrowserStateStore(storage).read()
 
-    expect(state).toEqual(INITIAL_MOCK_STATE)
-    expect(JSON.parse(storage.getItem(CANONICAL_KEY)!)).toEqual(INITIAL_MOCK_STATE)
+    expect(state).toEqual(validatedInitialState)
+    expect(JSON.parse(storage.getItem(CANONICAL_KEY)!)).toEqual(validatedInitialState)
     expect(storage.getItem(LEGACY_KEY)).toBeNull()
   })
 
@@ -84,59 +89,74 @@ describe('BrowserStateStore TASKOVIA namespace', () => {
 
   it('keeps valid legacy data when the canonical write fails', () => {
     const storage = new TestStorage(
-      { [LEGACY_KEY]: serializedState },
+      { [LEGACY_KEY]: serializedValidatedState },
       CANONICAL_KEY,
     )
 
-    expect(new BrowserStateStore(storage).read()).toEqual(INITIAL_MOCK_STATE)
-    expect(storage.getItem(LEGACY_KEY)).toBe(serializedState)
+    expect(new BrowserStateStore(storage).read()).toEqual(validatedInitialState)
+    expect(storage.getItem(LEGACY_KEY)).toBe(serializedValidatedState)
     expect(storage.getItem(CANONICAL_KEY)).toBeNull()
   })
 
   it('keeps legacy data and rolls back canonical data when legacy removal fails', () => {
     const storage = new TestStorage(
-      { [LEGACY_KEY]: serializedState },
+      { [LEGACY_KEY]: serializedValidatedState },
       undefined,
       new Set([LEGACY_KEY]),
     )
 
-    expect(new BrowserStateStore(storage).read()).toEqual(INITIAL_MOCK_STATE)
+    expect(new BrowserStateStore(storage).read()).toEqual(validatedInitialState)
     expect(storage.getItem(CANONICAL_KEY)).toBeNull()
-    expect(storage.getItem(LEGACY_KEY)).toBe(serializedState)
+    expect(storage.getItem(LEGACY_KEY)).toBe(serializedValidatedState)
   })
 
   it('does not migrate legacy data when canonical storage reads fail', () => {
     const failingKeys = new Set([CANONICAL_KEY])
     const storage = new TestStorage(
-      { [LEGACY_KEY]: serializedState },
+      { [LEGACY_KEY]: serializedValidatedState },
       undefined,
       new Set(),
       failingKeys,
     )
 
-    expect(new BrowserStateStore(storage).read()).toBeNull()
+    expect(() => new BrowserStateStore(storage).read()).toThrow('storage read failed')
     failingKeys.clear()
     expect(storage.getItem(CANONICAL_KEY)).toBeNull()
-    expect(storage.getItem(LEGACY_KEY)).toBe(serializedState)
+    expect(storage.getItem(LEGACY_KEY)).toBe(serializedValidatedState)
 
-    expect(new BrowserStateStore(storage).read()).toEqual(INITIAL_MOCK_STATE)
+    expect(new BrowserStateStore(storage).read()).toEqual(validatedInitialState)
     expect(storage.getItem(LEGACY_KEY)).toBeNull()
   })
 
   it('retries legacy cleanup after canonical rollback also fails', () => {
     const failingKeys = new Set([CANONICAL_KEY, LEGACY_KEY])
     const storage = new TestStorage(
-      { [LEGACY_KEY]: serializedState },
+      { [LEGACY_KEY]: serializedValidatedState },
       undefined,
       failingKeys,
     )
 
-    expect(new BrowserStateStore(storage).read()).toEqual(INITIAL_MOCK_STATE)
-    expect(storage.getItem(CANONICAL_KEY)).toBe(serializedState)
-    expect(storage.getItem(LEGACY_KEY)).toBe(serializedState)
+    expect(new BrowserStateStore(storage).read()).toEqual(validatedInitialState)
+    expect(storage.getItem(CANONICAL_KEY)).toBe(serializedValidatedState)
+    expect(storage.getItem(LEGACY_KEY)).toBe(serializedValidatedState)
 
     failingKeys.clear()
-    expect(new BrowserStateStore(storage).read()).toEqual(INITIAL_MOCK_STATE)
+    expect(new BrowserStateStore(storage).read()).toEqual(validatedInitialState)
+    expect(storage.getItem(LEGACY_KEY)).toBeNull()
+  })
+
+  it('retries legacy cleanup after a later canonical write changes state', () => {
+    const failingKeys = new Set([LEGACY_KEY])
+    const storage = new TestStorage({ [LEGACY_KEY]: serializedValidatedState }, undefined, failingKeys)
+    const store = new BrowserStateStore(storage)
+    const updatedState = structuredClone(INITIAL_MOCK_STATE)
+    updatedState.companies[0]!.name = 'Updated canonical company'
+
+    expect(store.read()).toEqual(validatedInitialState)
+    store.write(updatedState)
+    failingKeys.clear()
+
+    expect(store.read()?.companies[0]?.name).toBe('Updated canonical company')
     expect(storage.getItem(LEGACY_KEY)).toBeNull()
   })
 

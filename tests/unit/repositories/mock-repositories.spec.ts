@@ -1,6 +1,46 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { INITIAL_MOCK_STATE } from '../../../app/repositories/mock/fixtures'
 import { createMockRepositories } from '../../../app/repositories/mock/mock-repositories'
-import { MemoryStateStore } from '../../../app/repositories/mock/state-store'
+import {
+  BrowserStateStore,
+  type StorageLike,
+  MemoryStateStore,
+} from '../../../app/repositories/mock/state-store'
+
+const CANONICAL_KEY = 'taskovia:tenant-vqh:company-vqh:prototype:v1'
+const LEGACY_KEY = 'company-operations-platform:tenant-vqh:company-vqh:prototype:v1'
+
+class FailingReadStorage implements StorageLike {
+  private readonly values: Map<string, string>
+  readonly writes: Array<{ key: string; value: string }> = []
+  readonly removals: string[] = []
+
+  constructor(
+    values: Record<string, string>,
+    private readonly failingKeys: Set<string>,
+  ) {
+    this.values = new Map(Object.entries(values))
+  }
+
+  getItem(key: string): string | null {
+    if (this.failingKeys.has(key)) throw new Error('storage read failed')
+    return this.values.get(key) ?? null
+  }
+
+  setItem(key: string, value: string): void {
+    this.writes.push({ key, value })
+    this.values.set(key, value)
+  }
+
+  removeItem(key: string): void {
+    this.removals.push(key)
+    this.values.delete(key)
+  }
+
+  peek(key: string): string | undefined {
+    return this.values.get(key)
+  }
+}
 
 describe('mock repositories', () => {
   const context = { tenantId: 'tenant-vqh', companyId: 'company-vqh' }
@@ -36,5 +76,27 @@ describe('mock repositories', () => {
   it('rejects mutation attempts against another company record', async () => {
     await expect(repositories.tasks.setStatus('task-other-company', 'done'))
       .rejects.toThrow('không thuộc phạm vi công ty')
+  })
+
+  it('fails closed on browser read errors without seeding or overwriting persisted data', async () => {
+    const failingKeys = new Set([CANONICAL_KEY])
+    const canonicalPayload = JSON.stringify({ ...INITIAL_MOCK_STATE, companies: [] })
+    const legacyPayload = JSON.stringify(INITIAL_MOCK_STATE)
+    const storage = new FailingReadStorage(
+      { [CANONICAL_KEY]: canonicalPayload, [LEGACY_KEY]: legacyPayload },
+      failingKeys,
+    )
+    const browserRepositories = createMockRepositories(
+      new BrowserStateStore(storage),
+      context,
+    )
+
+    await expect(browserRepositories.projects.list()).rejects.toThrow('storage read failed')
+    expect(storage.writes).toEqual([])
+    expect(storage.removals).toEqual([])
+
+    failingKeys.clear()
+    expect(storage.peek(CANONICAL_KEY)).toBe(canonicalPayload)
+    expect(storage.peek(LEGACY_KEY)).toBe(legacyPayload)
   })
 })

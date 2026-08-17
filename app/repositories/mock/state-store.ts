@@ -13,7 +13,7 @@ export interface StorageLike {
 
 type ReadResult =
   | { status: 'valid'; state: MockState }
-  | { status: 'missing' | 'invalid' | 'error' }
+  | { status: 'missing' | 'invalid' }
 
 export interface StateStore {
   read(): MockState | null
@@ -41,17 +41,12 @@ export class BrowserStateStore implements StateStore {
   constructor(private readonly storage: StorageLike = localStorage) {}
 
   private readAt(key: string): ReadResult {
-    let serialized: string | null
-    try {
-      serialized = this.storage.getItem(key)
-    } catch {
-      return { status: 'error' }
-    }
+    const serialized = this.storage.getItem(key)
     if (!serialized) return { status: 'missing' }
     try {
       const parsed = JSON.parse(serialized)
-      validateMockState(parsed)
-      return { status: 'valid', state: parsed as MockState }
+      const state = validateMockState(parsed)
+      return { status: 'valid', state }
     } catch {
       try {
         this.storage.removeItem(key)
@@ -65,10 +60,9 @@ export class BrowserStateStore implements StateStore {
   read(): MockState | null {
     const current = this.readAt(MOCK_STORAGE_KEY)
     if (current.status === 'valid') {
-      this.retryLegacyCleanup(current.state)
+      this.retryLegacyCleanup()
       return current.state
     }
-    if (current.status === 'error') return null
 
     const legacy = this.readAt(LEGACY_MOCK_STORAGE_KEY)
     if (legacy.status !== 'valid') return null
@@ -91,14 +85,7 @@ export class BrowserStateStore implements StateStore {
     return legacy.state
   }
 
-  private retryLegacyCleanup(state: MockState): void {
-    let legacy: string | null
-    try {
-      legacy = this.storage.getItem(LEGACY_MOCK_STORAGE_KEY)
-    } catch {
-      return
-    }
-    if (!legacy || legacy !== JSON.stringify(state)) return
+  private retryLegacyCleanup(): void {
     try {
       this.storage.removeItem(LEGACY_MOCK_STORAGE_KEY)
     } catch {
@@ -108,6 +95,7 @@ export class BrowserStateStore implements StateStore {
 
   write(state: MockState): void {
     this.storage.setItem(MOCK_STORAGE_KEY, JSON.stringify(state))
+    this.retryLegacyCleanup()
   }
 
   clear(): void {
