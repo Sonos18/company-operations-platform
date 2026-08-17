@@ -1,0 +1,40 @@
+{
+  "files.watcherExclude": {
+    "**/.worktrees/**": true,
+    "**/.output/**": true,
+    "**/test-results/**": true,
+    "**/playwright-report/**": true,
+    "**/.playwright-mcp/**": true,
+    "**/graphify-out/**": true,
+    "**/.superpowers/**": true,
+    "**/merge-verify-test-results/**": true
+  },
+  "search.exclude": {
+    "**/.worktrees/**": true,
+    "**/.nuxt/**": true,
+    "**/.output/**": true,
+    "**/node_modules/**": true,
+    "**/test-results/**": true,
+    "**/playwright-report/**": true,
+    "**/.playwright-mcp/**": true,
+    "**/graphify-out/**": true,
+    "**/.superpowers/**": true,
+    "**/merge-verify-test-results/**": true
+  },
+  "tailwindCSS.files.exclude": [
+    "**/.git/**",
+    "**/node_modules/**",
+    "**/.hg/**",
+    "**/.svn/**",
+    "**/.worktrees/**",
+    "**/.nuxt/**",
+    "**/.output/**",
+    "**/test-results/**",
+    "**/playwright-report/**",
+    "**/.playwright-mcp/**",
+    "**/graphify-out/**",
+    "**/.superpowers/**",
+    "**/merge-verify-test-results/**"
+  ],
+  "tailwindCSS.experimental.configFile": "app/assets/css/main.css"
+}
