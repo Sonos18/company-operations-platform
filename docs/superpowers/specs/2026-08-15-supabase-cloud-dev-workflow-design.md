@@ -68,9 +68,11 @@ Template được commit sẽ mô tả Cloud DEV thay vì URL `127.0.0.1`. Nó c
 CLI được xác thực và link bằng:
 
 ```powershell
-pnpm exec supabase login
-pnpm exec supabase link --project-ref <dev-project-ref>
+pnpm db:dev:auth-check
+pnpm db:dev:link
 ```
+
+The ignored `.supabase.dev.env.local` file holds exactly one `SUPABASE_DEV_ACCESS_TOKEN=` assignment. That PAT is authoritative for CLI authorization: the runner strips ambient Supabase credentials and maps only this PAT to the child process. `db:dev:auth-check` silently verifies access to the canonical DEV project ref without printing project lists. The project-isolated `SUPABASE_HOME` (`%LOCALAPPDATA%\SupabaseCLI\company-operations-dev` on Windows, with an XDG/HOME fallback elsewhere) is retained only for non-auth CLI state; do not use browser login, the machine-global CLI session, or `--profile`.
 
 Project ref/link state trong `supabase/.temp` và thông tin xác thực phải tiếp tục bị Git ignore. Database password không được ghi vào script, tài liệu có giá trị thật hoặc file môi trường của frontend.
 
@@ -81,18 +83,20 @@ Các lệnh Cloud DEV dùng target `--linked` rõ ràng:
 - `db:dev:status`: so sánh migration local và DEV.
 - `db:dev:dry-run`: hiển thị migration sẽ áp dụng mà không thay đổi DEV.
 - `db:dev:push`: chỉ áp migration tiến tới.
-- `db:dev:test`: chạy pgTAP trên DEV.
+- `db:dev:test`: chạy pgTAP trên DEV, only in an optional Docker/container-capable environment.
 - `db:dev:types`: sinh `shared/types/database.types.ts` từ DEV.
 
 Luồng chuẩn:
 
-1. Tạo migration bằng `supabase migration new <descriptive_name>`.
+1. Tạo migration bằng `pnpm exec supabase migration new <descriptive_name>`.
 2. Review SQL và test tĩnh/unit test trên máy.
 3. Chạy `db:dev:status`.
 4. Chạy `db:dev:dry-run`.
 5. Chạy `db:dev:push`.
-6. Chạy `db:dev:test` và `db:dev:types`.
+6. Chạy `db:dev:types`.
 7. Chạy unit, typecheck, lint và production build.
+
+`db:dev:test` is an optional Docker/container-capable pgTAP check; it is not part of the daily no-Docker flow or `verify:dev`.
 
 Không tạo bất kỳ script nào thực thi `db reset --linked`, remote seed hoặc `db push --include-seed`. Các lệnh `supabase:start`, `supabase:stop` và `db:local:*` có thể được giữ với nhãn CI/fallback, nhưng không còn nằm trong hướng dẫn phát triển hằng ngày.
 
@@ -158,7 +162,7 @@ Thay đổi hoàn thành khi:
 - Contract tests xác nhận `pnpm dev` đọc `.env.local`, các script DEV dùng `--linked`, và không có remote reset/seed dưới bất kỳ alias hoặc biến thể flags nào.
 - Migration bootstrap chỉ tạo tenant/company VQH và idempotent.
 - pgTAP tự tạo fixture trong transaction và rollback; không phụ thuộc Cloud seed.
-- Sau khi người dùng điền biến và link project: status, dry-run, push, pgTAP và type generation trên DEV đều thành công.
+- Sau khi người dùng điền biến và link project: status, dry-run, push và type generation trên DEV đều thành công; pgTAP remains optional in a Docker/container-capable environment.
 - Generated types không tạo diff ngoài dự kiến.
 - Unit tests, typecheck, lint và production build đều thành công mà không khởi động Docker trên máy.
 - Cloud DEV có đúng schema tenancy, tenant/company VQH, không có tenant isolation và không có user `.local`.

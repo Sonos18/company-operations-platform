@@ -133,6 +133,13 @@ for (const project of [
 
     const visuals = page.getByTestId('journey-carousel').locator('img')
     await expect(visuals).toHaveCount(project.visualCount)
+    await expect.poll(async () => visuals.evaluateAll(images => images.every((image) => {
+      const element = image as HTMLImageElement
+      return element.complete
+        && element.naturalWidth === 1600
+        && element.naturalHeight === 900
+        && element.currentSrc.length > 0
+    }))).toBe(true)
     const loaded = await visuals.evaluateAll(images => images.map((image) => {
       const element = image as HTMLImageElement
       return {
