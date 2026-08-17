@@ -6,7 +6,7 @@ const root = resolve(import.meta.dirname, '../../..')
 const rlsTest = readFileSync(
   resolve(root, 'supabase/tests/database/tenancy_rls.test.sql'),
   'utf8',
-)
+).replace(/\r\n?/g, '\n')
 
 const authenticatedRole = rlsTest.indexOf('set local role authenticated')
 const fixtureStatements = [

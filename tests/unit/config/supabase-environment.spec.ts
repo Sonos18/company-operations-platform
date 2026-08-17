@@ -18,7 +18,7 @@ describe('Supabase environment wiring', () => {
     expect(envExample).toMatch(/^NUXT_PUBLIC_SUPABASE_URL=$/m)
     expect(envExample).toMatch(/^NUXT_PUBLIC_SUPABASE_ANON_KEY=$/m)
     expect(gitignore).toMatch(/^\.env\.local$/m)
-    expect(devPatExample).toBe('SUPABASE_DEV_ACCESS_TOKEN=\n')
+    expect(devPatExample.replace(/\r\n?/g, '\n')).toBe('SUPABASE_DEV_ACCESS_TOKEN=\n')
     expect(gitignore).toMatch(/^\.supabase\.dev\.env\.local$/m)
     expect(envExample).not.toContain('127.0.0.1')
   })
