@@ -1,6 +1,6 @@
-# Company Operations Platform
+# TASKOVIA
 
-Prototype frontend tương tác cho nền tảng quản trị vận hành đa công ty. Cấu hình đầu tiên dành cho Việt Quốc Huy (VQH), nhưng domain và repository đã tách theo `tenantId`/`companyId` để tiếp tục phát triển theo mô hình hybrid.
+TASKOVIA là nền tảng quản trị vận hành đa công ty. Cấu hình tenant/company đầu tiên dành cho Việt Quốc Huy (VQH), nhưng domain và repository đã tách theo `tenantId`/`companyId` để tiếp tục phát triển theo mô hình hybrid.
 
 ## Stack hiện tại
 

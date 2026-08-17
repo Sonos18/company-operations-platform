@@ -1,5 +1,5 @@
 {
-  "name": "company-operations-platform",
+  "name": "taskovia",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.29.3",

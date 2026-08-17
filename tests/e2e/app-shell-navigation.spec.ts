@@ -2,6 +2,16 @@ import { expect, test } from '@playwright/test'
 
 test.use({ viewport: { width: 1280, height: 900 } })
 
+test('publishes TASKOVIA product metadata', async ({ page }) => {
+  await page.goto('/projects')
+
+  await expect(page).toHaveTitle('TASKOVIA — Nền tảng vận hành đa công ty')
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+    'content',
+    'Nền tảng quản trị công việc và hành trình dự án cho nhiều công ty.',
+  )
+})
+
 test('collapses the header and releases content height', async ({ page }) => {
   await page.goto('/projects')
 

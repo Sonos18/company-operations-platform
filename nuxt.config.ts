@@ -1,3 +1,5 @@
+import { PRODUCT_BRAND } from './shared/constants/product-brand'
+
 export default defineNuxtConfig({
   compatibilityDate: "2026-08-13",
   ssr: false,
@@ -17,11 +19,11 @@ export default defineNuxtConfig({
   app: {
     head: {
       htmlAttrs: { lang: "vi" },
-      title: "Nền tảng vận hành dự án",
+      title: `${PRODUCT_BRAND.name} — ${PRODUCT_BRAND.tagline}`,
       meta: [
         {
           name: "description",
-          content: "Prototype quản trị hành trình dự án cho Việt Quốc Huy.",
+          content: PRODUCT_BRAND.description,
         },
         { name: "theme-color", content: "#1A3C2B" },
       ],
