@@ -415,7 +415,7 @@ test('keeps TASKOVIA identity separate from company context', async ({ page }) =
   const header = page.getByTestId('app-header')
   await expect(header.getByText('TASKOVIA', { exact: true })).toBeVisible()
   await expect(header.getByText('TV', { exact: true })).toBeVisible()
-  await expect(header.getByText('Việt Quốc Huy', { exact: true })).toBeVisible()
+  await expect(header.getByText('Công ty TNHH Thiết kế Xây dựng Việt Quốc Huy', { exact: true })).toBeVisible()
   await expect(header.getByRole('link', { name: 'TASKOVIA — Về danh sách dự án' })).toBeVisible()
 })
 ```
@@ -425,7 +425,7 @@ In the existing `collapses the header and releases content height` test, add the
 ```ts
 const productName = header.getByText('TASKOVIA', { exact: true })
 const productMark = header.getByText('TV', { exact: true })
-const companyName = header.getByText('Việt Quốc Huy', { exact: true })
+const companyName = header.getByText('Công ty TNHH Thiết kế Xây dựng Việt Quốc Huy', { exact: true })
 const brandLink = header.getByRole('link', { name: 'TASKOVIA — Về danh sách dự án' })
 ```
 
