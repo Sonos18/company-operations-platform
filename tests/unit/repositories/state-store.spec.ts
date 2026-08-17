@@ -10,12 +10,19 @@ const LEGACY_KEY = 'company-operations-platform:tenant-vqh:company-vqh:prototype
 
 class TestStorage implements StorageLike {
   private readonly values = new Map<string, string>()
+  readonly removedKeys: string[] = []
 
-  constructor(initial: Record<string, string> = {}, private readonly failOnSetKey?: string) {
+  constructor(
+    initial: Record<string, string> = {},
+    private readonly failOnSetKey?: string,
+    private readonly failOnRemoveKeys = new Set<string>(),
+    private readonly failOnGetKeys = new Set<string>(),
+  ) {
     for (const [key, value] of Object.entries(initial)) this.values.set(key, value)
   }
 
   getItem(key: string): string | null {
+    if (this.failOnGetKeys.has(key)) throw new Error('storage read failed')
     return this.values.get(key) ?? null
   }
 
@@ -25,6 +32,8 @@ class TestStorage implements StorageLike {
   }
 
   removeItem(key: string): void {
+    this.removedKeys.push(key)
+    if (this.failOnRemoveKeys.has(key)) throw new Error('storage remove failed')
     this.values.delete(key)
   }
 }
@@ -84,6 +93,29 @@ describe('BrowserStateStore TASKOVIA namespace', () => {
     expect(storage.getItem(CANONICAL_KEY)).toBeNull()
   })
 
+  it('keeps legacy data and rolls back canonical data when legacy removal fails', () => {
+    const storage = new TestStorage(
+      { [LEGACY_KEY]: serializedState },
+      undefined,
+      new Set([LEGACY_KEY]),
+    )
+
+    expect(new BrowserStateStore(storage).read()).toEqual(INITIAL_MOCK_STATE)
+    expect(storage.getItem(CANONICAL_KEY)).toBeNull()
+    expect(storage.getItem(LEGACY_KEY)).toBe(serializedState)
+  })
+
+  it('continues reading legacy data when canonical storage reads fail', () => {
+    const storage = new TestStorage(
+      { [LEGACY_KEY]: serializedState },
+      undefined,
+      new Set(),
+      new Set([CANONICAL_KEY]),
+    )
+
+    expect(new BrowserStateStore(storage).read()).toEqual(INITIAL_MOCK_STATE)
+  })
+
   it('clears canonical and legacy data together', () => {
     const storage = new TestStorage({
       [CANONICAL_KEY]: serializedState,
@@ -93,6 +125,21 @@ describe('BrowserStateStore TASKOVIA namespace', () => {
     new BrowserStateStore(storage).clear()
 
     expect(storage.getItem(CANONICAL_KEY)).toBeNull()
+    expect(storage.getItem(LEGACY_KEY)).toBeNull()
+  })
+
+  it('still attempts to clear legacy data when canonical removal fails', () => {
+    const storage = new TestStorage(
+      {
+        [CANONICAL_KEY]: serializedState,
+        [LEGACY_KEY]: serializedState,
+      },
+      undefined,
+      new Set([CANONICAL_KEY]),
+    )
+
+    expect(() => new BrowserStateStore(storage).clear()).toThrow('storage remove failed')
+    expect(storage.removedKeys).toEqual([CANONICAL_KEY, LEGACY_KEY])
     expect(storage.getItem(LEGACY_KEY)).toBeNull()
   })
 })

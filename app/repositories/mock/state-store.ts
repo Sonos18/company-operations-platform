@@ -37,14 +37,23 @@ export class BrowserStateStore implements StateStore {
   constructor(private readonly storage: StorageLike = localStorage) {}
 
   private readAt(key: string): MockState | null {
-    const serialized = this.storage.getItem(key)
+    let serialized: string | null
+    try {
+      serialized = this.storage.getItem(key)
+    } catch {
+      return null
+    }
     if (!serialized) return null
     try {
       const parsed = JSON.parse(serialized)
       validateMockState(parsed)
       return parsed as MockState
     } catch {
-      this.storage.removeItem(key)
+      try {
+        this.storage.removeItem(key)
+      } catch {
+        // Best effort cleanup for invalid data.
+      }
       return null
     }
   }
@@ -58,9 +67,18 @@ export class BrowserStateStore implements StateStore {
 
     try {
       this.storage.setItem(MOCK_STORAGE_KEY, JSON.stringify(legacy))
-      this.storage.removeItem(LEGACY_MOCK_STORAGE_KEY)
     } catch {
       return legacy
+    }
+
+    try {
+      this.storage.removeItem(LEGACY_MOCK_STORAGE_KEY)
+    } catch {
+      try {
+        this.storage.removeItem(MOCK_STORAGE_KEY)
+      } catch {
+        // Keep whichever copy remains; a later read can retry cleanup.
+      }
     }
     return legacy
   }
@@ -70,7 +88,17 @@ export class BrowserStateStore implements StateStore {
   }
 
   clear(): void {
-    this.storage.removeItem(MOCK_STORAGE_KEY)
-    this.storage.removeItem(LEGACY_MOCK_STORAGE_KEY)
+    let firstError: unknown
+    try {
+      this.storage.removeItem(MOCK_STORAGE_KEY)
+    } catch (error) {
+      firstError = error
+    }
+    try {
+      this.storage.removeItem(LEGACY_MOCK_STORAGE_KEY)
+    } catch (error) {
+      firstError ??= error
+    }
+    if (firstError) throw firstError
   }
 }
