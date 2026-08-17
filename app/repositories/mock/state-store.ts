@@ -11,6 +11,10 @@ export interface StorageLike {
   removeItem(key: string): void
 }
 
+type ReadResult =
+  | { status: 'valid'; state: MockState }
+  | { status: 'missing' | 'invalid' | 'error' }
+
 export interface StateStore {
   read(): MockState | null
   write(state: MockState): void
@@ -36,39 +40,43 @@ export class MemoryStateStore implements StateStore {
 export class BrowserStateStore implements StateStore {
   constructor(private readonly storage: StorageLike = localStorage) {}
 
-  private readAt(key: string): MockState | null {
+  private readAt(key: string): ReadResult {
     let serialized: string | null
     try {
       serialized = this.storage.getItem(key)
     } catch {
-      return null
+      return { status: 'error' }
     }
-    if (!serialized) return null
+    if (!serialized) return { status: 'missing' }
     try {
       const parsed = JSON.parse(serialized)
       validateMockState(parsed)
-      return parsed as MockState
+      return { status: 'valid', state: parsed as MockState }
     } catch {
       try {
         this.storage.removeItem(key)
       } catch {
         // Best effort cleanup for invalid data.
       }
-      return null
+      return { status: 'invalid' }
     }
   }
 
   read(): MockState | null {
     const current = this.readAt(MOCK_STORAGE_KEY)
-    if (current) return current
+    if (current.status === 'valid') {
+      this.retryLegacyCleanup(current.state)
+      return current.state
+    }
+    if (current.status === 'error') return null
 
     const legacy = this.readAt(LEGACY_MOCK_STORAGE_KEY)
-    if (!legacy) return null
+    if (legacy.status !== 'valid') return null
 
     try {
-      this.storage.setItem(MOCK_STORAGE_KEY, JSON.stringify(legacy))
+      this.storage.setItem(MOCK_STORAGE_KEY, JSON.stringify(legacy.state))
     } catch {
-      return legacy
+      return legacy.state
     }
 
     try {
@@ -77,10 +85,25 @@ export class BrowserStateStore implements StateStore {
       try {
         this.storage.removeItem(MOCK_STORAGE_KEY)
       } catch {
-        // Keep whichever copy remains; a later read can retry cleanup.
+        // Keep both copies; a later canonical read retries legacy cleanup.
       }
     }
-    return legacy
+    return legacy.state
+  }
+
+  private retryLegacyCleanup(state: MockState): void {
+    let legacy: string | null
+    try {
+      legacy = this.storage.getItem(LEGACY_MOCK_STORAGE_KEY)
+    } catch {
+      return
+    }
+    if (!legacy || legacy !== JSON.stringify(state)) return
+    try {
+      this.storage.removeItem(LEGACY_MOCK_STORAGE_KEY)
+    } catch {
+      // Retry on a later canonical read.
+    }
   }
 
   write(state: MockState): void {

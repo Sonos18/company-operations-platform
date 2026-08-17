@@ -105,15 +105,39 @@ describe('BrowserStateStore TASKOVIA namespace', () => {
     expect(storage.getItem(LEGACY_KEY)).toBe(serializedState)
   })
 
-  it('continues reading legacy data when canonical storage reads fail', () => {
+  it('does not migrate legacy data when canonical storage reads fail', () => {
+    const failingKeys = new Set([CANONICAL_KEY])
     const storage = new TestStorage(
       { [LEGACY_KEY]: serializedState },
       undefined,
       new Set(),
-      new Set([CANONICAL_KEY]),
+      failingKeys,
+    )
+
+    expect(new BrowserStateStore(storage).read()).toBeNull()
+    failingKeys.clear()
+    expect(storage.getItem(CANONICAL_KEY)).toBeNull()
+    expect(storage.getItem(LEGACY_KEY)).toBe(serializedState)
+
+    expect(new BrowserStateStore(storage).read()).toEqual(INITIAL_MOCK_STATE)
+    expect(storage.getItem(LEGACY_KEY)).toBeNull()
+  })
+
+  it('retries legacy cleanup after canonical rollback also fails', () => {
+    const failingKeys = new Set([CANONICAL_KEY, LEGACY_KEY])
+    const storage = new TestStorage(
+      { [LEGACY_KEY]: serializedState },
+      undefined,
+      failingKeys,
     )
 
     expect(new BrowserStateStore(storage).read()).toEqual(INITIAL_MOCK_STATE)
+    expect(storage.getItem(CANONICAL_KEY)).toBe(serializedState)
+    expect(storage.getItem(LEGACY_KEY)).toBe(serializedState)
+
+    failingKeys.clear()
+    expect(new BrowserStateStore(storage).read()).toEqual(INITIAL_MOCK_STATE)
+    expect(storage.getItem(LEGACY_KEY)).toBeNull()
   })
 
   it('clears canonical and legacy data together', () => {
