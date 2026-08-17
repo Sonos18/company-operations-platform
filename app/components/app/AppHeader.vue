@@ -1,7 +1,8 @@
 <script setup lang="ts">
-const props = defineProps<{
+defineProps<{
+  productName: string
+  productMark: string
   companyName: string
-  shortName: string
   collapsed: boolean
 }>()
 
@@ -9,13 +10,6 @@ const emit = defineEmits<{
   toggle: []
 }>()
 
-const brandMark = computed(() => props.shortName
-  .split(/\s+/)
-  .filter(Boolean)
-  .slice(0, 3)
-  .map(word => word[0])
-  .join('')
-  .toLocaleUpperCase('vi-VN'))
 const { resetting, resetPrototype } = usePrototypeReset()
 </script>
 
@@ -27,10 +21,14 @@ const { resetting, resetPrototype } = usePrototypeReset()
     data-testid="app-header"
   >
     <div class="app-header__primary">
-      <NuxtLink to="/projects" class="brand" aria-label="Về danh sách dự án">
-        <span class="brand__mark" aria-hidden="true">{{ brandMark }}</span>
+      <NuxtLink
+        to="/projects"
+        class="brand"
+        :aria-label="`${productName} — Về danh sách dự án`"
+      >
+        <span class="brand__mark" aria-hidden="true">{{ productMark }}</span>
         <span class="brand__copy">
-          <strong>{{ shortName }}</strong>
+          <strong>{{ productName }}</strong>
           <small>{{ companyName }}</small>
         </span>
       </NuxtLink>

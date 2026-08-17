@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { PRODUCT_BRAND } from '../../shared/constants/product-brand'
+
 const repositories = useRepositories()
 const { data: company } = await useAsyncData('active-company-config', () => repositories.company.getConfig())
 const headerCollapsed = ref(false)
@@ -12,8 +14,9 @@ const sidebarCollapsed = ref(false)
     :data-sidebar-collapsed="sidebarCollapsed || undefined"
   >
     <AppHeader
+      :product-name="PRODUCT_BRAND.name"
+      :product-mark="PRODUCT_BRAND.mark"
       :company-name="company?.displayName ?? 'Đang tải công ty'"
-      :short-name="company?.shortName ?? 'Nền tảng vận hành'"
       :collapsed="headerCollapsed"
       @toggle="headerCollapsed = !headerCollapsed"
     />

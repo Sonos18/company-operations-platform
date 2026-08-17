@@ -12,12 +12,26 @@ test('publishes TASKOVIA product metadata', async ({ page }) => {
   )
 })
 
+test('keeps TASKOVIA identity separate from company context', async ({ page }) => {
+  await page.goto('/projects')
+
+  const header = page.getByTestId('app-header')
+  await expect(header.getByText('TASKOVIA', { exact: true })).toBeVisible()
+  await expect(header.getByText('TV', { exact: true })).toBeVisible()
+  await expect(header.getByText('Công ty TNHH Thiết kế Xây dựng Việt Quốc Huy', { exact: true })).toBeVisible()
+  await expect(header.getByRole('link', { name: 'TASKOVIA — Về danh sách dự án' })).toBeVisible()
+})
+
 test('collapses the header and releases content height', async ({ page }) => {
   await page.goto('/projects')
 
   const header = page.getByTestId('app-header')
   const main = page.getByTestId('app-main')
   const toggle = page.getByRole('button', { name: 'Thu gọn thanh điều hướng phía trên' })
+  const productName = header.getByText('TASKOVIA', { exact: true })
+  const productMark = header.getByText('TV', { exact: true })
+  const companyName = header.getByText('Công ty TNHH Thiết kế Xây dựng Việt Quốc Huy', { exact: true })
+  const brandLink = header.getByRole('link', { name: 'TASKOVIA — Về danh sách dự án' })
 
   await expect.poll(async () => (await header.boundingBox())?.height).toBe(64)
   await expect.poll(async () => main.evaluate(element => Number.parseFloat(getComputedStyle(element).paddingTop))).toBe(88)
@@ -28,7 +42,10 @@ test('collapses the header and releases content height', async ({ page }) => {
   await expect.poll(async () => (await header.boundingBox())?.height).toBe(44)
   await expect.poll(async () => main.evaluate(element => Number.parseFloat(getComputedStyle(element).paddingTop))).toBe(68)
   await expect(page.getByRole('button', { name: 'Mở rộng thanh điều hướng phía trên' })).toHaveAttribute('aria-expanded', 'false')
-  await expect(header.getByText('Việt Quốc Huy', { exact: true })).toBeHidden()
+  await expect(productName).toBeHidden()
+  await expect(companyName).toBeHidden()
+  await expect(productMark).toBeVisible()
+  await expect(brandLink).toBeVisible()
 
 })
 
