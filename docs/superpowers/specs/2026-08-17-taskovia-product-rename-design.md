@@ -102,8 +102,9 @@ Việc chọn company, membership và role không thay đổi. TASKOVIA không �
 
 - Company config đang tải: hiển thị TASKOVIA và “Đang tải công ty”.
 - Company config thiếu `shortName`: không ảnh hưởng monogram vì monogram luôn lấy từ `PRODUCT_BRAND.mark`.
+- Lỗi đọc local storage: truyền lỗi lên thay vì coi là không có dữ liệu, để không seed fixture lên dữ liệu đang tạm thời không đọc được.
 - Dữ liệu local storage cũ không hợp lệ: không migrate; dùng fixture mặc định.
-- Dữ liệu local storage mới hợp lệ: không đọc hoặc ghi đè từ khóa legacy.
+- Dữ liệu local storage mới hợp lệ: canonical là nguồn dữ liệu có thẩm quyền; không dùng legacy để ghi đè và dọn legacy theo cơ chế best-effort có thể retry.
 - Không thay đổi hành vi reset prototype, route hiện tại hoặc trạng thái thu gọn navigation.
 
 ## Accessibility

@@ -177,6 +177,8 @@ git -c "safe.directory=$taskoviaRoot" commit -m "feat: establish Taskovia produc
 - Consumes: `PRODUCT_BRAND.storageNamespace` from Task 1 and `validateMockState(input: unknown): MockState` from `app/repositories/mock/schemas.ts`.
 - Produces: `MOCK_STORAGE_KEY`, `LEGACY_MOCK_STORAGE_KEY`, `StorageLike`, and `BrowserStateStore(storage?: StorageLike)` while preserving the existing `StateStore` interface.
 
+> **Post-review safety amendment:** A `StorageLike.getItem()` exception is a read failure, not an empty store, and must propagate so repository consumers never seed fixtures over unreadable persisted data. Once a valid canonical value has been written, that canonical value is authoritative; legacy cleanup is best-effort and retryable without comparing or consuming the obsolete legacy payload.
+
 - [ ] **Step 1: Write the failing storage migration tests**
 
 Create `tests/unit/repositories/state-store.spec.ts`:
@@ -236,7 +238,7 @@ describe('BrowserStateStore TASKOVIA namespace', () => {
     const state = new BrowserStateStore(storage).read()
 
     expect(state?.companies[0]?.name).toBe('Canonical company')
-    expect(storage.getItem(LEGACY_KEY)).toBe(serializedState)
+    expect(storage.getItem(LEGACY_KEY)).toBeNull()
   })
 
   it('migrates valid legacy data and removes the old key after writing', () => {
