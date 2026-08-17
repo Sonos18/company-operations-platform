@@ -26,13 +26,12 @@
 ## File Structure
 
 - Create `shared/constants/product-brand.ts`: the runtime source of truth for product name, mark, tagline, description, and storage namespace.
-- Create `tests/unit/config/product-brand.spec.ts`: contract tests for the shared brand, package metadata, README, Nuxt metadata wiring, and forbidden legacy product name.
+- Modify `tests/e2e/app-shell-navigation.spec.ts`: verify runtime product metadata first, then product/company separation, collapsed header, and accessible brand link.
 - Modify `package.json`: change only the package name.
 - Modify `nuxt.config.ts`: consume the shared brand for document title and meta description.
 - Modify `README.md`: replace the active product heading and opening product description.
 - Create `tests/unit/repositories/state-store.spec.ts`: isolated tests for canonical storage, one-time migration, invalid data, failed writes, and reset cleanup.
 - Modify `app/repositories/mock/state-store.ts`: use the TASKOVIA namespace and migrate valid legacy browser data.
-- Modify `tests/e2e/app-shell-navigation.spec.ts`: verify product/company separation, document title, collapsed header, and accessible brand link.
 - Modify `app/layouts/default.vue`: pass product identity and company context to the header as separate inputs.
 - Modify `app/components/app/AppHeader.vue`: render TASKOVIA/TV as product identity and the active company as secondary context.
 
@@ -42,7 +41,7 @@
 
 **Files:**
 - Create: `shared/constants/product-brand.ts`
-- Create: `tests/unit/config/product-brand.spec.ts`
+- Modify: `tests/e2e/app-shell-navigation.spec.ts:1-5`
 - Modify: `package.json:2`
 - Modify: `nuxt.config.ts:1-27`
 - Modify: `README.md:1-3`
@@ -51,75 +50,33 @@
 - Consumes: no prior task interfaces.
 - Produces: `PRODUCT_BRAND` with readonly fields `name`, `mark`, `tagline`, `description`, and `storageNamespace`, all inferred as string literals.
 
-- [ ] **Step 1: Write the failing brand contract test**
+- [ ] **Step 1: Write the failing runtime metadata test**
 
-Create `tests/unit/config/product-brand.spec.ts`:
+Add this test immediately after `test.use` in `tests/e2e/app-shell-navigation.spec.ts`:
 
 ```ts
-import { readFileSync, readdirSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { PRODUCT_BRAND } from '../../../shared/constants/product-brand'
+test('publishes TASKOVIA product metadata', async ({ page }) => {
+  await page.goto('/projects')
 
-const root = resolve(import.meta.dirname, '../../..')
-const normalize = (text: string) => text.replace(/\r\n?/g, '\n')
-const read = (path: string) => normalize(readFileSync(resolve(root, path), 'utf8'))
-
-function readTree(relativeDirectory: string): string[] {
-  const directory = resolve(root, relativeDirectory)
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const relativePath = `${relativeDirectory}/${entry.name}`
-    return entry.isDirectory() ? readTree(relativePath) : [read(relativePath)]
-  })
-}
-
-const packageJson = JSON.parse(read('package.json')) as { name: string }
-const readme = read('README.md')
-const nuxtConfig = read('nuxt.config.ts')
-const activeSources = [
-  readme,
-  nuxtConfig,
-  read('package.json'),
-  ...readTree('app'),
-  ...readTree('server'),
-  ...readTree('shared'),
-].join('\n')
-
-describe('TASKOVIA product brand', () => {
-  it('defines one readonly runtime identity', () => {
-    expect(PRODUCT_BRAND).toEqual({
-      name: 'TASKOVIA',
-      mark: 'TV',
-      tagline: 'Nền tảng vận hành đa công ty',
-      description: 'Nền tảng quản trị công việc và hành trình dự án cho nhiều công ty.',
-      storageNamespace: 'taskovia',
-    })
-  })
-
-  it('keeps package, README, and Nuxt metadata aligned', () => {
-    expect(packageJson.name).toBe(PRODUCT_BRAND.storageNamespace)
-    expect(readme.startsWith(`# ${PRODUCT_BRAND.name}\n`)).toBe(true)
-    expect(nuxtConfig).toContain("import { PRODUCT_BRAND } from './shared/constants/product-brand'")
-    expect(nuxtConfig).toContain('title: `${PRODUCT_BRAND.name} — ${PRODUCT_BRAND.tagline}`')
-    expect(nuxtConfig).toContain('content: PRODUCT_BRAND.description')
-    expect(`${readme}\n${nuxtConfig}`).not.toContain('Company Operations Platform')
-  })
-
-  it('does not expose the rejected Taskora identity in active sources', () => {
-    expect(activeSources).not.toMatch(/taskora/i)
-  })
+  await expect(page).toHaveTitle('TASKOVIA — Nền tảng vận hành đa công ty')
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+    'content',
+    'Nền tảng quản trị công việc và hành trình dự án cho nhiều công ty.',
+  )
 })
 ```
 
-- [ ] **Step 2: Run the brand test to verify it fails**
+The test catches a runtime regression where Nuxt serves the wrong product title or description. It does not inspect config source text.
+
+- [ ] **Step 2: Run the metadata test to verify it fails**
 
 Run:
 
 ```powershell
-pnpm vitest run tests/unit/config/product-brand.spec.ts
+pnpm exec playwright test tests/e2e/app-shell-navigation.spec.ts --grep "publishes TASKOVIA product metadata"
 ```
 
-Expected: FAIL because `shared/constants/product-brand.ts` does not exist and active metadata still uses `company-operations-platform`/“Company Operations Platform”.
+Expected: FAIL because the browser receives the old title and VQH-specific meta description.
 
 - [ ] **Step 3: Add the shared product-brand constant**
 
@@ -176,21 +133,35 @@ TASKOVIA là nền tảng quản trị vận hành đa công ty. Cấu hình ten
 
 Keep the remaining VQH deployment, bootstrap, and company-context documentation unchanged.
 
-- [ ] **Step 6: Run the brand contract and related configuration tests**
+- [ ] **Step 6: Run the runtime metadata and related configuration tests**
 
 Run:
 
 ```powershell
-pnpm vitest run tests/unit/config/product-brand.spec.ts tests/unit/config/supabase-environment.spec.ts tests/unit/config/supabase-cloud-dev-docs.spec.ts
+pnpm exec playwright test tests/e2e/app-shell-navigation.spec.ts --grep "publishes TASKOVIA product metadata"
+pnpm vitest run tests/unit/config/supabase-environment.spec.ts tests/unit/config/supabase-cloud-dev-docs.spec.ts
 ```
 
-Expected: PASS. The existing Supabase tests confirm the metadata rename did not disturb environment or VQH deployment documentation.
+Expected: PASS. The browser proves the runtime metadata, while existing Supabase tests confirm the rename did not disturb environment or VQH deployment documentation.
 
-- [ ] **Step 7: Commit the brand contract**
+- [ ] **Step 7: Audit package and README artifacts without adding source-inspection tests**
+
+Run:
+
+```powershell
+$packageName = (Get-Content -Raw -LiteralPath 'package.json' | ConvertFrom-Json).name
+if ($packageName -ne 'taskovia') { throw "Expected package name taskovia, got $packageName" }
+$readmeHeading = Get-Content -LiteralPath 'README.md' -First 1
+if ($readmeHeading -ne '# TASKOVIA') { throw "Expected README heading # TASKOVIA, got $readmeHeading" }
+```
+
+Expected: no output and exit code 0. These are release artifact checks, not persistent change-detector tests.
+
+- [ ] **Step 8: Commit the brand contract**
 
 ```powershell
 $taskoviaRoot = (Get-Location).Path
-git -c "safe.directory=$taskoviaRoot" add shared/constants/product-brand.ts tests/unit/config/product-brand.spec.ts package.json nuxt.config.ts README.md
+git -c "safe.directory=$taskoviaRoot" add shared/constants/product-brand.ts tests/e2e/app-shell-navigation.spec.ts package.json nuxt.config.ts README.md
 git -c "safe.directory=$taskoviaRoot" commit -m "feat: establish Taskovia product identity"
 ```
 
@@ -215,10 +186,11 @@ import { describe, expect, it } from 'vitest'
 import { INITIAL_MOCK_STATE } from '../../../app/repositories/mock/fixtures'
 import {
   BrowserStateStore,
-  LEGACY_MOCK_STORAGE_KEY,
-  MOCK_STORAGE_KEY,
   type StorageLike,
 } from '../../../app/repositories/mock/state-store'
+
+const CANONICAL_KEY = 'taskovia:tenant-vqh:company-vqh:prototype:v1'
+const LEGACY_KEY = 'company-operations-platform:tenant-vqh:company-vqh:prototype:v1'
 
 class TestStorage implements StorageLike {
   private readonly values = new Map<string, string>()
@@ -244,63 +216,68 @@ class TestStorage implements StorageLike {
 const serializedState = JSON.stringify(INITIAL_MOCK_STATE)
 
 describe('BrowserStateStore TASKOVIA namespace', () => {
-  it('uses the TASKOVIA canonical key', () => {
-    expect(MOCK_STORAGE_KEY).toBe('taskovia:tenant-vqh:company-vqh:prototype:v1')
+  it('writes new state under the TASKOVIA namespace', () => {
+    const storage = new TestStorage()
+
+    new BrowserStateStore(storage).write(INITIAL_MOCK_STATE)
+
+    expect(JSON.parse(storage.getItem(CANONICAL_KEY)!)).toEqual(INITIAL_MOCK_STATE)
+    expect(storage.getItem(LEGACY_KEY)).toBeNull()
   })
 
   it('prefers canonical data when both keys exist', () => {
     const canonical = structuredClone(INITIAL_MOCK_STATE)
     canonical.companies[0]!.name = 'Canonical company'
     const storage = new TestStorage({
-      [MOCK_STORAGE_KEY]: JSON.stringify(canonical),
-      [LEGACY_MOCK_STORAGE_KEY]: serializedState,
+      [CANONICAL_KEY]: JSON.stringify(canonical),
+      [LEGACY_KEY]: serializedState,
     })
 
     const state = new BrowserStateStore(storage).read()
 
     expect(state?.companies[0]?.name).toBe('Canonical company')
-    expect(storage.getItem(LEGACY_MOCK_STORAGE_KEY)).toBe(serializedState)
+    expect(storage.getItem(LEGACY_KEY)).toBe(serializedState)
   })
 
   it('migrates valid legacy data and removes the old key after writing', () => {
-    const storage = new TestStorage({ [LEGACY_MOCK_STORAGE_KEY]: serializedState })
+    const storage = new TestStorage({ [LEGACY_KEY]: serializedState })
 
     const state = new BrowserStateStore(storage).read()
 
     expect(state).toEqual(INITIAL_MOCK_STATE)
-    expect(JSON.parse(storage.getItem(MOCK_STORAGE_KEY)!)).toEqual(INITIAL_MOCK_STATE)
-    expect(storage.getItem(LEGACY_MOCK_STORAGE_KEY)).toBeNull()
+    expect(JSON.parse(storage.getItem(CANONICAL_KEY)!)).toEqual(INITIAL_MOCK_STATE)
+    expect(storage.getItem(LEGACY_KEY)).toBeNull()
   })
 
   it('removes invalid legacy data and returns no state', () => {
-    const storage = new TestStorage({ [LEGACY_MOCK_STORAGE_KEY]: '{"projects":"invalid"}' })
+    const storage = new TestStorage({ [LEGACY_KEY]: '{"projects":"invalid"}' })
 
     expect(new BrowserStateStore(storage).read()).toBeNull()
-    expect(storage.getItem(LEGACY_MOCK_STORAGE_KEY)).toBeNull()
-    expect(storage.getItem(MOCK_STORAGE_KEY)).toBeNull()
+    expect(storage.getItem(LEGACY_KEY)).toBeNull()
+    expect(storage.getItem(CANONICAL_KEY)).toBeNull()
   })
 
   it('keeps valid legacy data when the canonical write fails', () => {
     const storage = new TestStorage(
-      { [LEGACY_MOCK_STORAGE_KEY]: serializedState },
-      MOCK_STORAGE_KEY,
+      { [LEGACY_KEY]: serializedState },
+      CANONICAL_KEY,
     )
 
     expect(new BrowserStateStore(storage).read()).toEqual(INITIAL_MOCK_STATE)
-    expect(storage.getItem(LEGACY_MOCK_STORAGE_KEY)).toBe(serializedState)
-    expect(storage.getItem(MOCK_STORAGE_KEY)).toBeNull()
+    expect(storage.getItem(LEGACY_KEY)).toBe(serializedState)
+    expect(storage.getItem(CANONICAL_KEY)).toBeNull()
   })
 
   it('clears canonical and legacy data together', () => {
     const storage = new TestStorage({
-      [MOCK_STORAGE_KEY]: serializedState,
-      [LEGACY_MOCK_STORAGE_KEY]: serializedState,
+      [CANONICAL_KEY]: serializedState,
+      [LEGACY_KEY]: serializedState,
     })
 
     new BrowserStateStore(storage).clear()
 
-    expect(storage.getItem(MOCK_STORAGE_KEY)).toBeNull()
-    expect(storage.getItem(LEGACY_MOCK_STORAGE_KEY)).toBeNull()
+    expect(storage.getItem(CANONICAL_KEY)).toBeNull()
+    expect(storage.getItem(LEGACY_KEY)).toBeNull()
   })
 })
 ```
@@ -429,14 +406,13 @@ git -c "safe.directory=$taskoviaRoot" commit -m "feat: migrate prototype storage
 
 - [ ] **Step 1: Add the failing product/company separation E2E assertions**
 
-Add this test after `test.use` in `tests/e2e/app-shell-navigation.spec.ts`:
+Add this test after the metadata test from Task 1 in `tests/e2e/app-shell-navigation.spec.ts`:
 
 ```ts
 test('keeps TASKOVIA identity separate from company context', async ({ page }) => {
   await page.goto('/projects')
 
   const header = page.getByTestId('app-header')
-  await expect(page).toHaveTitle('TASKOVIA — Nền tảng vận hành đa công ty')
   await expect(header.getByText('TASKOVIA', { exact: true })).toBeVisible()
   await expect(header.getByText('TV', { exact: true })).toBeVisible()
   await expect(header.getByText('Việt Quốc Huy', { exact: true })).toBeVisible()
@@ -470,7 +446,7 @@ Run:
 pnpm exec playwright test tests/e2e/app-shell-navigation.spec.ts
 ```
 
-Expected: FAIL because the current header brands itself from the company short name, renders `VQH`, and uses the old document title and accessible label.
+Expected: FAIL because the current header brands itself from the company short name, renders `VQH`, and uses the old accessible label.
 
 - [ ] **Step 3: Pass product and company inputs separately from the layout**
 
@@ -588,7 +564,7 @@ Expected: both commands print no matches and exit with code 1, which is the norm
 Run:
 
 ```powershell
-rg -n 'TASKOVIA|taskovia' shared/constants/product-brand.ts package.json nuxt.config.ts README.md app/layouts/default.vue tests/unit/config/product-brand.spec.ts
+rg -n 'TASKOVIA|taskovia' shared/constants/product-brand.ts package.json nuxt.config.ts README.md app/layouts/default.vue tests/e2e/app-shell-navigation.spec.ts
 ```
 
 Expected: matches show the canonical constant, technical package name, metadata wiring, README identity, layout consumption, and contract tests.

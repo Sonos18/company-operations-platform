@@ -56,7 +56,7 @@ export const PRODUCT_BRAND = {
 } as const
 ```
 
-Nuxt metadata và các component giao diện phải đọc tên, monogram, tagline và description từ module này thay vì lặp chuỗi trong nhiều file. `package.json` và README không thể import module runtime, nên test contract sẽ kiểm tra chúng khớp với tên chuẩn.
+Nuxt metadata và các component giao diện phải đọc tên, monogram, tagline và description từ module này thay vì lặp chuỗi trong nhiều file. `package.json` và README không thể import module runtime, nên release audit sẽ kiểm tra chúng khớp với tên chuẩn. Không tạo unit test chỉ để đọc source hoặc khóa nguyên văn nội dung tài liệu.
 
 ### 3. Metadata và tài liệu hiện hành
 
@@ -115,14 +115,18 @@ Việc chọn company, membership và role không thay đổi. TASKOVIA không �
 
 ## Kiểm thử
 
-### Unit/contract
+### Automated behavior
 
-- `PRODUCT_BRAND` chứa đúng `TASKOVIA`, `TV`, tagline và namespace.
-- `package.json`, README và Nuxt metadata khớp tên chuẩn.
-- Không có chuỗi `Taskora` trong `app`, `server`, `shared`, `package.json`, `nuxt.config.ts` hoặc README. Tài liệu spec này được loại khỏi phép kiểm tra vì cần ghi lại quyết định loại bỏ tên cũ.
+- Trình duyệt nhận đúng document title và meta description TASKOVIA từ Nuxt runtime.
 - Header hiển thị TASKOVIA độc lập với tên công ty.
 - Header thu gọn vẫn giữ monogram `TV` và accessible name.
 - State store ưu tiên khóa mới, migrate dữ liệu legacy hợp lệ, chỉ xóa khóa cũ sau khi ghi thành công, bỏ qua dữ liệu legacy lỗi và xóa cả hai khóa khi reset.
+
+### Release audit
+
+- `package.json` có package name `taskovia` và README bắt đầu bằng `# TASKOVIA`.
+- Không có chuỗi `Taskora` trong `app`, `server`, `shared`, `package.json`, `nuxt.config.ts` hoặc README. Tài liệu spec này được loại khỏi phép kiểm tra vì cần ghi lại quyết định loại bỏ tên cũ.
+- Không còn nhận diện “Company Operations Platform” trong các bề mặt sản phẩm đang hoạt động.
 
 ### Regression
 
