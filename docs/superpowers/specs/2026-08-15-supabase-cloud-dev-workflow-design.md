@@ -68,11 +68,11 @@ Template được commit sẽ mô tả Cloud DEV thay vì URL `127.0.0.1`. Nó c
 CLI được xác thực và link bằng:
 
 ```powershell
-pnpm db:dev:login
-node scripts/run-supabase-dev.mjs link --project-ref ykrurrumqlsxnqfqunjc
+pnpm db:dev:auth-check
+pnpm db:dev:link
 ```
 
-`db:dev:login` uses the project-isolated `SUPABASE_HOME` (`%LOCALAPPDATA%\SupabaseCLI\company-operations-dev` on Windows, with an XDG/HOME fallback elsewhere), so it does not use the machine-global default CLI session. Do not use `--profile`.
+The ignored `.supabase.dev.env.local` file holds exactly one `SUPABASE_DEV_ACCESS_TOKEN=` assignment. That PAT is authoritative for CLI authorization: the runner strips ambient Supabase credentials and maps only this PAT to the child process. `db:dev:auth-check` silently verifies access to the canonical DEV project ref without printing project lists. The project-isolated `SUPABASE_HOME` (`%LOCALAPPDATA%\SupabaseCLI\company-operations-dev` on Windows, with an XDG/HOME fallback elsewhere) is retained only for non-auth CLI state; do not use browser login, the machine-global CLI session, or `--profile`.
 
 Project ref/link state trong `supabase/.temp` và thông tin xác thực phải tiếp tục bị Git ignore. Database password không được ghi vào script, tài liệu có giá trị thật hoặc file môi trường của frontend.
 
@@ -88,7 +88,7 @@ Các lệnh Cloud DEV dùng target `--linked` rõ ràng:
 
 Luồng chuẩn:
 
-1. Tạo migration bằng `node scripts/run-supabase-dev.mjs migration new <descriptive_name>`.
+1. Tạo migration bằng `pnpm exec supabase migration new <descriptive_name>`.
 2. Review SQL và test tĩnh/unit test trên máy.
 3. Chạy `db:dev:status`.
 4. Chạy `db:dev:dry-run`.

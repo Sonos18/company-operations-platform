@@ -6,5 +6,6 @@ test-results/
 .env
 *.local
 .env.local
+.supabase.dev.env.local
 .superpowers/
 .worktrees/

@@ -74,19 +74,32 @@ describe('Supabase Cloud DEV runbooks', () => {
     expect(deployment).toContain('canonical DEV target guard')
   })
 
-  it('uses the isolated Supabase CLI home for every documented DEV login and link', () => {
+  it('uses the dedicated ignored DEV PAT for every documented DEV authentication check', () => {
     for (const document of [development, deployment, design, implementationPlan]) {
       expect(document).not.toContain('pnpm exec supabase login')
       expect(document).not.toContain('pnpm exec supabase link')
-      expect(document).not.toMatch(/(?:pnpm\s+db:dev:login|run-supabase-dev\.mjs)\s+[^\r\n]*--profile/)
+      expect(document).not.toContain('pnpm db:dev:login')
     }
 
-    expect(development).toContain('pnpm db:dev:login')
-    expect(deployment).toContain('pnpm db:dev:login')
-    expect(design).toContain('pnpm db:dev:login')
-    expect(implementationPlan).toContain('pnpm db:dev:login')
+    expect(development).toContain('pnpm db:dev:auth-check')
+    expect(deployment).toContain('pnpm db:dev:auth-check')
+    expect(design).toContain('pnpm db:dev:auth-check')
+    expect(implementationPlan).toContain('pnpm db:dev:auth-check')
+    expect(development).toContain('.supabase.dev.env.local')
+    expect(deployment).toContain('PAT is authoritative')
     expect(development).toContain('SUPABASE_HOME')
-    expect(deployment).toContain('company-operations-dev')
+    expect(deployment).toContain('SUPABASE_DEV_ACCESS_TOKEN')
+  })
+
+  it('keeps all active linked Cloud DEV operations behind fixed runner modes', () => {
+    for (const document of [development, deployment, design, implementationPlan]) {
+      expect(document).not.toMatch(/pnpm\s+exec\s+supabase\s+.*--linked/)
+      expect(document).not.toMatch(/run-supabase-dev\.mjs\s+(?:db|migration|gen|test)\b/)
+    }
+    expect(development).toContain('pnpm db:dev:advisors:security')
+    expect(deployment).toContain('pnpm db:dev:advisors:performance')
+    expect(implementationPlan).toContain('pnpm db:dev:canonical-check')
+    expect(implementationPlan).toContain('pnpm db:dev:rls-smoke')
   })
 
   it('provides a guarded, idempotent VQH admin onboarding snippet', () => {

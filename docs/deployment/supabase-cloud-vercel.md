@@ -4,15 +4,15 @@
 
 1. Create a dedicated VQH Cloud DEV project in Supabase Cloud.
 2. Copy its project ref from the Dashboard project URL.
-3. Authenticate and link from the repository root:
+3. Create `.supabase.dev.env.local` from the tracked blank `.supabase.dev.env.example`, put the DEV-project PAT in its single `SUPABASE_DEV_ACCESS_TOKEN=` assignment, then authenticate and link from the repository root:
 
 ```powershell
-pnpm db:dev:login
-node scripts/run-supabase-dev.mjs link --project-ref ykrurrumqlsxnqfqunjc
+pnpm db:dev:auth-check
+pnpm db:dev:link
 pnpm db:dev:status
 ```
 
-The Cloud DEV CLI session is isolated in `SUPABASE_HOME` at `%LOCALAPPDATA%\SupabaseCLI\company-operations-dev` on Windows, with an XDG/HOME state-directory fallback on other platforms. Use `pnpm db:dev:login` instead of the default CLI login and never use `--profile`.
+The ignored `.supabase.dev.env.local` PAT is authoritative for Cloud DEV CLI authorization. `pnpm db:dev:auth-check` silently confirms visibility of the canonical DEV ref and never prints project lists. The runner strips ambient Supabase access-token/database-password variables and maps only that PAT to the CLI. `SUPABASE_HOME` is isolated at `%LOCALAPPDATA%\SupabaseCLI\company-operations-dev` on Windows, with an XDG/HOME state-directory fallback on other platforms, for non-auth CLI state only. Do not use `db:dev:login`, `--profile`, or the machine-global CLI session.
 
 The CLI is linked to Cloud DEV; không dùng project DEV hoặc link hiện tại để triển khai Vercel Production. The access token and database password must stay outside Git, and the CLI link metadata under `supabase/.temp/` is ignored.
 
@@ -21,11 +21,13 @@ Every `db:dev:*` linked command starts with the canonical DEV target guard. It f
 ## Deliver a Cloud DEV database migration
 
 ```powershell
-node scripts/run-supabase-dev.mjs migration new descriptive_name
+pnpm exec supabase migration new descriptive_name
 pnpm db:dev:status
 pnpm db:dev:dry-run
 pnpm db:dev:push
 pnpm db:dev:types
+pnpm db:dev:advisors:security
+pnpm db:dev:advisors:performance
 ```
 
 This daily Cloud DEV migration path is no-Docker and deliberately excludes `pnpm db:dev:test`. The Supabase CLI pgTAP runner requires a Docker/container-capable environment even for a linked project, so it is an optional check outside this workflow. Task 4 or any future Cloud DEV bootstrap guidance must not describe remote pgTAP as a no-Docker check.

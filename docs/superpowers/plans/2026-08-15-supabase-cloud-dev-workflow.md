@@ -69,13 +69,13 @@ describe('Supabase environment wiring', () => {
   })
 
   it('exposes an explicit linked DEV workflow and an isolated local fallback', () => {
-    expect(packageJson.scripts['db:dev:login']).toBe('node scripts/run-supabase-dev.mjs login --agent no')
-    expect(packageJson.scripts['db:dev:status']).toBe('pnpm db:dev:target && node scripts/run-supabase-dev.mjs migration list --linked')
-    expect(packageJson.scripts['db:dev:dry-run']).toBe('pnpm db:dev:target && node scripts/run-supabase-dev.mjs db push --linked --dry-run')
-    expect(packageJson.scripts['db:dev:push']).toBe('pnpm db:dev:target && node scripts/run-supabase-dev.mjs db push --linked')
-    expect(packageJson.scripts['db:dev:test']).toBe('pnpm db:dev:target && node scripts/run-supabase-dev.mjs test db --linked')
+    expect(packageJson.scripts['db:dev:auth-check']).toBe('node scripts/run-supabase-dev.mjs auth-check')
+    expect(packageJson.scripts['db:dev:status']).toBe('node scripts/run-supabase-dev.mjs status')
+    expect(packageJson.scripts['db:dev:dry-run']).toBe('node scripts/run-supabase-dev.mjs dry-run')
+    expect(packageJson.scripts['db:dev:push']).toBe('node scripts/run-supabase-dev.mjs push')
+    expect(packageJson.scripts['db:dev:test']).toBe('node scripts/run-supabase-dev.mjs pg-tap')
     expect(packageJson.scripts['db:dev:types']).toBe(
-      'pnpm db:dev:target && node scripts/run-supabase-dev.mjs gen types typescript --linked > shared/types/database.types.ts',
+      'node scripts/run-supabase-dev.mjs types',
     )
     expect(packageJson.scripts['verify:app']).toBe(
       'pnpm test:unit && pnpm typecheck && pnpm lint && pnpm build',
@@ -140,12 +140,13 @@ In `package.json`, keep the existing app/test scripts and set the Supabase/verif
   "db:local:test": "supabase test db --local",
   "db:local:types": "supabase gen types typescript --local > shared/types/database.types.ts",
   "db:dev:target": "node scripts/assert-cloud-dev-target.mjs",
-  "db:dev:login": "node scripts/run-supabase-dev.mjs login --agent no",
-  "db:dev:status": "pnpm db:dev:target && node scripts/run-supabase-dev.mjs migration list --linked",
-  "db:dev:dry-run": "pnpm db:dev:target && node scripts/run-supabase-dev.mjs db push --linked --dry-run",
-  "db:dev:push": "pnpm db:dev:target && node scripts/run-supabase-dev.mjs db push --linked",
-  "db:dev:test": "pnpm db:dev:target && node scripts/run-supabase-dev.mjs test db --linked",
-  "db:dev:types": "pnpm db:dev:target && node scripts/run-supabase-dev.mjs gen types typescript --linked > shared/types/database.types.ts",
+  "db:dev:auth-check": "node scripts/run-supabase-dev.mjs auth-check",
+  "db:dev:link": "node scripts/run-supabase-dev.mjs link",
+  "db:dev:status": "node scripts/run-supabase-dev.mjs status",
+  "db:dev:dry-run": "node scripts/run-supabase-dev.mjs dry-run",
+  "db:dev:push": "node scripts/run-supabase-dev.mjs push",
+  "db:dev:test": "node scripts/run-supabase-dev.mjs pg-tap",
+  "db:dev:types": "node scripts/run-supabase-dev.mjs types",
   "verify:app": "pnpm test:unit && pnpm typecheck && pnpm lint && pnpm build",
   "verify:dev": "pnpm db:dev:status && pnpm db:dev:dry-run && pnpm db:dev:types && pnpm verify:app",
   "verify:backend:local": "pnpm db:local:reset && pnpm db:local:test && pnpm db:local:types && pnpm verify:app"
@@ -418,20 +419,20 @@ This file is an operator snippet, not a migration. The sentinel prevents acciden
 
 Update `docs/development/backend-local.md` with these sections and commands:
 
-1. `Prerequisites`: Node 24.x, pnpm 10.29.3, a dedicated Supabase Cloud DEV project, and Supabase CLI authentication; explicitly state Docker is not required for the daily workflow.
+1. `Prerequisites`: Node 24.x, pnpm 10.29.3, a dedicated Supabase Cloud DEV project, and an ignored dedicated CLI PAT; explicitly state Docker is not required for the daily workflow.
 2. `Prepare .env.local`: run `Copy-Item .env.example .env.local`, fill only Cloud DEV URL/public key, and never add database password, access token, or service-role key.
 3. `One-time DEV link`:
 
 ```powershell
-pnpm db:dev:login
-node scripts/run-supabase-dev.mjs link --project-ref ykrurrumqlsxnqfqunjc
+pnpm db:dev:auth-check
+pnpm db:dev:link
 pnpm db:dev:status
 ```
 
 4. `Daily database workflow`:
 
 ```powershell
-node scripts/run-supabase-dev.mjs migration new descriptive_name
+pnpm exec supabase migration new descriptive_name
 pnpm db:dev:status
 pnpm db:dev:dry-run
 pnpm db:dev:push
@@ -492,7 +493,7 @@ git commit -m "docs: add Cloud DEV and VQH onboarding workflow"
 - Read but never stage: `.env.local`, `supabase/.temp/*`
 
 **Interfaces:**
-- Consumes: Task 1 linked DEV commands, Task 2 transaction-safe pgTAP, Task 3 onboarding snippet, existing tenancy migration, and user-supplied `.env.local` values/project authentication.
+- Consumes: Task 1 linked DEV commands, Task 2 transaction-safe pgTAP, Task 3 onboarding snippet, existing tenancy migration, user-supplied `.env.local` values, and the ignored dedicated `.supabase.dev.env.local` PAT.
 - Produces: Cloud DEV migration history containing the tenancy foundation and VQH bootstrap migration; VQH tenant/company rows; generated types matching DEV; one real Auth user with VQH memberships after the manual checkpoint.
 
 - [ ] **Step 1: Write the failing VQH bootstrap migration contract**
@@ -606,11 +607,11 @@ Expected: one success message and no URL/key in terminal output. If validation f
 Run:
 
 ```powershell
-pnpm db:dev:login
-node scripts/run-supabase-dev.mjs link --project-ref ykrurrumqlsxnqfqunjc
+pnpm db:dev:auth-check
+pnpm db:dev:link
 ```
 
-Let the user complete browser authentication and type the database password only into the CLI prompt. Never pass the database password with `--password` and never persist it in `.env.local`.
+The ignored `.supabase.dev.env.local` PAT is authoritative. It contains exactly one `SUPABASE_DEV_ACCESS_TOKEN=` assignment and is mapped only to the CLI child after ambient credentials are stripped. Never use browser login, a database password, `--profile`, or a frontend environment file for CLI authorization.
 
 - [ ] **Step 8: Prove the linked target and dry-run scope before changing Cloud DEV**
 
@@ -648,8 +649,8 @@ Expected when this optional check is run in a suitable container-capable environ
 
 ```powershell
 pnpm db:dev:types
-pnpm exec supabase db advisors --linked --type security --level warn --fail-on error
-pnpm exec supabase db advisors --linked --type performance --level warn --fail-on error
+pnpm db:dev:advisors:security
+pnpm db:dev:advisors:performance
 ```
 
 Expected: type generation exits 0; neither advisor reports an error-level finding introduced by these migrations. Record warning-level findings for review rather than silently ignoring them.
@@ -659,7 +660,7 @@ Expected: type generation exits 0; neither advisor reports an error-level findin
 Run:
 
 ```powershell
-pnpm exec supabase db query --linked "select (select count(*) from public.tenants where id = '10000000-0000-4000-8000-000000000010' and code = 'vqh') as vqh_tenants, (select count(*) from public.companies where id = '10000000-0000-4000-8000-000000000020' and tenant_id = '10000000-0000-4000-8000-000000000010' and code = 'VQH') as vqh_companies, (select count(*) from public.tenants where code = 'isolation') as isolation_tenants, (select count(*) from auth.users where email like '%.local') as local_auth_users;"
+pnpm db:dev:canonical-check
 ```
 
 Expected result: `vqh_tenants = 1`, `vqh_companies = 1`, `isolation_tenants = 0`, and `local_auth_users = 0`.
@@ -676,7 +677,7 @@ Ask the user to:
 After confirmation, verify membership counts without printing identity data:
 
 ```powershell
-pnpm exec supabase db query --linked "select (select count(*) from public.tenant_memberships where tenant_id = '10000000-0000-4000-8000-000000000010' and roles @> array['tenant_admin']) as vqh_tenant_admins, (select count(*) from public.company_memberships where tenant_id = '10000000-0000-4000-8000-000000000010' and company_id = '10000000-0000-4000-8000-000000000020' and roles @> array['director']) as vqh_directors;"
+pnpm db:dev:rls-smoke
 ```
 
 Expected: both counts are at least 1. If either is 0, stop and diagnose the Auth user lookup/onboarding transaction; do not insert a fake `auth.users` row.
@@ -701,12 +702,12 @@ Expected: both Node commands report `v24.19.0`; linked migration status and dry-
 - [ ] **Step 14: Prove no secret or CLI link state can be committed**
 
 ```powershell
-git check-ignore -v .env.local supabase/.temp
+git check-ignore -v .env.local .supabase.dev.env.local supabase/.temp
 git status --short --untracked-files=all
 git grep -n -E 'sb_secret_|SUPABASE_ACCESS_TOKEN=|postgres(ql)?://[^[:space:]]+:[^[:space:]]+@' -- ':!docs/superpowers/plans/*'
 ```
 
-Expected: `.env.local` and `supabase/.temp` are ignored and absent from status; the tracked-secret scan returns no match. Intended uncommitted files are only the bootstrap migration, its contract test, and `shared/types/database.types.ts` if the generator produced a legitimate schema change.
+Expected: `.env.local`, `.supabase.dev.env.local`, and `supabase/.temp` are ignored and absent from status; the tracked-secret scan returns no match. The tracked `.supabase.dev.env.example` contains only the blank assignment line, while the PAT file must never be inspected, staged, or passed through shell arguments. Intended uncommitted files are only the bootstrap migration, its contract test, and `shared/types/database.types.ts` if the generator produced a legitimate schema change.
 
 - [ ] **Step 15: Commit the verified migration artifacts**
 
