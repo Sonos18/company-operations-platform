@@ -1,6 +1,15 @@
+import { PRODUCT_BRAND } from '../../../shared/constants/product-brand'
+import { validateMockState } from './schemas'
 import type { MockState } from './schemas'
 
-export const MOCK_STORAGE_KEY = 'company-operations-platform:tenant-vqh:company-vqh:prototype:v1'
+export const MOCK_STORAGE_KEY = `${PRODUCT_BRAND.storageNamespace}:tenant-vqh:company-vqh:prototype:v1`
+export const LEGACY_MOCK_STORAGE_KEY = 'company-operations-platform:tenant-vqh:company-vqh:prototype:v1'
+
+export interface StorageLike {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem(key: string): void
+}
 
 export interface StateStore {
   read(): MockState | null
@@ -25,22 +34,43 @@ export class MemoryStateStore implements StateStore {
 }
 
 export class BrowserStateStore implements StateStore {
-  read(): MockState | null {
-    const serialized = localStorage.getItem(MOCK_STORAGE_KEY)
+  constructor(private readonly storage: StorageLike = localStorage) {}
+
+  private readAt(key: string): MockState | null {
+    const serialized = this.storage.getItem(key)
     if (!serialized) return null
     try {
-      return JSON.parse(serialized) as MockState
+      const parsed = JSON.parse(serialized)
+      validateMockState(parsed)
+      return parsed as MockState
     } catch {
-      localStorage.removeItem(MOCK_STORAGE_KEY)
+      this.storage.removeItem(key)
       return null
     }
   }
 
+  read(): MockState | null {
+    const current = this.readAt(MOCK_STORAGE_KEY)
+    if (current) return current
+
+    const legacy = this.readAt(LEGACY_MOCK_STORAGE_KEY)
+    if (!legacy) return null
+
+    try {
+      this.storage.setItem(MOCK_STORAGE_KEY, JSON.stringify(legacy))
+      this.storage.removeItem(LEGACY_MOCK_STORAGE_KEY)
+    } catch {
+      return legacy
+    }
+    return legacy
+  }
+
   write(state: MockState): void {
-    localStorage.setItem(MOCK_STORAGE_KEY, JSON.stringify(state))
+    this.storage.setItem(MOCK_STORAGE_KEY, JSON.stringify(state))
   }
 
   clear(): void {
-    localStorage.removeItem(MOCK_STORAGE_KEY)
+    this.storage.removeItem(MOCK_STORAGE_KEY)
+    this.storage.removeItem(LEGACY_MOCK_STORAGE_KEY)
   }
 }
