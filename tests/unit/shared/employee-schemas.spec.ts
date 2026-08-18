@@ -9,7 +9,7 @@ import {
   employeeUpdateInputSchema,
 } from '../../../shared/schemas/employees'
 import { roleAssignmentInputSchema } from '../../../shared/schemas/rbac'
-import { companyAccessSchema } from '../../../shared/schemas/session'
+import { companyAccessSchema, sessionResponseSchema } from '../../../shared/schemas/session'
 
 const ids = {
   employee: '10000000-0000-4000-8000-000000000401',
@@ -51,7 +51,7 @@ const employeeSummary = {
 }
 
 describe('employee shared schemas', () => {
-  it('parses a visible employee summary with its account, department, and active role', () => {
+  it('parses an authorized employee summary with its account, department, and active role', () => {
     expect(employeeSummarySchema.parse(employeeSummary)).toEqual(employeeSummary)
   })
 
@@ -117,11 +117,27 @@ describe('employee shared schemas', () => {
     }).success).toBe(false)
   })
 
-  it('requires each visible employee to expose at least one active role while allowing redacted account IDs', () => {
+  it('allows a regular-viewer employee projection to redact account and role data together', () => {
+    const { account: _account, roles: _roles, ...redactedSummary } = employeeSummary
+
+    expect(employeeSummarySchema.parse(redactedSummary)).toEqual(redactedSummary)
+  })
+
+  it('rejects half-redacted employee projections and empty authorized role arrays', () => {
+    const { account: _account, roles: _roles, ...redactedSummary } = employeeSummary
+
     expect(employeeSummarySchema.parse({
       ...employeeSummary,
       account: { email: 'nhu@vqh.local' },
     }).account).toEqual({ email: 'nhu@vqh.local' })
+    expect(employeeSummarySchema.safeParse({
+      ...redactedSummary,
+      account: employeeSummary.account,
+    }).success).toBe(false)
+    expect(employeeSummarySchema.safeParse({
+      ...redactedSummary,
+      roles: employeeSummary.roles,
+    }).success).toBe(false)
     expect(employeeSummarySchema.safeParse({
       ...employeeSummary,
       roles: [],
@@ -182,6 +198,31 @@ describe('employee shared schemas', () => {
       companyName: 'Việt Quốc Huy',
       roles: ['employee'],
       permissions: ['employee.*'],
+    }).success).toBe(false)
+  })
+
+  it('rejects unknown fields in company access and session responses', () => {
+    const companyAccess = {
+      tenantId: ids.tenant,
+      companyId: ids.company,
+      companyCode: 'VQH',
+      companyName: 'Việt Quốc Huy',
+      roles: ['employee'],
+      permissions: ['employee.read_directory'],
+    }
+
+    expect(companyAccessSchema.safeParse({
+      ...companyAccess,
+      legacyMembershipRoles: ['company_admin'],
+    }).success).toBe(false)
+    expect(sessionResponseSchema.safeParse({
+      user: { id: ids.user, email: 'nhu@vqh.local', isAdmin: true },
+      companies: [companyAccess],
+    }).success).toBe(false)
+    expect(sessionResponseSchema.safeParse({
+      user: { id: ids.user, email: 'nhu@vqh.local' },
+      companies: [companyAccess],
+      actorId: ids.user,
     }).success).toBe(false)
   })
 

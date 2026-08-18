@@ -17,16 +17,16 @@ export const companyAccessSchema = z.object({
   // use permissions for authorization rather than legacy membership arrays.
   roles: deduplicatedStringArraySchema,
   permissions: deduplicatedPermissionArraySchema,
-})
+}).strict()
 export type CompanyAccess = z.infer<typeof companyAccessSchema>
 
 export const sessionResponseSchema = z.object({
   user: z.object({
     id: z.string().min(1),
     email: z.string().email().nullable(),
-  }),
+  }).strict(),
   companies: z.array(companyAccessSchema),
-})
+}).strict()
 
 export const companyRequestContextSchema = companyAccessSchema.pick({
   tenantId: true,

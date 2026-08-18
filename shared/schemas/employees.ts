@@ -54,15 +54,18 @@ export const employeeSummarySchema = z.object({
   employeeCode: z.string().trim().min(1),
   fullName: z.string().trim().min(1),
   workEmail: normalizedEmailSchema,
-  account: employeeAccountSchema,
+  account: employeeAccountSchema.optional(),
   department: departmentSummarySchema,
   position: positionSummarySchema.nullable(),
   hireDate: nullableDateSchema,
   probationEndDate: nullableDateSchema,
   employmentStatus: employmentStatusSchema,
   profileComplete: z.boolean(),
-  roles: z.array(roleSummarySchema).min(1),
-}).strict()
+  roles: z.array(roleSummarySchema).min(1).optional(),
+}).strict().refine(
+  employee => (employee.account === undefined) === (employee.roles === undefined),
+  'Account and roles must be provided together or redacted together.',
+)
 export type EmployeeSummary = z.infer<typeof employeeSummarySchema>
 
 export const employeeDetailSchema = employeeSummarySchema.extend({
