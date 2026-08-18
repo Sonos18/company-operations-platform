@@ -10,6 +10,60 @@ select has_table('public', 'permissions');
 select has_table('public', 'role_permissions');
 select has_table('public', 'company_role_assignments');
 
+select has_function('private', 'has_company_permission', array['uuid', 'uuid', 'text']);
+select has_function('public', 'complete_employee_onboarding');
+select has_function('public', 'revoke_company_role_assignment');
+select has_function('public', 'revoke_company_role_assignment', array['bigint', 'text']);
+
+select is(
+  (select format_type(atttypid, atttypmod)
+   from pg_attribute
+   where attrelid = 'public.company_memberships'::regclass
+     and attname = 'is_active'),
+  'boolean',
+  'company memberships records active state as a boolean'
+);
+select ok(
+  (select attnotnull
+   from pg_attribute
+   where attrelid = 'public.company_memberships'::regclass
+     and attname = 'is_active'),
+  'company memberships active state is required'
+);
+select is(
+  (select pg_get_expr(adbin, adrelid)
+   from pg_attrdef
+   where adrelid = 'public.company_memberships'::regclass
+     and adnum = (
+       select attnum
+       from pg_attribute
+       where attrelid = 'public.company_memberships'::regclass
+         and attname = 'is_active'
+     )),
+  'true',
+  'company memberships default to active'
+);
+select ok(exists (
+  select 1
+  from pg_constraint
+  where conrelid = 'public.company_memberships'::regclass
+    and contype = 'u'
+    and conkey = array[
+      (select attnum from pg_attribute where attrelid = 'public.company_memberships'::regclass and attname = 'tenant_id'),
+      (select attnum from pg_attribute where attrelid = 'public.company_memberships'::regclass and attname = 'company_id'),
+      (select attnum from pg_attribute where attrelid = 'public.company_memberships'::regclass and attname = 'user_id')
+    ]
+), 'company memberships has the ordered same-scope user candidate key');
+select ok(exists (
+  select 1
+  from pg_index i
+  where i.indexrelid = 'public.company_memberships_active_scope_user_idx'::regclass
+    and i.indrelid = 'public.company_memberships'::regclass
+    and not i.indisunique
+    and pg_get_indexdef(i.indexrelid) ilike '%(tenant_id, company_id, user_id)%'
+    and pg_get_expr(i.indpred, i.indrelid) = 'is_active'
+), 'company memberships has an ordered active scope-user lookup index');
+
 select is(
   (select array_agg(attname::text order by attnum) from pg_attribute where attrelid = 'public.departments'::regclass and attnum > 0 and not attisdropped),
   array['id', 'tenant_id', 'company_id', 'code', 'name', 'description', 'is_active', 'created_at', 'updated_at']::text[],
