@@ -12,3 +12,11 @@ export interface EmployeeInvitationAuthAdmin {
   inviteUser(email: string): Promise<EmployeeInvitationAuthResult>
   findUserByEmail(email: string): Promise<EmployeeInvitationUserLookup>
 }
+
+export type EmployeeOffboardingAuthResult =
+  | { kind: 'disabled' }
+  | { kind: 'failed' }
+
+export interface EmployeeOffboardingAuthAdmin {
+  disableUser(userId: string): Promise<EmployeeOffboardingAuthResult>
+}

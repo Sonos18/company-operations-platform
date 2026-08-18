@@ -1,5 +1,9 @@
+import {
+  employeeOffboardingResultSchema,
+} from '../../../shared/schemas/employees'
 import type {
   EmployeeInvitationInput,
+  EmployeeOffboardingResult,
   EmployeePrivateDetails,
   EmployeeSummary,
   EmployeeUpdateInput,
@@ -25,6 +29,12 @@ export interface EmployeeRepository {
     userId: string,
     input: EmployeeInvitationInput,
   ): Promise<EmployeeSummary | null>
+  offboardEmployee(
+    companyId: string,
+    employeeId: string,
+    reason: string,
+  ): Promise<EmployeeOffboardingResult>
+  recordOffboardingAuthFailure(companyId: string, employeeId: string): Promise<void>
 }
 
 interface QueryResult {
@@ -69,6 +79,21 @@ interface EmployeeDataClient {
       target_department_id: string
       target_position_id?: string
       target_hire_date?: string
+    },
+  ): Promise<QueryResult>
+  rpc(
+    functionName: 'offboard_employee',
+    arguments_: {
+      target_company_id: string
+      target_employee_id: string
+      target_reason: string
+    },
+  ): Promise<QueryResult>
+  rpc(
+    functionName: 'record_employee_offboarding_auth_failure',
+    arguments_: {
+      target_company_id: string
+      target_employee_id: string
     },
   ): Promise<QueryResult>
 }
@@ -121,6 +146,11 @@ const privateDetailsRowSchema = z.object({
   emergency_contact_phone: z.string().min(1).nullable(),
 }).strict()
 
+const offboardingResultRowSchema = z.object({
+  employee_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+}).strict()
+
 const employeeColumns = 'id, employee_code, full_name, work_email, department_id, position_id, hire_date, probation_end_date, employment_status, departments!inner(id, code, name), positions(id, code, name, level)'
 const roleColumns = 'id, code, name, description, is_privileged, is_system'
 const privateColumns = 'date_of_birth, gender, personal_email, personal_phone, current_address, permanent_address, tax_code, social_insurance_number, emergency_contact_name, emergency_contact_phone'
@@ -169,6 +199,34 @@ function mapOnboardingRpcError(error: unknown): never {
     throw new AppApiError(409, 'EMPLOYEE_EMAIL_CONFLICT', 'Email công việc đã được sử dụng trong công ty này.')
   }
   return onboardingIncomplete()
+}
+
+function mapOffboardingRpcError(error: unknown): never {
+  const known = z.object({ code: z.string().optional(), message: z.string().optional() }).safeParse(error)
+  if (known.success && known.data.code === 'P0001') {
+    if (known.data.message === 'EMPLOYEE_NOT_FOUND') {
+      throw new AppApiError(404, 'EMPLOYEE_NOT_FOUND', 'Không tìm thấy nhân viên.')
+    }
+    if (known.data.message === 'LAST_COMPANY_ADMIN_REQUIRED') {
+      throw new AppApiError(409, 'LAST_COMPANY_ADMIN_REQUIRED', 'Công ty phải còn ít nhất một quản trị viên.')
+    }
+    if (known.data.message === 'PERMISSION_DENIED') {
+      throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.')
+    }
+  }
+  return failDatabase('Không thể hoàn tất quy trình nghỉ việc.')
+}
+
+function parseOffboardingResult(data: unknown): EmployeeOffboardingResult {
+  const parsed = z.union([
+    offboardingResultRowSchema,
+    z.array(offboardingResultRowSchema).length(1).transform(rows => rows[0]!),
+  ]).safeParse(data)
+  if (!parsed.success) return failDatabase('Không thể hoàn tất quy trình nghỉ việc.')
+  return employeeOffboardingResultSchema.parse({
+    employeeId: parsed.data.employee_id,
+    userId: parsed.data.user_id,
+  })
 }
 
 function one<T>(value: T | T[]): T {
@@ -372,6 +430,22 @@ export function createSupabaseEmployeeRepository(db: UserSupabaseClient): Employ
         }
         return onboardingIncomplete()
       }
+    },
+    async offboardEmployee(companyId, employeeId, reason) {
+      const { data, error } = await client.rpc('offboard_employee', {
+        target_company_id: companyId,
+        target_employee_id: employeeId,
+        target_reason: reason,
+      })
+      if (error) return mapOffboardingRpcError(error)
+      return parseOffboardingResult(data)
+    },
+    async recordOffboardingAuthFailure(companyId, employeeId) {
+      const { error } = await client.rpc('record_employee_offboarding_auth_failure', {
+        target_company_id: companyId,
+        target_employee_id: employeeId,
+      })
+      if (error) failDatabase('Không thể ghi nhận lỗi khóa tài khoản.')
     },
   }
 }

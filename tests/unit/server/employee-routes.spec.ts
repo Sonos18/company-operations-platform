@@ -153,4 +153,43 @@ describe('employee route handlers', () => {
     expect(readBody).not.toHaveBeenCalled()
     expect(invite).not.toHaveBeenCalled()
   })
+
+  it('derives offboarding context and authorization before reading a strict local reason body', async () => {
+    readBody.mockResolvedValue({ reason: 'Kết thúc hợp đồng' })
+    const resolveContext = vi.fn().mockResolvedValue(context)
+    const authorizeOffboarding = vi.fn().mockResolvedValue(undefined)
+    const offboard = vi.fn().mockResolvedValue({ employeeId, userId: '10000000-0000-4000-8000-000000000002' })
+    const routes = createEmployeeRoutes({
+      resolveContext,
+      service: { authorizeOffboarding, offboard } as never,
+    }) as unknown as {
+      offboard(event: unknown): Promise<unknown>
+    }
+
+    await expect(routes.offboard({})).resolves.toEqual({
+      employeeId,
+      userId: '10000000-0000-4000-8000-000000000002',
+    })
+    expect(resolveContext).toHaveBeenCalledWith(expect.anything(), companyId)
+    expect(authorizeOffboarding).toHaveBeenCalledWith(context)
+    expect(readBody.mock.invocationCallOrder[0]).toBeGreaterThan(authorizeOffboarding.mock.invocationCallOrder[0]!)
+    expect(offboard).toHaveBeenCalledWith(context, employeeId, { reason: 'Kết thúc hợp đồng' })
+  })
+
+  it('rejects client-supplied offboarding actor or scope fields after server-derived authorization', async () => {
+    readBody.mockResolvedValue({ reason: 'Kết thúc hợp đồng', companyId, actorId: context.actorId })
+    const resolveContext = vi.fn().mockResolvedValue(context)
+    const authorizeOffboarding = vi.fn().mockResolvedValue(undefined)
+    const offboard = vi.fn()
+    const routes = createEmployeeRoutes({
+      resolveContext,
+      service: { authorizeOffboarding, offboard } as never,
+    }) as unknown as {
+      offboard(event: unknown): Promise<unknown>
+    }
+
+    await expect(routes.offboard({})).rejects.toMatchObject({ statusCode: 400 })
+    expect(authorizeOffboarding).toHaveBeenCalledWith(context)
+    expect(offboard).not.toHaveBeenCalled()
+  })
 })

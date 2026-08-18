@@ -109,6 +109,12 @@ export const employeeOffboardingInputSchema = z.object({
 }).strict()
 export type EmployeeOffboardingInput = z.infer<typeof employeeOffboardingInputSchema>
 
+export const employeeOffboardingResultSchema = z.object({
+  employeeId: uuidSchema,
+  userId: uuidSchema,
+}).strict()
+export type EmployeeOffboardingResult = z.infer<typeof employeeOffboardingResultSchema>
+
 export const employeeListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),

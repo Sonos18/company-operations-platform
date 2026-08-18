@@ -2,7 +2,10 @@ import { createClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import type { Database } from '../../shared/types/database.types'
-import type { EmployeeInvitationAuthAdmin } from '../features/employees/employee-invitation-auth'
+import type {
+  EmployeeInvitationAuthAdmin,
+  EmployeeOffboardingAuthAdmin,
+} from '../features/employees/employee-invitation-auth'
 import type { SupabaseAdminConfig, SupabaseRuntimeConfig } from './supabase-config'
 
 const auth = {
@@ -28,7 +31,12 @@ export function createSupabaseUserClient(
 export type UserSupabaseClient = ReturnType<typeof createSupabaseUserClient>
 
 export interface SupabaseAdminClient {
-  auth: Pick<SupabaseClient<Database>['auth'], 'admin'>
+  auth: {
+    admin: Pick<
+      SupabaseClient<Database>['auth']['admin'],
+      'inviteUserByEmail' | 'listUsers' | 'updateUserById'
+    >
+  }
 }
 
 const authUserIdSchema = z.string().uuid()
@@ -42,6 +50,7 @@ const authUserSchema = z.object({
 const paginationSchema = z.object({ users: z.array(z.unknown()) }).passthrough()
 const authUserPageLimit = 100
 const authUserPageSize = 100
+const disabledAccountBanDuration = '876000h'
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
@@ -99,6 +108,27 @@ export function createSupabaseInvitationAuthAdmin(
         }
       }
       return { kind: 'failed' }
+    },
+  }
+}
+
+export function createSupabaseOffboardingAuthAdmin(
+  client: SupabaseAdminClient,
+): EmployeeOffboardingAuthAdmin {
+  return {
+    async disableUser(userId) {
+      try {
+        const { data, error } = await client.auth.admin.updateUserById(userId, {
+          ban_duration: disabledAccountBanDuration,
+        })
+        const returnedUserId = authUserIdSchema.safeParse(data.user?.id)
+        if (error || !returnedUserId.success || returnedUserId.data !== userId) {
+          return { kind: 'failed' }
+        }
+        return { kind: 'disabled' }
+      } catch {
+        return { kind: 'failed' }
+      }
     },
   }
 }

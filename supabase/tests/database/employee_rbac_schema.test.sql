@@ -16,6 +16,45 @@ select has_function('public', 'get_my_company_access', array['uuid']);
 select has_function('public', 'complete_employee_onboarding');
 select has_function('public', 'revoke_company_role_assignment');
 select has_function('public', 'revoke_company_role_assignment', array['bigint', 'text']);
+select has_function('private', 'offboard_employee', array['uuid', 'uuid', 'text']);
+select has_function('public', 'offboard_employee', array['uuid', 'uuid', 'text']);
+select has_function('private', 'record_employee_offboarding_auth_failure', array['uuid', 'uuid']);
+select has_function('public', 'record_employee_offboarding_auth_failure', array['uuid', 'uuid']);
+select is(
+  (select format_type(atttypid, atttypmod)
+   from pg_attribute
+   where attrelid = 'public.employees'::regclass
+     and attname = 'termination_date'),
+  'date',
+  'employee offboarding records a termination date'
+);
+select is(
+  (select format_type(atttypid, atttypmod)
+   from pg_attribute
+   where attrelid = 'public.employees'::regclass
+     and attname = 'termination_reason'),
+  'text',
+  'employee offboarding records a termination reason'
+);
+select ok(
+  (select prosecdef from pg_proc where oid = 'private.offboard_employee(uuid, uuid, text)'::regprocedure)
+  and (select pg_get_functiondef('private.offboard_employee(uuid, uuid, text)'::regprocedure) like '%pg_advisory_xact_lock%')
+  and (select pg_get_functiondef('private.offboard_employee(uuid, uuid, text)'::regprocedure) like '%for update%'),
+  'private offboarding locks deterministically in its privileged transaction'
+);
+select ok(
+  not (select prosecdef from pg_proc where oid = 'public.offboard_employee(uuid, uuid, text)'::regprocedure)
+  and not has_function_privilege('anon', 'public.offboard_employee(uuid, uuid, text)', 'execute')
+  and has_function_privilege('authenticated', 'public.offboard_employee(uuid, uuid, text)', 'execute'),
+  'only authenticated callers can execute the public security-invoker offboarding wrapper'
+);
+select ok(
+  (select prosecdef from pg_proc where oid = 'private.record_employee_offboarding_auth_failure(uuid, uuid)'::regprocedure)
+  and not (select prosecdef from pg_proc where oid = 'public.record_employee_offboarding_auth_failure(uuid, uuid)'::regprocedure)
+  and not has_function_privilege('anon', 'public.record_employee_offboarding_auth_failure(uuid, uuid)', 'execute')
+  and has_function_privilege('authenticated', 'public.record_employee_offboarding_auth_failure(uuid, uuid)', 'execute'),
+  'offboarding Auth-failure auditing uses a private definer implementation and authenticated invoker wrapper'
+);
 
 select is(
   (select format_type(atttypid, atttypmod)

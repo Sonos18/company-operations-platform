@@ -49,6 +49,7 @@ function privateAdminSymbolFiles(files: Array<{ path: string, source: string }>)
     'supabaseServiceRoleKey',
     'serviceRoleKey',
     'createSupabaseAdminClient',
+    'createSupabaseOffboardingAuthAdmin',
     'SupabaseAdminClient',
     'parseSupabaseAdminConfig',
   ]
@@ -84,6 +85,15 @@ async function invitationAuthAdapter() {
         inviteUser(email: string): Promise<unknown>
         findUserByEmail(email: string): Promise<unknown>
       }
+    : undefined
+}
+
+async function offboardingAuthAdapter() {
+  const module = await import('../../../server/utils/supabase-client') as Record<string, unknown>
+  const factory = module.createSupabaseOffboardingAuthAdmin
+  expect(factory).toBeTypeOf('function')
+  return typeof factory === 'function'
+    ? factory as (client: unknown) => { disableUser(userId: string): Promise<unknown> }
     : undefined
 }
 
@@ -282,6 +292,36 @@ describe('Supabase Auth admin boundary', () => {
     await expect(admin.inviteUser('retry@vqh.local')).resolves.toEqual({ kind: 'existing' })
     await expect(admin.inviteUser('retry@vqh.local')).resolves.toEqual({ kind: 'failed' })
     expect(listUsers).not.toHaveBeenCalled()
+  })
+
+  it('uses the narrow Auth-only adapter to disable an account with an explicit non-destructive ban duration', async () => {
+    const adapterFactory = await offboardingAuthAdapter()
+    if (!adapterFactory) return
+    const updateUserById = vi.fn().mockResolvedValue({
+      data: { user: { id: authUser(1).id } },
+      error: null,
+    })
+    const adapter = adapterFactory({ auth: { admin: { updateUserById } } })
+
+    await expect(adapter.disableUser(authUser(1).id)).resolves.toEqual({ kind: 'disabled' })
+    expect(updateUserById).toHaveBeenCalledWith(authUser(1).id, { ban_duration: '876000h' })
+  })
+
+  it('hides Auth disable provider failures behind the narrow failed result', async () => {
+    const adapterFactory = await offboardingAuthAdapter()
+    if (!adapterFactory) return
+    const adapter = adapterFactory({
+      auth: {
+        admin: {
+          updateUserById: vi.fn().mockResolvedValue({
+            data: { user: null },
+            error: { message: 'secret provider detail' },
+          }),
+        },
+      },
+    })
+
+    await expect(adapter.disableUser(authUser(1).id)).resolves.toEqual({ kind: 'failed' })
   })
 
   it('allows private Auth-admin symbols only in the exact server-side assembly allowlist', () => {

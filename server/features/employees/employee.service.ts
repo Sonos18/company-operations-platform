@@ -4,11 +4,16 @@ import type {
   EmployeeInvitationInput,
   EmployeeListQuery,
   EmployeeListResponse,
+  EmployeeOffboardingInput,
+  EmployeeOffboardingResult,
   EmployeeUpdateInput,
 } from '../../../shared/schemas/employees'
 import { employeeDetailSchema } from '../../../shared/schemas/employees'
 import { AppApiError } from '../../utils/api-error'
-import type { EmployeeInvitationAuthAdmin } from './employee-invitation-auth'
+import type {
+  EmployeeInvitationAuthAdmin,
+  EmployeeOffboardingAuthAdmin,
+} from './employee-invitation-auth'
 import type { EmployeeRepository } from './employee.repository'
 
 export interface EmployeeServiceContext {
@@ -30,6 +35,10 @@ function notFound(): never {
 
 function accountInviteFailed(): never {
   throw new AppApiError(502, 'ACCOUNT_INVITE_FAILED', 'Không thể gửi lời mời tài khoản.')
+}
+
+function offboardingFailed(): never {
+  throw new AppApiError(502, 'EMPLOYEE_OFFBOARDING_FAILED', 'Không thể hoàn tất quy trình nghỉ việc.')
 }
 
 function onboardingIncomplete(): never {
@@ -72,6 +81,10 @@ export function createEmployeeService(repository: EmployeeRepository) {
     async authorizeInvitation(context: EmployeeServiceContext): Promise<void> {
       requirePermission(context, 'account.invite')
       requirePermission(context, 'employee.create')
+    },
+    async authorizeOffboarding(context: EmployeeServiceContext): Promise<void> {
+      requirePermission(context, 'employee.offboard')
+      requirePermission(context, 'account.disable')
     },
     async invite(
       context: EmployeeServiceContext,
@@ -143,6 +156,33 @@ export function createEmployeeService(repository: EmployeeRepository) {
       const employee = await repository.updateEmployee(context.companyId, employeeId, input)
       if (!employee) return notFound()
       return withPrivateDetails(repository, context, employee, employeeId)
+    },
+    async offboard(
+      context: EmployeeServiceContext,
+      employeeId: string,
+      input: EmployeeOffboardingInput,
+      auth: EmployeeOffboardingAuthAdmin | (() => EmployeeOffboardingAuthAdmin),
+    ): Promise<EmployeeOffboardingResult> {
+      requirePermission(context, 'employee.offboard')
+      requirePermission(context, 'account.disable')
+
+      const result = await repository.offboardEmployee(context.companyId, employeeId, input.reason)
+      let disableResult: { kind: 'disabled' } | { kind: 'failed' }
+      try {
+        const authAdmin = typeof auth === 'function' ? auth() : auth
+        disableResult = await authAdmin.disableUser(result.userId)
+      } catch {
+        disableResult = { kind: 'failed' }
+      }
+
+      if (disableResult.kind === 'disabled') return result
+
+      try {
+        await repository.recordOffboardingAuthFailure(context.companyId, employeeId)
+      } catch {
+        // The business transaction is already complete; reconciliation is retry-safe.
+      }
+      return offboardingFailed()
     },
   }
 }

@@ -61,6 +61,8 @@ function repository(overrides: Partial<EmployeeRepository> = {}): EmployeeReposi
     getPrivateDetails: vi.fn().mockResolvedValue(privateDetails),
     updateEmployee: vi.fn().mockResolvedValue({ ...summary, privateDetails }),
     completeEmployeeOnboarding: vi.fn().mockResolvedValue(summary),
+    offboardEmployee: vi.fn().mockResolvedValue({ employeeId, userId: otherUserId }),
+    recordOffboardingAuthFailure: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
 }
@@ -456,5 +458,104 @@ describe('employee service', () => {
       { fullName: 'Như Nguyễn' },
     )).resolves.toEqual({ ...summary, privateDetails })
     expect(employeeRepository.getPrivateDetails).toHaveBeenCalledWith(companyId, employeeId)
+  })
+
+  it.each([
+    ['employee.offboard', ['employee.offboard']],
+    ['account.disable', ['account.disable']],
+  ] as const)('denies offboarding without %s before database or Auth administration', async (_missing, permissions) => {
+    const employeeRepository = repository()
+    const authFactory = vi.fn()
+    const service = createEmployeeService(employeeRepository) as unknown as {
+      offboard(context: ReturnType<typeof context>, employeeId: string, input: { reason: string }, authFactory: () => unknown): Promise<unknown>
+    }
+
+    await expect(service.offboard(
+      context(permissions as string[]),
+      employeeId,
+      { reason: 'Kết thúc hợp đồng' },
+      authFactory,
+    )).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    expect(authFactory).not.toHaveBeenCalled()
+    expect(employeeRepository.offboardEmployee).not.toHaveBeenCalled()
+  })
+
+  it('commits database offboarding before disabling the target Auth account', async () => {
+    const calls: string[] = []
+    const employeeRepository = repository({
+      offboardEmployee: vi.fn(async () => {
+        calls.push('database')
+        return { employeeId, userId: otherUserId }
+      }),
+    })
+    const auth = {
+      disableUser: vi.fn(async () => {
+        calls.push('auth')
+        return { kind: 'disabled' }
+      }),
+    }
+    const service = createEmployeeService(employeeRepository) as unknown as {
+      offboard(context: ReturnType<typeof context>, employeeId: string, input: { reason: string }, auth: typeof auth): Promise<unknown>
+    }
+
+    await expect(service.offboard(
+      context(['employee.offboard', 'account.disable']),
+      employeeId,
+      { reason: 'Kết thúc hợp đồng' },
+      auth,
+    )).resolves.toEqual({ employeeId, userId: otherUserId })
+    expect(calls).toEqual(['database', 'auth'])
+    expect(employeeRepository.offboardEmployee)
+      .toHaveBeenCalledWith(companyId, employeeId, 'Kết thúc hợp đồng')
+  })
+
+  it('records one redacted database audit failure and hides Auth provider details when account disable fails', async () => {
+    const calls: string[] = []
+    const employeeRepository = repository({
+      offboardEmployee: vi.fn(async () => {
+        calls.push('database')
+        return { employeeId, userId: otherUserId }
+      }),
+      recordOffboardingAuthFailure: vi.fn(async () => {
+        calls.push('audit')
+      }),
+    })
+    const auth = {
+      disableUser: vi.fn().mockResolvedValue({ kind: 'failed', providerDetail: 'secret provider detail' }),
+    }
+    const service = createEmployeeService(employeeRepository) as unknown as {
+      offboard(context: ReturnType<typeof context>, employeeId: string, input: { reason: string }, auth: typeof auth): Promise<unknown>
+    }
+
+    const result = service.offboard(
+      context(['employee.offboard', 'account.disable']),
+      employeeId,
+      { reason: 'Kết thúc hợp đồng' },
+      auth,
+    )
+    await expect(result).rejects.toMatchObject({ statusCode: 502, code: 'EMPLOYEE_OFFBOARDING_FAILED' })
+    await expect(result).rejects.not.toThrow(/provider|secret|credential/i)
+    expect(calls).toEqual(['database', 'audit'])
+    expect(employeeRepository.recordOffboardingAuthFailure)
+      .toHaveBeenCalledWith(companyId, employeeId)
+  })
+
+  it('retries idempotent database offboarding and disables the same target account again', async () => {
+    const employeeRepository = repository({
+      offboardEmployee: vi.fn().mockResolvedValue({ employeeId, userId: otherUserId }),
+    })
+    const auth = { disableUser: vi.fn().mockResolvedValue({ kind: 'disabled' }) }
+    const service = createEmployeeService(employeeRepository) as unknown as {
+      offboard(context: ReturnType<typeof context>, employeeId: string, input: { reason: string }, auth: typeof auth): Promise<unknown>
+    }
+    const requestContext = context(['employee.offboard', 'account.disable'])
+
+    await expect(service.offboard(requestContext, employeeId, { reason: 'Kết thúc hợp đồng' }, auth))
+      .resolves.toEqual({ employeeId, userId: otherUserId })
+    await expect(service.offboard(requestContext, employeeId, { reason: 'retry ignored' }, auth))
+      .resolves.toEqual({ employeeId, userId: otherUserId })
+    expect(employeeRepository.offboardEmployee)
+      .toHaveBeenCalledTimes(2)
+    expect(auth.disableUser).toHaveBeenCalledTimes(2)
   })
 })

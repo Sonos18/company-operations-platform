@@ -4,6 +4,7 @@ import { z } from 'zod'
 import {
   employeeInvitationInputSchema,
   employeeListQuerySchema,
+  employeeOffboardingInputSchema,
   employeeUpdateInputSchema,
 } from '../../../shared/schemas/employees'
 import { AppApiError } from '../../utils/api-error'
@@ -14,6 +15,7 @@ import { parseSupabaseAdminConfig } from '../../utils/supabase-config'
 import {
   createSupabaseAdminClient,
   createSupabaseInvitationAuthAdmin,
+  createSupabaseOffboardingAuthAdmin,
 } from '../../utils/supabase-client'
 import { createSupabaseEmployeeRepository } from './employee.repository'
 import { createEmployeeService } from './employee.service'
@@ -23,6 +25,7 @@ const uuidSchema = z.string().uuid()
 
 export interface EmployeeRouteService {
   authorizeInvitation(context: EmployeeServiceContext): Promise<void>
+  authorizeOffboarding(context: EmployeeServiceContext): Promise<void>
   invite(context: EmployeeServiceContext, input: z.infer<typeof employeeInvitationInputSchema>): Promise<unknown>
   list(context: EmployeeServiceContext, query: z.infer<typeof employeeListQuerySchema>): Promise<unknown>
   detail(context: EmployeeServiceContext, employeeId: string): Promise<unknown>
@@ -30,6 +33,11 @@ export interface EmployeeRouteService {
     context: EmployeeServiceContext,
     employeeId: string,
     input: z.infer<typeof employeeUpdateInputSchema>,
+  ): Promise<unknown>
+  offboard(
+    context: EmployeeServiceContext,
+    employeeId: string,
+    input: z.infer<typeof employeeOffboardingInputSchema>,
   ): Promise<unknown>
 }
 
@@ -89,6 +97,14 @@ export function createEmployeeRoutes(dependencies: EmployeeRouteDependencies) {
       const context = await dependencies.resolveContext(event, companyId)
       return dependencies.service.update(context, employeeId, input)
     },
+    async offboard(event: unknown) {
+      const companyId = companyIdFrom(event)
+      const employeeId = employeeIdFrom(event)
+      const context = await dependencies.resolveContext(event, companyId)
+      await dependencies.service.authorizeOffboarding(context)
+      const input = parse(employeeOffboardingInputSchema.safeParse(await readBody(event as never)))
+      return dependencies.service.offboard(context, employeeId, input)
+    },
   }
 }
 
@@ -104,14 +120,23 @@ export function createSupabaseEmployeeRoutes(event: H3Event) {
     return createSupabaseInvitationAuthAdmin(createSupabaseAdminClient(config))
   }
 
+  function offboardingAuthAdmin() {
+    const runtime = useRuntimeConfig(event)
+    const config = parseSupabaseAdminConfig({
+      url: runtime.public.supabaseUrl,
+      serviceRoleKey: runtime.supabaseServiceRoleKey,
+    })
+    return createSupabaseOffboardingAuthAdmin(createSupabaseAdminClient(config))
+  }
+
   async function resolveContext(_event: unknown, companyId: string): Promise<EmployeeServiceContext> {
     const { actor, db } = await requireAuthenticatedRequest(event)
-    service = createEmployeeService(createSupabaseEmployeeRepository(db))
     const tenancy = createTenancyService(
       createSupabaseTenancyReader(db),
       createSupabaseAuthorizationReader(db),
     )
     const context = await tenancy.resolveCompanyContext(actor.userId, companyId)
+    service = createEmployeeService(createSupabaseEmployeeRepository(db))
     return { actorId: actor.userId, ...context }
   }
 
@@ -126,10 +151,14 @@ export function createSupabaseEmployeeRoutes(event: H3Event) {
     resolveContext,
     service: {
       authorizeInvitation: context => resolvedService().authorizeInvitation(context),
+      authorizeOffboarding: context => resolvedService().authorizeOffboarding(context),
       invite: (context, input) => resolvedService().invite(context, input, invitationAuthAdmin),
       list: (...args) => resolvedService().list(...args),
       detail: (...args) => resolvedService().detail(...args),
       update: (...args) => resolvedService().update(...args),
+      offboard: (context, employeeId, input) => (
+        resolvedService().offboard(context, employeeId, input, offboardingAuthAdmin)
+      ),
     },
   })
 }

@@ -20,3 +20,15 @@ export const roleAssignmentInputSchema = z.object({
   reason: z.string().trim().min(1),
 }).strict()
 export type RoleAssignmentInput = z.infer<typeof roleAssignmentInputSchema>
+
+export const roleAssignmentRevokeInputSchema = z.object({
+  reason: z.string().trim().min(1),
+}).strict()
+export type RoleAssignmentRevokeInput = z.infer<typeof roleAssignmentRevokeInputSchema>
+
+export const roleAssignmentResultSchema = z.object({
+  id: z.number().int().positive(),
+  targetUserId: z.string().uuid(),
+  roleId: z.string().uuid(),
+}).strict()
+export type RoleAssignmentResult = z.infer<typeof roleAssignmentResultSchema>

@@ -92,8 +92,10 @@ insert into public.permissions (code, module, name, description) values
   ('account.invite', 'account', 'Invite accounts', 'Invite an account for employee onboarding'),
   ('employee.create', 'employee', 'Create employees', 'Onboard an employee'),
   ('employee.update', 'employee', 'Update employees', 'Update employee profiles'),
+  ('employee.offboard', 'employee', 'Offboard employees', 'Terminate an employee safely'),
   ('role.assign', 'role', 'Assign company roles', 'Grant company role assignments'),
-  ('role.revoke', 'role', 'Revoke company roles', 'Revoke company role assignments');
+  ('role.revoke', 'role', 'Revoke company roles', 'Revoke company role assignments'),
+  ('account.disable', 'account', 'Disable accounts', 'Disable an employee account after offboarding');
 
 insert into public.role_permissions (role_id, permission_code) values
   ('41000000-0000-4000-8000-000000000301', 'employee.read_directory'),
@@ -105,6 +107,8 @@ insert into public.role_permissions (role_id, permission_code) values
   ('41000000-0000-4000-8000-000000000303', 'employee.read_private'),
   ('41000000-0000-4000-8000-000000000303', 'employee.create'),
   ('41000000-0000-4000-8000-000000000303', 'employee.update'),
+  ('41000000-0000-4000-8000-000000000303', 'employee.offboard'),
+  ('41000000-0000-4000-8000-000000000303', 'account.disable'),
   ('41000000-0000-4000-8000-000000000303', 'role.assign'),
   ('41000000-0000-4000-8000-000000000303', 'role.revoke'),
   ('42000000-0000-4000-8000-000000000301', 'employee.read_directory'),
@@ -1191,6 +1195,187 @@ select throws_ok(
   '42501',
   'permission denied for table audit_events',
   'audit events are append-only to authenticated callers'
+);
+
+reset role;
+insert into auth.users (id, email) values
+  ('41000000-0000-4000-8000-000000000011'::uuid, 'offboarding-operator@employee-rbac.invalid'),
+  ('41000000-0000-4000-8000-000000000012'::uuid, 'offboarding-target@employee-rbac.invalid');
+insert into public.tenant_memberships (user_id, tenant_id, roles) values
+  ('41000000-0000-4000-8000-000000000011'::uuid, :'tenant_a_id'::uuid, array['employee']),
+  ('41000000-0000-4000-8000-000000000012'::uuid, :'tenant_a_id'::uuid, array['employee']);
+insert into public.company_memberships (user_id, tenant_id, company_id, roles) values
+  ('41000000-0000-4000-8000-000000000011'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['employee']),
+  ('41000000-0000-4000-8000-000000000012'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['employee']);
+insert into public.employees (id, tenant_id, company_id, user_id, employee_code, full_name, work_email, department_id, employment_status, created_by) values
+  ('41000000-0000-4000-8000-000000000111'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, :'admin_user_id'::uuid, 'EMP-ADMIN', 'Admin Employee', 'admin@employee-rbac.invalid', '41000000-0000-4000-8000-000000000201'::uuid, 'active', :'admin_user_id'::uuid),
+  ('41000000-0000-4000-8000-000000000112'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, '41000000-0000-4000-8000-000000000012'::uuid, 'EMP-OFFBOARD', 'Offboarding Target', 'offboarding-target@employee-rbac.invalid', '41000000-0000-4000-8000-000000000201'::uuid, 'active', :'admin_user_id'::uuid);
+insert into public.employee_private_details (employee_id, tenant_id, company_id, personal_email) values
+  ('41000000-0000-4000-8000-000000000112'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, 'target.private@employee-rbac.invalid');
+insert into public.role_permissions (role_id, permission_code) values
+  ('41000000-0000-4000-8000-000000000302'::uuid, 'employee.offboard'),
+  ('41000000-0000-4000-8000-000000000302'::uuid, 'account.disable');
+insert into public.company_role_assignments (tenant_id, company_id, user_id, role_id, granted_by, grant_reason) values
+  (:'tenant_a_id'::uuid, :'company_a_id'::uuid, '41000000-0000-4000-8000-000000000011'::uuid, '41000000-0000-4000-8000-000000000302'::uuid, :'admin_user_id'::uuid, 'offboarding operator'),
+  (:'tenant_a_id'::uuid, :'company_a_id'::uuid, '41000000-0000-4000-8000-000000000012'::uuid, '41000000-0000-4000-8000-000000000301'::uuid, :'admin_user_id'::uuid, 'offboarding target employee role');
+
+set local role authenticated;
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', '41000000-0000-4000-8000-000000000011'), true);
+select throws_ok(
+  format('select * from public.offboard_employee(%L::uuid, %L::uuid, %L)', :'company_a_id', :'cross_company_employee_id', 'wrong company'),
+  'P0001',
+  'EMPLOYEE_NOT_FOUND',
+  'offboarding a cross-company employee uses the same not-found result as an absent scoped target'
+);
+select throws_ok(
+  format('select * from public.offboard_employee(%L::uuid, %L::uuid, %L)', :'company_a_id', '41000000-0000-4000-8000-000000009999', 'absent target'),
+  'P0001',
+  'EMPLOYEE_NOT_FOUND',
+  'offboarding a nonexistent employee does not reveal a different target state'
+);
+select throws_ok(
+  format('select * from public.offboard_employee(%L::uuid, %L::uuid, %L)', :'company_a_id', '41000000-0000-4000-8000-000000000111', 'last admin'),
+  'P0001',
+  'LAST_COMPANY_ADMIN_REQUIRED',
+  'offboarding cannot bypass the final-company-admin assignment trigger'
+);
+select is(
+  (select employee_id from public.offboard_employee(
+    :'company_a_id'::uuid,
+    '41000000-0000-4000-8000-000000000112'::uuid,
+    'Kết thúc hợp đồng'
+  )),
+  '41000000-0000-4000-8000-000000000112'::uuid,
+  'authorized operator offboards the scoped target after database authorization'
+);
+select is(
+  (select employment_status from public.employees where id = '41000000-0000-4000-8000-000000000112'::uuid),
+  'terminated',
+  'offboarding marks the employee terminated'
+);
+select ok(
+  (select termination_date = current_date and termination_reason = 'Kết thúc hợp đồng'
+   from public.employees where id = '41000000-0000-4000-8000-000000000112'::uuid)
+  and not (select is_active from public.company_memberships where company_id = :'company_a_id'::uuid and user_id = '41000000-0000-4000-8000-000000000012'::uuid),
+  'offboarding records termination metadata and deactivates company membership'
+);
+select is(
+  (select count(*) from public.employee_private_details where employee_id = '41000000-0000-4000-8000-000000000112'::uuid),
+  1::bigint,
+  'offboarding preserves the employee private-detail history'
+);
+select ok(
+  exists (
+    select 1
+    from public.company_role_assignments
+    where company_id = :'company_a_id'::uuid
+      and user_id = '41000000-0000-4000-8000-000000000012'::uuid
+      and revoked_at is not null
+      and revoked_by = '41000000-0000-4000-8000-000000000011'::uuid
+      and revoke_reason = 'Kết thúc hợp đồng'
+  )
+  and not exists (
+    select 1 from public.company_role_assignments
+    where company_id = :'company_a_id'::uuid
+      and user_id = '41000000-0000-4000-8000-000000000012'::uuid
+      and revoked_at is null
+  ),
+  'offboarding logically revokes role history without hard deletes'
+);
+select is(
+  (select user_id from public.offboard_employee(
+    :'company_a_id'::uuid,
+    '41000000-0000-4000-8000-000000000112'::uuid,
+    'retry uses original record'
+  )),
+  '41000000-0000-4000-8000-000000000012'::uuid,
+  'already-offboarded retry returns the same narrow target result'
+);
+select is(
+  (select count(*) from public.company_role_assignments where company_id = :'company_a_id'::uuid and user_id = '41000000-0000-4000-8000-000000000012'::uuid),
+  1::bigint,
+  'already-offboarded retry does not create or erase assignment history'
+);
+select public.record_employee_offboarding_auth_failure(
+  :'company_a_id'::uuid,
+  '41000000-0000-4000-8000-000000000112'::uuid
+);
+select public.record_employee_offboarding_auth_failure(
+  :'company_a_id'::uuid,
+  '41000000-0000-4000-8000-000000000112'::uuid
+);
+select is(
+  (select count(*) from public.audit_events
+   where company_id = :'company_a_id'::uuid
+     and actor_id = '41000000-0000-4000-8000-000000000011'::uuid
+     and action = 'employee.offboarding_auth_disable_failed'
+     and resource_id = '41000000-0000-4000-8000-000000000112'),
+  1::bigint,
+  'Auth-disable audit failure is retry-safe and appended once'
+);
+select ok(
+  not exists (
+    select 1 from public.audit_events
+    where action = 'employee.offboarding_auth_disable_failed'
+      and coalesce(after_summary, '{}'::jsonb) ?| array['reason', 'provider_error', 'provider_detail', 'credential', 'credentials']
+  ),
+  'Auth-disable audit failures contain no provider detail or credentials'
+);
+
+reset role;
+insert into public.role_permissions (role_id, permission_code)
+values ('41000000-0000-4000-8000-000000000301'::uuid, 'employee.offboard');
+set local role authenticated;
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'grant_target_user_id'), true);
+select throws_ok(
+  format('select public.record_employee_offboarding_auth_failure(%L::uuid, %L::uuid)', :'company_a_id', '41000000-0000-4000-8000-000000000112'),
+  'P0001',
+  'PERMISSION_DENIED',
+  'offboard-only callers cannot use the audit RPC to probe terminated targets'
+);
+select throws_ok(
+  format('select * from public.offboard_employee(%L::uuid, %L::uuid, %L)', :'company_a_id', '41000000-0000-4000-8000-000000009999', 'missing account disable'),
+  'P0001',
+  'PERMISSION_DENIED',
+  'offboard-only callers are denied before a nonexistent target can be inspected'
+);
+
+reset role;
+insert into public.roles (id, tenant_id, company_id, code, name, description)
+values (
+  '41000000-0000-4000-8000-000000000305'::uuid,
+  :'tenant_a_id'::uuid,
+  :'company_a_id'::uuid,
+  'account_disable_only',
+  'Account disable only',
+  'Offboarding permission-combination fixture'
+);
+insert into public.role_permissions (role_id, permission_code)
+values ('41000000-0000-4000-8000-000000000305'::uuid, 'account.disable');
+insert into public.company_role_assignments (tenant_id, company_id, user_id, role_id, granted_by, grant_reason)
+values (
+  :'tenant_a_id'::uuid,
+  :'company_a_id'::uuid,
+  :'hr_user_id'::uuid,
+  '41000000-0000-4000-8000-000000000305'::uuid,
+  :'admin_user_id'::uuid,
+  'account-disable-only offboarding fixture'
+);
+set local role authenticated;
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'hr_user_id'), true);
+select throws_ok(
+  format('select * from public.offboard_employee(%L::uuid, %L::uuid, %L)', :'company_a_id', '41000000-0000-4000-8000-000000009999', 'missing offboard permission'),
+  'P0001',
+  'PERMISSION_DENIED',
+  'account-disable-only callers are denied before a nonexistent target can be inspected'
+);
+
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'admin_user_id'), true);
+select throws_ok(
+  format('select * from public.offboard_employee(%L::uuid, %L::uuid, %L)', :'company_a_id', '41000000-0000-4000-8000-000000000111', 'self'),
+  'P0001',
+  'PERMISSION_DENIED',
+  'employees cannot offboard themselves even with both permissions'
 );
 
 select * from finish();
