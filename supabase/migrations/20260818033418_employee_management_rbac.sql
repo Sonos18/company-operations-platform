@@ -465,6 +465,54 @@ as $$
     and membership.is_active;
 $$;
 
+create or replace function private.get_company_employee_access_links(
+  target_company_id uuid,
+  target_employee_ids uuid[]
+)
+returns table (employee_id uuid, user_id uuid, role_codes text[])
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select
+    employee.id,
+    employee.user_id,
+    pg_catalog.array_agg(distinct company_role.code order by company_role.code)
+  from public.employees employee
+  join public.company_memberships employee_membership
+    on employee_membership.tenant_id = employee.tenant_id
+   and employee_membership.company_id = employee.company_id
+   and employee_membership.user_id = employee.user_id
+   and employee_membership.is_active
+  join public.company_role_assignments assignment
+    on assignment.tenant_id = employee.tenant_id
+   and assignment.company_id = employee.company_id
+   and assignment.user_id = employee.user_id
+   and assignment.revoked_at is null
+  join public.roles company_role
+    on company_role.id = assignment.role_id
+   and company_role.tenant_id = assignment.tenant_id
+   and company_role.company_id = assignment.company_id
+   and company_role.is_active
+  where employee.company_id = target_company_id
+    and employee.id = any(target_employee_ids)
+    and exists (
+      select 1
+      from public.company_memberships actor_membership
+      where actor_membership.tenant_id = employee.tenant_id
+        and actor_membership.company_id = employee.company_id
+        and actor_membership.user_id = auth.uid()
+        and actor_membership.is_active
+    )
+    and (
+      employee.user_id = auth.uid()
+      or private.has_company_permission(employee.tenant_id, employee.company_id, 'employee.read_all')
+      or private.has_company_permission(employee.tenant_id, employee.company_id, 'employee.read_private')
+    )
+  group by employee.id, employee.user_id;
+$$;
+
 create or replace function private.can_read_role_catalog(
   target_tenant_id uuid,
   target_company_id uuid
@@ -513,6 +561,22 @@ security invoker
 set search_path = ''
 as $$
   select * from private.get_my_company_access(target_company_id);
+$$;
+
+create or replace function public.get_company_employee_access_links(
+  target_company_id uuid,
+  target_employee_ids uuid[]
+)
+returns table (employee_id uuid, user_id uuid, role_codes text[])
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select * from private.get_company_employee_access_links(
+    target_company_id,
+    target_employee_ids
+  );
 $$;
 
 create or replace function private.complete_employee_onboarding(
@@ -1379,7 +1443,25 @@ create policy roles_select_company_role_catalog on public.roles
   for select to authenticated
   using (
     is_active
-    and private.can_read_role_catalog(tenant_id, company_id)
+    and (
+      private.can_read_role_catalog(tenant_id, company_id)
+      or private.has_company_permission(tenant_id, company_id, 'employee.read_all')
+      or private.has_company_permission(tenant_id, company_id, 'employee.read_private')
+      or exists (
+        select 1
+        from public.company_role_assignments assignment
+        join public.company_memberships membership
+          on membership.tenant_id = assignment.tenant_id
+         and membership.company_id = assignment.company_id
+         and membership.user_id = assignment.user_id
+         and membership.is_active
+        where assignment.role_id = roles.id
+          and assignment.tenant_id = roles.tenant_id
+          and assignment.company_id = roles.company_id
+          and assignment.user_id = auth.uid()
+          and assignment.revoked_at is null
+      )
+    )
   );
 
 create policy permissions_select_active_company_member on public.permissions
@@ -1404,9 +1486,9 @@ create policy company_role_assignments_select_self_or_role_manager on public.com
     or private.can_read_role_catalog(tenant_id, company_id)
   );
 
--- Directory access is intentionally column-scoped.  The account linkage,
--- provenance, and probation fields are not Data API columns for authenticated
--- callers; private data has a separate RLS-protected table.
+-- Directory access is intentionally column-scoped.  Account linkage and
+-- provenance are not Data API columns for authenticated callers; private data
+-- has a separate RLS-protected table.
 revoke all on table public.departments, public.positions, public.employees,
   public.employee_private_details, public.roles, public.permissions,
   public.role_permissions, public.company_role_assignments, public.audit_events
@@ -1425,6 +1507,8 @@ grant select (
   department_id,
   position_id,
   manager_employee_id,
+  hire_date,
+  probation_end_date,
   employment_status,
   created_at,
   updated_at
@@ -1446,6 +1530,8 @@ revoke all on function public.is_tenant_member(uuid) from public, anon;
 revoke all on function public.is_company_member(uuid, uuid) from public, anon;
 revoke all on function private.get_my_company_access(uuid) from public, anon, authenticated;
 revoke all on function public.get_my_company_access(uuid) from public, anon, authenticated;
+revoke all on function private.get_company_employee_access_links(uuid, uuid[]) from public, anon, authenticated;
+revoke all on function public.get_company_employee_access_links(uuid, uuid[]) from public, anon, authenticated;
 revoke all on function public.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) from public, anon;
 revoke all on function public.grant_company_role_assignment(uuid, uuid, uuid, text) from public, anon;
 revoke all on function public.revoke_company_role_assignment(bigint, text) from public, anon;
@@ -1458,6 +1544,7 @@ grant execute on function private.is_own_employee_record(uuid, uuid, uuid) to au
 grant execute on function private.is_active_employee_directory_record(uuid, uuid, uuid) to authenticated;
 grant execute on function private.has_company_permission(uuid, uuid, text) to authenticated;
 grant execute on function private.get_my_company_access(uuid) to authenticated;
+grant execute on function private.get_company_employee_access_links(uuid, uuid[]) to authenticated;
 grant execute on function private.can_read_role_catalog(uuid, uuid) to authenticated;
 grant execute on function private.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) to authenticated;
 grant execute on function private.grant_company_role_assignment(uuid, uuid, uuid, text) to authenticated;
@@ -1465,6 +1552,7 @@ grant execute on function private.revoke_company_role_assignment(bigint, text) t
 grant execute on function public.is_tenant_member(uuid) to authenticated;
 grant execute on function public.is_company_member(uuid, uuid) to authenticated;
 grant execute on function public.get_my_company_access(uuid) to authenticated;
+grant execute on function public.get_company_employee_access_links(uuid, uuid[]) to authenticated;
 grant execute on function public.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) to authenticated;
 grant execute on function public.grant_company_role_assignment(uuid, uuid, uuid, text) to authenticated;
 grant execute on function public.revoke_company_role_assignment(bigint, text) to authenticated;

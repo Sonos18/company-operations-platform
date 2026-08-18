@@ -145,6 +145,17 @@ select ok(
   and has_function_privilege('authenticated', 'public.get_my_company_access(uuid)', 'execute'),
   'only authenticated users can execute the public access RPC'
 );
+select has_function(
+  'public',
+  'get_company_employee_access_links',
+  array['uuid', 'uuid[]'],
+  'employee access-link RPC is available with a company and requested employee IDs'
+);
+select ok(
+  not has_function_privilege('anon', 'public.get_company_employee_access_links(uuid, uuid[])', 'execute')
+  and has_function_privilege('authenticated', 'public.get_company_employee_access_links(uuid, uuid[])', 'execute'),
+  'only authenticated users can execute the employee access-link RPC'
+);
 select ok(
   not has_function_privilege('anon', 'private.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date)', 'execute'),
   'anonymous users cannot execute the private onboarding implementation'
@@ -208,6 +219,28 @@ reset role;
 set local role authenticated;
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'self_user_id'), true);
 select is((select count(*) from public.employees where company_id = :'company_a_id'::uuid), 2::bigint, 'employee reads the company directory');
+select is(
+  (
+    select array_agg(employee_id order by employee_id)
+    from public.get_company_employee_access_links(
+      :'company_a_id'::uuid,
+      array[:'self_employee_id'::uuid, :'other_employee_id'::uuid]
+    )
+  ),
+  array[:'self_employee_id'::uuid],
+  'ordinary employee access links expose only the caller own account and roles'
+);
+select is(
+  (
+    select role_codes
+    from public.get_company_employee_access_links(
+      :'company_a_id'::uuid,
+      array[:'self_employee_id'::uuid]
+    )
+  ),
+  array['employee']::text[],
+  'ordinary employee access links expose only active normalized role codes'
+);
 select throws_ok(
   'select user_id from public.employees',
   '42501',
@@ -225,6 +258,18 @@ select is(
   'employee cannot read another private profile'
 );
 select is((select count(*) from public.employees where company_id = :'company_b_id'::uuid), 0::bigint, 'employee cannot read another company directory');
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'hr_user_id'), true);
+select is(
+  (
+    select array_agg(employee_id order by employee_id)
+    from public.get_company_employee_access_links(
+      :'company_a_id'::uuid,
+      array[:'self_employee_id'::uuid, :'other_employee_id'::uuid]
+    )
+  ),
+  array[:'self_employee_id'::uuid, :'other_employee_id'::uuid],
+  'private-directory readers receive requested active scoped employee links'
+);
 
 reset role;
 update public.company_memberships
