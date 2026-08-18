@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createTenancyService } from '../../../server/features/tenancy/tenancy.service'
+import { createSupabaseTenancyReader, createTenancyService } from '../../../server/features/tenancy/tenancy.service'
 
 const vqh = {
   tenantId: '10000000-0000-4000-8000-000000000010',
@@ -11,6 +11,30 @@ const vqh = {
 const normalizedAccess = {
   roles: ['employee'],
   permissions: ['employee.read_directory'] as const,
+}
+
+function membershipDb(active: boolean) {
+  const membershipQuery = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    order: vi.fn(),
+    then: (resolve: (value: unknown) => unknown) => resolve({
+      data: [{
+        tenant_id: vqh.tenantId,
+        company_id: vqh.companyId,
+        companies: { code: vqh.companyCode, name: vqh.companyName },
+      }],
+      error: null,
+    }),
+  }
+  membershipQuery.select.mockReturnValue(membershipQuery)
+  membershipQuery.eq.mockReturnValue(membershipQuery)
+  membershipQuery.order.mockReturnValue(membershipQuery)
+
+  return {
+    from: vi.fn().mockReturnValue(membershipQuery),
+    rpc: vi.fn().mockResolvedValue({ data: active, error: null }),
+  }
 }
 
 describe('tenancy service', () => {
@@ -50,5 +74,33 @@ describe('tenancy service', () => {
     await expect(createTenancyService(reader, authorization).resolveCompanyContext('user-vqh', '10000000-0000-4000-8000-000000000099'))
       .rejects.toMatchObject({ statusCode: 403, code: 'COMPANY_FORBIDDEN' })
     expect(authorization.listAccess).not.toHaveBeenCalled()
+  })
+
+  it('denies company context when the active-membership RPC returns false', async () => {
+    const db = membershipDb(false)
+    const authorization = { listAccess: vi.fn() }
+    const service = createTenancyService(
+      createSupabaseTenancyReader(db as never),
+      authorization,
+    )
+
+    await expect(service.resolveCompanyContext('user-vqh', vqh.companyId))
+      .rejects.toMatchObject({ statusCode: 403, code: 'COMPANY_FORBIDDEN' })
+    expect(authorization.listAccess).not.toHaveBeenCalled()
+  })
+
+  it('resolves company context when the active-membership RPC returns true', async () => {
+    const db = membershipDb(true)
+    const authorization = { listAccess: vi.fn().mockResolvedValue(normalizedAccess) }
+    const service = createTenancyService(
+      createSupabaseTenancyReader(db as never),
+      authorization,
+    )
+
+    await expect(service.resolveCompanyContext('user-vqh', vqh.companyId)).resolves.toEqual({
+      tenantId: vqh.tenantId,
+      companyId: vqh.companyId,
+      ...normalizedAccess,
+    })
   })
 })

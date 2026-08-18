@@ -57,12 +57,17 @@ describe('company context route', () => {
       actor: { userId: 'user-vqh', email: 'owner@vqh.local' },
       db: {
         from: vi.fn().mockReturnValue(membershipQuery),
-        rpc: vi.fn().mockResolvedValue({
-          data: [{
-            roles: ['employee'],
-            permissions: ['employee.read_directory'],
-          }],
-          error: null,
+        rpc: vi.fn((functionName: string) => {
+          if (functionName === 'is_company_member') {
+            return Promise.resolve({ data: true, error: null })
+          }
+          return Promise.resolve({
+            data: [{
+              roles: ['employee'],
+              permissions: ['employee.read_directory'],
+            }],
+            error: null,
+          })
         }),
       },
     })

@@ -65,14 +65,22 @@ function mapMembership(row: MembershipRow): CompanyMembership {
 }
 
 export function createSupabaseTenancyReader(db: UserSupabaseClient): TenancyReader {
+  async function isActiveMembership(membership: CompanyMembership): Promise<boolean> {
+    const { data, error } = await db.rpc('is_company_member', {
+      target_tenant_id: membership.tenantId,
+      target_company_id: membership.companyId,
+    })
+    if (error) {
+      throw new AppApiError(500, 'INTERNAL_ERROR', 'Không thể xác thực quyền truy cập công ty.')
+    }
+    return data === true
+  }
+
   async function query(userId: string, companyId?: string): Promise<CompanyMembership[]> {
     let request = db
       .from('company_memberships')
       .select('tenant_id, company_id, companies!inner(code, name)')
       .eq('user_id', userId)
-      // This migration adds is_active; generated database types intentionally
-      // remain untouched until the managed type-generation workflow is available.
-      .eq('is_active' as never, true)
       .order('company_id')
     if (companyId) request = request.eq('company_id', companyId)
 
@@ -80,7 +88,10 @@ export function createSupabaseTenancyReader(db: UserSupabaseClient): TenancyRead
     if (error) {
       throw new AppApiError(500, 'INTERNAL_ERROR', 'Không thể đọc danh sách công ty.')
     }
-    return (data as unknown as MembershipRow[]).map(mapMembership)
+    const memberships = (data as unknown as MembershipRow[]).map(mapMembership)
+    return (await Promise.all(memberships.map(async membership => (
+      await isActiveMembership(membership) ? membership : null
+    )))).filter((membership): membership is CompanyMembership => membership !== null)
   }
 
   return {
