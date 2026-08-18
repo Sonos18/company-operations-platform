@@ -1,16 +1,28 @@
 import type { CompanyAccess, CompanyRequestContext } from '../../../shared/schemas/session'
+import type { AuthorizationReader } from '../authorization/authorization.service'
 import { AppApiError } from '../../utils/api-error'
 import type { UserSupabaseClient } from '../../utils/supabase-client'
 
-export interface TenancyReader {
-  listCompanyAccess(userId: string): Promise<CompanyAccess[]>
-  findCompanyAccess(userId: string, companyId: string): Promise<CompanyAccess | null>
+export interface CompanyMembership {
+  tenantId: string
+  companyId: string
+  companyCode: string
+  companyName: string
 }
 
-export function createTenancyService(reader: TenancyReader) {
+export interface TenancyReader {
+  listCompanyAccess(userId: string): Promise<CompanyMembership[]>
+  findCompanyAccess(userId: string, companyId: string): Promise<CompanyMembership | null>
+}
+
+export function createTenancyService(reader: TenancyReader, authorization: AuthorizationReader) {
   return {
-    listCompanies(userId: string) {
-      return reader.listCompanyAccess(userId)
+    async listCompanies(userId: string): Promise<CompanyAccess[]> {
+      const memberships = await reader.listCompanyAccess(userId)
+      return Promise.all(memberships.map(async membership => ({
+        ...membership,
+        ...await authorization.listAccess(userId, membership.companyId),
+      })))
     },
     async resolveCompanyContext(
       userId: string,
@@ -27,8 +39,7 @@ export function createTenancyService(reader: TenancyReader) {
       return {
         tenantId: membership.tenantId,
         companyId: membership.companyId,
-        roles: membership.roles,
-        permissions: membership.permissions,
+        ...await authorization.listAccess(userId, companyId),
       }
     },
   }
@@ -37,11 +48,10 @@ export function createTenancyService(reader: TenancyReader) {
 interface MembershipRow {
   tenant_id: string
   company_id: string
-  roles: string[]
   companies: { code: string; name: string } | Array<{ code: string; name: string }>
 }
 
-function mapMembership(row: MembershipRow): CompanyAccess {
+function mapMembership(row: MembershipRow): CompanyMembership {
   const company = Array.isArray(row.companies) ? row.companies[0] : row.companies
   if (!company) {
     throw new AppApiError(500, 'INTERNAL_ERROR', 'Không thể đọc thông tin công ty.')
@@ -51,19 +61,18 @@ function mapMembership(row: MembershipRow): CompanyAccess {
     companyId: row.company_id,
     companyCode: company.code,
     companyName: company.name,
-    // The compatibility membership array is never an authorization input.
-    // Task 6 replaces this display projection with normalized assignments.
-    roles: row.roles,
-    permissions: [],
   }
 }
 
 export function createSupabaseTenancyReader(db: UserSupabaseClient): TenancyReader {
-  async function query(userId: string, companyId?: string): Promise<CompanyAccess[]> {
+  async function query(userId: string, companyId?: string): Promise<CompanyMembership[]> {
     let request = db
       .from('company_memberships')
-      .select('tenant_id, company_id, roles, companies!inner(code, name)')
+      .select('tenant_id, company_id, companies!inner(code, name)')
       .eq('user_id', userId)
+      // This migration adds is_active; generated database types intentionally
+      // remain untouched until the managed type-generation workflow is available.
+      .eq('is_active' as never, true)
       .order('company_id')
     if (companyId) request = request.eq('company_id', companyId)
 

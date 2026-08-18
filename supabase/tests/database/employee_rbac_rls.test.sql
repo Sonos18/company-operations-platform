@@ -13,6 +13,7 @@ select no_plan();
 \set legacy_admin_user_id '41000000-0000-4000-8000-000000000006'
 \set grant_target_user_id '41000000-0000-4000-8000-000000000007'
 \set onboarding_user_id '41000000-0000-4000-8000-000000000008'
+\set access_target_user_id '41000000-0000-4000-8000-000000000009'
 \set unrelated_admin_user_id '42000000-0000-4000-8000-000000000001'
 \set self_employee_id '41000000-0000-4000-8000-000000000101'
 \set other_employee_id '41000000-0000-4000-8000-000000000102'
@@ -28,6 +29,7 @@ insert into auth.users (id, email) values
   (:'legacy_admin_user_id'::uuid, 'legacy-admin@employee-rbac.invalid'),
   (:'grant_target_user_id'::uuid, 'grant-target@employee-rbac.invalid'),
   (:'onboarding_user_id'::uuid, 'onboarding@employee-rbac.invalid'),
+  (:'access_target_user_id'::uuid, 'access-target@employee-rbac.invalid'),
   (:'unrelated_admin_user_id'::uuid, 'unrelated-admin@employee-rbac.invalid');
 
 insert into public.tenants (id, code, name) values
@@ -46,6 +48,7 @@ insert into public.tenant_memberships (user_id, tenant_id, roles) values
   (:'second_admin_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
   (:'legacy_admin_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
   (:'grant_target_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
+  (:'access_target_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
   (:'unrelated_admin_user_id'::uuid, :'tenant_b_id'::uuid, array['tenant_admin']);
 
 insert into public.company_memberships (user_id, tenant_id, company_id, roles) values
@@ -56,6 +59,7 @@ insert into public.company_memberships (user_id, tenant_id, company_id, roles) v
   (:'second_admin_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['employee']),
   (:'legacy_admin_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['company_admin']),
   (:'grant_target_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['employee']),
+  (:'access_target_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['employee']),
   (:'unrelated_admin_user_id'::uuid, :'tenant_b_id'::uuid, :'company_b_id'::uuid, array['employee']);
 
 insert into public.departments (id, tenant_id, company_id, code, name) values
@@ -131,6 +135,15 @@ where tenant_id = :'tenant_a_id'::uuid
 select ok(
   not has_function_privilege('anon', 'private.has_company_permission(uuid, uuid, text)', 'execute'),
   'anonymous users cannot execute the private permission helper'
+);
+select ok(
+  not has_function_privilege('anon', 'private.get_my_company_access(uuid)', 'execute'),
+  'anonymous users cannot execute the private access implementation'
+);
+select ok(
+  not has_function_privilege('anon', 'public.get_my_company_access(uuid)', 'execute')
+  and has_function_privilege('authenticated', 'public.get_my_company_access(uuid)', 'execute'),
+  'only authenticated users can execute the public access RPC'
 );
 select ok(
   not has_function_privilege('anon', 'private.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date)', 'execute'),
@@ -279,6 +292,16 @@ select throws_ok(
 );
 
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated","app_metadata":{"company_roles":["company_admin"]},"company_roles":["company_admin"]}', :'legacy_admin_user_id'), true);
+select is(
+  (select roles from public.get_my_company_access(:'company_a_id'::uuid)),
+  array['employee']::text[],
+  'legacy membership and JWT company-admin spoofing do not affect normalized roles'
+);
+select is(
+  (select permissions from public.get_my_company_access(:'company_a_id'::uuid)),
+  array['employee.read_directory', 'employee.read_self_private']::text[],
+  'legacy membership and JWT company-admin spoofing do not affect normalized permissions'
+);
 select is((select count(*) from public.employee_private_details where company_id = :'company_a_id'::uuid), 0::bigint, 'legacy company membership roles and stale JWT role claims cannot read private profiles');
 select throws_ok(
   format(
@@ -289,6 +312,45 @@ select throws_ok(
   'P0001',
   'PERMISSION_DENIED',
   'legacy company membership roles and stale JWT role claims cannot revoke roles'
+);
+
+reset role;
+insert into public.company_role_assignments (tenant_id, company_id, user_id, role_id, granted_by, grant_reason) values
+  (:'tenant_a_id'::uuid, :'company_a_id'::uuid, :'access_target_user_id'::uuid, '41000000-0000-4000-8000-000000000301'::uuid, :'admin_user_id'::uuid, 'test normalized access union employee role'),
+  (:'tenant_a_id'::uuid, :'company_a_id'::uuid, :'access_target_user_id'::uuid, '41000000-0000-4000-8000-000000000302'::uuid, :'admin_user_id'::uuid, 'test normalized access union HR role');
+set local role authenticated;
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'access_target_user_id'), true);
+select is(
+  (select roles from public.get_my_company_access(:'company_a_id'::uuid)),
+  array['employee', 'hr_manager']::text[],
+  'access RPC returns the sorted normalized role union'
+);
+select is(
+  (select permissions from public.get_my_company_access(:'company_a_id'::uuid)),
+  array['employee.read_directory', 'employee.read_private', 'employee.read_self_private']::text[],
+  'access RPC returns the sorted deduplicated permission union'
+);
+reset role;
+update public.company_role_assignments
+set revoked_at = now(),
+    revoked_by = :'admin_user_id'::uuid,
+    revoke_reason = 'test access RPC immediate role revocation'
+where tenant_id = :'tenant_a_id'::uuid
+  and company_id = :'company_a_id'::uuid
+  and user_id = :'access_target_user_id'::uuid
+  and role_id = '41000000-0000-4000-8000-000000000302'::uuid
+  and revoked_at is null;
+set local role authenticated;
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'access_target_user_id'), true);
+select is(
+  (select roles from public.get_my_company_access(:'company_a_id'::uuid)),
+  array['employee']::text[],
+  'access RPC ignores a revoked assignment on the next call'
+);
+select is(
+  (select permissions from public.get_my_company_access(:'company_a_id'::uuid)),
+  array['employee.read_directory', 'employee.read_self_private']::text[],
+  'revocation removes permissions without changing the JWT'
 );
 
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'unrelated_admin_user_id'), true);

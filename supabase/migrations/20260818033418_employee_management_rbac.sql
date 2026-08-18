@@ -415,6 +415,56 @@ as $$
   );
 $$;
 
+create or replace function private.get_my_company_access(target_company_id uuid)
+returns table (roles text[], permissions text[])
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select
+    coalesce((
+      select pg_catalog.array_agg(role_codes.code order by role_codes.code)
+      from (
+        select distinct assigned_role.code
+        from public.company_role_assignments assignment
+        join public.roles assigned_role
+          on assigned_role.id = assignment.role_id
+         and assigned_role.tenant_id = assignment.tenant_id
+         and assigned_role.company_id = assignment.company_id
+         and assigned_role.is_active
+        where assignment.tenant_id = membership.tenant_id
+          and assignment.company_id = membership.company_id
+          and assignment.user_id = membership.user_id
+          and assignment.revoked_at is null
+      ) role_codes
+    ), '{}'::text[]),
+    coalesce((
+      select pg_catalog.array_agg(permission_codes.code order by permission_codes.code)
+      from (
+        select distinct permission.code
+        from public.company_role_assignments assignment
+        join public.roles assigned_role
+          on assigned_role.id = assignment.role_id
+         and assigned_role.tenant_id = assignment.tenant_id
+         and assigned_role.company_id = assignment.company_id
+         and assigned_role.is_active
+        join public.role_permissions role_permission
+          on role_permission.role_id = assignment.role_id
+        join public.permissions permission
+          on permission.code = role_permission.permission_code
+        where assignment.tenant_id = membership.tenant_id
+          and assignment.company_id = membership.company_id
+          and assignment.user_id = membership.user_id
+          and assignment.revoked_at is null
+      ) permission_codes
+    ), '{}'::text[])
+  from public.company_memberships membership
+  where membership.user_id = auth.uid()
+    and membership.company_id = target_company_id
+    and membership.is_active;
+$$;
+
 create or replace function private.can_read_role_catalog(
   target_tenant_id uuid,
   target_company_id uuid
@@ -453,6 +503,16 @@ security invoker
 set search_path = ''
 as $$
   select private.is_company_member(target_tenant_id, target_company_id);
+$$;
+
+create or replace function public.get_my_company_access(target_company_id uuid)
+returns table (roles text[], permissions text[])
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select * from private.get_my_company_access(target_company_id);
 $$;
 
 create or replace function private.complete_employee_onboarding(
@@ -1384,6 +1444,8 @@ grant update on public.employee_private_details to authenticated;
 revoke all on function public.set_updated_at() from public, anon, authenticated;
 revoke all on function public.is_tenant_member(uuid) from public, anon;
 revoke all on function public.is_company_member(uuid, uuid) from public, anon;
+revoke all on function private.get_my_company_access(uuid) from public, anon, authenticated;
+revoke all on function public.get_my_company_access(uuid) from public, anon, authenticated;
 revoke all on function public.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) from public, anon;
 revoke all on function public.grant_company_role_assignment(uuid, uuid, uuid, text) from public, anon;
 revoke all on function public.revoke_company_role_assignment(bigint, text) from public, anon;
@@ -1395,12 +1457,14 @@ grant execute on function private.has_any_active_company_membership() to authent
 grant execute on function private.is_own_employee_record(uuid, uuid, uuid) to authenticated;
 grant execute on function private.is_active_employee_directory_record(uuid, uuid, uuid) to authenticated;
 grant execute on function private.has_company_permission(uuid, uuid, text) to authenticated;
+grant execute on function private.get_my_company_access(uuid) to authenticated;
 grant execute on function private.can_read_role_catalog(uuid, uuid) to authenticated;
 grant execute on function private.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) to authenticated;
 grant execute on function private.grant_company_role_assignment(uuid, uuid, uuid, text) to authenticated;
 grant execute on function private.revoke_company_role_assignment(bigint, text) to authenticated;
 grant execute on function public.is_tenant_member(uuid) to authenticated;
 grant execute on function public.is_company_member(uuid, uuid) to authenticated;
+grant execute on function public.get_my_company_access(uuid) to authenticated;
 grant execute on function public.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) to authenticated;
 grant execute on function public.grant_company_role_assignment(uuid, uuid, uuid, text) to authenticated;
 grant execute on function public.revoke_company_role_assignment(bigint, text) to authenticated;

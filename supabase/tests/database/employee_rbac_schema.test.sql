@@ -11,6 +11,8 @@ select has_table('public', 'role_permissions');
 select has_table('public', 'company_role_assignments');
 
 select has_function('private', 'has_company_permission', array['uuid', 'uuid', 'text']);
+select has_function('private', 'get_my_company_access', array['uuid']);
+select has_function('public', 'get_my_company_access', array['uuid']);
 select has_function('public', 'complete_employee_onboarding');
 select has_function('public', 'revoke_company_role_assignment');
 select has_function('public', 'revoke_company_role_assignment', array['bigint', 'text']);

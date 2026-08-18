@@ -6,8 +6,11 @@ const vqh = {
   companyId: '10000000-0000-4000-8000-000000000020',
   companyCode: 'VQH',
   companyName: 'Việt Quốc Huy',
-  roles: ['director'],
-  permissions: [],
+}
+
+const normalizedAccess = {
+  roles: ['employee'],
+  permissions: ['employee.read_directory'] as const,
 }
 
 describe('tenancy service', () => {
@@ -16,24 +19,25 @@ describe('tenancy service', () => {
       listCompanyAccess: vi.fn().mockResolvedValue([vqh]),
       findCompanyAccess: vi.fn(),
     }
-    await expect(createTenancyService(reader).listCompanies('user-vqh'))
-      .resolves.toEqual([vqh])
+    const authorization = { listAccess: vi.fn().mockResolvedValue(normalizedAccess) }
+    await expect(createTenancyService(reader, authorization).listCompanies('user-vqh'))
+      .resolves.toEqual([{ ...vqh, ...normalizedAccess }])
     expect(reader.listCompanyAccess).toHaveBeenCalledWith('user-vqh')
   })
 
-  it('derives normalized permissions with tenant context from company membership', async () => {
+  it('ignores legacy membership roles when resolving normalized company access', async () => {
     const reader = {
       listCompanyAccess: vi.fn(),
-      findCompanyAccess: vi.fn().mockResolvedValue(vqh),
+      findCompanyAccess: vi.fn().mockResolvedValue({ ...vqh, roles: ['company_admin'] }),
     }
-    await expect(createTenancyService(reader).resolveCompanyContext(
+    const authorization = { listAccess: vi.fn().mockResolvedValue(normalizedAccess) }
+    await expect(createTenancyService(reader, authorization).resolveCompanyContext(
       'user-vqh',
       vqh.companyId,
     )).resolves.toEqual({
       tenantId: vqh.tenantId,
       companyId: vqh.companyId,
-      roles: ['director'],
-      permissions: [],
+      ...normalizedAccess,
     })
   })
 
@@ -42,7 +46,9 @@ describe('tenancy service', () => {
       listCompanyAccess: vi.fn(),
       findCompanyAccess: vi.fn().mockResolvedValue(null),
     }
-    await expect(createTenancyService(reader).resolveCompanyContext('user-vqh', '10000000-0000-4000-8000-000000000099'))
+    const authorization = { listAccess: vi.fn() }
+    await expect(createTenancyService(reader, authorization).resolveCompanyContext('user-vqh', '10000000-0000-4000-8000-000000000099'))
       .rejects.toMatchObject({ statusCode: 403, code: 'COMPANY_FORBIDDEN' })
+    expect(authorization.listAccess).not.toHaveBeenCalled()
   })
 })
