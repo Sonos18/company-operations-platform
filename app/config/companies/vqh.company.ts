@@ -12,7 +12,8 @@ export const VQH_COMPANY_CONFIG: CompanyConfig = {
   },
   departments: [
     { code: 'BLD', name: 'Ban lãnh đạo' },
-    { code: 'TKE', name: 'Thiết kế – Kỹ thuật' },
+    { code: 'TECH', name: 'Phòng Kỹ thuật' },
+    { code: 'DESIGN', name: 'Phòng Thiết kế' },
     { code: 'TCO', name: 'Thi công – Hiện trường' },
     { code: 'VTU', name: 'Vật tư – Mua hàng' },
     { code: 'KE', name: 'Kế toán – Tài chính' },

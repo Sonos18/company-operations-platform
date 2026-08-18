@@ -285,5 +285,292 @@ select ok(not exists (
   where d.oid is null or pg_get_expr(d.adbin, d.adrelid) <> 'now()'
 ), 'all approved timestamps default to now()');
 
+select is(
+  (
+    select array_agg(department.code order by department.code)
+    from public.departments department
+    where department.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and department.company_id = '10000000-0000-4000-8000-000000000020'
+      and department.is_active
+  ),
+  array['ACCOUNTING', 'BLD', 'CONSTRUCTION', 'DESIGN', 'HR', 'PROCUREMENT', 'TECH']::text[],
+  'VQH has exactly the seven approved active departments'
+);
+select ok(
+  (
+    select tech.id <> design.id
+    from public.departments tech
+    join public.departments design
+      on design.tenant_id = tech.tenant_id
+     and design.company_id = tech.company_id
+     and design.code = 'DESIGN'
+    where tech.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and tech.company_id = '10000000-0000-4000-8000-000000000020'
+      and tech.code = 'TECH'
+  ),
+  'VQH TECH and DESIGN resolve to distinct departments'
+);
+select is(
+  (
+    select array_agg(company_role.code order by company_role.code)
+    from public.roles company_role
+    where company_role.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and company_role.company_id = '10000000-0000-4000-8000-000000000020'
+      and company_role.is_active
+  ),
+  array['accountant', 'company_admin', 'designer', 'employee', 'hr_manager', 'inventory_auditor', 'supplier_sourcing', 'technical_staff']::text[],
+  'VQH has exactly the eight approved active roles'
+);
+select is(
+  (
+    select array_agg(permission.code order by permission.code)
+    from public.permissions permission
+  ),
+  array[
+    'account.disable', 'account.invite', 'accounting_document.read', 'accounting_document.update',
+    'drawing.create', 'drawing.read', 'drawing.update', 'employee.create', 'employee.offboard',
+    'employee.read_all', 'employee.read_directory', 'employee.read_private', 'employee.read_self_private',
+    'employee.update', 'inventory.read', 'inventory_value.read', 'project.read', 'quotation_request.create',
+    'quotation_request.update', 'role.assign', 'role.read', 'role.revoke', 'stock_adjustment.approve',
+    'stock_adjustment.read', 'stock_count.create', 'stock_count.update', 'supplier.create', 'supplier.read',
+    'supplier.update', 'supplier_payment.approve', 'task.read_assigned', 'task.update_assigned',
+    'technical_document.read', 'technical_document.update'
+  ]::text[],
+  'the seed has the complete explicit permission catalog without wildcards'
+);
+select is(
+  (
+    select array_agg(role_permission.permission_code order by role_permission.permission_code)
+    from public.role_permissions role_permission
+    join public.roles company_role on company_role.id = role_permission.role_id
+    where company_role.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and company_role.company_id = '10000000-0000-4000-8000-000000000020'
+      and company_role.code = 'employee'
+  ),
+  array['employee.read_directory', 'employee.read_self_private', 'project.read', 'task.read_assigned', 'task.update_assigned']::text[],
+  'employee has only directory, self-private, project, and assigned-task permissions'
+);
+select is(
+  (
+    select array_agg(role_permission.permission_code order by role_permission.permission_code)
+    from public.role_permissions role_permission
+    join public.roles company_role on company_role.id = role_permission.role_id
+    where company_role.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and company_role.company_id = '10000000-0000-4000-8000-000000000020'
+      and company_role.code = 'hr_manager'
+  ),
+  array['account.invite', 'employee.create', 'employee.read_all', 'employee.read_directory', 'employee.read_private', 'employee.update', 'role.read']::text[],
+  'HR has employee/profile/invite access without role, account, or approval authority'
+);
+select is(
+  (
+    select array_agg(role_permission.permission_code order by role_permission.permission_code)
+    from public.role_permissions role_permission
+    join public.roles company_role on company_role.id = role_permission.role_id
+    where company_role.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and company_role.company_id = '10000000-0000-4000-8000-000000000020'
+      and company_role.code = 'supplier_sourcing'
+  ),
+  array['inventory.read', 'quotation_request.create', 'quotation_request.update', 'supplier.create', 'supplier.read', 'supplier.update']::text[],
+  'supplier sourcing has supplier, quotation, and inventory-read permissions only'
+);
+select is(
+  (
+    select array_agg(role_permission.permission_code order by role_permission.permission_code)
+    from public.role_permissions role_permission
+    join public.roles company_role on company_role.id = role_permission.role_id
+    where company_role.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and company_role.company_id = '10000000-0000-4000-8000-000000000020'
+      and company_role.code = 'inventory_auditor'
+  ),
+  array['inventory.read', 'stock_adjustment.read', 'stock_count.create', 'stock_count.update']::text[],
+  'inventory auditor cannot approve stock adjustments'
+);
+select is(
+  (
+    select array_agg(role_permission.permission_code order by role_permission.permission_code)
+    from public.role_permissions role_permission
+    join public.roles company_role on company_role.id = role_permission.role_id
+    where company_role.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and company_role.company_id = '10000000-0000-4000-8000-000000000020'
+      and company_role.code = 'technical_staff'
+  ),
+  array['project.read', 'task.read_assigned', 'task.update_assigned', 'technical_document.read', 'technical_document.update']::text[],
+  'technical staff has assigned-work and technical-document permissions'
+);
+select is(
+  (
+    select array_agg(role_permission.permission_code order by role_permission.permission_code)
+    from public.role_permissions role_permission
+    join public.roles company_role on company_role.id = role_permission.role_id
+    where company_role.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and company_role.company_id = '10000000-0000-4000-8000-000000000020'
+      and company_role.code = 'designer'
+  ),
+  array['drawing.create', 'drawing.read', 'drawing.update', 'project.read', 'task.read_assigned', 'task.update_assigned']::text[],
+  'designers have assigned-work and drawing permissions'
+);
+select is(
+  (
+    select array_agg(role_permission.permission_code order by role_permission.permission_code)
+    from public.role_permissions role_permission
+    join public.roles company_role on company_role.id = role_permission.role_id
+    where company_role.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and company_role.company_id = '10000000-0000-4000-8000-000000000020'
+      and company_role.code = 'accountant'
+  ),
+  array['accounting_document.read', 'accounting_document.update', 'inventory_value.read', 'supplier.read']::text[],
+  'accountants do not receive payment approval without a separate approval'
+);
+select is(
+  (
+    select array_agg(role_permission.permission_code order by role_permission.permission_code)
+    from public.role_permissions role_permission
+    join public.roles company_role on company_role.id = role_permission.role_id
+    where company_role.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and company_role.company_id = '10000000-0000-4000-8000-000000000020'
+      and company_role.code = 'company_admin'
+  ),
+  (
+    select array_agg(permission.code order by permission.code)
+    from public.permissions permission
+  ),
+  'company admin has every explicit permission code'
+);
+select is(
+  (
+    select array_agg(employee.employee_code order by employee.employee_code)
+    from public.employees employee
+    where employee.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and employee.company_id = '10000000-0000-4000-8000-000000000020'
+  ),
+  array['VQH-HAU', 'VQH-HIEU', 'VQH-LONG', 'VQH-NHI', 'VQH-NHU', 'VQH-Y']::text[],
+  'VQH has exactly the six approved employee records'
+);
+select is(
+  (
+    select array_agg(company_role.code order by company_role.code)
+    from public.company_role_assignments assignment
+    join public.roles company_role on company_role.id = assignment.role_id
+    join public.employees employee on employee.user_id = assignment.user_id
+      and employee.tenant_id = assignment.tenant_id
+      and employee.company_id = assignment.company_id
+    where employee.employee_code = 'VQH-NHU'
+      and assignment.revoked_at is null
+  ),
+  array['employee', 'hr_manager', 'inventory_auditor', 'supplier_sourcing']::text[],
+  'Như has the approved active role matrix'
+);
+select is(
+  (
+    select array_agg(company_role.code order by company_role.code)
+    from public.company_role_assignments assignment
+    join public.roles company_role on company_role.id = assignment.role_id
+    join public.employees employee on employee.user_id = assignment.user_id
+      and employee.tenant_id = assignment.tenant_id
+      and employee.company_id = assignment.company_id
+    where employee.employee_code in ('VQH-LONG', 'VQH-HIEU')
+      and assignment.revoked_at is null
+    group by employee.employee_code
+    order by employee.employee_code
+  ),
+  array[
+    array['employee', 'technical_staff']::text[],
+    array['employee', 'technical_staff']::text[]
+  ]::text[][],
+  'Long and Hiếu each have the technical role matrix'
+);
+select is(
+  (
+    select array_agg(company_role.code order by company_role.code)
+    from public.company_role_assignments assignment
+    join public.roles company_role on company_role.id = assignment.role_id
+    join public.employees employee on employee.user_id = assignment.user_id
+      and employee.tenant_id = assignment.tenant_id
+      and employee.company_id = assignment.company_id
+    where employee.employee_code = 'VQH-Y'
+      and assignment.revoked_at is null
+  ),
+  array['accountant', 'employee']::text[],
+  'Y has the approved accountant role matrix'
+);
+select is(
+  (
+    select array_agg(company_role.code order by company_role.code)
+    from public.company_role_assignments assignment
+    join public.roles company_role on company_role.id = assignment.role_id
+    join public.employees employee on employee.user_id = assignment.user_id
+      and employee.tenant_id = assignment.tenant_id
+      and employee.company_id = assignment.company_id
+    where employee.employee_code in ('VQH-NHI', 'VQH-HAU')
+      and assignment.revoked_at is null
+    group by employee.employee_code
+    order by employee.employee_code
+  ),
+  array[
+    array['designer', 'employee']::text[],
+    array['designer', 'employee']::text[]
+  ]::text[][],
+  'Nhi and Hậu each have the designer role matrix'
+);
+select is(
+  (
+    select array_agg(company_role.code order by company_role.code)
+    from public.company_role_assignments assignment
+    join public.roles company_role on company_role.id = assignment.role_id
+    where assignment.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and assignment.company_id = '10000000-0000-4000-8000-000000000020'
+      and assignment.user_id = '10000000-0000-4000-8000-000000000001'
+      and assignment.revoked_at is null
+  ),
+  array['company_admin']::text[],
+  'the existing VQH owner has the normalized company admin role'
+);
+select ok(
+  not exists (
+    select 1
+    from public.company_memberships membership
+    where not membership.is_active
+       or membership.roles is distinct from array['employee']::text[]
+  ),
+  'every seeded company membership is active with only the employee compatibility role'
+);
+select ok(
+  not exists (
+    select 1
+    from public.company_role_assignments assignment
+    where assignment.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and assignment.company_id = '10000000-0000-4000-8000-000000000020'
+      and assignment.revoked_at is null
+    group by assignment.user_id, assignment.role_id
+    having count(*) > 1
+  ),
+  'VQH seed has no duplicate active role assignments'
+);
+select is(
+  (
+    select count(*)
+    from public.employees employee
+    join public.employee_private_details private_details on private_details.employee_id = employee.id
+    where employee.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and employee.company_id = '10000000-0000-4000-8000-000000000020'
+      and employee.position_id is null
+      and employee.hire_date is null
+      and employee.probation_end_date is null
+      and private_details.date_of_birth is null
+      and private_details.gender is null
+      and private_details.personal_email is null
+      and private_details.personal_phone is null
+      and private_details.current_address is null
+      and private_details.permanent_address is null
+      and private_details.tax_code is null
+      and private_details.social_insurance_number is null
+      and private_details.emergency_contact_name is null
+      and private_details.emergency_contact_phone is null
+  ),
+  6::bigint,
+  'VQH seed employees retain incomplete organizational and private profiles'
+);
+
 select * from finish();
 rollback;
