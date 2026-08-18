@@ -1,4 +1,4 @@
-﻿import type { CompanyAccess, CompanyRequestContext } from '../../../shared/schemas/session'
+import type { CompanyAccess, CompanyRequestContext } from '../../../shared/schemas/session'
 import { AppApiError } from '../../utils/api-error'
 import type { UserSupabaseClient } from '../../utils/supabase-client'
 
@@ -28,6 +28,7 @@ export function createTenancyService(reader: TenancyReader) {
         tenantId: membership.tenantId,
         companyId: membership.companyId,
         roles: membership.roles,
+        permissions: membership.permissions,
       }
     },
   }
@@ -50,7 +51,10 @@ function mapMembership(row: MembershipRow): CompanyAccess {
     companyId: row.company_id,
     companyCode: company.code,
     companyName: company.name,
+    // The compatibility membership array is never an authorization input.
+    // Task 6 replaces this display projection with normalized assignments.
     roles: row.roles,
+    permissions: [],
   }
 }
 

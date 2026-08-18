@@ -1,4 +1,4 @@
-﻿import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createTenancyService } from '../../../server/features/tenancy/tenancy.service'
 
 const vqh = {
@@ -7,6 +7,7 @@ const vqh = {
   companyCode: 'VQH',
   companyName: 'Việt Quốc Huy',
   roles: ['director'],
+  permissions: [],
 }
 
 describe('tenancy service', () => {
@@ -20,7 +21,7 @@ describe('tenancy service', () => {
     expect(reader.listCompanyAccess).toHaveBeenCalledWith('user-vqh')
   })
 
-  it('derives tenant context from company membership', async () => {
+  it('derives normalized permissions with tenant context from company membership', async () => {
     const reader = {
       listCompanyAccess: vi.fn(),
       findCompanyAccess: vi.fn().mockResolvedValue(vqh),
@@ -32,6 +33,7 @@ describe('tenancy service', () => {
       tenantId: vqh.tenantId,
       companyId: vqh.companyId,
       roles: ['director'],
+      permissions: [],
     })
   })
 
