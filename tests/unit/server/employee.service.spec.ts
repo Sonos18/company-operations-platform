@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createEmployeeService } from '../../../server/features/employees/employee.service'
 import type { EmployeeRepository } from '../../../server/features/employees/employee.repository'
 import type { EmployeeDetail, EmployeePrivateDetails, EmployeeSummary } from '../../../shared/schemas/employees'
+import { AppApiError } from '../../../server/utils/api-error'
 
 const companyId = '10000000-0000-4000-8000-000000000020'
 const actorId = '10000000-0000-4000-8000-000000000001'
@@ -43,12 +44,23 @@ const privateDetails: EmployeePrivateDetails = {
   emergencyContactPhone: null,
 }
 
+function invitedEmployee(workEmail = 'new@vqh.local'): EmployeeSummary {
+  return {
+    ...summary,
+    employeeCode: 'VQH-NEW',
+    fullName: 'Nguyễn Mới',
+    workEmail,
+    account: { email: workEmail, userId: otherUserId },
+  }
+}
+
 function repository(overrides: Partial<EmployeeRepository> = {}): EmployeeRepository {
   return {
     listDirectory: vi.fn().mockResolvedValue({ items: [summary], total: 1 }),
     getDirectoryEmployee: vi.fn().mockResolvedValue(summary),
     getPrivateDetails: vi.fn().mockResolvedValue(privateDetails),
     updateEmployee: vi.fn().mockResolvedValue({ ...summary, privateDetails }),
+    completeEmployeeOnboarding: vi.fn().mockResolvedValue(summary),
     ...overrides,
   }
 }
@@ -63,6 +75,252 @@ function context(permissions: string[]) {
 }
 
 describe('employee service', () => {
+  it('invites a normalized work email then completes onboarding with the returned Auth user', async () => {
+    const employeeRepository = repository({ completeEmployeeOnboarding: vi.fn().mockResolvedValue(invitedEmployee()) })
+    const auth = {
+      inviteUser: vi.fn().mockResolvedValue({ kind: 'invited', userId: otherUserId }),
+      findUserByEmail: vi.fn(),
+    }
+    const service = createEmployeeService(employeeRepository) as unknown as {
+      invite(context: ReturnType<typeof context>, input: {
+        employeeCode: string
+        fullName: string
+        workEmail: string
+        departmentId: string
+      }, auth: typeof auth): Promise<EmployeeDetail>
+    }
+
+    await expect(service.invite(
+      context(['account.invite', 'employee.create']),
+      {
+        employeeCode: 'VQH-NEW',
+        fullName: 'Nguyễn Mới',
+        workEmail: '  NEW@VQH.LOCAL ',
+        departmentId: summary.department.id,
+      },
+      auth,
+    )).resolves.toEqual(invitedEmployee())
+
+    expect(auth.inviteUser).toHaveBeenCalledWith('new@vqh.local')
+    expect(auth.findUserByEmail).not.toHaveBeenCalled()
+    expect(employeeRepository.completeEmployeeOnboarding).toHaveBeenCalledWith(
+      companyId,
+      otherUserId,
+      expect.objectContaining({ workEmail: 'new@vqh.local' }),
+    )
+  })
+
+  it('reuses the exact normalized existing Auth user to retry incomplete onboarding', async () => {
+    const employeeRepository = repository({ completeEmployeeOnboarding: vi.fn().mockResolvedValue(invitedEmployee()) })
+    const auth = {
+      inviteUser: vi.fn().mockResolvedValue({ kind: 'existing' }),
+      findUserByEmail: vi.fn().mockResolvedValue({ kind: 'found', userId: otherUserId }),
+    }
+    const service = createEmployeeService(employeeRepository) as unknown as {
+      invite(context: ReturnType<typeof context>, input: {
+        employeeCode: string
+        fullName: string
+        workEmail: string
+        departmentId: string
+      }, auth: typeof auth): Promise<EmployeeDetail>
+    }
+
+    await expect(service.invite(
+      context(['account.invite', 'employee.create']),
+      {
+        employeeCode: 'VQH-NEW',
+        fullName: 'Nguyễn Mới',
+        workEmail: 'NEW@VQH.LOCAL',
+        departmentId: summary.department.id,
+      },
+      auth,
+    )).resolves.toEqual(invitedEmployee())
+
+    expect(auth.findUserByEmail).toHaveBeenCalledWith('new@vqh.local')
+    expect(employeeRepository.completeEmployeeOnboarding).toHaveBeenCalledWith(
+      companyId,
+      otherUserId,
+      expect.objectContaining({ workEmail: 'new@vqh.local' }),
+    )
+  })
+
+  it('returns the schema-valid redacted summary when onboarding permissions do not include account or role read access', async () => {
+    const redactedEmployee = { ...invitedEmployee(), account: undefined, roles: undefined }
+    const employeeRepository = repository({
+      completeEmployeeOnboarding: vi.fn().mockResolvedValue(redactedEmployee),
+    })
+    const auth = {
+      inviteUser: vi.fn().mockResolvedValue({ kind: 'invited', userId: otherUserId }),
+      findUserByEmail: vi.fn(),
+    }
+    const service = createEmployeeService(employeeRepository) as unknown as {
+      invite(context: ReturnType<typeof context>, input: {
+        employeeCode: string
+        fullName: string
+        workEmail: string
+        departmentId: string
+      }, auth: typeof auth): Promise<EmployeeDetail>
+    }
+
+    await expect(service.invite(
+      context(['account.invite', 'employee.create']),
+      {
+        employeeCode: 'VQH-NEW',
+        fullName: 'Nguyễn Mới',
+        workEmail: 'new@vqh.local',
+        departmentId: summary.department.id,
+      },
+      auth,
+    )).resolves.toEqual(redactedEmployee)
+  })
+
+  it('fails safely when a documented existing-user response cannot be resolved by exact email', async () => {
+    const employeeRepository = repository()
+    const auth = {
+      inviteUser: vi.fn().mockResolvedValue({ kind: 'existing' }),
+      findUserByEmail: vi.fn().mockResolvedValue({ kind: 'not_found' }),
+    }
+    const service = createEmployeeService(employeeRepository) as unknown as {
+      invite(context: ReturnType<typeof context>, input: {
+        employeeCode: string
+        fullName: string
+        workEmail: string
+        departmentId: string
+      }, auth: typeof auth): Promise<EmployeeDetail>
+    }
+
+    await expect(service.invite(
+      context(['account.invite', 'employee.create']),
+      {
+        employeeCode: 'VQH-NEW',
+        fullName: 'Nguyễn Mới',
+        workEmail: 'new@vqh.local',
+        departmentId: summary.department.id,
+      },
+      auth,
+    )).rejects.toMatchObject({ statusCode: 502, code: 'ACCOUNT_INVITE_FAILED' })
+    expect(employeeRepository.completeEmployeeOnboarding).not.toHaveBeenCalled()
+  })
+
+  it('redacts Auth provider details and maps Auth failures to ACCOUNT_INVITE_FAILED', async () => {
+    const employeeRepository = repository()
+    const auth = {
+      inviteUser: vi.fn().mockResolvedValue({ kind: 'failed' }),
+      findUserByEmail: vi.fn(),
+    }
+    const service = createEmployeeService(employeeRepository) as unknown as {
+      invite(context: ReturnType<typeof context>, input: {
+        employeeCode: string
+        fullName: string
+        workEmail: string
+        departmentId: string
+      }, auth: typeof auth): Promise<EmployeeDetail>
+    }
+
+    const result = service.invite(
+      context(['account.invite', 'employee.create']),
+      {
+        employeeCode: 'VQH-NEW',
+        fullName: 'Nguyễn Mới',
+        workEmail: 'new@vqh.local',
+        departmentId: summary.department.id,
+      },
+      auth,
+    )
+    await expect(result).rejects.toMatchObject({ statusCode: 502, code: 'ACCOUNT_INVITE_FAILED' })
+    await expect(result).rejects.not.toThrow(/provider|secret|credential/i)
+    expect(auth.findUserByEmail).not.toHaveBeenCalled()
+    expect(employeeRepository.completeEmployeeOnboarding).not.toHaveBeenCalled()
+  })
+
+  it('preserves a stable incomplete-onboarding error after Auth succeeds', async () => {
+    const employeeRepository = repository({
+      completeEmployeeOnboarding: vi.fn().mockRejectedValue(
+        new AppApiError(409, 'ONBOARDING_INCOMPLETE', 'Hồ sơ nhân viên chưa hoàn tất.'),
+      ),
+    })
+    const auth = {
+      inviteUser: vi.fn().mockResolvedValue({ kind: 'invited', userId: otherUserId }),
+      findUserByEmail: vi.fn(),
+    }
+    const service = createEmployeeService(employeeRepository) as unknown as {
+      invite(context: ReturnType<typeof context>, input: {
+        employeeCode: string
+        fullName: string
+        workEmail: string
+        departmentId: string
+      }, auth: typeof auth): Promise<EmployeeDetail>
+    }
+
+    await expect(service.invite(
+      context(['account.invite', 'employee.create']),
+      {
+        employeeCode: 'VQH-NEW',
+        fullName: 'Nguyễn Mới',
+        workEmail: 'new@vqh.local',
+        departmentId: summary.department.id,
+      },
+      auth,
+    )).rejects.toMatchObject({ statusCode: 409, code: 'ONBOARDING_INCOMPLETE' })
+  })
+
+  it.each([
+    ['account.invite', ['account.invite']],
+    ['employee.create', ['employee.create']],
+  ] as const)('requires %s in addition to the other invitation permission', async (_missing, permissions) => {
+    const employeeRepository = repository()
+    const auth = {
+      inviteUser: vi.fn(),
+      findUserByEmail: vi.fn(),
+    }
+    const service = createEmployeeService(employeeRepository) as unknown as {
+      invite(context: ReturnType<typeof context>, input: {
+        employeeCode: string
+        fullName: string
+        workEmail: string
+        departmentId: string
+      }, auth: typeof auth): Promise<EmployeeDetail>
+    }
+
+    await expect(service.invite(
+      context(permissions as string[]),
+      {
+        employeeCode: 'VQH-NEW',
+        fullName: 'Nguyễn Mới',
+        workEmail: 'new@vqh.local',
+        departmentId: summary.department.id,
+      },
+      auth,
+    )).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    expect(auth.inviteUser).not.toHaveBeenCalled()
+    expect(employeeRepository.completeEmployeeOnboarding).not.toHaveBeenCalled()
+  })
+
+  it('does not initialize Auth administration when either invitation permission is absent', async () => {
+    const employeeRepository = repository()
+    const authFactory = vi.fn()
+    const service = createEmployeeService(employeeRepository) as unknown as {
+      invite(context: ReturnType<typeof context>, input: {
+        employeeCode: string
+        fullName: string
+        workEmail: string
+        departmentId: string
+      }, authFactory: () => unknown): Promise<EmployeeDetail>
+    }
+
+    await expect(service.invite(
+      context(['account.invite']),
+      {
+        employeeCode: 'VQH-NEW',
+        fullName: 'Nguyễn Mới',
+        workEmail: 'new@vqh.local',
+        departmentId: summary.department.id,
+      },
+      authFactory,
+    )).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    expect(authFactory).not.toHaveBeenCalled()
+  })
+
   it('denies directory access without the normalized directory permission', async () => {
     const employeeRepository = repository()
     const service = createEmployeeService(employeeRepository)

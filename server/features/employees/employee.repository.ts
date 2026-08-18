@@ -1,4 +1,5 @@
 import type {
+  EmployeeInvitationInput,
   EmployeePrivateDetails,
   EmployeeSummary,
   EmployeeUpdateInput,
@@ -18,6 +19,11 @@ export interface EmployeeRepository {
     companyId: string,
     employeeId: string,
     input: EmployeeUpdateInput,
+  ): Promise<EmployeeSummary | null>
+  completeEmployeeOnboarding(
+    companyId: string,
+    userId: string,
+    input: EmployeeInvitationInput,
   ): Promise<EmployeeSummary | null>
 }
 
@@ -50,6 +56,19 @@ interface EmployeeDataClient {
       target_company_id: string
       target_employee_id: string
       target_update: { [key: string]: UpdateJson }
+    },
+  ): Promise<QueryResult>
+  rpc(
+    functionName: 'complete_employee_onboarding',
+    arguments_: {
+      target_company_id: string
+      target_user_id: string
+      target_employee_code: string
+      target_full_name: string
+      target_work_email: string
+      target_department_id: string
+      target_position_id?: string
+      target_hire_date?: string
     },
   ): Promise<QueryResult>
 }
@@ -129,6 +148,27 @@ function mapUpdateRpcError(error: unknown): null {
     throw new AppApiError(409, 'EMPLOYEE_EMAIL_CONFLICT', 'Email công việc đã được sử dụng trong công ty này.')
   }
   return failDatabase('Không thể cập nhật nhân viên.')
+}
+
+function onboardingIncomplete(): never {
+  throw new AppApiError(409, 'ONBOARDING_INCOMPLETE', 'Hồ sơ nhân viên chưa hoàn tất.')
+}
+
+function mapOnboardingRpcError(error: unknown): never {
+  const known = z.object({ code: z.string().optional(), message: z.string().optional() }).safeParse(error)
+  if (known.success && known.data.code === 'P0001') {
+    if (known.data.message === 'PERMISSION_DENIED') {
+      throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.')
+    }
+    if (known.data.message === 'EMPLOYEE_EMAIL_CONFLICT') {
+      throw new AppApiError(409, 'EMPLOYEE_EMAIL_CONFLICT', 'Email công việc đã được sử dụng trong công ty này.')
+    }
+  }
+  if (known.success && known.data.code === '23505'
+    && known.data.message?.includes('employees_company_work_email_key')) {
+    throw new AppApiError(409, 'EMPLOYEE_EMAIL_CONFLICT', 'Email công việc đã được sử dụng trong công ty này.')
+  }
+  return onboardingIncomplete()
 }
 
 function one<T>(value: T | T[]): T {
@@ -304,6 +344,34 @@ export function createSupabaseEmployeeRepository(db: UserSupabaseClient): Employ
       if (error) return mapUpdateRpcError(error)
       if (!z.string().uuid().safeParse(data).success) failDatabase('Không thể cập nhật nhân viên.')
       return directoryEmployee(companyId, employeeId)
+    },
+    async completeEmployeeOnboarding(companyId, userId, input) {
+      const { data, error } = await client.rpc('complete_employee_onboarding', {
+        target_company_id: companyId,
+        target_user_id: userId,
+        target_employee_code: input.employeeCode,
+        target_full_name: input.fullName,
+        target_work_email: input.workEmail,
+        target_department_id: input.departmentId,
+        ...(input.positionId === undefined ? {} : { target_position_id: input.positionId }),
+        ...(input.hireDate === undefined ? {} : { target_hire_date: input.hireDate }),
+      })
+      if (error) return mapOnboardingRpcError(error)
+      const employeeId = z.string().uuid().safeParse(data)
+      if (!employeeId.success) return onboardingIncomplete()
+      try {
+        const employee = await directoryEmployee(companyId, employeeId.data)
+        return employee ?? onboardingIncomplete()
+      } catch (error) {
+        if (error instanceof AppApiError && (
+          error.code === 'EMPLOYEE_EMAIL_CONFLICT'
+          || error.code === 'ONBOARDING_INCOMPLETE'
+          || error.code === 'PERMISSION_DENIED'
+        )) {
+          throw error
+        }
+        return onboardingIncomplete()
+      }
     },
   }
 }

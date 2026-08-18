@@ -3,6 +3,7 @@ import { createSupabaseEmployeeRepository } from '../../../server/features/emplo
 
 const companyId = '10000000-0000-4000-8000-000000000020'
 const employeeId = '10000000-0000-4000-8000-000000000101'
+const userId = '10000000-0000-4000-8000-000000000001'
 
 function query(result: { data: unknown, error: unknown, count?: number | null }) {
   const value = {
@@ -149,5 +150,66 @@ describe('Supabase employee repository', () => {
       employeeId,
       { workEmail: 'existing@vqh.local' },
     )).rejects.toMatchObject({ statusCode: 409, code: 'EMPLOYEE_EMAIL_CONFLICT' })
+  })
+
+  it('uses the caller-scoped onboarding RPC then returns the linked directory employee', async () => {
+    const employees = query({ data: employeeRow, error: null })
+    const roles = query({ data: [employeeRole], error: null })
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: employeeId, error: null })
+      .mockResolvedValueOnce({
+        data: [{ employee_id: employeeId, user_id: userId, role_codes: ['employee'] }],
+        error: null,
+      })
+    const db = {
+      from: vi.fn((table: string) => table === 'employees' ? employees : roles),
+      rpc,
+    }
+
+    await expect(createSupabaseEmployeeRepository(db as never).completeEmployeeOnboarding(
+      companyId,
+      userId,
+      {
+        employeeCode: 'VQH-NHU',
+        fullName: 'Như',
+        workEmail: 'nhu@vqh.local',
+        departmentId: employeeRow.department_id,
+      },
+    )).resolves.toMatchObject({
+      id: employeeId,
+      account: { email: 'nhu@vqh.local', userId },
+      roles: [{ code: 'employee' }],
+    })
+    expect(rpc).toHaveBeenNthCalledWith(1, 'complete_employee_onboarding', {
+      target_company_id: companyId,
+      target_user_id: userId,
+      target_employee_code: 'VQH-NHU',
+      target_full_name: 'Như',
+      target_work_email: 'nhu@vqh.local',
+      target_department_id: employeeRow.department_id,
+    })
+  })
+
+  it('maps incomplete onboarding database failures without exposing database details', async () => {
+    const db = {
+      from: vi.fn(),
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'P0001', message: 'untrusted database diagnostic' },
+      }),
+    }
+
+    const result = createSupabaseEmployeeRepository(db as never).completeEmployeeOnboarding(
+      companyId,
+      userId,
+      {
+        employeeCode: 'VQH-NHU',
+        fullName: 'Như',
+        workEmail: 'nhu@vqh.local',
+        departmentId: employeeRow.department_id,
+      },
+    )
+    await expect(result).rejects.toMatchObject({ statusCode: 409, code: 'ONBOARDING_INCOMPLETE' })
+    await expect(result).rejects.not.toThrow(/untrusted database diagnostic/)
   })
 })

@@ -75,4 +75,82 @@ describe('employee route handlers', () => {
     expect(resolveContext).not.toHaveBeenCalled()
     expect(update).not.toHaveBeenCalled()
   })
+
+  it('accepts only the invitation schema and passes the server-derived company context', async () => {
+    readBody.mockResolvedValue({
+      employeeCode: 'VQH-NEW',
+      fullName: 'Nguyễn Mới',
+      workEmail: ' NEW@VQH.LOCAL ',
+      departmentId: '10000000-0000-4000-8000-000000000201',
+    })
+    const resolveContext = vi.fn().mockResolvedValue(context)
+    const authorizeInvitation = vi.fn().mockResolvedValue(undefined)
+    const invite = vi.fn().mockResolvedValue({ id: employeeId })
+    const routes = createEmployeeRoutes({
+      resolveContext,
+      service: { authorizeInvitation, invite } as never,
+    }) as unknown as {
+      invite(event: unknown): Promise<unknown>
+    }
+
+    await expect(routes.invite({})).resolves.toEqual({ id: employeeId })
+    expect(resolveContext).toHaveBeenCalledWith(expect.anything(), companyId)
+    expect(authorizeInvitation).toHaveBeenCalledWith(context)
+    expect(readBody.mock.invocationCallOrder[0]).toBeGreaterThan(authorizeInvitation.mock.invocationCallOrder[0]!)
+    expect(invite).toHaveBeenCalledWith(context, {
+      employeeCode: 'VQH-NEW',
+      fullName: 'Nguyễn Mới',
+      workEmail: 'new@vqh.local',
+      departmentId: '10000000-0000-4000-8000-000000000201',
+    })
+  })
+
+  it('rejects client-supplied invitation actor, scope, or role fields after authorization', async () => {
+    readBody.mockResolvedValue({
+      employeeCode: 'VQH-NEW',
+      fullName: 'Nguyễn Mới',
+      workEmail: 'new@vqh.local',
+      departmentId: '10000000-0000-4000-8000-000000000201',
+      actorId: context.actorId,
+      companyId,
+      userId: '10000000-0000-4000-8000-000000000002',
+      roles: ['company_admin'],
+    })
+    const resolveContext = vi.fn().mockResolvedValue(context)
+    const authorizeInvitation = vi.fn().mockResolvedValue(undefined)
+    const invite = vi.fn()
+    const routes = createEmployeeRoutes({
+      resolveContext,
+      service: { authorizeInvitation, invite } as never,
+    }) as unknown as {
+      invite(event: unknown): Promise<unknown>
+    }
+
+    await expect(routes.invite({})).rejects.toMatchObject({ statusCode: 400 })
+    expect(resolveContext).toHaveBeenCalledWith(expect.anything(), companyId)
+    expect(authorizeInvitation).toHaveBeenCalledWith(context)
+    expect(invite).not.toHaveBeenCalled()
+  })
+
+  it('denies an unauthorized invitation before reading its body or initializing Auth administration', async () => {
+    readBody.mockResolvedValue({ employeeCode: 'malformed body that must not be read' })
+    const resolveContext = vi.fn().mockResolvedValue(context)
+    const authorizeInvitation = vi.fn().mockRejectedValue({
+      statusCode: 403,
+      code: 'PERMISSION_DENIED',
+    })
+    const invite = vi.fn()
+    const routes = createEmployeeRoutes({
+      resolveContext,
+      service: { authorizeInvitation, invite } as never,
+    }) as unknown as {
+      invite(event: unknown): Promise<unknown>
+    }
+
+    await expect(routes.invite({})).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    expect(resolveContext).toHaveBeenCalledWith(expect.anything(), companyId)
+    expect(authorizeInvitation).toHaveBeenCalledWith(context)
+    expect(readBody).not.toHaveBeenCalled()
+    expect(invite).not.toHaveBeenCalled()
+  })
 })
