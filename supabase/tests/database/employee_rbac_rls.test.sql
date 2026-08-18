@@ -110,6 +110,24 @@ insert into public.company_role_assignments (tenant_id, company_id, user_id, rol
   (:'tenant_a_id'::uuid, :'company_a_id'::uuid, :'legacy_admin_user_id'::uuid, '41000000-0000-4000-8000-000000000301', :'admin_user_id'::uuid, 'test normalized employee role'),
   (:'tenant_b_id'::uuid, :'company_b_id'::uuid, :'unrelated_admin_user_id'::uuid, '42000000-0000-4000-8000-000000000301', :'unrelated_admin_user_id'::uuid, 'test unrelated company admin role');
 
+select id as second_admin_assignment_id
+from public.company_role_assignments
+where tenant_id = :'tenant_a_id'::uuid
+  and company_id = :'company_a_id'::uuid
+  and user_id = :'second_admin_user_id'::uuid
+  and role_id = '41000000-0000-4000-8000-000000000303'::uuid
+  and revoked_at is null
+\gset
+
+select id as other_employee_assignment_id
+from public.company_role_assignments
+where tenant_id = :'tenant_a_id'::uuid
+  and company_id = :'company_a_id'::uuid
+  and user_id = :'other_user_id'::uuid
+  and role_id = '41000000-0000-4000-8000-000000000301'::uuid
+  and revoked_at is null
+\gset
+
 select ok(
   not has_function_privilege('anon', 'private.has_company_permission(uuid, uuid, text)', 'execute'),
   'anonymous users cannot execute the private permission helper'
@@ -135,6 +153,10 @@ select ok(
 select ok(
   not has_column_privilege('authenticated', 'public.employees', 'user_id', 'select'),
   'account user IDs are not selectable through the employee directory table'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.employees', 'insert'),
+  'authenticated users cannot create employee rows directly'
 );
 select ok(
   not has_table_privilege('authenticated', 'public.company_role_assignments', 'insert')
@@ -191,13 +213,46 @@ select is(
 );
 select is((select count(*) from public.employees where company_id = :'company_b_id'::uuid), 0::bigint, 'employee cannot read another company directory');
 
+reset role;
+update public.company_memberships
+set is_active = false
+where tenant_id = :'tenant_a_id'::uuid
+  and company_id = :'company_a_id'::uuid
+  and user_id = :'other_user_id'::uuid;
+set local role authenticated;
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'self_user_id'), true);
+select is(
+  (select count(*) from public.employees where company_id = :'company_a_id'::uuid),
+  1::bigint,
+  'directory excludes an employee whose same-company membership is inactive'
+);
+
+reset role;
+update public.company_memberships
+set is_active = true
+where tenant_id = :'tenant_a_id'::uuid
+  and company_id = :'company_a_id'::uuid
+  and user_id = :'other_user_id'::uuid;
+update public.company_role_assignments
+set revoked_at = now(),
+    revoked_by = :'admin_user_id'::uuid,
+    revoke_reason = 'test target base employee role revoked'
+where id = :'other_employee_assignment_id'::bigint;
+set local role authenticated;
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'self_user_id'), true);
+select is(
+  (select count(*) from public.employees where company_id = :'company_a_id'::uuid),
+  1::bigint,
+  'directory excludes an employee without an active normalized base employee role'
+);
+
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'hr_user_id'), true);
 select is((select count(*) from public.employee_private_details where company_id = :'company_a_id'::uuid), 2::bigint, 'HR manager reads company private profiles');
 select is((select count(*) from public.employee_private_details where company_id = :'company_b_id'::uuid), 0::bigint, 'HR manager cannot read another company private profiles');
 select throws_ok(
   format(
     'select public.revoke_company_role_assignment(%s, %L)',
-    (select id from public.company_role_assignments where tenant_id = :'tenant_a_id'::uuid and company_id = :'company_a_id'::uuid and user_id = :'second_admin_user_id'::uuid and role_id = '41000000-0000-4000-8000-000000000303'::uuid and revoked_at is null),
+    :'second_admin_assignment_id'::bigint,
     'test HR role-revoke denial'
   ),
   'P0001',
@@ -228,7 +283,7 @@ select is((select count(*) from public.employee_private_details where company_id
 select throws_ok(
   format(
     'select public.revoke_company_role_assignment(%s, %L)',
-    (select id from public.company_role_assignments where tenant_id = :'tenant_a_id'::uuid and company_id = :'company_a_id'::uuid and user_id = :'second_admin_user_id'::uuid and role_id = '41000000-0000-4000-8000-000000000303'::uuid and revoked_at is null),
+    :'second_admin_assignment_id'::bigint,
     'test legacy role-revoke denial'
   ),
   'P0001',
@@ -379,7 +434,7 @@ select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticate
 select is(
   (
     select (public.revoke_company_role_assignment(
-      (select id from public.company_role_assignments where tenant_id = :'tenant_a_id'::uuid and company_id = :'company_a_id'::uuid and user_id = :'second_admin_user_id'::uuid and role_id = '41000000-0000-4000-8000-000000000303'::uuid and revoked_at is null),
+      :'second_admin_assignment_id'::bigint,
       'test second company admin revocation'
     )).revoked_at is not null
   ),
@@ -402,6 +457,30 @@ select throws_ok(
   'P0001',
   'LAST_COMPANY_ADMIN_REQUIRED',
   'database prevents privileged direct revocation of the final company admin'
+);
+select throws_ok(
+  'update public.roles set is_active = false where id = ''41000000-0000-4000-8000-000000000303''::uuid',
+  'P0001',
+  'LAST_COMPANY_ADMIN_REQUIRED',
+  'database prevents privileged deactivation of the final company-admin role'
+);
+select throws_ok(
+  'update public.roles set code = ''retired_company_admin'' where id = ''41000000-0000-4000-8000-000000000303''::uuid',
+  'P0001',
+  'LAST_COMPANY_ADMIN_REQUIRED',
+  'database prevents privileged code changes that remove the final company-admin role'
+);
+select throws_ok(
+  'delete from public.roles where id = ''41000000-0000-4000-8000-000000000303''::uuid',
+  'P0001',
+  'LAST_COMPANY_ADMIN_REQUIRED',
+  'database prevents privileged deletion of the final company-admin role'
+);
+select throws_ok(
+  'update public.roles set is_active = false where id = ''41000000-0000-4000-8000-000000000301''::uuid',
+  'P0001',
+  'SYSTEM_ROLE_LIFECYCLE_FORBIDDEN',
+  'database prevents privileged lifecycle changes to assigned system roles'
 );
 set local role authenticated;
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'admin_user_id'), true);
@@ -461,6 +540,77 @@ select ok(
     ]
   ),
   'audit summaries redact employee private-detail fields'
+);
+select ok(
+  not exists (
+    select 1
+    from public.audit_events
+    where coalesce(before_summary, '{}'::jsonb) ? 'full_name'
+       or coalesce(after_summary, '{}'::jsonb) ? 'full_name'
+  ),
+  'audit summaries redact employee full names'
+);
+select throws_ok(
+  format('delete from public.company_role_assignments where id = %s', :'other_employee_assignment_id'::bigint),
+  'P0001',
+  'ROLE_ASSIGNMENT_HISTORY_REQUIRED',
+  'privileged callers cannot hard-delete role-assignment history'
+);
+insert into public.roles (id, tenant_id, company_id, code, name, description, is_system, is_privileged)
+values (
+  '41000000-0000-4000-8000-000000000304'::uuid,
+  :'tenant_a_id'::uuid,
+  :'company_a_id'::uuid,
+  'audit_catalog_role',
+  'Audit catalog role',
+  'audit catalog mutation fixture',
+  false,
+  false
+);
+insert into public.role_permissions (role_id, permission_code)
+values ('41000000-0000-4000-8000-000000000304'::uuid, 'employee.read_directory');
+update public.roles
+set description = 'audit catalog mutation fixture updated'
+where id = '41000000-0000-4000-8000-000000000304'::uuid;
+update public.role_permissions
+set permission_code = 'employee.read_self_private'
+where role_id = '41000000-0000-4000-8000-000000000304'::uuid
+  and permission_code = 'employee.read_directory';
+delete from public.role_permissions
+where role_id = '41000000-0000-4000-8000-000000000304'::uuid
+  and permission_code = 'employee.read_self_private';
+delete from public.roles
+where id = '41000000-0000-4000-8000-000000000304'::uuid;
+select ok(
+  exists (
+    select 1
+    from public.audit_events
+    where resource_type = 'role'
+      and action in ('role.catalog_created', 'role.catalog_updated', 'role.catalog_deleted')
+    group by resource_type
+    having count(distinct action) = 3
+  )
+  and exists (
+    select 1
+    from public.audit_events
+    where resource_type = 'role_permission'
+      and action in ('role_permission.created', 'role_permission.updated', 'role_permission.deleted')
+    group by resource_type
+    having count(distinct action) = 3
+  ),
+  'privileged direct role and role-permission catalog mutations are audited'
+);
+select ok(
+  not exists (
+    select 1
+    from public.audit_events
+    where resource_type in ('role', 'role_permission')
+      and (
+        coalesce(before_summary, '{}'::jsonb) ?| array['name', 'description']
+        or coalesce(after_summary, '{}'::jsonb) ?| array['name', 'description']
+      )
+  ),
+  'role and role-permission audit summaries contain only non-sensitive catalog fields'
 );
 select throws_ok(
   'update public.audit_events set action = ''tampered'' where id = (select min(id) from public.audit_events)',
