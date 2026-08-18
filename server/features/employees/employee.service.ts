@@ -25,6 +25,21 @@ function notFound(): never {
   throw new AppApiError(404, 'EMPLOYEE_NOT_FOUND', 'Không tìm thấy nhân viên.')
 }
 
+async function withPrivateDetails(
+  repository: EmployeeRepository,
+  context: EmployeeServiceContext,
+  employee: EmployeeDetail,
+  employeeId: string,
+): Promise<EmployeeDetail> {
+  const { privateDetails: _privateDetails, ...directoryEmployee } = employee
+  const canReadPrivate = context.permissions.includes('employee.read_private')
+    || (directoryEmployee.account?.userId === context.actorId
+      && context.permissions.includes('employee.read_self_private'))
+  if (!canReadPrivate) return directoryEmployee
+  const privateDetails = await repository.getPrivateDetails(context.companyId, employeeId)
+  return privateDetails ? { ...directoryEmployee, privateDetails } : directoryEmployee
+}
+
 export function createEmployeeService(repository: EmployeeRepository) {
   return {
     async list(context: EmployeeServiceContext, query: EmployeeListQuery): Promise<EmployeeListResponse> {
@@ -37,13 +52,7 @@ export function createEmployeeService(repository: EmployeeRepository) {
       const employee = await repository.getDirectoryEmployee(context.companyId, employeeId)
       if (!employee) return notFound()
 
-      const canReadPrivate = context.permissions.includes('employee.read_private')
-        || (employee.account?.userId === context.actorId
-          && context.permissions.includes('employee.read_self_private'))
-      if (!canReadPrivate) return employee
-
-      const privateDetails = await repository.getPrivateDetails(context.companyId, employeeId)
-      return privateDetails ? { ...employee, privateDetails } : employee
+      return withPrivateDetails(repository, context, employee, employeeId)
     },
     async update(
       context: EmployeeServiceContext,
@@ -52,7 +61,8 @@ export function createEmployeeService(repository: EmployeeRepository) {
     ): Promise<EmployeeDetail> {
       requirePermission(context, 'employee.update')
       const employee = await repository.updateEmployee(context.companyId, employeeId, input)
-      return employee ?? notFound()
+      if (!employee) return notFound()
+      return withPrivateDetails(repository, context, employee, employeeId)
     },
   }
 }

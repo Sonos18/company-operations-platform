@@ -64,4 +64,15 @@ describe('employee route handlers', () => {
     expect(resolveContext).not.toHaveBeenCalled()
     expect(update).not.toHaveBeenCalled()
   })
+
+  it('rejects terminal employment status in the generic employee PATCH route', async () => {
+    readBody.mockResolvedValue({ employmentStatus: 'terminated' })
+    const resolveContext = vi.fn()
+    const update = vi.fn()
+    const routes = createEmployeeRoutes({ resolveContext, service: { update } as never })
+
+    await expect(routes.update({} as never)).rejects.toMatchObject({ statusCode: 400 })
+    expect(resolveContext).not.toHaveBeenCalled()
+    expect(update).not.toHaveBeenCalled()
+  })
 })

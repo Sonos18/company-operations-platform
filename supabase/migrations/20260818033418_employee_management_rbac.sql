@@ -497,6 +497,12 @@ as $$
    and company_role.is_active
   where employee.company_id = target_company_id
     and employee.id = any(target_employee_ids)
+    and employee.employment_status <> 'terminated'
+    and private.is_active_employee_directory_record(
+      employee.id,
+      employee.tenant_id,
+      employee.company_id
+    )
     and exists (
       select 1
       from public.company_memberships actor_membership
@@ -511,6 +517,220 @@ as $$
       or private.has_company_permission(employee.tenant_id, employee.company_id, 'employee.read_private')
     )
   group by employee.id, employee.user_id;
+$$;
+
+create or replace function private.update_employee_profile(
+  target_company_id uuid,
+  target_employee_id uuid,
+  target_update jsonb
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_tenant_id uuid;
+  v_employee_id uuid;
+  v_private_employee_id uuid;
+  v_private_update jsonb;
+begin
+  if auth.uid() is null then
+    raise exception using errcode = 'P0001', message = 'PERMISSION_DENIED';
+  end if;
+
+  if jsonb_typeof(target_update) is distinct from 'object'
+    or target_update = '{}'::jsonb
+    or exists (
+      select 1
+      from jsonb_object_keys(target_update) as update_key(key)
+      where update_key.key not in (
+        'fullName', 'workEmail', 'departmentId', 'positionId', 'managerEmployeeId',
+        'hireDate', 'probationEndDate', 'employmentStatus', 'privateDetails'
+      )
+    ) then
+    raise exception using errcode = 'P0001', message = 'EMPLOYEE_UPDATE_INVALID';
+  end if;
+
+  if (target_update ? 'fullName' and (
+        jsonb_typeof(target_update -> 'fullName') <> 'string'
+        or pg_catalog.btrim(target_update ->> 'fullName') = ''
+      ))
+    or (target_update ? 'workEmail' and (
+        jsonb_typeof(target_update -> 'workEmail') <> 'string'
+        or pg_catalog.btrim(target_update ->> 'workEmail') !~* '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'
+      ))
+    or (target_update ? 'departmentId' and (
+        jsonb_typeof(target_update -> 'departmentId') <> 'string'
+        or target_update ->> 'departmentId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      ))
+    or (target_update ? 'positionId' and target_update -> 'positionId' <> 'null'::jsonb and (
+        jsonb_typeof(target_update -> 'positionId') <> 'string'
+        or target_update ->> 'positionId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      ))
+    or (target_update ? 'managerEmployeeId' and target_update -> 'managerEmployeeId' <> 'null'::jsonb and (
+        jsonb_typeof(target_update -> 'managerEmployeeId') <> 'string'
+        or target_update ->> 'managerEmployeeId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      ))
+    or (target_update ? 'hireDate' and target_update -> 'hireDate' <> 'null'::jsonb and jsonb_typeof(target_update -> 'hireDate') <> 'string')
+    or (target_update ? 'probationEndDate' and target_update -> 'probationEndDate' <> 'null'::jsonb and jsonb_typeof(target_update -> 'probationEndDate') <> 'string')
+    or (target_update ? 'employmentStatus' and (
+        jsonb_typeof(target_update -> 'employmentStatus') <> 'string'
+        or target_update ->> 'employmentStatus' not in ('probation', 'active', 'on_leave', 'terminated')
+      )) then
+    raise exception using errcode = 'P0001', message = 'EMPLOYEE_UPDATE_INVALID';
+  end if;
+
+  if target_update ? 'employmentStatus'
+    and target_update ->> 'employmentStatus' = 'terminated' then
+    raise exception using errcode = 'P0001', message = 'EMPLOYEE_OFFBOARDING_FAILED';
+  end if;
+
+  begin
+    if target_update ? 'hireDate' and target_update -> 'hireDate' <> 'null'::jsonb then
+      perform (target_update ->> 'hireDate')::date;
+    end if;
+    if target_update ? 'probationEndDate' and target_update -> 'probationEndDate' <> 'null'::jsonb then
+      perform (target_update ->> 'probationEndDate')::date;
+    end if;
+  exception when others then
+    raise exception using errcode = 'P0001', message = 'EMPLOYEE_UPDATE_INVALID';
+  end;
+
+  if target_update ? 'privateDetails' then
+    v_private_update := target_update -> 'privateDetails';
+    if jsonb_typeof(v_private_update) is distinct from 'object'
+      or v_private_update = '{}'::jsonb
+      or exists (
+        select 1
+        from jsonb_object_keys(v_private_update) as private_key(key)
+        where private_key.key not in (
+          'dateOfBirth', 'gender', 'personalEmail', 'personalPhone', 'currentAddress',
+          'permanentAddress', 'taxCode', 'socialInsuranceNumber', 'emergencyContactName',
+          'emergencyContactPhone'
+        )
+      ) then
+      raise exception using errcode = 'P0001', message = 'EMPLOYEE_UPDATE_INVALID';
+    end if;
+
+    if (v_private_update ? 'dateOfBirth' and v_private_update -> 'dateOfBirth' <> 'null'::jsonb and jsonb_typeof(v_private_update -> 'dateOfBirth') <> 'string')
+      or (v_private_update ? 'gender' and v_private_update -> 'gender' <> 'null'::jsonb and (
+        jsonb_typeof(v_private_update -> 'gender') <> 'string'
+        or v_private_update ->> 'gender' not in ('female', 'male', 'other', 'undisclosed')
+      ))
+      or (v_private_update ? 'personalEmail' and v_private_update -> 'personalEmail' <> 'null'::jsonb and (
+        jsonb_typeof(v_private_update -> 'personalEmail') <> 'string'
+        or pg_catalog.btrim(v_private_update ->> 'personalEmail') !~* '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'
+      ))
+      or exists (
+        select 1
+        from jsonb_each(v_private_update) as private_value(key, value)
+        where private_value.key in (
+          'personalPhone', 'currentAddress', 'permanentAddress', 'taxCode',
+          'socialInsuranceNumber', 'emergencyContactName', 'emergencyContactPhone'
+        )
+          and private_value.value <> 'null'::jsonb
+          and (
+            jsonb_typeof(private_value.value) <> 'string'
+            or pg_catalog.btrim(private_value.value #>> '{}') = ''
+          )
+      ) then
+      raise exception using errcode = 'P0001', message = 'EMPLOYEE_UPDATE_INVALID';
+    end if;
+
+    begin
+      if v_private_update ? 'dateOfBirth' and v_private_update -> 'dateOfBirth' <> 'null'::jsonb then
+        perform (v_private_update ->> 'dateOfBirth')::date;
+      end if;
+    exception when others then
+      raise exception using errcode = 'P0001', message = 'EMPLOYEE_UPDATE_INVALID';
+    end;
+  end if;
+
+  select employee.tenant_id
+    into v_tenant_id
+    from public.employees employee
+   where employee.id = target_employee_id
+     and employee.company_id = target_company_id;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'EMPLOYEE_NOT_FOUND';
+  end if;
+
+  if not private.has_company_permission(v_tenant_id, target_company_id, 'employee.update') then
+    raise exception using errcode = 'P0001', message = 'PERMISSION_DENIED';
+  end if;
+
+  update public.employees employee
+     set full_name = case when target_update ? 'fullName' then pg_catalog.btrim(target_update ->> 'fullName') else employee.full_name end,
+         work_email = case when target_update ? 'workEmail' then pg_catalog.lower(pg_catalog.btrim(target_update ->> 'workEmail')) else employee.work_email end,
+         department_id = case when target_update ? 'departmentId' then (target_update ->> 'departmentId')::uuid else employee.department_id end,
+         position_id = case
+           when target_update ? 'positionId' and target_update -> 'positionId' = 'null'::jsonb then null
+           when target_update ? 'positionId' then (target_update ->> 'positionId')::uuid
+           else employee.position_id
+         end,
+         manager_employee_id = case
+           when target_update ? 'managerEmployeeId' and target_update -> 'managerEmployeeId' = 'null'::jsonb then null
+           when target_update ? 'managerEmployeeId' then (target_update ->> 'managerEmployeeId')::uuid
+           else employee.manager_employee_id
+         end,
+         hire_date = case
+           when target_update ? 'hireDate' and target_update -> 'hireDate' = 'null'::jsonb then null
+           when target_update ? 'hireDate' then (target_update ->> 'hireDate')::date
+           else employee.hire_date
+         end,
+         probation_end_date = case
+           when target_update ? 'probationEndDate' and target_update -> 'probationEndDate' = 'null'::jsonb then null
+           when target_update ? 'probationEndDate' then (target_update ->> 'probationEndDate')::date
+           else employee.probation_end_date
+         end,
+         employment_status = case when target_update ? 'employmentStatus' then target_update ->> 'employmentStatus' else employee.employment_status end
+   where employee.id = target_employee_id
+     and employee.tenant_id = v_tenant_id
+     and employee.company_id = target_company_id
+  returning employee.id into v_employee_id;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'EMPLOYEE_NOT_FOUND';
+  end if;
+
+  if v_private_update is not null then
+    update public.employee_private_details private_details
+       set date_of_birth = case
+             when v_private_update ? 'dateOfBirth' and v_private_update -> 'dateOfBirth' = 'null'::jsonb then null
+             when v_private_update ? 'dateOfBirth' then (v_private_update ->> 'dateOfBirth')::date
+             else private_details.date_of_birth
+           end,
+           gender = case
+             when v_private_update ? 'gender' and v_private_update -> 'gender' = 'null'::jsonb then null
+             when v_private_update ? 'gender' then v_private_update ->> 'gender'
+             else private_details.gender
+           end,
+           personal_email = case
+             when v_private_update ? 'personalEmail' and v_private_update -> 'personalEmail' = 'null'::jsonb then null
+             when v_private_update ? 'personalEmail' then pg_catalog.lower(pg_catalog.btrim(v_private_update ->> 'personalEmail'))
+             else private_details.personal_email
+           end,
+           personal_phone = case when v_private_update ? 'personalPhone' then pg_catalog.btrim(v_private_update ->> 'personalPhone') else private_details.personal_phone end,
+           current_address = case when v_private_update ? 'currentAddress' then pg_catalog.btrim(v_private_update ->> 'currentAddress') else private_details.current_address end,
+           permanent_address = case when v_private_update ? 'permanentAddress' then pg_catalog.btrim(v_private_update ->> 'permanentAddress') else private_details.permanent_address end,
+           tax_code = case when v_private_update ? 'taxCode' then pg_catalog.btrim(v_private_update ->> 'taxCode') else private_details.tax_code end,
+           social_insurance_number = case when v_private_update ? 'socialInsuranceNumber' then pg_catalog.btrim(v_private_update ->> 'socialInsuranceNumber') else private_details.social_insurance_number end,
+           emergency_contact_name = case when v_private_update ? 'emergencyContactName' then pg_catalog.btrim(v_private_update ->> 'emergencyContactName') else private_details.emergency_contact_name end,
+           emergency_contact_phone = case when v_private_update ? 'emergencyContactPhone' then pg_catalog.btrim(v_private_update ->> 'emergencyContactPhone') else private_details.emergency_contact_phone end
+     where private_details.employee_id = target_employee_id
+       and private_details.tenant_id = v_tenant_id
+       and private_details.company_id = target_company_id
+    returning private_details.employee_id into v_private_employee_id;
+
+    if not found then
+      raise exception using errcode = 'P0001', message = 'ONBOARDING_INCOMPLETE';
+    end if;
+  end if;
+
+  return v_employee_id;
+end;
 $$;
 
 create or replace function private.can_read_role_catalog(
@@ -577,6 +797,19 @@ as $$
     target_company_id,
     target_employee_ids
   );
+$$;
+
+create or replace function public.update_employee_profile(
+  target_company_id uuid,
+  target_employee_id uuid,
+  target_update jsonb
+)
+returns uuid
+language sql
+security invoker
+set search_path = ''
+as $$
+  select private.update_employee_profile(target_company_id, target_employee_id, target_update);
 $$;
 
 create or replace function private.complete_employee_onboarding(
@@ -1429,9 +1662,11 @@ create policy employees_update_hr on public.employees
 create policy employee_private_details_select_self_or_hr on public.employee_private_details
   for select to authenticated
   using (
-    private.is_own_employee_record(employee_id, tenant_id, company_id)
+    (
+      private.is_own_employee_record(employee_id, tenant_id, company_id)
+      and private.has_company_permission(tenant_id, company_id, 'employee.read_self_private')
+    )
     or private.has_company_permission(tenant_id, company_id, 'employee.read_private')
-    or private.has_company_permission(tenant_id, company_id, 'employee.update')
   );
 
 create policy employee_private_details_update_hr on public.employee_private_details
@@ -1513,17 +1748,6 @@ grant select (
   created_at,
   updated_at
 ) on public.employees to authenticated;
-grant update (
-  full_name,
-  work_email,
-  department_id,
-  position_id,
-  manager_employee_id,
-  hire_date,
-  probation_end_date,
-  employment_status
-) on public.employees to authenticated;
-grant update on public.employee_private_details to authenticated;
 
 revoke all on function public.set_updated_at() from public, anon, authenticated;
 revoke all on function public.is_tenant_member(uuid) from public, anon;
@@ -1532,6 +1756,8 @@ revoke all on function private.get_my_company_access(uuid) from public, anon, au
 revoke all on function public.get_my_company_access(uuid) from public, anon, authenticated;
 revoke all on function private.get_company_employee_access_links(uuid, uuid[]) from public, anon, authenticated;
 revoke all on function public.get_company_employee_access_links(uuid, uuid[]) from public, anon, authenticated;
+revoke all on function private.update_employee_profile(uuid, uuid, jsonb) from public, anon, authenticated;
+revoke all on function public.update_employee_profile(uuid, uuid, jsonb) from public, anon, authenticated;
 revoke all on function public.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) from public, anon;
 revoke all on function public.grant_company_role_assignment(uuid, uuid, uuid, text) from public, anon;
 revoke all on function public.revoke_company_role_assignment(bigint, text) from public, anon;
@@ -1545,6 +1771,7 @@ grant execute on function private.is_active_employee_directory_record(uuid, uuid
 grant execute on function private.has_company_permission(uuid, uuid, text) to authenticated;
 grant execute on function private.get_my_company_access(uuid) to authenticated;
 grant execute on function private.get_company_employee_access_links(uuid, uuid[]) to authenticated;
+grant execute on function private.update_employee_profile(uuid, uuid, jsonb) to authenticated;
 grant execute on function private.can_read_role_catalog(uuid, uuid) to authenticated;
 grant execute on function private.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) to authenticated;
 grant execute on function private.grant_company_role_assignment(uuid, uuid, uuid, text) to authenticated;
@@ -1553,6 +1780,7 @@ grant execute on function public.is_tenant_member(uuid) to authenticated;
 grant execute on function public.is_company_member(uuid, uuid) to authenticated;
 grant execute on function public.get_my_company_access(uuid) to authenticated;
 grant execute on function public.get_company_employee_access_links(uuid, uuid[]) to authenticated;
+grant execute on function public.update_employee_profile(uuid, uuid, jsonb) to authenticated;
 grant execute on function public.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) to authenticated;
 grant execute on function public.grant_company_role_assignment(uuid, uuid, uuid, text) to authenticated;
 grant execute on function public.revoke_company_role_assignment(bigint, text) to authenticated;

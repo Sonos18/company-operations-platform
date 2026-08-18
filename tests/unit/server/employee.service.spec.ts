@@ -99,6 +99,16 @@ describe('employee service', () => {
     expect(employeeRepository.getPrivateDetails).toHaveBeenCalledWith(companyId, employeeId)
   })
 
+  it('redacts own private details when employee.read_self_private is absent', async () => {
+    const employeeRepository = repository()
+
+    await expect(createEmployeeService(employeeRepository).detail(
+      context(['employee.read_directory']),
+      employeeId,
+    )).resolves.toEqual(summary)
+    expect(employeeRepository.getPrivateDetails).not.toHaveBeenCalled()
+  })
+
   it('returns private details for a caller with company-wide private access', async () => {
     const employeeRepository = repository({
       getDirectoryEmployee: vi.fn().mockResolvedValue({
@@ -153,7 +163,7 @@ describe('employee service', () => {
       context(['employee.update']),
       employeeId,
       input,
-    )).resolves.toEqual(updated)
+    )).resolves.toEqual(summary)
     expect(employeeRepository.updateEmployee).toHaveBeenCalledWith(companyId, employeeId, input)
   })
 
@@ -166,5 +176,27 @@ describe('employee service', () => {
       { fullName: 'Như Nguyễn' },
     )).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
     expect(employeeRepository.updateEmployee).not.toHaveBeenCalled()
+  })
+
+  it('redacts private details from an update response when update access lacks private-read access', async () => {
+    const employeeRepository = repository()
+
+    await expect(createEmployeeService(employeeRepository).update(
+      context(['employee.update']),
+      employeeId,
+      { fullName: 'Như Nguyễn' },
+    )).resolves.toEqual(summary)
+    expect(employeeRepository.getPrivateDetails).not.toHaveBeenCalled()
+  })
+
+  it('returns private details from an update response only with an independent private-read permission', async () => {
+    const employeeRepository = repository()
+
+    await expect(createEmployeeService(employeeRepository).update(
+      context(['employee.update', 'employee.read_private']),
+      employeeId,
+      { fullName: 'Như Nguyễn' },
+    )).resolves.toEqual({ ...summary, privateDetails })
+    expect(employeeRepository.getPrivateDetails).toHaveBeenCalledWith(companyId, employeeId)
   })
 })

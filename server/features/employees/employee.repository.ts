@@ -1,5 +1,4 @@
 import type {
-  EmployeeDetail,
   EmployeePrivateDetails,
   EmployeeSummary,
   EmployeeUpdateInput,
@@ -19,7 +18,7 @@ export interface EmployeeRepository {
     companyId: string,
     employeeId: string,
     input: EmployeeUpdateInput,
-  ): Promise<EmployeeDetail | null>
+  ): Promise<EmployeeSummary | null>
 }
 
 interface QueryResult {
@@ -34,15 +33,24 @@ interface Query extends PromiseLike<QueryResult> {
   in(column: string, values: string[]): Query
   order(column: string, options?: { ascending?: boolean }): Query
   range(from: number, to: number): Query
-  update(values: Record<string, string | null>): Query
   maybeSingle(): Promise<QueryResult>
 }
+
+type UpdateJson = string | null | { [key: string]: UpdateJson }
 
 interface EmployeeDataClient {
   from(table: 'employees' | 'employee_private_details' | 'roles'): Query
   rpc(
     functionName: 'get_company_employee_access_links',
     arguments_: { target_company_id: string, target_employee_ids: string[] },
+  ): Promise<QueryResult>
+  rpc(
+    functionName: 'update_employee_profile',
+    arguments_: {
+      target_company_id: string
+      target_employee_id: string
+      target_update: { [key: string]: UpdateJson }
+    },
   ): Promise<QueryResult>
 }
 
@@ -69,7 +77,7 @@ const employeeRowSchema = z.object({
 const accessLinkSchema = z.object({
   employee_id: z.string().uuid(),
   user_id: z.string().uuid(),
-  role_codes: z.array(z.string().trim().min(1)),
+  role_codes: z.array(z.string().trim().min(1)).min(1),
 }).strict()
 
 const roleRowSchema = z.object({
@@ -102,6 +110,27 @@ function failDatabase(message: string): never {
   throw new AppApiError(500, 'INTERNAL_ERROR', message)
 }
 
+function mapUpdateRpcError(error: unknown): null {
+  const known = z.object({ code: z.string().optional(), message: z.string().optional() }).safeParse(error)
+  if (known.success && known.data.code === 'P0001') {
+    if (known.data.message === 'EMPLOYEE_NOT_FOUND') return null
+    if (known.data.message === 'PERMISSION_DENIED') {
+      throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.')
+    }
+    if (known.data.message === 'ONBOARDING_INCOMPLETE') {
+      throw new AppApiError(409, 'ONBOARDING_INCOMPLETE', 'Hồ sơ nhân viên chưa hoàn tất.')
+    }
+    if (known.data.message === 'EMPLOYEE_OFFBOARDING_FAILED') {
+      throw new AppApiError(409, 'EMPLOYEE_OFFBOARDING_FAILED', 'Chỉ quy trình nghỉ việc mới có thể chấm dứt nhân viên.')
+    }
+  }
+  if (known.success && known.data.code === '23505'
+    && known.data.message?.includes('employees_company_work_email_key')) {
+    throw new AppApiError(409, 'EMPLOYEE_EMAIL_CONFLICT', 'Email công việc đã được sử dụng trong công ty này.')
+  }
+  return failDatabase('Không thể cập nhật nhân viên.')
+}
+
 function one<T>(value: T | T[]): T {
   return Array.isArray(value) ? value[0]! : value
 }
@@ -128,20 +157,24 @@ function mapEmployee(
 ): EmployeeSummary {
   const department = one(row.departments)
   const position = row.positions === null ? null : one(row.positions)
-  const roles = link?.role_codes.map(code => rolesByCode.get(code)).filter(
-    (role): role is z.infer<typeof roleRowSchema> => role !== undefined,
-  )
-  const access = link && roles && roles.length === link.role_codes.length
+  if (link && link.role_codes.some(code => !rolesByCode.has(code))) {
+    failDatabase('Không thể đọc vai trò nhân viên.')
+  }
+  const access = link
     ? {
         account: { email: row.work_email, userId: link.user_id },
-        roles: roles.map(role => ({
-          id: role.id,
-          code: role.code,
-          name: role.name,
-          description: role.description,
-          isPrivileged: role.is_privileged,
-          isSystem: role.is_system,
-        })),
+        roles: link.role_codes.map(code => {
+          const role = rolesByCode.get(code)
+          if (!role) failDatabase('Không thể đọc vai trò nhân viên.')
+          return {
+            id: role.id,
+            code: role.code,
+            name: role.name,
+            description: role.description,
+            isPrivileged: role.is_privileged,
+            isSystem: role.is_system,
+          }
+        }),
       }
     : {}
 
@@ -164,13 +197,21 @@ export function createSupabaseEmployeeRepository(db: UserSupabaseClient): Employ
   const client = db as unknown as EmployeeDataClient
 
   async function accessFor(companyId: string, employeeIds: string[]) {
-    if (employeeIds.length === 0) return new Map<string, z.infer<typeof accessLinkSchema>>()
+    const requestedIds = [...new Set(employeeIds)]
+    if (requestedIds.length === 0) return new Map<string, z.infer<typeof accessLinkSchema>>()
     const { data, error } = await client.rpc('get_company_employee_access_links', {
       target_company_id: companyId,
-      target_employee_ids: employeeIds,
+      target_employee_ids: requestedIds,
     })
     const result = z.array(accessLinkSchema).safeParse(data)
     if (error || !result.success) failDatabase('Không thể đọc liên kết tài khoản nhân viên.')
+    const returnedIds = new Set<string>()
+    for (const link of result.data) {
+      if (!requestedIds.includes(link.employee_id) || returnedIds.has(link.employee_id)) {
+        failDatabase('Không thể đọc liên kết tài khoản nhân viên.')
+      }
+      returnedIds.add(link.employee_id)
+    }
     return new Map(result.data.map(link => [link.employee_id, link]))
   }
 
@@ -224,6 +265,7 @@ export function createSupabaseEmployeeRepository(db: UserSupabaseClient): Employ
         .select(employeeColumns, { count: 'exact' })
         .eq('company_id', companyId)
         .order('full_name')
+        .order('id')
         .range((page - 1) * pageSize, page * pageSize - 1)
       if (error || count === null || count === undefined) failDatabase('Không thể đọc danh sách nhân viên.')
       return { items: await summaries(companyId, data), total: count }
@@ -231,44 +273,37 @@ export function createSupabaseEmployeeRepository(db: UserSupabaseClient): Employ
     getDirectoryEmployee: directoryEmployee,
     getPrivateDetails: privateDetails,
     async updateEmployee(companyId, employeeId, input) {
-      const employeeUpdate: Record<string, string | null> = {}
-      if (input.fullName !== undefined) employeeUpdate.full_name = input.fullName
-      if (input.workEmail !== undefined) employeeUpdate.work_email = input.workEmail
-      if (input.departmentId !== undefined) employeeUpdate.department_id = input.departmentId
-      if (input.positionId !== undefined) employeeUpdate.position_id = input.positionId
-      if (input.managerEmployeeId !== undefined) employeeUpdate.manager_employee_id = input.managerEmployeeId
-      if (input.hireDate !== undefined) employeeUpdate.hire_date = input.hireDate
-      if (input.probationEndDate !== undefined) employeeUpdate.probation_end_date = input.probationEndDate
-      if (input.employmentStatus !== undefined) employeeUpdate.employment_status = input.employmentStatus
-      if (Object.keys(employeeUpdate).length > 0) {
-        const { error } = await client.from('employees')
-          .update(employeeUpdate)
-          .eq('company_id', companyId)
-          .eq('id', employeeId)
-        if (error) failDatabase('Không thể cập nhật nhân viên.')
+      const update: { [key: string]: UpdateJson } = {}
+      if (input.fullName !== undefined) update.fullName = input.fullName
+      if (input.workEmail !== undefined) update.workEmail = input.workEmail
+      if (input.departmentId !== undefined) update.departmentId = input.departmentId
+      if (input.positionId !== undefined) update.positionId = input.positionId
+      if (input.managerEmployeeId !== undefined) update.managerEmployeeId = input.managerEmployeeId
+      if (input.hireDate !== undefined) update.hireDate = input.hireDate
+      if (input.probationEndDate !== undefined) update.probationEndDate = input.probationEndDate
+      if (input.employmentStatus !== undefined) update.employmentStatus = input.employmentStatus
+      if (input.privateDetails !== undefined) {
+        const privateDetails: { [key: string]: UpdateJson } = {}
+        if (input.privateDetails.dateOfBirth !== undefined) privateDetails.dateOfBirth = input.privateDetails.dateOfBirth
+        if (input.privateDetails.gender !== undefined) privateDetails.gender = input.privateDetails.gender
+        if (input.privateDetails.personalEmail !== undefined) privateDetails.personalEmail = input.privateDetails.personalEmail
+        if (input.privateDetails.personalPhone !== undefined) privateDetails.personalPhone = input.privateDetails.personalPhone
+        if (input.privateDetails.currentAddress !== undefined) privateDetails.currentAddress = input.privateDetails.currentAddress
+        if (input.privateDetails.permanentAddress !== undefined) privateDetails.permanentAddress = input.privateDetails.permanentAddress
+        if (input.privateDetails.taxCode !== undefined) privateDetails.taxCode = input.privateDetails.taxCode
+        if (input.privateDetails.socialInsuranceNumber !== undefined) privateDetails.socialInsuranceNumber = input.privateDetails.socialInsuranceNumber
+        if (input.privateDetails.emergencyContactName !== undefined) privateDetails.emergencyContactName = input.privateDetails.emergencyContactName
+        if (input.privateDetails.emergencyContactPhone !== undefined) privateDetails.emergencyContactPhone = input.privateDetails.emergencyContactPhone
+        update.privateDetails = privateDetails
       }
-      if (input.privateDetails) {
-        const privateUpdate: Record<string, string | null> = {}
-        if (input.privateDetails.dateOfBirth !== undefined) privateUpdate.date_of_birth = input.privateDetails.dateOfBirth
-        if (input.privateDetails.gender !== undefined) privateUpdate.gender = input.privateDetails.gender
-        if (input.privateDetails.personalEmail !== undefined) privateUpdate.personal_email = input.privateDetails.personalEmail
-        if (input.privateDetails.personalPhone !== undefined) privateUpdate.personal_phone = input.privateDetails.personalPhone
-        if (input.privateDetails.currentAddress !== undefined) privateUpdate.current_address = input.privateDetails.currentAddress
-        if (input.privateDetails.permanentAddress !== undefined) privateUpdate.permanent_address = input.privateDetails.permanentAddress
-        if (input.privateDetails.taxCode !== undefined) privateUpdate.tax_code = input.privateDetails.taxCode
-        if (input.privateDetails.socialInsuranceNumber !== undefined) privateUpdate.social_insurance_number = input.privateDetails.socialInsuranceNumber
-        if (input.privateDetails.emergencyContactName !== undefined) privateUpdate.emergency_contact_name = input.privateDetails.emergencyContactName
-        if (input.privateDetails.emergencyContactPhone !== undefined) privateUpdate.emergency_contact_phone = input.privateDetails.emergencyContactPhone
-        const { error } = await client.from('employee_private_details')
-          .update(privateUpdate)
-          .eq('company_id', companyId)
-          .eq('employee_id', employeeId)
-        if (error) failDatabase('Không thể cập nhật hồ sơ riêng tư của nhân viên.')
-      }
-      const employee = await directoryEmployee(companyId, employeeId)
-      if (!employee) return null
-      const details = await privateDetails(companyId, employeeId)
-      return details ? { ...employee, privateDetails: details } : employee
+      const { data, error } = await client.rpc('update_employee_profile', {
+        target_company_id: companyId,
+        target_employee_id: employeeId,
+        target_update: update,
+      })
+      if (error) return mapUpdateRpcError(error)
+      if (!z.string().uuid().safeParse(data).success) failDatabase('Không thể cập nhật nhân viên.')
+      return directoryEmployee(companyId, employeeId)
     },
   }
 }

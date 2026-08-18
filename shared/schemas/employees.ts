@@ -96,7 +96,7 @@ export const employeeUpdateInputSchema = z.object({
   managerEmployeeId: uuidSchema.nullable().optional(),
   hireDate: nullableDateSchema.optional(),
   probationEndDate: nullableDateSchema.optional(),
-  employmentStatus: employmentStatusSchema.optional(),
+  employmentStatus: z.enum(['probation', 'active', 'on_leave']).optional(),
   privateDetails: employeePrivateDetailsUpdateSchema.optional(),
 }).strict().refine(
   update => Object.keys(update).length > 0,

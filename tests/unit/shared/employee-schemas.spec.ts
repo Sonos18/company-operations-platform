@@ -151,6 +151,10 @@ describe('employee shared schemas', () => {
       hireDate: null,
     })).toMatchObject({ workEmail: 'new.employee@example.com', positionId: null })
     expect(employeeUpdateInputSchema.safeParse({ tenantId: ids.tenant }).success).toBe(false)
+    expect(employeeUpdateInputSchema.safeParse({ employmentStatus: 'terminated' }).success).toBe(false)
+    expect(employeeUpdateInputSchema.parse({ employmentStatus: 'on_leave' })).toEqual({
+      employmentStatus: 'on_leave',
+    })
 
     expect(roleAssignmentInputSchema.safeParse({
       targetUserId: ids.user,

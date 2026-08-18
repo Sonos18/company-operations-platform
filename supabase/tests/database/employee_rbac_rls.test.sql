@@ -88,6 +88,7 @@ insert into public.permissions (code, module, name, description) values
   ('employee.read_self_private', 'employee', 'Read own private profile', 'Read own private employee details'),
   ('employee.read_private', 'employee', 'Read private profiles', 'Read private employee details'),
   ('employee.create', 'employee', 'Create employees', 'Onboard an employee'),
+  ('employee.update', 'employee', 'Update employees', 'Update employee profiles'),
   ('role.assign', 'role', 'Assign company roles', 'Grant company role assignments'),
   ('role.revoke', 'role', 'Revoke company roles', 'Revoke company role assignments');
 
@@ -99,6 +100,7 @@ insert into public.role_permissions (role_id, permission_code) values
   ('41000000-0000-4000-8000-000000000303', 'employee.read_directory'),
   ('41000000-0000-4000-8000-000000000303', 'employee.read_private'),
   ('41000000-0000-4000-8000-000000000303', 'employee.create'),
+  ('41000000-0000-4000-8000-000000000303', 'employee.update'),
   ('41000000-0000-4000-8000-000000000303', 'role.assign'),
   ('41000000-0000-4000-8000-000000000303', 'role.revoke'),
   ('42000000-0000-4000-8000-000000000301', 'employee.read_directory'),
@@ -155,6 +157,22 @@ select ok(
   not has_function_privilege('anon', 'public.get_company_employee_access_links(uuid, uuid[])', 'execute')
   and has_function_privilege('authenticated', 'public.get_company_employee_access_links(uuid, uuid[])', 'execute'),
   'only authenticated users can execute the employee access-link RPC'
+);
+select has_function(
+  'public',
+  'update_employee_profile',
+  array['uuid', 'uuid', 'jsonb'],
+  'atomic employee update RPC is available with only company, employee, and allowlisted update input'
+);
+select ok(
+  not has_function_privilege('anon', 'public.update_employee_profile(uuid, uuid, jsonb)', 'execute')
+  and has_function_privilege('authenticated', 'public.update_employee_profile(uuid, uuid, jsonb)', 'execute'),
+  'only authenticated users can execute the atomic employee update RPC'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.employees', 'update')
+  and not has_table_privilege('authenticated', 'public.employee_private_details', 'update'),
+  'authenticated users cannot bypass the atomic employee update RPC through direct table updates'
 );
 select ok(
   not has_function_privilege('anon', 'private.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date)', 'execute'),
@@ -216,6 +234,59 @@ select throws_ok(
 );
 
 reset role;
+update public.employee_private_details
+set tax_code = 'OTHER-TAX-CODE'
+where employee_id = :'other_employee_id'::uuid;
+set local role authenticated;
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'admin_user_id'), true);
+select is(
+  public.update_employee_profile(
+    :'company_a_id'::uuid,
+    :'self_employee_id'::uuid,
+    '{"fullName":"Employee Self Updated","privateDetails":{"personalPhone":"0900000000"}}'::jsonb
+  ),
+  :'self_employee_id'::uuid,
+  'atomic employee update RPC changes employee and requested private details together'
+);
+select is(
+  (select full_name from public.employees where id = :'self_employee_id'::uuid),
+  'Employee Self Updated',
+  'atomic employee update persists the directory change'
+);
+select is(
+  (select personal_phone from public.employee_private_details where employee_id = :'self_employee_id'::uuid),
+  '0900000000',
+  'atomic employee update persists the private-detail change'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '{"fullName":"Employee Change Must Roll Back","privateDetails":{"taxCode":"OTHER-TAX-CODE"}}'
+  ),
+  '23505',
+  'duplicate key value violates unique constraint "employee_private_details_company_tax_code_key"',
+  'private-detail failure aborts the enclosing atomic employee update'
+);
+select is(
+  (select full_name from public.employees where id = :'self_employee_id'::uuid),
+  'Employee Self Updated',
+  'failed private-detail update rolls back the directory change'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '{"employmentStatus":"terminated"}'
+  ),
+  'P0001',
+  'EMPLOYEE_OFFBOARDING_FAILED',
+  'generic employee PATCH cannot terminate employment outside the offboarding workflow'
+);
+
+reset role;
 set local role authenticated;
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'self_user_id'), true);
 select is((select count(*) from public.employees where company_id = :'company_a_id'::uuid), 2::bigint, 'employee reads the company directory');
@@ -257,6 +328,27 @@ select is(
   0::bigint,
   'employee cannot read another private profile'
 );
+reset role;
+delete from public.role_permissions
+where role_id = '41000000-0000-4000-8000-000000000301'::uuid
+  and permission_code = 'employee.read_self_private';
+insert into public.role_permissions (role_id, permission_code)
+values ('41000000-0000-4000-8000-000000000301'::uuid, 'employee.update');
+set local role authenticated;
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'self_user_id'), true);
+select is(
+  (select count(*) from public.employee_private_details where employee_id = :'self_employee_id'),
+  0::bigint,
+  'self access without employee.read_self_private and with employee.update cannot select private details'
+);
+reset role;
+delete from public.role_permissions
+where role_id = '41000000-0000-4000-8000-000000000301'::uuid
+  and permission_code = 'employee.update';
+insert into public.role_permissions (role_id, permission_code)
+values ('41000000-0000-4000-8000-000000000301'::uuid, 'employee.read_self_private');
+set local role authenticated;
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'self_user_id'), true);
 select is((select count(*) from public.employees where company_id = :'company_b_id'::uuid), 0::bigint, 'employee cannot read another company directory');
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'hr_user_id'), true);
 select is(
@@ -270,6 +362,28 @@ select is(
   array[:'self_employee_id'::uuid, :'other_employee_id'::uuid],
   'private-directory readers receive requested active scoped employee links'
 );
+
+reset role;
+update public.employees
+set employment_status = 'terminated'
+where id = :'other_employee_id'::uuid;
+set local role authenticated;
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'hr_user_id'), true);
+select is(
+  (
+    select array_agg(employee_id order by employee_id)
+    from public.get_company_employee_access_links(
+      :'company_a_id'::uuid,
+      array[:'self_employee_id'::uuid, :'other_employee_id'::uuid]
+    )
+  ),
+  array[:'self_employee_id'::uuid],
+  'terminated employees never expose account or role access links'
+);
+reset role;
+update public.employees
+set employment_status = 'active'
+where id = :'other_employee_id'::uuid;
 
 reset role;
 update public.company_memberships
@@ -296,6 +410,15 @@ set revoked_at = now(),
     revoked_by = :'admin_user_id'::uuid,
     revoke_reason = 'test target base employee role revoked'
 where id = :'other_employee_assignment_id'::bigint;
+insert into public.company_role_assignments (tenant_id, company_id, user_id, role_id, granted_by, grant_reason)
+values (
+  :'tenant_a_id'::uuid,
+  :'company_a_id'::uuid,
+  :'other_user_id'::uuid,
+  '41000000-0000-4000-8000-000000000302'::uuid,
+  :'admin_user_id'::uuid,
+  'test target retains a non-base role after employee-role revocation'
+);
 set local role authenticated;
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'self_user_id'), true);
 select is(
@@ -305,6 +428,17 @@ select is(
 );
 
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'hr_user_id'), true);
+select is(
+  (
+    select array_agg(employee_id order by employee_id)
+    from public.get_company_employee_access_links(
+      :'company_a_id'::uuid,
+      array[:'self_employee_id'::uuid, :'other_employee_id'::uuid]
+    )
+  ),
+  array[:'self_employee_id'::uuid],
+  'an employee without an active base employee role exposes no link even with another active role'
+);
 select is((select count(*) from public.employee_private_details where company_id = :'company_a_id'::uuid), 2::bigint, 'HR manager reads company private profiles');
 select is((select count(*) from public.employee_private_details where company_id = :'company_b_id'::uuid), 0::bigint, 'HR manager cannot read another company private profiles');
 select throws_ok(
