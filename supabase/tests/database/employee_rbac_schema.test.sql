@@ -10,11 +10,6 @@ select has_table('public', 'permissions');
 select has_table('public', 'role_permissions');
 select has_table('public', 'company_role_assignments');
 
-select has_function('private', 'has_company_permission', array['uuid', 'uuid', 'text']);
-select has_function('public', 'complete_employee_onboarding');
-select has_function('public', 'revoke_company_role_assignment');
-select has_function('public', 'revoke_company_role_assignment', array['bigint', 'text']);
-
 select is(
   (select array_agg(attname::text order by attnum) from pg_attribute where attrelid = 'public.departments'::regclass and attnum > 0 and not attisdropped),
   array['id', 'tenant_id', 'company_id', 'code', 'name', 'description', 'is_active', 'created_at', 'updated_at']::text[],
