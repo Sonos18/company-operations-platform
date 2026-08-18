@@ -9,6 +9,8 @@ select no_plan();
 \set other_user_id '41000000-0000-4000-8000-000000000002'
 \set hr_user_id '41000000-0000-4000-8000-000000000003'
 \set admin_user_id '41000000-0000-4000-8000-000000000004'
+\set second_admin_user_id '41000000-0000-4000-8000-000000000005'
+\set legacy_admin_user_id '41000000-0000-4000-8000-000000000006'
 \set unrelated_admin_user_id '42000000-0000-4000-8000-000000000001'
 \set self_employee_id '41000000-0000-4000-8000-000000000101'
 \set other_employee_id '41000000-0000-4000-8000-000000000102'
@@ -20,6 +22,8 @@ insert into auth.users (id, email) values
   (:'other_user_id'::uuid, 'other@employee-rbac.invalid'),
   (:'hr_user_id'::uuid, 'hr@employee-rbac.invalid'),
   (:'admin_user_id'::uuid, 'admin@employee-rbac.invalid'),
+  (:'second_admin_user_id'::uuid, 'second-admin@employee-rbac.invalid'),
+  (:'legacy_admin_user_id'::uuid, 'legacy-admin@employee-rbac.invalid'),
   (:'unrelated_admin_user_id'::uuid, 'unrelated-admin@employee-rbac.invalid');
 
 insert into public.tenants (id, code, name) values
@@ -35,6 +39,8 @@ insert into public.tenant_memberships (user_id, tenant_id, roles) values
   (:'other_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
   (:'hr_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
   (:'admin_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
+  (:'second_admin_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
+  (:'legacy_admin_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
   (:'unrelated_admin_user_id'::uuid, :'tenant_b_id'::uuid, array['tenant_admin']);
 
 insert into public.company_memberships (user_id, tenant_id, company_id, roles) values
@@ -42,6 +48,8 @@ insert into public.company_memberships (user_id, tenant_id, company_id, roles) v
   (:'other_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['employee']),
   (:'hr_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['employee']),
   (:'admin_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['employee']),
+  (:'second_admin_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['employee']),
+  (:'legacy_admin_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['company_admin']),
   (:'unrelated_admin_user_id'::uuid, :'tenant_b_id'::uuid, :'company_b_id'::uuid, array['employee']);
 
 insert into public.departments (id, tenant_id, company_id, code, name) values
@@ -60,7 +68,6 @@ insert into public.roles (id, tenant_id, company_id, code, name, description, is
   ('41000000-0000-4000-8000-000000000301', :'tenant_a_id'::uuid, :'company_a_id'::uuid, 'employee', 'Employee', 'Directory and own private profile', false),
   ('41000000-0000-4000-8000-000000000302', :'tenant_a_id'::uuid, :'company_a_id'::uuid, 'hr_manager', 'HR manager', 'Employee and private profile administration', false),
   ('41000000-0000-4000-8000-000000000303', :'tenant_a_id'::uuid, :'company_a_id'::uuid, 'company_admin', 'Company admin', 'Company administration', true),
-  ('41000000-0000-4000-8000-000000000304', :'tenant_a_id'::uuid, :'company_a_id'::uuid, 'role_manager', 'Role manager', 'Role revocation test fixture', false),
   ('42000000-0000-4000-8000-000000000301', :'tenant_b_id'::uuid, :'company_b_id'::uuid, 'company_admin', 'Company admin', 'Company administration', true);
 
 insert into public.permissions (code, module, name, description) values
@@ -77,7 +84,6 @@ insert into public.role_permissions (role_id, permission_code) values
   ('41000000-0000-4000-8000-000000000303', 'employee.read_directory'),
   ('41000000-0000-4000-8000-000000000303', 'employee.read_private'),
   ('41000000-0000-4000-8000-000000000303', 'role.revoke'),
-  ('41000000-0000-4000-8000-000000000304', 'role.revoke'),
   ('42000000-0000-4000-8000-000000000301', 'employee.read_directory'),
   ('42000000-0000-4000-8000-000000000301', 'employee.read_private'),
   ('42000000-0000-4000-8000-000000000301', 'role.revoke');
@@ -87,7 +93,8 @@ insert into public.company_role_assignments (tenant_id, company_id, user_id, rol
   (:'tenant_a_id'::uuid, :'company_a_id'::uuid, :'other_user_id'::uuid, '41000000-0000-4000-8000-000000000301', :'admin_user_id'::uuid, 'test employee role'),
   (:'tenant_a_id'::uuid, :'company_a_id'::uuid, :'hr_user_id'::uuid, '41000000-0000-4000-8000-000000000302', :'admin_user_id'::uuid, 'test HR role'),
   (:'tenant_a_id'::uuid, :'company_a_id'::uuid, :'admin_user_id'::uuid, '41000000-0000-4000-8000-000000000303', :'admin_user_id'::uuid, 'test company admin role'),
-  (:'tenant_a_id'::uuid, :'company_a_id'::uuid, :'other_user_id'::uuid, '41000000-0000-4000-8000-000000000304', :'admin_user_id'::uuid, 'test role manager role'),
+  (:'tenant_a_id'::uuid, :'company_a_id'::uuid, :'second_admin_user_id'::uuid, '41000000-0000-4000-8000-000000000303', :'admin_user_id'::uuid, 'test second company admin role'),
+  (:'tenant_a_id'::uuid, :'company_a_id'::uuid, :'legacy_admin_user_id'::uuid, '41000000-0000-4000-8000-000000000301', :'admin_user_id'::uuid, 'test normalized employee role'),
   (:'tenant_b_id'::uuid, :'company_b_id'::uuid, :'unrelated_admin_user_id'::uuid, '42000000-0000-4000-8000-000000000301', :'unrelated_admin_user_id'::uuid, 'test unrelated company admin role');
 
 set local role anon;
@@ -113,6 +120,35 @@ select is((select count(*) from public.employees where company_id = :'company_b_
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'hr_user_id'), true);
 select is((select count(*) from public.employee_private_details where company_id = :'company_a_id'::uuid), 2::bigint, 'HR manager reads company private profiles');
 select is((select count(*) from public.employee_private_details where company_id = :'company_b_id'::uuid), 0::bigint, 'HR manager cannot read another company private profiles');
+select throws_ok(
+  format(
+    'select public.revoke_company_role_assignment(%s, %L)',
+    (select id from public.company_role_assignments where tenant_id = :'tenant_a_id'::uuid and company_id = :'company_a_id'::uuid and user_id = :'second_admin_user_id'::uuid and role_id = '41000000-0000-4000-8000-000000000303'::uuid and revoked_at is null),
+    'test HR role-revoke denial'
+  ),
+  'P0001',
+  'PERMISSION_DENIED',
+  'HR manager cannot invoke company role revocation'
+);
+select throws_ok(
+  'update public.company_role_assignments set revoke_reason = ''test HR direct mutation denial'' where false',
+  '42501',
+  'permission denied for table company_role_assignments',
+  'HR manager cannot mutate role assignments directly'
+);
+
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated","app_metadata":{"company_roles":["company_admin"]},"company_roles":["company_admin"]}', :'legacy_admin_user_id'), true);
+select is((select count(*) from public.employee_private_details where company_id = :'company_a_id'::uuid), 0::bigint, 'legacy company membership roles and stale JWT role claims cannot read private profiles');
+select throws_ok(
+  format(
+    'select public.revoke_company_role_assignment(%s, %L)',
+    (select id from public.company_role_assignments where tenant_id = :'tenant_a_id'::uuid and company_id = :'company_a_id'::uuid and user_id = :'second_admin_user_id'::uuid and role_id = '41000000-0000-4000-8000-000000000303'::uuid and revoked_at is null),
+    'test legacy role-revoke denial'
+  ),
+  'P0001',
+  'PERMISSION_DENIED',
+  'legacy company membership roles and stale JWT role claims cannot revoke roles'
+);
 
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'unrelated_admin_user_id'), true);
 select is((select count(*) from public.employees where company_id = :'company_a_id'::uuid), 0::bigint, 'unrelated-company admin cannot read the target company directory');
@@ -129,18 +165,22 @@ set local role authenticated;
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'hr_user_id'), true);
 select is((select count(*) from public.employee_private_details where company_id = :'company_a_id'::uuid), 0::bigint, 'revoking an HR role takes effect on the next request');
 
-select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'other_user_id'), true);
-select throws_ok(
-  format(
-    'select public.revoke_company_role_assignment(%s, %L)',
-    (select id from public.company_role_assignments where tenant_id = :'tenant_a_id'::uuid and company_id = :'company_a_id'::uuid and user_id = :'admin_user_id'::uuid and role_id = '41000000-0000-4000-8000-000000000303'::uuid and revoked_at is null),
-    'test final admin protection'
-  ),
-  'P0001',
-  'LAST_COMPANY_ADMIN_REQUIRED',
-  'company admin cannot revoke the final active company admin'
-);
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'admin_user_id'), true);
+select is(
+  (
+    select (public.revoke_company_role_assignment(
+      (select id from public.company_role_assignments where tenant_id = :'tenant_a_id'::uuid and company_id = :'company_a_id'::uuid and user_id = :'second_admin_user_id'::uuid and role_id = '41000000-0000-4000-8000-000000000303'::uuid and revoked_at is null),
+      'test second company admin revocation'
+    )).revoked_at is not null
+  ),
+  true,
+  'company admin can revoke a second active company admin'
+);
+select is(
+  (select count(*) from public.company_role_assignments where tenant_id = :'tenant_a_id'::uuid and company_id = :'company_a_id'::uuid and role_id = '41000000-0000-4000-8000-000000000303'::uuid and revoked_at is null),
+  1::bigint,
+  'revoking a second company admin leaves one active company admin'
+);
 select throws_ok(
   format(
     'select public.revoke_company_role_assignment(%s, %L)',
@@ -149,7 +189,7 @@ select throws_ok(
   ),
   'P0001',
   'SELF_ROLE_CHANGE_FORBIDDEN',
-  'company admin cannot change their own roles'
+  'final company admin cannot change their own roles'
 );
 
 select * from finish();
