@@ -181,6 +181,20 @@ select is(
   1::bigint,
   'revoking a second company admin leaves one active company admin'
 );
+reset role;
+select throws_ok(
+  format(
+    'update public.company_role_assignments set revoked_at = now(), revoked_by = %L::uuid, revoke_reason = %L where id = %s',
+    :'admin_user_id',
+    'test direct final admin protection',
+    (select id from public.company_role_assignments where tenant_id = :'tenant_a_id'::uuid and company_id = :'company_a_id'::uuid and user_id = :'admin_user_id'::uuid and role_id = '41000000-0000-4000-8000-000000000303'::uuid and revoked_at is null)
+  ),
+  'P0001',
+  'LAST_COMPANY_ADMIN_REQUIRED',
+  'database prevents privileged direct revocation of the final company admin'
+);
+set local role authenticated;
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'admin_user_id'), true);
 select throws_ok(
   format(
     'select public.revoke_company_role_assignment(%s, %L)',
