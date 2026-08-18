@@ -530,17 +530,37 @@ security definer
 set search_path = ''
 as $$
 declare
+  v_actor_id uuid;
   v_tenant_id uuid;
   v_employee_id uuid;
   v_private_employee_id uuid;
   v_private_update jsonb;
 begin
-  if auth.uid() is null then
+  v_actor_id := auth.uid();
+  if v_actor_id is null then
     raise exception using errcode = 'P0001', message = 'PERMISSION_DENIED';
   end if;
 
-  if jsonb_typeof(target_update) is distinct from 'object'
-    or target_update = '{}'::jsonb
+  select membership.tenant_id
+    into v_tenant_id
+    from public.company_memberships membership
+   where membership.user_id = v_actor_id
+     and membership.company_id = target_company_id
+     and membership.is_active;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'PERMISSION_DENIED';
+  end if;
+
+  if not private.has_company_permission(v_tenant_id, target_company_id, 'employee.update') then
+    raise exception using errcode = 'P0001', message = 'PERMISSION_DENIED';
+  end if;
+
+  if jsonb_typeof(target_update) is distinct from 'object' then
+    raise exception using errcode = 'P0001', message = 'EMPLOYEE_UPDATE_INVALID';
+  end if;
+
+  if target_update = '{}'::jsonb
     or exists (
       select 1
       from jsonb_object_keys(target_update) as update_key(key)
@@ -599,8 +619,11 @@ begin
 
   if target_update ? 'privateDetails' then
     v_private_update := target_update -> 'privateDetails';
-    if jsonb_typeof(v_private_update) is distinct from 'object'
-      or v_private_update = '{}'::jsonb
+    if jsonb_typeof(v_private_update) is distinct from 'object' then
+      raise exception using errcode = 'P0001', message = 'EMPLOYEE_UPDATE_INVALID';
+    end if;
+
+    if v_private_update = '{}'::jsonb
       or exists (
         select 1
         from jsonb_object_keys(v_private_update) as private_key(key)
@@ -647,18 +670,14 @@ begin
     end;
   end if;
 
-  select employee.tenant_id
-    into v_tenant_id
+  perform 1
     from public.employees employee
    where employee.id = target_employee_id
+     and employee.tenant_id = v_tenant_id
      and employee.company_id = target_company_id;
 
   if not found then
     raise exception using errcode = 'P0001', message = 'EMPLOYEE_NOT_FOUND';
-  end if;
-
-  if not private.has_company_permission(v_tenant_id, target_company_id, 'employee.update') then
-    raise exception using errcode = 'P0001', message = 'PERMISSION_DENIED';
   end if;
 
   update public.employees employee

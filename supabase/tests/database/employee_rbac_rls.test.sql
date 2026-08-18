@@ -17,6 +17,7 @@ select no_plan();
 \set unrelated_admin_user_id '42000000-0000-4000-8000-000000000001'
 \set self_employee_id '41000000-0000-4000-8000-000000000101'
 \set other_employee_id '41000000-0000-4000-8000-000000000102'
+\set cross_company_employee_id '42000000-0000-4000-8000-000000000101'
 
 select set_config('request.headers', '{"x-request-id":"41000000-0000-4000-8000-000000000999"}', true);
 
@@ -71,7 +72,8 @@ insert into public.positions (id, tenant_id, company_id, code, name) values
 
 insert into public.employees (id, tenant_id, company_id, user_id, employee_code, full_name, work_email, department_id, employment_status, created_by) values
   (:'self_employee_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, :'self_user_id'::uuid, 'EMP-SELF', 'Employee Self', 'employee@employee-rbac.invalid', '41000000-0000-4000-8000-000000000201', 'active', :'admin_user_id'::uuid),
-  (:'other_employee_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, :'other_user_id'::uuid, 'EMP-OTHER', 'Employee Other', 'other@employee-rbac.invalid', '41000000-0000-4000-8000-000000000201', 'active', :'admin_user_id'::uuid);
+  (:'other_employee_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, :'other_user_id'::uuid, 'EMP-OTHER', 'Employee Other', 'other@employee-rbac.invalid', '41000000-0000-4000-8000-000000000201', 'active', :'admin_user_id'::uuid),
+  (:'cross_company_employee_id'::uuid, :'tenant_b_id'::uuid, :'company_b_id'::uuid, :'unrelated_admin_user_id'::uuid, 'EMP-CROSS', 'Employee Cross Company', 'cross-company@employee-rbac.invalid', '42000000-0000-4000-8000-000000000201', 'active', :'unrelated_admin_user_id'::uuid);
 
 insert into public.employee_private_details (employee_id, tenant_id, company_id, personal_email) values
   (:'self_employee_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, 'employee.personal@employee-rbac.invalid'),
@@ -286,9 +288,251 @@ select throws_ok(
   'generic employee PATCH cannot terminate employment outside the offboarding workflow'
 );
 
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    'null'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'JSON null update input returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, null::jsonb)',
+    :'company_a_id',
+    :'self_employee_id'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'SQL NULL update input returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '"scalar"'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'JSON string update input returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '123'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'JSON number update input returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    'true'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'JSON boolean update input returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '[]'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'JSON array update input returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '{"privateDetails":null}'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'JSON null private update input returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '{"privateDetails":"scalar"}'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'JSON string private update input returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '{"privateDetails":123}'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'JSON number private update input returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '{"privateDetails":true}'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'JSON boolean private update input returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '{"privateDetails":[]}'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'JSON array private update input returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '{"unknown":true}'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'unknown update keys return the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '{"departmentId":"not-a-uuid"}'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'invalid department UUID returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '{"hireDate":"not-a-date"}'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'invalid hire date returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '{"workEmail":"not-an-email"}'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'invalid work email returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '{"privateDetails":{"gender":"invalid"}}'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'invalid private gender returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '{"privateDetails":{"personalPhone":" "}}'
+  ),
+  'P0001',
+  'EMPLOYEE_UPDATE_INVALID',
+  'blank private string value returns the stable validation error'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    '41000000-0000-4000-8000-000000000199',
+    '{"fullName":"Authorized Missing Target"}'
+  ),
+  'P0001',
+  'EMPLOYEE_NOT_FOUND',
+  'authorized updater receives not found for a missing scoped target'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'cross_company_employee_id',
+    '{"fullName":"Authorized Cross Company Target"}'
+  ),
+  'P0001',
+  'EMPLOYEE_NOT_FOUND',
+  'authorized updater receives not found for a cross-company target'
+);
+
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'self_user_id'), true);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'self_employee_id',
+    '{"fullName":"Unauthorized Valid Target"}'
+  ),
+  'P0001',
+  'PERMISSION_DENIED',
+  'unauthorized updater receives permission denied for an existing scoped target'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    '41000000-0000-4000-8000-000000000199',
+    '{"fullName":"Unauthorized Missing Target"}'
+  ),
+  'P0001',
+  'PERMISSION_DENIED',
+  'unauthorized updater receives permission denied for a random target ID'
+);
+select throws_ok(
+  format(
+    'select public.update_employee_profile(%L::uuid, %L::uuid, %L::jsonb)',
+    :'company_a_id',
+    :'cross_company_employee_id',
+    '{"fullName":"Unauthorized Cross Company Target"}'
+  ),
+  'P0001',
+  'PERMISSION_DENIED',
+  'unauthorized updater receives permission denied for a cross-company target ID'
+);
 select is((select count(*) from public.employees where company_id = :'company_a_id'::uuid), 2::bigint, 'employee reads the company directory');
 select is(
   (
@@ -311,6 +555,31 @@ select is(
   ),
   array['employee']::text[],
   'ordinary employee access links expose only active normalized role codes'
+);
+select is_empty(
+  format(
+    'select * from public.get_company_employee_access_links(%L::uuid, array[]::uuid[])',
+    :'company_a_id'
+  ),
+  'empty access-link ID input exposes no links'
+);
+select is_empty(
+  format(
+    'select * from public.get_company_employee_access_links(%L::uuid, null::uuid[])',
+    :'company_a_id'
+  ),
+  'SQL NULL access-link ID input exposes no links'
+);
+select is(
+  (
+    select count(*)
+    from public.get_company_employee_access_links(
+      :'company_a_id'::uuid,
+      array[:'self_employee_id'::uuid, :'self_employee_id'::uuid]
+    )
+  ),
+  1::bigint,
+  'duplicate access-link IDs return one scoped link'
 );
 select throws_ok(
   'select user_id from public.employees',
