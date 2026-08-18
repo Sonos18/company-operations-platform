@@ -16,6 +16,8 @@ select has_function('public', 'get_my_company_access', array['uuid']);
 select has_function('public', 'complete_employee_onboarding');
 select has_function('public', 'revoke_company_role_assignment');
 select has_function('public', 'revoke_company_role_assignment', array['bigint', 'text']);
+select has_function('private', 'revoke_company_role_assignment_scoped', array['uuid', 'bigint', 'text']);
+select has_function('public', 'revoke_company_role_assignment_scoped', array['uuid', 'bigint', 'text']);
 select has_function('private', 'offboard_employee', array['uuid', 'uuid', 'text']);
 select has_function('public', 'offboard_employee', array['uuid', 'uuid', 'text']);
 select has_function('private', 'record_employee_offboarding_auth_failure', array['uuid', 'uuid']);
@@ -36,11 +38,26 @@ select is(
   'text',
   'employee offboarding records a termination reason'
 );
+with offboarding_definition as (
+  select lower(pg_get_functiondef('private.offboard_employee(uuid, uuid, text)'::regprocedure)) as definition
+)
 select ok(
   (select prosecdef from pg_proc where oid = 'private.offboard_employee(uuid, uuid, text)'::regprocedure)
-  and (select pg_get_functiondef('private.offboard_employee(uuid, uuid, text)'::regprocedure) like '%pg_advisory_xact_lock%')
-  and (select pg_get_functiondef('private.offboard_employee(uuid, uuid, text)'::regprocedure) like '%for update%'),
-  'private offboarding locks deterministically in its privileged transaction'
+  and (select position(':company_admin' in definition) > 0 from offboarding_definition)
+  and (select position(':company_admin' in definition) < position(':offboard' in definition) from offboarding_definition)
+  and (select position(':company_admin' in definition) < position('from public.company_role_assignments assignment' in definition) from offboarding_definition)
+  and (select position(':company_admin' in definition) < position('if v_target_status = ''terminated'' then' in definition) from offboarding_definition),
+  'private offboarding acquires the company-admin lock before target locks, assignment locks, and idempotent return'
+);
+select ok(
+  (select prosecdef from pg_proc where oid = 'private.revoke_company_role_assignment_scoped(uuid, bigint, text)'::regprocedure)
+  and not (select prosecdef from pg_proc where oid = 'public.revoke_company_role_assignment_scoped(uuid, bigint, text)'::regprocedure)
+  and not has_function_privilege('anon', 'public.revoke_company_role_assignment_scoped(uuid, bigint, text)', 'execute')
+  and has_function_privilege('authenticated', 'public.revoke_company_role_assignment_scoped(uuid, bigint, text)', 'execute')
+  and position('role.revoke' in lower(pg_get_functiondef('private.revoke_company_role_assignment_scoped(uuid, bigint, text)'::regprocedure))) > 0
+  and position('role.revoke' in lower(pg_get_functiondef('private.revoke_company_role_assignment_scoped(uuid, bigint, text)'::regprocedure)))
+      < position('from public.company_role_assignments assignment' in lower(pg_get_functiondef('private.revoke_company_role_assignment_scoped(uuid, bigint, text)'::regprocedure))),
+  'scoped role revoke authorizes the URL company before assignment lookup and exposes only an authenticated invoker wrapper'
 );
 select ok(
   not (select prosecdef from pg_proc where oid = 'public.offboard_employee(uuid, uuid, text)'::regprocedure)

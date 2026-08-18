@@ -540,6 +540,34 @@ describe('employee service', () => {
       .toHaveBeenCalledWith(companyId, employeeId)
   })
 
+  it('retries the idempotent audit RPC exactly once, emits a fixed operational message, and never retries Auth', async () => {
+    const auditFailure = new Error('provider credential detail must not be logged')
+    const employeeRepository = repository({
+      recordOffboardingAuthFailure: vi.fn().mockRejectedValue(auditFailure),
+    })
+    const auth = { disableUser: vi.fn().mockResolvedValue({ kind: 'failed' }) }
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const service = createEmployeeService(employeeRepository) as unknown as {
+      offboard(context: ReturnType<typeof context>, employeeId: string, input: { reason: string }, auth: typeof auth): Promise<unknown>
+    }
+
+    try {
+      await expect(service.offboard(
+        context(['employee.offboard', 'account.disable']),
+        employeeId,
+        { reason: 'Kết thúc hợp đồng' },
+        auth,
+      )).rejects.toMatchObject({ statusCode: 502, code: 'EMPLOYEE_OFFBOARDING_FAILED' })
+      expect(employeeRepository.offboardEmployee).toHaveBeenCalledTimes(1)
+      expect(auth.disableUser).toHaveBeenCalledTimes(1)
+      expect(employeeRepository.recordOffboardingAuthFailure).toHaveBeenCalledTimes(2)
+      expect(consoleError).toHaveBeenCalledWith('EMPLOYEE_OFFBOARDING_AUDIT_RECORD_FAILED')
+      expect(consoleError).not.toHaveBeenCalledWith(expect.stringMatching(/provider|credential|detail/i))
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
   it('retries idempotent database offboarding and disables the same target account again', async () => {
     const employeeRepository = repository({
       offboardEmployee: vi.fn().mockResolvedValue({ employeeId, userId: otherUserId }),

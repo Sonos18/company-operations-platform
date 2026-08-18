@@ -192,4 +192,26 @@ describe('employee route handlers', () => {
     expect(authorizeOffboarding).toHaveBeenCalledWith(context)
     expect(offboard).not.toHaveBeenCalled()
   })
+
+  it('denies offboarding before reading its body or constructing the lazy Auth-disable dependency', async () => {
+    readBody.mockResolvedValue({ reason: 'body must not be read' })
+    const resolveContext = vi.fn().mockResolvedValue(context)
+    const authorizeOffboarding = vi.fn().mockRejectedValue({
+      statusCode: 403,
+      code: 'PERMISSION_DENIED',
+    })
+    const offboard = vi.fn()
+    const routes = createEmployeeRoutes({
+      resolveContext,
+      service: { authorizeOffboarding, offboard } as never,
+    }) as unknown as {
+      offboard(event: unknown): Promise<unknown>
+    }
+
+    await expect(routes.offboard({})).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    expect(resolveContext).toHaveBeenCalledWith(expect.anything(), companyId)
+    expect(authorizeOffboarding).toHaveBeenCalledWith(context)
+    expect(readBody).not.toHaveBeenCalled()
+    expect(offboard).not.toHaveBeenCalled()
+  })
 })

@@ -86,6 +86,22 @@ describe('role lifecycle service', () => {
     expect(roleRepository.revokeRole).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['authorizeGrant', 'role.assign'],
+    ['authorizeRevoke', 'role.revoke'],
+  ] as const)('exposes %s as a direct permission-first guard for %s', async (method, permission) => {
+    const roleRepository = repository()
+    const service = createRoleLifecycleService(roleRepository)
+
+    await expect(service[method](context([]))).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'PERMISSION_DENIED',
+    })
+    await expect(service[method](context([permission]))).resolves.toBeUndefined()
+    expect(roleRepository.grantRole).not.toHaveBeenCalled()
+    expect(roleRepository.revokeRole).not.toHaveBeenCalled()
+  })
+
   it('preserves database conflict codes instead of rebuilding role-assignment invariants in TypeScript', async () => {
     const conflict = new AppApiError(409, 'ROLE_ASSIGNMENT_CONFLICT', 'Vai trò đang hoạt động.')
     const roleRepository = repository({ grantRole: vi.fn().mockRejectedValue(conflict) })
@@ -103,7 +119,8 @@ describe('role lifecycle service', () => {
         activeAssignments.set(input.targetUserId, 8)
         return { id: 8, targetUserId: input.targetUserId, roleId: input.roleId }
       }),
-      revokeRole: vi.fn(async assignmentId => {
+      revokeRole: vi.fn(async (scopedCompanyId, assignmentId) => {
+        expect(scopedCompanyId).toBe(companyId)
         expect(assignmentId).toBe(7)
         activeAssignments.delete(nhuUserId)
         return { id: assignmentId, targetUserId: nhuUserId, roleId }
@@ -139,11 +156,13 @@ describe('role lifecycle route handlers', () => {
     })
     const resolveContext = vi.fn().mockResolvedValue(context(['role.assign']))
     const grant = vi.fn().mockResolvedValue({ id: 8, targetUserId: newEmployeeUserId, roleId })
-    const routes = createRoleLifecycleRoutes({ resolveContext, service: { grant } as never })
+    const authorizeGrant = vi.fn().mockResolvedValue(undefined)
+    const routes = createRoleLifecycleRoutes({ resolveContext, service: { authorizeGrant, grant } as never })
 
     await expect(routes.grant({} as never)).resolves.toEqual({ id: 8, targetUserId: newEmployeeUserId, roleId })
     expect(resolveContext).toHaveBeenCalledWith(expect.anything(), companyId)
-    expect(readBody.mock.invocationCallOrder[0]).toBeGreaterThan(resolveContext.mock.invocationCallOrder[0]!)
+    expect(authorizeGrant).toHaveBeenCalledWith(context(['role.assign']))
+    expect(readBody.mock.invocationCallOrder[0]).toBeGreaterThan(authorizeGrant.mock.invocationCallOrder[0]!)
     expect(grant).toHaveBeenCalledWith(context(['role.assign']), {
       targetUserId: newEmployeeUserId,
       roleId,
@@ -161,7 +180,8 @@ describe('role lifecycle route handlers', () => {
     })
     const resolveContext = vi.fn().mockResolvedValue(context(['role.assign']))
     const grant = vi.fn()
-    const routes = createRoleLifecycleRoutes({ resolveContext, service: { grant } as never })
+    const authorizeGrant = vi.fn().mockResolvedValue(undefined)
+    const routes = createRoleLifecycleRoutes({ resolveContext, service: { authorizeGrant, grant } as never })
 
     await expect(routes.grant({} as never)).rejects.toMatchObject({ statusCode: 400 })
     expect(grant).not.toHaveBeenCalled()
@@ -171,12 +191,38 @@ describe('role lifecycle route handlers', () => {
     readBody.mockResolvedValue({ reason: 'Transferred to new employee' })
     const resolveContext = vi.fn().mockResolvedValue(context(['role.revoke']))
     const revoke = vi.fn().mockResolvedValue({ id: 7, targetUserId: nhuUserId, roleId })
-    const routes = createRoleLifecycleRoutes({ resolveContext, service: { revoke } as never })
+    const authorizeRevoke = vi.fn().mockResolvedValue(undefined)
+    const routes = createRoleLifecycleRoutes({ resolveContext, service: { authorizeRevoke, revoke } as never })
 
     await expect(routes.revoke({} as never)).resolves.toEqual({ id: 7, targetUserId: nhuUserId, roleId })
+    expect(authorizeRevoke).toHaveBeenCalledWith(context(['role.revoke']))
+    expect(readBody.mock.invocationCallOrder[0]).toBeGreaterThan(authorizeRevoke.mock.invocationCallOrder[0]!)
     expect(revoke).toHaveBeenCalledWith(context(['role.revoke']), 7, {
       reason: 'Transferred to new employee',
     })
+  })
+
+  it.each([
+    ['grant', 'authorizeGrant'],
+    ['revoke', 'authorizeRevoke'],
+  ] as const)('denies %s before reading its request body or invoking its operation', async (operation, guard) => {
+    readBody.mockResolvedValue({ reason: 'body must not be read' })
+    const resolveContext = vi.fn().mockResolvedValue(context([]))
+    const authorize = vi.fn().mockRejectedValue(new AppApiError(403, 'PERMISSION_DENIED', 'Denied'))
+    const action = vi.fn()
+    const routes = createRoleLifecycleRoutes({
+      resolveContext,
+      service: { [guard]: authorize, [operation]: action } as never,
+    })
+
+    await expect(routes[operation]({} as never)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'PERMISSION_DENIED',
+    })
+    expect(resolveContext).toHaveBeenCalledWith(expect.anything(), companyId)
+    expect(authorize).toHaveBeenCalledWith(context([]))
+    expect(readBody).not.toHaveBeenCalled()
+    expect(action).not.toHaveBeenCalled()
   })
 })
 
@@ -227,14 +273,19 @@ describe('Supabase role lifecycle repository', () => {
     })).rejects.toMatchObject({ statusCode: 409, code: 'ROLE_ASSIGNMENT_CONFLICT' })
   })
 
-  it('maps target scope failures to the non-enumerating permission denial', async () => {
+  it('uses the URL-scoped revoke RPC and maps target scope failures to a non-enumerating denial', async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: null,
-      error: { code: 'P0001', message: 'ONBOARDING_INCOMPLETE' },
+      error: { code: 'P0001', message: 'PERMISSION_DENIED' },
     })
     const repository = createSupabaseRoleLifecycleRepository({ from: vi.fn(), rpc } as never)
 
-    await expect(repository.revokeRole(7, { reason: 'Transfer supplier sourcing' }))
+    await expect(repository.revokeRole(companyId, 7, { reason: 'Transfer supplier sourcing' }))
       .rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    expect(rpc).toHaveBeenCalledWith('revoke_company_role_assignment_scoped', {
+      target_company_id: companyId,
+      target_assignment_id: 7,
+      target_revoke_reason: 'Transfer supplier sourcing',
+    })
   })
 })

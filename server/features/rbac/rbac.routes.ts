@@ -20,6 +20,8 @@ const assignmentIdSchema = z.coerce.number().int().positive()
 
 export interface RoleLifecycleRouteService {
   list(context: RoleLifecycleServiceContext): Promise<unknown>
+  authorizeGrant(context: RoleLifecycleServiceContext): Promise<void>
+  authorizeRevoke(context: RoleLifecycleServiceContext): Promise<void>
   grant(
     context: RoleLifecycleServiceContext,
     input: z.infer<typeof roleAssignmentInputSchema>,
@@ -69,6 +71,7 @@ export function createRoleLifecycleRoutes(dependencies: RoleLifecycleRouteDepend
     async grant(event: unknown) {
       const companyId = companyIdFrom(event)
       const context = await dependencies.resolveContext(event, companyId)
+      await dependencies.service.authorizeGrant(context)
       const input = parse(roleAssignmentInputSchema.safeParse(await readBody(event as never)))
       return dependencies.service.grant(context, input)
     },
@@ -76,6 +79,7 @@ export function createRoleLifecycleRoutes(dependencies: RoleLifecycleRouteDepend
       const companyId = companyIdFrom(event)
       const assignmentId = assignmentIdFrom(event)
       const context = await dependencies.resolveContext(event, companyId)
+      await dependencies.service.authorizeRevoke(context)
       const input = parse(roleAssignmentRevokeInputSchema.safeParse(await readBody(event as never)))
       return dependencies.service.revoke(context, assignmentId, input)
     },
@@ -107,6 +111,8 @@ export function createSupabaseRoleLifecycleRoutes(event: H3Event) {
     resolveContext,
     service: {
       list: context => resolvedService().list(context),
+      authorizeGrant: context => resolvedService().authorizeGrant(context),
+      authorizeRevoke: context => resolvedService().authorizeRevoke(context),
       grant: (context, input) => resolvedService().grant(context, input),
       revoke: (context, assignmentId, input) => resolvedService().revoke(context, assignmentId, input),
     },

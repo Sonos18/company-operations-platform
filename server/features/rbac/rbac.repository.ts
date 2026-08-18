@@ -32,8 +32,9 @@ interface RoleDataClient {
     },
   ): Promise<QueryResult>
   rpc(
-    functionName: 'revoke_company_role_assignment',
+    functionName: 'revoke_company_role_assignment_scoped',
     arguments_: {
+      target_company_id: string
       target_assignment_id: number
       target_revoke_reason: string
     },
@@ -130,8 +131,9 @@ export function createSupabaseRoleLifecycleRepository(db: UserSupabaseClient): R
       if (error) return mapRoleAssignmentError(error)
       return parseRoleAssignmentResult(data)
     },
-    async revokeRole(assignmentId, input) {
-      const { data, error } = await client.rpc('revoke_company_role_assignment', {
+    async revokeRole(companyId, assignmentId, input) {
+      const { data, error } = await client.rpc('revoke_company_role_assignment_scoped', {
+        target_company_id: companyId,
         target_assignment_id: assignmentId,
         target_revoke_reason: input.reason,
       })

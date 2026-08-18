@@ -17,7 +17,11 @@ export interface RoleLifecycleServiceContext {
 export interface RoleLifecycleRepository {
   listActiveRoles(companyId: string): Promise<RoleSummary[]>
   grantRole(companyId: string, input: RoleAssignmentInput): Promise<RoleAssignmentResult>
-  revokeRole(assignmentId: number, input: RoleAssignmentRevokeInput): Promise<RoleAssignmentResult>
+  revokeRole(
+    companyId: string,
+    assignmentId: number,
+    input: RoleAssignmentRevokeInput,
+  ): Promise<RoleAssignmentResult>
 }
 
 function requirePermission(context: RoleLifecycleServiceContext, permission: PermissionCode) {
@@ -32,6 +36,12 @@ export function createRoleLifecycleService(repository: RoleLifecycleRepository) 
       requirePermission(context, 'role.read')
       return repository.listActiveRoles(context.companyId)
     },
+    async authorizeGrant(context: RoleLifecycleServiceContext): Promise<void> {
+      requirePermission(context, 'role.assign')
+    },
+    async authorizeRevoke(context: RoleLifecycleServiceContext): Promise<void> {
+      requirePermission(context, 'role.revoke')
+    },
     async grant(
       context: RoleLifecycleServiceContext,
       input: RoleAssignmentInput,
@@ -45,7 +55,7 @@ export function createRoleLifecycleService(repository: RoleLifecycleRepository) 
       input: RoleAssignmentRevokeInput,
     ): Promise<RoleAssignmentResult> {
       requirePermission(context, 'role.revoke')
-      return repository.revokeRole(assignmentId, input)
+      return repository.revokeRole(context.companyId, assignmentId, input)
     },
   }
 }

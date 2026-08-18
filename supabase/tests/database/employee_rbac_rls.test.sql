@@ -50,6 +50,7 @@ insert into public.tenant_memberships (user_id, tenant_id, roles) values
   (:'legacy_admin_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
   (:'grant_target_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
   (:'access_target_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
+  (:'admin_user_id'::uuid, :'tenant_b_id'::uuid, array['tenant_admin']),
   (:'unrelated_admin_user_id'::uuid, :'tenant_b_id'::uuid, array['tenant_admin']);
 
 insert into public.company_memberships (user_id, tenant_id, company_id, roles) values
@@ -61,6 +62,7 @@ insert into public.company_memberships (user_id, tenant_id, company_id, roles) v
   (:'legacy_admin_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['company_admin']),
   (:'grant_target_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['employee']),
   (:'access_target_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['employee']),
+  (:'admin_user_id'::uuid, :'tenant_b_id'::uuid, :'company_b_id'::uuid, array['employee']),
   (:'unrelated_admin_user_id'::uuid, :'tenant_b_id'::uuid, :'company_b_id'::uuid, array['employee']);
 
 insert into public.departments (id, tenant_id, company_id, code, name) values
@@ -122,6 +124,7 @@ insert into public.company_role_assignments (tenant_id, company_id, user_id, rol
   (:'tenant_a_id'::uuid, :'company_a_id'::uuid, :'admin_user_id'::uuid, '41000000-0000-4000-8000-000000000303', :'admin_user_id'::uuid, 'test company admin role'),
   (:'tenant_a_id'::uuid, :'company_a_id'::uuid, :'second_admin_user_id'::uuid, '41000000-0000-4000-8000-000000000303', :'admin_user_id'::uuid, 'test second company admin role'),
   (:'tenant_a_id'::uuid, :'company_a_id'::uuid, :'legacy_admin_user_id'::uuid, '41000000-0000-4000-8000-000000000301', :'admin_user_id'::uuid, 'test normalized employee role'),
+  (:'tenant_b_id'::uuid, :'company_b_id'::uuid, :'admin_user_id'::uuid, '42000000-0000-4000-8000-000000000301', :'unrelated_admin_user_id'::uuid, 'test cross-company actor admin role'),
   (:'tenant_b_id'::uuid, :'company_b_id'::uuid, :'unrelated_admin_user_id'::uuid, '42000000-0000-4000-8000-000000000301', :'unrelated_admin_user_id'::uuid, 'test unrelated company admin role');
 
 select id as second_admin_assignment_id
@@ -139,6 +142,15 @@ where tenant_id = :'tenant_a_id'::uuid
   and company_id = :'company_a_id'::uuid
   and user_id = :'other_user_id'::uuid
   and role_id = '41000000-0000-4000-8000-000000000301'::uuid
+  and revoked_at is null
+\gset
+
+select id as cross_company_assignment_id
+from public.company_role_assignments
+where tenant_id = :'tenant_b_id'::uuid
+  and company_id = :'company_b_id'::uuid
+  and user_id = :'unrelated_admin_user_id'::uuid
+  and role_id = '42000000-0000-4000-8000-000000000301'::uuid
   and revoked_at is null
 \gset
 
@@ -1001,9 +1013,29 @@ select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticate
 select is((select count(*) from public.employee_private_details where company_id = :'company_a_id'::uuid), 0::bigint, 'revoking an HR role takes effect on the next request');
 
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'admin_user_id'), true);
+select throws_ok(
+  format(
+    'select public.revoke_company_role_assignment_scoped(%L::uuid, %s, %L)',
+    :'company_a_id',
+    :'cross_company_assignment_id'::bigint,
+    'test scoped cross-company revoke denial'
+  ),
+  'P0001',
+  'PERMISSION_DENIED',
+  'an actor with role.revoke in both companies cannot revoke a company-B assignment through a company-A URL'
+);
+select ok(
+  exists (
+    select 1 from public.company_role_assignments
+    where id = :'cross_company_assignment_id'::bigint
+      and revoked_at is null
+  ),
+  'scoped cross-company revoke denial preserves the company-B assignment'
+);
 select is(
   (
-    select (public.revoke_company_role_assignment(
+    select (public.revoke_company_role_assignment_scoped(
+      :'company_a_id'::uuid,
       :'second_admin_assignment_id'::bigint,
       'test second company admin revocation'
     )).revoked_at is not null

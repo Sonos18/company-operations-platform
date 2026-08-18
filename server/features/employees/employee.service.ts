@@ -41,6 +41,24 @@ function offboardingFailed(): never {
   throw new AppApiError(502, 'EMPLOYEE_OFFBOARDING_FAILED', 'Không thể hoàn tất quy trình nghỉ việc.')
 }
 
+const offboardingAuditAttempts = 2
+
+async function recordOffboardingAuthFailure(
+  repository: EmployeeRepository,
+  companyId: string,
+  employeeId: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < offboardingAuditAttempts; attempt += 1) {
+    try {
+      await repository.recordOffboardingAuthFailure(companyId, employeeId)
+      return
+    } catch {
+      // The RPC is idempotent and the database offboarding transaction is already durable.
+    }
+  }
+  console.error('EMPLOYEE_OFFBOARDING_AUDIT_RECORD_FAILED')
+}
+
 function onboardingIncomplete(): never {
   throw new AppApiError(409, 'ONBOARDING_INCOMPLETE', 'Hồ sơ nhân viên chưa hoàn tất.')
 }
@@ -177,11 +195,7 @@ export function createEmployeeService(repository: EmployeeRepository) {
 
       if (disableResult.kind === 'disabled') return result
 
-      try {
-        await repository.recordOffboardingAuthFailure(context.companyId, employeeId)
-      } catch {
-        // The business transaction is already complete; reconciliation is retry-safe.
-      }
+      await recordOffboardingAuthFailure(repository, context.companyId, employeeId)
       return offboardingFailed()
     },
   }
