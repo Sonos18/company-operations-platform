@@ -296,6 +296,13 @@ select is(
   array['ACCOUNTING', 'BLD', 'CONSTRUCTION', 'DESIGN', 'HR', 'PROCUREMENT', 'TECH']::text[],
   'VQH has exactly the seven approved active departments'
 );
+select is((select department.name from public.departments department where department.tenant_id = '10000000-0000-4000-8000-000000000010' and department.company_id = '10000000-0000-4000-8000-000000000020' and department.code = 'BLD'), 'Ban lãnh đạo', 'VQH BLD has the approved department name');
+select is((select department.name from public.departments department where department.tenant_id = '10000000-0000-4000-8000-000000000010' and department.company_id = '10000000-0000-4000-8000-000000000020' and department.code = 'HR'), 'Phòng Nhân sự', 'VQH HR has the approved department name');
+select is((select department.name from public.departments department where department.tenant_id = '10000000-0000-4000-8000-000000000010' and department.company_id = '10000000-0000-4000-8000-000000000020' and department.code = 'TECH'), 'Phòng Kỹ thuật', 'VQH TECH has the approved department name');
+select is((select department.name from public.departments department where department.tenant_id = '10000000-0000-4000-8000-000000000010' and department.company_id = '10000000-0000-4000-8000-000000000020' and department.code = 'DESIGN'), 'Phòng Thiết kế', 'VQH DESIGN has the approved department name');
+select is((select department.name from public.departments department where department.tenant_id = '10000000-0000-4000-8000-000000000010' and department.company_id = '10000000-0000-4000-8000-000000000020' and department.code = 'CONSTRUCTION'), 'Thi công – Hiện trường', 'VQH CONSTRUCTION has the approved department name');
+select is((select department.name from public.departments department where department.tenant_id = '10000000-0000-4000-8000-000000000010' and department.company_id = '10000000-0000-4000-8000-000000000020' and department.code = 'PROCUREMENT'), 'Vật tư – Mua hàng', 'VQH PROCUREMENT has the approved department name');
+select is((select department.name from public.departments department where department.tenant_id = '10000000-0000-4000-8000-000000000010' and department.company_id = '10000000-0000-4000-8000-000000000020' and department.code = 'ACCOUNTING'), 'Phòng Kế toán', 'VQH ACCOUNTING has the approved department name');
 select ok(
   (
     select tech.id <> design.id
@@ -447,6 +454,12 @@ select is(
   array['VQH-HAU', 'VQH-HIEU', 'VQH-LONG', 'VQH-NHI', 'VQH-NHU', 'VQH-Y']::text[],
   'VQH has exactly the six approved employee records'
 );
+select is((select employee.employee_code || '|' || employee.full_name || '|' || employee.work_email || '|' || employee.user_id::text || '|' || auth_user.email || '|' || department.code || '|' || department.name from public.employees employee join auth.users auth_user on auth_user.id = employee.user_id join public.departments department on department.id = employee.department_id and department.tenant_id = employee.tenant_id and department.company_id = employee.company_id where employee.tenant_id = '10000000-0000-4000-8000-000000000010' and employee.company_id = '10000000-0000-4000-8000-000000000020' and employee.employee_code = 'VQH-NHU'), 'VQH-NHU|Như|nhu@vqh.local|10000000-0000-4000-8000-000000000101|nhu@vqh.local|HR|Phòng Nhân sự', 'Như has the approved employee, Auth identity, and HR department mapping');
+select is((select employee.employee_code || '|' || employee.full_name || '|' || employee.work_email || '|' || employee.user_id::text || '|' || auth_user.email || '|' || department.code || '|' || department.name from public.employees employee join auth.users auth_user on auth_user.id = employee.user_id join public.departments department on department.id = employee.department_id and department.tenant_id = employee.tenant_id and department.company_id = employee.company_id where employee.tenant_id = '10000000-0000-4000-8000-000000000010' and employee.company_id = '10000000-0000-4000-8000-000000000020' and employee.employee_code = 'VQH-LONG'), 'VQH-LONG|Long|long@vqh.local|10000000-0000-4000-8000-000000000102|long@vqh.local|TECH|Phòng Kỹ thuật', 'Long has the approved employee, Auth identity, and TECH department mapping');
+select is((select employee.employee_code || '|' || employee.full_name || '|' || employee.work_email || '|' || employee.user_id::text || '|' || auth_user.email || '|' || department.code || '|' || department.name from public.employees employee join auth.users auth_user on auth_user.id = employee.user_id join public.departments department on department.id = employee.department_id and department.tenant_id = employee.tenant_id and department.company_id = employee.company_id where employee.tenant_id = '10000000-0000-4000-8000-000000000010' and employee.company_id = '10000000-0000-4000-8000-000000000020' and employee.employee_code = 'VQH-HIEU'), 'VQH-HIEU|Hiếu|hieu@vqh.local|10000000-0000-4000-8000-000000000103|hieu@vqh.local|TECH|Phòng Kỹ thuật', 'Hiếu has the approved employee, Auth identity, and TECH department mapping');
+select is((select employee.employee_code || '|' || employee.full_name || '|' || employee.work_email || '|' || employee.user_id::text || '|' || auth_user.email || '|' || department.code || '|' || department.name from public.employees employee join auth.users auth_user on auth_user.id = employee.user_id join public.departments department on department.id = employee.department_id and department.tenant_id = employee.tenant_id and department.company_id = employee.company_id where employee.tenant_id = '10000000-0000-4000-8000-000000000010' and employee.company_id = '10000000-0000-4000-8000-000000000020' and employee.employee_code = 'VQH-Y'), 'VQH-Y|Y|y@vqh.local|10000000-0000-4000-8000-000000000104|y@vqh.local|ACCOUNTING|Phòng Kế toán', 'Y has the approved employee, Auth identity, and ACCOUNTING department mapping');
+select is((select employee.employee_code || '|' || employee.full_name || '|' || employee.work_email || '|' || employee.user_id::text || '|' || auth_user.email || '|' || department.code || '|' || department.name from public.employees employee join auth.users auth_user on auth_user.id = employee.user_id join public.departments department on department.id = employee.department_id and department.tenant_id = employee.tenant_id and department.company_id = employee.company_id where employee.tenant_id = '10000000-0000-4000-8000-000000000010' and employee.company_id = '10000000-0000-4000-8000-000000000020' and employee.employee_code = 'VQH-NHI'), 'VQH-NHI|Nhi|nhi@vqh.local|10000000-0000-4000-8000-000000000105|nhi@vqh.local|DESIGN|Phòng Thiết kế', 'Nhi has the approved employee, Auth identity, and DESIGN department mapping');
+select is((select employee.employee_code || '|' || employee.full_name || '|' || employee.work_email || '|' || employee.user_id::text || '|' || auth_user.email || '|' || department.code || '|' || department.name from public.employees employee join auth.users auth_user on auth_user.id = employee.user_id join public.departments department on department.id = employee.department_id and department.tenant_id = employee.tenant_id and department.company_id = employee.company_id where employee.tenant_id = '10000000-0000-4000-8000-000000000010' and employee.company_id = '10000000-0000-4000-8000-000000000020' and employee.employee_code = 'VQH-HAU'), 'VQH-HAU|Hậu|hau@vqh.local|10000000-0000-4000-8000-000000000106|hau@vqh.local|DESIGN|Phòng Thiết kế', 'Hậu has the approved employee, Auth identity, and DESIGN department mapping');
 select is(
   (
     select array_agg(company_role.code order by company_role.code)
@@ -461,25 +474,8 @@ select is(
   array['employee', 'hr_manager', 'inventory_auditor', 'supplier_sourcing']::text[],
   'Như has the approved active role matrix'
 );
-select is(
-  (
-    select array_agg(company_role.code order by company_role.code)
-    from public.company_role_assignments assignment
-    join public.roles company_role on company_role.id = assignment.role_id
-    join public.employees employee on employee.user_id = assignment.user_id
-      and employee.tenant_id = assignment.tenant_id
-      and employee.company_id = assignment.company_id
-    where employee.employee_code in ('VQH-LONG', 'VQH-HIEU')
-      and assignment.revoked_at is null
-    group by employee.employee_code
-    order by employee.employee_code
-  ),
-  array[
-    array['employee', 'technical_staff']::text[],
-    array['employee', 'technical_staff']::text[]
-  ]::text[][],
-  'Long and Hiếu each have the technical role matrix'
-);
+select is((select array_agg(company_role.code order by company_role.code) from public.company_role_assignments assignment join public.roles company_role on company_role.id = assignment.role_id join public.employees employee on employee.user_id = assignment.user_id and employee.tenant_id = assignment.tenant_id and employee.company_id = assignment.company_id where employee.employee_code = 'VQH-LONG' and assignment.revoked_at is null), array['employee', 'technical_staff']::text[], 'Long has the approved technical role matrix');
+select is((select array_agg(company_role.code order by company_role.code) from public.company_role_assignments assignment join public.roles company_role on company_role.id = assignment.role_id join public.employees employee on employee.user_id = assignment.user_id and employee.tenant_id = assignment.tenant_id and employee.company_id = assignment.company_id where employee.employee_code = 'VQH-HIEU' and assignment.revoked_at is null), array['employee', 'technical_staff']::text[], 'Hiếu has the approved technical role matrix');
 select is(
   (
     select array_agg(company_role.code order by company_role.code)
@@ -494,25 +490,8 @@ select is(
   array['accountant', 'employee']::text[],
   'Y has the approved accountant role matrix'
 );
-select is(
-  (
-    select array_agg(company_role.code order by company_role.code)
-    from public.company_role_assignments assignment
-    join public.roles company_role on company_role.id = assignment.role_id
-    join public.employees employee on employee.user_id = assignment.user_id
-      and employee.tenant_id = assignment.tenant_id
-      and employee.company_id = assignment.company_id
-    where employee.employee_code in ('VQH-NHI', 'VQH-HAU')
-      and assignment.revoked_at is null
-    group by employee.employee_code
-    order by employee.employee_code
-  ),
-  array[
-    array['designer', 'employee']::text[],
-    array['designer', 'employee']::text[]
-  ]::text[][],
-  'Nhi and Hậu each have the designer role matrix'
-);
+select is((select array_agg(company_role.code order by company_role.code) from public.company_role_assignments assignment join public.roles company_role on company_role.id = assignment.role_id join public.employees employee on employee.user_id = assignment.user_id and employee.tenant_id = assignment.tenant_id and employee.company_id = assignment.company_id where employee.employee_code = 'VQH-NHI' and assignment.revoked_at is null), array['designer', 'employee']::text[], 'Nhi has the approved designer role matrix');
+select is((select array_agg(company_role.code order by company_role.code) from public.company_role_assignments assignment join public.roles company_role on company_role.id = assignment.role_id join public.employees employee on employee.user_id = assignment.user_id and employee.tenant_id = assignment.tenant_id and employee.company_id = assignment.company_id where employee.employee_code = 'VQH-HAU' and assignment.revoked_at is null), array['designer', 'employee']::text[], 'Hậu has the approved designer role matrix');
 select is(
   (
     select array_agg(company_role.code order by company_role.code)
