@@ -11,6 +11,8 @@ select no_plan();
 \set admin_user_id '41000000-0000-4000-8000-000000000004'
 \set second_admin_user_id '41000000-0000-4000-8000-000000000005'
 \set legacy_admin_user_id '41000000-0000-4000-8000-000000000006'
+\set grant_target_user_id '41000000-0000-4000-8000-000000000007'
+\set onboarding_user_id '41000000-0000-4000-8000-000000000008'
 \set unrelated_admin_user_id '42000000-0000-4000-8000-000000000001'
 \set self_employee_id '41000000-0000-4000-8000-000000000101'
 \set other_employee_id '41000000-0000-4000-8000-000000000102'
@@ -24,6 +26,8 @@ insert into auth.users (id, email) values
   (:'admin_user_id'::uuid, 'admin@employee-rbac.invalid'),
   (:'second_admin_user_id'::uuid, 'second-admin@employee-rbac.invalid'),
   (:'legacy_admin_user_id'::uuid, 'legacy-admin@employee-rbac.invalid'),
+  (:'grant_target_user_id'::uuid, 'grant-target@employee-rbac.invalid'),
+  (:'onboarding_user_id'::uuid, 'onboarding@employee-rbac.invalid'),
   (:'unrelated_admin_user_id'::uuid, 'unrelated-admin@employee-rbac.invalid');
 
 insert into public.tenants (id, code, name) values
@@ -41,6 +45,7 @@ insert into public.tenant_memberships (user_id, tenant_id, roles) values
   (:'admin_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
   (:'second_admin_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
   (:'legacy_admin_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
+  (:'grant_target_user_id'::uuid, :'tenant_a_id'::uuid, array['tenant_admin']),
   (:'unrelated_admin_user_id'::uuid, :'tenant_b_id'::uuid, array['tenant_admin']);
 
 insert into public.company_memberships (user_id, tenant_id, company_id, roles) values
@@ -50,11 +55,15 @@ insert into public.company_memberships (user_id, tenant_id, company_id, roles) v
   (:'admin_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['employee']),
   (:'second_admin_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['employee']),
   (:'legacy_admin_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['company_admin']),
+  (:'grant_target_user_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, array['employee']),
   (:'unrelated_admin_user_id'::uuid, :'tenant_b_id'::uuid, :'company_b_id'::uuid, array['employee']);
 
 insert into public.departments (id, tenant_id, company_id, code, name) values
   ('41000000-0000-4000-8000-000000000201', :'tenant_a_id'::uuid, :'company_a_id'::uuid, 'HR', 'Human Resources'),
   ('42000000-0000-4000-8000-000000000201', :'tenant_b_id'::uuid, :'company_b_id'::uuid, 'HR', 'Human Resources');
+
+insert into public.positions (id, tenant_id, company_id, code, name) values
+  ('41000000-0000-4000-8000-000000000211', :'tenant_a_id'::uuid, :'company_a_id'::uuid, 'HR-ASSISTANT', 'HR Assistant');
 
 insert into public.employees (id, tenant_id, company_id, user_id, employee_code, full_name, work_email, department_id, employment_status, created_by) values
   (:'self_employee_id'::uuid, :'tenant_a_id'::uuid, :'company_a_id'::uuid, :'self_user_id'::uuid, 'EMP-SELF', 'Employee Self', 'employee@employee-rbac.invalid', '41000000-0000-4000-8000-000000000201', 'active', :'admin_user_id'::uuid),
@@ -74,6 +83,8 @@ insert into public.permissions (code, module, name, description) values
   ('employee.read_directory', 'employee', 'Read employee directory', 'Read company employee directory'),
   ('employee.read_self_private', 'employee', 'Read own private profile', 'Read own private employee details'),
   ('employee.read_private', 'employee', 'Read private profiles', 'Read private employee details'),
+  ('employee.create', 'employee', 'Create employees', 'Onboard an employee'),
+  ('role.assign', 'role', 'Assign company roles', 'Grant company role assignments'),
   ('role.revoke', 'role', 'Revoke company roles', 'Revoke company role assignments');
 
 insert into public.role_permissions (role_id, permission_code) values
@@ -83,6 +94,8 @@ insert into public.role_permissions (role_id, permission_code) values
   ('41000000-0000-4000-8000-000000000302', 'employee.read_private'),
   ('41000000-0000-4000-8000-000000000303', 'employee.read_directory'),
   ('41000000-0000-4000-8000-000000000303', 'employee.read_private'),
+  ('41000000-0000-4000-8000-000000000303', 'employee.create'),
+  ('41000000-0000-4000-8000-000000000303', 'role.assign'),
   ('41000000-0000-4000-8000-000000000303', 'role.revoke'),
   ('42000000-0000-4000-8000-000000000301', 'employee.read_directory'),
   ('42000000-0000-4000-8000-000000000301', 'employee.read_private'),
@@ -97,14 +110,75 @@ insert into public.company_role_assignments (tenant_id, company_id, user_id, rol
   (:'tenant_a_id'::uuid, :'company_a_id'::uuid, :'legacy_admin_user_id'::uuid, '41000000-0000-4000-8000-000000000301', :'admin_user_id'::uuid, 'test normalized employee role'),
   (:'tenant_b_id'::uuid, :'company_b_id'::uuid, :'unrelated_admin_user_id'::uuid, '42000000-0000-4000-8000-000000000301', :'unrelated_admin_user_id'::uuid, 'test unrelated company admin role');
 
+select ok(
+  not has_function_privilege('anon', 'private.has_company_permission(uuid, uuid, text)', 'execute'),
+  'anonymous users cannot execute the private permission helper'
+);
+select ok(
+  not has_function_privilege('anon', 'private.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date)', 'execute'),
+  'anonymous users cannot execute the private onboarding implementation'
+);
+select ok(
+  not has_function_privilege('authenticated', 'private.audit_employee_rbac_change()', 'execute'),
+  'authenticated users cannot invoke the private audit trigger function directly'
+);
+select ok(
+  not exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.prosecdef
+  ),
+  'the exposed public schema has no security-definer functions'
+);
+select ok(
+  not has_column_privilege('authenticated', 'public.employees', 'user_id', 'select'),
+  'account user IDs are not selectable through the employee directory table'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.company_role_assignments', 'insert')
+  and not has_table_privilege('authenticated', 'public.company_role_assignments', 'update')
+  and not has_table_privilege('authenticated', 'public.company_role_assignments', 'delete'),
+  'authenticated users have no direct assignment write privilege'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.role_permissions', 'insert')
+  and not has_table_privilege('authenticated', 'public.role_permissions', 'update')
+  and not has_table_privilege('authenticated', 'public.role_permissions', 'delete'),
+  'authenticated users have no direct role-permission write privilege'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.audit_events', 'insert')
+  and not has_table_privilege('authenticated', 'public.audit_events', 'update')
+  and not has_table_privilege('authenticated', 'public.audit_events', 'delete'),
+  'authenticated users have no direct audit-event write privilege'
+);
+
 set local role anon;
-select is((select count(*) from public.employees), 0::bigint, 'anonymous cannot read the employee directory');
-select is((select count(*) from public.employee_private_details), 0::bigint, 'anonymous cannot read private employee details');
+select throws_ok(
+  'select id from public.employees',
+  '42501',
+  'permission denied for table employees',
+  'anonymous users have no employee-directory table privilege'
+);
+select throws_ok(
+  'select employee_id from public.employee_private_details',
+  '42501',
+  'permission denied for table employee_private_details',
+  'anonymous users have no private-detail table privilege'
+);
 
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'self_user_id'), true);
 select is((select count(*) from public.employees where company_id = :'company_a_id'::uuid), 2::bigint, 'employee reads the company directory');
+select throws_ok(
+  'select user_id from public.employees',
+  '42501',
+  'permission denied for table employees',
+  'employee directory queries cannot project account user IDs'
+);
 select is(
   (select count(*) from public.employee_private_details where employee_id = :'self_employee_id'),
   1::bigint,
@@ -136,6 +210,18 @@ select throws_ok(
   'permission denied for table company_role_assignments',
   'HR manager cannot mutate role assignments directly'
 );
+select throws_ok(
+  format(
+    'select public.grant_company_role_assignment(%L::uuid, %L::uuid, %L::uuid, %L)',
+    :'company_a_id',
+    :'grant_target_user_id',
+    '41000000-0000-4000-8000-000000000301',
+    'test HR grant denial'
+  ),
+  'P0001',
+  'PERMISSION_DENIED',
+  'HR manager cannot grant a company role'
+);
 
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated","app_metadata":{"company_roles":["company_admin"]},"company_roles":["company_admin"]}', :'legacy_admin_user_id'), true);
 select is((select count(*) from public.employee_private_details where company_id = :'company_a_id'::uuid), 0::bigint, 'legacy company membership roles and stale JWT role claims cannot read private profiles');
@@ -153,6 +239,130 @@ select throws_ok(
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'unrelated_admin_user_id'), true);
 select is((select count(*) from public.employees where company_id = :'company_a_id'::uuid), 0::bigint, 'unrelated-company admin cannot read the target company directory');
 select is((select count(*) from public.employee_private_details where company_id = :'company_a_id'::uuid), 0::bigint, 'unrelated-company admin cannot read target company private profiles');
+
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'admin_user_id'), true);
+select is(
+  (
+    select (public.grant_company_role_assignment(
+      :'company_a_id'::uuid,
+      :'grant_target_user_id'::uuid,
+      '41000000-0000-4000-8000-000000000301'::uuid,
+      'test safe employee grant'
+    )).user_id
+  ),
+  :'grant_target_user_id'::uuid,
+  'company admin grants a role without caller-supplied tenant or actor data'
+);
+select throws_ok(
+  format(
+    'select public.grant_company_role_assignment(%L::uuid, %L::uuid, %L::uuid, %L)',
+    :'company_a_id',
+    :'admin_user_id',
+    '41000000-0000-4000-8000-000000000301',
+    'test self grant denial'
+  ),
+  'P0001',
+  'SELF_ROLE_CHANGE_FORBIDDEN',
+  'company admins cannot grant themselves a role'
+);
+select is(
+  public.complete_employee_onboarding(
+    :'company_a_id'::uuid,
+    :'onboarding_user_id'::uuid,
+    'EMP-ONBOARDING',
+    'Onboarding Employee',
+    'onboarding@employee-rbac.invalid',
+    '41000000-0000-4000-8000-000000000201'::uuid,
+    '41000000-0000-4000-8000-000000000211'::uuid,
+    '2026-08-18'::date
+  ),
+  (
+    select id
+    from public.employees
+    where company_id = :'company_a_id'::uuid
+      and employee_code = 'EMP-ONBOARDING'
+  ),
+  'onboarding atomically returns the account-linked employee record'
+);
+select is(
+  public.complete_employee_onboarding(
+    :'company_a_id'::uuid,
+    :'onboarding_user_id'::uuid,
+    'EMP-ONBOARDING',
+    'Onboarding Employee',
+    'onboarding@employee-rbac.invalid',
+    '41000000-0000-4000-8000-000000000201'::uuid,
+    '41000000-0000-4000-8000-000000000211'::uuid,
+    '2026-08-18'::date
+  ),
+  (
+    select id
+    from public.employees
+    where company_id = :'company_a_id'::uuid
+      and employee_code = 'EMP-ONBOARDING'
+  ),
+  'repeating matching onboarding is idempotent'
+);
+select is(
+  (
+    select count(*)
+    from public.company_role_assignments cra
+    join public.roles r on r.id = cra.role_id
+    where cra.company_id = :'company_a_id'::uuid
+      and cra.user_id = :'onboarding_user_id'::uuid
+      and r.code = 'employee'
+      and cra.revoked_at is null
+  ),
+  1::bigint,
+  'onboarding grants exactly one active base employee role'
+);
+select throws_ok(
+  format(
+    'select public.complete_employee_onboarding(%L::uuid, %L::uuid, %L, %L, %L, %L::uuid, %L::uuid, %L::date)',
+    :'company_a_id',
+    :'onboarding_user_id',
+    'EMP-ONBOARDING',
+    'Onboarding Employee',
+    'different@employee-rbac.invalid',
+    '41000000-0000-4000-8000-000000000201',
+    '41000000-0000-4000-8000-000000000211',
+    '2026-08-18'
+  ),
+  'P0001',
+  'EMPLOYEE_EMAIL_CONFLICT',
+  'onboarding rejects an immutable work-email mismatch'
+);
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'onboarding_user_id'), true);
+select is(
+  (select count(*) from public.employee_private_details where company_id = :'company_a_id'::uuid),
+  1::bigint,
+  'a position assignment does not grant access to other private employee profiles'
+);
+
+reset role;
+select ok(
+  exists (
+    select 1
+    from public.audit_events
+    where tenant_id = :'tenant_a_id'::uuid
+      and company_id = :'company_a_id'::uuid
+      and actor_id = :'admin_user_id'::uuid
+      and action = 'role.granted'
+      and resource_type = 'company_role_assignment'
+      and request_id = '41000000-0000-4000-8000-000000000999'::uuid
+      and after_summary ? 'role_id'
+  ),
+  'role grants create scoped, attributed, request-correlated audit events'
+);
+update public.company_memberships
+set is_active = false
+where tenant_id = :'tenant_a_id'::uuid
+  and company_id = :'company_a_id'::uuid
+  and user_id = :'self_user_id'::uuid;
+set local role authenticated;
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'self_user_id'), true);
+select is((select count(*) from public.employees where company_id = :'company_a_id'::uuid), 0::bigint, 'inactive company membership immediately loses directory access');
+select is((select count(*) from public.employee_private_details where employee_id = :'self_employee_id'), 0::bigint, 'inactive company membership immediately loses private-profile access');
 
 reset role;
 update public.company_role_assignments
@@ -204,6 +414,67 @@ select throws_ok(
   'P0001',
   'SELF_ROLE_CHANGE_FORBIDDEN',
   'final company admin cannot change their own roles'
+);
+
+reset role;
+select set_config('request.headers', '', true);
+insert into public.company_role_assignments (tenant_id, company_id, user_id, role_id, granted_by, grant_reason)
+values (
+  :'tenant_a_id'::uuid,
+  :'company_a_id'::uuid,
+  :'grant_target_user_id'::uuid,
+  '41000000-0000-4000-8000-000000000302'::uuid,
+  :'admin_user_id'::uuid,
+  'test audit fallback request identifier'
+);
+select ok(
+  exists (
+    select 1
+    from public.audit_events
+    where tenant_id = :'tenant_a_id'::uuid
+      and company_id = :'company_a_id'::uuid
+      and action = 'role.granted'
+      and resource_id = (
+        select id::text
+        from public.company_role_assignments
+        where tenant_id = :'tenant_a_id'::uuid
+          and company_id = :'company_a_id'::uuid
+          and user_id = :'grant_target_user_id'::uuid
+          and role_id = '41000000-0000-4000-8000-000000000302'::uuid
+          and revoked_at is null
+      )
+      and request_id is not null
+  ),
+  'audit triggers safely generate a request ID when no request header is present'
+);
+select ok(
+  not exists (
+    select 1
+    from public.audit_events
+    where coalesce(before_summary, '{}'::jsonb) ?| array[
+      'personal_email', 'personal_phone', 'current_address', 'permanent_address',
+      'tax_code', 'social_insurance_number', 'emergency_contact_name', 'emergency_contact_phone'
+    ]
+       or coalesce(after_summary, '{}'::jsonb) ?| array[
+      'personal_email', 'personal_phone', 'current_address', 'permanent_address',
+      'tax_code', 'social_insurance_number', 'emergency_contact_name', 'emergency_contact_phone'
+    ]
+  ),
+  'audit summaries redact employee private-detail fields'
+);
+select throws_ok(
+  'update public.audit_events set action = ''tampered'' where id = (select min(id) from public.audit_events)',
+  'P0001',
+  'AUDIT_EVENTS_APPEND_ONLY',
+  'audit triggers prevent even privileged direct audit-event mutation'
+);
+set local role authenticated;
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'admin_user_id'), true);
+select throws_ok(
+  'update public.audit_events set action = ''tampered'' where false',
+  '42501',
+  'permission denied for table audit_events',
+  'audit events are append-only to authenticated callers'
 );
 
 select * from finish();
