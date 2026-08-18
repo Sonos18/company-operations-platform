@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { readFileSync, readdirSync } from 'node:fs'
 import { extname, join, relative, resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +10,8 @@ vi.mock('@supabase/supabase-js', () => ({ createClient }))
 
 const root = resolve(import.meta.dirname, '../../..')
 const adminSecret = 'sb_secret_that_must_not_reach_user_queries'
+const historicalOnboardingMigration = 'supabase/migrations/20260818033418_employee_management_rbac.sql'
+const forwardMigrationSuffix = '_harden_employee_onboarding_permissions.sql'
 
 function filesRecursively(directory: string, extensions = new Set(['.ts'])): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
@@ -32,6 +35,35 @@ function fullAuthPage(page: number) {
 
 function authPage(users: unknown[]) {
   return { data: { users }, error: null }
+}
+
+function functionDefinition(source: string, declaration: string): string {
+  const start = source.indexOf(declaration)
+  const end = source.indexOf('$$;', start)
+  if (start < 0 || end < 0) throw new Error(`Unable to find ${declaration}`)
+  return source.slice(start, end + 3).replaceAll('\r\n', '\n')
+}
+
+function privateAdminSymbolFiles(files: Array<{ path: string, source: string }>): string[] {
+  const symbols = [
+    'supabaseServiceRoleKey',
+    'serviceRoleKey',
+    'createSupabaseAdminClient',
+    'SupabaseAdminClient',
+    'parseSupabaseAdminConfig',
+  ]
+  return files
+    .filter(({ source }) => symbols.some(symbol => source.includes(symbol)))
+    .map(({ path }) => path)
+    .sort()
+}
+
+function forwardOnboardingMigrationPath(): string {
+  const migrationsDirectory = resolve(root, 'supabase/migrations')
+  const migration = readdirSync(migrationsDirectory)
+    .filter(path => path.endsWith(forwardMigrationSuffix))
+  if (migration.length !== 1) throw new Error('Expected exactly one forward onboarding hardening migration')
+  return resolve(migrationsDirectory, migration[0]!)
 }
 
 async function adminFactory() {
@@ -252,28 +284,26 @@ describe('Supabase Auth admin boundary', () => {
     expect(listUsers).not.toHaveBeenCalled()
   })
 
-  it('keeps private Auth-admin symbols out of browser, shared, repository, and normal caller-client code', () => {
-    const privateAdminSymbols = [
-      'supabaseServiceRoleKey',
-      'serviceRoleKey',
-      'createSupabaseAdminClient',
-      'SupabaseAdminClient',
-      'parseSupabaseAdminConfig',
-    ]
-    const forbiddenBrowserOrSharedFiles = [
+  it('allows private Auth-admin symbols only in the exact server-side assembly allowlist', () => {
+    const files = [
+      resolve(root, 'nuxt.config.ts'),
+      ...filesRecursively(resolve(root, 'server'), new Set(['.ts'])),
       ...filesRecursively(resolve(root, 'app'), new Set(['.ts', '.vue'])),
       ...filesRecursively(resolve(root, 'shared'), new Set(['.ts', '.vue'])),
-      ...filesRecursively(resolve(root, 'server')).filter(path => path.endsWith('.repository.ts')),
-      resolve(root, 'server/utils/auth-context.ts'),
-    ]
-    const leaks = forbiddenBrowserOrSharedFiles.flatMap(path => {
-      const source = readFileSync(path, 'utf8')
-      return privateAdminSymbols
-        .filter(symbol => source.includes(symbol))
-        .map(symbol => `${relative(root, path).replaceAll('\\', '/')}:${symbol}`)
-    })
+    ].map(path => ({
+      path: relative(root, path).replaceAll('\\', '/'),
+      source: readFileSync(path, 'utf8'),
+    }))
 
-    expect(leaks).toEqual([])
+    expect(privateAdminSymbolFiles(files)).toEqual([
+      'nuxt.config.ts',
+      'server/features/employees/employee.routes.ts',
+      'server/utils/supabase-client.ts',
+      'server/utils/supabase-config.ts',
+    ])
+    expect(privateAdminSymbolFiles([
+      { path: 'server/api/leak.post.ts', source: 'runtime.supabaseServiceRoleKey' },
+    ])).toEqual(['server/api/leak.post.ts'])
   })
 
   it('limits Auth-admin factory imports to dependency assembly and its server-only façade', () => {
@@ -285,5 +315,36 @@ describe('Supabase Auth admin boundary', () => {
       'server/features/employees/employee.routes.ts',
       'server/utils/supabase-client.ts',
     ])
+  })
+
+  it('keeps the historical onboarding migration unchanged from the Task 8 baseline', () => {
+    const historical = readFileSync(resolve(root, historicalOnboardingMigration), 'utf8')
+    const baseline = execFileSync(
+      'git',
+      ['show', `f233899:${historicalOnboardingMigration}`],
+      { cwd: root, encoding: 'utf8' },
+    )
+
+    expect(historical).toBe(baseline)
+  })
+
+  it('uses one forward migration to replace only the private onboarding permission check', () => {
+    const historical = readFileSync(resolve(root, historicalOnboardingMigration), 'utf8')
+    const forward = readFileSync(forwardOnboardingMigrationPath(), 'utf8')
+    const privateDeclaration = 'create or replace function private.complete_employee_onboarding('
+    const publicDeclaration = 'create or replace function public.complete_employee_onboarding('
+    const historicalPrivate = functionDefinition(historical, privateDeclaration)
+    const forwardPrivate = functionDefinition(forward, privateDeclaration)
+    const expectedPrivate = historicalPrivate.replace(
+      "     or not private.has_company_permission(v_tenant_id, target_company_id, 'employee.create') then",
+      "     or not private.has_company_permission(v_tenant_id, target_company_id, 'account.invite')\n     or not private.has_company_permission(v_tenant_id, target_company_id, 'employee.create') then",
+    )
+
+    expect(forwardPrivate).toBe(expectedPrivate)
+    expect(functionDefinition(forward, publicDeclaration)).toBe(functionDefinition(historical, publicDeclaration))
+    expect(forward).toContain('revoke all on function private.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) from public, anon, authenticated;')
+    expect(forward).toContain('grant execute on function private.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) to authenticated;')
+    expect(forward).toContain('revoke all on function public.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) from public, anon;')
+    expect(forward).toContain('grant execute on function public.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) to authenticated;')
   })
 })

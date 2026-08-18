@@ -870,7 +870,6 @@ begin
      and membership.is_active;
 
   if not found
-     or not private.has_company_permission(v_tenant_id, target_company_id, 'account.invite')
      or not private.has_company_permission(v_tenant_id, target_company_id, 'employee.create') then
     raise exception using errcode = 'P0001', message = 'PERMISSION_DENIED';
   end if;

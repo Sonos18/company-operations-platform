@@ -57,3 +57,18 @@ Intentional Task 8 commit: `feat: add secure employee invitations`.
 - `pnpm typecheck`, `pnpm lint`, and `pnpm build` — passed.
 - Generated browser asset scan found no private-admin symbols. Source-boundary review confines private key/config/factory use to the server config/client façade and invitation dependency assembly.
 - `pnpm db:local:test` was attempted once but remained blocked before pgTAP execution because PostgreSQL refused `127.0.0.1:54322`; the new direct-RPC cases require a running local Supabase/Postgres instance.
+
+## Fix round 2/5
+
+- Reverted the prior `account.invite` edit from historical migration `20260818033418_employee_management_rbac.sql`; a static baseline comparison confirms it now exactly matches commit `f233899`.
+- Generated `20260818074118_harden_employee_onboarding_permissions.sql` with the Supabase CLI. It forward-replaces the private definer and public invoker onboarding routines, adding only the second normalized permission check before target lookup/mutation and explicitly restoring private/public RPC privileges.
+- Expanded private-admin boundary scanning to every server TypeScript file plus app/shared source, with an exact allowlist for Nuxt private config, the server config/client façade, and invitation dependency assembly. A simulated arbitrary route credential read is detected by the same classifier.
+- Added catalog/static tests that lock the historical migration content, full private function body (apart from the new permission predicate), public signature/defaults/invoker wrapper, and explicit grants. This prevents fresh installs and already-migrated installs from drifting.
+
+### Fix-round verification
+
+- RED: forward-only migration/catalog coverage failed while the historical file still contained the extra predicate and the CLI-created migration was empty.
+- GREEN: boundary/migration suite passed, 17 tests; focused suite passed, 60 tests; full unit suite passed, 29 files / 187 tests.
+- `pnpm typecheck`, `pnpm lint`, and `pnpm build` — passed.
+- Generated browser asset scan found no private-admin symbols; `git diff --check` passed; direct comparison confirmed the historical migration equals `f233899`.
+- `pnpm db:local:test` was attempted once but remained blocked before pgTAP execution because PostgreSQL refused `127.0.0.1:54322`.
