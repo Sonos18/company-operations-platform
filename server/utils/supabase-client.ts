@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import type { Database } from '../../shared/types/database.types'
 import type { EmployeeInvitationAuthAdmin } from '../features/employees/employee-invitation-auth'
@@ -26,43 +27,21 @@ export function createSupabaseUserClient(
 
 export type UserSupabaseClient = ReturnType<typeof createSupabaseUserClient>
 
-interface AuthAdminUser {
-  id: unknown
-  email?: unknown
-}
-
-interface AuthAdminApi {
-  inviteUserByEmail(email: string): Promise<{
-    data: { user: AuthAdminUser | null }
-    error: unknown
-  }>
-  listUsers(options: { page: number, perPage: number }): Promise<{
-    data: {
-      users: AuthAdminUser[]
-      nextPage?: number | null
-    }
-    error: unknown
-  }>
-}
-
 export interface SupabaseAdminClient {
-  auth: {
-    admin: AuthAdminApi
-  }
+  auth: Pick<SupabaseClient<Database>['auth'], 'admin'>
 }
 
 const authUserIdSchema = z.string().uuid()
 const duplicateInviteErrorSchema = z.object({
   code: z.enum(['email_exists', 'user_already_exists']),
 }).passthrough()
-const paginationSchema = z.object({
-  users: z.array(z.object({
-    id: z.unknown(),
-    email: z.unknown().optional(),
-  }).passthrough()),
-  nextPage: z.number().int().positive().nullable().optional(),
-}).passthrough()
+const authUserSchema = z.object({
+  id: authUserIdSchema,
+  email: z.string().trim().toLowerCase().email(),
+})
+const paginationSchema = z.object({ users: z.array(z.unknown()) }).passthrough()
 const authUserPageLimit = 100
+const authUserPageSize = 100
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
@@ -73,7 +52,8 @@ function isDocumentedDuplicateInviteError(error: unknown): boolean {
 }
 
 export function createSupabaseAdminClient(config: SupabaseAdminConfig): SupabaseAdminClient {
-  return createClient<Database>(config.url, config.serviceRoleKey, { auth }) as unknown as SupabaseAdminClient
+  const client = createClient<Database>(config.url, config.serviceRoleKey, { auth })
+  return { auth: { admin: client.auth.admin } }
 }
 
 export function createSupabaseInvitationAuthAdmin(
@@ -96,26 +76,24 @@ export function createSupabaseInvitationAuthAdmin(
     },
     async findUserByEmail(email) {
       const normalizedEmail = normalizeEmail(email)
-      let page = 1
-      const visitedPages = new Set<number>()
-      for (let attempts = 0; attempts < authUserPageLimit; attempts += 1) {
-        if (visitedPages.has(page)) return { kind: 'failed' }
-        visitedPages.add(page)
+      const matchedUserIds: string[] = []
+      const seenUserIds = new Set<string>()
+      for (let page = 1; page <= authUserPageLimit; page += 1) {
         try {
-          const { data, error } = await client.auth.admin.listUsers({ page, perPage: 100 })
+          const { data, error } = await client.auth.admin.listUsers({ page, perPage: authUserPageSize })
           const parsed = paginationSchema.safeParse(data)
           if (error || !parsed.success) return { kind: 'failed' }
-          const exactMatch = parsed.data.users.find(user => (
-            typeof user.email === 'string' && normalizeEmail(user.email) === normalizedEmail
-          ))
-          if (exactMatch) {
-            const userId = authUserIdSchema.safeParse(exactMatch.id)
-            return userId.success ? { kind: 'found', userId: userId.data } : { kind: 'failed' }
+          const users = z.array(authUserSchema).safeParse(parsed.data.users)
+          if (!users.success) return { kind: 'failed' }
+          for (const user of users.data) {
+            if (seenUserIds.has(user.id)) return { kind: 'failed' }
+            seenUserIds.add(user.id)
+            if (user.email === normalizedEmail) matchedUserIds.push(user.id)
           }
-          const nextPage = parsed.data.nextPage
-          if (nextPage === undefined || nextPage === null) return { kind: 'not_found' }
-          if (nextPage <= page || visitedPages.has(nextPage)) return { kind: 'failed' }
-          page = nextPage
+          if (users.data.length < authUserPageSize) {
+            if (matchedUserIds.length === 1) return { kind: 'found', userId: matchedUserIds[0]! }
+            return matchedUserIds.length === 0 ? { kind: 'not_found' } : { kind: 'failed' }
+          }
         } catch {
           return { kind: 'failed' }
         }

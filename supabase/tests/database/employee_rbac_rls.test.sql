@@ -89,6 +89,7 @@ insert into public.permissions (code, module, name, description) values
   ('employee.read_directory', 'employee', 'Read employee directory', 'Read company employee directory'),
   ('employee.read_self_private', 'employee', 'Read own private profile', 'Read own private employee details'),
   ('employee.read_private', 'employee', 'Read private profiles', 'Read private employee details'),
+  ('account.invite', 'account', 'Invite accounts', 'Invite an account for employee onboarding'),
   ('employee.create', 'employee', 'Create employees', 'Onboard an employee'),
   ('employee.update', 'employee', 'Update employees', 'Update employee profiles'),
   ('role.assign', 'role', 'Assign company roles', 'Grant company role assignments'),
@@ -99,6 +100,7 @@ insert into public.role_permissions (role_id, permission_code) values
   ('41000000-0000-4000-8000-000000000301', 'employee.read_self_private'),
   ('41000000-0000-4000-8000-000000000302', 'employee.read_directory'),
   ('41000000-0000-4000-8000-000000000302', 'employee.read_private'),
+  ('41000000-0000-4000-8000-000000000302', 'account.invite'),
   ('41000000-0000-4000-8000-000000000303', 'employee.read_directory'),
   ('41000000-0000-4000-8000-000000000303', 'employee.read_private'),
   ('41000000-0000-4000-8000-000000000303', 'employee.create'),
@@ -830,6 +832,60 @@ select throws_ok(
   'SELF_ROLE_CHANGE_FORBIDDEN',
   'company admins cannot grant themselves a role'
 );
+select throws_ok(
+  format(
+    'select public.complete_employee_onboarding(%L::uuid, %L::uuid, %L, %L, %L, %L::uuid, %L::uuid, %L::date)',
+    :'company_a_id',
+    :'onboarding_user_id',
+    'EMP-ONBOARDING',
+    'Onboarding Employee',
+    'onboarding@employee-rbac.invalid',
+    '41000000-0000-4000-8000-000000000201',
+    '41000000-0000-4000-8000-000000000211',
+    '2026-08-18'
+  ),
+  'P0001',
+  'PERMISSION_DENIED',
+  'an active company member with only employee.create cannot onboard an employee'
+);
+select throws_ok(
+  format(
+    'select public.complete_employee_onboarding(%L::uuid, %L::uuid, %L, %L, %L, %L::uuid, %L::uuid, %L::date)',
+    :'company_a_id',
+    '41000000-0000-4000-8000-000000000099',
+    'EMP-ONBOARDING',
+    'Onboarding Employee',
+    'onboarding@employee-rbac.invalid',
+    '41000000-0000-4000-8000-000000000201',
+    '41000000-0000-4000-8000-000000000211',
+    '2026-08-18'
+  ),
+  'P0001',
+  'PERMISSION_DENIED',
+  'create-only denial does not reveal whether the target Auth user exists'
+);
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'hr_user_id'), true);
+select throws_ok(
+  format(
+    'select public.complete_employee_onboarding(%L::uuid, %L::uuid, %L, %L, %L, %L::uuid, %L::uuid, %L::date)',
+    :'company_a_id',
+    :'onboarding_user_id',
+    'EMP-ONBOARDING',
+    'Onboarding Employee',
+    'onboarding@employee-rbac.invalid',
+    '41000000-0000-4000-8000-000000000201',
+    '41000000-0000-4000-8000-000000000211',
+    '2026-08-18'
+  ),
+  'P0001',
+  'PERMISSION_DENIED',
+  'an active company member with only account.invite cannot onboard an employee'
+);
+reset role;
+insert into public.role_permissions (role_id, permission_code)
+values ('41000000-0000-4000-8000-000000000303'::uuid, 'account.invite');
+set local role authenticated;
+select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated"}', :'admin_user_id'), true);
 select is(
   public.complete_employee_onboarding(
     :'company_a_id'::uuid,

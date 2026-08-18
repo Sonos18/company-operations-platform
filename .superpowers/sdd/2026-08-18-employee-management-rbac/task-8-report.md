@@ -40,3 +40,20 @@
 ## Commit
 
 Intentional Task 8 commit: `feat: add secure employee invitations`.
+
+## Fix round 1/5
+
+- Hardened `private.complete_employee_onboarding` to require both normalized permissions, `account.invite` and `employee.create`, for the authenticated user's active company membership before any target-account lookup or mutation. The public RPC remains a security-invoker wrapper.
+- Added direct public-RPC pgTAP cases for create-only denial, invite-only denial, a stable denial against a nonexistent Auth user, and the existing both-permissions success/idempotency assertions.
+- Reworked Auth retry lookup to validate every traversed record as a UUID plus normalized valid email, collect every exact-email match, reject duplicate IDs/matches or malformed data, and use explicit page numbers through a 100-page cap. It ignores the pinned Auth client's unreliable `nextPage` value and performs the required empty-page probe after a full final page.
+- Changed `createSupabaseAdminClient` from a type-only cast to a runtime `{ auth: { admin } }` façade; the raw Supabase client cannot expose database, storage, function, or session APIs.
+- Expanded boundary tests to cover runtime façade shape, same/cross-page duplicate emails, malformed Auth records, page 9-to-10 traversal, cycle/cap behavior, browser/shared/repository/caller-client static boundaries, route permission precedence, and lazy credential use.
+
+### Fix-round verification
+
+- RED: `pnpm test:unit -- tests/unit/server/service-role-boundary.spec.ts` — 10 expected failures before implementation (raw client escape, early match, malformed records, explicit page traversal, cycle, and cap handling).
+- GREEN: the same boundary suite passed, 15 tests; focused invitation/config/repository/route/service suite passed, 58 tests.
+- `pnpm test:unit` — passed, 29 files / 185 tests.
+- `pnpm typecheck`, `pnpm lint`, and `pnpm build` — passed.
+- Generated browser asset scan found no private-admin symbols. Source-boundary review confines private key/config/factory use to the server config/client façade and invitation dependency assembly.
+- `pnpm db:local:test` was attempted once but remained blocked before pgTAP execution because PostgreSQL refused `127.0.0.1:54322`; the new direct-RPC cases require a running local Supabase/Postgres instance.
