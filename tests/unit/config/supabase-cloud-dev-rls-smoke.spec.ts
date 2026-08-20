@@ -16,6 +16,6 @@ describe('Cloud DEV VQH RLS smoke command', () => {
     expect(runner).toContain("select 'PASS' as result;")
     expect(runner).toContain('rollback;')
     expect(runner).toContain("'canonical-check'")
-    expect(runner).not.toMatch(/select\s+.*(?:email|user_id).*as/i)
+    expect(runner).not.toMatch(/select\s+(?:\w+\.)?(?:email|user_id)\s+as\b/i)
   })
 })

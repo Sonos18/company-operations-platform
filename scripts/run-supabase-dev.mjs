@@ -8,17 +8,26 @@ const SUPABASE_DEV_HOME_SEGMENTS = ['SupabaseCLI', 'company-operations-dev']
 const VQH_RLS_SMOKE_SQL = String.raw`begin;
 do $$
 declare
-  member_id uuid;
   member_tenant_count integer;
   member_company_count integer;
   non_member_tenant_count integer;
   non_member_company_count integer;
 begin
-  select user_id into member_id from public.tenant_memberships
-    where tenant_id = '10000000-0000-4000-8000-000000000010'
-      and roles @> array['tenant_admin']::text[] limit 1;
-  if not found then raise exception 'VQH tenant admin membership is missing'; end if;
-  perform set_config('request.jwt.claims', json_build_object('sub', member_id::text, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claims', json_build_object('sub', (
+    select assignment.user_id::text
+    from public.tenant_memberships tenant_membership
+    join public.company_memberships company_membership on company_membership.user_id = tenant_membership.user_id and company_membership.tenant_id = tenant_membership.tenant_id
+    join public.company_role_assignments assignment on assignment.user_id = company_membership.user_id and assignment.tenant_id = company_membership.tenant_id and assignment.company_id = company_membership.company_id and assignment.revoked_at is null
+    join public.roles role on role.id = assignment.role_id
+    where tenant_membership.tenant_id = '10000000-0000-4000-8000-000000000010'
+      and tenant_membership.roles @> array['tenant_admin']::text[]
+      and company_membership.company_id = '10000000-0000-4000-8000-000000000020'
+      and company_membership.is_active
+      and role.code = 'company_admin'
+      and role.is_active
+    limit 1
+  ), 'role', 'authenticated')::text, true);
+  if auth.uid() is null then raise exception 'VQH active normalized company admin is missing'; end if;
   execute 'set local role authenticated';
   select count(*) into member_tenant_count from public.tenants where id = '10000000-0000-4000-8000-000000000010';
   select count(*) into member_company_count from public.companies where id = '10000000-0000-4000-8000-000000000020' and tenant_id = '10000000-0000-4000-8000-000000000010';
@@ -38,6 +47,21 @@ begin
   end if;
   if (select count(*) from public.companies where id = '10000000-0000-4000-8000-000000000020' and tenant_id = '10000000-0000-4000-8000-000000000010' and code = 'VQH' and name = 'Việt Quốc Huy') <> 1 then
     raise exception 'canonical VQH company boundary/name check failed';
+  end if;
+  if (select count(*) from public.departments where tenant_id = '10000000-0000-4000-8000-000000000010' and company_id = '10000000-0000-4000-8000-000000000020' and code in ('BLD', 'HR', 'TECH', 'DESIGN', 'CONSTRUCTION', 'PROCUREMENT', 'ACCOUNTING')) <> 7 then
+    raise exception 'canonical VQH department catalog check failed';
+  end if;
+  if (select count(*) from public.roles where tenant_id = '10000000-0000-4000-8000-000000000010' and company_id = '10000000-0000-4000-8000-000000000020' and code in ('employee', 'hr_manager', 'supplier_sourcing', 'inventory_auditor', 'technical_staff', 'designer', 'accountant', 'company_admin') and is_system and is_active) <> 8 then
+    raise exception 'canonical VQH role catalog check failed';
+  end if;
+  if (select count(*) from public.permissions) <> 34 then
+    raise exception 'canonical VQH permission catalog check failed';
+  end if;
+  if (select count(*) from public.role_permissions role_permission join public.roles role on role.id = role_permission.role_id where role.tenant_id = '10000000-0000-4000-8000-000000000010' and role.company_id = '10000000-0000-4000-8000-000000000020' and role.code in ('employee', 'hr_manager', 'supplier_sourcing', 'inventory_auditor', 'technical_staff', 'designer', 'accountant', 'company_admin')) <> 71 then
+    raise exception 'canonical VQH role permission matrix check failed';
+  end if;
+  if not exists (select 1 from public.company_role_assignments assignment join public.roles role on role.id = assignment.role_id join public.company_memberships membership on membership.user_id = assignment.user_id and membership.tenant_id = assignment.tenant_id and membership.company_id = assignment.company_id where assignment.tenant_id = '10000000-0000-4000-8000-000000000010' and assignment.company_id = '10000000-0000-4000-8000-000000000020' and assignment.revoked_at is null and membership.is_active and role.code = 'company_admin') then
+    raise exception 'canonical VQH normalized company admin check failed';
   end if;
 end $$;
 select 'PASS' as result;

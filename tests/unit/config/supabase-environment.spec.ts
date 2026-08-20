@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -10,6 +10,14 @@ const envExample = readFileSync(resolve(root, '.env.example'), 'utf8')
 const devPatExample = readFileSync(resolve(root, '.supabase.dev.env.example'), 'utf8')
 const gitignore = readFileSync(resolve(root, '.gitignore'), 'utf8')
 const nuxtConfig = readFileSync(resolve(root, 'nuxt.config.ts'), 'utf8')
+const devRunner = readFileSync(resolve(root, 'scripts/run-supabase-dev.mjs'), 'utf8')
+
+function canonicalCatalogMigration() {
+  const filename = readdirSync(resolve(root, 'supabase/migrations'))
+    .find(file => file.endsWith('_bootstrap_vqh_employee_rbac_catalog.sql'))
+  if (!filename) throw new Error('canonical VQH catalog migration is missing')
+  return readFileSync(resolve(root, 'supabase/migrations', filename), 'utf8')
+}
 
 describe('Supabase environment wiring', () => {
   it('loads an ignored Cloud DEV environment for local Nuxt development', () => {
@@ -68,5 +76,27 @@ describe('Supabase environment wiring', () => {
       }
       expect(script, `${name} must not deploy seed data remotely`).not.toMatch(/--include-seed\b/)
     }
+  })
+
+  it('makes the canonical VQH catalog and normalized company-admin assignment a Cloud DEV boundary', () => {
+    const migration = canonicalCatalogMigration()
+
+    expect(migration).toContain("'10000000-0000-4000-8000-000000000010'")
+    expect(migration).toContain("'10000000-0000-4000-8000-000000000020'")
+    expect(migration).toContain("'company_admin'")
+    expect(migration).toContain('role_permissions')
+    expect(migration).toContain('expected_role_permissions')
+    expect(migration).not.toMatch(/auth\.users|public\.employees|tenant_memberships|company_memberships|company_role_assignments/)
+
+    expect(devRunner).toContain('count(*) from public.departments')
+    expect(devRunner).toContain('<> 7')
+    expect(devRunner).toContain('count(*) from public.roles')
+    expect(devRunner).toContain('<> 8')
+    expect(devRunner).toContain('count(*) from public.permissions')
+    expect(devRunner).toContain('<> 34')
+    expect(devRunner).toContain('count(*) from public.role_permissions')
+    expect(devRunner).toContain('<> 71')
+    expect(devRunner).toContain('company_admin')
+    expect(devRunner).toContain('company_role_assignments')
   })
 })

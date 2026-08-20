@@ -61,7 +61,7 @@ Do not self-change roles. Do not revoke or offboard the final active `company_ad
 1. An operator with both `employee.offboard` and `account.disable` posts a non-empty reason to `POST /api/companies/:companyId/employees/:employeeId/offboarding`. The actor cannot offboard themself.
 2. The database operation locks the employee, logically revokes active role assignments, sets the employment status to `terminated` with termination metadata, and sets the company membership inactive. It retains employee, assignment, and audit history.
 3. The server-only Admin client then disables the linked Supabase Auth user. Normal offboarding never hard-deletes the Auth identity, employee, assignments, or audit events.
-4. If the response is `EMPLOYEE_OFFBOARDING_FAILED`, the database transition is durable but Auth disabling did not complete. The service records the idempotent `employee.offboarding_auth_disable_failed` audit action, then returns the failure.
+4. If the response is `EMPLOYEE_OFFBOARDING_FAILED`, the database transition is durable but Auth disabling did not complete. The service attempts to record the idempotent `employee.offboarding_auth_disable_failed` audit action twice; that audit write can still fail and must be escalated with the original API failure.
 5. After resolving the Auth/Admin condition, retry the same endpoint. A terminated employee returns its existing identity from the database operation, so the Auth-disable step can be retried.
 6. Reconcile terminated status and termination metadata, inactive company membership, revoked assignments, Auth disabled state, and audit history. Keep the incident open until all agree.
 
@@ -78,6 +78,9 @@ select created_at, actor_id, action, resource_type, resource_id, request_id,
        before_summary, after_summary
 from public.audit_events
 where company_id = <company_uuid>
+  and resource_id = <employee_or_assignment_id>
+  and created_at >= <incident_start_timestamptz>
+  and created_at < <incident_end_timestamptz>
   and action in (
     'employee.created',
     'employee.updated',
@@ -135,12 +138,13 @@ pnpm db:dev:advisors:security
 pnpm db:dev:advisors:performance
 ```
 
-Review the dry-run before seeking deployment authorization. At the recorded preflight, the remote has only the first three migrations applied; the dry-run would apply exactly these four forward migrations and no seed/role data:
+Review the dry-run before seeking deployment authorization. At the recorded preflight, the remote has only the first three migrations applied; the dry-run would apply exactly these five forward migrations and no seed/role data:
 
 1. `20260818033418_employee_management_rbac.sql`
 2. `20260818074118_harden_employee_onboarding_permissions.sql`
 3. `20260818075749_employee_offboarding_audit.sql`
 4. `20260818121555_scoped_role_revoke_and_offboarding_lock.sql`
+5. `20260820042507_bootstrap_vqh_employee_rbac_catalog.sql`
 
 The security advisor reported seven existing warnings on the pre-feature remote: six executable-function warnings for `public.is_company_member`, `public.is_tenant_member`, and `public.rls_auto_enable` (each reported for `anon` and `authenticated`), plus disabled leaked-password protection. The performance advisor reported no issues. Because the feature migrations remain pending, this preflight cannot prove that a post-migration advisor regression is absent.
 
@@ -151,7 +155,6 @@ Do not run this section until an authorized reviewer approves the dry-run and ex
 ```powershell
 pnpm db:dev:push
 pnpm db:dev:status
-pnpm db:dev:test
 pnpm db:dev:types
 pnpm db:dev:rls-smoke
 pnpm db:dev:canonical-check
@@ -159,4 +162,4 @@ pnpm db:dev:advisors:security
 pnpm db:dev:advisors:performance
 ```
 
-`db:dev:test` invokes `supabase test db --linked`, so it runs pgTAP against the linked Cloud DEV database and does not depend on the local Docker stack. It is still required release evidence for the pending feature schema. Do not claim database, RLS, concurrency, generated-type, or post-migration advisor verification until these commands complete successfully against the applied feature migrations.
+This mandatory no-Docker post-push sequence intentionally excludes `db:dev:test`. Run `pnpm db:dev:test` separately only from a Docker/container-capable environment as the optional pgTAP check described in the Cloud DEV workflow. Do not claim database, RLS, generated-type, or post-migration advisor verification until the mandatory sequence completes successfully against the applied feature migrations; record optional pgTAP evidence separately when that environment is available.
