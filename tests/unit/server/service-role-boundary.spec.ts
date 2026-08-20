@@ -365,7 +365,7 @@ describe('Supabase Auth admin boundary', () => {
       { cwd: root, encoding: 'utf8' },
     )
 
-    expect(historical).toBe(baseline)
+    expect(historical.replace(/\r\n?/g, '\n')).toBe(baseline.replace(/\r\n?/g, '\n'))
   })
 
   it('uses one forward migration to replace only the private onboarding permission check', () => {
