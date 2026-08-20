@@ -868,7 +868,7 @@ git commit -m "feat: add employee management directory"
 - Consumes: completed schema, APIs, adapters, UI, and verification scripts.
 - Produces: reproducible local/cloud rollout and an evidence-backed completion record.
 
-- [ ] **Step 1: Write the operational runbook**
+- [x] **Step 1: Write the operational runbook**
 
 Document:
 
@@ -881,7 +881,7 @@ Document:
 - expand–migrate–contract note: `company_memberships.roles` remains compatibility-only until all deployed consumers prove normalized reads;
 - rollback: disable new routes/UI, preserve forward schema and history, and never restore legacy authorization reads.
 
-- [ ] **Step 2: Scan for forbidden patterns**
+- [x] **Step 2: Scan for forbidden patterns**
 
 Run:
 
@@ -894,15 +894,16 @@ Select-String -LiteralPath 'docs/superpowers/plans/2026-08-18-employee-managemen
 
 Expected: no server/app authorization reads of legacy company role arrays; no service-role references in browser/shared code; no plan placeholders.
 
-- [ ] **Step 3: Run local backend gates**
+- [x] **Step 3: Run the application gates with Node.js 24**
 
 ```powershell
-pnpm verify:backend:local
+node --version
+pnpm verify:app
 ```
 
-Expected: reset, all pgTAP tests, generated type check, unit tests, Nuxt typecheck, ESLint, and production build pass.
+Expected: Node.js reports `v24.x`; unit tests, Nuxt typecheck, ESLint, and production build pass. By approved project decision, the local Supabase stack is not used; database verification runs against the canonical Cloud DEV target after separate migration authorization.
 
-- [ ] **Step 4: Run the complete browser suite**
+- [x] **Step 4: Run the complete browser suite**
 
 ```powershell
 pnpm test:e2e
@@ -910,18 +911,20 @@ pnpm test:e2e
 
 Expected: all existing and employee browser tests pass on configured projects.
 
-- [ ] **Step 5: Run cloud-development preflight without mutation**
+- [x] **Step 5: Run cloud-development preflight without mutation**
 
 ```powershell
+pnpm db:dev:auth-check
+pnpm db:dev:link
 pnpm db:dev:status
 pnpm db:dev:dry-run
 pnpm db:dev:advisors:security
 pnpm db:dev:advisors:performance
 ```
 
-Expected: the linked development target is verified, dry-run contains only the new forward migration, and no unresolved security/performance advisor finding is introduced. Do not push to cloud unless the user separately authorizes deployment.
+Expected: the dedicated DEV credential can access the canonical project, the linked development target is verified, dry-run contains only the new forward migrations, and no unresolved security/performance advisor finding is introduced. Linking changes only ignored local CLI state. Do not push to Cloud DEV unless the user separately authorizes deployment after reviewing the dry-run.
 
-- [ ] **Step 6: Record verification evidence and commit documentation**
+- [x] **Step 6: Record verification evidence and commit documentation**
 
 Append command timestamps and pass/fail summaries to this plan, check completed boxes, then run:
 
@@ -929,6 +932,38 @@ Append command timestamps and pass/fail summaries to this plan, check completed 
 git add docs/runbooks/employee-onboarding-and-rbac.md docs/superpowers/plans/2026-08-18-employee-management-rbac.md
 git commit -m "docs: add employee rbac operations runbook"
 ```
+
+#### Task 12 verification evidence — 2026-08-18 20:32–20:34 +07:00
+
+| Gate | Command / check | Outcome |
+| --- | --- | --- |
+| Runbook | `docs/runbooks/employee-onboarding-and-rbac.md` | Complete. Based on this worktree's actual routes, private runtime config, seed, audit actions, and offboarding retry implementation. |
+| Legacy authorization scan | `rg -n "company_memberships.*roles|roles.*company_memberships" server app shared` | Passed: no matches (exit code 1 is `rg`'s expected no-match status). |
+| Browser/shared credential scan | `rg -n "serviceRole|service_role|SUPABASE_SERVICE_ROLE" app shared` | Passed: no matches (exit code 1 is `rg`'s expected no-match status). |
+| Plan placeholder scan | `Select-String` using the Task 12 forbidden-term array | Passed: no matches. |
+| Focused lifecycle/security units | `pnpm test:unit -- tests/unit/server/employee.service.spec.ts tests/unit/server/rbac.service.spec.ts tests/unit/server/supabase-config.spec.ts tests/unit/server/service-role-boundary.spec.ts` | Passed with a process-local Git `safe.directory` setting: 4 files, 70 tests. The package still warned that Node `v22.23.2` does not satisfy required Node `24.x`. |
+| Nuxt typecheck | `pnpm typecheck` | Passed (exit code 0), with the same unsupported-Node warning. |
+| Local backend gate | `pnpm verify:backend:local` | Blocked before database tests: required Node is `24.x`, environment is Node `v22.23.2`; `supabase db reset --local` then failed when the CLI could not write its telemetry temporary file (`EPERM`). Local Supabase/Postgres verification did not run. |
+| Browser gate | `pnpm test:e2e` | Blocked: the configured web-server URL `http://127.0.0.1:4317` was already in use. No browser tests ran in this worktree invocation. The existing process was not stopped. |
+| Cloud DEV preflight | `pnpm db:dev:status` | Blocked before target verification because this worktree has no `.env.local`. `db:dev:dry-run` and both advisor commands were not run because the prerequisite status gate did not complete. No Cloud mutation was attempted. |
+| Documentation commit | `git add` / `git commit` | Not attempted by Task 12 constraint. Git index permission prevents staging/committing; no commit claim is made. |
+
+Superseded release note: Node.js `v24.19.0` is now confirmed installed, and the approved database verification path is Cloud DEV only. The old local-Supabase blocker no longer applies.
+
+#### Task 12 verification evidence — 2026-08-20 (current controller / canonical Cloud DEV)
+
+| Gate | Command / check | Outcome |
+| --- | --- | --- |
+| Application gate | Node `v24.19.0`; `pnpm verify:app` | Passed on current HEAD after Tasks 10/11: 32 files / 225 unit tests, Nuxt typecheck, ESLint, and production build. The build emitted only a dependency deprecation warning. |
+| Browser gate | `PLAYWRIGHT_PORT=4318 pnpm test:e2e` | Passed: 43/43 tests in approximately 2.5 minutes. |
+| Cloud DEV non-mutating preflight | `pnpm db:dev:auth-check`, `db:dev:link`, `db:dev:status`, `db:dev:dry-run`, and both advisor commands | Passed on canonical ref `ykrurrumqlsxnqfqunjc`; no push, reset, or seed was run. The remote has the first three migrations only; dry-run would apply exactly the four documented feature migrations and no seed/role data. |
+| Security advisor baseline | Cloud DEV security advisor | Completed with seven existing pre-feature warnings: `public.is_company_member`, `public.is_tenant_member`, and `public.rls_auto_enable` executable by both `anon` and `authenticated` (six warnings), plus leaked-password protection disabled. Performance advisor reported no issues. Because feature migrations are pending, post-migration advisor regression is not proven. |
+| Database release verification | Pending feature schema | Not run. No pgTAP, RLS, or concurrency test has executed against the four pending feature migrations; generated types, Cloud RLS smoke, and canonical-data checks also remain post-push work. |
+| Task 12 static checks | Exact forbidden scans and placeholder scan, 2026-08-20 | Passed: no legacy company-role-array reads in `server`, `app`, or `shared`; no service-role references in `app` or `shared`; no Task 12 plan placeholders. |
+| Targeted docs/config units | Five Cloud DEV/config test files, Node `v24.19.0`, 2026-08-20 | Passed: 47 tests in 5 files. |
+| Documentation commit | Scoped root-session commit of the two Task 12 documentation files, 2026-08-20 | Git index write access was restored and verified. Only the runbook and this plan are included in the Task 12 commit; the SDD progress file and unrelated `debug.log` remain unstaged. |
+
+The remaining deployment gate is separately authorized Cloud DEV migration application, followed by `db:dev:status`, `db:dev:test`, `db:dev:types`, `db:dev:rls-smoke`, `db:dev:canonical-check`, and both advisor commands. Completion checklist items remain unchecked until the pending schema is applied and those database gates produce evidence.
 
 ---
 
