@@ -115,6 +115,11 @@ describe('Supabase Cloud DEV runbooks', () => {
     expect(onboarding).toContain("'company_admin'")
     expect(onboarding).toContain('pg_advisory_xact_lock')
     expect(onboarding).toContain("set_config('request.jwt.claims'")
+    expect(onboarding).toContain('expected_permissions(code, module, name, description)')
+    expect(onboarding).toContain('from public.permissions permission')
+    expect(onboarding).toContain('role_permission.permission_code = permission.code')
+    expect(onboarding).not.toContain('(select count(*) from public.permissions) <> 34')
+    expect(onboarding).not.toContain('where role_id = company_admin_role_id) <> 34')
     expect(onboarding).not.toContain('@vqh.local')
   })
 
@@ -132,6 +137,7 @@ describe('Supabase Cloud DEV runbooks', () => {
     expect(releaseProcedure.indexOf('pnpm db:dev:canonical-check')).toBeLessThan(
       releaseProcedure.indexOf('pnpm db:dev:rls-smoke'),
     )
-    expect(releaseProcedure).toContain('7 departments, 8 roles, 34 permissions, and 71 mappings')
+    expect(releaseProcedure).toContain('baseline 34 permissions and 71 mappings')
+    expect(releaseProcedure).toContain('`company_admin` role maps every public permission, including future additions')
   })
 })

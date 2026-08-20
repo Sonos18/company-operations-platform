@@ -19,6 +19,18 @@ function canonicalCatalogMigration() {
   return readFileSync(resolve(root, 'supabase/migrations', filename), 'utf8')
 }
 
+function canonicalPermissionValues(migration: string) {
+  const valuesBlock = migration.match(
+    /insert into public\.permissions \(code, module, name, description\) values\s+([\s\S]*?)\s+on conflict \(code\) do update/,
+  )?.[1]
+  if (!valuesBlock) throw new Error('canonical permission VALUES block is missing')
+
+  return [...valuesBlock.matchAll(/\(([^()]*)\)/g)].map((match) => {
+    const fields = match[1].match(/'[^']*'/g) ?? []
+    return fields.map(field => field.slice(1, -1))
+  })
+}
+
 describe('Supabase environment wiring', () => {
   it('loads an ignored Cloud DEV environment for local Nuxt development', () => {
     expect(packageJson.scripts.dev).toBe('nuxt dev --dotenv .env.local')
@@ -98,5 +110,21 @@ describe('Supabase environment wiring', () => {
     expect(devRunner).toContain('expected_role_permissions')
     expect(devRunner).toContain('company_admin')
     expect(devRunner).toContain('company_role_assignments')
+  })
+
+  it('keeps the canonical permission VALUES contract at 34 complete four-string tuples', () => {
+    const values = canonicalPermissionValues(canonicalCatalogMigration())
+
+    expect(values).toHaveLength(34)
+    expect(values.map(fields => fields.length)).toEqual(Array(34).fill(4))
+    expect(values.map(([code]) => code)).toEqual([
+      'employee.read_directory', 'employee.read_self_private', 'employee.read_all', 'employee.read_private', 'employee.create', 'employee.update', 'employee.offboard',
+      'account.invite', 'account.disable', 'role.read', 'role.assign', 'role.revoke',
+      'supplier.read', 'supplier.create', 'supplier.update', 'quotation_request.create', 'quotation_request.update',
+      'inventory.read', 'stock_count.create', 'stock_count.update', 'stock_adjustment.read', 'stock_adjustment.approve',
+      'technical_document.read', 'technical_document.update', 'drawing.read', 'drawing.create', 'drawing.update',
+      'accounting_document.read', 'accounting_document.update', 'supplier_payment.approve', 'inventory_value.read',
+      'project.read', 'task.read_assigned', 'task.update_assigned',
+    ])
   })
 })

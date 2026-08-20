@@ -117,7 +117,7 @@ begin
       ('accountant','accounting_document.read'), ('accountant','accounting_document.update'), ('accountant','supplier.read'), ('accountant','inventory_value.read')
     ), expected_role_permissions(role_code, permission_code) as (
       select role_code, permission_code from explicit_role_permissions
-      union all select 'company_admin', code from expected_permissions
+      union all select 'company_admin', permission.code from public.permissions permission
     ), actual_role_permissions(role_code, permission_code) as (
       select role.code, role_permission.permission_code
       from public.role_permissions role_permission

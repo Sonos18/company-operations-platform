@@ -138,7 +138,7 @@ pnpm db:dev:advisors:security
 pnpm db:dev:advisors:performance
 ```
 
-Review the dry-run before seeking deployment authorization. The root controller reran the status/dry-run after commit `8ecaf19`: it succeeded with exactly these five forward migrations, `seeds=[]`, and CLI `roles=[]`. The empty CLI `roles` field is unrelated to the fifth migration's database role catalog; that migration contains only reference data (7 departments, 8 roles, 34 permissions, and 71 mappings), not Auth identities, employees, memberships, role assignments, or local fixture seed:
+Review the dry-run before seeking deployment authorization. The root controller reran the status/dry-run after commit `8ecaf19`: it succeeded with exactly these five forward migrations, `seeds=[]`, and CLI `roles=[]`. The empty CLI `roles` field is unrelated to the fifth migration's database role catalog; on a clean target that migration contains only reference data (7 departments, 8 roles, and a baseline 34 permissions and 71 mappings), not Auth identities, employees, memberships, role assignments, or local fixture seed. The `company_admin` role maps every public permission, including future additions:
 
 1. `20260818033418_employee_management_rbac.sql`
 2. `20260818074118_harden_employee_onboarding_permissions.sql`
