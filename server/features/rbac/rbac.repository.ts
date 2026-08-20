@@ -2,7 +2,9 @@ import { z } from 'zod'
 import {
   permissionCodeSchema,
   roleAssignmentResultSchema,
+  roleAssignmentSummarySchema,
   type RoleAssignmentResult,
+  type RoleAssignmentSummary,
   type RoleSummary,
 } from '../../../shared/schemas/rbac'
 import { AppApiError } from '../../utils/api-error'
@@ -17,11 +19,12 @@ interface QueryResult {
 interface RoleQuery extends PromiseLike<QueryResult> {
   select(columns: string): RoleQuery
   eq(column: string, value: string | boolean): RoleQuery
+  is(column: string, value: null): RoleQuery
   order(column: string, options?: { ascending?: boolean }): RoleQuery
 }
 
 interface RoleDataClient {
-  from(table: 'roles'): RoleQuery
+  from(table: 'roles' | 'company_role_assignments'): RoleQuery
   rpc(
     functionName: 'grant_company_role_assignment',
     arguments_: {
@@ -56,6 +59,12 @@ const roleAssignmentRowSchema = z.object({
   user_id: z.string().uuid(),
   role_id: z.string().uuid(),
 }).passthrough()
+
+const roleAssignmentSummaryRowSchema = z.object({
+  id: z.number().int().positive(),
+  user_id: z.string().uuid(),
+  role_id: z.string().uuid(),
+}).strict()
 
 const rpcErrorSchema = z.object({
   code: z.string().optional(),
@@ -120,6 +129,21 @@ export function createSupabaseRoleLifecycleRepository(db: UserSupabaseClient): R
         isSystem: role.is_system,
         permissions: [...new Set(role.role_permissions.map(permission => permission.permission_code))].sort(),
       })) satisfies RoleSummary[]
+    },
+    async listActiveAssignments(companyId, targetUserId) {
+      let query = client.from('company_role_assignments')
+        .select('id, user_id, role_id')
+        .eq('company_id', companyId)
+        .is('revoked_at', null)
+      if (targetUserId) query = query.eq('user_id', targetUserId)
+      const { data, error } = await query.order('id', { ascending: true })
+      const parsed = z.array(roleAssignmentSummaryRowSchema).safeParse(data)
+      if (error || !parsed.success) return failDatabase()
+      return parsed.data.map(assignment => roleAssignmentSummarySchema.parse({
+        id: assignment.id,
+        targetUserId: assignment.user_id,
+        roleId: assignment.role_id,
+      })) satisfies RoleAssignmentSummary[]
     },
     async grantRole(companyId, input) {
       const { data, error } = await client.rpc('grant_company_role_assignment', {

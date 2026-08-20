@@ -32,3 +32,15 @@ export const roleAssignmentResultSchema = z.object({
   roleId: z.string().uuid(),
 }).strict()
 export type RoleAssignmentResult = z.infer<typeof roleAssignmentResultSchema>
+
+export const roleAssignmentSummarySchema = z.object({
+  id: z.number().int().positive(),
+  targetUserId: z.string().uuid(),
+  roleId: z.string().uuid(),
+}).strict()
+export type RoleAssignmentSummary = z.infer<typeof roleAssignmentSummarySchema>
+
+export const roleAssignmentListQuerySchema = z.object({
+  targetUserId: z.string().uuid().optional(),
+}).strict()
+export type RoleAssignmentListQuery = z.infer<typeof roleAssignmentListQuerySchema>

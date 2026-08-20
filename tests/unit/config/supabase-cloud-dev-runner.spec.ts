@@ -181,7 +181,8 @@ describe('Cloud DEV fixed-mode runner', () => {
     expect(sql).toContain('role.is_system is distinct from true')
     expect(sql).toContain('role.is_active is distinct from true')
     expect(sql).toContain('expected_role_permissions')
-    expect(sql).toContain("select 'company_admin', permission.code from public.permissions permission")
+    expect(sql).toContain("union all select 'company_admin', code from expected_permissions")
+    expect(sql).toContain('select code from public.permissions except select code from expected_permissions')
     expect(sql).toContain('company_role_assignments')
   })
 

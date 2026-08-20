@@ -12,11 +12,12 @@ export const VQH_COMPANY_CONFIG: CompanyConfig = {
   },
   departments: [
     { code: 'BLD', name: 'Ban lãnh đạo' },
+    { code: 'HR', name: 'Phòng Nhân sự' },
     { code: 'TECH', name: 'Phòng Kỹ thuật' },
     { code: 'DESIGN', name: 'Phòng Thiết kế' },
-    { code: 'TCO', name: 'Thi công – Hiện trường' },
-    { code: 'VTU', name: 'Vật tư – Mua hàng' },
-    { code: 'KE', name: 'Kế toán – Tài chính' },
+    { code: 'CONSTRUCTION', name: 'Thi công – Hiện trường' },
+    { code: 'PROCUREMENT', name: 'Vật tư – Mua hàng' },
+    { code: 'ACCOUNTING', name: 'Phòng Kế toán' },
   ],
   terminology: {
     project: 'Dự án',

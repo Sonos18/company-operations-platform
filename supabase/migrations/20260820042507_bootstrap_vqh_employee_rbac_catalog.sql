@@ -169,7 +169,7 @@ begin
       ('accountant','accounting_document.read'), ('accountant','accounting_document.update'), ('accountant','supplier.read'), ('accountant','inventory_value.read')
     ), expected_role_permissions(role_code, permission_code) as (
       select role_code, permission_code from explicit_role_permissions
-      union all select 'company_admin', permission.code from public.permissions permission
+      union all select 'company_admin', code from expected_permissions
     ), actual_role_permissions(role_code, permission_code) as (
       select role.code, role_permission.permission_code
       from public.role_permissions role_permission
@@ -181,6 +181,15 @@ begin
       union all
       (select role_code, permission_code from actual_role_permissions except select role_code, permission_code from expected_role_permissions)
     ) as matrix_difference
+  ) or exists (
+    with expected_permissions(code) as (values
+      ('employee.read_directory'), ('employee.read_self_private'), ('employee.read_all'), ('employee.read_private'), ('employee.create'), ('employee.update'), ('employee.offboard'), ('account.invite'), ('account.disable'), ('role.read'), ('role.assign'), ('role.revoke'), ('supplier.read'), ('supplier.create'), ('supplier.update'), ('quotation_request.create'), ('quotation_request.update'), ('inventory.read'), ('stock_count.create'), ('stock_count.update'), ('stock_adjustment.read'), ('stock_adjustment.approve'), ('technical_document.read'), ('technical_document.update'), ('drawing.read'), ('drawing.create'), ('drawing.update'), ('accounting_document.read'), ('accounting_document.update'), ('supplier_payment.approve'), ('inventory_value.read'), ('project.read'), ('task.read_assigned'), ('task.update_assigned')
+    )
+    select 1 from (
+      (select code from expected_permissions except select code from public.permissions)
+      union all
+      (select code from public.permissions except select code from expected_permissions)
+    ) as permission_code_difference
   ) then
     raise exception 'VQH_CANONICAL_CATALOG_CONFLICT';
   end if;

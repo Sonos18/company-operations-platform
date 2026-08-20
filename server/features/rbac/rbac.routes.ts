@@ -1,8 +1,9 @@
 import type { H3Event } from 'h3'
-import { getRouterParam, readBody } from 'h3'
+import { getQuery, getRouterParam, readBody } from 'h3'
 import { z } from 'zod'
 import {
   roleAssignmentInputSchema,
+  roleAssignmentListQuerySchema,
   roleAssignmentRevokeInputSchema,
 } from '../../../shared/schemas/rbac'
 import { AppApiError } from '../../utils/api-error'
@@ -20,6 +21,8 @@ const assignmentIdSchema = z.coerce.number().int().positive()
 
 export interface RoleLifecycleRouteService {
   list(context: RoleLifecycleServiceContext): Promise<unknown>
+  authorizeListAssignments(context: RoleLifecycleServiceContext): Promise<void>
+  listAssignments(context: RoleLifecycleServiceContext, query: z.infer<typeof roleAssignmentListQuerySchema>): Promise<unknown>
   authorizeGrant(context: RoleLifecycleServiceContext): Promise<void>
   authorizeRevoke(context: RoleLifecycleServiceContext): Promise<void>
   grant(
@@ -68,6 +71,13 @@ export function createRoleLifecycleRoutes(dependencies: RoleLifecycleRouteDepend
       const context = await dependencies.resolveContext(event, companyId)
       return dependencies.service.list(context)
     },
+    async listAssignments(event: unknown) {
+      const companyId = companyIdFrom(event)
+      const context = await dependencies.resolveContext(event, companyId)
+      await dependencies.service.authorizeListAssignments(context)
+      const query = parse(roleAssignmentListQuerySchema.safeParse(getQuery(event as never)))
+      return dependencies.service.listAssignments(context, query)
+    },
     async grant(event: unknown) {
       const companyId = companyIdFrom(event)
       const context = await dependencies.resolveContext(event, companyId)
@@ -111,6 +121,8 @@ export function createSupabaseRoleLifecycleRoutes(event: H3Event) {
     resolveContext,
     service: {
       list: context => resolvedService().list(context),
+      authorizeListAssignments: context => resolvedService().authorizeListAssignments(context),
+      listAssignments: (context, query) => resolvedService().listAssignments(context, query),
       authorizeGrant: context => resolvedService().authorizeGrant(context),
       authorizeRevoke: context => resolvedService().authorizeRevoke(context),
       grant: (context, input) => resolvedService().grant(context, input),

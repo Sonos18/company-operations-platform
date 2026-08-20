@@ -1,8 +1,10 @@
 import type { PermissionCode } from '../../../shared/constants/permissions'
 import type {
   RoleAssignmentInput,
+  RoleAssignmentListQuery,
   RoleAssignmentResult,
   RoleAssignmentRevokeInput,
+  RoleAssignmentSummary,
   RoleSummary,
 } from '../../../shared/schemas/rbac'
 import { AppApiError } from '../../utils/api-error'
@@ -16,6 +18,7 @@ export interface RoleLifecycleServiceContext {
 
 export interface RoleLifecycleRepository {
   listActiveRoles(companyId: string): Promise<RoleSummary[]>
+  listActiveAssignments(companyId: string, targetUserId?: string): Promise<RoleAssignmentSummary[]>
   grantRole(companyId: string, input: RoleAssignmentInput): Promise<RoleAssignmentResult>
   revokeRole(
     companyId: string,
@@ -35,6 +38,16 @@ export function createRoleLifecycleService(repository: RoleLifecycleRepository) 
     async list(context: RoleLifecycleServiceContext): Promise<RoleSummary[]> {
       requirePermission(context, 'role.read')
       return repository.listActiveRoles(context.companyId)
+    },
+    async authorizeListAssignments(context: RoleLifecycleServiceContext): Promise<void> {
+      requirePermission(context, 'role.read')
+    },
+    async listAssignments(
+      context: RoleLifecycleServiceContext,
+      query: RoleAssignmentListQuery,
+    ): Promise<RoleAssignmentSummary[]> {
+      requirePermission(context, 'role.read')
+      return repository.listActiveAssignments(context.companyId, query.targetUserId)
     },
     async authorizeGrant(context: RoleLifecycleServiceContext): Promise<void> {
       requirePermission(context, 'role.assign')

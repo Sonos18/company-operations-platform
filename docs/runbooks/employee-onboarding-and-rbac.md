@@ -51,7 +51,7 @@ Use a company-admin account. Như cannot assign or revoke roles, including her o
 2. Read `GET /api/companies/:companyId/roles` and identify the normalized role ID.
 3. Grant the role with `POST /api/companies/:companyId/role-assignments`, providing the replacement `targetUserId`, role ID, and a non-empty operational `reason`.
 4. Confirm the replacement's effective access on a new request. Authorization resolves active normalized assignments per request; do not wait for a JWT refresh or rely on `company_memberships.roles`.
-5. Locate Như's active assignment and logically revoke it with `DELETE /api/companies/:companyId/role-assignments/:assignmentId`, with a non-empty reason.
+5. Read `GET /api/companies/:companyId/role-assignments?targetUserId=:targetUserId` to obtain Như's active `assignmentId`, then logically revoke it with `DELETE /api/companies/:companyId/role-assignments/:assignmentId`, with a non-empty reason.
 6. Confirm Như retains her other approved roles and inspect the `role.granted` and `role.revoked` audit rows through the restricted administrative process below.
 
 Do not self-change roles. Do not revoke or offboard the final active `company_admin`; establish another active company admin first.
@@ -138,7 +138,7 @@ pnpm db:dev:advisors:security
 pnpm db:dev:advisors:performance
 ```
 
-Review the dry-run before seeking deployment authorization. The root controller reran the status/dry-run after commit `8ecaf19`: it succeeded with exactly these five forward migrations, `seeds=[]`, and CLI `roles=[]`. The empty CLI `roles` field is unrelated to the fifth migration's database role catalog; on a clean target that migration contains only reference data (7 departments, 8 roles, and a baseline 34 permissions and 71 mappings), not Auth identities, employees, memberships, role assignments, or local fixture seed. The `company_admin` role maps every public permission, including future additions:
+Review the dry-run before seeking deployment authorization. The root controller reran the status/dry-run after commit `8ecaf19`: it succeeded with exactly these five forward migrations, `seeds=[]`, and CLI `roles=[]`. The empty CLI `roles` field is unrelated to the fifth migration's database role catalog; on a clean target that migration contains only reference data (7 departments, 8 roles, and a versioned contract of 34 permissions and 71 mappings), not Auth identities, employees, memberships, role assignments, or local fixture seed. This release does not support custom permission codes: future codes require a coordinated code, schema, and migration release.
 
 1. `20260818033418_employee_management_rbac.sql`
 2. `20260818074118_harden_employee_onboarding_permissions.sql`

@@ -35,12 +35,18 @@ begin
          or permission.description is distinct from expected.description
      )
      or exists (
-       select 1
-       from public.permissions permission
-       left join public.role_permissions role_permission
-         on role_permission.role_id = company_admin_role_id
-        and role_permission.permission_code = permission.code
-       where role_permission.permission_code is null
+       with expected_permissions(code) as (values
+         ('employee.read_directory'), ('employee.read_self_private'), ('employee.read_all'), ('employee.read_private'), ('employee.create'), ('employee.update'), ('employee.offboard'), ('account.invite'), ('account.disable'), ('role.read'), ('role.assign'), ('role.revoke'), ('supplier.read'), ('supplier.create'), ('supplier.update'), ('quotation_request.create'), ('quotation_request.update'), ('inventory.read'), ('stock_count.create'), ('stock_count.update'), ('stock_adjustment.read'), ('stock_adjustment.approve'), ('technical_document.read'), ('technical_document.update'), ('drawing.read'), ('drawing.create'), ('drawing.update'), ('accounting_document.read'), ('accounting_document.update'), ('supplier_payment.approve'), ('inventory_value.read'), ('project.read'), ('task.read_assigned'), ('task.update_assigned')
+       )
+       select 1 from (
+         (select code from expected_permissions except select code from public.permissions)
+         union all
+         (select code from public.permissions except select code from expected_permissions)
+         union all
+         (select code from expected_permissions except select permission_code from public.role_permissions where role_id = company_admin_role_id)
+         union all
+         (select permission_code from public.role_permissions where role_id = company_admin_role_id except select code from expected_permissions)
+       ) as permission_contract_difference
      ) then
     raise exception 'VQH canonical RBAC catalog is missing or incomplete';
   end if;

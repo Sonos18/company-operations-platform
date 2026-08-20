@@ -33,7 +33,7 @@
 
 | File | Responsibility |
 | --- | --- |
-| `supabase/migrations/20260818095022_employee_management_rbac.sql` | Employee/RBAC schema, constraints, indexes, helper functions, RLS, grants, atomic onboarding, audit triggers |
+| `supabase/migrations/20260818033418_employee_management_rbac.sql` | Employee/RBAC schema, constraints, indexes, helper functions, RLS, grants, atomic onboarding, audit triggers |
 | `supabase/seed.sql` | Approved departments, roles, permissions, six development users and assignments |
 | `supabase/tests/database/employee_rbac_schema.test.sql` | Schema, constraints, catalogs, and seed contract |
 | `supabase/tests/database/employee_rbac_rls.test.sql` | Cross-company isolation, private HR access, permission and grant-safety checks |
@@ -161,7 +161,7 @@ git commit -m "test: define employee rbac database contract"
 ### Task 2: Create the normalized employee and RBAC schema
 
 **Files:**
-- Create: `supabase/migrations/20260818095022_employee_management_rbac.sql`
+- Create: `supabase/migrations/20260818033418_employee_management_rbac.sql`
 - Modify: `supabase/tests/database/employee_rbac_schema.test.sql`
 
 **Interfaces:**
@@ -252,7 +252,7 @@ Expected: all schema assertions pass; RLS behavior assertions remain red until T
 - [ ] **Step 5: Commit the schema**
 
 ```powershell
-git add supabase/migrations/20260818095022_employee_management_rbac.sql supabase/tests/database/employee_rbac_schema.test.sql
+git add supabase/migrations/20260818033418_employee_management_rbac.sql supabase/tests/database/employee_rbac_schema.test.sql
 git commit -m "feat: add employee and normalized rbac schema"
 ```
 
@@ -261,7 +261,7 @@ git commit -m "feat: add employee and normalized rbac schema"
 ### Task 3: Enforce RLS, permission checks, grant safety, and audit
 
 **Files:**
-- Modify: `supabase/migrations/20260818095022_employee_management_rbac.sql`
+- Modify: `supabase/migrations/20260818033418_employee_management_rbac.sql`
 - Modify: `supabase/tests/database/employee_rbac_rls.test.sql`
 
 **Interfaces:**
@@ -348,7 +348,7 @@ Expected: existing tenancy tests and both employee/RBAC pgTAP files pass with no
 - [ ] **Step 7: Commit database authorization**
 
 ```powershell
-git add supabase/migrations/20260818095022_employee_management_rbac.sql supabase/tests/database/employee_rbac_rls.test.sql
+git add supabase/migrations/20260818033418_employee_management_rbac.sql supabase/tests/database/employee_rbac_rls.test.sql
 git commit -m "feat: enforce employee rbac policies"
 ```
 
@@ -960,7 +960,7 @@ Superseded release note: Node.js `v24.19.0` is now confirmed installed, and the 
 | Security advisor baseline | Cloud DEV security advisor | Completed with seven existing pre-feature warnings: `public.is_company_member`, `public.is_tenant_member`, and `public.rls_auto_enable` executable by both `anon` and `authenticated` (six warnings), plus leaked-password protection disabled. Performance advisor reported no issues. Because feature migrations are pending, post-migration advisor regression is not proven. |
 | Database release verification | Pending feature schema | Not run. No pgTAP, RLS, or concurrency test has executed against the five pending feature migrations; generated types, Cloud RLS smoke, and canonical-data checks also remain post-push work. |
 | Task 12 static checks | Exact forbidden scans and placeholder scan, 2026-08-20 | Passed: no legacy company-role-array reads in `server`, `app`, or `shared`; no service-role references in `app` or `shared`; no Task 12 plan placeholders. |
-| Catalog bootstrap readiness | Forward migration `20260820042507_bootstrap_vqh_employee_rbac_catalog.sql`; focused Cloud DEV/config units | Prepared but not applied: the fifth migration contains catalog/reference data only—7 departments, 8 system roles, and a clean-target baseline of 34 permissions and 71 mappings—and contains no Auth identities, employees, memberships, role assignments, or local fixture seed. `company_admin` maps every public permission, including future additions; canonical checks require that catalog plus an active normalized company admin. Cloud DEV dry-run/push remain separately authorized. |
+| Catalog bootstrap readiness | Forward migration `20260820042507_bootstrap_vqh_employee_rbac_catalog.sql`; focused Cloud DEV/config units | Prepared but not applied: the fifth migration contains catalog/reference data only—7 departments, 8 system roles, and a versioned 34-permission/71-mapping contract—and contains no Auth identities, employees, memberships, role assignments, or local fixture seed. Custom roles may compose only those approved permissions; future codes require coordinated code, schema, and migration release. Canonical checks require that catalog plus an active normalized company admin. Cloud DEV dry-run/push remain separately authorized. |
 | Targeted docs/config units | Five Cloud DEV/config test files, Node `v24.19.0`, 2026-08-20 | Passed: 47 tests in 5 files. |
 | Documentation commit | Scoped root-session commit of the two Task 12 documentation files, 2026-08-20 | Git index write access was restored and verified. Only the runbook and this plan are included in the Task 12 commit; the SDD progress file and unrelated `debug.log` remain unstaged. |
 
