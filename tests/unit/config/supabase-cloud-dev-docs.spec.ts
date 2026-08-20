@@ -9,6 +9,7 @@ const development = read('docs/development/backend-local.md')
 const deployment = read('docs/deployment/supabase-cloud-vercel.md')
 const design = read('docs/superpowers/specs/2026-08-15-supabase-cloud-dev-workflow-design.md')
 const onboarding = read('docs/development/sql/onboard-vqh-dev-admin.sql')
+const employeeRunbook = read('docs/runbooks/employee-onboarding-and-rbac.md')
 const implementationPlan = read('docs/superpowers/plans/2026-08-15-supabase-cloud-dev-workflow.md')
 const commandsIn = (section: string) => section.match(/```powershell\s*([\s\S]*?)```/)?.[1] ?? ''
 const dailyWorkflow = development.slice(
@@ -115,5 +116,22 @@ describe('Supabase Cloud DEV runbooks', () => {
     expect(onboarding).toContain('pg_advisory_xact_lock')
     expect(onboarding).toContain("set_config('request.jwt.claims'")
     expect(onboarding).not.toContain('@vqh.local')
+  })
+
+  it('requires the restricted manual DEV admin bootstrap before the normalized-admin RLS smoke check', () => {
+    const releaseProcedure = employeeRunbook.slice(
+      employeeRunbook.indexOf('## Cloud DEV release procedure'),
+      employeeRunbook.indexOf('## Optional Docker/container check'),
+    )
+
+    expect(releaseProcedure).toContain('docs/development/sql/onboard-vqh-dev-admin.sql')
+    expect(releaseProcedure).toContain('replace-with-dev-admin@example.com')
+    expect(releaseProcedure).toContain('restricted Cloud DEV SQL Editor')
+    expect(releaseProcedure).toContain('controlled role')
+    expect(releaseProcedure).toContain('does not commit identity')
+    expect(releaseProcedure.indexOf('pnpm db:dev:canonical-check')).toBeLessThan(
+      releaseProcedure.indexOf('pnpm db:dev:rls-smoke'),
+    )
+    expect(releaseProcedure).toContain('7 departments, 8 roles, 34 permissions, and 71 mappings')
   })
 })

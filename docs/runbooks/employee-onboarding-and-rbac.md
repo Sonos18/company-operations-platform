@@ -138,7 +138,7 @@ pnpm db:dev:advisors:security
 pnpm db:dev:advisors:performance
 ```
 
-Review the dry-run before seeking deployment authorization. At the recorded preflight, the remote has only the first three migrations applied; the dry-run would apply exactly these five forward migrations and no seed/role data:
+Review the dry-run before seeking deployment authorization. The root controller reran the status/dry-run after commit `8ecaf19`: it succeeded with exactly these five forward migrations, `seeds=[]`, and CLI `roles=[]`. The empty CLI `roles` field is unrelated to the fifth migration's database role catalog; that migration contains only reference data (7 departments, 8 roles, 34 permissions, and 71 mappings), not Auth identities, employees, memberships, role assignments, or local fixture seed:
 
 1. `20260818033418_employee_management_rbac.sql`
 2. `20260818074118_harden_employee_onboarding_permissions.sql`
@@ -150,14 +150,23 @@ The security advisor reported seven existing warnings on the pre-feature remote:
 
 ### 3. Post-push verification — separately authorized only
 
-Do not run this section until an authorized reviewer approves the dry-run and explicitly authorizes `db:dev:push`. After the push, run:
+Do not run this section until an authorized reviewer approves the dry-run and explicitly authorizes `db:dev:push`. After authorization, push the migration:
 
 ```powershell
 pnpm db:dev:push
+```
+
+### 3a. Bootstrap the authorized Cloud DEV administrator
+
+An authorized operator opens `docs/development/sql/onboard-vqh-dev-admin.sql`, replaces the `replace-with-dev-admin@example.com` sentinel email, and runs it through the restricted Cloud DEV SQL Editor or a controlled role. This manual operation does not commit identity data. It creates the required active normalized `company_admin` assignment so that the subsequent RLS smoke check has an authorized principal.
+
+Then run the post-push checks. The canonical check deliberately precedes the RLS smoke check:
+
+```powershell
 pnpm db:dev:status
 pnpm db:dev:types
-pnpm db:dev:rls-smoke
 pnpm db:dev:canonical-check
+pnpm db:dev:rls-smoke
 pnpm db:dev:advisors:security
 pnpm db:dev:advisors:performance
 ```

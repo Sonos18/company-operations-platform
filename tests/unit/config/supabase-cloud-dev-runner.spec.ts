@@ -157,6 +157,33 @@ describe('Cloud DEV fixed-mode runner', () => {
     expect(spawnCalls).toBe(0)
   })
 
+  it('sends a metadata-complete canonical catalog check through the linked CLI query argument', () => {
+    const root = makeWorktree()
+    let childArgs: string[] | undefined
+
+    runSupabaseDevMode('canonical-check', {
+      cwd: root,
+      spawn(_command, args) {
+        childArgs = args
+        return { status: 0 }
+      },
+    })
+
+    expect(childArgs?.slice(1, 4)).toEqual(['db', 'query', '--linked'])
+    const sql = childArgs?.[4] ?? ''
+    expect(sql).toContain('expected_departments')
+    expect(sql).toContain("'Ban lãnh đạo'")
+    expect(sql).toContain('department.name is distinct from expected.name')
+    expect(sql).toContain('department.is_active is distinct from true')
+    expect(sql).toContain('expected_roles')
+    expect(sql).toContain("'Complete explicit company permission set'")
+    expect(sql).toContain('role.is_privileged is distinct from expected.is_privileged')
+    expect(sql).toContain('role.is_system is distinct from true')
+    expect(sql).toContain('role.is_active is distinct from true')
+    expect(sql).toContain('expected_role_permissions')
+    expect(sql).toContain('company_role_assignments')
+  })
+
   it('leaves generated types byte-identical when type generation fails or is implausible', () => {
     const root = makeWorktree()
     const target = join(root, 'shared/types/database.types.ts')
