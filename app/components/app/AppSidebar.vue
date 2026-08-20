@@ -11,6 +11,7 @@ const route = useRoute()
 const links = [
   { to: '/projects', label: 'Dự án', icon: 'i-lucide-panels-top-left' },
   { to: '/my-work', label: 'Công việc của tôi', icon: 'i-lucide-circle-check-big' },
+  { to: '/employees', label: 'Nhân sự', icon: 'i-lucide-users-round' },
 ]
 
 function isActive(to: string) {
@@ -116,7 +117,7 @@ function isActive(to: string) {
 @media (max-width: 767px) {
   .app-sidebar { display: none; }
   .sidebar-toggle { display: none; }
-  .mobile-nav { position: fixed; z-index: 60; inset: auto 10px 10px; display: grid; grid-template-columns: repeat(2, 1fr); min-height: 58px; padding: 5px; border: 1px solid #d7d9d1; border-radius: 8px; background: var(--forest-deep); box-shadow: 0 10px 30px rgb(16 39 28 / 20%); }
+  .mobile-nav { position: fixed; z-index: 60; inset: auto 10px 10px; display: grid; grid-template-columns: repeat(3, 1fr); min-height: 58px; padding: 5px; border: 1px solid #d7d9d1; border-radius: 8px; background: var(--forest-deep); box-shadow: 0 10px 30px rgb(16 39 28 / 20%); }
   .mobile-nav a { display: grid; place-items: center; align-content: center; gap: 2px; border-radius: 4px; color: #b9c8c0; font-size: 0.67rem; font-weight: 650; }
   .mobile-nav a :deep(svg) { width: 19px; height: 19px; }
   .mobile-nav a.active { background: white; color: var(--forest); }

@@ -46,3 +46,22 @@ test('uses a swipeable journey without horizontal page overflow', async ({ page 
   await page.mouse.up()
   await expect(page.locator('[data-testid="journey-stage-card"][data-focused="true"]')).toContainText('Nghiệm thu & bàn giao')
 })
+
+test('renders employee directory cards without horizontal overflow on mobile', async ({ page }) => {
+  await page.goto('/employees')
+
+  await expect(page.getByTestId('employee-cards')).toBeVisible()
+  await expect(page.getByTestId('employee-table')).toBeHidden()
+  await expect(page.getByTestId('employee-card')).toHaveCount(6)
+
+  const search = page.getByRole('searchbox', { name: 'Tìm nhân sự' })
+  const box = await search.boundingBox()
+  expect(box).not.toBeNull()
+  expect(box!.height).toBeGreaterThanOrEqual(44)
+
+  const dimensions = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    content: document.documentElement.scrollWidth,
+  }))
+  expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
+})
