@@ -1,10 +1,17 @@
 import { z } from 'zod'
+import { employeeDetailSchema } from '../../../shared/schemas/employees'
+import { CANONICAL_MOCK_EMPLOYEES } from './fixtures'
 import type { Company, CompanyConfig, Tenant } from '../../features/companies/company.types'
 import type { DrawingFile } from '../../features/drawings/drawing.types'
 import type { ProjectMedia } from '../../features/media/media.types'
 import type { ProjectDetail } from '../../features/projects/project.types'
 import type { ProjectTask } from '../../features/tasks/task.types'
-import type { CompanyMembership, TenantMembership } from '../../features/tenancy/tenancy.types'
+import type { CompanyContext, CompanyMembership, TenantMembership } from '../../features/tenancy/tenancy.types'
+import type { EmployeeDetail } from '../../features/employees/employee.types'
+
+export interface MockEmployee extends EmployeeDetail, CompanyContext {
+  managerEmployeeId: string | null
+}
 
 export interface MockState {
   tenants: Tenant[]
@@ -16,6 +23,7 @@ export interface MockState {
   drawings: DrawingFile[]
   media: ProjectMedia[]
   tasks: ProjectTask[]
+  employees: MockEmployee[]
 }
 
 const scopeSchema = z.object({ tenantId: z.string().min(1), companyId: z.string().min(1) })
@@ -105,6 +113,10 @@ export const mockStateSchema = z.object({
   drawings: z.array(drawingSchema),
   media: z.array(mediaSchema),
   tasks: z.array(taskSchema),
+  employees: z.array(employeeDetailSchema.extend({
+    ...scopeSchema.shape,
+    managerEmployeeId: z.string().uuid().nullable().default(null),
+  })).default(() => structuredClone(CANONICAL_MOCK_EMPLOYEES)),
 })
 
 export function validateMockState(input: unknown): MockState {

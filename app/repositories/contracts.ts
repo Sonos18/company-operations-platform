@@ -4,6 +4,7 @@ import type { ProjectMedia } from '../features/media/media.types'
 import type { ProjectDetail, ProjectSummary } from '../features/projects/project.types'
 import type { ProjectTask, TaskStatus } from '../features/tasks/task.types'
 import type { CompanyContext } from '../features/tenancy/tenancy.types'
+import type { EmployeeDetail, EmployeeSummary, EmployeeUpdateInput } from '../features/employees/employee.types'
 
 export interface CompanyRepository {
   getCurrent(): Promise<Company>
@@ -31,6 +32,12 @@ export interface MediaRepository {
   listByStage(stageId: string): Promise<ProjectMedia[]>
 }
 
+export interface EmployeeRepository {
+  list(): Promise<EmployeeSummary[]>
+  getById(employeeId: string): Promise<EmployeeDetail | null>
+  update(employeeId: string, input: EmployeeUpdateInput): Promise<EmployeeDetail>
+}
+
 export interface PrototypeRepository {
   reset(): Promise<void>
 }
@@ -42,5 +49,6 @@ export interface RepositoryRegistry {
   drawings: DrawingRepository
   tasks: TaskRepository
   media: MediaRepository
+  employees: EmployeeRepository
   prototype: PrototypeRepository
 }

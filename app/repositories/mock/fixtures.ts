@@ -4,6 +4,38 @@ import type { MockState } from './schemas'
 
 const scope = { tenantId: 'tenant-vqh', companyId: 'company-vqh' }
 
+const privateDetails = {
+  dateOfBirth: null,
+  gender: null,
+  personalEmail: null,
+  personalPhone: null,
+  currentAddress: null,
+  permanentAddress: null,
+  taxCode: null,
+  socialInsuranceNumber: null,
+  emergencyContactName: null,
+  emergencyContactPhone: null,
+} as const
+
+const roles = {
+  employee: { id: '10000000-0000-4000-8000-000000000301', code: 'employee', name: 'Nhân viên', description: 'Company directory and assigned-work access', isPrivileged: false, isSystem: true },
+  hrManager: { id: '10000000-0000-4000-8000-000000000302', code: 'hr_manager', name: 'Quản lý nhân sự', description: 'Employee records, private details, and account invitations', isPrivileged: false, isSystem: true },
+  supplierSourcing: { id: '10000000-0000-4000-8000-000000000303', code: 'supplier_sourcing', name: 'Thu mua', description: 'Supplier and quotation sourcing', isPrivileged: false, isSystem: true },
+  inventoryAuditor: { id: '10000000-0000-4000-8000-000000000304', code: 'inventory_auditor', name: 'Kiểm kê kho', description: 'Inventory and stock count audit', isPrivileged: false, isSystem: true },
+  technicalStaff: { id: '10000000-0000-4000-8000-000000000305', code: 'technical_staff', name: 'Nhân viên kỹ thuật', description: 'Technical documents and assigned work', isPrivileged: false, isSystem: true },
+  designer: { id: '10000000-0000-4000-8000-000000000306', code: 'designer', name: 'Nhân viên thiết kế', description: 'Drawings and assigned work', isPrivileged: false, isSystem: true },
+  accountant: { id: '10000000-0000-4000-8000-000000000307', code: 'accountant', name: 'Kế toán', description: 'Accounting documents, suppliers, and inventory value', isPrivileged: false, isSystem: true },
+} as const
+
+export const CANONICAL_MOCK_EMPLOYEES: MockState['employees'] = [
+  { ...scope, managerEmployeeId: null, id: '10000000-0000-4000-8000-000000000401', employeeCode: 'VQH-NHU', fullName: 'Như', workEmail: 'nhu@vqh.local', account: { userId: '10000000-0000-4000-8000-000000000101', email: 'nhu@vqh.local' }, department: { id: '10000000-0000-4000-8000-000000000202', code: 'HR', name: 'Phòng Nhân sự' }, position: null, hireDate: null, probationEndDate: null, employmentStatus: 'active', profileComplete: false, roles: [roles.employee, roles.hrManager, roles.supplierSourcing, roles.inventoryAuditor], privateDetails },
+  { ...scope, managerEmployeeId: null, id: '10000000-0000-4000-8000-000000000402', employeeCode: 'VQH-LONG', fullName: 'Long', workEmail: 'long@vqh.local', account: { userId: '10000000-0000-4000-8000-000000000102', email: 'long@vqh.local' }, department: { id: '10000000-0000-4000-8000-000000000203', code: 'TECH', name: 'Phòng Kỹ thuật' }, position: null, hireDate: null, probationEndDate: null, employmentStatus: 'active', profileComplete: false, roles: [roles.employee, roles.technicalStaff], privateDetails },
+  { ...scope, managerEmployeeId: null, id: '10000000-0000-4000-8000-000000000403', employeeCode: 'VQH-HIEU', fullName: 'Hiếu', workEmail: 'hieu@vqh.local', account: { userId: '10000000-0000-4000-8000-000000000103', email: 'hieu@vqh.local' }, department: { id: '10000000-0000-4000-8000-000000000203', code: 'TECH', name: 'Phòng Kỹ thuật' }, position: null, hireDate: null, probationEndDate: null, employmentStatus: 'active', profileComplete: false, roles: [roles.employee, roles.technicalStaff], privateDetails },
+  { ...scope, managerEmployeeId: null, id: '10000000-0000-4000-8000-000000000404', employeeCode: 'VQH-Y', fullName: 'Y', workEmail: 'y@vqh.local', account: { userId: '10000000-0000-4000-8000-000000000104', email: 'y@vqh.local' }, department: { id: '10000000-0000-4000-8000-000000000207', code: 'ACCOUNTING', name: 'Phòng Kế toán' }, position: null, hireDate: null, probationEndDate: null, employmentStatus: 'active', profileComplete: false, roles: [roles.employee, roles.accountant], privateDetails },
+  { ...scope, managerEmployeeId: null, id: '10000000-0000-4000-8000-000000000405', employeeCode: 'VQH-NHI', fullName: 'Nhi', workEmail: 'nhi@vqh.local', account: { userId: '10000000-0000-4000-8000-000000000105', email: 'nhi@vqh.local' }, department: { id: '10000000-0000-4000-8000-000000000204', code: 'DESIGN', name: 'Phòng Thiết kế' }, position: null, hireDate: null, probationEndDate: null, employmentStatus: 'active', profileComplete: false, roles: [roles.employee, roles.designer], privateDetails },
+  { ...scope, managerEmployeeId: null, id: '10000000-0000-4000-8000-000000000406', employeeCode: 'VQH-HAU', fullName: 'Hậu', workEmail: 'hau@vqh.local', account: { userId: '10000000-0000-4000-8000-000000000106', email: 'hau@vqh.local' }, department: { id: '10000000-0000-4000-8000-000000000204', code: 'DESIGN', name: 'Phòng Thiết kế' }, position: null, hireDate: null, probationEndDate: null, employmentStatus: 'active', profileComplete: false, roles: [roles.employee, roles.designer], privateDetails },
+]
+
 function makeStage(input: {
   id: string
   code: string
@@ -75,6 +107,7 @@ export const INITIAL_MOCK_STATE: MockState = {
   ],
   tenantMemberships: [{ userId: 'user-vqh-demo', tenantId: 'tenant-vqh', roles: ['tenant_member'] }],
   companyMemberships: [{ ...scope, userId: 'user-vqh-demo', roles: ['project_member'] }],
+  employees: CANONICAL_MOCK_EMPLOYEES,
   projects: [
     {
       ...scope,

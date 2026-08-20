@@ -1,6 +1,7 @@
 import type { AddDrawingVersionInput, DrawingFile } from '../../features/drawings/drawing.types'
 import type { ProjectSummary } from '../../features/projects/project.types'
 import type { TaskStatus } from '../../features/tasks/task.types'
+import { employeeUpdateInputSchema } from '../../../shared/schemas/employees'
 import type { CompanyContext } from '../../features/tenancy/tenancy.types'
 import type { RepositoryRegistry } from '../contracts'
 import { INITIAL_MOCK_STATE } from './fixtures'
@@ -121,6 +122,75 @@ export function createMockRepositories(store: StateStore, context: CompanyContex
         return read().media
           .filter(item => item.stageId === stageId && inScope(item, context))
           .sort((left, right) => Date.parse(right.capturedAt) - Date.parse(left.capturedAt))
+      },
+    },
+    employees: {
+      async list() {
+        return read().employees
+          .filter(item => inScope(item, context))
+          .map(item => {
+            const {
+              tenantId: _tenantId,
+              companyId: _companyId,
+              managerEmployeeId: _managerEmployeeId,
+              privateDetails: _privateDetails,
+              ...employee
+            } = item
+            return structuredClone(employee)
+          })
+      },
+      async getById(employeeId) {
+        const employee = read().employees.find(item => item.id === employeeId && inScope(item, context))
+        if (!employee) return null
+        const { tenantId: _tenantId, companyId: _companyId, managerEmployeeId: _managerEmployeeId, ...detail } = employee
+        return structuredClone(detail)
+      },
+      async update(employeeId, input) {
+        const parsedInput = employeeUpdateInputSchema.parse(input)
+        const state = read()
+        const employee = state.employees.find(item => item.id === employeeId && inScope(item, context))
+        if (!employee) throw scopeError()
+
+        if (parsedInput.departmentId !== undefined) {
+          const department = state.employees.find(item => (
+            item.department.id === parsedInput.departmentId && inScope(item, context)
+          ))?.department
+          if (!department) throw scopeError()
+          employee.department = structuredClone(department)
+        }
+        if (parsedInput.positionId !== undefined) {
+          if (parsedInput.positionId !== null) throw scopeError()
+          employee.position = null
+        }
+        if (parsedInput.managerEmployeeId !== undefined) {
+          const managerIsValid = parsedInput.managerEmployeeId === null || (
+            parsedInput.managerEmployeeId !== employee.id
+            && state.employees.some(item => item.id === parsedInput.managerEmployeeId && inScope(item, context))
+          )
+          if (!managerIsValid) throw scopeError()
+          employee.managerEmployeeId = parsedInput.managerEmployeeId
+        }
+        if (parsedInput.fullName !== undefined) employee.fullName = parsedInput.fullName
+        if (parsedInput.workEmail !== undefined) {
+          employee.workEmail = parsedInput.workEmail
+          if (employee.account) employee.account.email = parsedInput.workEmail
+        }
+        if (parsedInput.hireDate !== undefined) employee.hireDate = parsedInput.hireDate
+        if (parsedInput.probationEndDate !== undefined) employee.probationEndDate = parsedInput.probationEndDate
+        if (parsedInput.employmentStatus !== undefined) employee.employmentStatus = parsedInput.employmentStatus
+        if (parsedInput.privateDetails !== undefined) {
+          employee.privateDetails = { ...employee.privateDetails ?? {
+            dateOfBirth: null, gender: null, personalEmail: null, personalPhone: null,
+            currentAddress: null, permanentAddress: null, taxCode: null, socialInsuranceNumber: null,
+            emergencyContactName: null, emergencyContactPhone: null,
+          }, ...parsedInput.privateDetails }
+        }
+        employee.profileComplete = employee.position !== null
+          && employee.hireDate !== null
+          && employee.probationEndDate !== null
+        write(state)
+        const { tenantId: _tenantId, companyId: _companyId, managerEmployeeId: _managerEmployeeId, ...detail } = employee
+        return structuredClone(detail)
       },
     },
     prototype: {
