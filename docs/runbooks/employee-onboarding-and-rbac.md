@@ -11,9 +11,14 @@ Set values only in deployment settings or ignored local files. Do not record a v
 | `NUXT_PUBLIC_SUPABASE_URL` | Public runtime | Selected Supabase project URL. |
 | `NUXT_PUBLIC_SUPABASE_ANON_KEY` | Public runtime | Selected Supabase publishable/anon key. |
 | `NUXT_SUPABASE_SERVICE_ROLE_KEY` | Server-only runtime | Maps to private `runtimeConfig.supabaseServiceRoleKey`; used only to construct the invitation/offboarding Supabase Admin client. |
+| `NUXT_PUBLIC_TASKOVIA_SUPABASE_URL` | Public runtime | Taskovia Control/Auth Supabase project URL; it does not replace the VQH data-plane URL. |
+| `NUXT_PUBLIC_TASKOVIA_SUPABASE_ANON_KEY` | Public runtime | Taskovia Control/Auth publishable/anon key. |
+| `NUXT_TASKOVIA_SUPABASE_SERVICE_ROLE_KEY` | Server-only runtime | Maps to private `runtimeConfig.taskoviaSupabaseServiceRoleKey`; reserve it for Taskovia administrative server operations. |
 | `SUPABASE_DEV_ACCESS_TOKEN` | Ignored `.supabase.dev.env.local`, CLI only | Dedicated Cloud DEV PAT for `pnpm db:dev:*`; it is not an application runtime variable. |
 
-Copy `.env.example` to ignored `.env.local` for the public Cloud DEV values. Copy `.supabase.dev.env.example` to ignored `.supabase.dev.env.local` for the Cloud DEV PAT. The server-only key must never be placed under `NUXT_PUBLIC_*`, `runtimeConfig.public`, client code, repository adapters, API responses, or logs. The CLI runner validates the canonical DEV project ref before every linked operation; do not use its link state for Production.
+Copy `.env.example` to ignored `.env.local` and fill the VQH and Taskovia values from each project's Supabase API settings. Keep both server-only keys outside `NUXT_PUBLIC_*`, `runtimeConfig.public`, client code, repository adapters, API responses, and logs. Configure the same variable names separately for Vercel Development, Preview, and Production scopes; changing Vercel scope does not require renaming or regenerating Supabase keys.
+
+Copy `.supabase.dev.env.example` to ignored `.supabase.dev.env.local` for the Cloud DEV PAT. A Supabase Personal Access Token is a CLI credential, not an application or Vercel runtime variable. Supabase-managed JWT signing secrets/private keys are also not application environment variables for this architecture. The CLI runner validates the canonical VQH DEV project ref before every linked operation; do not use its link state for Production.
 
 The current Supabase Data API requires explicit grants in addition to RLS. The feature migrations bundle their explicit grants and policies; do not assume that creating a `public` table exposes it to the Data API. [Supabase’s Data API guidance](https://supabase.com/docs/guides/api/securing-your-api) describes grants and RLS as separate controls.
 

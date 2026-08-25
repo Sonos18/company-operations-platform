@@ -64,6 +64,20 @@ describe('Supabase environment wiring', () => {
     expect(nuxtConfig).not.toContain('process.env.NUXT_PUBLIC_SUPABASE')
   })
 
+  it('keeps Taskovia Control/Auth configuration separate from the VQH data plane', () => {
+    expect(envExampleSource).toMatch(/^NUXT_PUBLIC_TASKOVIA_SUPABASE_URL=$/m)
+    expect(envExampleSource).toMatch(/^NUXT_PUBLIC_TASKOVIA_SUPABASE_ANON_KEY=$/m)
+    expect(envExampleSource).toMatch(/^NUXT_TASKOVIA_SUPABASE_SERVICE_ROLE_KEY=$/m)
+
+    expect(nuxtConfig).toContain("taskoviaSupabaseServiceRoleKey: ''")
+    expect(nuxtConfig).toContain("taskoviaSupabaseUrl: ''")
+    expect(nuxtConfig).toContain("taskoviaSupabaseAnonKey: ''")
+    expect(nuxtConfig).not.toMatch(/public:\s*\{[^}]*taskoviaSupabaseServiceRoleKey/s)
+
+    expect(envExampleSource).toMatch(/^NUXT_PUBLIC_SUPABASE_URL=$/m)
+    expect(envExampleSource).toMatch(/^NUXT_PUBLIC_SUPABASE_ANON_KEY=$/m)
+  })
+
   it('exposes an explicit linked DEV workflow and an isolated local fallback', () => {
     expect(packageJson.scripts['db:dev:target']).toBe('node scripts/assert-cloud-dev-target.mjs')
     expect(packageJson.scripts).not.toHaveProperty('db:dev:login')
