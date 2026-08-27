@@ -1,11 +1,23 @@
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CANONICAL_DEV_PROJECT_REF, assertCloudDevTarget } from '../../../scripts/assert-cloud-dev-target.mjs'
 import { resolveSupabaseDevHome } from '../../../scripts/run-supabase-dev.mjs'
 
 const worktrees: string[] = []
+const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url))
+
+function trackedSupabaseSetupDirectories() {
+  const trackedConfigPaths = execFileSync('git', ['ls-files', '--', ':(glob)**/config.toml'], {
+    cwd: repositoryRoot,
+    encoding: 'utf8',
+  }).trim().split(/\r?\n/).filter(Boolean)
+
+  return [...new Set(trackedConfigPaths.map(dirname))].sort()
+}
 
 function makeWorktree(options: { projectRef?: string, envLines?: string[], url?: string } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'taskovia-cloud-dev-target-'))
@@ -31,18 +43,11 @@ afterEach(() => {
 
 describe('Cloud DEV target guard', () => {
   it('uses Taskovia as the single canonical Cloud DEV database project', () => {
-    const repositoryRoot = new URL('../../../', import.meta.url)
     const config = readFileSync(new URL('../../../supabase/config.toml', import.meta.url), 'utf8')
 
     expect(CANONICAL_DEV_PROJECT_REF).toBe('gtgljlnhwvhqdnwrfdfj')
     expect(config).toContain('project_id = "taskovia"')
-    expect(readdirSync(repositoryRoot)).toContain('supabase')
-    expect(readdirSync(repositoryRoot)).not.toEqual(expect.arrayContaining([
-      'supabase-taskovia',
-      'supabase-vqh',
-      'taskovia-supabase',
-      'vqh-supabase',
-    ]))
+    expect(trackedSupabaseSetupDirectories()).toEqual(['supabase'])
   })
 
   it('runs the target guard before every linked DEV command', () => {

@@ -14,6 +14,32 @@ const implementationPlan = read('docs/superpowers/plans/2026-08-15-supabase-clou
 const targetGuard = read('scripts/assert-cloud-dev-target.mjs')
 const runner = read('scripts/run-supabase-dev.mjs')
 const oldVqhProjectRef = ['ykrurrum', 'qlsxnqfqunjc'].join('')
+const activeTrackedSetupPaths = [
+  '.env.example',
+  '.supabase.dev.env.example',
+  'README.md',
+  'package.json',
+  'nuxt.config.ts',
+  'scripts/assert-cloud-dev-target.mjs',
+  'scripts/run-supabase-dev.mjs',
+  'supabase/config.toml',
+  'docs/development/backend-local.md',
+  'docs/development/sql/onboard-vqh-dev-admin.sql',
+  'docs/deployment/supabase-cloud-vercel.md',
+  'docs/runbooks/employee-onboarding-and-rbac.md',
+  'docs/superpowers/specs/2026-08-15-supabase-cloud-dev-workflow-design.md',
+  'docs/superpowers/plans/2026-08-15-supabase-cloud-dev-workflow.md',
+  'tests/unit/config/supabase-advisor-remediation.spec.ts',
+  'tests/unit/config/supabase-cloud-dev-data.spec.ts',
+  'tests/unit/config/supabase-cloud-dev-docs.spec.ts',
+  'tests/unit/config/supabase-cloud-dev-pgtap.spec.ts',
+  'tests/unit/config/supabase-cloud-dev-rls-smoke.spec.ts',
+  'tests/unit/config/supabase-cloud-dev-runner.spec.ts',
+  'tests/unit/config/supabase-cloud-dev-target.spec.ts',
+  'tests/unit/config/supabase-environment.spec.ts',
+  'tests/unit/server/supabase-config.spec.ts',
+]
+const activeTrackedSetupFiles = activeTrackedSetupPaths.map(path => ({ path, contents: read(path) }))
 const commandsIn = (section: string) => section.match(/```powershell\s*([\s\S]*?)```/)?.[1] ?? ''
 const dailyWorkflow = development.slice(
   development.indexOf('## Daily database workflow'),
@@ -44,8 +70,8 @@ describe('Supabase Cloud DEV runbooks', () => {
       expect(document).toContain('VQH is its first tenant/company; there is no separate VQH database.')
     }
 
-    for (const setupFile of [targetGuard, runner, development, deployment, design, implementationPlan]) {
-      expect(setupFile).not.toContain(oldVqhProjectRef)
+    for (const { path, contents } of activeTrackedSetupFiles) {
+      expect(contents, `${path} must not retain the retired VQH project ref`).not.toContain(oldVqhProjectRef)
     }
   })
 
