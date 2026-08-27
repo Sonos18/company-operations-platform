@@ -138,6 +138,11 @@ describe('Supabase Cloud DEV runbooks', () => {
     expect(deployment).toContain('SUPABASE_DEV_ACCESS_TOKEN')
   })
 
+  it('describes PAT access to the canonical Taskovia DEV project without claiming exclusive visibility', () => {
+    expect(development).toContain('The PAT can access the canonical Taskovia DEV project.')
+    expect(development).not.toContain('PAT can see only the canonical DEV project ref')
+  })
+
   it('keeps all active linked Cloud DEV operations behind fixed runner modes', () => {
     for (const document of [development, deployment, design, implementationPlan]) {
       expect(document).not.toMatch(/pnpm\s+exec\s+supabase\s+.*--linked/)
