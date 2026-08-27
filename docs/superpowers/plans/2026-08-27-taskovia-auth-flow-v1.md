@@ -1027,4 +1027,3 @@ Only report `COMPLETE` when remote HEAD equals local HEAD.
 - Scope: no business-data migration or employee-profile work is included.
 
 ---
-

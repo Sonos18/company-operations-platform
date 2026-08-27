@@ -1,10 +1,10 @@
 # Taskovia Auth Flow v1 — Approved Design
 
-**Status:** `APPROVED_WITH_TECHNICAL_CONFORMANCE`  
-**Approved by:** Sơn  
-**Repository:** `Sonos18/company-operations-platform`  
-**Base ref:** `origin/main`  
-**Analysis base SHA:** `aa11e8bb0267bbf63ef6564083e4561a088afdf0`  
+**Status:** `APPROVED_WITH_TECHNICAL_CONFORMANCE`
+**Approved by:** Sơn
+**Repository:** `Sonos18/company-operations-platform`
+**Base ref:** `origin/main`
+**Analysis base SHA:** `aa11e8bb0267bbf63ef6564083e4561a088afdf0`
 **Approved scope version:** `taskovia-auth-flow-v1`
 
 ## 1. Technical conformance amendments
@@ -769,4 +769,3 @@ Codex must not change:
 - Auth-only task scope.
 
 ---
-
