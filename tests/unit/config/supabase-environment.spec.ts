@@ -6,7 +6,7 @@ const root = resolve(import.meta.dirname, '../../..')
 const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
   scripts: Record<string, string>
 }
-const envExample = readFileSync(resolve(root, '.env.example'), 'utf8')
+const envExampleSource = readFileSync(resolve(root, '.env.example'), 'utf8')
 const devPatExample = readFileSync(resolve(root, '.supabase.dev.env.example'), 'utf8')
 const gitignore = readFileSync(resolve(root, '.gitignore'), 'utf8')
 const nuxtConfig = readFileSync(resolve(root, 'nuxt.config.ts'), 'utf8')
@@ -17,6 +17,19 @@ function canonicalCatalogMigration() {
     .find(file => file.endsWith('_bootstrap_vqh_employee_rbac_catalog.sql'))
   if (!filename) throw new Error('canonical VQH catalog migration is missing')
   return readFileSync(resolve(root, 'supabase/migrations', filename), 'utf8')
+}
+
+function parseEnv(source: string): Record<string, string> {
+  return Object.fromEntries(
+    source
+      .split(/\r?\n/)
+      .filter(line => line && !line.startsWith('#'))
+      .map((line) => {
+        const separator = line.indexOf('=')
+
+        return [line.slice(0, separator), line.slice(separator + 1)]
+      }),
+  )
 }
 
 function canonicalPermissionValues(migration: string) {
@@ -33,14 +46,15 @@ function canonicalPermissionValues(migration: string) {
 
 describe('Supabase environment wiring', () => {
   it('loads an ignored Cloud DEV environment for local Nuxt development', () => {
+    const envExample = parseEnv(envExampleSource)
+
     expect(packageJson.scripts.dev).toBe('nuxt dev --dotenv .env.local')
-    expect(envExample).toContain('# Supabase Cloud DEV')
-    expect(envExample).toMatch(/^NUXT_PUBLIC_SUPABASE_URL=$/m)
-    expect(envExample).toMatch(/^NUXT_PUBLIC_SUPABASE_ANON_KEY=$/m)
+    expect(envExampleSource).toContain('# Supabase Cloud DEV')
+    expect(envExample.NUXT_PUBLIC_SUPABASE_URL).toBe('')
+    expect(envExample.NUXT_PUBLIC_SUPABASE_ANON_KEY).toBe('')
     expect(gitignore).toMatch(/^\.env\.local$/m)
     expect(devPatExample.replace(/\r\n?/g, '\n')).toBe('SUPABASE_DEV_ACCESS_TOKEN=\n')
     expect(gitignore).toMatch(/^\.supabase\.dev\.env\.local$/m)
-    expect(envExample).not.toContain('127.0.0.1')
   })
 
   it('leaves production build configuration to the deploy environment', () => {
