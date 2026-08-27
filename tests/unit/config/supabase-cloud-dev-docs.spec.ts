@@ -11,6 +11,9 @@ const design = read('docs/superpowers/specs/2026-08-15-supabase-cloud-dev-workfl
 const onboarding = read('docs/development/sql/onboard-vqh-dev-admin.sql')
 const employeeRunbook = read('docs/runbooks/employee-onboarding-and-rbac.md')
 const implementationPlan = read('docs/superpowers/plans/2026-08-15-supabase-cloud-dev-workflow.md')
+const targetGuard = read('scripts/assert-cloud-dev-target.mjs')
+const runner = read('scripts/run-supabase-dev.mjs')
+const oldVqhProjectRef = ['ykrurrum', 'qlsxnqfqunjc'].join('')
 const commandsIn = (section: string) => section.match(/```powershell\s*([\s\S]*?)```/)?.[1] ?? ''
 const dailyWorkflow = development.slice(
   development.indexOf('## Daily database workflow'),
@@ -35,6 +38,17 @@ const task4ReleaseGate = task4Plan.slice(
 )
 
 describe('Supabase Cloud DEV runbooks', () => {
+  it('assigns the one canonical database to Taskovia while preserving VQH as its first tenant/company', () => {
+    for (const document of [readme, development, deployment, design, implementationPlan]) {
+      expect(document).toContain('Taskovia owns the one canonical Supabase Cloud DEV database.')
+      expect(document).toContain('VQH is its first tenant/company; there is no separate VQH database.')
+    }
+
+    for (const setupFile of [targetGuard, runner, development, deployment, design, implementationPlan]) {
+      expect(setupFile).not.toContain(oldVqhProjectRef)
+    }
+  })
+
   it('makes Cloud DEV the default local-app backend without requiring Docker', () => {
     expect(readme).toContain('Supabase Cloud DEV')
     expect(readme).toContain('optional Docker-backed pgTAP check')

@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'no
 import { fileURLToPath } from 'node:url'
 import { CANONICAL_DEV_PROJECT_REF, assertCloudDevEnvironment, assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
 
-const SUPABASE_DEV_HOME_SEGMENTS = ['SupabaseCLI', 'company-operations-dev']
+const SUPABASE_DEV_HOME_SEGMENTS = ['SupabaseCLI', 'taskovia-dev']
 const VQH_RLS_SMOKE_SQL = String.raw`begin;
 do $$
 declare
@@ -152,7 +152,7 @@ select 'PASS' as result;
 rollback;`
 
 const REMOTE_MODE_ARGS = {
-  link: ['link', '--project-ref', 'ykrurrumqlsxnqfqunjc'],
+  link: ['link', '--project-ref', CANONICAL_DEV_PROJECT_REF],
   status: ['migration', 'list', '--linked'],
   'dry-run': ['db', 'push', '--linked', '--dry-run'],
   push: ['db', 'push', '--linked'],

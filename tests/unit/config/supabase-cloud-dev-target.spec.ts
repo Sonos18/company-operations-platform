@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -8,7 +8,7 @@ import { resolveSupabaseDevHome } from '../../../scripts/run-supabase-dev.mjs'
 const worktrees: string[] = []
 
 function makeWorktree(options: { projectRef?: string, envLines?: string[], url?: string } = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'vqh-cloud-dev-target-'))
+  const root = mkdtempSync(join(tmpdir(), 'taskovia-cloud-dev-target-'))
   worktrees.push(root)
   mkdirSync(join(root, 'supabase/.temp'), { recursive: true })
 
@@ -30,6 +30,21 @@ afterEach(() => {
 })
 
 describe('Cloud DEV target guard', () => {
+  it('uses Taskovia as the single canonical Cloud DEV database project', () => {
+    const repositoryRoot = new URL('../../../', import.meta.url)
+    const config = readFileSync(new URL('../../../supabase/config.toml', import.meta.url), 'utf8')
+
+    expect(CANONICAL_DEV_PROJECT_REF).toBe('gtgljlnhwvhqdnwrfdfj')
+    expect(config).toContain('project_id = "taskovia"')
+    expect(readdirSync(repositoryRoot)).toContain('supabase')
+    expect(readdirSync(repositoryRoot)).not.toEqual(expect.arrayContaining([
+      'supabase-taskovia',
+      'supabase-vqh',
+      'taskovia-supabase',
+      'vqh-supabase',
+    ]))
+  })
+
   it('runs the target guard before every linked DEV command', () => {
     const packageJson = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'))
 
@@ -48,20 +63,20 @@ describe('Cloud DEV target guard', () => {
     const env = { LOCALAPPDATA: 'C:\\Users\\developer\\AppData\\Local', SUPABASE_HOME: defaultAuthHome }
     const isolatedHome = resolveSupabaseDevHome({ env, platform: 'win32' })
 
-    expect(isolatedHome).toBe('C:\\Users\\developer\\AppData\\Local\\SupabaseCLI\\company-operations-dev')
+    expect(isolatedHome).toBe('C:\\Users\\developer\\AppData\\Local\\SupabaseCLI\\taskovia-dev')
     expect(isolatedHome).not.toBe(defaultAuthHome)
   })
 
   it('uses an XDG state directory for the isolated CLI home on Unix', () => {
     const home = resolveSupabaseDevHome({ env: { XDG_STATE_HOME: '/var/state' }, platform: 'linux' })
 
-    expect(home).toBe('/var/state/SupabaseCLI/company-operations-dev')
+    expect(home).toBe('/var/state/SupabaseCLI/taskovia-dev')
   })
 
   it('falls back to the Unix home state directory when XDG state is absent', () => {
     const home = resolveSupabaseDevHome({ env: { HOME: '/home/developer' }, platform: 'darwin' })
 
-    expect(home).toBe('/home/developer/.local/state/SupabaseCLI/company-operations-dev')
+    expect(home).toBe('/home/developer/.local/state/SupabaseCLI/taskovia-dev')
   })
 
   it('accepts only the canonical linked project and matching Cloud DEV URL', () => {

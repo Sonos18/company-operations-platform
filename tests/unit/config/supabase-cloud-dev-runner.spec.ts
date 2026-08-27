@@ -6,9 +6,10 @@ import { CANONICAL_DEV_PROJECT_REF } from '../../../scripts/assert-cloud-dev-tar
 import { runSupabaseDevMode } from '../../../scripts/run-supabase-dev.mjs'
 
 const worktrees: string[] = []
+const oldVqhProjectRef = ['ykrurrum', 'qlsxnqfqunjc'].join('')
 
 function makeWorktree({ linked = true }: { linked?: boolean } = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'vqh-cloud-dev-runner-'))
+  const root = mkdtempSync(join(tmpdir(), 'taskovia-cloud-dev-runner-'))
   worktrees.push(root)
   mkdirSync(join(root, 'supabase/.temp'), { recursive: true })
   if (linked) writeFileSync(join(root, 'supabase/.temp/project-ref'), `${CANONICAL_DEV_PROJECT_REF}\n`)
@@ -46,7 +47,7 @@ describe('Cloud DEV fixed-mode runner', () => {
     })
 
     expect(childArgs?.slice(-3)).toEqual(['migration', 'list', '--linked'])
-    expect(childEnvironment?.SUPABASE_HOME).toBe('C:\\Users\\developer\\AppData\\Local\\SupabaseCLI\\company-operations-dev')
+    expect(childEnvironment?.SUPABASE_HOME).toBe('C:\\Users\\developer\\AppData\\Local\\SupabaseCLI\\taskovia-dev')
     expect(childEnvironment?.SUPABASE_ACCESS_TOKEN).toBe('dedicated-dev-pat')
     expect(childEnvironment).not.toHaveProperty('SUPABASE_CLI_BINARY_OVERRIDE')
     expect(childEnvironment).not.toHaveProperty('SUPABASE_DB_PASSWORD')
@@ -111,6 +112,13 @@ describe('Cloud DEV fixed-mode runner', () => {
         return { status: 0 }
       },
     })).not.toThrow()
+  })
+
+  it('uses the shared canonical project constant for the link command', () => {
+    const runner = readFileSync(new URL('../../../scripts/run-supabase-dev.mjs', import.meta.url), 'utf8')
+
+    expect(runner).toContain("link: ['link', '--project-ref', CANONICAL_DEV_PROJECT_REF]")
+    expect(runner).not.toContain(oldVqhProjectRef)
   })
 
   it('fails closed when a successful link process does not create canonical link state', () => {

@@ -9,6 +9,8 @@
 
 Docker is not required for the daily workflow. The local application and its database commands use the linked Supabase Cloud DEV project.
 
+Taskovia owns the one canonical Supabase Cloud DEV database. VQH is its first tenant/company; there is no separate VQH database.
+
 ## Prepare `.env.local`
 
 ```powershell
@@ -35,9 +37,9 @@ pnpm db:dev:link
 pnpm db:dev:status
 ```
 
-`db:dev:auth-check` silently verifies that the PAT can see only the canonical DEV project ref needed by this workflow; it does not print the project list. The runner strips ambient Supabase access-token and database-password variables, then supplies only the PAT from `.supabase.dev.env.local`. `SUPABASE_HOME` remains isolated at `%LOCALAPPDATA%\SupabaseCLI\company-operations-dev` on Windows, with an XDG/HOME state-directory fallback elsewhere, for non-auth CLI state only. The PAT is authoritative; do not use `db:dev:login`, `--profile`, or the machine-global CLI session. The CLI link metadata under `supabase/.temp/` is ignored.
+`db:dev:auth-check` silently verifies that the PAT can see only the canonical DEV project ref needed by this workflow; it does not print the project list. The runner strips ambient Supabase access-token and database-password variables, then supplies only the PAT from `.supabase.dev.env.local`. `SUPABASE_HOME` remains isolated at `%LOCALAPPDATA%\SupabaseCLI\taskovia-dev` on Windows, with an XDG/HOME state-directory fallback elsewhere, for non-auth CLI state only. The PAT is authoritative; do not use `db:dev:login`, `--profile`, or the machine-global CLI session. The CLI link metadata under `supabase/.temp/` is ignored.
 
-Every `db:dev:*` linked command starts with the canonical DEV target guard. It fails closed unless the tracked DEV ref `ykrurrumqlsxnqfqunjc`, ignored `supabase/.temp/project-ref`, and the project ref in `NUXT_PUBLIC_SUPABASE_URL` agree; it does not print the URL or key.
+Every `db:dev:*` linked command starts with the canonical DEV target guard. It fails closed unless the tracked DEV ref `gtgljlnhwvhqdnwrfdfj`, ignored `supabase/.temp/project-ref`, and the project ref in `NUXT_PUBLIC_SUPABASE_URL` agree; it does not print the URL or key.
 
 ## Daily database workflow
 
