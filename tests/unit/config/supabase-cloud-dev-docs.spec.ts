@@ -11,8 +11,6 @@ const design = read('docs/superpowers/specs/2026-08-15-supabase-cloud-dev-workfl
 const onboarding = read('docs/development/sql/onboard-vqh-dev-admin.sql')
 const employeeRunbook = read('docs/runbooks/employee-onboarding-and-rbac.md')
 const implementationPlan = read('docs/superpowers/plans/2026-08-15-supabase-cloud-dev-workflow.md')
-const targetGuard = read('scripts/assert-cloud-dev-target.mjs')
-const runner = read('scripts/run-supabase-dev.mjs')
 const oldVqhProjectRef = ['ykrurrum', 'qlsxnqfqunjc'].join('')
 const activeTrackedSetupPaths = [
   '.env.example',
