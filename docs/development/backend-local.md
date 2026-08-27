@@ -4,7 +4,7 @@
 
 - Node.js 24.x
 - pnpm 10.29.3
-- A dedicated Supabase Cloud DEV project
+- Access to the existing canonical Taskovia Cloud DEV project
 - A dedicated Supabase DEV personal access token (PAT)
 
 Docker is not required for the daily workflow. The local application and its database commands use the linked Supabase Cloud DEV project.
@@ -29,7 +29,7 @@ Set the single `SUPABASE_DEV_ACCESS_TOKEN=` assignment in `.supabase.dev.env.loc
 
 ## One-time DEV link
 
-Run this once from the repository root after creating the dedicated Cloud DEV project:
+Run this once from the repository root after obtaining access and preparing local credentials for the existing canonical Taskovia Cloud DEV project. Do not create or choose another Supabase project.
 
 ```powershell
 pnpm db:dev:auth-check

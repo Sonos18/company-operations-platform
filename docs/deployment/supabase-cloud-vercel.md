@@ -4,8 +4,10 @@
 
 Taskovia owns the one canonical Supabase Cloud DEV database. VQH is its first tenant/company; there is no separate VQH database.
 
-1. Create a dedicated Taskovia Cloud DEV project in Supabase Cloud.
-2. Copy its project ref from the Dashboard project URL.
+Obtain access and credentials for the existing canonical Taskovia Cloud DEV project. Do not create or choose another Supabase project.
+
+1. Copy the existing project's ref from the Dashboard project URL and confirm that it is the tracked canonical ref.
+2. Obtain the dedicated DEV-project PAT from an authorized operator.
 3. Create `.supabase.dev.env.local` from the tracked blank `.supabase.dev.env.example`, put the DEV-project PAT in its single `SUPABASE_DEV_ACCESS_TOKEN=` assignment, then authenticate and link from the repository root:
 
 ```powershell

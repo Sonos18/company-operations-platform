@@ -10,13 +10,28 @@ import { resolveSupabaseDevHome } from '../../../scripts/run-supabase-dev.mjs'
 const worktrees: string[] = []
 const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url))
 
+function supabaseSetupDirectories(trackedPaths: string[]) {
+  const directories = trackedPaths.flatMap(path => {
+    if (path.endsWith('/config.toml')) return [dirname(path)]
+    const migrationsIndex = path.indexOf('/migrations/')
+    return migrationsIndex === -1 ? [] : [path.slice(0, migrationsIndex)]
+  })
+
+  return [...new Set(directories)].sort()
+}
+
 function trackedSupabaseSetupDirectories() {
-  const trackedConfigPaths = execFileSync('git', ['ls-files', '--', ':(glob)**/config.toml'], {
+  const trackedSetupPaths = execFileSync('git', [
+    'ls-files',
+    '--',
+    ':(glob)**/config.toml',
+    ':(glob)**/migrations/**',
+  ], {
     cwd: repositoryRoot,
     encoding: 'utf8',
   }).trim().split(/\r?\n/).filter(Boolean)
 
-  return [...new Set(trackedConfigPaths.map(dirname))].sort()
+  return supabaseSetupDirectories(trackedSetupPaths)
 }
 
 function makeWorktree(options: { projectRef?: string, envLines?: string[], url?: string } = {}) {
@@ -42,6 +57,13 @@ afterEach(() => {
 })
 
 describe('Cloud DEV target guard', () => {
+  it('does not overlook a separate migration-only Supabase setup root', () => {
+    expect(supabaseSetupDirectories([
+      'supabase/config.toml',
+      'supabase-vqh/migrations/20260827000000_init.sql',
+    ])).toEqual(['supabase', 'supabase-vqh'])
+  })
+
   it('uses Taskovia as the single canonical Cloud DEV database project', () => {
     const config = readFileSync(new URL('../../../supabase/config.toml', import.meta.url), 'utf8')
 

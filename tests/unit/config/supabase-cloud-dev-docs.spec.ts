@@ -62,6 +62,14 @@ const task4ReleaseGate = task4Plan.slice(
 )
 
 describe('Supabase Cloud DEV runbooks', () => {
+  it('directs operators to the existing canonical Taskovia Cloud DEV project only', () => {
+    for (const document of [development, deployment]) {
+      expect(document).toContain('existing canonical Taskovia Cloud DEV project')
+      expect(document).toContain('Do not create or choose another Supabase project.')
+      expect(document).not.toContain('Create a dedicated Taskovia Cloud DEV project')
+    }
+  })
+
   it('assigns the one canonical database to Taskovia while preserving VQH as its first tenant/company', () => {
     for (const document of [readme, development, deployment, design, implementationPlan]) {
       expect(document).toContain('Taskovia owns the one canonical Supabase Cloud DEV database.')
