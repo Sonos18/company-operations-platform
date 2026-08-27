@@ -58,6 +58,10 @@ pnpm build
 
 `pnpm test` chạy lần lượt unit test và E2E test.
 
+## Quy trình phát triển với GPT và Codex
+
+Taskovia phối hợp theo luồng Sơn → GPT Chat → Codex → GPT review remote → Sơn quyết định merge. Quy tắc vận hành dành cho Codex nằm trong [AGENTS.md](AGENTS.md); quy trình đầy đủ và các packet template nằm trong [Taskovia Three-Party AI Development Workflow](docs/ai-workflow/README.md).
+
 ## Khôi phục dữ liệu mẫu
 
 Nút **Khôi phục dữ liệu mẫu** trên header xóa mọi thay đổi cục bộ rồi nạp lại fixture ban đầu. Hệ thống hỏi xác nhận trước khi thực hiện và giữ người dùng ở route hiện tại. Thao tác này khôi phục bản vẽ v1 làm bản lưu hành, mốc khách chốt và trạng thái công việc mẫu.
