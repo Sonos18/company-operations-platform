@@ -42,6 +42,13 @@ describe('internal redirect sanitizer', () => {
     '/forgot-password',
     '/auth/callback',
     '/reset-password',
+    '/%6c%6f%67%69%6e',
+    '/login/continue',
+    '/forgot-password/reset',
+    '/auth/callback/continue',
+    '/reset-password/continue',
+    '/%',
+    '/%E0%A4%A',
     '/\\evil.example',
     '/projects%0Ahttps://evil.example',
   ])('rejects an unsafe post-login destination: %s', value => {
@@ -50,5 +57,6 @@ describe('internal redirect sanitizer', () => {
 
   it('preserves an internal business path and its query', () => {
     expect(sanitizeInternalRedirect('/projects?tab=active')).toBe('/projects?tab=active')
+    expect(sanitizeInternalRedirect('/login-help')).toBe('/login-help')
   })
 })

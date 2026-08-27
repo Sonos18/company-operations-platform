@@ -7,6 +7,10 @@ const blockedPostLoginPathnames = new Set([
 const encodedUnsafePathCharacter = /%(?:0[0-9a-f]|1[0-9a-f]|7f|2f|5c)/i
 const controlCharacter = /[\u0000-\u001f\u007f]/
 
+function isBlockedPostLoginPath(pathname: string): boolean {
+  return [...blockedPostLoginPathnames].some(path => pathname === path || pathname.startsWith(`${path}/`))
+}
+
 export function parseCanonicalAppUrl(value: string): URL {
   if (typeof value !== 'string') throw new TypeError('App URL must be a string.')
 
@@ -46,7 +50,15 @@ export function sanitizeInternalRedirect(value: unknown): string | null {
     return null
   }
 
-  if (url.origin !== 'https://taskovia.internal' || blockedPostLoginPathnames.has(url.pathname)) {
+  let pathname: string
+  try {
+    pathname = decodeURIComponent(url.pathname)
+  }
+  catch {
+    return null
+  }
+
+  if (url.origin !== 'https://taskovia.internal' || isBlockedPostLoginPath(pathname)) {
     return null
   }
 

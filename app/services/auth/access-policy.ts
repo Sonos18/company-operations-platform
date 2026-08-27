@@ -112,11 +112,12 @@ export function resolveAccessNavigation(input: AccessNavigationInput): AccessDec
 
   const accessStateDecision = resolveAccessStateNavigation(input)
   if (accessStateDecision) return accessStateDecision
-  if (!requiresCompany) return allow
 
-  const companyIds = input.companyIds ?? []
-  if (companyIds.length === 0) return redirect('/no-access')
-  if (companyIds.length > 1 && !hasSelectedCompany(input)) return redirect('/select-company')
+  if (requiresCompany) {
+    const companyIds = input.companyIds ?? []
+    if (companyIds.length === 0) return redirect('/no-access')
+    if (companyIds.length > 1 && !hasSelectedCompany(input)) return redirect('/select-company')
+  }
 
   const permissions = new Set(input.permissions ?? [])
   if (input.requiredPermission && !permissions.has(input.requiredPermission)) return redirect('/forbidden')

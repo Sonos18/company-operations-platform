@@ -71,6 +71,26 @@ describe('access navigation policy', () => {
     })).toEqual({ type: 'redirect', to: '/forbidden' })
   })
 
+  it('enforces exact and any permissions even when company selection is not required', () => {
+    expect(resolveAccessNavigation({
+      path: '/account',
+      lifecycle: 'authenticated',
+      requiresCompany: false,
+      companyIds: ['company-a'],
+      requiredPermission: 'project.read',
+      permissions: ['task.read_assigned'],
+    })).toEqual({ type: 'redirect', to: '/forbidden' })
+
+    expect(resolveAccessNavigation({
+      path: '/directory',
+      lifecycle: 'authenticated',
+      requiresCompany: false,
+      companyIds: ['company-a'],
+      requiredAnyPermissions: ['employee.read_directory', 'employee.read_all'],
+      permissions: ['task.read_assigned'],
+    })).toEqual({ type: 'redirect', to: '/forbidden' })
+  })
+
   it('uses access state rather than a redirect query for protected access-state routes', () => {
     expect(resolveAccessNavigation({
       path: '/login',
