@@ -2,8 +2,12 @@
 
 ## Cloud DEV link
 
-1. Create a dedicated VQH Cloud DEV project in Supabase Cloud.
-2. Copy its project ref from the Dashboard project URL.
+Taskovia owns the one canonical Supabase Cloud DEV database. VQH is its first tenant/company; there is no separate VQH database.
+
+Obtain access and credentials for the existing canonical Taskovia Cloud DEV project. Do not create or choose another Supabase project.
+
+1. Copy the existing project's ref from the Dashboard project URL and confirm that it is the tracked canonical ref.
+2. Obtain the dedicated DEV-project PAT from an authorized operator.
 3. Create `.supabase.dev.env.local` from the tracked blank `.supabase.dev.env.example`, put the DEV-project PAT in its single `SUPABASE_DEV_ACCESS_TOKEN=` assignment, then authenticate and link from the repository root:
 
 ```powershell
@@ -12,11 +16,11 @@ pnpm db:dev:link
 pnpm db:dev:status
 ```
 
-The ignored `.supabase.dev.env.local` PAT is authoritative for Cloud DEV CLI authorization. `pnpm db:dev:auth-check` silently confirms visibility of the canonical DEV ref and never prints project lists. The runner strips ambient Supabase access-token/database-password variables and maps only that PAT to the CLI. `SUPABASE_HOME` is isolated at `%LOCALAPPDATA%\SupabaseCLI\company-operations-dev` on Windows, with an XDG/HOME state-directory fallback on other platforms, for non-auth CLI state only. Do not use `db:dev:login`, `--profile`, or the machine-global CLI session.
+The ignored `.supabase.dev.env.local` PAT is authoritative for Cloud DEV CLI authorization. `pnpm db:dev:auth-check` silently confirms visibility of the canonical DEV ref and never prints project lists. The runner strips ambient Supabase access-token/database-password variables and maps only that PAT to the CLI. `SUPABASE_HOME` is isolated at `%LOCALAPPDATA%\SupabaseCLI\taskovia-dev` on Windows, with an XDG/HOME state-directory fallback on other platforms, for non-auth CLI state only. Do not use `db:dev:login`, `--profile`, or the machine-global CLI session.
 
 The CLI is linked to Cloud DEV; không dùng project DEV hoặc link hiện tại để triển khai Vercel Production. The access token and database password must stay outside Git, and the CLI link metadata under `supabase/.temp/` is ignored.
 
-Every `db:dev:*` linked command starts with the canonical DEV target guard. It fails closed unless the tracked DEV ref `ykrurrumqlsxnqfqunjc`, ignored CLI link state, and the local public Supabase URL agree; it never prints the URL or key.
+Every `db:dev:*` linked command starts with the canonical DEV target guard. It fails closed unless the tracked DEV ref `gtgljlnhwvhqdnwrfdfj`, ignored CLI link state, and the local public Supabase URL agree; it never prints the URL or key.
 
 ## Deliver a Cloud DEV database migration
 

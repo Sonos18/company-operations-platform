@@ -5,7 +5,7 @@
 
 ## Mục tiêu
 
-Thay Supabase local chạy bằng Docker trên máy phát triển bằng một project Supabase Cloud DEV riêng. Ứng dụng Nuxt chạy local dùng Cloud DEV; Vercel Production tiếp tục dùng project Production độc lập. Schema và dữ liệu nền VQH được triển khai bằng migration có kiểm soát, không sao chép dữ liệu kiểm thử hoặc tài khoản giả từ Docker.
+Thay Supabase local chạy bằng Docker trên máy phát triển bằng một project Supabase Cloud DEV riêng. Ứng dụng Nuxt chạy local dùng Cloud DEV; Vercel Production tiếp tục dùng project Production độc lập. Schema và dữ liệu nền VQH được triển khai bằng migration có kiểm soát, không sao chép dữ liệu kiểm thử hoặc tài khoản giả từ Docker. Taskovia owns the one canonical Supabase Cloud DEV database. VQH is its first tenant/company; there is no separate VQH database.
 
 Thiết kế này thay thế các phần yêu cầu Supabase local trong `2026-08-14-supabase-local-cloud-environments-design.md`. Các nguyên tắc vẫn giữ nguyên gồm: migration nằm trong Git, Production nhận biến từ Vercel, không commit secret, không reset hoặc seed database Cloud.
 
@@ -72,7 +72,7 @@ pnpm db:dev:auth-check
 pnpm db:dev:link
 ```
 
-The ignored `.supabase.dev.env.local` file holds exactly one `SUPABASE_DEV_ACCESS_TOKEN=` assignment. That PAT is authoritative for CLI authorization: the runner strips ambient Supabase credentials and maps only this PAT to the child process. `db:dev:auth-check` silently verifies access to the canonical DEV project ref without printing project lists. The project-isolated `SUPABASE_HOME` (`%LOCALAPPDATA%\SupabaseCLI\company-operations-dev` on Windows, with an XDG/HOME fallback elsewhere) is retained only for non-auth CLI state; do not use browser login, the machine-global CLI session, or `--profile`.
+The ignored `.supabase.dev.env.local` file holds exactly one `SUPABASE_DEV_ACCESS_TOKEN=` assignment. That PAT is authoritative for CLI authorization: the runner strips ambient Supabase credentials and maps only this PAT to the child process. `db:dev:auth-check` silently verifies access to the canonical DEV project ref without printing project lists. The project-isolated `SUPABASE_HOME` (`%LOCALAPPDATA%\SupabaseCLI\taskovia-dev` on Windows, with an XDG/HOME fallback elsewhere) is retained only for non-auth CLI state; do not use browser login, the machine-global CLI session, or `--profile`.
 
 Project ref/link state trong `supabase/.temp` và thông tin xác thực phải tiếp tục bị Git ignore. Database password không được ghi vào script, tài liệu có giá trị thật hoặc file môi trường của frontend.
 

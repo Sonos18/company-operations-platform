@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 
-export const CANONICAL_DEV_PROJECT_REF = 'ykrurrumqlsxnqfqunjc'
+export const CANONICAL_DEV_PROJECT_REF = 'gtgljlnhwvhqdnwrfdfj'
 const CANONICAL_DEV_ORIGIN = `https://${CANONICAL_DEV_PROJECT_REF}.supabase.co`
 
 function readRequiredFile(path, missingMessage) {

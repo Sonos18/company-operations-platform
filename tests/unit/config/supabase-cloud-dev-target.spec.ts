@@ -1,14 +1,41 @@
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CANONICAL_DEV_PROJECT_REF, assertCloudDevTarget } from '../../../scripts/assert-cloud-dev-target.mjs'
 import { resolveSupabaseDevHome } from '../../../scripts/run-supabase-dev.mjs'
 
 const worktrees: string[] = []
+const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url))
+
+function supabaseSetupDirectories(trackedPaths: string[]) {
+  const directories = trackedPaths.flatMap(path => {
+    if (path.endsWith('/config.toml')) return [dirname(path)]
+    const migrationsIndex = path.indexOf('/migrations/')
+    return migrationsIndex === -1 ? [] : [path.slice(0, migrationsIndex)]
+  })
+
+  return [...new Set(directories)].sort()
+}
+
+function trackedSupabaseSetupDirectories() {
+  const trackedSetupPaths = execFileSync('git', [
+    'ls-files',
+    '--',
+    ':(glob)**/config.toml',
+    ':(glob)**/migrations/**',
+  ], {
+    cwd: repositoryRoot,
+    encoding: 'utf8',
+  }).trim().split(/\r?\n/).filter(Boolean)
+
+  return supabaseSetupDirectories(trackedSetupPaths)
+}
 
 function makeWorktree(options: { projectRef?: string, envLines?: string[], url?: string } = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'vqh-cloud-dev-target-'))
+  const root = mkdtempSync(join(tmpdir(), 'taskovia-cloud-dev-target-'))
   worktrees.push(root)
   mkdirSync(join(root, 'supabase/.temp'), { recursive: true })
 
@@ -30,6 +57,21 @@ afterEach(() => {
 })
 
 describe('Cloud DEV target guard', () => {
+  it('does not overlook a separate migration-only Supabase setup root', () => {
+    expect(supabaseSetupDirectories([
+      'supabase/config.toml',
+      'supabase-vqh/migrations/20260827000000_init.sql',
+    ])).toEqual(['supabase', 'supabase-vqh'])
+  })
+
+  it('uses Taskovia as the single canonical Cloud DEV database project', () => {
+    const config = readFileSync(new URL('../../../supabase/config.toml', import.meta.url), 'utf8')
+
+    expect(CANONICAL_DEV_PROJECT_REF).toBe('gtgljlnhwvhqdnwrfdfj')
+    expect(config).toContain('project_id = "taskovia"')
+    expect(trackedSupabaseSetupDirectories()).toEqual(['supabase'])
+  })
+
   it('runs the target guard before every linked DEV command', () => {
     const packageJson = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'))
 
@@ -48,20 +90,20 @@ describe('Cloud DEV target guard', () => {
     const env = { LOCALAPPDATA: 'C:\\Users\\developer\\AppData\\Local', SUPABASE_HOME: defaultAuthHome }
     const isolatedHome = resolveSupabaseDevHome({ env, platform: 'win32' })
 
-    expect(isolatedHome).toBe('C:\\Users\\developer\\AppData\\Local\\SupabaseCLI\\company-operations-dev')
+    expect(isolatedHome).toBe('C:\\Users\\developer\\AppData\\Local\\SupabaseCLI\\taskovia-dev')
     expect(isolatedHome).not.toBe(defaultAuthHome)
   })
 
   it('uses an XDG state directory for the isolated CLI home on Unix', () => {
     const home = resolveSupabaseDevHome({ env: { XDG_STATE_HOME: '/var/state' }, platform: 'linux' })
 
-    expect(home).toBe('/var/state/SupabaseCLI/company-operations-dev')
+    expect(home).toBe('/var/state/SupabaseCLI/taskovia-dev')
   })
 
   it('falls back to the Unix home state directory when XDG state is absent', () => {
     const home = resolveSupabaseDevHome({ env: { HOME: '/home/developer' }, platform: 'darwin' })
 
-    expect(home).toBe('/home/developer/.local/state/SupabaseCLI/company-operations-dev')
+    expect(home).toBe('/home/developer/.local/state/SupabaseCLI/taskovia-dev')
   })
 
   it('accepts only the canonical linked project and matching Cloud DEV URL', () => {

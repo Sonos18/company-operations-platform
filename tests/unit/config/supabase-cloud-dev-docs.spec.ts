@@ -11,6 +11,33 @@ const design = read('docs/superpowers/specs/2026-08-15-supabase-cloud-dev-workfl
 const onboarding = read('docs/development/sql/onboard-vqh-dev-admin.sql')
 const employeeRunbook = read('docs/runbooks/employee-onboarding-and-rbac.md')
 const implementationPlan = read('docs/superpowers/plans/2026-08-15-supabase-cloud-dev-workflow.md')
+const oldVqhProjectRef = ['ykrurrum', 'qlsxnqfqunjc'].join('')
+const activeTrackedSetupPaths = [
+  '.env.example',
+  '.supabase.dev.env.example',
+  'README.md',
+  'package.json',
+  'nuxt.config.ts',
+  'scripts/assert-cloud-dev-target.mjs',
+  'scripts/run-supabase-dev.mjs',
+  'supabase/config.toml',
+  'docs/development/backend-local.md',
+  'docs/development/sql/onboard-vqh-dev-admin.sql',
+  'docs/deployment/supabase-cloud-vercel.md',
+  'docs/runbooks/employee-onboarding-and-rbac.md',
+  'docs/superpowers/specs/2026-08-15-supabase-cloud-dev-workflow-design.md',
+  'docs/superpowers/plans/2026-08-15-supabase-cloud-dev-workflow.md',
+  'tests/unit/config/supabase-advisor-remediation.spec.ts',
+  'tests/unit/config/supabase-cloud-dev-data.spec.ts',
+  'tests/unit/config/supabase-cloud-dev-docs.spec.ts',
+  'tests/unit/config/supabase-cloud-dev-pgtap.spec.ts',
+  'tests/unit/config/supabase-cloud-dev-rls-smoke.spec.ts',
+  'tests/unit/config/supabase-cloud-dev-runner.spec.ts',
+  'tests/unit/config/supabase-cloud-dev-target.spec.ts',
+  'tests/unit/config/supabase-environment.spec.ts',
+  'tests/unit/server/supabase-config.spec.ts',
+]
+const activeTrackedSetupFiles = activeTrackedSetupPaths.map(path => ({ path, contents: read(path) }))
 const commandsIn = (section: string) => section.match(/```powershell\s*([\s\S]*?)```/)?.[1] ?? ''
 const dailyWorkflow = development.slice(
   development.indexOf('## Daily database workflow'),
@@ -35,6 +62,25 @@ const task4ReleaseGate = task4Plan.slice(
 )
 
 describe('Supabase Cloud DEV runbooks', () => {
+  it('directs operators to the existing canonical Taskovia Cloud DEV project only', () => {
+    for (const document of [development, deployment]) {
+      expect(document).toContain('existing canonical Taskovia Cloud DEV project')
+      expect(document).toContain('Do not create or choose another Supabase project.')
+      expect(document).not.toContain('Create a dedicated Taskovia Cloud DEV project')
+    }
+  })
+
+  it('assigns the one canonical database to Taskovia while preserving VQH as its first tenant/company', () => {
+    for (const document of [readme, development, deployment, design, implementationPlan]) {
+      expect(document).toContain('Taskovia owns the one canonical Supabase Cloud DEV database.')
+      expect(document).toContain('VQH is its first tenant/company; there is no separate VQH database.')
+    }
+
+    for (const { path, contents } of activeTrackedSetupFiles) {
+      expect(contents, `${path} must not retain the retired VQH project ref`).not.toContain(oldVqhProjectRef)
+    }
+  })
+
   it('makes Cloud DEV the default local-app backend without requiring Docker', () => {
     expect(readme).toContain('Supabase Cloud DEV')
     expect(readme).toContain('optional Docker-backed pgTAP check')
@@ -90,6 +136,11 @@ describe('Supabase Cloud DEV runbooks', () => {
     expect(deployment).toContain('PAT is authoritative')
     expect(development).toContain('SUPABASE_HOME')
     expect(deployment).toContain('SUPABASE_DEV_ACCESS_TOKEN')
+  })
+
+  it('describes PAT access to the canonical Taskovia DEV project without claiming exclusive visibility', () => {
+    expect(development).toContain('The PAT can access the canonical Taskovia DEV project.')
+    expect(development).not.toContain('PAT can see only the canonical DEV project ref')
   })
 
   it('keeps all active linked Cloud DEV operations behind fixed runner modes', () => {
