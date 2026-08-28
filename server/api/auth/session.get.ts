@@ -1,5 +1,5 @@
-﻿import { sessionResponseSchema } from '../../../shared/schemas/session'
 import { createSupabaseAuthorizationReader } from '../../features/authorization/authorization.service'
+import { createAuthSessionService } from '../../features/auth/session.service'
 import { createSupabaseTenancyReader, createTenancyService } from '../../features/tenancy/tenancy.service'
 import { runApiRoute } from '../../utils/api-error'
 import { requireAuthenticatedRequest } from '../../utils/auth-context'
@@ -10,8 +10,5 @@ export default defineEventHandler(event => runApiRoute(event, async () => {
     createSupabaseTenancyReader(db),
     createSupabaseAuthorizationReader(db),
   )
-  return sessionResponseSchema.parse({
-    user: { id: actor.userId, email: actor.email },
-    companies: await service.listCompanies(actor.userId),
-  })
+  return createAuthSessionService(service).getSession(actor)
 }))

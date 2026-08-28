@@ -1,10 +1,37 @@
 <script setup lang="ts">
 import { PRODUCT_BRAND } from '../../shared/constants/product-brand'
+import { switchCompanyAndReload } from '../components/app/shell-actions'
 
-const repositories = useRepositories()
-const { data: company } = await useAsyncData('active-company-config', () => repositories.company.getConfig())
+const nuxtApp = useNuxtApp()
+const authStore = nuxtApp.$authStore
+const companyAccessStore = nuxtApp.$companyAccessStore
 const headerCollapsed = ref(false)
 const sidebarCollapsed = ref(false)
+const companyName = computed(() => companyAccessStore.activeCompany?.companyName ?? 'Đang chọn công ty')
+const signingOut = computed(() => authStore.operations.signOut.status === 'pending')
+
+async function selectCompany(companyId: string): Promise<void> {
+  await switchCompanyAndReload(companyId, {
+    selectCompany: companyAccessStore.selectCompany,
+    clearRuntimeData: clearNuxtData,
+    reloadNuxtApp,
+  })
+}
+
+async function signOut(): Promise<void> {
+  if (signingOut.value) return
+
+  try {
+    await authStore.signOut()
+  }
+  catch {
+    // The auth store clears local Auth and company state even when provider logout fails.
+  }
+  finally {
+    clearNuxtData()
+    await navigateTo('/login')
+  }
+}
 </script>
 
 <template>
@@ -16,9 +43,15 @@ const sidebarCollapsed = ref(false)
     <AppHeader
       :product-name="PRODUCT_BRAND.name"
       :product-mark="PRODUCT_BRAND.mark"
-      :company-name="company?.displayName ?? 'Đang tải công ty'"
+      :company-name="companyName"
+      :user-email="authStore.user?.email ?? null"
+      :companies="companyAccessStore.companies"
+      :active-company-id="companyAccessStore.activeCompanyId"
+      :signing-out="signingOut"
       :collapsed="headerCollapsed"
       @toggle="headerCollapsed = !headerCollapsed"
+      @select-company="selectCompany"
+      @sign-out="signOut"
     />
     <AppSidebar
       :collapsed="sidebarCollapsed"

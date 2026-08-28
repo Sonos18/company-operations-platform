@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures/authenticated'
 
 test('has no serious accessibility violations on core pages', async ({ page }) => {
   for (const route of ['/projects', '/projects/project-thao-dien', '/my-work', '/employees']) {

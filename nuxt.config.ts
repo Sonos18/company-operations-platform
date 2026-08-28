@@ -3,12 +3,16 @@ import { PRODUCT_BRAND } from './shared/constants/product-brand'
 export default defineNuxtConfig({
   compatibilityDate: "2026-08-13",
   ssr: false,
-  modules: ["@nuxt/ui", "@nuxt/eslint"],
+  modules: ["@nuxt/ui", "@nuxt/eslint", '@pinia/nuxt'],
+  pinia: {
+    storesDirs: ['./app/stores/**'],
+  },
   css: ["~/assets/css/main.css"],
   devtools: { enabled: true },
   runtimeConfig: {
     supabaseServiceRoleKey: '',
     public: {
+      appUrl: '',
       supabaseUrl: '',
       supabaseAnonKey: '',
     },

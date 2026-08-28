@@ -10,6 +10,7 @@ vi.mock('@supabase/supabase-js', () => ({ createClient }))
 
 const root = resolve(import.meta.dirname, '../../..')
 const adminSecret = 'sb_secret_that_must_not_reach_user_queries'
+const invitationRedirectTo = 'http://127.0.0.1:3000/auth/callback'
 const historicalOnboardingMigration = 'supabase/migrations/20260818033418_employee_management_rbac.sql'
 const forwardMigrationSuffix = '_harden_employee_onboarding_permissions.sql'
 
@@ -81,10 +82,10 @@ async function invitationAuthAdapter() {
   const factory = module.createSupabaseInvitationAuthAdmin
   expect(factory).toBeTypeOf('function')
   return typeof factory === 'function'
-    ? factory as (client: unknown) => {
-        inviteUser(email: string): Promise<unknown>
-        findUserByEmail(email: string): Promise<unknown>
-      }
+    ? (client: unknown) => (factory as (client: unknown, options: { redirectTo: string }) => {
+          inviteUser(email: string): Promise<unknown>
+          findUserByEmail(email: string): Promise<unknown>
+        })(client, { redirectTo: invitationRedirectTo })
     : undefined
 }
 
@@ -292,6 +293,24 @@ describe('Supabase Auth admin boundary', () => {
     await expect(admin.inviteUser('retry@vqh.local')).resolves.toEqual({ kind: 'existing' })
     await expect(admin.inviteUser('retry@vqh.local')).resolves.toEqual({ kind: 'failed' })
     expect(listUsers).not.toHaveBeenCalled()
+  })
+
+  it('closes the canonical callback redirect into normalized invitation requests', async () => {
+    const adapterFactory = await invitationAuthAdapter()
+    if (!adapterFactory) return
+    const inviteUserByEmail = vi.fn().mockResolvedValue({
+      data: { user: { id: authUser(1).id } },
+      error: null,
+    })
+    const admin = adapterFactory({ auth: { admin: { inviteUserByEmail, listUsers: vi.fn() } } })
+
+    await expect(admin.inviteUser(' Invitee@VQH.Local ')).resolves.toEqual({
+      kind: 'invited',
+      userId: authUser(1).id,
+    })
+    expect(inviteUserByEmail).toHaveBeenCalledWith('invitee@vqh.local', {
+      redirectTo: invitationRedirectTo,
+    })
   })
 
   it('uses the narrow Auth-only adapter to disable an account with an explicit non-destructive ban duration', async () => {

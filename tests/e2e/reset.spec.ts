@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures/authenticated'
 
 test('restores the original mock state', async ({ page }) => {
   await page.goto('/projects/project-thao-dien/stages/stage-design-3d/drawings')

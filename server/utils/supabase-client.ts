@@ -67,11 +67,12 @@ export function createSupabaseAdminClient(config: SupabaseAdminConfig): Supabase
 
 export function createSupabaseInvitationAuthAdmin(
   client: SupabaseAdminClient,
+  { redirectTo }: { redirectTo: string },
 ): EmployeeInvitationAuthAdmin {
   return {
     async inviteUser(email) {
       try {
-        const { data, error } = await client.auth.admin.inviteUserByEmail(normalizeEmail(email))
+        const { data, error } = await client.auth.admin.inviteUserByEmail(normalizeEmail(email), { redirectTo })
         if (error) {
           return isDocumentedDuplicateInviteError(error)
             ? { kind: 'existing' }

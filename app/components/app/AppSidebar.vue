@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { canonicalNavigationLinks, filterNavigationLinks } from './navigation-permissions'
+
 const props = defineProps<{
   collapsed: boolean
 }>()
@@ -8,11 +10,8 @@ const emit = defineEmits<{
 }>()
 
 const route = useRoute()
-const links = [
-  { to: '/projects', label: 'Dự án', icon: 'i-lucide-panels-top-left' },
-  { to: '/my-work', label: 'Công việc của tôi', icon: 'i-lucide-circle-check-big' },
-  { to: '/employees', label: 'Nhân sự', icon: 'i-lucide-users-round' },
-]
+const companyAccessStore = useNuxtApp().$companyAccessStore
+const visibleLinks = computed(() => filterNavigationLinks(canonicalNavigationLinks, companyAccessStore))
 
 function isActive(to: string) {
   return route.path === to || (to === '/projects' && route.path.startsWith('/projects/'))
@@ -42,7 +41,7 @@ function isActive(to: string) {
       <nav class="sidebar-nav">
         <p class="eyebrow sidebar-label">Không gian làm việc</p>
         <NuxtLink
-          v-for="link in links"
+          v-for="link in visibleLinks"
           :key="link.to"
           :to="link.to"
           class="sidebar-link"
@@ -66,7 +65,7 @@ function isActive(to: string) {
 
   <nav class="mobile-nav" aria-label="Điều hướng chính trên điện thoại">
     <NuxtLink
-      v-for="link in links"
+      v-for="link in visibleLinks"
       :key="link.to"
       :to="link.to"
       :class="{ active: isActive(link.to) }"
