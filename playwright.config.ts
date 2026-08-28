@@ -26,12 +26,37 @@ export function createPlaywrightConfig(port = resolvePlaywrightPort()) {
       trace: 'on-first-retry',
       screenshot: 'only-on-failure',
     },
-    projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+    projects: [
+      {
+        name: 'auth-setup',
+        testMatch: 'auth.setup.ts',
+        use: { ...devices['Desktop Chrome'] },
+      },
+      {
+        name: 'auth-flow',
+        testMatch: 'auth-flow.spec.ts',
+        use: { ...devices['Desktop Chrome'] },
+      },
+      {
+        name: 'chromium',
+        testIgnore: ['auth.setup.ts', 'auth-flow.spec.ts'],
+        dependencies: ['auth-setup'],
+        use: {
+          ...devices['Desktop Chrome'],
+          storageState: 'test-results/.auth/authenticated.json',
+        },
+      },
+    ],
     webServer: {
       command: `pnpm dev --host 127.0.0.1 --port ${port}`,
       url: baseURL,
       reuseExistingServer: false,
       timeout: 120_000,
+      env: {
+        NUXT_PUBLIC_APP_URL: baseURL,
+        NUXT_PUBLIC_SUPABASE_URL: 'https://auth.taskovia.test',
+        NUXT_PUBLIC_SUPABASE_ANON_KEY: 'test-anon-key',
+      },
     },
   })
 }

@@ -1,100 +1,35 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
+import {
+  createAuthTestState,
+  createCompany,
+  installAuthRoutes,
+  type AuthTestState,
+} from './fixtures/auth-routes'
 
-const supabaseUrl = 'https://auth.taskovia.test'
-const accessToken = crypto.randomUUID()
-const refreshToken = crypto.randomUUID()
 const invalidPassword = crypto.randomUUID()
-const validPassword = crypto.randomUUID()
 const shortPassword = crypto.randomUUID().slice(0, 8)
 const recoveryTokenHash = crypto.randomUUID()
 const invalidTokenHash = crypto.randomUUID()
 const surplusTokenHash = crypto.randomUUID()
 
-const sessionUser = {
-  id: '11111111-1111-4111-8111-111111111111',
-  email: 'anh@example.com',
-}
-const grantedCompany = {
-  tenantId: '10000000-0000-4000-8000-000000000001',
-  companyId: '10000000-0000-4000-8000-000000000002',
-  companyCode: 'TASKOVIA',
-  companyName: 'Taskovia',
+const grantedCompany = createCompany({
   roles: ['administrator'],
   permissions: ['project.read'],
-}
-let sessionCompanies: typeof grantedCompany[] = []
-const verifyRequests: Array<{ token_hash?: unknown, type?: unknown }> = []
-
-function sessionResponse() {
-  return {
-    user: {
-      ...sessionUser,
-    },
-    companies: sessionCompanies,
-  }
-}
-
-async function installAnonymousAuthRoutes(page: Page): Promise<void> {
-  await page.route(`${supabaseUrl}/auth/v1/**`, async (route) => {
-    const request = route.request()
-    const url = new URL(request.url())
-
-    if (url.pathname.endsWith('/token') && url.searchParams.get('grant_type') === 'password') {
-      const body = request.postDataJSON() as { email?: string, password?: string }
-      if (body.password === invalidPassword) {
-        await route.fulfill({
-          status: 400,
-          contentType: 'application/json',
-          headers: {
-            'Access-Control-Expose-Headers': 'X-Supabase-Api-Version',
-            'X-Supabase-Api-Version': '2024-01-01',
-          },
-          body: JSON.stringify({ code: 'invalid_credentials', message: 'invalid credentials' }),
-        })
-        return
-      }
-
-      await route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-          token_type: 'bearer',
-          expires_in: 3600,
-          user: sessionUser,
-        }),
-      })
-      return
-    }
-
-    if (url.pathname.endsWith('/verify')) {
-      verifyRequests.push(request.postDataJSON() as { token_hash?: unknown, type?: unknown })
-      await route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-          token_type: 'bearer',
-          expires_in: 3600,
-          user: sessionUser,
-        }),
-      })
-      return
-    }
-
-    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({}) })
-  })
-  await page.route('**/api/auth/session', route => route.fulfill({
-    contentType: 'application/json',
-    body: JSON.stringify(sessionResponse()),
-  }))
-}
+})
+const alternateCompany = createCompany({
+  tenantId: '20000000-0000-4000-8000-000000000001',
+  companyId: '20000000-0000-4000-8000-000000000002',
+  companyCode: 'TASKOVIA',
+  companyName: 'Công ty kiểm thử Taskovia',
+  roles: ['company_admin'],
+  permissions: ['project.read', 'employee.read_directory'],
+})
+let authState: AuthTestState
 
 test.beforeEach(async ({ page }) => {
-  sessionCompanies = []
-  verifyRequests.length = 0
-  await installAnonymousAuthRoutes(page)
+  authState = createAuthTestState({ sessionCompanies: [] })
+  await installAuthRoutes(page, authState)
 })
 
 test('redirects anonymous visitors from protected routes to login', async ({ page }) => {
@@ -126,13 +61,30 @@ test('shows a safe invalid-credentials message and routes a successful login thr
   await expect(page.getByRole('alert')).toContainText('Email hoặc mật khẩu không chính xác.')
   await expect(password).toHaveValue('')
 
-  await password.fill(validPassword)
+  await password.fill(authState.password)
   await page.getByRole('button', { name: 'Đăng nhập' }).click()
   await expect(page).toHaveURL(/\/no-access$/)
 
-  sessionCompanies = [grantedCompany]
+  authState.sessionCompanies = [grantedCompany]
   await page.getByRole('button', { name: 'Thử lại' }).click()
   await expect(page).toHaveURL(/\/projects$/)
+})
+
+test('persists a successful login across reload and clears it after logout', async ({ page }) => {
+  authState.sessionCompanies = [grantedCompany]
+  await page.goto('/login')
+  await page.getByLabel('Email').fill('anh@example.com')
+  await page.getByLabel('Mật khẩu', { exact: true }).fill(authState.password)
+  await page.getByRole('button', { name: 'Đăng nhập' }).click()
+  await expect(page).toHaveURL(/\/projects$/)
+
+  await page.reload()
+  await expect(page).toHaveURL(/\/projects$/)
+
+  await page.getByRole('button', { name: 'Đăng xuất' }).click()
+  await expect(page).toHaveURL(/\/login$/)
+  await page.reload()
+  await expect(page).toHaveURL(/\/login$/)
 })
 
 test('always acknowledges a valid forgot-password request generically', async ({ page }) => {
@@ -147,8 +99,8 @@ test('scrubs callback tokens before opening reset password and preserves recover
   await expect(page).toHaveURL(/\/reset-password$/)
   await expect(page.getByRole('heading', { name: 'Đặt lại mật khẩu' })).toBeVisible()
   expect(page.url()).not.toContain(recoveryTokenHash)
-  expect(verifyRequests).toHaveLength(1)
-  expect(verifyRequests[0]).toEqual(expect.objectContaining({ token_hash: recoveryTokenHash, type: 'recovery' }))
+  expect(authState.verifyRequests).toHaveLength(1)
+  expect(authState.verifyRequests[0]).toEqual(expect.objectContaining({ token_hash: recoveryTokenHash, type: 'recovery' }))
 
   await page.reload()
   await expect(page).toHaveURL(/\/reset-password$/)
@@ -159,12 +111,24 @@ test('scrubs callback tokens before opening reset password and preserves recover
   await expect(page.getByText('Mật khẩu phải có từ 12 đến 72 ký tự và không chỉ gồm khoảng trắng.')).toBeVisible()
 })
 
+test('updates the password from an accepted recovery callback', async ({ page }) => {
+  authState.sessionCompanies = [grantedCompany]
+  await page.goto(`/auth/callback?${new URLSearchParams({ token_hash: recoveryTokenHash, type: 'recovery' })}`)
+  await expect(page).toHaveURL(/\/reset-password$/)
+
+  const password = crypto.randomUUID()
+  await page.getByLabel('Mật khẩu mới', { exact: true }).fill(password)
+  await page.getByLabel('Xác nhận mật khẩu mới', { exact: true }).fill(password)
+  await page.getByRole('button', { name: 'Cập nhật mật khẩu' }).click()
+  await expect(page).toHaveURL(/\/projects$/)
+})
+
 test('scrubs malformed callback queries without rendering a token', async ({ page }) => {
   await page.goto(`/auth/callback?${new URLSearchParams({ token_hash: invalidTokenHash, type: 'unsupported' })}`)
   await expect(page).toHaveURL(/\/auth\/callback$/)
   await expect(page.getByRole('heading', { name: 'Không thể xác minh liên kết' })).toBeVisible()
   expect(await page.locator('body').innerText()).not.toContain(invalidTokenHash)
-  expect(verifyRequests).toEqual([])
+  expect(authState.verifyRequests).toEqual([])
 })
 
 test('rejects callback queries with surplus fields before calling the provider', async ({ page }) => {
@@ -172,5 +136,50 @@ test('rejects callback queries with surplus fields before calling the provider',
   await expect(page).toHaveURL(/\/auth\/callback$/)
   await expect(page.getByRole('heading', { name: 'Không thể xác minh liên kết' })).toBeVisible()
   expect(await page.locator('body').innerText()).not.toContain(surplusTokenHash)
-  expect(verifyRequests).toEqual([])
+  expect(authState.verifyRequests).toEqual([])
+})
+
+test('requires company selection, switches the header company, and preserves the selected company', async ({ page }) => {
+  authState.sessionCompanies = [grantedCompany, alternateCompany]
+  await page.goto('/login')
+  await page.getByLabel('Email').fill('anh@example.com')
+  await page.getByLabel('Mật khẩu', { exact: true }).fill(authState.password)
+  await page.getByRole('button', { name: 'Đăng nhập' }).click()
+  await expect(page).toHaveURL(/\/select-company$/)
+
+  await page.getByRole('button', { name: grantedCompany.companyName }).click()
+  await expect(page).toHaveURL(/\/projects$/)
+
+  const switcher = page.getByRole('combobox', { name: 'Chuyển công ty' })
+  await switcher.selectOption(alternateCompany.companyId)
+  await expect(page).toHaveURL(/\/projects$/)
+  await expect(switcher).toHaveValue(alternateCompany.companyId)
+  await expect(page.getByTestId('app-header')).toContainText(alternateCompany.companyName)
+})
+
+test('routes a signed-in user without the page permission to forbidden without logging out', async ({ page }) => {
+  authState.sessionCompanies = [grantedCompany]
+  await page.goto('/login')
+  await page.getByLabel('Email').fill('anh@example.com')
+  await page.getByLabel('Mật khẩu', { exact: true }).fill(authState.password)
+  await page.getByRole('button', { name: 'Đăng nhập' }).click()
+  await expect(page).toHaveURL(/\/projects$/)
+
+  await page.goto('/employees')
+  await expect(page).toHaveURL(/\/forbidden$/)
+  await expect(page.getByRole('button', { name: 'Đăng xuất' })).toBeVisible()
+})
+
+test('fails closed on an app-session connection error and recovers only after retry', async ({ page }) => {
+  authState.sessionCompanies = [grantedCompany]
+  authState.sessionFailure = 'server'
+  await page.goto('/login')
+  await page.getByLabel('Email').fill('anh@example.com')
+  await page.getByLabel('Mật khẩu', { exact: true }).fill(authState.password)
+  await page.getByRole('button', { name: 'Đăng nhập' }).click()
+  await expect(page.getByRole('heading', { name: 'Không thể xác minh quyền truy cập' })).toBeVisible()
+
+  authState.sessionFailure = 'none'
+  await page.getByRole('button', { name: 'Thử lại' }).click()
+  await expect(page).toHaveURL(/\/projects$/)
 })

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures/authenticated'
 
 test('lists only VQH projects and opens the selected project', async ({ page }) => {
   await page.goto('/projects')
@@ -8,6 +8,15 @@ test('lists only VQH projects and opens the selected project', async ({ page }) 
   await expect(page.getByText('Công ty kiểm thử cách ly')).toHaveCount(0)
   await page.getByRole('link', { name: /Mở dự án Nhà phố Thảo Điền/ }).click()
   await expect(page).toHaveURL(/\/projects\/project-thao-dien$/)
+})
+
+test('retains verified application access across a reload', async ({ page }) => {
+  await page.goto('/projects')
+  await expect(page.getByRole('heading', { name: 'Dự án' })).toBeVisible()
+
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Dự án' })).toBeVisible()
+  await expect(page.getByText('Công ty TNHH Thiết kế Xây dựng Việt Quốc Huy', { exact: true })).toBeVisible()
 })
 
 test('shows the journey loading skeleton during project navigation', async ({ page }) => {

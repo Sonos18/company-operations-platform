@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures/authenticated'
 
 test('groups work and preserves assignment source', async ({ page }) => {
   await page.goto('/my-work')

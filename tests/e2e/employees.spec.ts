@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures/authenticated'
 
 function employeeRows(page: Page) {
   return page.getByTestId('employee-table').locator('tbody tr[data-slot="tr"]')

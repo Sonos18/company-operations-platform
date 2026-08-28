@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures/authenticated'
 
 test('shows approved target and latest construction photo at equal width', async ({ page }) => {
   await page.goto('/projects/project-thao-dien')
