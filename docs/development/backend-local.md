@@ -17,7 +17,7 @@ Taskovia owns the one canonical Supabase Cloud DEV database. VQH is its first te
 Copy-Item .env.example .env.local
 ```
 
-Fill only `NUXT_PUBLIC_SUPABASE_URL` and `NUXT_PUBLIC_SUPABASE_ANON_KEY` with the Cloud DEV URL and public/anon key. Never add a database password, access token, or service-role key to `.env.local`. Do not commit this file.
+Fill `.env.local` with exactly these three variables for the sole Taskovia application database: `NUXT_PUBLIC_SUPABASE_URL`, `NUXT_PUBLIC_SUPABASE_ANON_KEY`, and `NUXT_SUPABASE_SERVICE_ROLE_KEY`. The service-role key is server-only for invitation/offboarding Admin operations; never put it under a `NUXT_PUBLIC_*` name, in client code, API responses, logs, tickets, or source control. Keep database passwords and CLI access tokens out of `.env.local`. Do not commit this file.
 
 ## Prepare the dedicated CLI PAT
 
@@ -54,7 +54,7 @@ pnpm db:dev:advisors:performance
 pnpm verify:app
 ```
 
-Never edit `shared/types/database.types.ts` manually. `pnpm dev` reads `.env.local`; deployment builds receive their public Supabase values from the deploy environment.
+Never edit `shared/types/database.types.ts` manually. `pnpm dev` reads `.env.local`; deployment builds receive the same three Taskovia application database variables from the deploy environment.
 
 ## Read-only VQH RLS smoke check
 

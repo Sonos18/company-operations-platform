@@ -11,13 +11,10 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   runtimeConfig: {
     supabaseServiceRoleKey: '',
-    taskoviaSupabaseServiceRoleKey: '',
     public: {
       appUrl: '',
       supabaseUrl: '',
       supabaseAnonKey: '',
-      taskoviaSupabaseUrl: '',
-      taskoviaSupabaseAnonKey: '',
     },
   },
   typescript: {

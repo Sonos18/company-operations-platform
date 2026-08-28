@@ -64,18 +64,25 @@ describe('Supabase environment wiring', () => {
     expect(nuxtConfig).not.toContain('process.env.NUXT_PUBLIC_SUPABASE')
   })
 
-  it('keeps Taskovia Control/Auth configuration separate from the VQH data plane', () => {
-    expect(envExampleSource).toMatch(/^NUXT_PUBLIC_TASKOVIA_SUPABASE_URL=$/m)
-    expect(envExampleSource).toMatch(/^NUXT_PUBLIC_TASKOVIA_SUPABASE_ANON_KEY=$/m)
-    expect(envExampleSource).toMatch(/^NUXT_TASKOVIA_SUPABASE_SERVICE_ROLE_KEY=$/m)
+  it('uses the generic variables for the sole Taskovia application database', () => {
+    const envExample = parseEnv(envExampleSource)
+    const supabaseVariables = Object.keys(envExample)
+      .filter(name => name.includes('SUPABASE'))
+      .sort()
 
-    expect(nuxtConfig).toContain("taskoviaSupabaseServiceRoleKey: ''")
-    expect(nuxtConfig).toContain("taskoviaSupabaseUrl: ''")
-    expect(nuxtConfig).toContain("taskoviaSupabaseAnonKey: ''")
-    expect(nuxtConfig).not.toMatch(/public:\s*\{[^}]*taskoviaSupabaseServiceRoleKey/s)
+    expect(supabaseVariables).toEqual([
+      'NUXT_PUBLIC_SUPABASE_ANON_KEY',
+      'NUXT_PUBLIC_SUPABASE_URL',
+      'NUXT_SUPABASE_SERVICE_ROLE_KEY',
+    ])
+    expect(envExample.NUXT_PUBLIC_SUPABASE_URL).toBe('')
+    expect(envExample.NUXT_PUBLIC_SUPABASE_ANON_KEY).toBe('')
+    expect(envExample.NUXT_SUPABASE_SERVICE_ROLE_KEY).toBe('')
 
-    expect(envExampleSource).toMatch(/^NUXT_PUBLIC_SUPABASE_URL=$/m)
-    expect(envExampleSource).toMatch(/^NUXT_PUBLIC_SUPABASE_ANON_KEY=$/m)
+    expect(nuxtConfig).toContain("supabaseServiceRoleKey: ''")
+    expect(nuxtConfig).toContain("supabaseUrl: ''")
+    expect(nuxtConfig).toContain("supabaseAnonKey: ''")
+    expect(nuxtConfig).not.toMatch(/(?:TASKOVIA_SUPABASE|taskoviaSupabase)/)
   })
 
   it('exposes an explicit linked DEV workflow and an isolated local fallback', () => {

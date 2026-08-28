@@ -101,6 +101,17 @@ describe('Supabase Cloud DEV runbooks', () => {
     expect(deployment).not.toContain('pnpm db:cloud:')
   })
 
+  it('documents the server-only Taskovia Admin credential without treating it as a CLI PAT', () => {
+    for (const document of [development, deployment]) {
+      expect(document).toContain('NUXT_SUPABASE_SERVICE_ROLE_KEY')
+      expect(document).toContain('NUXT_PUBLIC_SUPABASE_URL')
+      expect(document).toContain('NUXT_PUBLIC_SUPABASE_ANON_KEY')
+      expect(document).not.toMatch(/NUXT_(?:PUBLIC_)?TASKOVIA_SUPABASE/)
+    }
+    expect(development).toContain('SUPABASE_DEV_ACCESS_TOKEN')
+    expect(deployment).toContain('SUPABASE_DEV_ACCESS_TOKEN')
+  })
+
   it('keeps Task 4 pgTAP optional and outside the no-Docker release gate', () => {
     expect(task4OptionalPgtap).toContain('pnpm db:dev:test')
     expect(task4OptionalPgtap).toContain('Docker/container-capable environment')

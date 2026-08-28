@@ -42,12 +42,13 @@ Never run a remote reset or seed against Cloud DEV without a separate diagnosis 
 
 ## Configure Vercel Production
 
-Add these variables to the Vercel project with the `Production` scope:
+Add these sole Taskovia application database variables to the Vercel project with the `Production` scope:
 
-- `NUXT_PUBLIC_SUPABASE_URL`: the Vercel Production Supabase project URL.
-- `NUXT_PUBLIC_SUPABASE_ANON_KEY`: the Vercel Production public/anon key.
+- `NUXT_PUBLIC_SUPABASE_URL`: the Taskovia Production Supabase project URL.
+- `NUXT_PUBLIC_SUPABASE_ANON_KEY`: the Taskovia Production public/anon key.
+- `NUXT_SUPABASE_SERVICE_ROLE_KEY`: the server-only Taskovia Admin credential required for invitation/offboarding operations.
 
-Redeploy Vercel Production after changing either value. Do not add a service-role key to any `NUXT_PUBLIC_*` variable. Preview deployments receive no Cloud configuration unless the same variables are deliberately added to the `Preview` scope.
+Redeploy Vercel Production after changing any value. Do not add the service-role key to any `NUXT_PUBLIC_*` variable, client code, browser configuration, API response, log, ticket, or source control. Preview deployments receive no Cloud configuration unless the same three variables are deliberately added to the `Preview` scope.
 
 ## Production boundary
 
