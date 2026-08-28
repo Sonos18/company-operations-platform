@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto'
 import { defineConfig, devices } from '@playwright/test'
 
 const DEFAULT_PLAYWRIGHT_PORT = 4317
+const PLAYWRIGHT_SUPABASE_ANON_KEY = randomUUID()
 
 export function resolvePlaywrightPort(value = process.env.PLAYWRIGHT_PORT) {
   if (value === undefined) return DEFAULT_PLAYWRIGHT_PORT
@@ -55,7 +57,7 @@ export function createPlaywrightConfig(port = resolvePlaywrightPort()) {
       env: {
         NUXT_PUBLIC_APP_URL: baseURL,
         NUXT_PUBLIC_SUPABASE_URL: 'https://auth.taskovia.test',
-        NUXT_PUBLIC_SUPABASE_ANON_KEY: 'test-anon-key',
+        NUXT_PUBLIC_SUPABASE_ANON_KEY: PLAYWRIGHT_SUPABASE_ANON_KEY,
       },
     },
   })

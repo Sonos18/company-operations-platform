@@ -6,7 +6,7 @@ type AuthenticatedFixtures = {
 }
 
 export const test = base.extend<AuthenticatedFixtures>({
-  authState: async (_, use) => {
+  authState: async ({ browserName: _browserName }, use) => {
     await use(createAuthTestState())
   },
   page: async ({ page, authState }, use) => {

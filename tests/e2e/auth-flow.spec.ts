@@ -87,6 +87,29 @@ test('persists a successful login across reload and clears it after logout', asy
   await expect(page).toHaveURL(/\/login$/)
 })
 
+test('rejects malformed app-session authorization and sends a non-empty bearer token after login', async ({ page }) => {
+  await page.goto('/login')
+  const rejectedStatuses = await page.evaluate(async () => Promise.all([
+    fetch('/api/auth/session').then(response => response.status),
+    fetch('/api/auth/session', { headers: { Authorization: '' } }).then(response => response.status),
+    fetch('/api/auth/session', { headers: { Authorization: 'Token malformed' } }).then(response => response.status),
+  ]))
+  expect(rejectedStatuses).toEqual([401, 401, 401])
+
+  let sawBearerAuthorization = false
+  await page.route('**/api/auth/session', async (route) => {
+    sawBearerAuthorization = /^Bearer\s+\S+$/u.test(route.request().headers().authorization ?? '')
+    await route.fallback()
+  })
+  authState.sessionCompanies = [grantedCompany]
+  await page.goto('/login')
+  await page.getByLabel('Email').fill('anh@example.com')
+  await page.getByLabel('Mật khẩu', { exact: true }).fill(authState.password)
+  await page.getByRole('button', { name: 'Đăng nhập' }).click()
+  await expect(page).toHaveURL(/\/projects$/)
+  expect(sawBearerAuthorization).toBe(true)
+})
+
 test('always acknowledges a valid forgot-password request generically', async ({ page }) => {
   await page.goto('/forgot-password')
   await page.getByLabel('Email').fill('anh@example.com')
@@ -155,6 +178,11 @@ test('requires company selection, switches the header company, and preserves the
   await expect(page).toHaveURL(/\/projects$/)
   await expect(switcher).toHaveValue(alternateCompany.companyId)
   await expect(page.getByTestId('app-header')).toContainText(alternateCompany.companyName)
+
+  await page.reload()
+  await expect(page).toHaveURL(/\/projects$/)
+  await expect(page.getByRole('combobox', { name: 'Chuyển công ty' })).toHaveValue(alternateCompany.companyId)
+  await expect(page.getByTestId('app-header')).toContainText(alternateCompany.companyName)
 })
 
 test('routes a signed-in user without the page permission to forbidden without logging out', async ({ page }) => {
@@ -182,4 +210,23 @@ test('fails closed on an app-session connection error and recovers only after re
   authState.sessionFailure = 'none'
   await page.getByRole('button', { name: 'Thử lại' }).click()
   await expect(page).toHaveURL(/\/projects$/)
+})
+
+test('clears the session when logging out from a connection error', async ({ page }) => {
+  authState.sessionCompanies = [grantedCompany]
+  authState.sessionFailure = 'server'
+  await page.goto('/login')
+  await page.getByLabel('Email').fill('anh@example.com')
+  await page.getByLabel('Mật khẩu', { exact: true }).fill(authState.password)
+  await page.getByRole('button', { name: 'Đăng nhập' }).click()
+  await expect(page.getByRole('heading', { name: 'Không thể xác minh quyền truy cập' })).toBeVisible()
+
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'load' }),
+    page.getByRole('button', { name: 'Đăng xuất' }).click(),
+  ])
+  await expect(page).toHaveURL(/\/login$/)
+  await expect(page.getByRole('heading', { name: 'Đăng nhập' })).toBeVisible()
+  await page.reload()
+  await expect(page).toHaveURL(/\/login$/)
 })

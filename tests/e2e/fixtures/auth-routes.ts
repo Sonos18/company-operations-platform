@@ -103,6 +103,10 @@ export async function installAuthRoutes(page: Page, state: AuthTestState): Promi
   })
 
   await page.route('**/api/auth/session', async (route) => {
+    if (!/^Bearer\s+\S+$/u.test(route.request().headers().authorization ?? '')) {
+      await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({}) })
+      return
+    }
     if (state.sessionFailure === 'network') {
       await route.abort('failed')
       return
