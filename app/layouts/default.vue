@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { PRODUCT_BRAND } from '../../shared/constants/product-brand'
+import { switchCompanyAndReload } from '../components/app/shell-actions'
 
 const nuxtApp = useNuxtApp()
 const authStore = nuxtApp.$authStore
@@ -10,10 +11,11 @@ const companyName = computed(() => companyAccessStore.activeCompany?.companyName
 const signingOut = computed(() => authStore.operations.signOut.status === 'pending')
 
 async function selectCompany(companyId: string): Promise<void> {
-  if (!companyAccessStore.selectCompany(companyId)) return
-
-  clearNuxtData()
-  await navigateTo('/projects')
+  await switchCompanyAndReload(companyId, {
+    selectCompany: companyAccessStore.selectCompany,
+    clearRuntimeData: clearNuxtData,
+    reloadNuxtApp,
+  })
 }
 
 async function signOut(): Promise<void> {
