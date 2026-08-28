@@ -3,10 +3,19 @@ import { ClientError } from '../../../app/errors/client-error'
 import {
   createSupabaseAuthRepository,
   type NarrowSupabaseAuthClient,
+  type SupabaseAuthRepository,
 } from '../../../app/repositories/auth/supabase-auth.repository'
 import { signInInputSchema } from '../../../shared/schemas/auth'
 
 type ProviderResult = { data: unknown; error: unknown }
+
+async function expectSafeFailure(operation: () => Promise<unknown>, code: string, rawDetail: string) {
+  const error = await operation().catch(error => error)
+
+  expect(error).toBeInstanceOf(ClientError)
+  expect(error).toMatchObject({ code })
+  expect((error as Error).message).not.toContain(rawDetail)
+}
 
 function createClient(overrides: Partial<NarrowSupabaseAuthClient['auth']> = {}) {
   const calls = {
@@ -25,12 +34,21 @@ function createClient(overrides: Partial<NarrowSupabaseAuthClient['auth']> = {})
     user: { id: string; email: string | null }
   } | null) => void) | undefined
 
+  const sessionSuccess = (): Promise<ProviderResult> => Promise.resolve({
+    data: {
+      session: {
+        access_token: 'provider-access-token',
+        user: { id: 'user-1', email: 'user@example.com' },
+      },
+    },
+    error: null,
+  })
   const success = (): Promise<ProviderResult> => Promise.resolve({ data: {}, error: null })
   const client: NarrowSupabaseAuthClient = {
     auth: {
       signInWithPassword: input => {
         calls.signIn.push(input)
-        return success()
+        return sessionSuccess()
       },
       signOut: () => {
         calls.signOut += 1
@@ -42,7 +60,7 @@ function createClient(overrides: Partial<NarrowSupabaseAuthClient['auth']> = {})
       },
       refreshSession: () => {
         calls.refreshSession += 1
-        return success()
+        return sessionSuccess()
       },
       resetPasswordForEmail: (email, options) => {
         calls.reset.push({ email, redirectTo: options?.redirectTo })
@@ -50,7 +68,7 @@ function createClient(overrides: Partial<NarrowSupabaseAuthClient['auth']> = {})
       },
       verifyOtp: input => {
         calls.verify.push(input)
-        return success()
+        return sessionSuccess()
       },
       updateUser: input => {
         calls.update.push(input)
@@ -177,5 +195,140 @@ describe('SupabaseAuthRepository', () => {
 
     await expect(repository.signOut()).rejects.toBeInstanceOf(ClientError)
     await expect(repository.signOut()).rejects.not.toThrow('secret provider response body')
+  })
+
+  it.each([
+    {
+      name: 'sign-in',
+      configure: (client: NarrowSupabaseAuthClient) => {
+        client.auth.signInWithPassword = () => Promise.resolve({ data: {}, error: null })
+      },
+      invoke: (repository: SupabaseAuthRepository) => repository.signIn(
+        signInInputSchema.parse({ email: 'user@example.com', password: 'password' }),
+      ),
+    },
+    {
+      name: 'session refresh',
+      configure: (client: NarrowSupabaseAuthClient) => {
+        client.auth.refreshSession = () => Promise.resolve({ data: {}, error: null })
+      },
+      invoke: (repository: SupabaseAuthRepository) => repository.refreshSession(),
+    },
+    {
+      name: 'token-hash verification',
+      configure: (client: NarrowSupabaseAuthClient) => {
+        client.auth.verifyOtp = () => Promise.resolve({ data: {}, error: null })
+      },
+      invoke: (repository: SupabaseAuthRepository) => repository.verifyEmailTokenHash({
+        tokenHash: 'opaque-token-hash',
+        type: 'recovery',
+      }),
+    },
+  ])('rejects malformed successful $name responses', async ({ configure, invoke }) => {
+    const fake = createClient()
+    configure(fake.client)
+
+    await expectSafeFailure(
+      () => invoke(createSupabaseAuthRepository(fake.client)),
+      'MALFORMED_RESPONSE',
+      'provider',
+    )
+  })
+
+  it('maps a synchronous subscription setup failure without leaking provider details', () => {
+    const fake = createClient({
+      onAuthStateChange: () => {
+        throw new TypeError('fetch subscription raw provider detail')
+      },
+    })
+    const repository = createSupabaseAuthRepository(fake.client)
+
+    let error: unknown
+    try {
+      repository.subscribe(() => {})
+    } catch (caught) {
+      error = caught
+    }
+
+    expect(error).toBeInstanceOf(ClientError)
+    expect(error).toMatchObject({ code: 'NETWORK_ERROR' })
+    expect((error as Error).message).not.toContain('raw provider detail')
+  })
+
+  it.each([
+    {
+      name: 'getAccessToken',
+      returned: (client: NarrowSupabaseAuthClient) => {
+        client.auth.getSession = () => Promise.resolve({
+          data: { session: null },
+          error: { code: 'invalid_credentials', message: 'raw returned get-session detail' },
+        })
+      },
+      thrown: (client: NarrowSupabaseAuthClient) => {
+        client.auth.getSession = () => Promise.reject(new TypeError('fetch raw thrown get-session detail'))
+      },
+      invoke: (repository: SupabaseAuthRepository) => repository.getAccessToken(),
+    },
+    {
+      name: 'requestPasswordReset',
+      returned: (client: NarrowSupabaseAuthClient) => {
+        client.auth.resetPasswordForEmail = () => Promise.resolve({
+          data: null,
+          error: { code: 'invalid_credentials', message: 'raw returned reset detail' },
+        })
+      },
+      thrown: (client: NarrowSupabaseAuthClient) => {
+        client.auth.resetPasswordForEmail = () => Promise.reject(new TypeError('fetch raw thrown reset detail'))
+      },
+      invoke: (repository: SupabaseAuthRepository) => repository.requestPasswordReset({
+        email: 'user@example.com',
+        redirectTo: 'https://taskovia.example/auth/callback',
+      }),
+    },
+    {
+      name: 'verifyEmailTokenHash',
+      returned: (client: NarrowSupabaseAuthClient) => {
+        client.auth.verifyOtp = () => Promise.resolve({
+          data: null,
+          error: { code: 'invalid_credentials', message: 'raw returned verify detail' },
+        })
+      },
+      thrown: (client: NarrowSupabaseAuthClient) => {
+        client.auth.verifyOtp = () => Promise.reject(new TypeError('fetch raw thrown verify detail'))
+      },
+      invoke: (repository: SupabaseAuthRepository) => repository.verifyEmailTokenHash({
+        tokenHash: 'opaque-token-hash',
+        type: 'recovery',
+      }),
+    },
+    {
+      name: 'updatePassword',
+      returned: (client: NarrowSupabaseAuthClient) => {
+        client.auth.updateUser = () => Promise.resolve({
+          data: null,
+          error: { code: 'invalid_credentials', message: 'raw returned update detail' },
+        })
+      },
+      thrown: (client: NarrowSupabaseAuthClient) => {
+        client.auth.updateUser = () => Promise.reject(new TypeError('fetch raw thrown update detail'))
+      },
+      invoke: (repository: SupabaseAuthRepository) => repository.updatePassword('a replacement passphrase'),
+    },
+  ])('maps returned and thrown provider errors from $name', async ({ returned, thrown, invoke }) => {
+    const returnedFake = createClient()
+    returned(returnedFake.client)
+    await expectSafeFailure(
+      () => invoke(createSupabaseAuthRepository(returnedFake.client)),
+      'INVALID_CREDENTIALS',
+      'raw returned',
+    )
+
+    const thrownFake = createClient()
+    thrown(thrownFake.client)
+    await expectSafeFailure(
+      () => invoke(createSupabaseAuthRepository(thrownFake.client)),
+      'NETWORK_ERROR',
+      'raw thrown',
+    )
   })
 })

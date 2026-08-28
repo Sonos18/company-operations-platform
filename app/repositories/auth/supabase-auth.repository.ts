@@ -24,6 +24,30 @@ type AuthStateSession = AuthSession & {
   refresh_token: string
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function hasValidSession(data: unknown): boolean {
+  if (!isRecord(data) || !isRecord(data.session)) {
+    return false
+  }
+
+  const session = data.session
+  if (typeof session.access_token !== 'string' || session.access_token.length === 0 || !isRecord(session.user)) {
+    return false
+  }
+
+  const { id, email } = session.user
+  return typeof id === 'string'
+    && id.length > 0
+    && (email === undefined || email === null || typeof email === 'string')
+}
+
+function hasSessionField(data: unknown): boolean {
+  return isRecord(data) && 'session' in data
+}
+
 export interface AuthLifecycleEvent {
   event: string
   user: AuthIdentity | null
@@ -59,7 +83,7 @@ class SupabaseAuthRepositoryImpl implements SupabaseAuthRepository {
   constructor(private readonly client: NarrowSupabaseAuthClient) {}
 
   async signIn(input: SignInInput): Promise<void> {
-    await this.runVoid(() => this.client.auth.signInWithPassword(input))
+    await this.runSessionOperation(() => this.client.auth.signInWithPassword(input))
   }
 
   async signOut(): Promise<void> {
@@ -73,6 +97,10 @@ class SupabaseAuthRepositoryImpl implements SupabaseAuthRepository {
         throw mapSupabaseAuthError(error)
       }
 
+      if (!hasSessionField(data) || (data.session !== null && !hasValidSession(data))) {
+        throw this.malformedResponse()
+      }
+
       return typeof data.session?.access_token === 'string' ? data.session.access_token : null
     } catch (error) {
       throw this.toClientError(error)
@@ -80,7 +108,7 @@ class SupabaseAuthRepositoryImpl implements SupabaseAuthRepository {
   }
 
   async refreshSession(): Promise<void> {
-    await this.runVoid(() => this.client.auth.refreshSession())
+    await this.runSessionOperation(() => this.client.auth.refreshSession())
   }
 
   async requestPasswordReset(input: { email: string; redirectTo: string }): Promise<void> {
@@ -90,7 +118,7 @@ class SupabaseAuthRepositoryImpl implements SupabaseAuthRepository {
   }
 
   async verifyEmailTokenHash(input: { tokenHash: string; type: AuthEmailFlow }): Promise<void> {
-    await this.runVoid(() => this.client.auth.verifyOtp({
+    await this.runSessionOperation(() => this.client.auth.verifyOtp({
       token_hash: input.tokenHash,
       type: input.type,
     }))
@@ -101,17 +129,21 @@ class SupabaseAuthRepositoryImpl implements SupabaseAuthRepository {
   }
 
   subscribe(listener: (event: AuthLifecycleEvent) => void): () => void {
-    const { data } = this.client.auth.onAuthStateChange((event, session) => {
-      const user = session?.user
-      listener({
-        event,
-        user: user && typeof user.id === 'string'
-          ? { id: user.id, email: typeof user.email === 'string' ? user.email : null }
-          : null,
+    try {
+      const { data } = this.client.auth.onAuthStateChange((event, session) => {
+        const user = session?.user
+        listener({
+          event,
+          user: user && typeof user.id === 'string'
+            ? { id: user.id, email: typeof user.email === 'string' ? user.email : null }
+            : null,
+        })
       })
-    })
 
-    return () => data.subscription.unsubscribe()
+      return () => data.subscription.unsubscribe()
+    } catch (error) {
+      throw this.toClientError(error)
+    }
   }
 
   private async runVoid(operation: () => Promise<ProviderResult>): Promise<void> {
@@ -123,6 +155,29 @@ class SupabaseAuthRepositoryImpl implements SupabaseAuthRepository {
     } catch (error) {
       throw this.toClientError(error)
     }
+  }
+
+  private async runSessionOperation(operation: () => Promise<ProviderResult>): Promise<void> {
+    try {
+      const { data, error } = await operation()
+      if (error) {
+        throw mapSupabaseAuthError(error)
+      }
+      if (!hasValidSession(data)) {
+        throw this.malformedResponse()
+      }
+    } catch (error) {
+      throw this.toClientError(error)
+    }
+  }
+
+  private malformedResponse(): ClientError {
+    return new ClientError({
+      kind: 'api',
+      code: 'MALFORMED_RESPONSE',
+      message: 'Phản hồi từ dịch vụ xác thực không hợp lệ.',
+      retryable: false,
+    })
   }
 
   private toClientError(error: unknown): ClientError {
