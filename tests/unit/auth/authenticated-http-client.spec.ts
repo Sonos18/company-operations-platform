@@ -59,6 +59,12 @@ describe('authenticated HTTP client', () => {
     '/api/auth/session\nX-Forwarded-Host: outside.example',
     '/api/%2f%2foutside.example/auth/session',
     '/api/%5coutside.example/auth/session',
+    '/api/%2e/auth/session',
+    '/api/%252e/auth/session',
+    '/api/%2e%2e/outside.example/auth/session',
+    '/api/%252e%252e%252foutside.example/auth/session',
+    '/api/%252e%252e%255coutside.example/auth/session',
+    '/api/projects/%252e%252e%252fauth/session',
   ])('fails closed before token lookup for unsafe URL %s', async url => {
     const getAccessToken = vi.fn(() => 'never-leak-this-token')
     const fetch = vi.fn()
@@ -69,6 +75,22 @@ describe('authenticated HTTP client', () => {
 
     expect(getAccessToken).not.toHaveBeenCalled()
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('preserves a valid internal API query string', async () => {
+    const calls: string[] = []
+    const client = createAuthenticatedHttpClient({
+      getAccessToken: () => 'token',
+      fetch: async url => {
+        calls.push(url)
+        return new Response(JSON.stringify({ value: 1 }), { status: 200 })
+      },
+    })
+
+    await expect(client.request({ url: '/api/tasks?status=open&sort=updatedAt', schema: valueSchema }))
+      .resolves.toEqual({ value: 1 })
+
+    expect(calls).toEqual(['/api/tasks?status=open&sort=updatedAt'])
   })
 
   it('sends only an exact bearer header and JSON body when a body is provided', async () => {

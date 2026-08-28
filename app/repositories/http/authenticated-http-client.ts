@@ -69,6 +69,13 @@ function decodeApiPath(pathname: string): string | null {
   return null
 }
 
+function isCanonicalInternalApiPath(pathname: string): boolean {
+  const decodedPathname = decodeApiPath(pathname)
+  return decodedPathname !== null
+    && decodedPathname.startsWith('/api/')
+    && !decodedPathname.split('/').some(segment => segment === '.' || segment === '..')
+}
+
 function isInternalApiUrl(value: string): boolean {
   if (!value.startsWith('/api/')
     || value.startsWith('/api//')
@@ -78,6 +85,9 @@ function isInternalApiUrl(value: string): boolean {
     return false
   }
 
+  const queryOrFragmentIndex = value.search(/[?#]/)
+  const rawPathname = queryOrFragmentIndex === -1 ? value : value.slice(0, queryOrFragmentIndex)
+
   let url: URL
   try {
     url = new URL(value, 'https://taskovia.internal')
@@ -86,10 +96,9 @@ function isInternalApiUrl(value: string): boolean {
     return false
   }
 
-  const pathname = decodeApiPath(url.pathname)
   return url.origin === 'https://taskovia.internal'
-    && pathname !== null
-    && pathname.startsWith('/api/')
+    && isCanonicalInternalApiPath(rawPathname)
+    && url.pathname.startsWith('/api/')
 }
 
 function apiFailure(status: number, code: string, requestId: string): ClientError {
