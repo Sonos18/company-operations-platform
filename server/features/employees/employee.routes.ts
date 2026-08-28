@@ -7,6 +7,7 @@ import {
   employeeOffboardingInputSchema,
   employeeUpdateInputSchema,
 } from '../../../shared/schemas/employees'
+import { buildAuthCallbackUrl } from '../../../shared/utils/app-url'
 import { AppApiError } from '../../utils/api-error'
 import { createSupabaseAuthorizationReader } from '../authorization/authorization.service'
 import { createSupabaseTenancyReader, createTenancyService } from '../tenancy/tenancy.service'
@@ -113,11 +114,12 @@ export function createSupabaseEmployeeRoutes(event: H3Event) {
 
   function invitationAuthAdmin() {
     const runtime = useRuntimeConfig(event)
+    const redirectTo = buildAuthCallbackUrl(runtime.public.appUrl)
     const config = parseSupabaseAdminConfig({
       url: runtime.public.supabaseUrl,
       serviceRoleKey: runtime.supabaseServiceRoleKey,
     })
-    return createSupabaseInvitationAuthAdmin(createSupabaseAdminClient(config))
+    return createSupabaseInvitationAuthAdmin(createSupabaseAdminClient(config), { redirectTo })
   }
 
   function offboardingAuthAdmin() {
