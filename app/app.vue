@@ -8,6 +8,11 @@ const route = useRoute()
 const lifecycle = computed(() => authStore?.lifecycle ?? 'bootstrapping')
 const isBootstrapping = computed(() => lifecycle.value === 'idle' || lifecycle.value === 'bootstrapping')
 const isConnectionError = computed(() => lifecycle.value === 'connection_error')
+const connectionError = computed(() => authStore?.operations.refreshAppSession.error?.message
+  ?? authStore?.operations.initialize.error?.message
+  ?? undefined)
+const retryingConnection = computed(() => authStore?.operations.refreshAppSession.status === 'pending')
+const signingOut = computed(() => authStore?.operations.signOut.status === 'pending')
 
 async function retryConnection(): Promise<void> {
   try {
@@ -39,11 +44,14 @@ async function signOut(): Promise<void> {
     <main v-if="isBootstrapping" aria-busy="true" aria-live="polite">
       Đang xác thực phiên làm việc…
     </main>
-    <main v-else-if="isConnectionError" role="alert">
-      <p>Không thể xác minh quyền truy cập. Vui lòng thử lại.</p>
-      <UButton @click="retryConnection">Thử lại</UButton>
-      <UButton variant="ghost" @click="signOut">Đăng xuất</UButton>
-    </main>
+    <ConnectionErrorState
+      v-else-if="isConnectionError"
+      :message="connectionError"
+      :retrying="retryingConnection"
+      :signing-out="signingOut"
+      @retry="retryConnection"
+      @sign-out="signOut"
+    />
     <NuxtLayout v-else>
       <NuxtPage />
     </NuxtLayout>
