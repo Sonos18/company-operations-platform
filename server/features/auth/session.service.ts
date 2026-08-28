@@ -1,6 +1,5 @@
-import { z } from 'zod'
-import { sessionResponseSchema } from '../../../shared/schemas/session'
-import type { CompanyAccess } from '../../../shared/schemas/session'
+import type { z } from 'zod'
+import { sessionResponseSchema, type CompanyAccess } from '../../../shared/schemas/session'
 
 export type SessionResponse = z.infer<typeof sessionResponseSchema>
 

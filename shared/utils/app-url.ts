@@ -5,8 +5,14 @@ const blockedPostLoginPathnames = new Set([
   '/reset-password',
 ])
 const encodedUnsafePathCharacter = /%(?:0[0-9a-f]|1[0-9a-f]|7f|2f|5c)/i
-const controlCharacter = /[\u0000-\u001f\u007f]/
 const maximumPathDecodingPasses = 4
+
+function hasControlCharacter(value: string): boolean {
+  return [...value].some((character) => {
+    const code = character.charCodeAt(0)
+    return code <= 0x1f || code === 0x7f
+  })
+}
 
 function isBlockedPostLoginPath(pathname: string): boolean {
   return [...blockedPostLoginPathnames].some(path => pathname === path || pathname.startsWith(`${path}/`))
@@ -25,7 +31,7 @@ function decodePathname(pathname: string): string | null {
     }
 
     if (nextPathname === decodedPathname) {
-      return controlCharacter.test(decodedPathname)
+      return hasControlCharacter(decodedPathname)
         || decodedPathname.includes('\\')
         || decodedPathname.startsWith('//')
         ? null
@@ -66,7 +72,7 @@ export function buildAuthCallbackUrl(appUrl: string): string {
 
 export function sanitizeInternalRedirect(value: unknown): string | null {
   if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) return null
-  if (controlCharacter.test(value) || value.includes('\\') || encodedUnsafePathCharacter.test(value)) return null
+  if (hasControlCharacter(value) || value.includes('\\') || encodedUnsafePathCharacter.test(value)) return null
 
   let url: URL
   try {

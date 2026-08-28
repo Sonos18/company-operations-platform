@@ -1,19 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-
-vi.hoisted(() => {
-  vi.stubGlobal('defineNuxtPlugin', <T>(plugin: T) => plugin)
-  vi.stubGlobal('useRuntimeConfig', () => ({ public: { appUrl: 'https://taskovia.example' } }))
-})
-
-import {
-  default as authLifecyclePlugin,
+import authLifecyclePlugin, {
   authLifecyclePluginOptions,
   createAuthLifecycle,
   createAuthRuntime,
 } from '../../../app/plugins/auth-lifecycle.client'
 import type { AuthLifecycle } from '../../../app/services/auth/access-policy'
 import type { AuthLifecycleEvent, SupabaseAuthRepository } from '../../../app/repositories/auth/supabase-auth.repository'
+
+vi.hoisted(() => {
+  vi.stubGlobal('defineNuxtPlugin', <T>(plugin: T) => plugin)
+  vi.stubGlobal('useRuntimeConfig', () => ({ public: { appUrl: 'https://taskovia.example' } }))
+})
 
 function createStorage() {
   const values = new Map<string, string>()

@@ -92,7 +92,6 @@ describe('auth store', () => {
   })
 
   it('suppresses a reentrant signed-in event emitted during callback verification until password reset completes', async () => {
-    let store: ReturnType<typeof createStore>
     const service = createService({
       completeEmailCallback: vi.fn(async () => {
         await store.handleAuthStateChange({
@@ -101,7 +100,7 @@ describe('auth store', () => {
         })
       }),
     })
-    store = createStore(service)
+    const store = createStore(service)
 
     await store.completeEmailCallback({ token_hash: 'opaque-hash', type: 'recovery' })
 

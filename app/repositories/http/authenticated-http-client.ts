@@ -19,11 +19,17 @@ export interface AuthenticatedHttpClientOptions {
 }
 
 const encodedUnsafePathCharacter = /%(?:0[0-9a-f]|1[0-9a-f]|7f|2f|5c)/i
-const controlCharacter = /[\u0000-\u001f\u007f]/
 const maximumPathDecodingPasses = 4
 const strictApiErrorBodySchema = apiErrorBodySchema.extend({
   error: apiErrorBodySchema.shape.error.strict(),
 }).strict()
+
+function hasControlCharacter(value: string): boolean {
+  return [...value].some((character) => {
+    const code = character.charCodeAt(0)
+    return code <= 0x1f || code === 0x7f
+  })
+}
 
 function clientError(
   kind: ClientErrorKind,
@@ -57,7 +63,7 @@ function decodeApiPath(pathname: string): string | null {
     }
 
     if (nextPathname === decodedPathname) {
-      return controlCharacter.test(decodedPathname)
+      return hasControlCharacter(decodedPathname)
         || decodedPathname.includes('\\')
         || decodedPathname.startsWith('/api//')
         ? null
@@ -80,7 +86,7 @@ function isInternalApiUrl(value: string): boolean {
   if (!value.startsWith('/api/')
     || value.startsWith('/api//')
     || value.includes('\\')
-    || controlCharacter.test(value)
+    || hasControlCharacter(value)
     || encodedUnsafePathCharacter.test(value)) {
     return false
   }

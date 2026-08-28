@@ -1,7 +1,7 @@
 import type { z } from 'zod'
 import { ClientError } from '../../errors/client-error'
 import { mapSupabaseAuthError } from '../../errors/auth-error-mapper'
-import { signInInputSchema, type AuthEmailFlow } from '../../../shared/schemas/auth'
+import type { signInInputSchema, AuthEmailFlow } from '../../../shared/schemas/auth'
 
 export type SignInInput = z.infer<typeof signInInputSchema>
 

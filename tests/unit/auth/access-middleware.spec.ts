@@ -1,10 +1,4 @@
-import { describe, expect, it } from 'vitest'
-import { vi } from 'vitest'
-
-vi.hoisted(() => {
-  vi.stubGlobal('defineNuxtRouteMiddleware', <T>(middleware: T) => middleware)
-})
-
+import { describe, expect, it, vi } from 'vitest'
 import {
   createAccessNavigationGuard,
   revalidateAccessAfterAuthAction,
@@ -12,6 +6,10 @@ import {
   translateAccessDecision,
 } from '../../../app/middleware/access.global'
 import type { AuthLifecycle } from '../../../app/services/auth/access-policy'
+
+vi.hoisted(() => {
+  vi.stubGlobal('defineNuxtRouteMiddleware', <T>(middleware: T) => middleware)
+})
 
 function resolve(input: {
   path: string
