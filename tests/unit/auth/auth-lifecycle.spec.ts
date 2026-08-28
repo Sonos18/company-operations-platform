@@ -3,9 +3,11 @@ import { createPinia, setActivePinia } from 'pinia'
 
 vi.hoisted(() => {
   vi.stubGlobal('defineNuxtPlugin', <T>(plugin: T) => plugin)
+  vi.stubGlobal('useRuntimeConfig', () => ({ public: { appUrl: 'https://taskovia.example' } }))
 })
 
 import {
+  default as authLifecyclePlugin,
   authLifecyclePluginOptions,
   createAuthLifecycle,
   createAuthRuntime,
@@ -89,6 +91,41 @@ describe('auth lifecycle', () => {
     expect(authRepository.subscribe).toHaveBeenCalledTimes(1)
     expect(runtime.authStore.lifecycle).toBe('anonymous')
     expect(runtime.companyAccessStore).toBeDefined()
+  })
+
+  it('runs the actual post plugin setup against the existing provider repository and provides singleton stores with readiness', async () => {
+    const document = createDocument()
+    const unsubscribe = vi.fn()
+    const authRepository = {
+      getAccessToken: vi.fn(async () => null),
+      subscribe: vi.fn(() => unsubscribe),
+    } as unknown as SupabaseAuthRepository
+    const onUnmount = vi.fn()
+    vi.stubGlobal('document', document)
+
+    const result = authLifecyclePlugin.setup!({
+      $authRepository: authRepository,
+      vueApp: { onUnmount },
+    } as never)
+    const provided = result as { provide: {
+      authStore: { lifecycle: AuthLifecycle }
+      companyAccessStore: object
+      authReady: Promise<void>
+    } }
+    await provided.provide.authReady
+
+    expect(authLifecyclePluginOptions.enforce).toBe('post')
+    expect(authRepository.getAccessToken).toHaveBeenCalledTimes(1)
+    expect(authRepository.subscribe).toHaveBeenCalledTimes(1)
+    expect(document.addEventListener).toHaveBeenCalledTimes(1)
+    expect(provided.provide.authStore.lifecycle).toBe('anonymous')
+    expect(provided.provide.companyAccessStore).toBeDefined()
+    expect(onUnmount).toHaveBeenCalledTimes(1)
+
+    const cleanup = onUnmount.mock.calls[0]?.[0] as () => void
+    cleanup()
+    expect(unsubscribe).toHaveBeenCalledTimes(1)
+    expect(document.removeEventListener).toHaveBeenCalledTimes(1)
   })
 
   it('registers one auth subscription and visibility listener, then removes both during cleanup', async () => {

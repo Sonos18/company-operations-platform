@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { vi } from '@nuxt/ui/locale'
+import { revalidateAccessAfterAuthAction } from './middleware/access.global'
 
 const nuxtApp = useNuxtApp()
 const authStore = import.meta.client ? nuxtApp.$authStore : null
+const route = useRoute()
 const lifecycle = computed(() => authStore?.lifecycle ?? 'bootstrapping')
 const isBootstrapping = computed(() => lifecycle.value === 'idle' || lifecycle.value === 'bootstrapping')
 const isConnectionError = computed(() => lifecycle.value === 'connection_error')
@@ -14,6 +16,9 @@ async function retryConnection(): Promise<void> {
   catch {
     // The store keeps the fail-closed connection state and its safe error details.
   }
+  finally {
+    await revalidateAccessAfterAuthAction(lifecycle.value, () => reloadNuxtApp({ path: route.fullPath, force: true }))
+  }
 }
 
 async function signOut(): Promise<void> {
@@ -22,6 +27,9 @@ async function signOut(): Promise<void> {
   }
   catch {
     // Sign-out clears local application state even if the provider call fails.
+  }
+  finally {
+    await revalidateAccessAfterAuthAction(lifecycle.value, () => reloadNuxtApp({ path: route.fullPath, force: true }))
   }
 }
 </script>

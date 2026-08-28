@@ -146,18 +146,17 @@ export default defineNuxtPlugin({
       document,
     })
 
-    ignoreLifecycleInitialization(lifecycle.start())
+    // This promise is intentionally fulfilled after the store has left its transient bootstrap state,
+    // including connection failures, so global middleware can make a final policy decision.
+    const authReady = lifecycle.start().catch(() => {})
     nuxtApp.vueApp.onUnmount(lifecycle.cleanup)
 
     return {
       provide: {
         authStore: runtime.authStore,
         companyAccessStore: runtime.companyAccessStore,
+        authReady,
       },
     }
   },
 })
-
-function ignoreLifecycleInitialization(initialization: Promise<void>): void {
-  void initialization.catch(() => {})
-}

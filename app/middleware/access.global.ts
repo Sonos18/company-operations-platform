@@ -14,10 +14,15 @@ export interface AccessMiddlewareStores {
 }
 
 type AccessRoute = Pick<RouteLocationNormalizedLoaded, 'path' | 'fullPath' | 'query' | 'meta'>
+const accessStatePaths = new Set(['/select-company', '/no-access', '/forbidden'])
+
+function policyPath(route: AccessRoute): string {
+  return accessStatePaths.has(route.path) ? route.path : route.fullPath
+}
 
 export function resolveAccessMiddlewareDecision(route: AccessRoute, stores: AccessMiddlewareStores): AccessDecision {
   return resolveAccessNavigation({
-    path: route.fullPath,
+    path: policyPath(route),
     lifecycle: stores.lifecycle,
     authMode: route.meta.authMode,
     requiresCompany: route.meta.requiresCompany,
@@ -42,14 +47,46 @@ export function translateAccessDecision<NavigateResult, AbortResult>(
   return undefined
 }
 
-export default defineNuxtRouteMiddleware((to) => {
+export function createAccessNavigationGuard<NavigateResult, AbortResult>(options: {
+  authReady: Promise<void>
+  getStores: () => AccessMiddlewareStores
+  navigateTo: (to: string) => NavigateResult
+  abortNavigation: () => AbortResult
+}) {
+  return async (route: AccessRoute): Promise<NavigateResult | AbortResult | undefined> => {
+    const initialStores = options.getStores()
+    if (initialStores.lifecycle === 'idle' || initialStores.lifecycle === 'bootstrapping') {
+      await options.authReady
+    }
+
+    return translateAccessDecision(
+      resolveAccessMiddlewareDecision(route, options.getStores()),
+      options,
+    )
+  }
+}
+
+export async function revalidateAccessAfterAuthAction(
+  lifecycle: AuthLifecycle,
+  reload: () => void | Promise<void>,
+): Promise<void> {
+  if (lifecycle !== 'authenticated' && lifecycle !== 'anonymous') return
+  await reload()
+}
+
+export default defineNuxtRouteMiddleware(async (to) => {
   const nuxtApp = useNuxtApp()
-  const decision = resolveAccessMiddlewareDecision(to, {
-    lifecycle: nuxtApp.$authStore.lifecycle,
-    companies: nuxtApp.$companyAccessStore.companies,
-    activeCompanyId: nuxtApp.$companyAccessStore.activeCompanyId,
-    permissions: nuxtApp.$companyAccessStore.permissions,
+  const guard = createAccessNavigationGuard({
+    authReady: nuxtApp.$authReady,
+    getStores: () => ({
+      lifecycle: nuxtApp.$authStore.lifecycle,
+      companies: nuxtApp.$companyAccessStore.companies,
+      activeCompanyId: nuxtApp.$companyAccessStore.activeCompanyId,
+      permissions: nuxtApp.$companyAccessStore.permissions,
+    }),
+    navigateTo,
+    abortNavigation,
   })
 
-  return translateAccessDecision(decision, { navigateTo, abortNavigation })
+  return guard(to)
 })
