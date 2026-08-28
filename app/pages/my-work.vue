@@ -2,6 +2,8 @@
 import TaskGroup from '../components/tasks/TaskGroup.vue'
 import type { ProjectTask } from '../features/tasks/task.types'
 
+definePageMeta({ requiredPermission: 'task.read_assigned' })
+
 const repositories = useRepositories()
 const busyTaskId = ref<string | null>(null)
 const announcement = ref('')

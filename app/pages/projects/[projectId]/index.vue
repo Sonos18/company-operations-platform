@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import ProjectJourneyCarousel from '../../../components/journey/ProjectJourneyCarousel.vue'
 
+definePageMeta({ requiredPermission: 'project.read' })
+
 const route = useRoute()
 const repositories = useRepositories()
 const projectId = computed(() => String(route.params.projectId))

@@ -2,6 +2,8 @@
 import EmployeeTable from '../../components/employees/EmployeeTable.vue'
 import type { EmployeeSummary } from '../../features/employees/employee.types'
 
+definePageMeta({ requiredAnyPermissions: ['employee.read_directory', 'employee.read_all'] })
+
 const repositories = useRepositories()
 const search = ref('')
 const selectedDepartment = ref('all')

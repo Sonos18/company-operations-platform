@@ -1,16 +1,34 @@
 <script setup lang="ts">
-defineProps<{
+import type { CompanyAccess } from '../../../shared/schemas/session'
+
+const props = defineProps<{
   productName: string
   productMark: string
   companyName: string
+  userEmail: string | null
+  companies: readonly CompanyAccess[]
+  activeCompanyId: string | null
+  signingOut: boolean
   collapsed: boolean
 }>()
 
 const emit = defineEmits<{
   toggle: []
+  selectCompany: [companyId: string]
+  signOut: []
 }>()
 
 const { resetting, resetPrototype } = usePrototypeReset()
+const displayValue = computed(() => props.userEmail ?? '')
+const initials = computed(() => {
+  const parts = displayValue.value.split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+  return parts.slice(0, 2).map(part => part.slice(0, 1).toLocaleUpperCase()).join('') || '?'
+})
+
+function selectCompany(event: Event): void {
+  const companyId = (event.target as HTMLSelectElement).value
+  if (companyId) emit('selectCompany', companyId)
+}
 </script>
 
 <template>
@@ -46,6 +64,12 @@ const { resetting, resetPrototype } = usePrototypeReset()
 
     <div class="app-header__context">
       <span class="prototype-pill"><span /> Prototype nội bộ</span>
+      <label v-if="companies.length > 1" class="company-switcher" for="company-switcher">
+        <span class="sr-only">Chuyển công ty</span>
+        <select id="company-switcher" :value="activeCompanyId ?? undefined" aria-label="Chuyển công ty" @change="selectCompany">
+          <option v-for="company in companies" :key="company.companyId" :value="company.companyId">{{ company.companyName }}</option>
+        </select>
+      </label>
       <button class="reset-action" type="button" :disabled="resetting" aria-label="Khôi phục dữ liệu mẫu" @click="resetPrototype">
         <UIcon name="i-lucide-rotate-ccw" aria-hidden="true" />
         <span>{{ resetting ? 'Đang khôi phục' : 'Khôi phục dữ liệu mẫu' }}</span>
@@ -53,7 +77,11 @@ const { resetting, resetPrototype } = usePrototypeReset()
       <button class="header-action" type="button" aria-label="Mở thông báo">
         <UIcon name="i-lucide-bell" aria-hidden="true" />
       </button>
-      <span class="avatar" aria-label="Người dùng thử">NH</span>
+      <span class="avatar" :aria-label="displayValue || 'Tài khoản đang xác thực'">{{ initials }}</span>
+      <button class="logout-action" type="button" :disabled="signingOut" aria-label="Đăng xuất" @click="emit('signOut')">
+        <UIcon name="i-lucide-log-out" aria-hidden="true" />
+        <span>{{ signingOut ? 'Đang đăng xuất' : 'Đăng xuất' }}</span>
+      </button>
     </div>
   </header>
 </template>
@@ -87,6 +115,7 @@ const { resetting, resetPrototype } = usePrototypeReset()
 
 .brand { gap: 12px; }
 .app-header__context { gap: 10px; }
+.company-switcher select { min-height: 38px; max-width: 180px; padding: 0 28px 0 10px; border: 1px solid #d6d8d1; border-radius: var(--radius-md); background: white; color: var(--forest); font: inherit; font-size: .72rem; font-weight: 700; }
 
 .navigation-toggle {
   display: grid;
@@ -151,6 +180,7 @@ const { resetting, resetPrototype } = usePrototypeReset()
 }
 .header-action { color: var(--forest); cursor: pointer; font-size: 1.05rem; }
 .avatar { border-color: var(--forest); background: var(--forest); color: white; font-size: 0.72rem; font-weight: 750; }
+.logout-action { display: flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 10px; border: 1px solid var(--forest); border-radius: var(--radius-md); background: var(--forest); color: white; cursor: pointer; font: inherit; font-size: .72rem; font-weight: 750; }.logout-action:disabled { cursor: wait; opacity: .65; }.logout-action :deep(svg) { width: 16px; height: 16px; }
 
 .app-header--collapsed {
   padding-inline: 10px;
@@ -175,8 +205,11 @@ const { resetting, resetPrototype } = usePrototypeReset()
   .app-header--collapsed .brand__mark { width: 38px; height: 38px; }
   .brand__copy small,
   .prototype-pill,
-  .reset-action span { display: none; }
+  .reset-action span,
+  .logout-action span { display: none; }
   .reset-action { width: 38px; padding: 0; justify-content: center; }
+  .logout-action { width: 38px; padding: 0; justify-content: center; }
+  .company-switcher select { max-width: 120px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

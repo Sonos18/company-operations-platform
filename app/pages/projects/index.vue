@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import ProjectListCard from '../../components/projects/ProjectListCard.vue'
 
+definePageMeta({ requiredPermission: 'project.read' })
+
 const repositories = useRepositories()
 const { data: projects } = await useAsyncData('project-list', () => repositories.projects.list(), { default: () => [] })
 </script>

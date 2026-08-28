@@ -3,6 +3,8 @@ import DrawingHistory from '../../../../../components/drawings/DrawingHistory.vu
 import DrawingUploadForm from '../../../../../components/drawings/DrawingUploadForm.vue'
 import type { AddDrawingVersionInput } from '../../../../../features/drawings/drawing.types'
 
+definePageMeta({ requiredPermission: 'project.read', requiredAnyPermissions: ['drawing.read'] })
+
 const route = useRoute()
 const repositories = useRepositories()
 const projectId = computed(() => String(route.params.projectId))
