@@ -51,10 +51,6 @@ function asClientError(error: unknown): ClientError {
     })
 }
 
-function isConnectionFailure(error: ClientError): boolean {
-  return error.kind === 'network' || (error.kind === 'api' && error.retryable)
-}
-
 export function createAuthStore(options: AuthStoreOptions) {
   return defineStore('auth', () => {
     const lifecycle = ref<AuthLifecycle>('idle')
@@ -86,6 +82,18 @@ export function createAuthStore(options: AuthStoreOptions) {
     function clearSession(): void {
       user.value = null
       options.companyAccess.clear()
+    }
+
+    function handlePostProviderAppSessionFailure(error: ClientError): void {
+      if (!isPostProviderAppSessionFailure(error)) return
+
+      if (error.code === 'AUTH_INVALID' || error.code === 'AUTH_REQUIRED') {
+        clearSession()
+        lifecycle.value = 'anonymous'
+        return
+      }
+
+      lifecycle.value = 'connection_error'
     }
 
     async function initialize(): Promise<void> {
@@ -126,9 +134,7 @@ export function createAuthStore(options: AuthStoreOptions) {
       }
       catch (error) {
         const clientError = setError('signIn', error)
-        if (isPostProviderAppSessionFailure(clientError) && isConnectionFailure(clientError)) {
-          lifecycle.value = 'connection_error'
-        }
+        handlePostProviderAppSessionFailure(clientError)
         throw clientError
       }
     }
@@ -181,9 +187,7 @@ export function createAuthStore(options: AuthStoreOptions) {
       }
       catch (error) {
         const clientError = setError('completePasswordReset', error)
-        if (isPostProviderAppSessionFailure(clientError) && isConnectionFailure(clientError)) {
-          lifecycle.value = 'connection_error'
-        }
+        handlePostProviderAppSessionFailure(clientError)
         throw clientError
       }
     }

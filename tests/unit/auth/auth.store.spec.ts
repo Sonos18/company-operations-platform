@@ -133,6 +133,32 @@ describe('auth store', () => {
   })
 
   it.each([
+    ['AUTH_INVALID', 'signIn', (store: AuthStore) => store.signIn({ email: 'member@example.com', password: 'current password' })],
+    ['AUTH_INVALID', 'completePasswordReset', (store: AuthStore) => store.completePasswordReset({ password: 'a'.repeat(12), confirmation: 'a'.repeat(12) })],
+    ['AUTH_REQUIRED', 'completePasswordReset', (store: AuthStore) => store.completePasswordReset({ password: 'a'.repeat(12), confirmation: 'a'.repeat(12) })],
+  ] as const)('clears app state and leaves recovery when post-provider %s from %s cannot authorize', async (code, _operation, invoke) => {
+    const invalidContinuation = createPostProviderAppSessionFailure(new ClientError({
+      kind: 'authentication',
+      code,
+      message: 'safe failure',
+      retryable: false,
+    }))
+    const service = createService({
+      signIn: vi.fn(async () => { throw invalidContinuation }),
+      completePasswordReset: vi.fn(async () => { throw invalidContinuation }),
+    })
+    const store = createStore(service)
+    await store.initialize()
+    await store.completeEmailCallback({ token_hash: 'opaque-hash', type: 'recovery' })
+
+    await expect(invoke(store)).rejects.toMatchObject({ code })
+
+    expect(store.lifecycle).toBe('anonymous')
+    expect(store.user).toBeNull()
+    expect(store.operations.completePasswordReset.status).not.toBe('pending')
+  })
+
+  it.each([
     ['signIn', (store: AuthStore) => store.signIn({ email: 'member@example.com', password: 'current password' })],
     ['completePasswordReset', (store: AuthStore) => store.completePasswordReset({ password: 'a'.repeat(12), confirmation: 'a'.repeat(12) })],
   ] as const)('keeps provider mutation network failure as an operation error for %s', async (_operation, invoke) => {
