@@ -85,4 +85,61 @@ describe('auth store', () => {
     expect(JSON.stringify(store.$state)).not.toContain('refresh_token')
     expect(JSON.stringify(store.$state)).not.toContain('provider')
   })
+
+  it('suppresses a reentrant signed-in event emitted during callback verification until password reset completes', async () => {
+    let store: ReturnType<typeof createStore>
+    const service = createService({
+      completeEmailCallback: vi.fn(async () => {
+        await store.handleAuthStateChange({
+          event: 'SIGNED_IN',
+          user: { id: 'user-1', email: 'member@example.com' },
+        })
+      }),
+    })
+    store = createStore(service)
+
+    await store.completeEmailCallback({ token_hash: 'opaque-hash', type: 'recovery' })
+
+    expect(service.refreshAppSession).not.toHaveBeenCalled()
+    expect(store.lifecycle).toBe('recovery')
+    expect(store.user).toBeNull()
+  })
+
+  it('enters connection_error after a successful sign-in cannot load the app session', async () => {
+    const service = createService({ signIn: vi.fn(async () => { throw clientError('NETWORK_ERROR') }) })
+    const store = createStore(service)
+
+    await expect(store.signIn({ email: 'member@example.com', password: 'current password' }))
+      .rejects.toMatchObject({ code: 'NETWORK_ERROR' })
+
+    expect(store.lifecycle).toBe('connection_error')
+    expect(store.operations.signIn.error).toMatchObject({ code: 'NETWORK_ERROR' })
+  })
+
+  it('enters connection_error after a successful password reset cannot load the app session', async () => {
+    const service = createService({ completePasswordReset: vi.fn(async () => { throw clientError('INTERNAL_ERROR') }) })
+    const store = createStore(service)
+
+    await expect(store.completePasswordReset({ password: 'a'.repeat(12), confirmation: 'a'.repeat(12) }))
+      .rejects.toMatchObject({ code: 'INTERNAL_ERROR' })
+
+    expect(store.lifecycle).toBe('connection_error')
+    expect(store.operations.completePasswordReset.error).toMatchObject({ code: 'INTERNAL_ERROR' })
+  })
+
+  it('does not classify validation, authentication, or authorization failures as connection errors', async () => {
+    for (const code of ['VALIDATION_FAILED', 'INVALID_CREDENTIALS', 'PERMISSION_DENIED'] as const) {
+      setActivePinia(createPinia())
+      const service = createService({ signIn: vi.fn(async () => { throw new ClientError({
+        kind: code === 'VALIDATION_FAILED' ? 'validation' : code === 'INVALID_CREDENTIALS' ? 'authentication' : 'authorization',
+        code,
+        message: 'safe failure',
+        retryable: false,
+      }) }) })
+      const store = createStore(service)
+
+      await expect(store.signIn({ email: 'member@example.com', password: 'current password' })).rejects.toMatchObject({ code })
+      expect(store.lifecycle).not.toBe('connection_error')
+    }
+  })
 })

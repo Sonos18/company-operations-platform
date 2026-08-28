@@ -48,6 +48,10 @@ function asClientError(error: unknown): ClientError {
     })
 }
 
+function isConnectionFailure(error: ClientError): boolean {
+  return error.kind === 'network' || (error.kind === 'api' && error.retryable)
+}
+
 export function createAuthStore(options: AuthStoreOptions) {
   return defineStore('auth', () => {
     const lifecycle = ref<AuthLifecycle>('idle')
@@ -118,7 +122,9 @@ export function createAuthStore(options: AuthStoreOptions) {
         setSuccess('signIn')
       }
       catch (error) {
-        throw setError('signIn', error)
+        const clientError = setError('signIn', error)
+        if (isConnectionFailure(clientError)) lifecycle.value = 'connection_error'
+        throw clientError
       }
     }
 
@@ -150,12 +156,14 @@ export function createAuthStore(options: AuthStoreOptions) {
 
     async function completeEmailCallback(input: Parameters<AuthService['completeEmailCallback']>[0]): Promise<void> {
       setPending('completeEmailCallback')
+      const lifecycleBeforeRecovery = lifecycle.value
+      lifecycle.value = 'recovery'
       try {
         await options.service.completeEmailCallback(input)
-        lifecycle.value = 'recovery'
         setSuccess('completeEmailCallback')
       }
       catch (error) {
+        lifecycle.value = lifecycleBeforeRecovery
         throw setError('completeEmailCallback', error)
       }
     }
@@ -167,7 +175,9 @@ export function createAuthStore(options: AuthStoreOptions) {
         setSuccess('completePasswordReset')
       }
       catch (error) {
-        throw setError('completePasswordReset', error)
+        const clientError = setError('completePasswordReset', error)
+        if (isConnectionFailure(clientError)) lifecycle.value = 'connection_error'
+        throw clientError
       }
     }
 

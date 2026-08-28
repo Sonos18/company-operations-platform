@@ -146,22 +146,32 @@ class AuthServiceImpl implements AuthService {
       const safeFirstError = safeError(firstError)
       if (safeFirstError.code !== 'AUTH_INVALID') throw safeFirstError
 
-      await this.options.authRepository.refreshSession()
+      try {
+        await this.options.authRepository.refreshSession()
+      }
+      catch (refreshError) {
+        await this.signOutAfterInvalidSession()
+        throw safeError(refreshError)
+      }
       try {
         return await this.options.sessionRepository.get()
       }
       catch (retryError) {
         const safeRetryError = safeError(retryError)
         if (safeRetryError.code === 'AUTH_INVALID') {
-          try {
-            await this.signOut()
-          }
-          catch {
-            // The invalid app session remains the outward failure even when best-effort sign-out fails.
-          }
+          await this.signOutAfterInvalidSession()
         }
         throw safeRetryError
       }
+    }
+  }
+
+  private async signOutAfterInvalidSession(): Promise<void> {
+    try {
+      await this.signOut()
+    }
+    catch {
+      // The original app-session failure remains the outward failure when best-effort sign-out fails.
     }
   }
 }
