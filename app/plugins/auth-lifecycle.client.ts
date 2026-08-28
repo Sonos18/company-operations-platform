@@ -7,6 +7,7 @@ import { createRecoveryFlowStorage, type RecoveryFlowStorage } from '../services
 import type { AuthLifecycle } from '../services/auth/access-policy'
 import { createAuthStore } from '../stores/auth/auth.store'
 import { createCompanyAccessStore } from '../stores/company/company-access.store'
+import { ClientError } from '../errors/client-error'
 
 const meaningfulAuthEvents = new Set(['SIGNED_IN', 'SIGNED_OUT', 'TOKEN_REFRESHED', 'USER_UPDATED'])
 const recoverySuppressedEvents = new Set(['SIGNED_IN', 'TOKEN_REFRESHED'])
@@ -75,6 +76,7 @@ export function createAuthLifecycle(options: AuthLifecycleOptions) {
   let started = false
   let initialization: Promise<void> | null = null
   let unsubscribe: (() => void) | null = null
+  let visibilityListenerRegistered = false
   let lastVisibleRefreshAt = Number.NEGATIVE_INFINITY
 
   function ignoreFailure(promise: Promise<unknown>): void {
@@ -100,21 +102,66 @@ export function createAuthLifecycle(options: AuthLifecycleOptions) {
     ignoreFailure(options.authStore.refreshAppSession())
   }
 
+  function registrationFailure(): ClientError {
+    return new ClientError({
+      kind: 'network',
+      code: 'NETWORK_ERROR',
+      message: 'Không thể kết nối đến dịch vụ xác thực. Vui lòng thử lại.',
+      retryable: true,
+    })
+  }
+
+  function cleanupRegistrations(): void {
+    const activeUnsubscribe = unsubscribe
+    unsubscribe = null
+
+    if (visibilityListenerRegistered) {
+      visibilityListenerRegistered = false
+      options.document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+    activeUnsubscribe?.()
+  }
+
+  function beginInitialization(resolve: () => void, reject: (error: ClientError) => void): void {
+    try {
+      unsubscribe = options.authRepository.subscribe(onAuthStateChange)
+      options.document.addEventListener('visibilitychange', onVisibilityChange)
+      visibilityListenerRegistered = true
+    }
+    catch {
+      options.authStore.lifecycle = 'connection_error'
+      cleanupRegistrations()
+      started = false
+      reject(registrationFailure())
+      return
+    }
+
+    try {
+      void options.authStore.initialize().then(resolve, reject)
+    }
+    catch {
+      options.authStore.lifecycle = 'connection_error'
+      reject(registrationFailure())
+    }
+  }
+
   return {
     start(): Promise<void> {
       if (initialization) return initialization
 
+      let resolveInitialization!: () => void
+      let rejectInitialization!: (error: ClientError) => void
+      initialization = new Promise<void>((resolve, reject) => {
+        resolveInitialization = resolve
+        rejectInitialization = reject
+      })
       started = true
-      unsubscribe = options.authRepository.subscribe(onAuthStateChange)
-      options.document.addEventListener('visibilitychange', onVisibilityChange)
-      initialization = options.authStore.initialize()
+      beginInitialization(resolveInitialization, rejectInitialization)
       return initialization
     },
     cleanup(): void {
       if (!started) return
-      unsubscribe?.()
-      unsubscribe = null
-      options.document.removeEventListener('visibilitychange', onVisibilityChange)
+      cleanupRegistrations()
       started = false
     },
   }

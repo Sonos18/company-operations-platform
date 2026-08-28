@@ -128,6 +128,79 @@ describe('auth lifecycle', () => {
     expect(document.removeEventListener).toHaveBeenCalledTimes(1)
   })
 
+  it('converts a synchronous subscription failure into one safe fail-closed initialization promise', async () => {
+    const document = createDocument()
+    const authStore = createStore('idle')
+    const authRepository = {
+      subscribe: vi.fn(() => { throw new TypeError('raw provider subscription failure') }),
+    }
+    const lifecycle = createAuthLifecycle({
+      authRepository,
+      authStore,
+      recoveryFlow: { get: () => null },
+      document,
+    })
+
+    const initialization = lifecycle.start()
+
+    expect(lifecycle.start()).toBe(initialization)
+    await expect(initialization).rejects.toMatchObject({ code: 'NETWORK_ERROR' })
+    await expect(initialization).rejects.not.toThrow('raw provider subscription failure')
+    expect(authStore.lifecycle).toBe('connection_error')
+    expect(authStore.initialize).not.toHaveBeenCalled()
+    expect(document.addEventListener).not.toHaveBeenCalled()
+    lifecycle.cleanup()
+    expect(document.removeEventListener).not.toHaveBeenCalled()
+  })
+
+  it('cleans a partially registered subscription exactly once when visibility listener registration throws', async () => {
+    const unsubscribe = vi.fn()
+    const document = createDocument()
+    document.addEventListener.mockImplementation(() => { throw new TypeError('raw visibility listener failure') })
+    const authStore = createStore('idle')
+    const lifecycle = createAuthLifecycle({
+      authRepository: { subscribe: vi.fn(() => unsubscribe) },
+      authStore,
+      recoveryFlow: { get: () => null },
+      document,
+    })
+
+    await expect(lifecycle.start()).rejects.toMatchObject({ code: 'NETWORK_ERROR' })
+    lifecycle.cleanup()
+
+    expect(authStore.lifecycle).toBe('connection_error')
+    expect(unsubscribe).toHaveBeenCalledTimes(1)
+    expect(document.removeEventListener).not.toHaveBeenCalled()
+  })
+
+  it('keeps actual plugin setup available with a settled safe readiness promise after synchronous subscription failure', async () => {
+    const document = createDocument()
+    const authRepository = {
+      getAccessToken: vi.fn(async () => null),
+      subscribe: vi.fn(() => { throw new TypeError('raw provider subscription failure') }),
+    } as unknown as SupabaseAuthRepository
+    const onUnmount = vi.fn()
+    vi.stubGlobal('document', document)
+
+    let result: unknown
+    expect(() => {
+      result = authLifecyclePlugin.setup!({
+        $authRepository: authRepository,
+        vueApp: { onUnmount },
+      } as never)
+    }).not.toThrow()
+    const provided = result as { provide: {
+      authStore: { lifecycle: AuthLifecycle }
+      authReady: Promise<void>
+    } }
+    await expect(provided.provide.authReady).resolves.toBeUndefined()
+
+    expect(provided.provide.authStore.lifecycle).toBe('connection_error')
+    expect(authRepository.subscribe).toHaveBeenCalledTimes(1)
+    expect(document.addEventListener).not.toHaveBeenCalled()
+    expect(onUnmount).toHaveBeenCalledTimes(1)
+  })
+
   it('registers one auth subscription and visibility listener, then removes both during cleanup', async () => {
     const repository = createRepository()
     const document = createDocument()
