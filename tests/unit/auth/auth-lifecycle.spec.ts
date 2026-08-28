@@ -204,6 +204,32 @@ describe('auth lifecycle', () => {
     expect(recoveryFlow.clear).not.toHaveBeenCalled()
   })
 
+  it('clears a recovery marker when rejected initialization has already confirmed an anonymous terminal lifecycle', async () => {
+    const repository = createRepository()
+    const document = createDocument()
+    const authStore = createStore('bootstrapping')
+    const authInvalid = new Error('auth invalid after provider refresh')
+    authStore.initialize.mockImplementation(async () => {
+      authStore.lifecycle = 'anonymous'
+      throw authInvalid
+    })
+    const recoveryFlow = createRecoveryFlow({ type: 'recovery', timestamp: 1 })
+    const lifecycle = createAuthLifecycle({
+      authRepository: repository.repository,
+      authStore,
+      recoveryFlow,
+      document,
+    })
+
+    await expect(lifecycle.start()).rejects.toBe(authInvalid)
+
+    expect(authStore.lifecycle).toBe('anonymous')
+    expect(recoveryFlow.clear).toHaveBeenCalledTimes(1)
+    lifecycle.cleanup()
+    expect(repository.unsubscribe).toHaveBeenCalledTimes(1)
+    expect(document.removeEventListener).toHaveBeenCalledTimes(1)
+  })
+
   it('converts a synchronous subscription failure into one safe fail-closed initialization promise', async () => {
     const document = createDocument()
     const authStore = createStore('idle')

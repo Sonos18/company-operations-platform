@@ -122,7 +122,17 @@ export function createAuthLifecycle(options: AuthLifecycleOptions) {
     activeUnsubscribe?.()
   }
 
-  function beginInitialization(resolve: () => void, reject: (error: ClientError) => void): void {
+  function finalizeRecoveryLifecycle(): void {
+    const recoveryMarker = options.recoveryFlow.get()
+    if (options.authStore.lifecycle === 'authenticated' && recoveryMarker) {
+      options.authStore.lifecycle = 'recovery'
+    }
+    else if (options.authStore.lifecycle === 'anonymous' && recoveryMarker) {
+      options.recoveryFlow.clear()
+    }
+  }
+
+  function beginInitialization(resolve: () => void, reject: (error?: unknown) => void): void {
     try {
       unsubscribe = options.authRepository.subscribe(onAuthStateChange)
       options.document.addEventListener('visibilitychange', onVisibilityChange)
@@ -137,19 +147,20 @@ export function createAuthLifecycle(options: AuthLifecycleOptions) {
     }
 
     try {
-      void options.authStore.initialize().then(() => {
-        const recoveryMarker = options.recoveryFlow.get()
-        if (options.authStore.lifecycle === 'authenticated' && recoveryMarker) {
-          options.authStore.lifecycle = 'recovery'
-        }
-        else if (options.authStore.lifecycle === 'anonymous' && recoveryMarker) {
-          options.recoveryFlow.clear()
-        }
-        resolve()
-      }, reject)
+      void options.authStore.initialize().then(
+        () => {
+          finalizeRecoveryLifecycle()
+          resolve()
+        },
+        (error) => {
+          finalizeRecoveryLifecycle()
+          reject(error)
+        },
+      )
     }
     catch {
       options.authStore.lifecycle = 'connection_error'
+      finalizeRecoveryLifecycle()
       reject(registrationFailure())
     }
   }
@@ -159,7 +170,7 @@ export function createAuthLifecycle(options: AuthLifecycleOptions) {
       if (initialization) return initialization
 
       let resolveInitialization!: () => void
-      let rejectInitialization!: (error: ClientError) => void
+      let rejectInitialization!: (error?: unknown) => void
       initialization = new Promise<void>((resolve, reject) => {
         resolveInitialization = resolve
         rejectInitialization = reject
