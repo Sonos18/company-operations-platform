@@ -2,7 +2,10 @@ import { reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { ClientError } from '../../errors/client-error'
 import type { AuthLifecycle } from '../../services/auth/access-policy'
-import type { AuthService } from '../../services/auth/auth.service'
+import {
+  isPostProviderAppSessionFailure,
+  type AuthService,
+} from '../../services/auth/auth.service'
 import type { AuthLifecycleEvent } from '../../repositories/auth/supabase-auth.repository'
 import type { CompanyAccessStore } from '../company/company-access.store'
 
@@ -123,7 +126,9 @@ export function createAuthStore(options: AuthStoreOptions) {
       }
       catch (error) {
         const clientError = setError('signIn', error)
-        if (isConnectionFailure(clientError)) lifecycle.value = 'connection_error'
+        if (isPostProviderAppSessionFailure(clientError) && isConnectionFailure(clientError)) {
+          lifecycle.value = 'connection_error'
+        }
         throw clientError
       }
     }
@@ -176,7 +181,9 @@ export function createAuthStore(options: AuthStoreOptions) {
       }
       catch (error) {
         const clientError = setError('completePasswordReset', error)
-        if (isConnectionFailure(clientError)) lifecycle.value = 'connection_error'
+        if (isPostProviderAppSessionFailure(clientError) && isConnectionFailure(clientError)) {
+          lifecycle.value = 'connection_error'
+        }
         throw clientError
       }
     }

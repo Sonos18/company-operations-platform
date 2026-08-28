@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ClientError } from '../../../app/errors/client-error'
-import { createAuthService } from '../../../app/services/auth/auth.service'
+import {
+  createAuthService,
+  isPostProviderAppSessionFailure,
+} from '../../../app/services/auth/auth.service'
 import { createRecoveryFlowStorage } from '../../../app/services/auth/recovery-flow.storage'
 import type { SessionResponse } from '../../../app/repositories/http/http-session-repository'
 
@@ -91,9 +94,11 @@ describe('AuthService', () => {
     dependencies.sessionRepository.get.mockRejectedValue(error('NETWORK_ERROR', 'network'))
     const service = createAuthService({ ...dependencies, appUrl: 'https://taskovia.example' })
 
-    await expect(service.signIn({ email: 'member@example.com', password: 'current password' }))
-      .rejects.toMatchObject({ code: 'NETWORK_ERROR' })
+    const failure = await service.signIn({ email: 'member@example.com', password: 'current password' })
+      .catch(error => error)
 
+    expect(failure).toMatchObject({ code: 'NETWORK_ERROR' })
+    expect(isPostProviderAppSessionFailure(failure)).toBe(true)
     expect(dependencies.authRepository.signIn).toHaveBeenCalledTimes(1)
     expect(dependencies.authRepository.signOut).not.toHaveBeenCalled()
   })
@@ -104,9 +109,11 @@ describe('AuthService', () => {
     dependencies.sessionRepository.get.mockRejectedValue(error('INTERNAL_ERROR', 'api'))
     const service = createAuthService({ ...dependencies, appUrl: 'https://taskovia.example' })
 
-    await expect(service.completePasswordReset({ password: 'a'.repeat(12), confirmation: 'a'.repeat(12) }))
-      .rejects.toMatchObject({ code: 'INTERNAL_ERROR' })
+    const failure = await service.completePasswordReset({ password: 'a'.repeat(12), confirmation: 'a'.repeat(12) })
+      .catch(error => error)
 
+    expect(failure).toMatchObject({ code: 'INTERNAL_ERROR' })
+    expect(isPostProviderAppSessionFailure(failure)).toBe(true)
     expect(dependencies.authRepository.updatePassword).toHaveBeenCalledTimes(1)
     expect(dependencies.authRepository.signOut).not.toHaveBeenCalled()
   })
@@ -125,13 +132,34 @@ describe('AuthService', () => {
     expect(dependencies.authRepository.signOut).toHaveBeenCalledTimes(1)
   })
 
-  it('signs out when the one permitted refresh fails after an invalid app-session read', async () => {
+  it.each([
+    error('NETWORK_ERROR', 'network'),
+    new ClientError({
+      kind: 'api',
+      code: 'INTERNAL_ERROR',
+      message: 'safe message',
+      retryable: true,
+    }),
+  ])('preserves the provider session when the one permitted refresh has a non-auth failure', async refreshFailure => {
     const dependencies = createDependencies()
     dependencies.sessionRepository.get.mockRejectedValue(error('AUTH_INVALID'))
-    dependencies.authRepository.refreshSession.mockRejectedValue(error('NETWORK_ERROR', 'network'))
+    dependencies.authRepository.refreshSession.mockRejectedValue(refreshFailure)
     const service = createAuthService({ ...dependencies, appUrl: 'https://taskovia.example' })
 
-    await expect(service.refreshAppSession()).rejects.toMatchObject({ code: 'NETWORK_ERROR' })
+    await expect(service.refreshAppSession()).rejects.toMatchObject({ code: refreshFailure.code })
+
+    expect(dependencies.authRepository.refreshSession).toHaveBeenCalledTimes(1)
+    expect(dependencies.sessionRepository.get).toHaveBeenCalledTimes(1)
+    expect(dependencies.authRepository.signOut).not.toHaveBeenCalled()
+  })
+
+  it.each(['AUTH_INVALID', 'AUTH_REQUIRED'] as const)('signs out when the one permitted refresh confirms %s', async code => {
+    const dependencies = createDependencies()
+    dependencies.sessionRepository.get.mockRejectedValue(error('AUTH_INVALID'))
+    dependencies.authRepository.refreshSession.mockRejectedValue(error(code))
+    const service = createAuthService({ ...dependencies, appUrl: 'https://taskovia.example' })
+
+    await expect(service.refreshAppSession()).rejects.toMatchObject({ code })
 
     expect(dependencies.authRepository.refreshSession).toHaveBeenCalledTimes(1)
     expect(dependencies.sessionRepository.get).toHaveBeenCalledTimes(1)

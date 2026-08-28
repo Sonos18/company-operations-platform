@@ -32,6 +32,29 @@ export interface AuthServiceOptions {
   appUrl: string
 }
 
+export class PostProviderAppSessionFailure extends ClientError {
+  readonly origin = 'post_provider_app_session' as const
+
+  constructor(error: ClientError) {
+    super({
+      kind: error.kind,
+      code: error.code,
+      message: error.message,
+      fieldErrors: error.fieldErrors,
+      requestId: error.requestId,
+      retryable: error.retryable,
+    })
+  }
+}
+
+export function createPostProviderAppSessionFailure(error: ClientError): PostProviderAppSessionFailure {
+  return new PostProviderAppSessionFailure(error)
+}
+
+export function isPostProviderAppSessionFailure(error: unknown): error is PostProviderAppSessionFailure {
+  return error instanceof PostProviderAppSessionFailure
+}
+
 function validationError(): ClientError {
   return new ClientError({
     kind: 'validation',
@@ -79,7 +102,7 @@ class AuthServiceImpl implements AuthService {
   async signIn(input: SignInInput): Promise<SessionResponse> {
     const parsed = parseOrThrow(signInInputSchema, input)
     await this.options.authRepository.signIn(parsed)
-    return this.readAppSession()
+    return this.readPostProviderAppSession()
   }
 
   async requestPasswordReset(input: ForgotPasswordInput): Promise<void> {
@@ -122,7 +145,7 @@ class AuthServiceImpl implements AuthService {
 
     await this.options.authRepository.updatePassword(parsed.password)
     this.options.recoveryFlow.clear()
-    return this.readAppSession()
+    return this.readPostProviderAppSession()
   }
 
   async refreshAppSession(): Promise<SessionResponse> {
@@ -150,8 +173,11 @@ class AuthServiceImpl implements AuthService {
         await this.options.authRepository.refreshSession()
       }
       catch (refreshError) {
-        await this.signOutAfterInvalidSession()
-        throw safeError(refreshError)
+        const safeRefreshError = safeError(refreshError)
+        if (safeRefreshError.code === 'AUTH_INVALID' || safeRefreshError.code === 'AUTH_REQUIRED') {
+          await this.signOutAfterInvalidSession()
+        }
+        throw safeRefreshError
       }
       try {
         return await this.options.sessionRepository.get()
@@ -172,6 +198,15 @@ class AuthServiceImpl implements AuthService {
     }
     catch {
       // The original app-session failure remains the outward failure when best-effort sign-out fails.
+    }
+  }
+
+  private async readPostProviderAppSession(): Promise<SessionResponse> {
+    try {
+      return await this.readAppSession()
+    }
+    catch (error) {
+      throw createPostProviderAppSessionFailure(safeError(error))
     }
   }
 }

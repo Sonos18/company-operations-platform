@@ -4,7 +4,10 @@ import { ClientError } from '../../../app/errors/client-error'
 import { createAuthStore } from '../../../app/stores/auth/auth.store'
 import { createCompanyAccessStore } from '../../../app/stores/company/company-access.store'
 import { createActiveCompanyStorage } from '../../../app/services/auth/active-company.storage'
-import type { AuthService } from '../../../app/services/auth/auth.service'
+import {
+  createPostProviderAppSessionFailure,
+  type AuthService,
+} from '../../../app/services/auth/auth.service'
 import type { SessionResponse } from '../../../app/repositories/http/http-session-repository'
 
 const session: SessionResponse = {
@@ -37,6 +40,8 @@ function createStore(service: AuthService) {
   const companyAccess = useCompanyAccessStore()
   return createAuthStore({ service, companyAccess })()
 }
+
+type AuthStore = ReturnType<typeof createStore>
 
 describe('auth store', () => {
   beforeEach(() => setActivePinia(createPinia()))
@@ -106,7 +111,7 @@ describe('auth store', () => {
   })
 
   it('enters connection_error after a successful sign-in cannot load the app session', async () => {
-    const service = createService({ signIn: vi.fn(async () => { throw clientError('NETWORK_ERROR') }) })
+    const service = createService({ signIn: vi.fn(async () => { throw createPostProviderAppSessionFailure(clientError('NETWORK_ERROR')) }) })
     const store = createStore(service)
 
     await expect(store.signIn({ email: 'member@example.com', password: 'current password' }))
@@ -117,7 +122,7 @@ describe('auth store', () => {
   })
 
   it('enters connection_error after a successful password reset cannot load the app session', async () => {
-    const service = createService({ completePasswordReset: vi.fn(async () => { throw clientError('INTERNAL_ERROR') }) })
+    const service = createService({ completePasswordReset: vi.fn(async () => { throw createPostProviderAppSessionFailure(clientError('INTERNAL_ERROR')) }) })
     const store = createStore(service)
 
     await expect(store.completePasswordReset({ password: 'a'.repeat(12), confirmation: 'a'.repeat(12) }))
@@ -125,6 +130,21 @@ describe('auth store', () => {
 
     expect(store.lifecycle).toBe('connection_error')
     expect(store.operations.completePasswordReset.error).toMatchObject({ code: 'INTERNAL_ERROR' })
+  })
+
+  it.each([
+    ['signIn', (store: AuthStore) => store.signIn({ email: 'member@example.com', password: 'current password' })],
+    ['completePasswordReset', (store: AuthStore) => store.completePasswordReset({ password: 'a'.repeat(12), confirmation: 'a'.repeat(12) })],
+  ] as const)('keeps provider mutation network failure as an operation error for %s', async (_operation, invoke) => {
+    const service = createService({
+      signIn: vi.fn(async () => { throw clientError('NETWORK_ERROR') }),
+      completePasswordReset: vi.fn(async () => { throw clientError('NETWORK_ERROR') }),
+    })
+    const store = createStore(service)
+
+    await expect(invoke(store)).rejects.toMatchObject({ code: 'NETWORK_ERROR' })
+
+    expect(store.lifecycle).not.toBe('connection_error')
   })
 
   it('does not classify validation, authentication, or authorization failures as connection errors', async () => {
