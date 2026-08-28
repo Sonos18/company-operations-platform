@@ -117,21 +117,45 @@ test('always acknowledges a valid forgot-password request generically', async ({
   await expect(page.getByRole('status')).toHaveText('Nếu email tồn tại trong hệ thống, hướng dẫn đặt lại mật khẩu đã được gửi.')
 })
 
-test('scrubs callback tokens before opening reset password and preserves recovery through reload', async ({ page }) => {
+test('scrubs callback tokens and denies a recovery session after closing and reopening the tab', async ({ page }) => {
   await page.goto(`/auth/callback?${new URLSearchParams({ token_hash: recoveryTokenHash, type: 'recovery' })}`)
   await expect(page).toHaveURL(/\/reset-password$/)
   await expect(page.getByRole('heading', { name: 'Đặt lại mật khẩu' })).toBeVisible()
   expect(page.url()).not.toContain(recoveryTokenHash)
+  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(authState.recoveryAccessToken)
+  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(authState.recoveryRefreshToken)
   expect(authState.verifyRequests).toHaveLength(1)
   expect(authState.verifyRequests[0]).toEqual(expect.objectContaining({ token_hash: recoveryTokenHash, type: 'recovery' }))
 
-  await page.reload()
-  await expect(page).toHaveURL(/\/reset-password$/)
-  await expect(page.getByRole('heading', { name: 'Đặt lại mật khẩu' })).toBeVisible()
   await page.getByLabel('Mật khẩu mới', { exact: true }).fill(shortPassword)
   await page.getByLabel('Xác nhận mật khẩu mới', { exact: true }).fill(shortPassword)
   await page.getByRole('button', { name: 'Cập nhật mật khẩu' }).click()
   await expect(page.getByText('Mật khẩu phải có từ 12 đến 72 ký tự và không chỉ gồm khoảng trắng.')).toBeVisible()
+
+  const context = page.context()
+  await page.close()
+  const reopenedPage = await context.newPage()
+  await installAuthRoutes(reopenedPage, authState)
+  await reopenedPage.goto('/projects')
+  await expect(reopenedPage).toHaveURL(/\/login/)
+
+  await expect(reopenedPage.getByRole('heading', { name: 'Đăng nhập' })).toBeVisible()
+})
+
+test('denies an expired recovery marker and requires a new link', async ({ page }) => {
+  await page.goto(`/auth/callback?${new URLSearchParams({ token_hash: recoveryTokenHash, type: 'recovery' })}`)
+  await expect(page).toHaveURL(/\/reset-password$/)
+
+  await page.evaluate(() => {
+    sessionStorage.setItem('taskovia:recovery-flow', JSON.stringify({
+      type: 'recovery',
+      timestamp: Date.now() - 16 * 60 * 1_000,
+    }))
+  })
+  await page.reload()
+  await expect(page).toHaveURL(/\/login/)
+  await page.goto('/projects')
+  await expect(page).toHaveURL(/\/login/)
 })
 
 test('updates the password from an accepted recovery callback', async ({ page }) => {
@@ -143,6 +167,8 @@ test('updates the password from an accepted recovery callback', async ({ page })
   await page.getByLabel('Mật khẩu mới', { exact: true }).fill(password)
   await page.getByLabel('Xác nhận mật khẩu mới', { exact: true }).fill(password)
   await page.getByRole('button', { name: 'Cập nhật mật khẩu' }).click()
+  await expect(page).toHaveURL(/\/projects$/)
+  await page.reload()
   await expect(page).toHaveURL(/\/projects$/)
 })
 
@@ -180,6 +206,15 @@ test('requires company selection, switches the header company, and preserves the
   await expect(page.getByTestId('app-header')).toContainText(alternateCompany.companyName)
 
   await page.reload()
+  await expect(page).toHaveURL(/\/projects$/)
+  await expect(page.getByRole('combobox', { name: 'Chuyển công ty' })).toHaveValue(alternateCompany.companyId)
+  await expect(page.getByTestId('app-header')).toContainText(alternateCompany.companyName)
+
+  await page.getByRole('button', { name: 'Đăng xuất' }).click()
+  await expect(page).toHaveURL(/\/login$/)
+  await page.getByLabel('Email').fill('anh@example.com')
+  await page.getByLabel('Mật khẩu', { exact: true }).fill(authState.password)
+  await page.getByRole('button', { name: 'Đăng nhập' }).click()
   await expect(page).toHaveURL(/\/projects$/)
   await expect(page.getByRole('combobox', { name: 'Chuyển công ty' })).toHaveValue(alternateCompany.companyId)
   await expect(page.getByTestId('app-header')).toContainText(alternateCompany.companyName)

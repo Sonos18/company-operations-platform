@@ -81,7 +81,7 @@ export function createAuthStore(options: AuthStoreOptions) {
 
     function clearSession(): void {
       user.value = null
-      options.companyAccess.clear()
+      options.companyAccess.clearRuntime()
     }
 
     function handlePostProviderAppSessionFailure(error: ClientError): void {

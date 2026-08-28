@@ -16,6 +16,7 @@ export interface AuthenticatedHttpClient {
 export interface AuthenticatedHttpClientOptions {
   getAccessToken: () => string | null | Promise<string | null>
   fetch?: FetchLike
+  onAuthorizationError?: (error: ClientError) => void | Promise<void>
 }
 
 const encodedUnsafePathCharacter = /%(?:0[0-9a-f]|1[0-9a-f]|7f|2f|5c)/i
@@ -206,7 +207,19 @@ export function createAuthenticatedHttpClient(options: AuthenticatedHttpClientOp
       if (!response.ok) {
         const parsedError = strictApiErrorBodySchema.safeParse(responseBody)
         if (!parsedError.success) throw malformedResponse()
-        throw apiFailure(response.status, parsedError.data.error.code, parsedError.data.error.requestId)
+        const failure = apiFailure(response.status, parsedError.data.error.code, parsedError.data.error.requestId)
+        const shouldRevalidate = input.url.split(/[?#]/u, 1)[0] !== '/api/auth/session'
+          && (failure.code === 'COMPANY_FORBIDDEN' || failure.code === 'PERMISSION_DENIED')
+
+        if (shouldRevalidate && options.onAuthorizationError) {
+          try {
+            await options.onAuthorizationError(failure)
+          }
+          catch {
+            // The original request error is authoritative and must be preserved.
+          }
+        }
+        throw failure
       }
 
       const parsedSuccess = input.schema.safeParse(responseBody)

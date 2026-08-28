@@ -184,4 +184,44 @@ describe('authenticated HTTP client', () => {
     expect(error).toMatchObject({ code: 'NETWORK_ERROR', kind: 'network', retryable: true })
     expect((error as Error).message).not.toContain('credential')
   })
+
+  it.each(['COMPANY_FORBIDDEN', 'PERMISSION_DENIED'] as const)(
+    'revalidates once for %s, never retries the mutation, and preserves the original error',
+    async code => {
+      const response = apiErrorResponse(code, 'authorization-request-id')
+      const transport = vi.fn(async () => new Response(response.body, { status: 403, headers: response.headers }))
+      const onAuthorizationError = vi.fn(async () => {})
+      const client = createAuthenticatedHttpClient({
+        getAccessToken: () => 'token',
+        fetch: transport,
+        onAuthorizationError,
+      })
+
+      const failure = await client.request({
+        url: '/api/tasks',
+        method: 'POST',
+        body: { state: 'closed' },
+        schema: valueSchema,
+      }).catch(error => error)
+
+      expect(failure).toMatchObject({ code, requestId: 'authorization-request-id' })
+      expect(transport).toHaveBeenCalledTimes(1)
+      expect(onAuthorizationError).toHaveBeenCalledTimes(1)
+      expect(onAuthorizationError).toHaveBeenCalledWith(failure)
+    },
+  )
+
+  it('rethrows the original authorization error when revalidation itself fails', async () => {
+    const response = apiErrorResponse('PERMISSION_DENIED', 'original-request-id')
+    const client = createAuthenticatedHttpClient({
+      getAccessToken: () => 'token',
+      fetch: async () => new Response(response.body, { status: 403, headers: response.headers }),
+      onAuthorizationError: async () => { throw new Error('refresh failure must not replace the request error') },
+    })
+
+    await expect(client.request({ url: '/api/tasks', schema: valueSchema })).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED',
+      requestId: 'original-request-id',
+    })
+  })
 })

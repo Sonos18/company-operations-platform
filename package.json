@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "nuxt dev --dotenv .env.local",
     "build": "nuxt build",
+    "postinstall": "nuxt prepare",
     "typecheck": "nuxt typecheck",
     "lint": "eslint .",
     "test:unit": "vitest run",

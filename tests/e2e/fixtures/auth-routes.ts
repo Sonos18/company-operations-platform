@@ -19,6 +19,8 @@ export interface AuthTestState {
   password: string
   accessToken: string
   refreshToken: string
+  recoveryAccessToken: string
+  recoveryRefreshToken: string
   user: { id: string, email: string }
   sessionCompanies: AuthTestCompany[]
   sessionFailure: 'none' | 'network' | 'server'
@@ -38,11 +40,18 @@ export function createCompany(overrides: Partial<AuthTestCompany> = {}): AuthTes
 }
 
 export function createAuthTestState(overrides: Partial<AuthTestState> = {}): AuthTestState {
+  const jwt = () => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
+    return `${encode({ alg: 'none', typ: 'JWT' })}.${encode({ exp: Math.floor(Date.now() / 1_000) + 3_600, sub: randomUUID() })}.${randomUUID()}`
+  }
+
   return {
     email: 'auth-fixture@taskovia.test',
     password: randomUUID(),
-    accessToken: randomUUID(),
+    accessToken: jwt(),
     refreshToken: randomUUID(),
+    recoveryAccessToken: jwt(),
+    recoveryRefreshToken: randomUUID(),
     user: {
       id: '11111111-1111-4111-8111-111111111111',
       email: 'auth-fixture@taskovia.test',
@@ -54,10 +63,10 @@ export function createAuthTestState(overrides: Partial<AuthTestState> = {}): Aut
   }
 }
 
-function sessionPayload(state: AuthTestState) {
+function sessionPayload(state: AuthTestState, recovery = false) {
   return {
-    access_token: state.accessToken,
-    refresh_token: state.refreshToken,
+    access_token: recovery ? state.recoveryAccessToken : state.accessToken,
+    refresh_token: recovery ? state.recoveryRefreshToken : state.refreshToken,
     token_type: 'bearer',
     expires_in: 3600,
     user: state.user,
@@ -90,7 +99,7 @@ export async function installAuthRoutes(page: Page, state: AuthTestState): Promi
 
     if (url.pathname.endsWith('/verify')) {
       state.verifyRequests.push(request.postDataJSON() as { token_hash?: unknown, type?: unknown })
-      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(sessionPayload(state)) })
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(sessionPayload(state, true)) })
       return
     }
 

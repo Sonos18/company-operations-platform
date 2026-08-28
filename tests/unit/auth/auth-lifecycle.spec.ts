@@ -7,6 +7,7 @@ import authLifecyclePlugin, {
 } from '../../../app/plugins/auth-lifecycle.client'
 import type { AuthLifecycle } from '../../../app/services/auth/access-policy'
 import type { AuthLifecycleEvent, SupabaseAuthRepository } from '../../../app/repositories/auth/supabase-auth.repository'
+import { z } from 'zod'
 
 vi.hoisted(() => {
   vi.stubGlobal('defineNuxtPlugin', <T>(plugin: T) => plugin)
@@ -96,6 +97,60 @@ describe('auth lifecycle', () => {
     expect(authRepository.subscribe).toHaveBeenCalledTimes(1)
     expect(runtime.authStore.lifecycle).toBe('anonymous')
     expect(runtime.companyAccessStore).toBeDefined()
+  })
+
+  it('refreshes authorization state once and rethrows the original business request error without retrying it', async () => {
+    const authRepository = {
+      getAccessToken: vi.fn(async () => 'access-token'),
+      refreshSession: vi.fn(async () => {}),
+      signOut: vi.fn(async () => {}),
+      clearRecoverySession: vi.fn(async () => {}),
+      subscribe: vi.fn(() => () => {}),
+    } as unknown as SupabaseAuthRepository
+    const requests: string[] = []
+    const runtime = createAuthRuntime({
+      authRepository,
+      appUrl: 'https://taskovia.example',
+      localStorage: createStorage(),
+      sessionStorage: createStorage(),
+      fetch: async (input) => {
+        const url = String(input)
+        requests.push(url)
+        if (url === '/api/auth/session') {
+          return new Response(JSON.stringify({
+            user: { id: 'user-1', email: 'member@example.com' },
+            companies: [{
+              tenantId: '10000000-0000-4000-8000-000000000001',
+              companyId: '10000000-0000-4000-8000-000000000002',
+              companyCode: 'VQH',
+              companyName: 'Việt Quốc Huy',
+              roles: ['company_admin'],
+              permissions: ['project.read'],
+            }],
+          }), { status: 200 })
+        }
+        return new Response(JSON.stringify({
+          error: {
+            code: 'COMPANY_FORBIDDEN',
+            message: 'raw server message',
+            requestId: 'original-request-id',
+            details: {},
+          },
+        }), { status: 403 })
+      },
+    })
+
+    const failure = await runtime.authenticatedHttpClient.request({
+      url: '/api/tasks',
+      method: 'POST',
+      body: { state: 'closed' },
+      schema: z.object({ value: z.number() }),
+    }).catch(error => error)
+
+    expect(failure).toMatchObject({ code: 'COMPANY_FORBIDDEN', requestId: 'original-request-id' })
+    expect(requests).toEqual(['/api/tasks', '/api/auth/session'])
+    expect(runtime.authStore.lifecycle).toBe('authenticated')
+    expect(runtime.companyAccessStore.permissions).toContain('project.read')
   })
 
   it('runs the actual post plugin setup against the existing provider repository and provides singleton stores with readiness', async () => {

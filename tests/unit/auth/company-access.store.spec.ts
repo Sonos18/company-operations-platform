@@ -13,6 +13,20 @@ const firstCompany = {
   permissions: ['project.read', 'employee.read_directory'] as const,
 }
 
+const secondCompany = {
+  ...firstCompany,
+  companyId: '10000000-0000-4000-8000-000000000003',
+  companyCode: 'OTHER',
+  companyName: 'Other company',
+}
+
+const thirdCompany = {
+  ...firstCompany,
+  companyId: '10000000-0000-4000-8000-000000000004',
+  companyCode: 'THIRD',
+  companyName: 'Third company',
+}
+
 function createStorage() {
   const values = new Map<string, string>()
   return {
@@ -42,13 +56,13 @@ describe('company access store', () => {
     expect(store.applySession({ ...base, companies: [firstCompany] })).toBe(firstCompany.companyId)
     expect(store.activeCompany).toEqual(firstCompany)
 
-    store.clear()
+    store.clearRuntime()
     expect(store.applySession({ ...base, companies: [firstCompany, {
       ...firstCompany,
       companyId: '10000000-0000-4000-8000-000000000003',
       companyCode: 'OTHER',
-    }] })).toBeNull()
-    expect(store.activeCompanyId).toBeNull()
+    }] })).toBe(firstCompany.companyId)
+    expect(store.activeCompanyId).toBe(firstCompany.companyId)
   })
 
   it('restores a valid stored selection and exposes permission helpers without persisting roles or permissions', () => {
@@ -63,5 +77,62 @@ describe('company access store', () => {
     expect(store.hasAnyPermission(['employee.read_all', 'employee.read_directory'])).toBe(true)
     expect([...fakeStorage.values.values()].join(' ')).not.toContain('company_admin')
     expect([...fakeStorage.values.values()].join(' ')).not.toContain('employee.read_directory')
+  })
+
+  it('preserves a valid selected company through runtime clear and restores it from the next session', () => {
+    const fakeStorage = createStorage()
+    const store = createCompanyAccessStore({
+      activeCompanyStorage: createActiveCompanyStorage({ storage: fakeStorage.storage }),
+    })()
+    const session: SessionResponse = {
+      user: { id: 'user-1', email: 'member@example.com' },
+      companies: [firstCompany, secondCompany],
+    }
+
+    store.applySession(session)
+    expect(store.selectCompany(secondCompany.companyId)).toBe(true)
+
+    store.clearRuntime()
+    expect(store.activeCompanyId).toBeNull()
+
+    expect(store.applySession(session)).toBe(secondCompany.companyId)
+    expect(store.activeCompanyId).toBe(secondCompany.companyId)
+  })
+
+  it('keeps selections isolated when the active session switches users', () => {
+    const fakeStorage = createStorage()
+    const store = createCompanyAccessStore({
+      activeCompanyStorage: createActiveCompanyStorage({ storage: fakeStorage.storage }),
+    })()
+    const userASession: SessionResponse = {
+      user: { id: 'user-a', email: 'a@example.com' },
+      companies: [firstCompany, secondCompany],
+    }
+    const userBSession: SessionResponse = {
+      user: { id: 'user-b', email: 'b@example.com' },
+      companies: [firstCompany, secondCompany],
+    }
+
+    store.applySession(userASession)
+    store.selectCompany(secondCompany.companyId)
+    store.applySession(userBSession)
+    store.selectCompany(firstCompany.companyId)
+
+    expect(store.applySession(userASession)).toBe(secondCompany.companyId)
+    expect(store.applySession(userBSession)).toBe(firstCompany.companyId)
+  })
+
+  it('removes a stored selection when the current session no longer grants that company', () => {
+    const fakeStorage = createStorage()
+    const store = createCompanyAccessStore({
+      activeCompanyStorage: createActiveCompanyStorage({ storage: fakeStorage.storage }),
+    })()
+    const user = { id: 'user-1', email: 'member@example.com' }
+
+    store.applySession({ user, companies: [firstCompany, secondCompany] })
+    store.selectCompany(secondCompany.companyId)
+
+    expect(store.applySession({ user, companies: [firstCompany, thirdCompany] })).toBeNull()
+    expect(fakeStorage.values.has('taskovia:active-company:user-1')).toBe(false)
   })
 })

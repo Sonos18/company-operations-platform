@@ -49,10 +49,13 @@ export function createAuthRuntime(options: AuthRuntimeOptions) {
   })
   const companyAccessStore = useCompanyAccessStore()
   const recoveryFlow = createRecoveryFlowStorage({ storage: options.sessionStorage })
-  const sessionRepository = createHttpSessionRepository(createAuthenticatedHttpClient({
+  let refreshAuthorizationState: (() => Promise<void>) | null = null
+  const authenticatedHttpClient = createAuthenticatedHttpClient({
     getAccessToken: () => options.authRepository.getAccessToken(),
     fetch: options.fetch,
-  }))
+    onAuthorizationError: async () => refreshAuthorizationState?.(),
+  })
+  const sessionRepository = createHttpSessionRepository(authenticatedHttpClient)
   const useAuthStore = createAuthStore({
     service: createAuthService({
       authRepository: options.authRepository,
@@ -62,11 +65,21 @@ export function createAuthRuntime(options: AuthRuntimeOptions) {
     }),
     companyAccess: companyAccessStore,
   })
+  const authStore = useAuthStore()
+  let authorizationRefreshFlight: Promise<void> | null = null
+  refreshAuthorizationState = () => {
+    if (authorizationRefreshFlight) return authorizationRefreshFlight
+    authorizationRefreshFlight = authStore.refreshAppSession().finally(() => {
+      authorizationRefreshFlight = null
+    })
+    return authorizationRefreshFlight
+  }
 
   return {
-    authStore: useAuthStore(),
+    authStore,
     companyAccessStore,
     recoveryFlow,
+    authenticatedHttpClient,
   }
 }
 
@@ -222,6 +235,7 @@ export default defineNuxtPlugin({
       provide: {
         authStore: runtime.authStore,
         companyAccessStore: runtime.companyAccessStore,
+        authenticatedHttpClient: runtime.authenticatedHttpClient,
         authReady,
       },
     }

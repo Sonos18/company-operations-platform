@@ -26,6 +26,8 @@ function createClient(overrides: Partial<NarrowSupabaseAuthClient['auth']> = {})
     reset: [] as Array<{ email: string; redirectTo?: string }>,
     verify: [] as Array<{ token_hash: string; type: string }>,
     update: [] as Array<{ password: string }>,
+    setSession: [] as Array<{ access_token: string; refresh_token: string }>,
+    signOutScopes: [] as Array<'global' | 'local' | 'others' | undefined>,
     unsubscribe: 0,
   }
   let listener: ((event: string, session: {
@@ -38,6 +40,7 @@ function createClient(overrides: Partial<NarrowSupabaseAuthClient['auth']> = {})
     data: {
       session: {
         access_token: 'provider-access-token',
+        refresh_token: 'provider-refresh-token',
         user: { id: 'user-1', email: 'user@example.com' },
       },
     },
@@ -50,8 +53,9 @@ function createClient(overrides: Partial<NarrowSupabaseAuthClient['auth']> = {})
         calls.signIn.push(input)
         return sessionSuccess()
       },
-      signOut: () => {
+      signOut: (options) => {
         calls.signOut += 1
+        calls.signOutScopes.push(options?.scope)
         return success()
       },
       getSession: () => {
@@ -73,6 +77,10 @@ function createClient(overrides: Partial<NarrowSupabaseAuthClient['auth']> = {})
       updateUser: input => {
         calls.update.push(input)
         return success()
+      },
+      setSession: input => {
+        calls.setSession.push(input)
+        return sessionSuccess()
       },
       onAuthStateChange: callback => {
         listener = callback
@@ -163,6 +171,50 @@ describe('SupabaseAuthRepository', () => {
 
     expect(fake.calls.signOut).toBe(1)
     expect(fake.calls.update).toEqual([{ password: 'a replacement passphrase' }])
+  })
+
+  it('isolates recovery verification and promotes it only after password update', async () => {
+    const persistent = createClient()
+    const recovery = createClient({
+      getSession: () => Promise.resolve({
+        data: {
+          session: {
+            access_token: 'recovery-access-token',
+            refresh_token: 'recovery-refresh-token',
+            user: { id: 'user-1', email: 'user@example.com' },
+          },
+        },
+        error: null,
+      }),
+    })
+    const repository = createSupabaseAuthRepository(persistent.client, recovery.client)
+
+    await repository.verifyEmailTokenHash({ tokenHash: 'opaque-token-hash', type: 'recovery' })
+    await expect(repository.getAccessToken()).resolves.toBeNull()
+    await expect(repository.getRecoveryAccessToken()).resolves.toBe('recovery-access-token')
+    await repository.updatePassword('a replacement passphrase')
+    await repository.promoteRecoverySession()
+
+    expect(recovery.calls.verify).toEqual([{ token_hash: 'opaque-token-hash', type: 'recovery' }])
+    expect(persistent.calls.verify).toEqual([])
+    expect(recovery.calls.update).toEqual([{ password: 'a replacement passphrase' }])
+    expect(persistent.calls.update).toEqual([])
+    expect(persistent.calls.setSession).toEqual([{
+      access_token: 'recovery-access-token',
+      refresh_token: 'recovery-refresh-token',
+    }])
+    expect(recovery.calls.signOutScopes).toEqual(['local'])
+  })
+
+  it('clears only the isolated recovery client without signing out the persistent client', async () => {
+    const persistent = createClient()
+    const recovery = createClient()
+    const repository = createSupabaseAuthRepository(persistent.client, recovery.client)
+
+    await repository.clearRecoverySession()
+
+    expect(recovery.calls.signOutScopes).toEqual(['local'])
+    expect(persistent.calls.signOut).toBe(0)
   })
 
   it('normalizes lifecycle events and returns a synchronous unsubscribe function', () => {

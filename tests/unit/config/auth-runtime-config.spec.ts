@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 const root = resolve(import.meta.dirname, '../../..')
 const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
   dependencies: Record<string, string>
+  scripts: Record<string, string>
 }
 
 function parseEnv(source: string): Record<string, string> {
@@ -30,6 +31,7 @@ describe('Taskovia auth runtime configuration', () => {
       pinia: '4.0.3',
       '@pinia/nuxt': '1.0.2',
     })
+    expect(packageJson.scripts.postinstall).toBe('nuxt prepare')
     expect(nuxtConfig.modules).toContain('@pinia/nuxt')
     expect(nuxtConfig.pinia).toMatchObject({
       storesDirs: ['./app/stores/**'],

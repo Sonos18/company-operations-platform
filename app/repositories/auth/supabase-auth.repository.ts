@@ -17,10 +17,16 @@ type AuthIdentity = {
 
 type AuthSession = {
   access_token: string
+  refresh_token?: string
   user: AuthIdentity
 }
 
 type AuthStateSession = AuthSession & {
+  refresh_token: string
+}
+
+type RecoverySessionTokens = {
+  access_token: string
   refresh_token: string
 }
 
@@ -56,12 +62,13 @@ export interface AuthLifecycleEvent {
 export interface NarrowSupabaseAuthClient {
   auth: {
     signInWithPassword(input: { email: string; password: string }): Promise<ProviderResult>
-    signOut(): Promise<ProviderResult>
+    signOut(options?: { scope?: 'global' | 'local' | 'others' }): Promise<ProviderResult>
     getSession(): Promise<ProviderResult<{ session: AuthSession | null }>>
     refreshSession(): Promise<ProviderResult>
     resetPasswordForEmail(email: string, options: { redirectTo?: string }): Promise<ProviderResult>
     verifyOtp(input: { token_hash: string; type: AuthEmailFlow }): Promise<ProviderResult>
     updateUser(input: { password: string }): Promise<ProviderResult>
+    setSession(input: RecoverySessionTokens): Promise<ProviderResult>
     onAuthStateChange(listener: (event: string, session: AuthStateSession | null) => void): {
       data: { subscription: { unsubscribe(): void } }
     }
@@ -75,12 +82,18 @@ export interface SupabaseAuthRepository {
   refreshSession(): Promise<void>
   requestPasswordReset(input: { email: string; redirectTo: string }): Promise<void>
   verifyEmailTokenHash(input: { tokenHash: string; type: AuthEmailFlow }): Promise<void>
+  getRecoveryAccessToken(): Promise<string | null>
   updatePassword(password: string): Promise<void>
+  promoteRecoverySession(): Promise<void>
+  clearRecoverySession(): Promise<void>
   subscribe(listener: (event: AuthLifecycleEvent) => void): () => void
 }
 
 class SupabaseAuthRepositoryImpl implements SupabaseAuthRepository {
-  constructor(private readonly client: NarrowSupabaseAuthClient) {}
+  constructor(
+    private readonly client: NarrowSupabaseAuthClient,
+    private readonly recoveryClient: NarrowSupabaseAuthClient,
+  ) {}
 
   async signIn(input: SignInInput): Promise<void> {
     await this.runSessionOperation(() => this.client.auth.signInWithPassword(input))
@@ -118,14 +131,43 @@ class SupabaseAuthRepositoryImpl implements SupabaseAuthRepository {
   }
 
   async verifyEmailTokenHash(input: { tokenHash: string; type: AuthEmailFlow }): Promise<void> {
-    await this.runSessionOperation(() => this.client.auth.verifyOtp({
+    await this.runSessionOperation(() => this.recoveryClient.auth.verifyOtp({
       token_hash: input.tokenHash,
       type: input.type,
     }))
   }
 
+  async getRecoveryAccessToken(): Promise<string | null> {
+    const session = await this.readSession(this.recoveryClient)
+    return session?.access_token ?? null
+  }
+
   async updatePassword(password: string): Promise<void> {
-    await this.runVoid(() => this.client.auth.updateUser({ password }))
+    await this.runVoid(() => this.recoveryClient.auth.updateUser({ password }))
+  }
+
+  async promoteRecoverySession(): Promise<void> {
+    const session = await this.readSession(this.recoveryClient)
+    if (!session || typeof session.refresh_token !== 'string' || !session.refresh_token) {
+      throw this.malformedResponse()
+    }
+    const refreshToken = session.refresh_token
+
+    await this.runSessionOperation(() => this.client.auth.setSession({
+      access_token: session.access_token,
+      refresh_token: refreshToken,
+    }))
+
+    try {
+      await this.clearRecoverySession()
+    }
+    catch {
+      // Promotion already succeeded. The isolated in-memory client is discarded on unload.
+    }
+  }
+
+  async clearRecoverySession(): Promise<void> {
+    await this.runVoid(() => this.recoveryClient.auth.signOut({ scope: 'local' }))
   }
 
   subscribe(listener: (event: AuthLifecycleEvent) => void): () => void {
@@ -171,6 +213,21 @@ class SupabaseAuthRepositoryImpl implements SupabaseAuthRepository {
     }
   }
 
+  private async readSession(client: NarrowSupabaseAuthClient): Promise<AuthSession | null> {
+    try {
+      const { data, error } = await client.auth.getSession()
+      if (error) throw mapSupabaseAuthError(error)
+      if (!hasSessionField(data) || (data.session !== null && !hasValidSession(data))) {
+        throw this.malformedResponse()
+      }
+
+      return data.session
+    }
+    catch (error) {
+      throw this.toClientError(error)
+    }
+  }
+
   private malformedResponse(): ClientError {
     return new ClientError({
       kind: 'api',
@@ -185,6 +242,9 @@ class SupabaseAuthRepositoryImpl implements SupabaseAuthRepository {
   }
 }
 
-export function createSupabaseAuthRepository(client: NarrowSupabaseAuthClient): SupabaseAuthRepository {
-  return new SupabaseAuthRepositoryImpl(client)
+export function createSupabaseAuthRepository(
+  client: NarrowSupabaseAuthClient,
+  recoveryClient: NarrowSupabaseAuthClient = client,
+): SupabaseAuthRepository {
+  return new SupabaseAuthRepositoryImpl(client, recoveryClient)
 }

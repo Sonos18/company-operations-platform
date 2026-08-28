@@ -138,12 +138,19 @@ class AuthServiceImpl implements AuthService {
 
   async completePasswordReset(input: ResetPasswordInput): Promise<SessionResponse> {
     const parsed = parseOrThrow(resetPasswordInputSchema, input)
-    if (!this.options.recoveryFlow.get()) throw authRequiredError()
+    if (!this.options.recoveryFlow.get()) {
+      await this.clearInvalidRecoverySession()
+      throw authRequiredError()
+    }
 
-    const accessToken = await this.options.authRepository.getAccessToken()
-    if (!accessToken) throw authRequiredError()
+    const accessToken = await this.options.authRepository.getRecoveryAccessToken()
+    if (!accessToken) {
+      await this.clearInvalidRecoverySession()
+      throw authRequiredError()
+    }
 
     await this.options.authRepository.updatePassword(parsed.password)
+    await this.options.authRepository.promoteRecoverySession()
     this.options.recoveryFlow.clear()
     return this.readPostProviderAppSession()
   }
@@ -157,8 +164,24 @@ class AuthServiceImpl implements AuthService {
       await this.options.authRepository.signOut()
     }
     finally {
+      try {
+        await this.options.authRepository.clearRecoverySession()
+      }
+      catch {
+        // Persistent sign-out result remains authoritative; recovery storage is memory-only.
+      }
       this.options.recoveryFlow.clear()
     }
+  }
+
+  private async clearInvalidRecoverySession(): Promise<void> {
+    try {
+      await this.options.authRepository.clearRecoverySession()
+    }
+    catch {
+      // A missing/expired marker is fail-closed even if provider cleanup is unavailable.
+    }
+    this.options.recoveryFlow.clear()
   }
 
   private async readAppSession(): Promise<SessionResponse> {

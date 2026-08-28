@@ -24,7 +24,10 @@ function createDependencies() {
     refreshSession: vi.fn(async () => {}),
     requestPasswordReset: vi.fn(async () => {}),
     verifyEmailTokenHash: vi.fn(async () => {}),
+    getRecoveryAccessToken: vi.fn(async () => 'recovery-access-token'),
     updatePassword: vi.fn(async () => {}),
+    promoteRecoverySession: vi.fn(async () => {}),
+    clearRecoverySession: vi.fn(async () => {}),
     subscribe: vi.fn(() => () => {}),
   }
   const sessionRepository = { get: vi.fn(async () => session) }
@@ -76,7 +79,38 @@ describe('AuthService', () => {
       .resolves.toEqual(session)
 
     expect(dependencies.authRepository.updatePassword).toHaveBeenCalledTimes(1)
+    expect(dependencies.authRepository.promoteRecoverySession).toHaveBeenCalledTimes(1)
     expect(dependencies.recoveryFlow.get()).toBeNull()
+  })
+
+  it('uses only the isolated recovery session until password update succeeds', async () => {
+    const dependencies = createDependencies()
+    dependencies.authRepository.getAccessToken.mockResolvedValue(null)
+    const service = createAuthService({ ...dependencies, appUrl: 'https://taskovia.example' })
+
+    await service.completeEmailCallback({ token_hash: 'opaque-hash', type: 'recovery' })
+    await expect(service.restoreAppSession()).resolves.toBeNull()
+    await service.completePasswordReset({ password: 'a'.repeat(12), confirmation: 'a'.repeat(12) })
+
+    expect(dependencies.authRepository.verifyEmailTokenHash).toHaveBeenCalledTimes(1)
+    expect(dependencies.authRepository.getRecoveryAccessToken).toHaveBeenCalledTimes(1)
+    expect(dependencies.authRepository.updatePassword).toHaveBeenCalledTimes(1)
+    expect(dependencies.authRepository.promoteRecoverySession).toHaveBeenCalledTimes(1)
+    expect(dependencies.sessionRepository.get).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears an isolated recovery session when its marker is missing or expired', async () => {
+    const dependencies = createDependencies()
+    dependencies.recoveryFlow.begin('recovery')
+    dependencies.recoveryFlow.clear()
+    const service = createAuthService({ ...dependencies, appUrl: 'https://taskovia.example' })
+
+    await expect(service.completePasswordReset({ password: 'a'.repeat(12), confirmation: 'a'.repeat(12) }))
+      .rejects.toMatchObject({ code: 'AUTH_REQUIRED' })
+
+    expect(dependencies.authRepository.clearRecoverySession).toHaveBeenCalledTimes(1)
+    expect(dependencies.authRepository.updatePassword).not.toHaveBeenCalled()
+    expect(dependencies.authRepository.promoteRecoverySession).not.toHaveBeenCalled()
   })
 
   it('preserves the provider session when app-session retrieval has a network failure', async () => {

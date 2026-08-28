@@ -45,7 +45,7 @@ Invited users sign in at `/login` with email/password. A Supabase session alone 
 - One active company is selected automatically.
 - Multiple companies route to `/select-company`; only a revalidated company ID is persisted.
 - Permission denial routes to `/forbidden` and does not sign the user out.
-- Network or retryable API failure routes to `/connection-error`, preserves the provider session, and offers Retry or Logout.
+- Network or retryable API failure activates the global connection-error state, preserves the provider session, and offers Retry or Logout.
 
 Logout clears the Supabase session plus Taskovia user/company runtime state, then revalidates navigation to `/login`. Do not use browser storage deletion as an operator logout substitute.
 

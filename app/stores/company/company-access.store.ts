@@ -19,7 +19,8 @@ export interface CompanyAccessStore {
   selectCompany(companyId: string): boolean
   hasPermission(permission: PermissionCode): boolean
   hasAnyPermission(permissions: readonly PermissionCode[]): boolean
-  clear(): void
+  clearRuntime(): void
+  clearPersistedPreference(): void
 }
 
 export function createCompanyAccessStore(options: CompanyAccessStoreOptions) {
@@ -41,10 +42,6 @@ export function createCompanyAccessStore(options: CompanyAccessStoreOptions) {
     }
 
     function applySession(session: SessionResponse): string | null {
-      if (currentUserId.value && currentUserId.value !== session.user.id) {
-        options.activeCompanyStorage.clear(currentUserId.value)
-      }
-
       currentUserId.value = session.user.id
       companies.value = session.companies
       const companyIds = session.companies.map(company => company.companyId)
@@ -74,11 +71,14 @@ export function createCompanyAccessStore(options: CompanyAccessStoreOptions) {
       return requiredPermissions.some(permission => hasPermission(permission))
     }
 
-    function clear(): void {
-      if (currentUserId.value) options.activeCompanyStorage.clear(currentUserId.value)
+    function clearRuntime(): void {
       companies.value = []
       activeCompanyId.value = null
       currentUserId.value = null
+    }
+
+    function clearPersistedPreference(): void {
+      if (currentUserId.value) options.activeCompanyStorage.clear(currentUserId.value)
     }
 
     return {
@@ -91,7 +91,8 @@ export function createCompanyAccessStore(options: CompanyAccessStoreOptions) {
       selectCompany,
       hasPermission,
       hasAnyPermission,
-      clear,
+      clearRuntime,
+      clearPersistedPreference,
     }
   })
 }
