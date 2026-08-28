@@ -22,6 +22,8 @@ The CLI is linked to Cloud DEV; không dùng project DEV hoặc link hiện tạ
 
 Every `db:dev:*` linked command starts with the canonical DEV target guard. It fails closed unless the tracked DEV ref `gtgljlnhwvhqdnwrfdfj`, ignored CLI link state, and the local public Supabase URL agree; it never prints the URL or key.
 
+The Auth v1 callback, invite/reset operations, and current Cloud DEV plan limitations are documented in [Taskovia Auth flow operations](../runbooks/auth-flow.md). Cloud DEV Auth settings are a separate authorization boundary from database migrations. Never use `db:dev:push` to infer permission to alter Auth, SMTP, billing, or Production.
+
 ## Deliver a Cloud DEV database migration
 
 ```powershell

@@ -38,6 +38,8 @@ Mở `http://127.0.0.1:3000`. Dữ liệu mẫu nằm trong browser local storag
 
 Daily development uses Supabase Cloud DEV and does not require Docker. Taskovia owns the one canonical Supabase Cloud DEV database. VQH is its first tenant/company; there is no separate VQH database. `.env.local` points to Cloud DEV; see [Cloud DEV backend development](docs/development/backend-local.md) for the daily database workflow and [Supabase Cloud and Vercel Production](docs/deployment/supabase-cloud-vercel.md) for the DEV/Production boundary. `pnpm db:dev:test` is an optional Docker-backed pgTAP check, not part of the daily no-Docker workflow or `pnpm verify:dev`.
 
+Luồng Auth v1 đã hỗ trợ đăng nhập invite-only, phiên bền vững, quên/đặt lại mật khẩu, chọn công ty, điều hướng theo permission và logout. Quy trình vận hành, callback, biến môi trường, lỗi an toàn và giới hạn cấu hình email hiện tại của Cloud DEV nằm tại [Taskovia Auth flow operations](docs/runbooks/auth-flow.md).
+
 ## Môi trường Supabase
 
 - Development app: Supabase Cloud DEV through `.env.local`.
@@ -70,16 +72,16 @@ Nút **Khôi phục dữ liệu mẫu** trên header xóa mọi thay đổi cụ
 
 Đã có danh sách dự án, dashboard hành trình, không gian chi tiết giai đoạn, lịch sử bản vẽ, ảnh mục tiêu so với hiện trạng, công việc xuyên dự án, mobile layout và reset dữ liệu.
 
-Đã có nền tảng backend local: migration Supabase cho tenant/company membership, RLS và pgTAP; cùng Nitro API cho health, bearer authentication, session và company context. Frontend hiện vẫn dùng mock repositories. Chưa triển khai tích hợp frontend với dữ liệu production, UI đăng nhập/session, object storage, thông báo, đồng bộ realtime hoặc APK. Form upload hiện chỉ mô phỏng việc lưu URL và metadata; không nhập hồ sơ, hợp đồng, ảnh hay bản vẽ thật.
+Đã có nền tảng backend Supabase cho tenant/company membership, RLS và pgTAP; Nitro API cho health, Bearer authentication, session/company context; cùng UI Auth/session và permission-aware shell. Các business repository vẫn dùng dữ liệu mẫu trong browser, chưa tích hợp dữ liệu production, object storage, thông báo, đồng bộ realtime hoặc APK. Form upload hiện chỉ mô phỏng việc lưu URL và metadata; không nhập hồ sơ, hợp đồng, ảnh hay bản vẽ thật.
 
 ## Đường chuyển sang production
 
 ```text
 Mock repositories now       → HTTP repositories later
-Fixed VQH CompanyContext    → Authenticated membership context later
+Authenticated company context → Employee profile linking later
 VQH CompanyConfig           → Tenant/company configuration service later
 Metadata URL simulation     → Supabase Storage signed upload first
-Mock user                   → Supabase Auth later
+Supabase Auth identity      → Employee identity display later
 Advisory gate               → Configurable blocking gate later
 ```
 
