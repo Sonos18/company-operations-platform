@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { resetPasswordInputSchema } from '../../../shared/schemas/auth'
 import { ClientError } from '../../errors/client-error'
+import PasswordField from './PasswordField.vue'
 
 const authStore = useNuxtApp().$authStore
 const password = ref('')

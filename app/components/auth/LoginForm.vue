@@ -2,6 +2,7 @@
 import { signInInputSchema } from '../../../shared/schemas/auth'
 import { sanitizeInternalRedirect } from '../../../shared/utils/app-url'
 import { ClientError } from '../../errors/client-error'
+import PasswordField from './PasswordField.vue'
 
 const authStore = useNuxtApp().$authStore
 const route = useRoute()
@@ -21,13 +22,13 @@ function validate(): boolean {
   if (parsed.success) return true
 
   fieldErrors.value = {}
+  if (!email.value.trim()) fieldErrors.value.email = 'Email là bắt buộc.'
+  if (!password.value) fieldErrors.value.password = 'Mật khẩu là bắt buộc.'
   for (const issue of parsed.error.issues) {
     const field = issue.path[0]
-    if (field === 'email') fieldErrors.value.email = 'Email hợp lệ là bắt buộc.'
-    if (field === 'password') fieldErrors.value.password = 'Mật khẩu là bắt buộc.'
+    if (field === 'email' && !fieldErrors.value.email) fieldErrors.value.email = 'Email hợp lệ là bắt buộc.'
+    if (field === 'password' && !fieldErrors.value.password) fieldErrors.value.password = 'Mật khẩu là bắt buộc.'
   }
-  if (!fieldErrors.value.email && !email.value.trim()) fieldErrors.value.email = 'Email là bắt buộc.'
-  if (!fieldErrors.value.password && !password.value) fieldErrors.value.password = 'Mật khẩu là bắt buộc.'
   focusFirstInvalidField()
   return false
 }

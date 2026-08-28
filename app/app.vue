@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { vi } from '@nuxt/ui/locale'
 import { revalidateAccessAfterAuthAction } from './middleware/access.global'
+import ConnectionErrorState from './components/auth/ConnectionErrorState.vue'
 
 const nuxtApp = useNuxtApp()
 const authStore = import.meta.client ? nuxtApp.$authStore : null

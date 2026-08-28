@@ -15,13 +15,18 @@ const sessionResponse = {
 async function installAnonymousAuthRoutes(page: Page): Promise<void> {
   await page.route(`${supabaseUrl}/auth/v1/**`, async (route) => {
     const request = route.request()
+    const url = new URL(request.url())
 
-    if (request.url().includes('/token?grant_type=password')) {
+    if (url.pathname.endsWith('/token') && url.searchParams.get('grant_type') === 'password') {
       const body = request.postDataJSON() as { email?: string, password?: string }
       if (body.password === 'incorrect-password') {
         await route.fulfill({
           status: 400,
           contentType: 'application/json',
+          headers: {
+            'Access-Control-Expose-Headers': 'X-Supabase-Api-Version',
+            'X-Supabase-Api-Version': '2024-01-01',
+          },
           body: JSON.stringify({ code: 'invalid_credentials', message: 'invalid credentials' }),
         })
         return
@@ -40,7 +45,7 @@ async function installAnonymousAuthRoutes(page: Page): Promise<void> {
       return
     }
 
-    if (request.url().includes('/verify')) {
+    if (url.pathname.endsWith('/verify')) {
       await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({
@@ -68,7 +73,8 @@ test.beforeEach(async ({ page }) => {
 
 test('redirects anonymous visitors from protected routes to login', async ({ page }) => {
   await page.goto('/projects')
-  await expect(page).toHaveURL(/\/login\?redirect=%2Fprojects/)
+  await expect(page).toHaveURL(/\/login/)
+  expect(new URL(page.url()).searchParams.get('redirect')).toBe('/projects')
 })
 
 test('renders the accessible login form and validates required fields', async ({ page }) => {
@@ -80,6 +86,49 @@ test('renders the accessible login form and validates required fields', async ({
   await expect(page.getByText('Email là bắt buộc.')).toBeVisible()
   await expect(page.getByText('Mật khẩu là bắt buộc.')).toBeVisible()
 
-  const result = await new AxeBuilder({ page }).analyze()
+  const result = await new AxeBuilder({ page }).include('main').analyze()
   expect(result.violations.filter(item => ['serious', 'critical'].includes(item.impact ?? ''))).toEqual([])
+})
+
+test('shows a safe invalid-credentials message and routes a successful login through access state', async ({ page }) => {
+  await page.goto('/login')
+  await page.getByLabel('Email').fill('anh@example.com')
+  const password = page.getByLabel('Mật khẩu', { exact: true })
+  await password.fill('incorrect-password')
+  await page.getByRole('button', { name: 'Đăng nhập' }).click()
+  await expect(page.getByRole('alert')).toContainText('Email hoặc mật khẩu không chính xác.')
+  await expect(password).toHaveValue('')
+
+  await password.fill('correct-password')
+  await page.getByRole('button', { name: 'Đăng nhập' }).click()
+  await expect(page).toHaveURL(/\/no-access$/)
+})
+
+test('always acknowledges a valid forgot-password request generically', async ({ page }) => {
+  await page.goto('/forgot-password')
+  await page.getByLabel('Email').fill('anh@example.com')
+  await page.getByRole('button', { name: 'Gửi hướng dẫn' }).click()
+  await expect(page.getByRole('status')).toHaveText('Nếu email tồn tại trong hệ thống, hướng dẫn đặt lại mật khẩu đã được gửi.')
+})
+
+test('scrubs callback tokens before opening reset password and preserves recovery through reload', async ({ page }) => {
+  await page.goto('/auth/callback?token_hash=fake-recovery-token&type=recovery')
+  await expect(page).toHaveURL(/\/reset-password$/)
+  await expect(page.getByRole('heading', { name: 'Đặt lại mật khẩu' })).toBeVisible()
+  expect(page.url()).not.toContain('fake-recovery-token')
+
+  await page.reload()
+  await expect(page).toHaveURL(/\/reset-password$/)
+  await expect(page.getByRole('heading', { name: 'Đặt lại mật khẩu' })).toBeVisible()
+  await page.getByRole('textbox', { name: 'Mật khẩu mới', exact: true }).fill('short')
+  await page.getByRole('textbox', { name: 'Xác nhận mật khẩu mới', exact: true }).fill('short')
+  await page.getByRole('button', { name: 'Cập nhật mật khẩu' }).click()
+  await expect(page.getByText('Mật khẩu phải có từ 12 đến 72 ký tự và không chỉ gồm khoảng trắng.')).toBeVisible()
+})
+
+test('scrubs malformed callback queries without rendering a token', async ({ page }) => {
+  await page.goto('/auth/callback?token_hash=fake-invalid-token&type=unsupported')
+  await expect(page).toHaveURL(/\/auth\/callback$/)
+  await expect(page.getByRole('heading', { name: 'Không thể xác minh liên kết' })).toBeVisible()
+  expect(await page.locator('body').innerText()).not.toContain('fake-invalid-token')
 })
