@@ -10,10 +10,7 @@ const status = ref<'loading' | 'error'>('loading')
 const message = ref('Đang xác minh liên kết bảo mật…')
 
 onMounted(async () => {
-  const parsed = authCallbackQuerySchema.safeParse({
-    token_hash: route.query.token_hash,
-    type: route.query.type,
-  })
+  const parsed = authCallbackQuerySchema.safeParse(route.query)
 
   window.history.replaceState(window.history.state, '', '/auth/callback')
   if (!parsed.success) {

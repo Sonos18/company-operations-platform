@@ -2,14 +2,37 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
 const supabaseUrl = 'https://auth.taskovia.test'
-const fakeAccessToken = 'fake-access-token-for-e2e'
+const accessToken = crypto.randomUUID()
+const refreshToken = crypto.randomUUID()
+const invalidPassword = crypto.randomUUID()
+const validPassword = crypto.randomUUID()
+const shortPassword = crypto.randomUUID().slice(0, 8)
+const recoveryTokenHash = crypto.randomUUID()
+const invalidTokenHash = crypto.randomUUID()
+const surplusTokenHash = crypto.randomUUID()
 
-const sessionResponse = {
-  user: {
-    id: '11111111-1111-4111-8111-111111111111',
-    email: 'anh@example.com',
-  },
-  companies: [],
+const sessionUser = {
+  id: '11111111-1111-4111-8111-111111111111',
+  email: 'anh@example.com',
+}
+const grantedCompany = {
+  tenantId: '10000000-0000-4000-8000-000000000001',
+  companyId: '10000000-0000-4000-8000-000000000002',
+  companyCode: 'TASKOVIA',
+  companyName: 'Taskovia',
+  roles: ['administrator'],
+  permissions: ['project.read'],
+}
+let sessionCompanies: typeof grantedCompany[] = []
+const verifyRequests: Array<{ token_hash?: unknown, type?: unknown }> = []
+
+function sessionResponse() {
+  return {
+    user: {
+      ...sessionUser,
+    },
+    companies: sessionCompanies,
+  }
 }
 
 async function installAnonymousAuthRoutes(page: Page): Promise<void> {
@@ -19,7 +42,7 @@ async function installAnonymousAuthRoutes(page: Page): Promise<void> {
 
     if (url.pathname.endsWith('/token') && url.searchParams.get('grant_type') === 'password') {
       const body = request.postDataJSON() as { email?: string, password?: string }
-      if (body.password === 'incorrect-password') {
+      if (body.password === invalidPassword) {
         await route.fulfill({
           status: 400,
           contentType: 'application/json',
@@ -35,25 +58,26 @@ async function installAnonymousAuthRoutes(page: Page): Promise<void> {
       await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({
-          access_token: fakeAccessToken,
-          refresh_token: 'fake-refresh-token-for-e2e',
+          access_token: accessToken,
+          refresh_token: refreshToken,
           token_type: 'bearer',
           expires_in: 3600,
-          user: sessionResponse.user,
+          user: sessionUser,
         }),
       })
       return
     }
 
     if (url.pathname.endsWith('/verify')) {
+      verifyRequests.push(request.postDataJSON() as { token_hash?: unknown, type?: unknown })
       await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({
-          access_token: fakeAccessToken,
-          refresh_token: 'fake-refresh-token-for-e2e',
+          access_token: accessToken,
+          refresh_token: refreshToken,
           token_type: 'bearer',
           expires_in: 3600,
-          user: sessionResponse.user,
+          user: sessionUser,
         }),
       })
       return
@@ -63,11 +87,13 @@ async function installAnonymousAuthRoutes(page: Page): Promise<void> {
   })
   await page.route('**/api/auth/session', route => route.fulfill({
     contentType: 'application/json',
-    body: JSON.stringify(sessionResponse),
+    body: JSON.stringify(sessionResponse()),
   }))
 }
 
 test.beforeEach(async ({ page }) => {
+  sessionCompanies = []
+  verifyRequests.length = 0
   await installAnonymousAuthRoutes(page)
 })
 
@@ -81,6 +107,7 @@ test('renders the accessible login form and validates required fields', async ({
   await page.goto('/login')
 
   await expect(page.getByRole('heading', { name: 'Đăng nhập' })).toBeVisible()
+  await expect(page.locator('h1')).toHaveCount(1)
   await page.getByRole('button', { name: 'Đăng nhập' }).click()
   await expect(page.getByLabel('Email')).toBeFocused()
   await expect(page.getByText('Email là bắt buộc.')).toBeVisible()
@@ -94,14 +121,18 @@ test('shows a safe invalid-credentials message and routes a successful login thr
   await page.goto('/login')
   await page.getByLabel('Email').fill('anh@example.com')
   const password = page.getByLabel('Mật khẩu', { exact: true })
-  await password.fill('incorrect-password')
+  await password.fill(invalidPassword)
   await page.getByRole('button', { name: 'Đăng nhập' }).click()
   await expect(page.getByRole('alert')).toContainText('Email hoặc mật khẩu không chính xác.')
   await expect(password).toHaveValue('')
 
-  await password.fill('correct-password')
+  await password.fill(validPassword)
   await page.getByRole('button', { name: 'Đăng nhập' }).click()
   await expect(page).toHaveURL(/\/no-access$/)
+
+  sessionCompanies = [grantedCompany]
+  await page.getByRole('button', { name: 'Thử lại' }).click()
+  await expect(page).toHaveURL(/\/projects$/)
 })
 
 test('always acknowledges a valid forgot-password request generically', async ({ page }) => {
@@ -112,23 +143,34 @@ test('always acknowledges a valid forgot-password request generically', async ({
 })
 
 test('scrubs callback tokens before opening reset password and preserves recovery through reload', async ({ page }) => {
-  await page.goto('/auth/callback?token_hash=fake-recovery-token&type=recovery')
+  await page.goto(`/auth/callback?${new URLSearchParams({ token_hash: recoveryTokenHash, type: 'recovery' })}`)
   await expect(page).toHaveURL(/\/reset-password$/)
   await expect(page.getByRole('heading', { name: 'Đặt lại mật khẩu' })).toBeVisible()
-  expect(page.url()).not.toContain('fake-recovery-token')
+  expect(page.url()).not.toContain(recoveryTokenHash)
+  expect(verifyRequests).toHaveLength(1)
+  expect(verifyRequests[0]).toEqual(expect.objectContaining({ token_hash: recoveryTokenHash, type: 'recovery' }))
 
   await page.reload()
   await expect(page).toHaveURL(/\/reset-password$/)
   await expect(page.getByRole('heading', { name: 'Đặt lại mật khẩu' })).toBeVisible()
-  await page.getByRole('textbox', { name: 'Mật khẩu mới', exact: true }).fill('short')
-  await page.getByRole('textbox', { name: 'Xác nhận mật khẩu mới', exact: true }).fill('short')
+  await page.getByLabel('Mật khẩu mới', { exact: true }).fill(shortPassword)
+  await page.getByLabel('Xác nhận mật khẩu mới', { exact: true }).fill(shortPassword)
   await page.getByRole('button', { name: 'Cập nhật mật khẩu' }).click()
   await expect(page.getByText('Mật khẩu phải có từ 12 đến 72 ký tự và không chỉ gồm khoảng trắng.')).toBeVisible()
 })
 
 test('scrubs malformed callback queries without rendering a token', async ({ page }) => {
-  await page.goto('/auth/callback?token_hash=fake-invalid-token&type=unsupported')
+  await page.goto(`/auth/callback?${new URLSearchParams({ token_hash: invalidTokenHash, type: 'unsupported' })}`)
   await expect(page).toHaveURL(/\/auth\/callback$/)
   await expect(page.getByRole('heading', { name: 'Không thể xác minh liên kết' })).toBeVisible()
-  expect(await page.locator('body').innerText()).not.toContain('fake-invalid-token')
+  expect(await page.locator('body').innerText()).not.toContain(invalidTokenHash)
+  expect(verifyRequests).toEqual([])
+})
+
+test('rejects callback queries with surplus fields before calling the provider', async ({ page }) => {
+  await page.goto(`/auth/callback?${new URLSearchParams({ token_hash: surplusTokenHash, type: 'recovery', extra: 'unexpected' })}`)
+  await expect(page).toHaveURL(/\/auth\/callback$/)
+  await expect(page.getByRole('heading', { name: 'Không thể xác minh liên kết' })).toBeVisible()
+  expect(await page.locator('body').innerText()).not.toContain(surplusTokenHash)
+  expect(verifyRequests).toEqual([])
 })

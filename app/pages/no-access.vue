@@ -9,7 +9,7 @@ async function retry(): Promise<void> {
   if (pending.value) return
   pending.value = true
   error.value = ''
-  try { await authStore.refreshAppSession() }
+  try { await authStore.refreshAppSession(); await navigateTo('/projects') }
   catch { error.value = 'Không thể cập nhật quyền truy cập. Vui lòng thử lại.' }
   finally { pending.value = false }
 }
