@@ -29,7 +29,7 @@ export interface BrowserDocument {
 export interface AuthLifecycleOptions {
   authRepository: Pick<SupabaseAuthRepository, 'subscribe'>
   authStore: LifecycleAuthStore
-  recoveryFlow: Pick<RecoveryFlowStorage, 'get'>
+  recoveryFlow: Pick<RecoveryFlowStorage, 'get' | 'clear'>
   document: BrowserDocument
   now?: () => number
   visibilityThrottleMs?: number
@@ -137,7 +137,16 @@ export function createAuthLifecycle(options: AuthLifecycleOptions) {
     }
 
     try {
-      void options.authStore.initialize().then(resolve, reject)
+      void options.authStore.initialize().then(() => {
+        const recoveryMarker = options.recoveryFlow.get()
+        if (options.authStore.lifecycle === 'authenticated' && recoveryMarker) {
+          options.authStore.lifecycle = 'recovery'
+        }
+        else if (options.authStore.lifecycle === 'anonymous' && recoveryMarker) {
+          options.recoveryFlow.clear()
+        }
+        resolve()
+      }, reject)
     }
     catch {
       options.authStore.lifecycle = 'connection_error'

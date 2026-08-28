@@ -62,6 +62,13 @@ function createRepository() {
   }
 }
 
+function createRecoveryFlow(marker: { type: 'invite' | 'recovery', timestamp: number } | null = null) {
+  return {
+    get: vi.fn(() => marker),
+    clear: vi.fn(),
+  }
+}
+
 describe('auth lifecycle', () => {
   beforeEach(() => setActivePinia(createPinia()))
 
@@ -128,6 +135,75 @@ describe('auth lifecycle', () => {
     expect(document.removeEventListener).toHaveBeenCalledTimes(1)
   })
 
+  it('enters recovery before readiness resolves when confirmed authentication has a valid recovery marker', async () => {
+    const repository = createRepository()
+    const authStore = createStore('authenticated')
+    const recoveryFlow = createRecoveryFlow({ type: 'recovery', timestamp: 1 })
+    const lifecycle = createAuthLifecycle({
+      authRepository: repository.repository,
+      authStore,
+      recoveryFlow,
+      document: createDocument(),
+    })
+
+    await lifecycle.start()
+
+    expect(authStore.lifecycle).toBe('recovery')
+    expect(recoveryFlow.clear).not.toHaveBeenCalled()
+  })
+
+  it('keeps authenticated bootstrap outside recovery when the marker is absent or expired', async () => {
+    const repository = createRepository()
+    const authStore = createStore('authenticated')
+    const recoveryFlow = createRecoveryFlow()
+    const lifecycle = createAuthLifecycle({
+      authRepository: repository.repository,
+      authStore,
+      recoveryFlow,
+      document: createDocument(),
+    })
+
+    await lifecycle.start()
+
+    expect(authStore.lifecycle).toBe('authenticated')
+    expect(recoveryFlow.clear).not.toHaveBeenCalled()
+  })
+
+  it('clears a recovery marker only after confirmed anonymous bootstrap without a provider session', async () => {
+    const repository = createRepository()
+    const authStore = createStore('anonymous')
+    const recoveryFlow = createRecoveryFlow({ type: 'recovery', timestamp: 1 })
+    const lifecycle = createAuthLifecycle({
+      authRepository: repository.repository,
+      authStore,
+      recoveryFlow,
+      document: createDocument(),
+    })
+
+    await lifecycle.start()
+
+    expect(authStore.lifecycle).toBe('anonymous')
+    expect(recoveryFlow.clear).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains a valid recovery marker when initialization ends fail-closed with a connection error', async () => {
+    const repository = createRepository()
+    const authStore = createStore('connection_error')
+    authStore.initialize.mockRejectedValue(new Error('safe connection failure'))
+    const recoveryFlow = createRecoveryFlow({ type: 'recovery', timestamp: 1 })
+    const lifecycle = createAuthLifecycle({
+      authRepository: repository.repository,
+      authStore,
+      recoveryFlow,
+      document: createDocument(),
+    })
+
+    await expect(lifecycle.start()).rejects.toThrow('safe connection failure')
+
+    expect(authStore.lifecycle).toBe('connection_error')
+    expect(recoveryFlow.clear).not.toHaveBeenCalled()
+  })
+
   it('converts a synchronous subscription failure into one safe fail-closed initialization promise', async () => {
     const document = createDocument()
     const authStore = createStore('idle')
@@ -137,7 +213,7 @@ describe('auth lifecycle', () => {
     const lifecycle = createAuthLifecycle({
       authRepository,
       authStore,
-      recoveryFlow: { get: () => null },
+      recoveryFlow: createRecoveryFlow(),
       document,
     })
 
@@ -161,7 +237,7 @@ describe('auth lifecycle', () => {
     const lifecycle = createAuthLifecycle({
       authRepository: { subscribe: vi.fn(() => unsubscribe) },
       authStore,
-      recoveryFlow: { get: () => null },
+      recoveryFlow: createRecoveryFlow(),
       document,
     })
 
@@ -208,7 +284,7 @@ describe('auth lifecycle', () => {
     const lifecycle = createAuthLifecycle({
       authRepository: repository.repository,
       authStore,
-      recoveryFlow: { get: () => null },
+      recoveryFlow: createRecoveryFlow(),
       document,
     })
 
@@ -229,7 +305,7 @@ describe('auth lifecycle', () => {
     const lifecycle = createAuthLifecycle({
       authRepository: repository.repository,
       authStore,
-      recoveryFlow: { get: () => ({ type: 'recovery', timestamp: 1 }) },
+      recoveryFlow: createRecoveryFlow({ type: 'recovery', timestamp: 1 }),
       document,
     })
     await lifecycle.start()
@@ -252,7 +328,7 @@ describe('auth lifecycle', () => {
     const lifecycle = createAuthLifecycle({
       authRepository: repository.repository,
       authStore,
-      recoveryFlow: { get: () => null },
+      recoveryFlow: createRecoveryFlow(),
       document,
       now: () => now,
       visibilityThrottleMs: 1_000,
