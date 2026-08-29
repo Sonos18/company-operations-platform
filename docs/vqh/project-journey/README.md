@@ -89,7 +89,11 @@ A lower-level specification or implementation does not override a confirmed VQH 
 4. update approved workflow documentation before, or together with, an approved business design change;
 5. preserve the rationale and history of superseded decisions.
 
-The current Stage-specific directory is intentionally absent. Future approved documents belong under `docs/vqh/project-journey/stages/` and must follow the contract in [Section 18](#18-stage-documentation-contract).
+Approved Stage-specific documents live under `docs/vqh/project-journey/stages/` and must follow the contract in [Section 18](#18-stage-documentation-contract). The current approved document is:
+
+- [Stage 01 — Tiếp nhận & đánh giá cơ hội](stages/01-opportunity-intake.md)
+
+Stages 02–11 do not yet have approved Stage-specific documents; do not create placeholders or infer their detailed design.
 
 ## 4. Repository analysis baseline
 
@@ -385,56 +389,53 @@ flowchart LR
     A -. "preserve and explicitly map runtime history" .-> B
 ```
 
-## 17. Stage 01 confirmed baseline
+## 17. Stage 01 approved business design
 
-Stage 01 detailed design remains unresolved beyond the decisions below. Only the following currently confirmed Stage 01 business baseline is authoritative.
+The [Stage 01 Detailed Business Design](stages/01-opportunity-intake.md) is approved and is the detailed authority for Stage 01. This section remains a concise overview; use the Stage document for the full inputs, gates, authorities, exception paths, audit expectations, deferred configuration, and Stage decision registry.
 
-### 17.1 Opportunity history and outcome
-
-- An opportunity decided as non-proceeding remains in Journey history; the Journey is not deleted (VQH-S01-001).
-- Final business outcome is separate from workflow status. Stage 01 can be `completed` with outcome `proceed` or `not_proceeding` (VQH-S01-002).
-- These are the only current final outcomes. `on_hold` and `deferred` are not completed outcomes; waiting/hold is represented through the appropriate active or blocked state (VQH-S01-008).
-
-### 17.2 Confirmed high-level breakdown
+### 17.1 Approved boundary and flow
 
 ```text
-01. Tiếp nhận & đánh giá cơ hội
-
 01.1 Tiếp nhận yêu cầu
+= đủ thông tin để đánh giá
+        ↓
+01.1 Complete
+→ explicit Stage 01 dependency satisfied
+→ 01.2 may Start
+        ↓
 01.2 Đánh giá cơ hội & quyết định tiếp tục
-
-Business sequence concept: 01.1 → 01.2
+= đánh giá và quyết định
 ```
 
-This confirms the high-level breakdown and business sequence only. It does not decide the unresolved hierarchy mechanics listed in [Section 22](#22-open--intentionally-unresolved) (VQH-S01-003).
+The dependency `01.1 Complete → 01.2 may Start` is an approved Stage 01-specific edge. It does not decide any generic parent/child hierarchy mechanic (VQH-S01-003, VQH-S01-018).
 
-### 17.3 Controlled decision and intake
+### 17.2 Intake baseline
 
-- `proceed / not_proceeding` must be based on a controlled decision/approval requirement. Evaluation Owner, Decision Authority, and workflow Completer are separate concerns (VQH-S01-004).
-- 01.1 collects a minimum intake set sufficient to evaluate the opportunity. Customer/contact, initial need/scope, known location, source, and notes are conceptual examples, not an approved final schema (VQH-S01-005).
-- 01.1 does not require a Project Manager, but does require appropriate intake accountability (VQH-S01-006).
-- PM assignment is not the Stage 01 completion gate. Stage 02 staffing/startability belongs to Stage 02 governance (VQH-S01-007).
+- One real need is represented by one canonical Opportunity; raised duplicate concerns must be resolved before 01.1 completes (VQH-S01-013).
+- The business minimum intake set is approved. It covers an identifiable preliminary Primary Customer and context, a contactable Primary Contact and relationship, structured scope plus a meaningful description, location status, lead source and conditional Referrer, engagement status, at least one Intake Record, Intake Owner, and clear duplicate/blocker validity gates. This is a business data set, not a physical schema or API contract (VQH-S01-005, VQH-S01-016).
+- 01.1 establishes an immutable completion baseline while current Opportunity data may continue to change with audit. Intake Records remain historical records rather than one mutable current-data record (VQH-S01-014, VQH-S01-024).
+- 01.1 needs intake accountability but neither Project Manager assignment nor second-person approval. Start and Complete remain explicit authorized actions; data sufficiency does not auto-complete the node (VQH-S01-006, VQH-S01-007, VQH-S01-015).
+- Invalid intake is a controlled record-validity lifecycle, not the `not_proceeding` outcome of evaluating a valid Opportunity (VQH-S01-017).
 
-### 17.4 Structured evaluation and reconsideration
+### 17.3 Evaluation, decision, and outcome
 
-- 01.2 uses structured evaluation criteria rather than free text alone. It does not auto-score the final outcome; a human Decision Authority decides. Exact criteria are unresolved (VQH-S01-009).
-- Evaluation criteria have required/optional semantics. Every required criterion must be evaluated before the final decision, but `evaluated != passed`; Decision Authority may proceed while acknowledging risk (VQH-S01-010).
-- A `not_proceeding` opportunity can be reactivated when it remains the same business opportunity. Reactivation requires permission, reason, actor, timestamp, and audit, and does not erase the prior decision (VQH-S01-011).
-- Each reconsideration/reactivation creates an immutable decision cycle. Prior assessments and decisions are not overwritten; current state may point to the latest cycle (VQH-S01-012).
+- 01.2 uses the Common VQH Evaluation Framework with five baseline dimensions: customer and need; scope and capability; resources and schedule; commercial viability; and risk/special conditions (VQH-S01-009, VQH-S01-019).
+- Criteria support required, optional, and conditional applicability. Every required applicable criterion must be evaluated with a structured result and rationale/evidence, while `evaluated != passed` and no criterion or score automatically decides the outcome (VQH-S01-010, VQH-S01-020).
+- Overall Recommendation is separate from Final Decision. Decision Authority may return for clarification in the same decision cycle, and a decision overriding the current Recommendation requires rationale (VQH-S01-004, VQH-S01-021, VQH-S01-022).
+- Final Decision has exactly two outcomes, `proceed` and `not_proceeding`, and is the canonical Stage 01 business outcome for that decision cycle. Final Decision does not auto-complete 01.2; completion remains a separate controlled action (VQH-S01-002, VQH-S01-008, VQH-S01-022, VQH-S01-023).
+- A valid Opportunity decided as `not_proceeding` remains in history. Controlled reactivation creates a new immutable decision cycle and never overwrites the previous cycle (VQH-S01-001, VQH-S01-011, VQH-S01-012, VQH-S01-025).
 
 ## 18. Stage documentation contract
 
 Create a Stage-specific document only after that Stage's discovery/design is sufficient and approved. Do not create placeholder documents for all 11 Stages.
 
-The expected future location is:
+The current structure is:
 
 ```text
 docs/vqh/project-journey/
 ├── README.md
 └── stages/
-    ├── 01-opportunity-intake.md
-    ├── 02-site-survey.md
-    └── ...
+    └── 01-opportunity-intake.md
 ```
 
 Each approved Stage document should cover:
@@ -518,7 +519,7 @@ The approved VQH business flow is the 11-Stage lifecycle and confirmed semantics
 | Assignment | Definition owner rules resolve to audited runtime assignments; unassigned nodes cannot start. | Fixtures store `ownerDepartment` and `ownerName` strings. | Prototype strings are not assignment resolution/history. |
 | Snapshot | Full reconstructable workflow definition snapshot, runtime separate. | `WorkflowSnapshot` stores tenant/company, `templateId`, `version`, `enforcementMode`, and `applicabilityNote`. | Prototype snapshot is not sufficient to reconstruct the confirmed effective workflow. |
 | Amendments/migration | Controlled, audited, immutable amendment and dedicated atomic migration models. | No project workflow amendment or migration operation. | Confirmed version-governance capabilities are absent. |
-| Stage 01 | `Tiếp nhận & đánh giá cơ hội`, with confirmed 01.1/01.2 baseline and controlled outcome cycles. | Prototype Stage 01 is `Tiếp nhận yêu cầu` with generic generated sub-stage fixtures. | Prototype does not represent the confirmed Stage 01 business baseline. |
+| Stage 01 | Approved detailed design for 01.1 intake baseline and 01.2 human-controlled evaluation/decision, with explicit dependency, authority separation, immutable baselines, and decision cycles. | Prototype Stage 01 is `Tiếp nhận yêu cầu` with generic generated sub-stage fixtures. | Prototype does not implement the approved Stage 01 Detailed Business Design. |
 | Workflow mutation | Explicit server/engine re-checks for controlled start, completion, N/A, reopen, revalidation, and other actions. | Journey UI reads project data and changes only browsing focus; project repository exposes no workflow mutation methods. | Current UI is a visualization prototype, not a workflow engine. |
 
 ### 20.2 How to interpret prototype documents
@@ -563,8 +564,11 @@ Every item in this section has status `UNRESOLVED`. These questions require disc
 - exact owner-resolution rules;
 - exact amendment schema;
 - exact migration schema;
-- exact Stage 01 intake fields;
-- exact Stage 01 evaluation criteria;
+- physical database schema and persisted/API field names for the approved Stage 01 business minimum intake set;
+- exact configurable Stage 01 taxonomies/enums for Customer Type, Primary Contact relationship, Scope, Lead Source, Referrer type, engagement status, invalid reason, and criterion result;
+- detailed individual criteria inside each of the five approved Stage 01 evaluation dimensions;
+- detailed conditional applicability rules and detailed Stage 01 risk taxonomy;
+- detailed Stage 01 authority-resolution rules and exact permission-to-role mapping;
 - detailed requirements for each Stage;
 - concrete Owners, Approvers, and Completers for each Stage;
 - detailed Stage 02–11 designs;
@@ -575,10 +579,9 @@ Every item in this section has status `UNRESOLVED`. These questions require disc
 - how reopening a child affects a completed parent;
 - whether and how parent applicability / N/A propagates to descendants;
 - the boundary between Stage-level and Sub-stage-level cross-Stage dependencies;
-- canonical business outcome placement between Stage 01 and 01.2;
 - child `ready` / `locked` semantics while a parent is not active;
 - other recursive parent/child hierarchy mechanics not yet approved;
-- remaining Stage 01 questions beyond the confirmed decisions in this reference.
+- Stage 01 technical representation, API contracts, UI design, and implementation plan.
 
 Potential examples and conceptual state names in this README remain non-final where explicitly marked. They must not be copied into schema or API contracts without approved design.
 
@@ -640,16 +643,30 @@ All decisions below are scoped to **VQH Project Journey**, not Taskovia globally
 | VQH-WF-050 | Migration does not reset historical completion | CONFIRMED | VQH Project Journey | Preserve completion/fulfillment and use revalidation for stricter current rules. |
 | VQH-S01-001 | Non-proceeding opportunity remains in Journey | CONFIRMED | VQH Project Journey | Retain Journey and decision history. |
 | VQH-S01-002 | Business outcome is separate from workflow status | CONFIRMED | VQH Project Journey | Stage 01 completion can carry either final business outcome. |
-| VQH-S01-003 | Current high-level Stage breakdown | CONFIRMED | VQH Project Journey | Use the confirmed 01.1 then 01.2 business sequence without inferring hierarchy mechanics. |
+| VQH-S01-003 | Approved Stage breakdown | CONFIRMED | VQH Project Journey | Use 01.1 intake then 01.2 evaluation/decision without inferring generic hierarchy mechanics. |
 | VQH-S01-004 | Controlled business decision | CONFIRMED | VQH Project Journey | Outcome requires a controlled decision/approval and separate authorities. |
-| VQH-S01-005 | Minimum intake set | CONFIRMED | VQH Project Journey | Gather enough information to evaluate; exact fields remain unresolved. |
+| VQH-S01-005 | Minimum intake set | CONFIRMED | VQH Project Journey | Gather the approved business minimum needed to evaluate; physical schema and persisted/API names remain unresolved. |
 | VQH-S01-006 | PM not required at initial intake | CONFIRMED | VQH Project Journey | 01.1 needs intake accountability, not mandatory PM assignment. |
 | VQH-S01-007 | PM assignment is not Stage 01 exit gate | CONFIRMED | VQH Project Journey | Handle Stage 02 staffing/startability in Stage 02 governance. |
 | VQH-S01-008 | Only two final outcomes | CONFIRMED | VQH Project Journey | Final outcome is `proceed` or `not_proceeding`; hold/wait uses workflow state. |
-| VQH-S01-009 | Structured evaluation | CONFIRMED | VQH Project Journey | Use structured criteria and human decision authority; no automatic outcome score. |
-| VQH-S01-010 | Required / optional evaluation criteria | CONFIRMED | VQH Project Journey | Evaluate all required criteria; risk does not mechanically determine outcome. |
+| VQH-S01-009 | Structured evaluation | CONFIRMED | VQH Project Journey | Use the Common VQH Evaluation Framework and human decision authority; no automatic outcome score. |
+| VQH-S01-010 | Required / optional / conditional evaluation criteria | CONFIRMED | VQH Project Journey | Evaluate every required applicable criterion; risk does not mechanically determine outcome. |
 | VQH-S01-011 | Controlled reactivation | CONFIRMED | VQH Project Journey | Reactivate the same opportunity with permission and immutable audit. |
 | VQH-S01-012 | Immutable decision cycles | CONFIRMED | VQH Project Journey | Reconsideration creates a new cycle and preserves every prior decision. |
+| VQH-S01-013 | Canonical Opportunity and duplicate resolution | CONFIRMED | VQH Stage 01 | Represent one real need with one canonical Opportunity; resolve a raised duplicate concern before 01.1 completion and retain intake history. |
+| VQH-S01-014 | Historical Intake Records versus current data | CONFIRMED | VQH Stage 01 | Keep Intake Records and the 01.1 completion basis historically reconstructable while current Opportunity data evolves separately. |
+| VQH-S01-015 | Explicit 01.1 start and completion governance | CONFIRMED | VQH Stage 01 | Require an Intake Owner and authorized explicit Start/Complete actions; do not auto-complete or require second-person approval. |
+| VQH-S01-016 | Approved 01.1 business completion set | CONFIRMED | VQH Stage 01 | Enforce the approved business minimum and conditional Referrer gate without turning optional budget, timeline, files, verification, or PM assignment into gates. |
+| VQH-S01-017 | Invalid intake lifecycle | CONFIRMED | VQH Stage 01 | Invalidate/restore non-Opportunity records through controlled audit; never use invalid as a substitute for `not_proceeding`. |
+| VQH-S01-018 | Explicit 01.1-to-01.2 dependency | CONFIRMED | VQH Stage 01 | A valid 01.1 completion permits 01.2 to start after owner resolution and explicit Start; this does not establish a generic hierarchy rule. |
+| VQH-S01-019 | Common evaluation framework and five dimensions | CONFIRMED | VQH Stage 01 | Evaluate every Opportunity against the common baseline covering customer/need, capability, resources/schedule, commercial viability, and risk/special conditions. |
+| VQH-S01-020 | Criterion result and gate semantics | CONFIRMED | VQH Stage 01 | Record a structured result with rationale/evidence; `evaluated != passed`, and only required applicable evaluation is gating. |
+| VQH-S01-021 | Recommendation and clarification loop | CONFIRMED | VQH Stage 01 | Keep Recommendation separate from Final Decision and preserve every clarification return and Recommendation version inside one cycle. |
+| VQH-S01-022 | Final Decision and canonical Stage outcome | CONFIRMED | VQH Stage 01 | Decision Authority records the single canonical `proceed`/`not_proceeding` outcome per cycle; overrides require rationale and do not auto-complete workflow. |
+| VQH-S01-023 | Explicit 01.2 completion governance | CONFIRMED | VQH Stage 01 | Separate Evaluation Owner, Decision Authority, and Completer concerns; explicitly complete only after current gates pass. |
+| VQH-S01-024 | Post-completion updates and intake revalidation | CONFIRMED | VQH Stage 01 | Enrich current data without rewriting the immutable completion basis; use controlled reopen/revalidation when that basis loses validity. |
+| VQH-S01-025 | Reactivation starts a new consideration cycle | CONFIRMED | VQH Stage 01 | Reuse the same valid Opportunity, check intake validity, and preserve every prior cycle instead of overwriting it. |
+| VQH-S01-026 | Stage 01 reconstructable audit | CONFIRMED | VQH Stage 01 | Retain ownership, intake, evaluation, decision, blocker, validity, and reactivation events needed to reconstruct business history. |
 
 Future changes do not delete decision history. When a decision is replaced, retain its row and record at least:
 
