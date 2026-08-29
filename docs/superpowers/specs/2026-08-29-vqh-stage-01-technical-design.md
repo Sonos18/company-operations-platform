@@ -2,11 +2,13 @@
 
 > **Stage:** 01 — Tiếp nhận & đánh giá cơ hội  
 > **Sub-stages:** 01.1 Tiếp nhận yêu cầu; 01.2 Đánh giá cơ hội & quyết định tiếp tục  
-> **Status:** APPROVED TECHNICAL SPEC  
+> **Status:** CORRECTION DRAFT — WRITTEN SPEC REVIEW REQUIRED
 > **Authority scope:** VQH Stage 01 only  
 > **Implementation authorization:** NONE  
-> **Approved:** 2026-08-29  
+> **Original technical spec approved:** 2026-08-29
 > **Analysis base:** `Sonos18/company-operations-platform@f314ed7a4ff1d86e45cc29075ab0213ec6421ca1`
+> **Correction source:** `origin/docs/vqh-stage-01-technical-spec@34c9a896c0fae78c9069f54406ee943864bf0852`
+> **Correction design accepted:** 2026-08-29
 >
 > **Business authorities**
 >
@@ -40,6 +42,8 @@ Technical Spec này chuyển approved Stage 01 business behavior thành contract
 
 Technical Spec không thay đổi business behavior đã duyệt.
 
+Correction này đóng các khoảng trống implementation-contract của bản Technical Spec đã duyệt mà không thay đổi product/business behavior: atomic Opportunity bootstrap, published definition selection, mutation/API coverage, database-enforced immutability, completion-event ordering, Supabase privilege hardening, Phase A operational boundary, và business-to-technical traceability.
+
 Authority chain:
 
 ```text
@@ -49,7 +53,7 @@ Approved Stage 01 Business Design
                     ↓
 THIS TECHNICAL SPEC
                     ↓
-Future Implementation Plan
+Corrected Execution Plan
                     ↓
 Implementation Packet
                     ↓
@@ -201,7 +205,7 @@ proceed
 
 ## 4.1 In scope
 
-Technical Spec covers complete Stage 01 runtime:
+Technical Spec covers the complete **Phase A Stage 01 runtime foundation**:
 
 ```text
 Create Opportunity
@@ -244,6 +248,8 @@ Also included:
 - reactivation;
 - immutable decision cycles.
 
+Phase A proves the generic runtime and contracts. It is not an operational production Stage 01 release until the required company definition, taxonomies, evaluation configuration, authority resolution, and role mappings have passed their Business Decision Gates and have been published through an authorized follow-up.
+
 ## 4.2 Explicitly out of scope
 
 This Technical Spec MUST NOT decide:
@@ -257,6 +263,22 @@ This Technical Spec MUST NOT decide:
 - generic requirement engine features that Stage 01 does not use;
 - generic parent Stage runtime semantics;
 - UI visual layout.
+
+## 4.3 Phase A operational boundary
+
+Phase A creates the schema, commands, API contracts, repositories, and verification needed to run Stage 01 once a complete company definition is published. Phase A MUST NOT seed a concrete VQH definition or silently fill any value governed by `BDG-TAX-01`, `BDG-EVAL-01`, `BDG-AUTH-01`, or `BDG-HIER-01`.
+
+Consequently:
+
+```text
+no complete published company definition
+→ Create Opportunity returns STAGE01_DEFINITION_CONFIG_UNAVAILABLE
+→ no Opportunity or workflow row is committed
+```
+
+A published row whose schema or required content is invalid returns `STAGE01_DEFINITION_CONFIG_INVALID`; bootstrap MUST NOT fall back silently to an older definition version.
+
+Synthetic complete definitions are permitted only inside local automated tests. They MUST NOT be placed in production migration seeds or treated as approved VQH business configuration.
 
 ---
 
@@ -278,6 +300,55 @@ An Opportunity exists before VQH has necessarily:
 - final address;
 - budget;
 - formal project commitment.
+
+## 5.1 Atomic Opportunity/workflow bootstrap
+
+Logical command:
+
+```text
+createStage01Opportunity()
+```
+
+Database RPC:
+
+```text
+public.create_stage01_opportunity(...)
+```
+
+The command executes in one PostgreSQL transaction:
+
+```text
+authenticate actor
+        ↓
+resolve active tenant/company membership
+        ↓
+require opportunity.create
+        ↓
+select highest template_version for
+(company_id, workflow_key = 'vqh.stage01')
+        ↓
+validate definition schema and required content
+        ↓
+create Opportunity
+        ↓
+create Workflow Instance bound to the definition snapshot
+        ↓
+create exactly Node Instances 01.1 and 01.2
+        ↓
+create execution #1 for each node
+        ↓
+create Decision Cycle #1 bound 1:1 to execution 01.2 #1
+        ↓
+append bootstrap workflow events and audit event
+        ↓
+commit
+```
+
+Required snapshot content includes the two authoritative node definitions, the explicit `01.1 → 01.2` dependency, approved five-dimension framework, completion/gate semantics, taxonomy configuration, criterion configuration, N/A allowance, and capability references. Missing required content is invalid configuration rather than an empty/default configuration.
+
+Failure at any step rolls back every write. The command MUST NOT leave an Opportunity without its workflow, node executions, or first Decision Cycle. It MUST NOT create a parent Stage 01 runtime, Project, Stage 02 runtime, or Project Manager assignment.
+
+On success, the command returns the Opportunity ID, Workflow Instance ID, both Node Instance/execution IDs, Decision Cycle #1 ID, and their initial optimistic versions.
 
 Therefore:
 
@@ -470,7 +541,7 @@ All new tables MUST follow existing Taskovia conventions:
 - explicit grants;
 - no direct unauthenticated access;
 - immutable/history records not physically deleted through application routes;
-- sensitive mutations through controlled RPC/transaction boundaries;
+- every Stage 01 business mutation through a controlled RPC/transaction boundary;
 - audit events include `request_id`.
 
 ---
@@ -509,7 +580,7 @@ Unique:
 
 ## 10.2 `workflow_definition_snapshots`
 
-Immutable definition used by the workflow instance.
+Immutable published definition used by the workflow instance.
 
 Fields:
 
@@ -527,6 +598,16 @@ Fields:
 
 No application UPDATE or DELETE.
 
+Unique:
+
+```text
+(company_id, workflow_key, template_version)
+```
+
+In Phase A, inserting a complete immutable row is the publication operation. There is no application-facing draft/activation UI or configuration mutation API. Only an authorized migration or later approved configuration-release mechanism may publish a production definition.
+
+Opportunity bootstrap selects the highest `template_version` for the target company and `workflow_key = 'vqh.stage01'`. If no row exists, bootstrap fails with `STAGE01_DEFINITION_CONFIG_UNAVAILABLE`. If the selected newest row fails schema/content validation, bootstrap fails with `STAGE01_DEFINITION_CONFIG_INVALID` and MUST NOT fall back to an older version.
+
 The snapshot contains enough Stage 01 definition to reconstruct:
 
 - node identity;
@@ -541,12 +622,14 @@ The snapshot contains enough Stage 01 definition to reconstruct:
 - N/A allowance;
 - gate semantics.
 
-The runtime MUST NOT query the latest company configuration to reinterpret an existing workflow.
+The selected definition snapshot is bound to `workflow_instances.definition_snapshot_id` during bootstrap. The runtime MUST NOT query the latest company configuration to reinterpret an existing workflow.
 
 ```text
 snapshot at creation
 != latest VQH configuration
 ```
+
+"Snapshot at creation" means selected and bound atomically when the Opportunity workflow is created; it does not require duplicating an identical immutable definition row for every Opportunity.
 
 ## 10.3 `workflow_node_instances`
 
@@ -904,7 +987,7 @@ Runtime gates operate on semantic behavior:
 
 ```text
 lead source behavior requiresReferrer
-→ active Referrer required
+→ exactly one active Primary Referrer required
 ```
 
 instead of hard-coding a source label.
@@ -914,6 +997,8 @@ Existing workflow instances use the taxonomy configuration captured in their imm
 ---
 
 # 13. Contacts
+
+Where Sections 13–15 use `reliability_state`, the field is data-quality metadata. `unverified`, `confirmed`, or `disputed` does not by itself create a Blocker, invalidate the Opportunity, or pass/fail a gate. Each gate evaluates the approved business property independently.
 
 ## 13.1 `contacts`
 
@@ -962,6 +1047,8 @@ confirmed
 disputed
 ```
 
+For Contact Method, the approved gate means at least one method row with `is_usable = true`; reliability metadata does not replace that check. Phase A does not define a separate Contact Method lifecycle state, so the contract MUST NOT use an undefined `active` flag for this gate.
+
 01.1 requires at least one usable method.
 
 It does not require both phone and email.
@@ -986,7 +1073,15 @@ ended_at
 end_reason
 ```
 
-One active Primary Contact per Opportunity.
+At most one active Primary Contact exists per Opportunity:
+
+```text
+unique opportunity_id
+where is_primary = true
+  and ended_at is null
+```
+
+01.1 completion requires exactly one such active Primary Contact relationship.
 
 Changing Primary Contact:
 
@@ -1041,6 +1136,7 @@ display_name
 contact_id nullable
 note
 reliability_state
+is_primary
 created_by
 created_at
 ended_by
@@ -1048,7 +1144,15 @@ ended_at
 end_reason
 ```
 
-One active primary Referrer is sufficient for Stage 01.
+At most one active Primary Referrer exists per Opportunity:
+
+```text
+unique opportunity_id
+where is_primary = true
+  and ended_at is null
+```
+
+When the configured Lead Source behavior requires a Referrer, 01.1 completion requires exactly one active Primary Referrer. Changing Primary Referrer ends the old row and inserts a new row in the same audited command; it never rewrites the old row into the new Referrer.
 
 A Referrer:
 
@@ -1174,6 +1278,23 @@ created_at
 
 Append-only.
 
+Unique:
+
+```text
+(node_execution_id, baseline_version)
+(completion_event_id)
+```
+
+`completion_event_id` is required and establishes a one-to-one link from each baseline to the event that completed its execution.
+
+An insertion guard verifies that the referenced event:
+
+- is a `completed` event;
+- belongs to the same `node_execution_id`, tenant, and company as the baseline;
+- carries the preallocated baseline ID in its payload.
+
+Database guards reject application `UPDATE` and `DELETE`. A baseline correction requires controlled reopen/revalidation and a new completion event/baseline version; it never edits the prior baseline.
+
 The snapshot contains only information necessary to reconstruct why completion was valid:
 
 ```text
@@ -1284,16 +1405,24 @@ second-person approval
 Success transaction:
 
 ```text
-evaluate all gates
+lock Opportunity and current 01.1 execution
         ↓
-create immutable intake baseline
+verify expected versions and evaluate all gates
         ↓
 phase active → completed
         ↓
-insert completion event
+increment execution version
         ↓
-audit
+preallocated baseline UUID is included in completion-event payload
+        ↓
+insert completion event and capture completion_event_id
+        ↓
+insert immutable intake baseline using that completion_event_id
+        ↓
+insert audit event referencing both event and baseline
 ```
+
+All steps occur in one transaction. The baseline MUST NOT be inserted before its referenced completion event exists. Any error rolls back the phase transition, event, baseline, and audit together.
 
 01.2 readiness is derived from dependency evaluation.
 
@@ -1411,6 +1540,8 @@ Unique:
 (node_execution_id)
 ```
 
+Opportunity bootstrap creates `cycle_no = 1` in the same transaction as execution `01.2 #1`. The cycle exists before 01.2 starts so every 01.2 execution has exactly one stable decision-cycle identity. Reactivation preserves the same rule by creating execution `N+1` and cycle `N+1` atomically.
+
 `final_outcome`:
 
 ```text
@@ -1420,7 +1551,28 @@ not_proceeding
 
 nullable until Final Decision.
 
-Exactly one Final Decision exists per cycle.
+A draft/in-progress cycle has zero Final Decisions. A cycle that has reached Final Decision has exactly one immutable Final Decision.
+
+Database constraints and a guard trigger enforce:
+
+```text
+final_outcome IS NULL
+→ final_decision_by, final_decision_at, final_rationale,
+  final_recommendation_id and override_rationale are NULL
+
+final_outcome IS NOT NULL
+→ final_decision_by, final_decision_at,
+  final_recommendation_id and a meaningful final_rationale are NOT NULL
+→ final_decision_by = decision_authority_user_id
+
+outcome differs from referenced Recommendation
+→ override_rationale is NOT NULL and meaningful
+
+outcome matches referenced Recommendation
+→ override_rationale IS NULL
+```
+
+The guard rejects any later change to a populated `final_*` field, `override_rationale`, `decision_authority_user_id`, or `authority_resolution_reference`, and rejects deletion of a Decision Cycle. It also verifies that `final_recommendation_id` belongs to the same `decision_cycle_id`; a Recommendation from another cycle is never a valid reference.
 
 ---
 
@@ -1429,6 +1581,12 @@ Exactly one Final Decision exists per cycle.
 ## `stage01_criterion_evaluations`
 
 Append-only versions.
+
+Unique:
+
+```text
+(decision_cycle_id, criterion_key, revision)
+```
 
 Fields:
 
@@ -1466,6 +1624,21 @@ insufficient_information
 ```
 
 N/A is represented by applicability, not mixed into result.
+
+Database constraints and the controlled command enforce:
+
+```text
+applicability = applicable
+→ result is one supported applicable result
+→ meaningful rationale and/or evidence exists
+
+applicability = not_applicable
+→ result IS NULL
+→ criterion definition permits N/A
+→ meaningful rationale and/or evidence exists
+```
+
+The current evaluation for a criterion is the highest `revision` within that Decision Cycle. Gate evaluation and Recommendation submission use only this current revision set; inserting a later criterion revision makes every earlier Recommendation non-current until a new Recommendation is submitted.
 
 A criterion with:
 
@@ -1505,6 +1678,12 @@ For `not_applicable`:
 
 Append-only.
 
+Unique:
+
+```text
+(decision_cycle_id, version)
+```
+
 Fields:
 
 ```text
@@ -1535,6 +1714,8 @@ Current Recommendation:
 
 ```text
 latest version
+AND no later criterion evaluation revision exists
+AND no later clarification return exists
 ```
 
 ---
@@ -1572,12 +1753,32 @@ means there is no current decision-ready Recommendation.
 
 A new Recommendation must be submitted after clarification.
 
+An insertion guard verifies that `recommendation_id` belongs to the same `decision_cycle_id`; a Clarification Return cannot reference a Recommendation from another cycle.
+
 Clarification:
 
 - does not end the cycle;
 - does not create another Opportunity;
 - does not create a new decision cycle;
 - does not create `not_proceeding`.
+
+## 26.1 Database-enforced history immutability
+
+The following tables are append-only from every application role and command path:
+
+```text
+workflow_definition_snapshots
+workflow_node_events
+opportunity_intake_records
+stage01_intake_completion_baselines
+stage01_criterion_evaluations
+stage01_recommendations
+stage01_clarification_returns
+```
+
+RLS/grants deny normal mutation and database guard triggers reject `UPDATE` or `DELETE`, including accidental writes from a future privileged function. Correction creates a new history row with an explicit reference/revision; it never edits or removes the original evidence.
+
+Lifecycle relationship tables such as Opportunity Contacts, Scopes, Referrers, Assignments, Blockers, and duplicate concerns are not rewritten into a different historical fact. Controlled commands may only populate their approved resolution/end/retirement fields and append audit history.
 
 ---
 
@@ -1852,7 +2053,11 @@ Add stable permission contracts.
 opportunity.read
 opportunity.create
 opportunity.update
+opportunity.contact.manage
+opportunity.scope.manage
+opportunity.referrer.manage
 opportunity.intake_record.create
+opportunity.duplicate.raise
 opportunity.duplicate.resolve
 opportunity.invalidate
 opportunity.restore
@@ -1882,6 +2087,27 @@ stage01.reactivate
 ```
 
 No wildcard permission.
+
+Command-to-permission mapping:
+
+| Command group | Required permission |
+| --- | --- |
+| Opportunity bootstrap | `opportunity.create` |
+| Current Opportunity field update | `opportunity.update` |
+| Contact, Contact Method, Opportunity Contact, Primary Contact | `opportunity.contact.manage` |
+| Scope add/retire | `opportunity.scope.manage` |
+| Referrer add/set/end | `opportunity.referrer.manage` |
+| Intake Record append/correction | `opportunity.intake_record.create` |
+| Duplicate concern raise | `opportunity.duplicate.raise` |
+| Duplicate concern resolution | `opportunity.duplicate.resolve` |
+| Invalidate / restore | `opportunity.invalidate` / `opportunity.restore` |
+| Assignment / reassignment / end | `journey.assignment.manage` |
+| Start / Complete / reopen / revalidate | corresponding `journey.node.*` permission |
+| Blocker raise / resolve | `journey.blocker.raise` / `journey.blocker.resolve` |
+| Criterion / Recommendation / clarification / Final Decision | corresponding `stage01.*` permission |
+| Reactivation | `stage01.reactivate` |
+
+Opportunity aggregate reads, including Stage 01 Contact/Scope/Referrer data, require `opportunity.read`; Workflow runtime reads require `journey.read`. Phase A does not introduce a separate general-purpose Contact-directory read contract.
 
 Permissions MUST be added to:
 
@@ -1936,7 +2162,7 @@ Until `BDG-AUTH-01` is resolved, the resolver MUST NOT invent a person from depa
 
 # 35. RLS and mutation security
 
-All new company-scoped tables enable RLS.
+All new company-scoped tables enable RLS. Migrations MUST declare grants explicitly and MUST NOT depend on Supabase project defaults for automatic Data API exposure.
 
 ## Read
 
@@ -1956,6 +2182,16 @@ private.has_company_permission(...)
 
 pattern.
 
+Readable public tables receive only the required `SELECT` grant for `authenticated`, followed by company-scoped RLS policies. `anon` receives no Stage 01 table access. Grants determine whether the role can reach an object; RLS independently determines which rows it may read.
+
+If an exposed view is introduced, PostgreSQL 15+ requires:
+
+```sql
+WITH (security_invoker = true)
+```
+
+Otherwise the view MUST remain in an unexposed schema with no `anon`/`authenticated` access.
+
 ## Mutation
 
 Normal authenticated clients MUST NOT receive unrestricted:
@@ -1968,19 +2204,35 @@ DELETE
 
 grants over protected Stage 01 runtime tables.
 
-Business commands use controlled RPC/functions.
+Every Stage 01 business mutation uses a controlled RPC/function. This includes single-row append operations as well as multi-table workflow transitions, so permission, versioning, history, and audit behavior do not split across competing write models.
 
-Recommended existing pattern:
+Required existing repository pattern:
 
 ```text
 Public SECURITY INVOKER wrapper
         ↓
 private SECURITY DEFINER transaction function
+SET search_path = ''
         ↓
-membership + permission + invariant re-check
+auth.uid() + active membership + tenant/company
++ permission + state + version + invariant re-check
         ↓
 mutation + audit
 ```
+
+All relation and function references inside a `SECURITY DEFINER` body are schema-qualified. `user_metadata` and stale client-provided role claims are never authorization inputs.
+
+Function privileges are deny-by-default and signature-specific:
+
+```text
+REVOKE EXECUTE from PUBLIC and anon
+REVOKE unintended EXECUTE from authenticated
+GRANT only the required public wrappers to authenticated
+GRANT private schema USAGE and exact private-function EXECUTE to authenticated
+only where the SECURITY INVOKER wrapper requires it
+```
+
+The last grant is required by PostgreSQL for the invoker wrapper to call the private implementation. The `private` schema MUST remain outside Supabase `exposed_schemas`, so it is not a PostgREST RPC surface. Direct PostgreSQL invocation under `authenticated` is still safe only because the private function performs the same `auth.uid()`, membership, company, permission, state, version, and invariant checks; wrapper-only trust is forbidden.
 
 Nitro permission checks improve UX and reject early.
 
@@ -1992,37 +2244,54 @@ Database transaction remains final authority for critical transitions.
 
 # 36. Atomic database commands
 
-The following operations MUST execute atomically:
+The controlled command set includes at minimum:
 
 ```text
-Start node
+create_stage01_opportunity
+update_opportunity_current_data
 
-Complete 01.1
-+ create immutable baseline
+create_contact
+update_contact
+add_contact_method
+update_contact_method
+link_opportunity_contact
+set_opportunity_primary_contact
+end_opportunity_contact
 
-Complete 01.2
+add_opportunity_scope
+retire_opportunity_scope
+add_opportunity_referrer
+set_opportunity_primary_referrer
+end_opportunity_referrer
 
-Final Decision
+append_opportunity_intake_record
+correct_opportunity_intake_record
+raise_opportunity_duplicate_concern
+resolve_opportunity_duplicate
 
-Resolve duplicate as same need
-+ link canonical Opportunity
-+ invalidate duplicate when applicable
+assign_workflow_node
+end_workflow_assignment
+raise_workflow_blocker
+resolve_workflow_blocker
 
-Invalidate / Restore
+start_workflow_node
+complete_stage01_intake
+invalidate_opportunity
+restore_opportunity
+reopen_workflow_node
+revalidate_workflow_node
 
-Reopen
-
-Revalidate
-
-Resolve blocker
-
-Reactivate
-+ supersede execution
-+ create execution
-+ create decision cycle
+record_stage01_criterion_evaluation
+submit_stage01_recommendation
+return_stage01_for_clarification
+record_stage01_final_decision
+complete_stage01_evaluation
+reactivate_stage01
 ```
 
-Supabase request-level code MUST NOT simulate these transactions by issuing several unrelated client queries.
+Each function call is one transaction, including commands whose current implementation writes one business row. Multi-write effects such as bootstrap, Primary Contact replacement, Primary Referrer replacement, reassignment, duplicate resolution, completion, Final Decision, reopen/revalidation, and Reactivation either commit completely with their event/audit history or roll back completely.
+
+Supabase request-level code MUST NOT simulate these transactions by issuing several unrelated client queries. No generic client-selected RPC proxy is introduced.
 
 ---
 
@@ -2034,10 +2303,21 @@ Mutable aggregate records use:
 version bigint
 ```
 
-Mutation input contains:
+Mutation input contains the version of the aggregate it changes:
 
 ```text
-expectedVersion
+Opportunity current data, contacts, scopes, referrers,
+intake, duplicate or validity
+→ expectedOpportunityVersion
+
+Contact or Contact Method
+→ expectedContactVersion
+
+assignment, blocker or workflow transition
+→ expectedExecutionVersion
+
+criterion, Recommendation, clarification or Final Decision
+→ expectedCycleVersion
 ```
 
 Transaction:
@@ -2047,6 +2327,8 @@ SELECT ... FOR UPDATE
 ```
 
 then checks current version.
+
+Contact Method commands lock and increment the owning Contact version. Opportunity relationship/history commands lock and increment the Opportunity version. Assignment/blocker commands lock and increment the current Node Execution version. Completion 01.1 checks both `expectedOpportunityVersion` and `expectedExecutionVersion` before capturing the baseline.
 
 Mismatch:
 
@@ -2079,10 +2361,44 @@ GET    /api/companies/:companyId/opportunities/:opportunityId
 PATCH  /api/companies/:companyId/opportunities/:opportunityId
 ```
 
+`POST` maps only to `create_stage01_opportunity`. `PATCH` updates current Opportunity fields only; it MUST NOT accept nested Contact, Scope, Referrer, Intake Record, assignment, blocker, or decision writes.
+
+## Contacts and Opportunity contact relationships
+
+```text
+POST  /api/companies/:companyId/contacts
+PATCH /api/companies/:companyId/contacts/:contactId
+
+POST  /api/companies/:companyId/contacts/:contactId/methods
+PATCH /api/companies/:companyId/contacts/:contactId/methods/:methodId
+
+POST /api/companies/:companyId/opportunities/:opportunityId/contacts
+POST /api/companies/:companyId/opportunities/:opportunityId/primary-contact
+POST /api/companies/:companyId/opportunities/:opportunityId/contacts/:opportunityContactId/end
+```
+
+Setting Primary Contact accepts an existing company-scoped `contactId`, relationship code, and `expectedOpportunityVersion`. It atomically ends the active Primary Contact relationship and inserts the new relationship. Creating a new Contact is a separate Contact command; no route body performs an unbounded nested aggregate mutation.
+
+Contact and Contact Method mutations use `expectedContactVersion`; relationship mutations use `expectedOpportunityVersion`.
+
+## Scopes and Referrers
+
+```text
+POST /api/companies/:companyId/opportunities/:opportunityId/scopes
+POST /api/companies/:companyId/opportunities/:opportunityId/scopes/:scopeId/retire
+
+POST /api/companies/:companyId/opportunities/:opportunityId/referrers
+POST /api/companies/:companyId/opportunities/:opportunityId/primary-referrer
+POST /api/companies/:companyId/opportunities/:opportunityId/referrers/:referrerId/end
+```
+
+Each route is a history-preserving command and requires `expectedOpportunityVersion`. Setting Primary Referrer ends the prior active primary row and inserts a new primary row atomically.
+
 ## Intake
 
 ```text
 POST /api/companies/:companyId/opportunities/:opportunityId/intake-records
+POST /api/companies/:companyId/opportunities/:opportunityId/intake-records/:recordId/corrections
 
 POST /api/companies/:companyId/opportunities/:opportunityId/duplicate-concerns
 POST /api/companies/:companyId/opportunities/:opportunityId/duplicate-concerns/:concernId/resolve
@@ -2118,19 +2434,24 @@ POST /api/companies/:companyId/workflow-nodes/:nodeExecutionId/reopen
 POST /api/companies/:companyId/workflow-nodes/:nodeExecutionId/revalidate
 ```
 
+The generic HTTP `complete` route dispatches by bound node identity: `01.1` calls `complete_stage01_intake`; `01.2` calls `complete_stage01_evaluation`. It MUST NOT implement gate or transaction logic in the route adapter.
+
 ## Assignments / blockers
 
 ```text
 POST /api/companies/:companyId/workflow-nodes/:nodeExecutionId/assignments
+POST /api/companies/:companyId/workflow-assignments/:assignmentId/end
 
 POST /api/companies/:companyId/workflow-nodes/:nodeExecutionId/blockers
 POST /api/companies/:companyId/workflow-blockers/:blockerId/resolve
 ```
 
+Posting a new accountable-owner assignment atomically ends the prior active assignment of the same kind and inserts the replacement. Assignment and Blocker commands require `expectedExecutionVersion`.
+
 ## Evaluation
 
 ```text
-PUT  /api/companies/:companyId/opportunities/:opportunityId/stage-01/evaluations/:criterionKey
+POST /api/companies/:companyId/opportunities/:opportunityId/stage-01/evaluations/:criterionKey/revisions
 
 POST /api/companies/:companyId/opportunities/:opportunityId/stage-01/recommendations
 
@@ -2196,7 +2517,9 @@ Required stable codes include:
 ```text
 OPPORTUNITY_NOT_FOUND
 OPPORTUNITY_INVALID
-OPPORTUNITY_VERSION_CONFLICT
+
+STAGE01_DEFINITION_CONFIG_UNAVAILABLE
+STAGE01_DEFINITION_CONFIG_INVALID
 
 WORKFLOW_NODE_NOT_READY
 WORKFLOW_NODE_NOT_ACTIVE
@@ -2220,8 +2543,14 @@ STAGE01_OVERRIDE_RATIONALE_REQUIRED
 STAGE01_REACTIVATION_NOT_ALLOWED
 STAGE01_INTAKE_REVALIDATION_REQUIRED
 
+STAGE01_HISTORY_IMMUTABLE
+STAGE01_RESOURCE_ALREADY_ENDED
+STAGE01_RESOURCE_ALREADY_RETIRED
+
 VERSION_CONFLICT
 ```
+
+`STAGE01_DEFINITION_CONFIG_*` applies only to aggregate bootstrap. `STAGE01_EVALUATION_CONFIG_UNAVAILABLE` applies to an already-bound workflow whose immutable snapshot cannot supply a supported evaluation definition; the runtime MUST fail closed and MUST NOT substitute the company's latest configuration.
 
 Use:
 
@@ -2230,9 +2559,11 @@ Use:
 401 → authentication
 403 → permission
 404 → scoped resource not found
-409 → state, gate, concurrency or transition conflict
+409 → state, gate, configuration availability/validity, concurrency or transition conflict
 500 → unexpected internal failure
 ```
+
+A resource outside the resolved company scope returns the same scoped `404` as a missing resource. APIs MUST NOT reveal cross-company existence through different error codes or details.
 
 Error details may contain:
 
@@ -2257,7 +2588,7 @@ Reuse existing append-only:
 audit_events
 ```
 
-Every critical action records:
+Every controlled Stage 01 mutation records:
 
 ```text
 actor
@@ -2275,6 +2606,7 @@ Minimum audited Stage 01 events:
 
 ```text
 Opportunity created
+published definition snapshot bound
 current Opportunity fields changed
 Primary Customer corrected
 Primary Contact changed
@@ -2331,7 +2663,24 @@ interface OpportunityRepository {
   getById(id: string): Promise<OpportunityDetail | null>
   create(input: CreateOpportunityInput): Promise<OpportunityDetail>
   update(id: string, input: UpdateOpportunityInput): Promise<OpportunityDetail>
+
+  createContact(...): Promise<Contact>
+  updateContact(...): Promise<Contact>
+  addContactMethod(...): Promise<ContactMethod>
+  updateContactMethod(...): Promise<ContactMethod>
+  linkContact(...): Promise<OpportunityContact>
+  setPrimaryContact(...): Promise<OpportunityContact>
+  endContactRelationship(...): Promise<void>
+
+  addScope(...): Promise<OpportunityScope>
+  retireScope(...): Promise<void>
+  addReferrer(...): Promise<OpportunityReferrer>
+  setPrimaryReferrer(...): Promise<OpportunityReferrer>
+  endReferrer(...): Promise<void>
+
   addIntakeRecord(...): Promise<IntakeRecord>
+  correctIntakeRecord(...): Promise<IntakeRecord>
+  raiseDuplicateConcern(...): Promise<DuplicateConcern>
   resolveDuplicateConcern(...): Promise<void>
   invalidate(...): Promise<void>
   restore(...): Promise<void>
@@ -2344,6 +2693,7 @@ interface WorkflowRepository {
   reopenNode(...): Promise<WorkflowNodeRuntime>
   revalidateNode(...): Promise<WorkflowNodeRuntime>
   assign(...): Promise<void>
+  endAssignment(...): Promise<void>
   raiseBlocker(...): Promise<void>
   resolveBlocker(...): Promise<void>
 }
@@ -2511,11 +2861,26 @@ At least two tenants/companies.
 Prove:
 
 ```text
-Company A cannot read Company B Opportunity
-Company A cannot mutate Company B Stage 01
-unauthorized user cannot call mutation RPC
-revoked role loses permission on next request
+DB-S01-BOOT-001  no definition → bootstrap rejects and leaves zero aggregate rows
+DB-S01-BOOT-002  newest invalid definition → rejects without older-version fallback
+DB-S01-BOOT-003  synthetic valid definition → exact aggregate shape and Cycle #1
+
+DB-S01-SEC-001   Company A cannot read or mutate Company B Stage 01
+DB-S01-SEC-002   anon has no Stage 01 table/function access
+DB-S01-SEC-003   authenticated has explicit SELECT only on readable tables
+DB-S01-SEC-004   direct protected-table INSERT/UPDATE/DELETE is denied
+DB-S01-SEC-005   public wrappers and private implementations have exact grants
+DB-S01-SEC-006   direct private invocation cannot bypass authorization checks
+DB-S01-SEC-007   revoked permission is rejected on the next command
+
+DB-S01-HIST-001  append-only tables reject UPDATE and DELETE
+DB-S01-HIST-002  Final Decision/authority fields cannot be changed after first write
+DB-S01-HIST-003  Final Decision and Clarification Return references must belong to the same cycle
+DB-S01-HIST-004  criterion revision, Recommendation version, and baseline keys are unique
+DB-S01-HIST-005  criterion applicability/result constraints and Recommendation currency are enforced
 ```
+
+Tests MUST exercise both grants and RLS because either layer alone is incomplete. Test fixtures may publish a synthetic complete definition only inside the rolled-back local test context.
 
 ## Transaction/concurrency tests
 
@@ -2528,9 +2893,14 @@ double Reactivation
 duplicate resolution race
 stale Opportunity update
 stale node execution mutation
+simultaneous Primary Contact replacement
+simultaneous Primary Referrer replacement
+simultaneous reassignment
 ```
 
 Exactly one valid mutation succeeds.
+
+`DB-S01-COMP-001` proves that Complete 01.1 inserts the completion event, captures its ID, inserts the baseline referencing that ID, and rolls every effect back on forced failure.
 
 ## API contract tests
 
@@ -2541,37 +2911,45 @@ Every Nitro route validates:
 - response;
 - stable error shape.
 
+`API-S01-001` covers the complete route matrix in Section 38, including command mapping, company scope, expected aggregate version, authenticated user-scoped Supabase client use, and cross-company scoped `404`. `API-S01-002` proves no server repository or request path constructs a `service_role` client.
+
 ## E2E acceptance flows
 
 Required flows:
 
-1. Create Opportunity with minimal preliminary information.
-2. 01.1 cannot Start without Intake Owner.
-3. 01.1 Start does not require complete intake data.
-4. 01.1 cannot Complete with missing required minimum.
-5. Budget, timeline, files and PM may be absent.
-6. Referral-like Lead Source requires Referrer.
-7. Raised duplicate concern prevents 01.1 completion.
-8. Resolve duplicate as different need and complete.
-9. Resolve duplicate as same need without deleting history.
-10. Complete 01.1 creates immutable baseline.
-11. 01.2 remains locked before valid 01.1 completion.
-12. 01.2 cannot Start without Evaluation Owner.
-13. Required evaluation with `insufficient_information` cannot proceed.
-14. `concern` or `not_fit` does not mechanically decide outcome.
-15. Submit Recommendation.
-16. Return for clarification.
-17. Submit a new Recommendation.
-18. Final Decision matching Recommendation.
-19. Final Decision overriding Recommendation requires rationale.
-20. Final Decision does not auto-complete 01.2.
-21. Complete 01.2 explicitly.
-22. `not_proceeding` Opportunity remains queryable.
-23. Reactivation creates Decision Cycle 2 and leaves Cycle 1 unchanged.
-24. Invalidation remains distinct from `not_proceeding`.
-25. Reopen/revalidation preserves old completion history.
-26. Blocking Blocker derives effective `blocked`.
-27. Non-blocking issue does not derive `blocked`.
+1. Without a published definition, Create Opportunity returns `STAGE01_DEFINITION_CONFIG_UNAVAILABLE` and commits nothing.
+2. An invalid newest definition returns `STAGE01_DEFINITION_CONFIG_INVALID` without falling back.
+3. A synthetic valid definition creates exactly one Opportunity, one Workflow Instance, two node instances/executions, and Decision Cycle #1, with no Project or parent Stage runtime.
+4. 01.1 cannot Start without Intake Owner.
+5. 01.1 Start does not require complete intake data.
+6. Create and change Primary Contact while preserving prior relationship history.
+7. Add/retire Scope and set/end Primary Referrer while preserving history.
+8. Append an Intake Record and append a correction without editing the original.
+9. 01.1 cannot Complete with missing required minimum.
+10. Budget, timeline, files and PM may be absent.
+11. Referral-like Lead Source requires Referrer.
+12. Raised duplicate concern prevents 01.1 completion.
+13. Resolve duplicate as different need and complete.
+14. Resolve duplicate as same need without deleting history.
+15. Complete 01.1 creates immutable baseline linked to its completion event.
+16. 01.2 remains locked before valid 01.1 completion.
+17. 01.2 cannot Start without Evaluation Owner.
+18. Required evaluation with `insufficient_information` cannot proceed.
+19. `concern` or `not_fit` does not mechanically decide outcome.
+20. Submit Recommendation.
+21. Return for clarification.
+22. Submit a new Recommendation.
+23. Final Decision matching Recommendation.
+24. Final Decision overriding Recommendation requires rationale.
+25. Final Decision cannot be edited or submitted twice.
+26. Final Decision does not auto-complete 01.2.
+27. Complete 01.2 explicitly.
+28. `not_proceeding` Opportunity remains queryable.
+29. Reactivation creates Decision Cycle 2 and leaves Cycle 1 unchanged.
+30. Invalidation remains distinct from `not_proceeding`.
+31. Reopen/revalidation preserves old completion history.
+32. Blocking Blocker derives effective `blocked`.
+33. Non-blocking issue does not derive `blocked`.
 
 ---
 
@@ -2599,7 +2977,8 @@ Logical migration order:
 
 6. policies / grants
 
-7. approved VQH Stage 01 configuration seed
+7. approved VQH Stage 01 definition/config publication
+   (Phase B only, after relevant BDGs)
 
 8. generated database types
 
@@ -2607,6 +2986,8 @@ Logical migration order:
 
 10. UI integration
 ```
+
+Phase A stops before step 7. Synthetic test definitions are fixtures, not migration step 7.
 
 Exact timestamped migration filenames belong to Implementation Plan.
 
@@ -2699,6 +3080,8 @@ transaction patterns
 HTTP repository infrastructure
 ```
 
+The bootstrap command itself is safe to implement before the gates: local tests use synthetic definitions, while any environment without an approved complete published definition fails closed. Safe foundation work does not imply operational Opportunity creation is enabled in production.
+
 MUST NOT be production-finalized before relevant gates:
 
 ```text
@@ -2733,23 +3116,68 @@ Codex MUST return `BLOCKED` rather than invent these when an implementation task
 | `VQH-S01-T014` | `proceed` does not create Project or start Stage 02 | APPROVED |
 | `VQH-S01-T015` | Current prototype Journey types are not production domain authority | APPROVED |
 | `VQH-S01-T016` | Generic parent Stage runtime remains outside this spec until BDG-HIER-01 | APPROVED |
+| `VQH-S01-T017` | Opportunity bootstrap fails closed without a valid published definition and atomically creates the complete aggregate plus Decision Cycle #1 | CORRECTION ACCEPTED |
+| `VQH-S01-T018` | Every Stage 01 business mutation uses an explicit controlled RPC and HTTP command/resource contract | CORRECTION ACCEPTED |
+| `VQH-S01-T019` | History immutability, Final Decision immutability, same-cycle references, and revision/version uniqueness are database-enforced | CORRECTION ACCEPTED |
+| `VQH-S01-T020` | Complete 01.1 creates the completion event before inserting the baseline that references it | CORRECTION ACCEPTED |
+| `VQH-S01-T021` | Supabase grants, RLS, exposed schemas, and SECURITY DEFINER privileges are explicit and deny-by-default | CORRECTION ACCEPTED |
+| `VQH-S01-T022` | Mutation concurrency is checked against the version of the Opportunity, Contact, Node Execution, or Decision Cycle aggregate being changed | CORRECTION ACCEPTED |
+| `VQH-S01-T023` | `reliability_state` is data-quality metadata and never creates a gate or Blocker by itself | CORRECTION ACCEPTED |
+| `VQH-S01-T024` | Phase A is a verified runtime foundation but remains non-operational in production until required BDGs are approved and a complete definition is published | CORRECTION ACCEPTED |
 
 ---
 
-# 52. Technical acceptance boundary
+# 52. Business-to-technical traceability
 
-This Technical Spec is technically approved with the following confirmed conditions:
+The corrected Execution Plan uses the planned task numbers below. Evidence IDs are defined in Section 47 and remain stable when individual test files are reorganized. In this matrix, `Tnnn` is shorthand for `VQH-S01-Tnnn` in Section 51.
+
+| Business decision | Technical decisions | Spec sections | Corrected plan tasks | Primary evidence |
+| --- | --- | --- | --- | --- |
+| `VQH-S01-001` | T002, T005, T013 | 5, 23, 30, 32 | 5, 10, 15 | E2E 28–29 |
+| `VQH-S01-002` | T003, T013 | 6, 27–28 | 7, 10 | E2E 26–27 |
+| `VQH-S01-003` | T001, T016, T017 | 2, 5.1, 8, 21 | 3, 8–9 | DB-S01-BOOT-003; E2E 3, 16 |
+| `VQH-S01-004` | T008, T009, T013, T018 | 25–28, 33–38 | 10–12 | API-S01-001; E2E 20–27 |
+| `VQH-S01-005` | T006, T011, T018 | 11–20, 36, 38 | 1, 4, 8–9 | E2E 6–15 |
+| `VQH-S01-006` | T002, T014, T017 | 3–5.1, 20, 29 | 3, 7, 9, 15 | E2E 3, 10 |
+| `VQH-S01-007` | T014, T017 | 4–5.1, 29 | 3, 15 | E2E 3, 10 |
+| `VQH-S01-008` | T013 | 23, 27–28 | 5, 10 | E2E 23–28 |
+| `VQH-S01-009` | T007, T011, T012 | 22, 24, 27 | 5, 7, 10 | E2E 18–24 |
+| `VQH-S01-010` | T012 | 22, 24 | 5, 7, 10 | E2E 18–19 |
+| `VQH-S01-011` | T005, T008 | 32, 36 | 10 | E2E 29 |
+| `VQH-S01-012` | T005, T013, T019 | 23–27, 32 | 5, 10 | DB-S01-HIST-002; E2E 29 |
+| `VQH-S01-013` | T002, T008, T018 | 5, 17, 36, 38 | 4, 8–9 | E2E 12–14 |
+| `VQH-S01-014` | T006, T019, T020 | 16, 18, 20, 26.1 | 4, 9 | DB-S01-HIST-001; DB-S01-COMP-001; E2E 8, 15 |
+| `VQH-S01-015` | T003, T008, T009 | 19–20, 33–36 | 7, 9 | E2E 4–5, 15 |
+| `VQH-S01-016` | T006, T011, T023 | 12–20 | 4, 7, 9 | E2E 9–11 |
+| `VQH-S01-017` | T002, T008, T019 | 30, 36 | 4, 9 | E2E 30 |
+| `VQH-S01-018` | T003, T007, T016, T017 | 5.1, 8, 21 | 3, 7–9 | DB-S01-BOOT-003; E2E 16–17 |
+| `VQH-S01-019` | T007, T011, T017 | 5.1, 10.2, 22 | 3, 5, 7–8 | DB-S01-BOOT-001..003; E2E 18 |
+| `VQH-S01-020` | T012, T013, T019 | 24, 27 | 5, 7, 10 | DB-S01-HIST-003..005; E2E 18–19, 23–25 |
+| `VQH-S01-021` | T013, T019 | 25–26.1 | 5, 10 | DB-S01-HIST-001; E2E 20–22 |
+| `VQH-S01-022` | T009, T013, T019 | 27 | 5, 10 | DB-S01-HIST-002..003; E2E 23–26 |
+| `VQH-S01-023` | T003, T008, T009 | 28, 33–36 | 7, 10 | E2E 26–27 |
+| `VQH-S01-024` | T005, T006, T019 | 18, 20, 31 | 4, 9–10 | DB-S01-HIST-001; E2E 31 |
+| `VQH-S01-025` | T005, T008, T013 | 23, 32, 36 | 5, 10 | E2E 29 |
+| `VQH-S01-026` | T005, T006, T009, T019, T020, T021 | 10, 16, 18, 23–41 | 3–15 | DB-S01-SEC-001..007; DB-S01-HIST-001..005; DB-S01-COMP-001 |
+
+---
+
+# 53. Technical acceptance boundary
+
+This correction draft is ready for written review with the following conditions:
 
 ```text
 [x] Architecture and domain boundaries approved
-[x] VQH-S01-T001..T016 accepted
+[x] VQH-S01-T001..T016 preserved
+[x] VQH-S01-T017..T024 correction design accepted
 [x] No known conflict with Canonical Journey
 [x] No known conflict with Approved Stage 01 Business Design
 [x] BDG items acknowledged as business gates
 [x] No implementation behavior may silently resolve a BDG
+[ ] Corrected written Technical Spec reviewed and approved
 ```
 
-Approval of this Technical Spec means:
+When the corrected written Technical Spec is approved, that approval means:
 
 ```text
 Technical Design approved
@@ -2780,12 +3208,16 @@ Implementation
 
 ---
 
-# 53. Final technical invariant
+# 54. Final technical invariant
 
 The implementation must always be able to answer, from persisted data alone:
 
 ```text
 What Opportunity was considered?
+
+Which published definition version was bound at bootstrap?
+
+Why was bootstrap allowed, and which aggregate rows were created atomically?
 
 What information did VQH have when 01.1 was completed?
 
