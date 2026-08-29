@@ -253,6 +253,30 @@ describe('Cloud DEV fixed-mode runner', () => {
     expect(queriedFiles).toEqual([join(root, 'supabase/tests/database/stage01_schema.test.sql')])
   })
 
+  it('isolates the CLI state directory for each concurrent Cloud DEV actor', () => {
+    const root = makeWorktree()
+    const testDirectory = join(root, 'supabase/tests/database')
+    mkdirSync(testDirectory, { recursive: true })
+    writeFileSync(
+      join(testDirectory, 'stage01_concurrency_actor_a.sql'),
+      "-- STAGE01 CLOUD DEV FIXED CONCURRENCY FIXTURE\nselect 'PASS';\n",
+    )
+    let childEnvironment: NodeJS.ProcessEnv | undefined
+
+    runSupabaseDevMode('stage01-concurrency-actor-a', {
+      cwd: root,
+      env: { LOCALAPPDATA: 'C:\\Users\\developer\\AppData\\Local' },
+      spawn(_command, _args, options) {
+        childEnvironment = options.env
+        return { status: 0 }
+      },
+    })
+
+    expect(childEnvironment?.SUPABASE_HOME).toBe(
+      'C:\\Users\\developer\\AppData\\Local\\SupabaseCLI\\taskovia-dev\\stage01-concurrency-actor-a',
+    )
+  })
+
   it('leaves generated types byte-identical when type generation fails or is implausible', () => {
     const root = makeWorktree()
     const target = join(root, 'shared/types/database.types.ts')

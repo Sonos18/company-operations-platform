@@ -305,6 +305,60 @@ end $$;
 
 reset role;
 
+do $$
+declare
+  function_signature text;
+begin
+  foreach function_signature in array array[
+    'create_stage01_opportunity(uuid,jsonb,uuid)',
+    'update_opportunity_current_data(uuid,uuid,jsonb,uuid)',
+    'create_contact(uuid,jsonb,uuid)',
+    'update_contact(uuid,uuid,jsonb,uuid)',
+    'add_contact_method(uuid,uuid,jsonb,uuid)',
+    'update_contact_method(uuid,uuid,uuid,jsonb,uuid)',
+    'link_opportunity_contact(uuid,uuid,jsonb,uuid)',
+    'set_opportunity_primary_contact(uuid,uuid,jsonb,uuid)',
+    'end_opportunity_contact(uuid,uuid,uuid,jsonb,uuid)',
+    'add_opportunity_scope(uuid,uuid,jsonb,uuid)',
+    'retire_opportunity_scope(uuid,uuid,uuid,jsonb,uuid)',
+    'add_opportunity_referrer(uuid,uuid,jsonb,uuid)',
+    'set_opportunity_primary_referrer(uuid,uuid,jsonb,uuid)',
+    'end_opportunity_referrer(uuid,uuid,uuid,jsonb,uuid)',
+    'append_opportunity_intake_record(uuid,uuid,jsonb,uuid)',
+    'correct_opportunity_intake_record(uuid,uuid,uuid,jsonb,uuid)',
+    'raise_opportunity_duplicate_concern(uuid,uuid,jsonb,uuid)'
+  ] loop
+    if not has_function_privilege('authenticated', 'public.' || function_signature, 'execute')
+       or has_function_privilege('anon', 'public.' || function_signature, 'execute')
+       or has_function_privilege('public', 'public.' || function_signature, 'execute') then
+      raise exception 'DB-S01-SEC public function privilege mismatch for %', function_signature;
+    end if;
+    if not has_function_privilege('authenticated', 'private.' || function_signature, 'execute')
+       or has_function_privilege('anon', 'private.' || function_signature, 'execute')
+       or has_function_privilege('public', 'private.' || function_signature, 'execute') then
+      raise exception 'DB-S01-SEC private function privilege mismatch for %', function_signature;
+    end if;
+  end loop;
+end $$;
+
+set local role authenticated;
+
+do $$
+begin
+  begin
+    perform private.create_stage01_opportunity(
+      '52000000-0000-4000-8000-000000000020',
+      '{"primaryCustomerName":"Private bypass attempt"}'::jsonb,
+      '52000000-0000-4000-8000-000000000299'
+    );
+    raise exception 'DB-S01-SEC direct private implementation bypass unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'PERMISSION_DENIED' then raise; end if;
+  end;
+end $$;
+
+reset role;
+
 select 'PASS DB-S01-SEC foundational grants and RLS' as result;
 
 rollback;

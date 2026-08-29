@@ -202,7 +202,7 @@ function runCli(cliArgs, mode, { cwd, env, platform, spawn }) {
   const result = spawn(process.execPath, [cliEntrypoint, ...cliArgs], {
     cwd,
     encoding: mode === 'types' || mode === 'auth-check' ? 'utf8' : undefined,
-    env: isolatedSupabaseEnvironment(cwd, env, platform),
+    env: isolatedSupabaseEnvironment(cwd, env, platform, mode),
     stdio: mode === 'types' || mode === 'auth-check' ? 'pipe' : 'inherit',
   })
   if (result.error) throw result.error
@@ -238,8 +238,13 @@ function readDedicatedSupabaseDevAccessToken(cwd) {
   return token
 }
 
-function isolatedSupabaseEnvironment(cwd, env, platform) {
+function isolatedSupabaseEnvironment(cwd, env, platform, mode) {
   const childEnv = { ...env }
+  const path = platform === 'win32' ? { join } : posix
+  const baseHome = resolveSupabaseDevHome({ env, platform })
+  const supabaseHome = Object.hasOwn(STAGE01_CONCURRENCY_MODE_FILES, mode)
+    ? path.join(baseHome, mode)
+    : baseHome
   delete childEnv.SUPABASE_ACCESS_TOKEN
   delete childEnv.SUPABASE_CLI_BINARY_OVERRIDE
   delete childEnv.SUPABASE_DB_PASSWORD
@@ -247,7 +252,7 @@ function isolatedSupabaseEnvironment(cwd, env, platform) {
   return {
     ...childEnv,
     SUPABASE_ACCESS_TOKEN: readDedicatedSupabaseDevAccessToken(cwd),
-    SUPABASE_HOME: resolveSupabaseDevHome({ env, platform }),
+    SUPABASE_HOME: supabaseHome,
   }
 }
 
