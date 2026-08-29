@@ -4,7 +4,7 @@
 > **Implementation authorization:** AUTHORIZED AFTER `READY` OR `READY_WITH_NON_MATERIAL_DRIFT` PREFLIGHT
 > **Scope:** Phase A foundation only
 > **Created:** 2026-08-30
-> **Execution source:** `Sonos18/company-operations-platform@303a8b01ea935c1042387e7d1b01e2d8826a0828`
+> **Execution source:** `Sonos18/company-operations-platform@1926ec6ddbcb385ca1358626e9ac95df858f2fbd`
 
 ```yaml
 task:
@@ -16,20 +16,20 @@ repository:
   remote: Sonos18/company-operations-platform
   base_ref: codex/vqh-stage-01-spec-plan-corrections
   analysis_base_sha: f314ed7a4ff1d86e45cc29075ab0213ec6421ca1
-  remote_base_sha: 303a8b01ea935c1042387e7d1b01e2d8826a0828
-  execution_base_sha: 303a8b01ea935c1042387e7d1b01e2d8826a0828
+  remote_base_sha: 1926ec6ddbcb385ca1358626e9ac95df858f2fbd
+  execution_base_sha: 1926ec6ddbcb385ca1358626e9ac95df858f2fbd
 
 approval:
   status: APPROVED
   approved_by: Son
   approval_reference: >-
-    Technical Spec approved by Son on 2026-08-29, corrected Execution Plan approved by Son on
-    2026-08-30, and this corrected Implementation Packet explicitly approved by Son in chat on
+    Technical Spec approved by Son on 2026-08-29; corrected Execution Plan, Cloud DEV no-Docker
+    amendment, and this amended Implementation Packet explicitly approved by Son in chat on
     2026-08-30.
-  approved_scope_version: 2026-08-30-stage01-foundation-a-corrected
+  approved_scope_version: 2026-08-30-stage01-foundation-a-cloud-dev
 
 goal: >-
-  Implement and locally verify the reusable Workflow Core and VQH Stage 01
+  Implement and verify on the guarded canonical Taskovia Supabase Cloud DEV project the reusable Workflow Core and VQH Stage 01
   Opportunity/Intake/Evaluation runtime foundation while failing closed until a complete company
   definition exists and leaving BDG-TAX-01, BDG-EVAL-01, BDG-AUTH-01, and BDG-HIER-01 unresolved.
 
@@ -37,7 +37,7 @@ current_state_summary: >-
   Project Journey business data remains prototype-backed and ProjectRepository remains separate
   from the new Opportunity aggregate. The repository already provides Supabase tenancy,
   normalized company RBAC, private.has_company_permission, audit events, authenticated Nitro
-  routes, Zod boundaries, user-scoped Supabase clients, pgTAP, Vitest, Playwright, and HTTP
+  routes, Zod boundaries, user-scoped Supabase clients, fixed linked database-query modes, Vitest, Playwright, and HTTP
   repository patterns. The corrected Technical Spec and 15-task Execution Plan are approved and
   present at execution_base_sha. The documentation-only range after analysis_base_sha does not
   modify application code, migrations, dependencies, lockfiles, validation scripts, or generated
@@ -49,7 +49,7 @@ approved_decisions:
   - Bootstrap is one fail-closed transaction that creates exactly one Opportunity, one Workflow Instance, node instances/executions 01.1 and 01.2, Decision Cycle 1 bound to 01.2 execution 1, events, and audit records.
   - Bootstrap returns STAGE01_DEFINITION_CONFIG_UNAVAILABLE when no published definition exists and commits no aggregate rows.
   - Bootstrap selects the newest company vqh.stage01 definition; an invalid newest row returns STAGE01_DEFINITION_CONFIG_INVALID without falling back to an older version.
-  - Synthetic complete definitions are allowed only as rolled-back local automated-test fixtures.
+  - Synthetic complete definitions are allowed only as rolled-back or cleanup-guaranteed Cloud DEV automated-test fixtures.
   - Phase A has authoritative runtime nodes 01.1 and 01.2 only; it creates no canonical parent Stage 01 runtime.
   - Persist only not_started, active, completed, and not_applicable phases; derive locked, ready, and blocked from dependencies, gates, and open blocking Blockers.
   - blocked is never a manually persisted or toggled state, and reliability_state is metadata rather than a gate or Blocker.
@@ -83,7 +83,9 @@ forbidden_changes:
   - Do not edit existing migrations or hand-edit shared/types/database.types.ts.
   - Do not add a production dependency.
   - Do not create a worktree or dispatch implementation to subagents; execute inline as selected by Son.
-  - Do not mutate Supabase Cloud DEV, mutate production, deploy, create a PR, merge, or force-push.
+  - Do not use Docker or local Supabase for Stage 01 validation.
+  - Do not run Cloud DEV reset, seed, migration repair, dashboard/Table Editor schema mutation, arbitrary linked SQL, or any Cloud DEV operation outside the fixed runner modes and exact Stage 01 scope below.
+  - Do not mutate production, deploy, create a PR, merge, or force-push.
 
 scope:
   in:
@@ -96,14 +98,14 @@ scope:
     - User-scoped server data repositories/services and the exact 36 Nitro routes in Technical Spec Section 38 and Execution Plan Task 12.
     - Frontend Opportunity, Workflow, and Stage01 contracts plus authenticated HTTP repositories and additive repository-registry wiring.
     - Client error preservation for stable Stage 01 4xx codes without weakening existing auth, rate-limit, network, malformed-response, or 5xx behavior.
-    - pgTAP, Vitest, API-contract, security, concurrency, history, and all 33 public-RPC acceptance flows.
-    - Local database type generation, full local verification, boundary audit, commit, push of feat/vqh-stage-01-foundation, and Completion Report.
+    - Transaction-wrapped PostgreSQL assertions, fixed multi-session concurrency verification, Vitest, API-contract, security, history, and all 33 public-RPC acceptance flows.
+    - Linked Cloud DEV type generation, security/performance advisors, no-Docker full verification, boundary audit, commit, push of feat/vqh-stage-01-foundation, and Completion Report.
   out:
     - Any production VQH definition/configuration publication or configuration authoring UI/API.
     - Concrete taxonomy values, evaluation definitions, risk catalogs, authority resolution, owner defaults, or operational role mappings.
     - Parent Stage 01 runtime semantics, Stage 02 behavior, automatic Project creation, or Project Manager assignment.
     - Stage 01 Vue pages, workspace redesign, or migration of existing Journey UI/mock domain.
-    - Supabase Cloud DEV rollout, production rollout, deployment, PR creation, merge, or force-push.
+    - Cloud DEV changes outside the exact eight Stage 01 migrations and controlled test-fixture verification; production rollout, deployment, PR creation, merge, or force-push.
   allowed_refactors:
     - Small focused extraction needed to reuse existing auth, tenancy, authorization, API-error, or repository patterns.
     - Type-only/additive registry changes needed to expose Stage 01 repositories while preserving existing PrototypeRepositoryRegistry behavior.
@@ -132,7 +134,7 @@ source_anchors:
     - server/utils/supabase-client.ts
     - app/errors/client-error.ts
     - app/repositories/contracts.ts
-    - app/repositories/create-mock-repositories.ts
+    - app/repositories/mock/mock-repositories.ts
     - app/repositories/http/authenticated-http-client.ts
     - app/features/journey/journey.types.ts
     - app/features/projects/project.types.ts
@@ -140,15 +142,18 @@ source_anchors:
     - supabase/migrations/20260818033418_employee_management_rbac.sql
     - supabase/tests/database/employee_rbac_schema.test.sql
     - supabase/tests/database/employee_rbac_rls.test.sql
+    - scripts/assert-cloud-dev-target.mjs
+    - scripts/run-supabase-dev.mjs
+    - docs/development/backend-local.md
     - package.json
     - pnpm-lock.yaml
   assumptions:
-    - origin/codex/vqh-stage-01-spec-plan-corrections contains execution_base_sha and both approved documents.
-    - analysis_base_sha is the application-source commit analyzed for the design; f314ed7a..303a8b01 is documentation-only.
+    - origin/codex/vqh-stage-01-spec-plan-corrections contains execution_base_sha and both approved Cloud DEV-amended documents.
+    - analysis_base_sha is the application-source commit analyzed for the design; f314ed7a..execution_base_sha is documentation-only.
     - Existing normalized RBAC and private.has_company_permission remain the canonical company authorization mechanism.
     - Existing authenticated company-context and user-scoped Supabase patterns remain valid for Stage 01 routes.
     - Existing prototype Project Journey behavior remains unchanged while the additive Stage 01 backend foundation is introduced.
-    - package.json continues to provide every required validation command listed below at technical preflight.
+    - package.json provides the existing guarded db:dev target/auth/status/dry-run/push/types/advisor and verify:dev commands at technical preflight; Execution Plan Task 2 adds db:dev:stage01:test and db:dev:stage01:concurrency before either is required.
 
 contracts:
   api: >-
@@ -174,8 +179,11 @@ contracts:
     and enforce company RLS separately; deny direct protected mutations and service_role request paths.
   migration_rollout: >-
     Add only the eight new forward-only migration files specified by Execution Plan Tasks 2 through
-    10. Local reset/pgTAP/type generation is authorized. No production definition publication,
-    Supabase Cloud DEV push, production database mutation, deployment, or production rollout is authorized.
+    10. Before each push, the fixed canonical target, status, and dry-run checks must pass and list
+    only the reviewed pending Stage 01 migration. Cloud DEV pushes, rollback-safe fixed SQL suites,
+    cleanup-guaranteed concurrency fixtures, linked type generation, and advisors are authorized only
+    on project ref gtgljlnhwvhqdnwrfdfj. No reset, seed, migration repair, production definition
+    publication, production database mutation, deployment, or production rollout is authorized.
 
 acceptance_criteria:
   - id: AC-S01-01
@@ -183,7 +191,7 @@ acceptance_criteria:
     evidence_expected: Focused schema Vitest tests pass; 24 permissions and the approved Stage 01 errors are present; OPPORTUNITY_VERSION_CONFLICT is absent.
   - id: AC-S01-02
     requirement: Workflow Core and definition migrations implement immutable snapshots, instances, exactly the required node runtime primitives, definition validation, RLS enablement, checks, foreign keys, and partial uniqueness.
-    evidence_expected: stage01_schema.test.sql and stage01_definition.test.sql pass against a clean local reset.
+    evidence_expected: stage01_schema.test.sql and stage01_definition.test.sql pass through the fixed transaction-wrapped Cloud DEV runner with no retained fixture rows.
   - id: AC-S01-03
     requirement: Bootstrap fails closed with no definition or an invalid newest definition and never falls back or commits partial aggregate rows.
     evidence_expected: DB-S01-BOOT-001 and DB-S01-BOOT-002 pass with STAGE01_DEFINITION_CONFIG_UNAVAILABLE and STAGE01_DEFINITION_CONFIG_INVALID respectively.
@@ -230,33 +238,40 @@ acceptance_criteria:
     requirement: Frontend Opportunity, Workflow, and Stage01 contracts/repositories are additive, preserve stable Stage 01 errors, and do not replace ProjectRepository or migrate existing Journey UI behavior.
     evidence_expected: Frontend repository/client-error tests pass and final diff contains no new Stage 01 Vue page/workspace or Project Journey reinterpretation.
   - id: AC-S01-18
-    requirement: All 33 required public-RPC acceptance flows pass from a clean local database with synthetic definitions confined to rolled-back test fixtures.
-    evidence_expected: stage01_flows.test.sql reports E2E 1 through 33 passing after pnpm db:local:reset and pnpm db:local:test.
+    requirement: All 33 required public-RPC acceptance flows pass on canonical Cloud DEV with synthetic definitions confined to rolled-back test fixtures.
+    evidence_expected: pnpm db:dev:stage01:test executes stage01_flows.test.sql and reports E2E 1 through 33 passing; the suite verifies rollback and leaves no fixture rows.
   - id: AC-S01-19
     requirement: Generated database types match the eight migrations and the full application/backend verification suite succeeds on the final implementation tree.
-    evidence_expected: Fresh pnpm db:local:types diff is reviewed; pnpm verify:backend:local, pnpm test:e2e, and git diff --check pass.
+    evidence_expected: Fresh pnpm db:dev:types diff is reviewed; pnpm verify:dev, fixed Stage 01 SQL/concurrency suites, both advisors, pnpm test:e2e, and git diff --check pass without Docker/local Supabase.
   - id: AC-S01-20
-    requirement: Final scope audit proves Phase A contains no BDG resolution, production definition, Project/PM/Stage 02/parent-runtime behavior, UI migration, Cloud DEV mutation, or production mutation/deployment.
-    evidence_expected: Task 15 boundary scan and Completion Report enumerate zero forbidden side effects and document all residual risks.
+    requirement: Final scope audit proves Phase A contains no BDG resolution, production definition, Project/PM/Stage 02/parent-runtime behavior, UI migration, unauthorized Cloud DEV mutation, or production mutation/deployment.
+    evidence_expected: Task 15 boundary scan and Completion Report enumerate the exact eight applied Cloud DEV migrations, confirm concurrency-fixture cleanup, list zero unauthorized side effects, and document all residual risks.
   - id: AC-S01-21
     requirement: The implementation is committed and pushed only to feat/vqh-stage-01-foundation, with the remotely queried head equal to local head and no PR, merge, or force-push.
     evidence_expected: Completion Report records execution_base_sha, head_sha, remote_head_sha, and git ls-remote proves remote_head_sha equals head_sha.
 
 validation:
   required:
+    - pnpm db:dev:target
+    - pnpm db:dev:auth-check
+    - pnpm db:dev:status
+    - pnpm db:dev:dry-run
+    - pnpm db:dev:push
+    - pnpm db:dev:stage01:test
+    - pnpm db:dev:stage01:concurrency
+    - pnpm db:dev:types
+    - pnpm db:dev:advisors:security
+    - pnpm db:dev:advisors:performance
     - pnpm exec vitest run tests/unit/shared/stage01-schemas.spec.ts
     - pnpm exec vitest run tests/unit/server/workflow-state.spec.ts tests/unit/server/stage01-gates.spec.ts
     - pnpm exec vitest run tests/unit/server
     - pnpm exec vitest run tests/unit/repositories tests/unit/auth/authenticated-http-client.spec.ts
-    - pnpm db:local:reset
-    - pnpm db:local:test
-    - pnpm db:local:types
     - pnpm test:unit
     - pnpm typecheck
     - pnpm lint
     - pnpm build
     - pnpm test:e2e
-    - pnpm verify:backend:local
+    - pnpm verify:dev
     - git diff --check
     - git status --short
     - git fetch origin codex/vqh-stage-01-spec-plan-corrections
@@ -264,12 +279,12 @@ validation:
   optional: []
   side_effect_authorization:
     workspace_mutating: true
-    local_db_destructive: true
-    cloud_dev_mutating: false
+    local_db_destructive: false
+    cloud_dev_mutating: true
     production_mutating: false
 
 required_capabilities:
-  - PostgreSQL schema, RLS, functions, grants, transactions, row locking, concurrency, and pgTAP implementation.
+  - PostgreSQL schema, RLS, functions, grants, transactions, row locking, exception-based SQL assertions, and fixed multi-session Cloud DEV concurrency verification.
   - Strict TypeScript and Zod contract implementation across shared, Nitro server, and frontend repository boundaries.
   - Security review of tenant isolation, permissions, RPC wrappers/private implementations, history immutability, and service-role absence.
   - TDD, exact plan-task execution, fresh verification, Git delivery verification, and repository-standard Completion Report.
@@ -302,7 +317,8 @@ task_specific_stop_conditions:
   - Return BLOCKED rather than adding a concrete authority resolver, operational role mapping, production definition, Stage 02 progression, Project creation, Project Manager assignment, parent Stage runtime, or Stage 01 UI migration.
   - Return BLOCKED before using service_role on a normal request path or weakening the approved RLS/grant/function-security contract.
   - Return BLOCKED before adding an unapproved production dependency or changing an approved API/data/security contract.
-  - Return BLOCKED before any Cloud DEV mutation because cloud_dev_mutating is false.
+  - Return BLOCKED before any Cloud DEV operation if the canonical target/auth/status guard fails, the dry-run contains anything outside the reviewed Stage 01 migration set, or a fixed test cannot guarantee rollback/cleanup.
+  - Return BLOCKED before remote reset, seed, migration repair, arbitrary linked SQL, dashboard/Table Editor schema mutation, Docker/local Supabase use, or a Cloud DEV target other than gtgljlnhwvhqdnwrfdfj.
   - Return BLOCKED before any production mutation or deployment.
   - Stop after Phase A Task 15; do not continue into Phase B.
 
@@ -325,35 +341,38 @@ known_risks:
   - Contact, relationship, Node Execution, and Decision Cycle commands use different owning versions; applying Opportunity version universally would violate concurrency contracts.
   - Generic reopen and Stage 01 Reactivation are distinct and can be conflated, corrupting execution/cycle history.
   - Existing client error mapping can collapse new stable Stage 01 4xx codes unless the narrow approved mapping change is tested.
+  - Cloud DEV is shared and forward-only: every successful Stage 01 push is immediately visible to other DEV users, and an applied defect requires a new corrective migration.
+  - Multi-session race tests temporarily commit namespaced fixture rows; mandatory pre-clean/finally-cleanup and post-clean assertions reduce but do not eliminate residue risk after external interruption.
 
 approved_design_ref: >-
   docs/superpowers/specs/2026-08-29-vqh-stage-01-technical-design.md
-  @ cf198b3bbf57df794bbe22464ccabd3704174153
+  @ 1926ec6ddbcb385ca1358626e9ac95df858f2fbd
 approved_execution_plan_ref: >-
   docs/superpowers/plans/2026-08-29-vqh-stage-01-foundation.md
-  @ 303a8b01ea935c1042387e7d1b01e2d8826a0828
+  @ 1926ec6ddbcb385ca1358626e9ac95df858f2fbd
 ```
 
 ## Preflight gate
 
 Codex MUST fetch `origin/codex/vqh-stage-01-spec-plan-corrections`, verify that it contains
-`303a8b01ea935c1042387e7d1b01e2d8826a0828`, and use that exact commit as
+`1926ec6ddbcb385ca1358626e9ac95df858f2fbd`, and use that exact commit as
 `execution_base_sha`. Implementation may start only after the repository-mandated technical
 preflight returns `READY` or `READY_WITH_NON_MATERIAL_DRIFT`.
 
 `PACKET_STALE` or `BLOCKED` is a stop-and-report result. It is not permission to branch from a
-different source, create a worktree, infer missing decisions, weaken security, or mutate Cloud DEV.
+different source, create a worktree, infer missing decisions, weaken security, or bypass the fixed Cloud DEV guardrails.
 
 ## Approval and handoff boundary
 
-This draft packet does not authorize implementation. Approval requires all of the following:
+This packet authorizes implementation only while every approval condition below remains true:
 
 ```text
 [x] Corrected Technical Spec approved
 [x] Corrected Execution Plan approved
 [x] Remote execution base contains both approved documents
-[x] Local destructive database testing is explicitly scoped
-[x] Cloud DEV and production mutation remain forbidden
+[x] Docker/local Supabase are excluded from the Stage 01 workflow
+[x] Canonical Cloud DEV migrations and controlled verification fixtures are explicitly scoped
+[x] Production mutation remains forbidden
 [x] Delivery branch and no-worktree/no-subagent constraints are explicit
 [x] Written Implementation Packet reviewed and approved by Son
 ```
@@ -361,6 +380,6 @@ This draft packet does not authorize implementation. Approval requires all of th
 This approval state records Sơn's explicit written handoff approval. The packet may now be used as
 the Phase A implementation instruction, subject to its mandatory technical preflight.
 
-Approval of this packet authorizes implementation only within its scope after successful preflight.
-It does not authorize Cloud DEV mutation, production mutation, deployment, PR creation, merge, or
-force-push.
+Approval of this packet authorizes implementation and the exact guarded canonical Cloud DEV
+migrations/verification side effects within its scope after successful preflight. It does not
+authorize production mutation, deployment, PR creation, merge, or force-push.
