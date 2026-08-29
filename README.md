@@ -74,6 +74,8 @@ Nút **Khôi phục dữ liệu mẫu** trên header xóa mọi thay đổi cụ
 
 Đã có nền tảng backend Supabase cho tenant/company membership, RLS và pgTAP; Nitro API cho health, Bearer authentication, session/company context; cùng UI Auth/session và permission-aware shell. Các business repository vẫn dùng dữ liệu mẫu trong browser, chưa tích hợp dữ liệu production, object storage, thông báo, đồng bộ realtime hoặc APK. Form upload hiện chỉ mô phỏng việc lưu URL và metadata; không nhập hồ sơ, hợp đồng, ảnh hay bản vẽ thật.
 
+Nguồn chuẩn mô tả cách riêng VQH vận hành toàn bộ vòng đời dự án là [VQH Project Journey — Canonical Reference](docs/vqh/project-journey/README.md). Tài liệu này chỉ có authority trong VQH Project Journey, không đặt workflow rule chung cho mọi company trên Taskovia.
+
 ## Đường chuyển sang production
 
 ```text
