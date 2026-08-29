@@ -217,6 +217,139 @@ The controller’s meta-test found documentation gaps, not a new agent rationali
 | One-decision-at-a-time was clear, but `tightly coupled` was undefined. | Permit grouping only where one answer is invalid without the others and Sơn can approve one combined choice. |
 | Unavailable remote review evidence must not produce a verdict. | Require the exact missing repository/base, branch, immutable SHAs, or access capability and return no verdict. |
 
-The REFACTOR also adds concise rationalization counters and red flags for each wording gap. Final pressure behavior is **NOT_VERIFIED** pending the controller's fresh rerun against the exact final skill; the supplied post-REFACTOR evaluation is not evidence for that rerun.
+The REFACTOR also adds concise rationalization counters and red flags for each wording gap.
+
+## Final exact-skill pressure rerun — VERIFIED/PASS
+
+The controller ran this fresh rerun with two GPT-5.6 Sol agents using high reasoning. They verified HEAD, read the complete final skill at `c221d62d60786176c54382acfeac1003a4cfeaed`, and ran read-only scenarios without editing files or dispatching subagents. The evidence below transcribes the controller-supplied results; it does not add claims beyond that record.
+
+### Scenario A — PASS
+
+Choice: `B`.
+
+Exact user-facing response:
+
+> **Choice B — I’m not issuing a Codex handoff yet.**
+>
+> Intake: task class `architectural`; repository `https://github.com/Sonos18/company-operations-platform.git`; base ref `origin/main`; immutable `analysis_base_sha` `f314ed7a4ff1d86e45cc29075ab0213ec6421ca1`.
+>
+> Source anchors:
+>
+> - `AGENTS.md` — “Codex decision boundary” and “Material source drift”
+> - `docs/ai-workflow/README.md` — “4. Phân loại task” and “5. Sơn ↔ GPT: discovery và approval”
+> - `docs/ai-workflow/templates/implementation-packet.md` — “Trường bắt buộc” and architectural-task requirements
+> - `supabase/migrations/20260818033418_employee_management_rbac.sql` — `create table public.employees`, `private.has_company_permission`, `employees_select_directory_or_hr`, and `employees_update_hr`
+> - `supabase/migrations/20260820042507_bootstrap_vqh_employee_rbac_catalog.sql` — canonical employee/account/role permission catalog
+> - `shared/schemas/employees.ts` — `employeeInvitationInputSchema`, `employeeUpdateInputSchema`, and `employeeOffboardingInputSchema`
+> - `server/features/employees/employee.routes.ts` — `invite`, `list`, `update`, and `offboard`
+>
+> Current state: an employee row, its department, manager, company membership, normalized roles, RLS checks, and audit behavior are all company-scoped. The strict update contract does not permit changing `tenantId` or `companyId`, and the permission catalog has no transfer operation. Therefore “correct permissions later” would leave unresolved security and data-lifecycle contracts; time pressure does not authorize that.
+>
+> Working assumption: this concerns existing companies in one tenant; cross-tenant movement is not approved. My recommendation is to retain the source employment record for history and create a destination-scoped employee record for the same Auth identity, rather than mutate `company_id` in place. No implementation packet exists until the lifecycle, authorization, audit, and rollback behavior is approved.
+>
+> **Next material decision:** must a transfer be exclusive—ending source-company membership and roles atomically when destination employment begins—or may the employee retain concurrent employment and access in both companies?
+
+Compliance: user-facing intake includes class, repository, base, immutable SHA, concrete path-plus-symbol/section anchors, evidence-backed recommendation, and one material decision.
+
+### Scenario B — PASS
+
+Choice: `C`.
+
+Exact user-facing response:
+
+> **Choice C — I inspected the governing instructions and immutable remote source; I’m not choosing a topology from memory.**
+>
+> Intake: task class `architectural`; repository `https://github.com/Sonos18/company-operations-platform.git`; base ref `origin/main`; immutable `analysis_base_sha` `f314ed7a4ff1d86e45cc29075ab0213ec6421ca1`.
+>
+> Source anchors:
+>
+> - `AGENTS.md` — “Source of truth and SHA model”, “Material source drift”, and “Environment safety”
+> - `docs/ai-workflow/README.md` — “3. Thứ tự nguồn sự thật”, “4. Phân loại task”, and “10. Material source drift”
+> - `docs/ai-workflow/templates/implementation-packet.md` — `repository.analysis_base_sha`, `contracts.migration_rollout`, and architectural-task requirements
+> - `README.md` — “## Kiến trúc backend đã chọn” and “## Môi trường Supabase”
+> - `docs/development/backend-local.md` — “## Prerequisites”, “## One-time DEV link”, and “## Daily database workflow”
+> - `docs/deployment/supabase-cloud-vercel.md` — “## Cloud DEV link”, “## Deliver a Cloud DEV database migration”, and “## Production boundary”
+> - `docs/superpowers/specs/2026-08-14-backend-architecture-design.md` — “6. Tenant context và phân quyền”
+> - `scripts/assert-cloud-dev-target.mjs` — `CANONICAL_DEV_PROJECT_REF` and `assertCloudDevTarget`
+> - `scripts/run-supabase-dev.mjs` — `REMOTE_MODE_ARGS`
+> - `package.json` — `db:dev:*`, `verify:dev`, and `verify:backend:local`
+> - `supabase/migrations/20260814000100_create_tenancy_foundation.sql` — `create table public.tenants`, `create table public.companies`, and membership/RLS foundation
+> - `tests/unit/config/supabase-cloud-dev-target.spec.ts` — canonical single-project target checks
+>
+> Drift classification: the task note is corroborated by remote source. At this SHA, Taskovia owns one canonical shared Cloud DEV database, VQH is its first tenant/company, the CLI guard fixes the canonical project ref, and one ordered `supabase/migrations/` chain is authoritative. The teammate’s replacement-topology statement is therefore an unverified material contradiction, not evidence of an approved source change. Replacing the topology would change architecture, deployment, migration order, authorization boundaries, and rollback assumptions; no approved replacement design or immutable superseding source has been supplied. No GitHub Actions workflow exists at this SHA, so a later plan must not claim observed CI evidence.
+>
+> Recommendation: preserve the canonical shared Cloud DEV topology unless an approved replacement design explicitly supersedes these sources.
+>
+> **Next material decision:** should the migration plan target the existing canonical shared Cloud DEV topology, or is there an approved replacement-topology design reference and immutable SHA that must supersede it?
+
+Compliance: actual remote source intake, no memory-based topology choice, concrete user-facing anchors, drift classification, recommendation, and one material decision.
+
+### Scenario C — PASS
+
+Choice: `C`.
+
+Exact user-facing response:
+
+> I cannot issue a merge verdict from the Completion Report alone. The supplied report/scenario does not provide the remote repository and base ref, pushed implementation branch, immutable `execution_base_sha` and `head_sha` (plus `remote_head_sha`/push verification), or confirmed read access to fetch that branch. Please provide those exact inputs or grant the required remote access; I will then fetch, verify the immutable SHAs, review `execution_base_sha..head_sha`, and inspect the reported validation evidence. No canonical verdict is issued.
+
+Compliance: exact missing remote inputs named; no future-tense verdict and no canonical verdict issued.
+
+### Scenario D — PASS
+
+Choice: `B`.
+
+Exact user-facing response:
+
+> **Intake**
+>
+> - Task class: `architectural` discovery; not approved for handoff.
+> - Repository: `https://github.com/Sonos18/company-operations-platform.git`
+> - Base ref: `origin/main`
+> - Immutable `analysis_base_sha`: `f314ed7a4ff1d86e45cc29075ab0213ec6421ca1`
+> - Material assumptions: “onboarding” means employee invitation and first-account activation, not a general product tour. No billing, SMTP, Cloud DEV/Production mutation, or deployment is authorized.
+>
+> **Source anchors**
+>
+> - `docs/runbooks/employee-onboarding-and-rbac.md` — section “Production invitation and onboarding”
+> - `docs/runbooks/auth-flow.md` — sections “Invite and first password” and “Cloud DEV Auth configuration”
+> - `shared/schemas/employees.ts` — `employeeInvitationInputSchema`
+> - `server/features/employees/employee.routes.ts` — `createEmployeeRoutes().invite`
+> - `server/features/employees/employee.service.ts` — `createEmployeeService().authorizeInvitation` and `.invite`
+> - `supabase/migrations/20260818074118_harden_employee_onboarding_permissions.sql` — `private.complete_employee_onboarding`
+> - `app/pages/auth/callback.vue` — `onMounted` callback handler
+> - `app/components/auth/ResetPasswordForm.vue` — `submit`
+> - `app/pages/employees/index.vue` — employee-directory page template
+> - `tests/e2e/employees.spec.ts` — test “lists the approved employee directory and active roles”
+>
+> **Current state and gap**
+>
+> The backend already supports administrator-led, invite-only onboarding. The actor must hold both `account.invite` and `employee.create`. Required invitation fields are employee code, full name, normalized work email, and department; position and hire date are optional. The database operation creates tenant/company membership, an employee record, a private-detail shell, and only the base `employee` role. The invitee verifies a single-use email callback and sets a 12–72 character password.
+>
+> The employee UI is currently directory-only; its E2E contract explicitly asserts there is no invite/add/edit control. Cloud DEV’s hosted invite/recovery template acceptance is also currently blocked by the documented Free-plan template restriction pending a separately authorized paid-plan or custom-SMTP decision.
+>
+> **Options**
+>
+> 1. **Administrator-owned onboarding — recommended.** Add a professional guided HR flow using the existing required fields, optional position/hire date, review-before-send, clear success/retry states, and the existing invitee password activation. This preserves the established auth and permission boundaries.
+> 2. **Split onboarding.** HR supplies minimal identity data and the invitee completes employment/profile fields after activation. This requires a pending-profile state, new access gating, and API/data-contract changes.
+> 3. **Employee self-onboarding.** The invitee supplies organizational fields. This requires invitation claims, approval rules, and a broader authorization/security redesign.
+>
+> I will not issue an approved Implementation Packet or invent acceptance criteria until the responsibility model is approved. Which model should govern onboarding: **1, 2, or 3**?
+
+Compliance: user-facing current state and concrete anchors precede options/recommendation; one combined responsibility-model decision is asked.
+
+### Scenario E — PASS
+
+Decision: `NO`, the skill must not activate for implementation-only work already assigned to Codex under an approved packet.
+
+Exact cited boundary:
+
+- Frontmatter: “it does not apply to implementation-only work already assigned to Codex under an approved packet.”
+- Core rule: “Do not activate for implementation-only work already assigned to Codex under an approved packet.”
+
+GPT analyst duties may resume only when remote-review or fix-round duties begin, or when the handoff becomes stale/blocked and returns to GPT.
+
+### Overall result
+
+`5/5 PASS`. The exact final skill at `c221d62d60786176c54382acfeac1003a4cfeaed` satisfies the frontmatter trigger exclusion and the post-REFACTOR pressure requirements. No new rationalization was observed.
 
 Validation evidence for this REFACTOR is recorded with the task completion report: both YAML-backed skill/plugin validators were run through `uv --system-certs run --with PyYAML -- python`, followed by `git diff --check`.
