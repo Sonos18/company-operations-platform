@@ -337,7 +337,13 @@ begin
     'invalidate_opportunity(uuid,uuid,jsonb,uuid)',
     'restore_opportunity(uuid,uuid,jsonb,uuid)',
     'reopen_workflow_node(uuid,uuid,jsonb,uuid)',
-    'revalidate_workflow_node(uuid,uuid,jsonb,uuid)'
+    'revalidate_workflow_node(uuid,uuid,jsonb,uuid)',
+    'record_stage01_criterion_evaluation(uuid,uuid,text,jsonb,uuid)',
+    'submit_stage01_recommendation(uuid,uuid,jsonb,uuid)',
+    'return_stage01_for_clarification(uuid,uuid,jsonb,uuid)',
+    'record_stage01_final_decision(uuid,uuid,jsonb,uuid)',
+    'complete_stage01_evaluation(uuid,uuid,jsonb,uuid)',
+    'reactivate_stage01(uuid,uuid,jsonb,uuid)'
   ] loop
     if not has_function_privilege('authenticated', 'public.' || function_signature, 'execute')
        or has_function_privilege('anon', 'public.' || function_signature, 'execute')
@@ -375,6 +381,18 @@ begin
       '52000000-0000-4000-8000-000000000298'
     );
     raise exception 'DB-S01-SEC direct private Workflow implementation bypass unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'PERMISSION_DENIED' then raise; end if;
+  end;
+
+  begin
+    perform private.record_stage01_final_decision(
+      '52000000-0000-4000-8000-000000000020',
+      '52000000-0000-4000-8000-000000000030',
+      '{"outcome":"proceed","rationale":"Private bypass attempt","expectedCycleVersion":0}'::jsonb,
+      '52000000-0000-4000-8000-000000000297'
+    );
+    raise exception 'DB-S01-SEC direct private Decision implementation bypass unexpectedly succeeded';
   exception when raise_exception then
     if sqlerrm <> 'PERMISSION_DENIED' then raise; end if;
   end;

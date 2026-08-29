@@ -32,7 +32,13 @@ begin
     'public.invalidate_opportunity(uuid,uuid,jsonb,uuid)',
     'public.restore_opportunity(uuid,uuid,jsonb,uuid)',
     'public.reopen_workflow_node(uuid,uuid,jsonb,uuid)',
-    'public.revalidate_workflow_node(uuid,uuid,jsonb,uuid)'
+    'public.revalidate_workflow_node(uuid,uuid,jsonb,uuid)',
+    'public.record_stage01_criterion_evaluation(uuid,uuid,text,jsonb,uuid)',
+    'public.submit_stage01_recommendation(uuid,uuid,jsonb,uuid)',
+    'public.return_stage01_for_clarification(uuid,uuid,jsonb,uuid)',
+    'public.record_stage01_final_decision(uuid,uuid,jsonb,uuid)',
+    'public.complete_stage01_evaluation(uuid,uuid,jsonb,uuid)',
+    'public.reactivate_stage01(uuid,uuid,jsonb,uuid)'
   ] loop
     if to_regprocedure(function_signature) is null then
       raise exception 'DB-S01-CMD missing function %', function_signature;
@@ -41,7 +47,8 @@ begin
 end $$;
 
 insert into auth.users (id, email) values
-  ('55000000-0000-4000-8000-000000000001', 'stage01-commands@test.invalid');
+  ('55000000-0000-4000-8000-000000000001', 'stage01-commands@test.invalid'),
+  ('55000000-0000-4000-8000-000000000002', 'stage01-commands-mismatch@test.invalid');
 
 insert into public.tenants (id, code, name) values
   ('55000000-0000-4000-8000-000000000010', 'stage01-commands', 'Stage 01 commands test');
@@ -50,10 +57,12 @@ insert into public.companies (id, tenant_id, code, name) values
   ('55000000-0000-4000-8000-000000000020', '55000000-0000-4000-8000-000000000010', 'S01-CMD', 'Stage 01 commands company');
 
 insert into public.tenant_memberships (user_id, tenant_id, roles) values
-  ('55000000-0000-4000-8000-000000000001', '55000000-0000-4000-8000-000000000010', array['member']);
+  ('55000000-0000-4000-8000-000000000001', '55000000-0000-4000-8000-000000000010', array['member']),
+  ('55000000-0000-4000-8000-000000000002', '55000000-0000-4000-8000-000000000010', array['member']);
 
 insert into public.company_memberships (user_id, tenant_id, company_id, roles) values
-  ('55000000-0000-4000-8000-000000000001', '55000000-0000-4000-8000-000000000010', '55000000-0000-4000-8000-000000000020', array['member']);
+  ('55000000-0000-4000-8000-000000000001', '55000000-0000-4000-8000-000000000010', '55000000-0000-4000-8000-000000000020', array['member']),
+  ('55000000-0000-4000-8000-000000000002', '55000000-0000-4000-8000-000000000010', '55000000-0000-4000-8000-000000000020', array['member']);
 
 insert into public.roles (id, tenant_id, company_id, code, name, description, is_system) values
   (
@@ -78,14 +87,25 @@ insert into public.role_permissions (role_id, permission_code) values
   ('55000000-0000-4000-8000-000000000100', 'journey.node.start'),
   ('55000000-0000-4000-8000-000000000100', 'journey.node.complete'),
   ('55000000-0000-4000-8000-000000000100', 'journey.node.reopen'),
-  ('55000000-0000-4000-8000-000000000100', 'journey.node.revalidate');
+  ('55000000-0000-4000-8000-000000000100', 'journey.node.revalidate'),
+  ('55000000-0000-4000-8000-000000000100', 'stage01.evaluation.update'),
+  ('55000000-0000-4000-8000-000000000100', 'stage01.recommendation.submit'),
+  ('55000000-0000-4000-8000-000000000100', 'stage01.clarification.return'),
+  ('55000000-0000-4000-8000-000000000100', 'stage01.decision.record'),
+  ('55000000-0000-4000-8000-000000000100', 'stage01.reactivate');
 
 insert into public.company_role_assignments (
   tenant_id, company_id, user_id, role_id, granted_by, grant_reason
-) values (
+) values
+(
   '55000000-0000-4000-8000-000000000010', '55000000-0000-4000-8000-000000000020',
   '55000000-0000-4000-8000-000000000001', '55000000-0000-4000-8000-000000000100',
   '55000000-0000-4000-8000-000000000001', 'Stage 01 command fixture'
+),
+(
+  '55000000-0000-4000-8000-000000000010', '55000000-0000-4000-8000-000000000020',
+  '55000000-0000-4000-8000-000000000002', '55000000-0000-4000-8000-000000000100',
+  '55000000-0000-4000-8000-000000000001', 'Stage 01 authority mismatch fixture'
 );
 
 insert into public.opportunities (id, tenant_id, company_id, primary_customer_name, created_by) values
@@ -675,6 +695,355 @@ begin
   end if;
 end $$;
 
-select 'PASS DB-S01-CMD Task 8 and Task 9 lifecycle commands; DB-S01-COMP-001' as result;
+insert into public.workflow_definition_snapshots (
+  id, tenant_id, company_id, workflow_key, template_version, schema_version,
+  definition, definition_hash
+) values (
+  '57000000-0000-4000-8000-000000000040',
+  '55000000-0000-4000-8000-000000000010',
+  '55000000-0000-4000-8000-000000000020',
+  'vqh.stage01', 2, 1,
+  '{
+    "nodes":[
+      {"key":"01.1","type":"sub_stage","parentNodeKey":null},
+      {"key":"01.2","type":"sub_stage","parentNodeKey":null}
+    ],
+    "dependencies":[{"from":"01.1","to":"01.2","requires":"completed_current_valid"}],
+    "dimensions":["customer_need","scope_capability","resources_schedule","commercial_viability","risk_special_conditions"],
+    "taxonomies":{
+      "customer_type":[{"code":"customer","label":"Customer"}],
+      "contact_relationship":[{"code":"decision_maker","label":"Decision maker"}],
+      "scope":[{"code":"design","label":"Design"}],
+      "lead_source":[{"code":"direct","label":"Direct","behavior":{"requiresReferrer":false}}],
+      "referrer_type":[{"code":"person","label":"Person"}],
+      "engagement_status":[{"code":"grounded","label":"Grounded"}],
+      "invalid_reason":[{"code":"test_invalid","label":"Test invalid"}]
+    },
+    "criteria":[
+      {"key":"required_fit","dimensionKey":"customer_need","label":"Required fit","description":"Required gate criterion","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":1},
+      {"key":"optional_na","dimensionKey":"scope_capability","label":"Optional N/A","description":"Optional N/A criterion","criticality":"optional","applicabilityMode":"manual","allowsNotApplicable":true,"displayOrder":2},
+      {"key":"optional_schedule","dimensionKey":"resources_schedule","label":"Optional schedule","description":"Optional criterion","criticality":"optional","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":3},
+      {"key":"optional_commercial","dimensionKey":"commercial_viability","label":"Optional commercial","description":"Optional criterion","criticality":"optional","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":4},
+      {"key":"optional_risk","dimensionKey":"risk_special_conditions","label":"Optional risk","description":"Optional criterion","criticality":"optional","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":5}
+    ],
+    "capabilities":{"intakeOwner":"journey.assignment.manage","evaluationOwner":"journey.assignment.manage","start":"journey.node.start","complete":"journey.node.complete","decision":"stage01.decision.record"},
+    "gates":{"intake":["approved_minimum","duplicate_resolved","no_blocking_blocker"],"evaluation":["required_applicable_evaluated","recommendation_current","final_decision_recorded"]}
+  }'::jsonb,
+  'stage01-decision-definition'
+);
+
+insert into public.opportunities (
+  id, tenant_id, company_id, primary_customer_name, customer_type_code,
+  need_description, location_status, primary_lead_source_code,
+  engagement_status_code, created_by
+) values (
+  '57000000-0000-4000-8000-000000000030',
+  '55000000-0000-4000-8000-000000000010',
+  '55000000-0000-4000-8000-000000000020',
+  'Decision Opportunity', 'customer', 'A qualified decision case', 'unknown',
+  'direct', 'grounded', '55000000-0000-4000-8000-000000000001'
+);
+insert into public.workflow_instances (
+  id, tenant_id, company_id, subject_type, subject_id, definition_snapshot_id, created_by
+) values (
+  '57000000-0000-4000-8000-000000000060',
+  '55000000-0000-4000-8000-000000000010',
+  '55000000-0000-4000-8000-000000000020', 'opportunity',
+  '57000000-0000-4000-8000-000000000030',
+  '57000000-0000-4000-8000-000000000040',
+  '55000000-0000-4000-8000-000000000001'
+);
+insert into public.workflow_node_instances (
+  id, tenant_id, company_id, workflow_instance_id, node_key, node_type
+) values
+  (
+    '57000000-0000-4000-8000-000000000061',
+    '55000000-0000-4000-8000-000000000010',
+    '55000000-0000-4000-8000-000000000020',
+    '57000000-0000-4000-8000-000000000060', '01.1', 'sub_stage'
+  ),
+  (
+    '57000000-0000-4000-8000-000000000062',
+    '55000000-0000-4000-8000-000000000010',
+    '55000000-0000-4000-8000-000000000020',
+    '57000000-0000-4000-8000-000000000060', '01.2', 'sub_stage'
+  );
+insert into public.workflow_node_executions (
+  id, tenant_id, company_id, node_instance_id, execution_no, phase,
+  started_by, started_at, completed_by, completed_at
+) values
+  (
+    '57000000-0000-4000-8000-000000000070',
+    '55000000-0000-4000-8000-000000000010',
+    '55000000-0000-4000-8000-000000000020',
+    '57000000-0000-4000-8000-000000000061', 1, 'completed',
+    '55000000-0000-4000-8000-000000000001', now() - interval '2 minutes',
+    '55000000-0000-4000-8000-000000000001', now() - interval '1 minute'
+  ),
+  (
+    '57000000-0000-4000-8000-000000000071',
+    '55000000-0000-4000-8000-000000000010',
+    '55000000-0000-4000-8000-000000000020',
+    '57000000-0000-4000-8000-000000000062', 1, 'active',
+    '55000000-0000-4000-8000-000000000001', now() - interval '30 seconds',
+    null, null
+  );
+insert into public.stage01_decision_cycles (
+  id, tenant_id, company_id, opportunity_id, node_execution_id, cycle_no,
+  decision_authority_user_id, authority_resolution_reference, created_by
+) values (
+  '57000000-0000-4000-8000-000000000090',
+  '55000000-0000-4000-8000-000000000010',
+  '55000000-0000-4000-8000-000000000020',
+  '57000000-0000-4000-8000-000000000030',
+  '57000000-0000-4000-8000-000000000071', 1,
+  '55000000-0000-4000-8000-000000000001', 'test-authority-resolution',
+  '55000000-0000-4000-8000-000000000001'
+);
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"55000000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
+
+do $$
+declare
+  company_id constant uuid := '55000000-0000-4000-8000-000000000020';
+  opportunity_id constant uuid := '57000000-0000-4000-8000-000000000030';
+  evaluation_execution_id constant uuid := '57000000-0000-4000-8000-000000000071';
+  result jsonb;
+  recommendation_id uuid;
+begin
+  begin
+    perform public.record_stage01_criterion_evaluation(
+      company_id, opportunity_id, 'required_fit',
+      '{"applicability":"not_applicable","result":null,"rationale":"Attempt forbidden N/A","evidence":[],"expectedCycleVersion":0}'::jsonb,
+      '57000000-0000-4000-8000-000000000201'
+    );
+    raise exception 'DB-S01-CMD forbidden criterion N/A unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'STAGE01_CRITERION_NOT_APPLICABLE_FORBIDDEN' then raise; end if;
+  end;
+
+  perform public.record_stage01_criterion_evaluation(
+    company_id, opportunity_id, 'required_fit',
+    '{"applicability":"applicable","result":"fit","rationale":"Initial supported fit","evidence":[],"expectedCycleVersion":0}'::jsonb,
+    '57000000-0000-4000-8000-000000000202'
+  );
+  perform public.record_stage01_criterion_evaluation(
+    company_id, opportunity_id, 'optional_na',
+    '{"applicability":"not_applicable","result":null,"rationale":"Not relevant to this case","evidence":[],"expectedCycleVersion":1}'::jsonb,
+    '57000000-0000-4000-8000-000000000203'
+  );
+  perform public.submit_stage01_recommendation(
+    company_id, opportunity_id,
+    '{"recommendation":"recommend_proceed","rationale":"Initial recommendation","evidence":[],"expectedCycleVersion":2}'::jsonb,
+    '57000000-0000-4000-8000-000000000204'
+  );
+
+  perform public.record_stage01_criterion_evaluation(
+    company_id, opportunity_id, 'required_fit',
+    '{"applicability":"applicable","result":"insufficient_information","rationale":"New evidence is incomplete","evidence":[],"expectedCycleVersion":3}'::jsonb,
+    '57000000-0000-4000-8000-000000000205'
+  );
+  begin
+    perform public.submit_stage01_recommendation(
+      company_id, opportunity_id,
+      '{"recommendation":"recommend_proceed","rationale":"Must not use stale evaluation","evidence":[],"expectedCycleVersion":4}'::jsonb,
+      '57000000-0000-4000-8000-000000000206'
+    );
+    raise exception 'DB-S01-CMD insufficient-information Recommendation unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'STAGE01_EVALUATION_GATES_NOT_SATISFIED' then raise; end if;
+  end;
+
+  perform public.record_stage01_criterion_evaluation(
+    company_id, opportunity_id, 'required_fit',
+    '{"applicability":"applicable","result":"concern","rationale":"Known risk accepted for decision","evidence":[],"expectedCycleVersion":4}'::jsonb,
+    '57000000-0000-4000-8000-000000000207'
+  );
+  result := public.submit_stage01_recommendation(
+    company_id, opportunity_id,
+    '{"recommendation":"recommend_proceed","rationale":"Current recommendation before clarification","evidence":[],"expectedCycleVersion":5}'::jsonb,
+    '57000000-0000-4000-8000-000000000208'
+  );
+  recommendation_id := (result ->> 'recommendationId')::uuid;
+  perform public.return_stage01_for_clarification(
+    company_id, opportunity_id,
+    pg_catalog.jsonb_build_object(
+      'recommendationId', recommendation_id,
+      'reason', 'Clarify known risk',
+      'expectedCycleVersion', 6
+    ),
+    '57000000-0000-4000-8000-000000000209'
+  );
+  begin
+    perform public.record_stage01_final_decision(
+      company_id, opportunity_id,
+      '{"outcome":"proceed","rationale":"Stale recommendation attempt","expectedCycleVersion":7}'::jsonb,
+      '57000000-0000-4000-8000-000000000210'
+    );
+    raise exception 'DB-S01-CMD Final Decision accepted a clarified Recommendation';
+  exception when raise_exception then
+    if sqlerrm <> 'STAGE01_CURRENT_RECOMMENDATION_REQUIRED' then raise; end if;
+  end;
+
+  perform public.submit_stage01_recommendation(
+    company_id, opportunity_id,
+    '{"recommendation":"recommend_proceed","rationale":"Fresh recommendation after clarification","evidence":[],"expectedCycleVersion":7}'::jsonb,
+    '57000000-0000-4000-8000-000000000211'
+  );
+
+  perform pg_catalog.set_config(
+    'request.jwt.claims',
+    '{"sub":"55000000-0000-4000-8000-000000000002","role":"authenticated"}', true
+  );
+  begin
+    perform public.record_stage01_final_decision(
+      company_id, opportunity_id,
+      '{"outcome":"not_proceeding","rationale":"Wrong actor","overrideRationale":"Known risk outweighs fit","expectedCycleVersion":8}'::jsonb,
+      '57000000-0000-4000-8000-000000000212'
+    );
+    raise exception 'DB-S01-CMD non-authority Final Decision unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'STAGE01_DECISION_AUTHORITY_MISMATCH' then raise; end if;
+  end;
+  perform pg_catalog.set_config(
+    'request.jwt.claims',
+    '{"sub":"55000000-0000-4000-8000-000000000001","role":"authenticated"}', true
+  );
+
+  begin
+    perform public.record_stage01_final_decision(
+      company_id, opportunity_id,
+      '{"outcome":"not_proceeding","rationale":"Override without rationale","expectedCycleVersion":8}'::jsonb,
+      '57000000-0000-4000-8000-000000000213'
+    );
+    raise exception 'DB-S01-CMD override without rationale unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'STAGE01_OVERRIDE_RATIONALE_REQUIRED' then raise; end if;
+  end;
+  perform public.record_stage01_final_decision(
+    company_id, opportunity_id,
+    '{"outcome":"not_proceeding","rationale":"Authority decided not to proceed","overrideRationale":"Known risk outweighs the proceed Recommendation","expectedCycleVersion":8}'::jsonb,
+    '57000000-0000-4000-8000-000000000214'
+  );
+  begin
+    perform public.record_stage01_final_decision(
+      company_id, opportunity_id,
+      '{"outcome":"not_proceeding","rationale":"Second decision","overrideRationale":"Not allowed","expectedCycleVersion":9}'::jsonb,
+      '57000000-0000-4000-8000-000000000215'
+    );
+    raise exception 'DB-S01-CMD second Final Decision unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'STAGE01_FINAL_DECISION_EXISTS' then raise; end if;
+  end;
+
+  perform public.complete_stage01_evaluation(
+    company_id, evaluation_execution_id,
+    '{"expectedExecutionVersion":0,"expectedCycleVersion":9}'::jsonb,
+    '57000000-0000-4000-8000-000000000216'
+  );
+end $$;
+
+reset role;
+
+do $$
+begin
+  if (select phase from public.workflow_node_executions
+      where id = '57000000-0000-4000-8000-000000000071') <> 'completed'
+     or (select final_outcome from public.stage01_decision_cycles
+         where id = '57000000-0000-4000-8000-000000000090') <> 'not_proceeding'
+     or (select validity_state from public.opportunities
+         where id = '57000000-0000-4000-8000-000000000030') <> 'valid' then
+    raise exception 'DB-S01-CMD explicit 01.2 completion or not_proceeding semantics failed';
+  end if;
+end $$;
+
+create temporary table stage01_cycle_one_before as
+select pg_catalog.to_jsonb(cycle) as snapshot
+from public.stage01_decision_cycles as cycle
+where cycle.id = '57000000-0000-4000-8000-000000000090';
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"55000000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
+
+do $$
+begin
+  perform public.reactivate_stage01(
+    '55000000-0000-4000-8000-000000000020',
+    '57000000-0000-4000-8000-000000000030',
+    '{"reason":"Reconsider after changed conditions","expectedOpportunityVersion":0,"expectedExecutionVersion":1,"expectedCycleVersion":9}'::jsonb,
+    '57000000-0000-4000-8000-000000000217'
+  );
+
+  begin
+    perform public.record_stage01_final_decision(
+      '55000000-0000-4000-8000-000000000020',
+      '57000000-0000-4000-8000-000000000030',
+      '{"outcome":"proceed","rationale":"Authority unresolved in new cycle","expectedCycleVersion":0}'::jsonb,
+      '57000000-0000-4000-8000-000000000218'
+    );
+    raise exception 'DB-S01-CMD unresolved Decision Authority unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'STAGE01_DECISION_AUTHORITY_UNRESOLVED' then raise; end if;
+  end;
+
+  begin
+    perform public.reactivate_stage01(
+      '55000000-0000-4000-8000-000000000020',
+      '57000000-0000-4000-8000-000000000030',
+      '{"reason":"Duplicate reactivation","expectedOpportunityVersion":0,"expectedExecutionVersion":0,"expectedCycleVersion":0}'::jsonb,
+      '57000000-0000-4000-8000-000000000219'
+    );
+    raise exception 'DB-S01-CMD duplicate Reactivation unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'STAGE01_NOT_REACTIVATABLE' then raise; end if;
+  end;
+end $$;
+
+reset role;
+
+do $$
+begin
+  if (select pg_catalog.to_jsonb(cycle)
+      from public.stage01_decision_cycles as cycle
+      where cycle.id = '57000000-0000-4000-8000-000000000090')
+     is distinct from (select snapshot from stage01_cycle_one_before) then
+    raise exception 'DB-S01-HIST Reactivation changed Cycle 1';
+  end if;
+  if (select count(*) from public.stage01_decision_cycles
+      where opportunity_id = '57000000-0000-4000-8000-000000000030') <> 2
+     or not exists (
+       select 1
+       from public.stage01_decision_cycles as cycle
+       join public.workflow_node_executions as execution
+         on execution.id = cycle.node_execution_id
+       where cycle.opportunity_id = '57000000-0000-4000-8000-000000000030'
+         and cycle.cycle_no = 2
+         and cycle.reactivation_reason = 'Reconsider after changed conditions'
+         and cycle.decision_authority_user_id is null
+         and execution.execution_no = 2
+         and execution.phase = 'not_started'
+         and execution.superseded_at is null
+     ) then
+    raise exception 'DB-S01-CMD Reactivation did not atomically create execution and Cycle N+1';
+  end if;
+  if not exists (
+    select 1 from public.workflow_node_executions
+    where id = '57000000-0000-4000-8000-000000000071'
+      and superseded_at is not null and phase = 'completed'
+  ) then
+    raise exception 'DB-S01-HIST Reactivation did not retain completed execution N';
+  end if;
+end $$;
+
+select 'PASS DB-S01-CMD Tasks 8-10 lifecycle commands; DB-S01-COMP-001' as result;
 
 rollback;
