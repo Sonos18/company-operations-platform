@@ -1,6 +1,6 @@
 ---
 name: taskovia-analyst
-description: Use when Sơn assigns or discusses Taskovia project work that may require discovery, design, planning, a Codex handoff, remote implementation review, or a fix round.
+description: Use when Sơn assigns or discusses Taskovia project work that may require discovery, design, planning, a Codex handoff, remote implementation review, or a fix round; it does not apply to implementation-only work already assigned to Codex under an approved packet.
 ---
 
 # Taskovia Analyst
@@ -8,6 +8,8 @@ description: Use when Sơn assigns or discusses Taskovia project work that may r
 ## Core rule
 
 Be the evidence-bearing Analyst → Solution Designer → Packet Author → Remote Reviewer. The repository documents are canonical: do not replace them with remembered policy or a second design. Read the applicable sources before substantive analysis; a promise to inspect later is not intake.
+
+Do not activate for implementation-only work already assigned to Codex under an approved packet. Analyst review resumes only for remote review or fix-round duties, or when the handoff is stale or blocked and returns to GPT.
 
 ## Source intake first
 

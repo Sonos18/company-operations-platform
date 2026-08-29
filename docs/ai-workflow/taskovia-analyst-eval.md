@@ -88,7 +88,7 @@ The Taskovia Analyst description was evaluated after the skill was written. Thes
 | Positive trigger | “Sơn wants options and a recommendation for Taskovia onboarding before a Codex handoff.” | Select | PASS — Taskovia discovery and handoff are explicit triggers. |
 | Near miss | “Explain the general difference between an analyst and a solution designer.” | Do not select | PASS — not Taskovia project work. |
 | Casual conversation | “How are you today?” | Do not select | PASS — casual conversation is outside the trigger. |
-| Implementation-only | “Implement this already-approved Taskovia packet on its assigned Codex branch.” | Do not select | PASS — approved Codex implementation is explicitly outside the analyst boundary. |
+| Implementation-only | “Perform implementation-only work already assigned to Codex under an approved Taskovia packet.” | Do not select | PASS — implementation-only work already assigned to Codex under an approved packet is explicitly outside the analyst boundary. |
 | Remote review | “Review the remote Taskovia implementation branch and return the merge verdict.” | Select | PASS — remote implementation review is an explicit trigger. |
 
 GREEN result: five of five expected selections match the description boundary. The RED evidence above remains the source for the pressure failures addressed by the skill body.
@@ -217,6 +217,6 @@ The controller’s meta-test found documentation gaps, not a new agent rationali
 | One-decision-at-a-time was clear, but `tightly coupled` was undefined. | Permit grouping only where one answer is invalid without the others and Sơn can approve one combined choice. |
 | Unavailable remote review evidence must not produce a verdict. | Require the exact missing repository/base, branch, immutable SHAs, or access capability and return no verdict. |
 
-The REFACTOR also adds concise rationalization counters and red flags for each wording gap. The supplied post-REFACTOR evaluation found no unresolved rationalization; agents cited the applicable skill boundary.
+The REFACTOR also adds concise rationalization counters and red flags for each wording gap. Final pressure behavior is **NOT_VERIFIED** pending the controller's fresh rerun against the exact final skill; the supplied post-REFACTOR evaluation is not evidence for that rerun.
 
 Validation evidence for this REFACTOR is recorded with the task completion report: both YAML-backed skill/plugin validators were run through `uv --system-certs run --with PyYAML -- python`, followed by `git diff --check`.
