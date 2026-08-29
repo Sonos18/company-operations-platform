@@ -21,7 +21,11 @@ begin
     'opportunity_referrers',
     'opportunity_intake_records',
     'opportunity_duplicate_concerns',
-    'stage01_intake_completion_baselines'
+    'stage01_intake_completion_baselines',
+    'stage01_decision_cycles',
+    'stage01_criterion_evaluations',
+    'stage01_recommendations',
+    'stage01_clarification_returns'
   ] loop
     if to_regclass(format('public.%I', relation_name)) is null then
       raise exception 'DB-S01-SCHEMA relation public.% is missing', relation_name;
@@ -199,7 +203,55 @@ begin
     ('stage01_intake_completion_baselines', 'snapshot'),
     ('stage01_intake_completion_baselines', 'snapshot_hash'),
     ('stage01_intake_completion_baselines', 'created_by'),
-    ('stage01_intake_completion_baselines', 'created_at')
+    ('stage01_intake_completion_baselines', 'created_at'),
+    ('stage01_decision_cycles', 'id'),
+    ('stage01_decision_cycles', 'tenant_id'),
+    ('stage01_decision_cycles', 'company_id'),
+    ('stage01_decision_cycles', 'opportunity_id'),
+    ('stage01_decision_cycles', 'node_execution_id'),
+    ('stage01_decision_cycles', 'cycle_no'),
+    ('stage01_decision_cycles', 'decision_authority_user_id'),
+    ('stage01_decision_cycles', 'authority_resolution_reference'),
+    ('stage01_decision_cycles', 'reactivation_reason'),
+    ('stage01_decision_cycles', 'final_outcome'),
+    ('stage01_decision_cycles', 'final_decision_by'),
+    ('stage01_decision_cycles', 'final_decision_at'),
+    ('stage01_decision_cycles', 'final_rationale'),
+    ('stage01_decision_cycles', 'final_recommendation_id'),
+    ('stage01_decision_cycles', 'override_rationale'),
+    ('stage01_decision_cycles', 'version'),
+    ('stage01_decision_cycles', 'created_by'),
+    ('stage01_decision_cycles', 'created_at'),
+    ('stage01_criterion_evaluations', 'id'),
+    ('stage01_criterion_evaluations', 'tenant_id'),
+    ('stage01_criterion_evaluations', 'company_id'),
+    ('stage01_criterion_evaluations', 'decision_cycle_id'),
+    ('stage01_criterion_evaluations', 'criterion_key'),
+    ('stage01_criterion_evaluations', 'revision'),
+    ('stage01_criterion_evaluations', 'applicability'),
+    ('stage01_criterion_evaluations', 'result'),
+    ('stage01_criterion_evaluations', 'rationale'),
+    ('stage01_criterion_evaluations', 'evidence'),
+    ('stage01_criterion_evaluations', 'evaluated_by'),
+    ('stage01_criterion_evaluations', 'evaluated_at'),
+    ('stage01_recommendations', 'id'),
+    ('stage01_recommendations', 'tenant_id'),
+    ('stage01_recommendations', 'company_id'),
+    ('stage01_recommendations', 'decision_cycle_id'),
+    ('stage01_recommendations', 'version'),
+    ('stage01_recommendations', 'recommendation'),
+    ('stage01_recommendations', 'rationale'),
+    ('stage01_recommendations', 'evidence'),
+    ('stage01_recommendations', 'submitted_by'),
+    ('stage01_recommendations', 'submitted_at'),
+    ('stage01_clarification_returns', 'id'),
+    ('stage01_clarification_returns', 'tenant_id'),
+    ('stage01_clarification_returns', 'company_id'),
+    ('stage01_clarification_returns', 'decision_cycle_id'),
+    ('stage01_clarification_returns', 'recommendation_id'),
+    ('stage01_clarification_returns', 'reason'),
+    ('stage01_clarification_returns', 'returned_by'),
+    ('stage01_clarification_returns', 'returned_at')
   ) as expected(table_name, column_name)
   where not exists (
     select 1
@@ -231,7 +283,11 @@ begin
     'opportunity_referrers',
     'opportunity_intake_records',
     'opportunity_duplicate_concerns',
-    'stage01_intake_completion_baselines'
+    'stage01_intake_completion_baselines',
+    'stage01_decision_cycles',
+    'stage01_criterion_evaluations',
+    'stage01_recommendations',
+    'stage01_clarification_returns'
   ] loop
     if not exists (
       select 1
@@ -346,9 +402,20 @@ begin
     ('stage01_intake_baselines_opportunity_fk', 'f'),
     ('stage01_intake_baselines_execution_fk', 'f'),
     ('stage01_intake_baselines_event_fk', 'f'),
+    ('stage01_decision_cycles_opportunity_fk', 'f'),
+    ('stage01_decision_cycles_execution_fk', 'f'),
+    ('stage01_decision_cycles_final_recommendation_fk', 'f'),
+    ('stage01_criterion_evaluations_cycle_fk', 'f'),
+    ('stage01_recommendations_cycle_fk', 'f'),
+    ('stage01_clarification_returns_cycle_fk', 'f'),
+    ('stage01_clarification_returns_recommendation_fk', 'f'),
     ('opportunities_id_scope_key', 'u'),
     ('stage01_taxonomy_values_company_key_code', 'u'),
-    ('stage01_intake_baselines_execution_version_key', 'u')
+    ('stage01_intake_baselines_execution_version_key', 'u'),
+    ('stage01_decision_cycles_opportunity_cycle_key', 'u'),
+    ('stage01_decision_cycles_node_execution_key', 'u'),
+    ('stage01_criterion_evaluations_cycle_criterion_revision_key', 'u'),
+    ('stage01_recommendations_cycle_version_key', 'u')
   ) as expected(constraint_name, constraint_type)
   where not exists (
     select 1
@@ -361,6 +428,172 @@ begin
   if missing_constraint is not null then
     raise exception 'DB-S01-SCHEMA required constraint % is missing', missing_constraint;
   end if;
+end $$;
+
+insert into auth.users (id, email) values
+  ('51000000-0000-4000-8000-000000000001', 'stage01-schema-authority@test.invalid'),
+  ('51000000-0000-4000-8000-000000000002', 'stage01-schema-other@test.invalid');
+
+insert into public.tenants (id, code, name) values
+  ('51000000-0000-4000-8000-000000000010', 'stage01-schema', 'Stage 01 schema test');
+
+insert into public.companies (id, tenant_id, code, name) values
+  ('51000000-0000-4000-8000-000000000020', '51000000-0000-4000-8000-000000000010', 'S01-SCHEMA', 'Stage 01 schema company');
+
+insert into public.opportunities (
+  id, tenant_id, company_id, primary_customer_name, created_by
+) values (
+  '51000000-0000-4000-8000-000000000030',
+  '51000000-0000-4000-8000-000000000010',
+  '51000000-0000-4000-8000-000000000020',
+  'Schema customer',
+  '51000000-0000-4000-8000-000000000001'
+);
+
+insert into public.workflow_definition_snapshots (
+  id, tenant_id, company_id, workflow_key, template_version, schema_version, definition, definition_hash
+) values (
+  '51000000-0000-4000-8000-000000000040',
+  '51000000-0000-4000-8000-000000000010',
+  '51000000-0000-4000-8000-000000000020',
+  'stage01-schema-test', 1, 1, '{}'::jsonb, 'stage01-schema-hash'
+);
+
+insert into public.workflow_instances (
+  id, tenant_id, company_id, subject_type, subject_id, definition_snapshot_id, created_by
+) values (
+  '51000000-0000-4000-8000-000000000050',
+  '51000000-0000-4000-8000-000000000010',
+  '51000000-0000-4000-8000-000000000020',
+  'opportunity',
+  '51000000-0000-4000-8000-000000000030',
+  '51000000-0000-4000-8000-000000000040',
+  '51000000-0000-4000-8000-000000000001'
+);
+
+insert into public.workflow_node_instances (
+  id, tenant_id, company_id, workflow_instance_id, node_key, node_type
+) values (
+  '51000000-0000-4000-8000-000000000060',
+  '51000000-0000-4000-8000-000000000010',
+  '51000000-0000-4000-8000-000000000020',
+  '51000000-0000-4000-8000-000000000050',
+  '01.2', 'child_stage'
+);
+
+insert into public.workflow_node_executions (
+  id, tenant_id, company_id, node_instance_id, execution_no
+) values (
+  '51000000-0000-4000-8000-000000000070',
+  '51000000-0000-4000-8000-000000000010',
+  '51000000-0000-4000-8000-000000000020',
+  '51000000-0000-4000-8000-000000000060', 1
+);
+
+insert into public.stage01_decision_cycles (
+  id, tenant_id, company_id, opportunity_id, node_execution_id, cycle_no,
+  decision_authority_user_id, authority_resolution_reference, created_by
+) values (
+  '51000000-0000-4000-8000-000000000080',
+  '51000000-0000-4000-8000-000000000010',
+  '51000000-0000-4000-8000-000000000020',
+  '51000000-0000-4000-8000-000000000030',
+  '51000000-0000-4000-8000-000000000070', 1,
+  '51000000-0000-4000-8000-000000000001', 'schema-test-authority',
+  '51000000-0000-4000-8000-000000000001'
+);
+
+insert into public.stage01_recommendations (
+  id, tenant_id, company_id, decision_cycle_id, version, recommendation,
+  rationale, evidence, submitted_by
+) values (
+  '51000000-0000-4000-8000-000000000090',
+  '51000000-0000-4000-8000-000000000010',
+  '51000000-0000-4000-8000-000000000020',
+  '51000000-0000-4000-8000-000000000080', 1, 'recommend_proceed',
+  'Schema test recommendation', '[]'::jsonb,
+  '51000000-0000-4000-8000-000000000001'
+);
+
+do $$
+declare
+  violated_constraint text;
+begin
+  begin
+    update public.stage01_decision_cycles
+    set final_rationale = 'decision-bearing field without outcome'
+    where id = '51000000-0000-4000-8000-000000000080';
+    raise exception 'DB-S01-SCHEMA accepted final fields without final_outcome';
+  exception when check_violation then
+    get stacked diagnostics violated_constraint = constraint_name;
+    if violated_constraint <> 'stage01_decision_cycles_final_fields_check' then
+      raise;
+    end if;
+  end;
+
+  begin
+    update public.stage01_decision_cycles
+    set final_outcome = 'proceed',
+        final_decision_by = '51000000-0000-4000-8000-000000000001',
+        final_decision_at = now(),
+        final_rationale = ' ',
+        final_recommendation_id = '51000000-0000-4000-8000-000000000090'
+    where id = '51000000-0000-4000-8000-000000000080';
+    raise exception 'DB-S01-SCHEMA accepted blank final_rationale';
+  exception when check_violation then
+    get stacked diagnostics violated_constraint = constraint_name;
+    if violated_constraint <> 'stage01_decision_cycles_final_fields_check' then
+      raise;
+    end if;
+  end;
+
+  begin
+    update public.stage01_decision_cycles
+    set final_outcome = 'proceed',
+        final_decision_by = '51000000-0000-4000-8000-000000000001',
+        final_decision_at = now(),
+        final_rationale = 'Decision without recommendation'
+    where id = '51000000-0000-4000-8000-000000000080';
+    raise exception 'DB-S01-SCHEMA accepted decision without final_recommendation_id';
+  exception when check_violation then
+    get stacked diagnostics violated_constraint = constraint_name;
+    if violated_constraint <> 'stage01_decision_cycles_final_fields_check' then
+      raise;
+    end if;
+  end;
+
+  begin
+    update public.stage01_decision_cycles
+    set final_outcome = 'proceed',
+        final_decision_by = '51000000-0000-4000-8000-000000000002',
+        final_decision_at = now(),
+        final_rationale = 'Wrong actor',
+        final_recommendation_id = '51000000-0000-4000-8000-000000000090'
+    where id = '51000000-0000-4000-8000-000000000080';
+    raise exception 'DB-S01-SCHEMA accepted non-authority final_decision_by';
+  exception when check_violation then
+    get stacked diagnostics violated_constraint = constraint_name;
+    if violated_constraint <> 'stage01_decision_cycles_final_fields_check' then
+      raise;
+    end if;
+  end;
+
+  begin
+    update public.stage01_decision_cycles
+    set final_outcome = 'proceed',
+        final_decision_by = '51000000-0000-4000-8000-000000000001',
+        final_decision_at = now(),
+        final_rationale = 'Decision rationale',
+        final_recommendation_id = '51000000-0000-4000-8000-000000000090',
+        override_rationale = ' '
+    where id = '51000000-0000-4000-8000-000000000080';
+    raise exception 'DB-S01-SCHEMA accepted blank override_rationale';
+  exception when check_violation then
+    get stacked diagnostics violated_constraint = constraint_name;
+    if violated_constraint <> 'stage01_decision_cycles_final_fields_check' then
+      raise;
+    end if;
+  end;
 end $$;
 
 select 'PASS DB-S01-SCHEMA Stage 01 foundation relations' as result;
