@@ -2,13 +2,13 @@
 
 > **Stage:** 01 — Tiếp nhận & đánh giá cơ hội  
 > **Sub-stages:** 01.1 Tiếp nhận yêu cầu; 01.2 Đánh giá cơ hội & quyết định tiếp tục  
-> **Status:** CORRECTION DRAFT — WRITTEN SPEC REVIEW REQUIRED
+> **Status:** APPROVED
 > **Authority scope:** VQH Stage 01 only  
 > **Implementation authorization:** NONE  
 > **Original technical spec approved:** 2026-08-29
 > **Analysis base:** `Sonos18/company-operations-platform@f314ed7a4ff1d86e45cc29075ab0213ec6421ca1`
 > **Correction source:** `origin/docs/vqh-stage-01-technical-spec@34c9a896c0fae78c9069f54406ee943864bf0852`
-> **Correction design accepted:** 2026-08-29
+> **Correction approved:** 2026-08-29
 >
 > **Business authorities**
 >
@@ -3116,14 +3116,14 @@ Codex MUST return `BLOCKED` rather than invent these when an implementation task
 | `VQH-S01-T014` | `proceed` does not create Project or start Stage 02 | APPROVED |
 | `VQH-S01-T015` | Current prototype Journey types are not production domain authority | APPROVED |
 | `VQH-S01-T016` | Generic parent Stage runtime remains outside this spec until BDG-HIER-01 | APPROVED |
-| `VQH-S01-T017` | Opportunity bootstrap fails closed without a valid published definition and atomically creates the complete aggregate plus Decision Cycle #1 | CORRECTION ACCEPTED |
-| `VQH-S01-T018` | Every Stage 01 business mutation uses an explicit controlled RPC and HTTP command/resource contract | CORRECTION ACCEPTED |
-| `VQH-S01-T019` | History immutability, Final Decision immutability, same-cycle references, and revision/version uniqueness are database-enforced | CORRECTION ACCEPTED |
-| `VQH-S01-T020` | Complete 01.1 creates the completion event before inserting the baseline that references it | CORRECTION ACCEPTED |
-| `VQH-S01-T021` | Supabase grants, RLS, exposed schemas, and SECURITY DEFINER privileges are explicit and deny-by-default | CORRECTION ACCEPTED |
-| `VQH-S01-T022` | Mutation concurrency is checked against the version of the Opportunity, Contact, Node Execution, or Decision Cycle aggregate being changed | CORRECTION ACCEPTED |
-| `VQH-S01-T023` | `reliability_state` is data-quality metadata and never creates a gate or Blocker by itself | CORRECTION ACCEPTED |
-| `VQH-S01-T024` | Phase A is a verified runtime foundation but remains non-operational in production until required BDGs are approved and a complete definition is published | CORRECTION ACCEPTED |
+| `VQH-S01-T017` | Opportunity bootstrap fails closed without a valid published definition and atomically creates the complete aggregate plus Decision Cycle #1 | APPROVED |
+| `VQH-S01-T018` | Every Stage 01 business mutation uses an explicit controlled RPC and HTTP command/resource contract | APPROVED |
+| `VQH-S01-T019` | History immutability, Final Decision immutability, same-cycle references, and revision/version uniqueness are database-enforced | APPROVED |
+| `VQH-S01-T020` | Complete 01.1 creates the completion event before inserting the baseline that references it | APPROVED |
+| `VQH-S01-T021` | Supabase grants, RLS, exposed schemas, and SECURITY DEFINER privileges are explicit and deny-by-default | APPROVED |
+| `VQH-S01-T022` | Mutation concurrency is checked against the version of the Opportunity, Contact, Node Execution, or Decision Cycle aggregate being changed | APPROVED |
+| `VQH-S01-T023` | `reliability_state` is data-quality metadata and never creates a gate or Blocker by itself | APPROVED |
+| `VQH-S01-T024` | Phase A is a verified runtime foundation but remains non-operational in production until required BDGs are approved and a complete definition is published | APPROVED |
 
 ---
 
@@ -3164,17 +3164,17 @@ The corrected Execution Plan uses the planned task numbers below. Evidence IDs a
 
 # 53. Technical acceptance boundary
 
-This correction draft is ready for written review with the following conditions:
+The corrected Technical Spec is approved with the following conditions:
 
 ```text
 [x] Architecture and domain boundaries approved
 [x] VQH-S01-T001..T016 preserved
-[x] VQH-S01-T017..T024 correction design accepted
+[x] VQH-S01-T017..T024 correction design approved
 [x] No known conflict with Canonical Journey
 [x] No known conflict with Approved Stage 01 Business Design
 [x] BDG items acknowledged as business gates
 [x] No implementation behavior may silently resolve a BDG
-[ ] Corrected written Technical Spec reviewed and approved
+[x] Corrected written Technical Spec reviewed and approved
 ```
 
 When the corrected written Technical Spec is approved, that approval means:
