@@ -560,6 +560,10 @@ begin
     if violated_constraint <> 'stage01_decision_cycles_final_fields_check' then
       raise;
     end if;
+  when raise_exception then
+    if sqlerrm <> 'STAGE01_FINAL_RECOMMENDATION_CYCLE_MISMATCH' then
+      raise;
+    end if;
   end;
 
   begin
@@ -591,6 +595,10 @@ begin
   exception when check_violation then
     get stacked diagnostics violated_constraint = constraint_name;
     if violated_constraint <> 'stage01_decision_cycles_final_fields_check' then
+      raise;
+    end if;
+  when raise_exception then
+    if sqlerrm <> 'STAGE01_DECISION_OVERRIDE_INVALID' then
       raise;
     end if;
   end;

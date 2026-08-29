@@ -1,0 +1,310 @@
+begin;
+
+do $$
+declare
+  missing_permission text;
+begin
+  select expected.code
+  into missing_permission
+  from (values
+    ('opportunity.read'),
+    ('opportunity.create'),
+    ('opportunity.update'),
+    ('opportunity.contact.manage'),
+    ('opportunity.scope.manage'),
+    ('opportunity.referrer.manage'),
+    ('opportunity.intake_record.create'),
+    ('opportunity.duplicate.raise'),
+    ('opportunity.duplicate.resolve'),
+    ('opportunity.invalidate'),
+    ('opportunity.restore'),
+    ('journey.read'),
+    ('journey.assignment.manage'),
+    ('journey.node.start'),
+    ('journey.node.complete'),
+    ('journey.node.reopen'),
+    ('journey.node.revalidate'),
+    ('journey.blocker.raise'),
+    ('journey.blocker.resolve'),
+    ('stage01.evaluation.update'),
+    ('stage01.recommendation.submit'),
+    ('stage01.clarification.return'),
+    ('stage01.decision.record'),
+    ('stage01.reactivate')
+  ) as expected(code)
+  where not exists (
+    select 1 from public.permissions as actual where actual.code = expected.code
+  )
+  limit 1;
+
+  if missing_permission is not null then
+    raise exception 'DB-S01-SEC permission % is missing', missing_permission;
+  end if;
+end $$;
+
+do $$
+begin
+  if exists (
+    select 1
+    from public.role_permissions as role_permission
+    join public.roles as company_role on company_role.id = role_permission.role_id
+    where (
+      role_permission.permission_code like 'opportunity.%'
+      or role_permission.permission_code like 'journey.%'
+      or role_permission.permission_code like 'stage01.%'
+    )
+      and company_role.code <> 'company_admin'
+  ) then
+    raise exception 'DB-S01-SEC Stage 01 permission was inferred for an operational role';
+  end if;
+
+  if exists (
+    select 1
+    from public.roles as company_role
+    cross join public.permissions as permission
+    where company_role.code = 'company_admin'
+      and company_role.is_active
+      and (
+        permission.code like 'opportunity.%'
+        or permission.code like 'journey.%'
+        or permission.code like 'stage01.%'
+      )
+      and not exists (
+        select 1
+        from public.role_permissions as role_permission
+        where role_permission.role_id = company_role.id
+          and role_permission.permission_code = permission.code
+      )
+  ) then
+    raise exception 'DB-S01-SEC company_admin does not have the complete Stage 01 catalog';
+  end if;
+end $$;
+
+do $$
+declare
+  relation_name text;
+begin
+  foreach relation_name in array array[
+    'workflow_definition_snapshots',
+    'workflow_instances',
+    'workflow_node_instances',
+    'workflow_node_executions',
+    'workflow_node_events',
+    'workflow_node_assignments',
+    'workflow_blockers',
+    'opportunities',
+    'stage01_taxonomy_values',
+    'contacts',
+    'contact_methods',
+    'opportunity_contacts',
+    'opportunity_scopes',
+    'opportunity_referrers',
+    'opportunity_intake_records',
+    'opportunity_duplicate_concerns',
+    'stage01_intake_completion_baselines',
+    'stage01_decision_cycles',
+    'stage01_criterion_evaluations',
+    'stage01_recommendations',
+    'stage01_clarification_returns'
+  ] loop
+    if not has_table_privilege('authenticated', format('public.%I', relation_name), 'select') then
+      raise exception 'DB-S01-SEC authenticated SELECT missing for public.%', relation_name;
+    end if;
+    if has_table_privilege('authenticated', format('public.%I', relation_name), 'insert')
+       or has_table_privilege('authenticated', format('public.%I', relation_name), 'update')
+       or has_table_privilege('authenticated', format('public.%I', relation_name), 'delete') then
+      raise exception 'DB-S01-SEC authenticated DML leaked for public.%', relation_name;
+    end if;
+    if has_table_privilege('anon', format('public.%I', relation_name), 'select')
+       or has_table_privilege('anon', format('public.%I', relation_name), 'insert')
+       or has_table_privilege('anon', format('public.%I', relation_name), 'update')
+       or has_table_privilege('anon', format('public.%I', relation_name), 'delete') then
+      raise exception 'DB-S01-SEC anon privilege leaked for public.%', relation_name;
+    end if;
+  end loop;
+end $$;
+
+insert into auth.users (id, email) values
+  ('52000000-0000-4000-8000-000000000001', 'stage01-security@test.invalid');
+
+insert into public.tenants (id, code, name) values
+  ('52000000-0000-4000-8000-000000000010', 'stage01-security', 'Stage 01 security test');
+
+insert into public.companies (id, tenant_id, code, name) values
+  ('52000000-0000-4000-8000-000000000020', '52000000-0000-4000-8000-000000000010', 'S01-SEC-A', 'Stage 01 security A'),
+  ('52000000-0000-4000-8000-000000000021', '52000000-0000-4000-8000-000000000010', 'S01-SEC-B', 'Stage 01 security B');
+
+insert into public.tenant_memberships (user_id, tenant_id, roles) values
+  ('52000000-0000-4000-8000-000000000001', '52000000-0000-4000-8000-000000000010', array['member']);
+
+insert into public.company_memberships (user_id, tenant_id, company_id, roles) values
+  ('52000000-0000-4000-8000-000000000001', '52000000-0000-4000-8000-000000000010', '52000000-0000-4000-8000-000000000020', array['member']),
+  ('52000000-0000-4000-8000-000000000001', '52000000-0000-4000-8000-000000000010', '52000000-0000-4000-8000-000000000021', array['member']);
+
+insert into public.roles (
+  id, tenant_id, company_id, code, name, description, is_system
+) values
+  (
+    '52000000-0000-4000-8000-000000000101',
+    '52000000-0000-4000-8000-000000000010',
+    '52000000-0000-4000-8000-000000000020',
+    'stage01_test_opportunity_reader', 'Stage 01 test Opportunity reader', 'Test-only permission role', false
+  ),
+  (
+    '52000000-0000-4000-8000-000000000102',
+    '52000000-0000-4000-8000-000000000010',
+    '52000000-0000-4000-8000-000000000020',
+    'stage01_test_journey_reader', 'Stage 01 test Journey reader', 'Test-only permission role', false
+  );
+
+insert into public.role_permissions (role_id, permission_code) values
+  ('52000000-0000-4000-8000-000000000101', 'opportunity.read'),
+  ('52000000-0000-4000-8000-000000000102', 'journey.read');
+
+insert into public.company_role_assignments (
+  tenant_id, company_id, user_id, role_id, granted_by, grant_reason
+) values
+  (
+    '52000000-0000-4000-8000-000000000010', '52000000-0000-4000-8000-000000000020',
+    '52000000-0000-4000-8000-000000000001', '52000000-0000-4000-8000-000000000101',
+    '52000000-0000-4000-8000-000000000001', 'Stage 01 security fixture'
+  ),
+  (
+    '52000000-0000-4000-8000-000000000010', '52000000-0000-4000-8000-000000000020',
+    '52000000-0000-4000-8000-000000000001', '52000000-0000-4000-8000-000000000102',
+    '52000000-0000-4000-8000-000000000001', 'Stage 01 security fixture'
+  );
+
+insert into public.opportunities (id, tenant_id, company_id, primary_customer_name, created_by) values
+  (
+    '52000000-0000-4000-8000-000000000030', '52000000-0000-4000-8000-000000000010',
+    '52000000-0000-4000-8000-000000000020', 'Visible company A',
+    '52000000-0000-4000-8000-000000000001'
+  ),
+  (
+    '52000000-0000-4000-8000-000000000031', '52000000-0000-4000-8000-000000000010',
+    '52000000-0000-4000-8000-000000000021', 'Hidden company B',
+    '52000000-0000-4000-8000-000000000001'
+  );
+
+insert into public.workflow_definition_snapshots (
+  id, tenant_id, company_id, workflow_key, template_version, schema_version, definition, definition_hash
+) values
+  (
+    '52000000-0000-4000-8000-000000000040', '52000000-0000-4000-8000-000000000010',
+    '52000000-0000-4000-8000-000000000020', 'stage01-security', 1, 1, '{}'::jsonb, 'security-a'
+  ),
+  (
+    '52000000-0000-4000-8000-000000000041', '52000000-0000-4000-8000-000000000010',
+    '52000000-0000-4000-8000-000000000021', 'stage01-security', 1, 1, '{}'::jsonb, 'security-b'
+  );
+
+insert into public.workflow_instances (
+  id, tenant_id, company_id, subject_type, subject_id, definition_snapshot_id, created_by
+) values
+  (
+    '52000000-0000-4000-8000-000000000050', '52000000-0000-4000-8000-000000000010',
+    '52000000-0000-4000-8000-000000000020', 'opportunity',
+    '52000000-0000-4000-8000-000000000030', '52000000-0000-4000-8000-000000000040',
+    '52000000-0000-4000-8000-000000000001'
+  ),
+  (
+    '52000000-0000-4000-8000-000000000051', '52000000-0000-4000-8000-000000000010',
+    '52000000-0000-4000-8000-000000000021', 'opportunity',
+    '52000000-0000-4000-8000-000000000031', '52000000-0000-4000-8000-000000000041',
+    '52000000-0000-4000-8000-000000000001'
+  );
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"52000000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
+
+do $$
+begin
+  if (select count(*) from public.opportunities) <> 1
+     or not exists (
+       select 1 from public.opportunities where id = '52000000-0000-4000-8000-000000000030'
+     ) then
+    raise exception 'DB-S01-SEC Opportunity RLS did not isolate Company A';
+  end if;
+
+  if (select count(*) from public.workflow_instances) <> 1
+     or not exists (
+       select 1 from public.workflow_instances where id = '52000000-0000-4000-8000-000000000050'
+     ) then
+    raise exception 'DB-S01-SEC Workflow RLS did not require scoped journey.read';
+  end if;
+
+  begin
+    insert into public.opportunities (tenant_id, company_id, primary_customer_name, created_by)
+    values (
+      '52000000-0000-4000-8000-000000000010', '52000000-0000-4000-8000-000000000020',
+      'Forbidden direct insert', '52000000-0000-4000-8000-000000000001'
+    );
+    raise exception 'DB-S01-SEC direct INSERT unexpectedly succeeded';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    update public.opportunities
+    set primary_customer_name = 'Forbidden direct update'
+    where id = '52000000-0000-4000-8000-000000000030';
+    raise exception 'DB-S01-SEC direct UPDATE unexpectedly succeeded';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    delete from public.opportunities
+    where id = '52000000-0000-4000-8000-000000000030';
+    raise exception 'DB-S01-SEC direct DELETE unexpectedly succeeded';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+
+reset role;
+
+update public.company_role_assignments
+set revoked_by = '52000000-0000-4000-8000-000000000001',
+    revoked_at = now(),
+    revoke_reason = 'Verify immediate journey permission revocation'
+where role_id = '52000000-0000-4000-8000-000000000102'
+  and revoked_at is null;
+
+set local role authenticated;
+
+do $$
+begin
+  if (select count(*) from public.workflow_instances) <> 0 then
+    raise exception 'DB-S01-SEC revoked journey.read was not effective immediately';
+  end if;
+  if (select count(*) from public.opportunities) <> 1 then
+    raise exception 'DB-S01-SEC revoking journey.read affected opportunity.read';
+  end if;
+end $$;
+
+reset role;
+
+update public.company_role_assignments
+set revoked_by = '52000000-0000-4000-8000-000000000001',
+    revoked_at = now(),
+    revoke_reason = 'Verify immediate Opportunity permission revocation'
+where role_id = '52000000-0000-4000-8000-000000000101'
+  and revoked_at is null;
+
+set local role authenticated;
+
+do $$
+begin
+  if (select count(*) from public.opportunities) <> 0 then
+    raise exception 'DB-S01-SEC revoked opportunity.read was not effective immediately';
+  end if;
+end $$;
+
+reset role;
+
+select 'PASS DB-S01-SEC foundational grants and RLS' as result;
+
+rollback;
