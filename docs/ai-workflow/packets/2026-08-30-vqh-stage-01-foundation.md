@@ -1,7 +1,7 @@
 # Codex Implementation Packet — VQH Stage 01 Phase A Foundation
 
-> **Packet status:** REVIEW REQUIRED
-> **Implementation authorization:** NONE
+> **Packet status:** APPROVED
+> **Implementation authorization:** AUTHORIZED AFTER `READY` OR `READY_WITH_NON_MATERIAL_DRIFT` PREFLIGHT
 > **Scope:** Phase A foundation only
 > **Created:** 2026-08-30
 > **Execution source:** `Sonos18/company-operations-platform@303a8b01ea935c1042387e7d1b01e2d8826a0828`
@@ -20,11 +20,12 @@ repository:
   execution_base_sha: 303a8b01ea935c1042387e7d1b01e2d8826a0828
 
 approval:
-  status: REVIEW_REQUIRED
-  approved_by: none
+  status: APPROVED
+  approved_by: Son
   approval_reference: >-
-    Technical Spec approved by Son on 2026-08-29 and corrected Execution Plan approved by Son
-    on 2026-08-30. This Implementation Packet still requires Son's explicit approval before use.
+    Technical Spec approved by Son on 2026-08-29, corrected Execution Plan approved by Son on
+    2026-08-30, and this corrected Implementation Packet explicitly approved by Son in chat on
+    2026-08-30.
   approved_scope_version: 2026-08-30-stage01-foundation-a-corrected
 
 goal: >-
@@ -354,12 +355,11 @@ This draft packet does not authorize implementation. Approval requires all of th
 [x] Local destructive database testing is explicitly scoped
 [x] Cloud DEV and production mutation remain forbidden
 [x] Delivery branch and no-worktree/no-subagent constraints are explicit
-[ ] Written Implementation Packet reviewed and approved by Son
+[x] Written Implementation Packet reviewed and approved by Son
 ```
 
-After approval, update `Packet status` and `approval.status` to `APPROVED`, set
-`approval.approved_by` to `Son`, check the final approval box, and commit the approval state. Only
-then may Sơn send/use the packet as the explicit Phase A implementation instruction.
+This approval state records Sơn's explicit written handoff approval. The packet may now be used as
+the Phase A implementation instruction, subject to its mandatory technical preflight.
 
 Approval of this packet authorizes implementation only within its scope after successful preflight.
 It does not authorize Cloud DEV mutation, production mutation, deployment, PR creation, merge, or
