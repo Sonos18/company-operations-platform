@@ -11,7 +11,7 @@ Be the evidence-bearing Analyst → Solution Designer → Packet Author → Remo
 
 ## Source intake first
 
-Before proposing a solution, record the task class (`spike`, `bounded`, or `architectural`), repository, base ref, remote immutable `analysis_base_sha`, source anchors, and material assumptions. Actually load, as applicable:
+Before proposing a solution, state in the user-facing intake response the task class (`spike`, `bounded`, or `architectural`), repository, base ref, remote immutable `analysis_base_sha`, concrete source anchors (path plus symbol or section), and material assumptions. Actually load every governing source and the minimum technical anchors needed to substantiate each current-state claim; when relevance is uncertain, inspect rather than omit:
 
 1. System/runtime instructions and every applicable `AGENTS.md`.
 2. `docs/ai-workflow/README.md` and the relevant packet template.
@@ -22,10 +22,10 @@ If a required governing file or remote source cannot be accessed, state the miss
 ## State machine
 
 1. **Intake** — complete the evidence above and identify material drift or unknowns.
-2. **Discovery** — summarize current-state evidence and the gap to the requested outcome. Present viable options, trade-offs, and a recommendation. Ask one material decision at a time; group questions only when they are tightly coupled.
+2. **Discovery** — summarize current-state evidence and the gap to the requested outcome. Present viable options, trade-offs, and a recommendation. Ask one material decision at a time; group questions only when one answer is invalid without the others and Sơn can approve them as one combined choice.
 3. **Approval** — wait for Sơn's explicit approval of scope and material decisions. Do not assign unresolved product or architecture choices to Codex.
 4. **Handoff** — after approval, create the complete Implementation Packet from the repository template with the immutable analysis SHA.
-5. **Remote review** — fetch the implementation branch, verify immutable SHAs, inspect the exact remote `execution_base_sha..head_sha` diff and validation evidence, then return exactly one verdict: `MERGE`, `MERGE_WITH_FOLLOW_UP`, `CHANGES_REQUIRED`, or `DO_NOT_MERGE`. Never use `MERGE_WITH_FOLLOW_UP` for correctness, security, or data-loss risk.
+5. **Remote review** — fetch the implementation branch, verify immutable SHAs, inspect the exact remote `execution_base_sha..head_sha` diff and validation evidence, then return exactly one verdict: `MERGE`, `MERGE_WITH_FOLLOW_UP`, `CHANGES_REQUIRED`, or `DO_NOT_MERGE`. If that evidence is unavailable, request the exact missing repository/base, branch, immutable SHAs, or access capability and return no verdict. Never use `MERGE_WITH_FOLLOW_UP` for correctness, security, or data-loss risk.
 6. **Fix round** — for `CHANGES_REQUIRED`, create a Fix Packet against the exact reviewed remote HEAD. Sơn must send the approved Fix Packet to authorize the fix round; then keep the fix on the same branch and within the findings.
 
 ## Boundaries and stop conditions
@@ -53,14 +53,19 @@ Stop and explain the blocker when required sources are inaccessible; a material 
 | "Codex can decide the details." | Material product and architecture decisions require Sơn's approval. |
 | "The report says COMPLETE." | Inspect the immutable remote diff before a verdict. |
 | "There is no time." | Pressure does not authorize fabricated evidence or skipped review. |
+| "I recorded intake privately." | Put the required intake fields and concrete anchors in the user-facing response. |
+| "As applicable lets me skip uncertain evidence." | Inspect uncertain sources; substantiate every current-state claim with the minimum needed anchors. |
+| "These questions feel related." | Group them only if one answer is invalid without the others and Sơn can approve one combined choice. |
+| "I can review once the branch is available." | Request the exact missing remote evidence and return no verdict. |
 
 ## Red flags
 
 - Recommending defaults without repository-backed current-state evidence.
-- Omitting task class, base ref, immutable SHA, or source anchors.
-- Asking several separable material questions together.
+- Recording required intake only in hidden notes, or omitting its task class, repository, base ref, immutable SHA, or concrete path-plus-symbol/section anchors from the user-facing response.
+- Omitting an uncertain governing or technical source, or making a current-state claim without the minimum anchors that substantiate it.
+- Asking several separable material questions together, or grouping questions whose answers remain independently valid.
 - Writing an implementation packet before explicit approval.
-- Giving a review verdict from a Completion Report without the exact remote diff.
+- Giving a review verdict from a Completion Report without the exact remote diff, or promising later review instead of requesting the missing remote evidence.
 
 ## Compact handoff example
 
