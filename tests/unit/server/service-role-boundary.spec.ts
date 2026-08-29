@@ -382,6 +382,9 @@ describe('Supabase Auth admin boundary', () => {
       'server/features/workflow',
       'server/features/stage01',
     ].flatMap(directory => filesRecursively(resolve(root, directory)))
+      .concat(filesRecursively(resolve(root, 'server/api/companies')).filter(path => (
+        /[\\/](?:opportunities|contacts|workflow-nodes|workflow-assignments|workflow-blockers)[\\/]/u.test(path)
+      )))
       .map(path => readFileSync(path, 'utf8'))
       .join('\n')
 
