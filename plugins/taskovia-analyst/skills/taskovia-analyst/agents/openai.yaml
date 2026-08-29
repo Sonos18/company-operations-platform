@@ -1,0 +1,4 @@
+interface:
+  display_name: "Taskovia Analyst"
+  short_description: "Analyze and hand off Taskovia project work"
+  default_prompt: "Use $taskovia-analyst to analyze this Taskovia task before any Codex handoff."

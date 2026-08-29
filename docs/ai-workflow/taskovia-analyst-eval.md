@@ -78,3 +78,17 @@ Rationale: UX direction, authentication behavior, required employee fields, and 
 Observed RED failures: proposed defaults without repository-backed current-state evidence and asked several separable material questions at once.
 
 Behavioral intake check: no actual intake evidence is present. The response offers recommendations without current-state evidence and asks several separable material questions at once; SHA/source anchors/task class are also absent.
+
+## GREEN description micro-tests
+
+The Taskovia Analyst description was evaluated after the skill was written. These manual discovery checks use the exact frontmatter trigger and verify that it selects analyst responsibilities only; they do not claim runtime model-selection telemetry.
+
+| Case | Request | Expected selection | Result |
+| --- | --- | --- | --- |
+| Positive trigger | “Sơn wants options and a recommendation for Taskovia onboarding before a Codex handoff.” | Select | PASS — Taskovia discovery and handoff are explicit triggers. |
+| Near miss | “Explain the general difference between an analyst and a solution designer.” | Do not select | PASS — not Taskovia project work. |
+| Casual conversation | “How are you today?” | Do not select | PASS — casual conversation is outside the trigger. |
+| Implementation-only | “Implement this already-approved Taskovia packet on its assigned Codex branch.” | Do not select | PASS — approved Codex implementation is explicitly outside the analyst boundary. |
+| Remote review | “Review the remote Taskovia implementation branch and return the merge verdict.” | Select | PASS — remote implementation review is an explicit trigger. |
+
+GREEN result: five of five expected selections match the description boundary. The RED evidence above remains the source for the pressure failures addressed by the skill body.

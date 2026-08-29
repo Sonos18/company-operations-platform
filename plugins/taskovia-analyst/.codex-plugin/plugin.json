@@ -1,18 +1,18 @@
 {
   "name": "taskovia-analyst",
   "version": "0.1.0",
-  "description": "Taskovia Analyst plugin",
+  "description": "Analyze Taskovia work and prepare governed Codex handoffs.",
   "author": {
-    "name": "Local developer"
+    "name": "Taskovia"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Taskovia Analyst",
-    "shortDescription": "Use Taskovia Analyst in Codex.",
-    "longDescription": "Taskovia Analyst adds a local Codex plugin scaffold.",
-    "developerName": "Local developer",
+    "shortDescription": "Analyze and hand off Taskovia project work.",
+    "longDescription": "Guided Taskovia analysis, approvals, handoffs, and remote reviews.",
+    "developerName": "Taskovia",
     "category": "Productivity",
     "capabilities": [],
-    "defaultPrompt": "Help me use Taskovia Analyst."
+    "defaultPrompt": "Use $taskovia-analyst to analyze this Taskovia task before any Codex handoff."
   }
 }
