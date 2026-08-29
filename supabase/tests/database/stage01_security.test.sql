@@ -326,7 +326,18 @@ begin
     'end_opportunity_referrer(uuid,uuid,uuid,jsonb,uuid)',
     'append_opportunity_intake_record(uuid,uuid,jsonb,uuid)',
     'correct_opportunity_intake_record(uuid,uuid,uuid,jsonb,uuid)',
-    'raise_opportunity_duplicate_concern(uuid,uuid,jsonb,uuid)'
+    'raise_opportunity_duplicate_concern(uuid,uuid,jsonb,uuid)',
+    'resolve_opportunity_duplicate(uuid,uuid,uuid,jsonb,uuid)',
+    'assign_workflow_node(uuid,uuid,jsonb,uuid)',
+    'end_workflow_assignment(uuid,uuid,jsonb,uuid)',
+    'raise_workflow_blocker(uuid,uuid,jsonb,uuid)',
+    'resolve_workflow_blocker(uuid,uuid,jsonb,uuid)',
+    'start_workflow_node(uuid,uuid,jsonb,uuid)',
+    'complete_stage01_intake(uuid,uuid,jsonb,uuid)',
+    'invalidate_opportunity(uuid,uuid,jsonb,uuid)',
+    'restore_opportunity(uuid,uuid,jsonb,uuid)',
+    'reopen_workflow_node(uuid,uuid,jsonb,uuid)',
+    'revalidate_workflow_node(uuid,uuid,jsonb,uuid)'
   ] loop
     if not has_function_privilege('authenticated', 'public.' || function_signature, 'execute')
        or has_function_privilege('anon', 'public.' || function_signature, 'execute')
@@ -352,6 +363,18 @@ begin
       '52000000-0000-4000-8000-000000000299'
     );
     raise exception 'DB-S01-SEC direct private implementation bypass unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'PERMISSION_DENIED' then raise; end if;
+  end;
+
+  begin
+    perform private.assign_workflow_node(
+      '52000000-0000-4000-8000-000000000020',
+      '52000000-0000-4000-8000-000000000099',
+      '{"assignmentKind":"accountable_owner","assigneeUserId":"52000000-0000-4000-8000-000000000001","expectedExecutionVersion":0}'::jsonb,
+      '52000000-0000-4000-8000-000000000298'
+    );
+    raise exception 'DB-S01-SEC direct private Workflow implementation bypass unexpectedly succeeded';
   exception when raise_exception then
     if sqlerrm <> 'PERMISSION_DENIED' then raise; end if;
   end;
