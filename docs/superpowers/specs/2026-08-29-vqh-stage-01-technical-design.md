@@ -6,6 +6,7 @@
 > **Authority scope:** VQH Stage 01 only  
 > **Implementation authorization:** NONE  
 > **Original technical spec approved:** 2026-08-29
+> **Cloud DEV execution amendment approved:** 2026-08-30
 > **Analysis base:** `Sonos18/company-operations-platform@f314ed7a4ff1d86e45cc29075ab0213ec6421ca1`
 > **Correction source:** `origin/docs/vqh-stage-01-technical-spec@34c9a896c0fae78c9069f54406ee943864bf0852`
 > **Correction approved:** 2026-08-29
@@ -278,7 +279,7 @@ no complete published company definition
 
 A published row whose schema or required content is invalid returns `STAGE01_DEFINITION_CONFIG_INVALID`; bootstrap MUST NOT fall back silently to an older definition version.
 
-Synthetic complete definitions are permitted only inside local automated tests. They MUST NOT be placed in production migration seeds or treated as approved VQH business configuration.
+Synthetic complete definitions are permitted only inside controlled automated-test fixtures. They MUST NOT be placed in migration seeds, retained as shared Cloud DEV business data, or treated as approved VQH business configuration.
 
 ---
 
@@ -2880,7 +2881,18 @@ DB-S01-HIST-004  criterion revision, Recommendation version, and baseline keys a
 DB-S01-HIST-005  criterion applicability/result constraints and Recommendation currency are enforced
 ```
 
-Tests MUST exercise both grants and RLS because either layer alone is incomplete. Test fixtures may publish a synthetic complete definition only inside the rolled-back local test context.
+Tests MUST exercise both grants and RLS because either layer alone is incomplete. Stage 01 database verification runs against the existing canonical Taskovia Supabase Cloud DEV project; Docker and local Supabase are not part of the required workflow.
+
+All ordinary database suites execute through a repository-owned fixed Cloud DEV runner using `supabase db query --linked --file`. Every SQL file MUST:
+
+- be in the Stage 01 allowlist;
+- start a transaction before creating fixtures;
+- use a unique Stage 01 test namespace;
+- raise a PostgreSQL exception for every failed assertion so the CLI exits non-zero;
+- roll back all fixture and assertion effects;
+- contain no remote reset, seed, migration repair, schema-history mutation, production definition, or arbitrary operator-supplied SQL path.
+
+The Supabase CLI `test db`/pgTAP runner is not used because it requires a Docker/container-capable environment even for a linked project. Stage 01 uses PostgreSQL exception-based assertions through `db query` instead; evidence IDs and acceptance semantics remain unchanged.
 
 ## Transaction/concurrency tests
 
@@ -2899,6 +2911,8 @@ simultaneous reassignment
 ```
 
 Exactly one valid mutation succeeds.
+
+True multi-session races cannot share a single rolled-back SQL transaction. They run through a second fixed Cloud DEV harness that opens separate guarded `db query --linked --file` processes against deterministic, test-only fixture IDs. The harness MUST clean the namespace before setup, commit only the minimum fixture rows required for the race, assert the winner and final state, and clean all fixture rows in `finally`. A cleanup failure is a blocking validation failure and must be reported as a Cloud DEV side effect; it is never hidden by continuing the plan. `service_role` remains forbidden on normal application request paths.
 
 `DB-S01-COMP-001` proves that Complete 01.1 inserts the completion event, captures its ID, inserts the baseline referencing that ID, and rolls every effect back on forced failure.
 
@@ -2987,11 +3001,11 @@ Logical migration order:
 10. UI integration
 ```
 
-Phase A stops before step 7. Synthetic test definitions are fixtures, not migration step 7.
+Phase A stops before step 7. Synthetic test definitions are rolled-back or cleanup-guaranteed Cloud DEV fixtures, not migration step 7.
 
 Exact timestamped migration filenames belong to Implementation Plan.
 
-No Cloud DEV mutation is authorized merely by approving this spec.
+This spec records the approved no-Docker verification architecture but does not independently authorize a Cloud DEV mutation. The Implementation Packet must separately scope Cloud DEV mutation to guarded Stage 01 migration pushes and test-fixture verification against the canonical Taskovia DEV project. Production mutation remains separately forbidden.
 
 ---
 
@@ -3175,6 +3189,7 @@ The corrected Technical Spec is approved with the following conditions:
 [x] BDG items acknowledged as business gates
 [x] No implementation behavior may silently resolve a BDG
 [x] Corrected written Technical Spec reviewed and approved
+[x] Cloud DEV no-Docker execution amendment reviewed and approved
 ```
 
 When the corrected written Technical Spec is approved, that approval means:

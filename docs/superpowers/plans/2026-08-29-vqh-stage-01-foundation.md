@@ -5,6 +5,7 @@
 > **Status:** APPROVED
 > **Implementation authorization:** NONE
 > **Plan date:** 2026-08-29
+> **Cloud DEV execution amendment:** APPROVED 2026-08-30
 > **Analysis base:** `Sonos18/company-operations-platform@f314ed7a4ff1d86e45cc29075ab0213ec6421ca1`
 > **Approved corrected spec commit:** `cf198b3bbf57df794bbe22464ccabd3704174153`
 
@@ -12,7 +13,7 @@
 
 **Architecture:** Extend the Taskovia modular monolith with a minimal reusable Workflow Core plus Opportunity, Intake, Evaluation, and Decision domains. Supabase PostgreSQL is the final transaction and authorization authority; Nitro routes and user-scoped repositories expose explicit resource/command contracts without a generic mutation proxy. Phase A creates no production VQH configuration, Project, Project Manager assignment, parent Stage 01 runtime, Stage 02 runtime, or Stage 01 UI migration.
 
-**Tech Stack:** pnpm 10.29.3, Node.js 24.x, Nuxt 4.3.1, Vue 3.5.28, TypeScript 5.9.3, Supabase JS 2.112.x, Supabase CLI 2.114.0, PostgreSQL/RLS, Zod 4.x, Vitest 4.1.9, pgTAP, Playwright 1.61.1.
+**Tech Stack:** pnpm 10.29.3, Node.js 24.x, Nuxt 4.3.1, Vue 3.5.28, TypeScript 5.9.3, Supabase JS 2.112.x, Supabase CLI 2.114.0, canonical Supabase Cloud DEV, PostgreSQL/RLS, transaction-wrapped SQL assertions, Zod 4.x, Vitest 4.1.9, Playwright 1.61.1.
 
 **Spec:** [`docs/superpowers/specs/2026-08-29-vqh-stage-01-technical-design.md`](../specs/2026-08-29-vqh-stage-01-technical-design.md)
 
@@ -20,12 +21,12 @@
 
 - Implement Phase A only.
 - Use the current clean checkout; do not create a worktree.
-- Follow TDD inside every task: red test, observed failure, minimal implementation, green test, focused commit.
+- Follow TDD inside every task: red test, observed failure, minimal implementation, green test, focused commit. Database red/green evidence runs only against the guarded canonical Cloud DEV target.
 - `Opportunity != Project`; never overload `ProjectRepository` with Opportunity behavior.
 - Create Opportunity atomically with its Workflow Instance, node instances/executions `01.1` and `01.2`, Decision Cycle #1, workflow events, and audit.
 - No complete published company definition returns `STAGE01_DEFINITION_CONFIG_UNAVAILABLE` and commits no aggregate rows.
 - An invalid newest definition returns `STAGE01_DEFINITION_CONFIG_INVALID`; never fall back to an older definition.
-- Synthetic complete definitions are local automated-test fixtures only.
+- Synthetic complete definitions are automated-test fixtures only and must be rolled back or removed by the fixed Cloud DEV harness.
 - Do not resolve or infer `BDG-TAX-01`, `BDG-EVAL-01`, `BDG-AUTH-01`, or `BDG-HIER-01`.
 - Do not seed concrete VQH taxonomies, evaluation criteria, authority rules, or operational role mappings.
 - Do not create a Project, assign a Project Manager, create canonical parent Stage 01 runtime, or start Stage 02.
@@ -41,14 +42,18 @@
 - Revoke function execution from `PUBLIC` and `anon`; grant exact signatures only.
 - Grant authenticated reads explicitly and enforce company-scoped RLS separately.
 - Do not grant unrestricted authenticated `INSERT`, `UPDATE`, or `DELETE` on protected Stage 01 tables.
-- `service_role` is forbidden on normal request paths; local test fixture setup is not a normal request path.
+- `service_role` is forbidden on normal request paths. The fixed Cloud DEV verification harness uses linked database access only and never turns `service_role` into an application dependency.
 - Use `expectedOpportunityVersion`, `expectedContactVersion`, `expectedExecutionVersion`, or `expectedCycleVersion` according to the owning aggregate.
 - Migrations are forward-only; never edit an existing migration.
+- Create every new migration with `pnpm exec supabase migration new <approved_name>` before assigning the exact ordered filename in the File Map; never fabricate a migration-history row.
 - `shared/types/database.types.ts` is generated and must not be hand-edited.
 - No new production dependency.
 - No Stage 01 Vue page, workspace, or existing Journey UI migration.
-- Local destructive database verification requires explicit authorization in the Implementation Packet.
-- Cloud DEV mutation, production mutation, deployment, merge, and force-push are not authorized by this plan.
+- Docker and local Supabase are outside the Stage 01 workflow. Do not run `db:local:*`, `verify:backend:local`, `supabase start`, `supabase db reset`, or the Docker-backed Supabase CLI pgTAP runner.
+- Cloud DEV migration pushes and controlled test-fixture mutations require the exact authorization and guardrails in the Implementation Packet. Production mutation, deployment, merge, and force-push remain unauthorized.
+- Every Cloud DEV operation must pass `db:dev:target`; migration delivery must run `db:dev:status`, `db:dev:dry-run`, then `db:dev:push` through the fixed runner.
+- Never run remote reset, seed, migration repair, dashboard/Table Editor schema changes, arbitrary linked SQL, or operator-supplied test-file paths.
+- Once a migration has reached Cloud DEV, never edit it. Diagnose failures and add a new forward corrective migration generated with `supabase migration new`.
 
 ---
 
@@ -61,7 +66,7 @@
 - Create `shared/schemas/stage01.ts` — definition, evaluation, Recommendation, clarification, Final Decision, and aggregate contracts.
 - Modify `shared/constants/permissions.ts` — add the approved explicit permission codes.
 - Modify `shared/schemas/api-error.ts` — add the stable Stage 01 error codes.
-- Regenerate `shared/types/database.types.ts` after all migrations pass locally.
+- Regenerate `shared/types/database.types.ts` from the linked canonical Cloud DEV project after all eight migrations pass remote verification.
 
 ### Database migrations
 
@@ -76,12 +81,17 @@
 
 ### Database verification
 
-- Create `supabase/tests/database/stage01_schema.test.sql` — relations, columns, checks, FKs, and indexes.
+- Modify `package.json` — add fixed no-Docker Stage 01 Cloud DEV verification commands.
+- Modify `scripts/run-supabase-dev.mjs` — add an allowlisted `stage01-test` mode using `db query --linked --file`; do not accept arbitrary SQL paths or extra arguments.
+- Create `scripts/run-stage01-cloud-dev-concurrency.mjs` — fixed multi-process race harness with deterministic cleanup.
+- Modify `tests/unit/config/supabase-cloud-dev-runner.spec.ts` and create `tests/unit/config/stage01-cloud-dev-concurrency.spec.ts` — fail-closed runner contracts.
+- Create `supabase/tests/database/stage01_schema.test.sql` — relations, columns, checks, FKs, and indexes using exception-based SQL assertions.
 - Create `supabase/tests/database/stage01_definition.test.sql` — definition validation and publication semantics.
 - Create `supabase/tests/database/stage01_bootstrap.test.sql` — `DB-S01-BOOT-001..003`.
 - Create `supabase/tests/database/stage01_security.test.sql` — `DB-S01-SEC-001..007`.
 - Create `supabase/tests/database/stage01_history.test.sql` — `DB-S01-HIST-001..005` and `DB-S01-COMP-001`.
-- Create `supabase/tests/database/stage01_commands.test.sql` — state, gate, permission, and concurrency behavior.
+- Create `supabase/tests/database/stage01_commands.test.sql` — state, gate, and permission behavior.
+- Create `supabase/tests/database/stage01_concurrency_setup.sql`, `stage01_concurrency_actor_a.sql`, `stage01_concurrency_actor_b.sql`, `stage01_concurrency_assert.sql`, and `stage01_concurrency_cleanup.sql` — fixed Cloud DEV multi-session race fixtures and assertions.
 - Create `supabase/tests/database/stage01_flows.test.sql` — end-to-end public-RPC acceptance flows 1–33.
 
 ### Server modules
@@ -351,6 +361,11 @@ git commit -m "feat: define stage 01 shared contracts"
 
 **Files:**
 
+- Modify `package.json`.
+- Modify `scripts/run-supabase-dev.mjs`.
+- Create `scripts/run-stage01-cloud-dev-concurrency.mjs`.
+- Modify `tests/unit/config/supabase-cloud-dev-runner.spec.ts`.
+- Create `tests/unit/config/stage01-cloud-dev-concurrency.spec.ts`.
 - Create `supabase/migrations/20260829120100_stage01_workflow_core.sql`.
 - Create `supabase/tests/database/stage01_schema.test.sql`.
 
@@ -360,32 +375,51 @@ git commit -m "feat: define stage 01 shared contracts"
 - Task 3 consumes `workflow_definition_snapshots.definition`.
 - Tasks 8–10 consume all Workflow Core primary keys and `version` columns.
 
-- [ ] **Step 1: Add failing pgTAP assertions for the seven Workflow Core tables**
+- [ ] **Step 1: Add failing tests for the fixed no-Docker Cloud DEV harness**
+
+Prove the runner accepts only the committed Stage 01 SQL allowlist, verifies the canonical target before spawning, passes each file through `db query --linked --file`, rejects extra arguments and files without `begin`/`rollback`, and always invokes concurrency cleanup after success or failure. Add `db:dev:stage01:test` and `db:dev:stage01:concurrency` only after observing the focused unit tests fail.
+
+- [ ] **Step 2: Implement the fixed harness and keep all operator input closed**
+
+The normal suite runs every existing file in the fixed Stage 01 inventory sequentially. SQL assertion failures must surface as non-zero command failures. The concurrency harness owns its fixed setup, actor, assertion, and cleanup files; no command-line path or SQL argument is accepted.
+
+```bash
+pnpm exec vitest run tests/unit/config/supabase-cloud-dev-runner.spec.ts tests/unit/config/stage01-cloud-dev-concurrency.spec.ts
+```
+
+Expected: fixed-mode safety tests PASS without contacting Cloud DEV.
+
+- [ ] **Step 3: Add failing PostgreSQL assertions for the seven Workflow Core tables**
 
 ```sql
 begin;
-select plan(7);
-select has_table('public', 'workflow_definition_snapshots');
-select has_table('public', 'workflow_instances');
-select has_table('public', 'workflow_node_instances');
-select has_table('public', 'workflow_node_executions');
-select has_table('public', 'workflow_node_events');
-select has_table('public', 'workflow_node_assignments');
-select has_table('public', 'workflow_blockers');
-select * from finish();
+do $$
+begin
+  if to_regclass('public.workflow_definition_snapshots') is null then raise exception 'DB-S01-SCHEMA workflow_definition_snapshots missing'; end if;
+  if to_regclass('public.workflow_instances') is null then raise exception 'DB-S01-SCHEMA workflow_instances missing'; end if;
+  if to_regclass('public.workflow_node_instances') is null then raise exception 'DB-S01-SCHEMA workflow_node_instances missing'; end if;
+  if to_regclass('public.workflow_node_executions') is null then raise exception 'DB-S01-SCHEMA workflow_node_executions missing'; end if;
+  if to_regclass('public.workflow_node_events') is null then raise exception 'DB-S01-SCHEMA workflow_node_events missing'; end if;
+  if to_regclass('public.workflow_node_assignments') is null then raise exception 'DB-S01-SCHEMA workflow_node_assignments missing'; end if;
+  if to_regclass('public.workflow_blockers') is null then raise exception 'DB-S01-SCHEMA workflow_blockers missing'; end if;
+end $$;
 rollback;
 ```
 
-- [ ] **Step 2: Reset the local database and observe the red schema test**
+- [ ] **Step 4: Verify the canonical target and observe the red Cloud DEV schema test**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:target
+pnpm db:dev:auth-check
+pnpm db:dev:status
+pnpm db:dev:stage01:test
 ```
 
-Expected: the new `has_table` assertions FAIL.
+Expected: the target/auth/status guards PASS and the new missing-table assertion FAILS without leaving fixture rows.
 
-- [ ] **Step 3: Create the Workflow Core tables and approved checks**
+- [ ] **Step 5: Create the Workflow Core migration and approved checks**
+
+Create the migration with `pnpm exec supabase migration new stage01_workflow_core`, then give the generated file the approved timestamped filename above before adding SQL. Do not hand-create an untracked migration-history entry.
 
 Implement the fields from Technical Spec Sections 10.1–10.7. Constrain execution phase exactly:
 
@@ -412,23 +446,25 @@ Do not create a parent node instance for Stage 01 and do not persist `locked`, `
 
 Enable RLS on all seven tables in this migration. Do not add permissive policies or authenticated DML grants.
 
-- [ ] **Step 4: Expand pgTAP assertions for columns, FKs, checks, uniqueness, and RLS enablement**
+- [ ] **Step 6: Expand SQL assertions for columns, FKs, checks, uniqueness, and RLS enablement**
 
-Use `has_column`, `has_fk`, `has_check`, `index_is_unique`, and catalog queries proving `relrowsecurity = true`. Task 6 later adds the approved policies and explicit read grants.
+Use `information_schema` and `pg_catalog` queries that raise on missing columns, FKs, checks, unique indexes, or `relrowsecurity = false`. Task 6 later adds the approved policies and explicit read grants.
 
-- [ ] **Step 5: Run the schema suite and observe green Workflow Core assertions**
+- [ ] **Step 7: Dry-run, push the one reviewed migration, and observe green assertions**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
 ```
 
-Expected: Workflow Core assertions PASS.
+Expected: dry-run lists only `20260829120100_stage01_workflow_core.sql`; push succeeds on canonical Cloud DEV; transaction-wrapped Workflow Core assertions PASS. If the applied migration is wrong, add a new forward corrective migration rather than editing it.
 
-- [ ] **Step 6: Commit the Workflow Core migration**
+- [ ] **Step 8: Commit the Cloud DEV harness and Workflow Core migration**
 
 ```bash
-git add supabase/migrations/20260829120100_stage01_workflow_core.sql supabase/tests/database/stage01_schema.test.sql
+git add package.json scripts/run-supabase-dev.mjs scripts/run-stage01-cloud-dev-concurrency.mjs tests/unit/config/supabase-cloud-dev-runner.spec.ts tests/unit/config/stage01-cloud-dev-concurrency.spec.ts supabase/migrations/20260829120100_stage01_workflow_core.sql supabase/tests/database/stage01_schema.test.sql
 git commit -m "feat: add stage 01 workflow core"
 ```
 
@@ -494,7 +530,7 @@ The fixture must contain exactly the two authoritative nodes, the dependency, al
 }
 ```
 
-The test fixture is deliberately synthetic and must remain inside the rolled-back pgTAP transaction.
+The test fixture is deliberately synthetic and must remain inside the rolled-back Cloud DEV assertion transaction.
 
 - [ ] **Step 2: Add failing cases for malformed and incomplete definitions**
 
@@ -503,8 +539,10 @@ Assert rejection for duplicate/missing nodes, missing `01.1 → 01.2`, missing a
 - [ ] **Step 3: Run the definition test and observe the missing-function failure**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
 ```
 
 Expected: `stage01_definition.test.sql` FAILS because the validator does not exist.
@@ -628,8 +666,10 @@ The implementation must raise only `STAGE01_DEFINITION_CONFIG_INVALID` for defin
 - [ ] **Step 5: Run definition and schema tests**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
 ```
 
 Expected: complete synthetic definition PASS; every invalid shape fails closed.
@@ -659,11 +699,13 @@ git commit -m "feat: validate stage 01 definitions"
 
 Assert every relation and field in Technical Spec Sections 11–18, including the absence of `opportunities.received_at` and the presence of all owning aggregate `version` columns.
 
-- [ ] **Step 2: Run pgTAP and observe the missing Opportunity relations**
+- [ ] **Step 2: Run the guarded Cloud DEV SQL suite and observe the missing Opportunity relations**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
 ```
 
 Expected: Opportunity-domain assertions FAIL.
@@ -701,8 +743,10 @@ create unique index stage01_intake_baselines_completion_event_key
 - [ ] **Step 5: Run schema tests and review the migration diff**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
 git diff --check
 ```
 
@@ -748,8 +792,10 @@ blank override_rationale whenever it is populated
 - [ ] **Step 3: Run schema tests and observe red Evaluation/Decision assertions**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
 ```
 
 Expected: Evaluation/Decision relation assertions FAIL.
@@ -772,8 +818,10 @@ Enable RLS on all four tables in this migration without adding permissive polici
 - [ ] **Step 5: Run the database suite**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
 ```
 
 Expected: schema assertions for all four tables PASS.
@@ -818,11 +866,13 @@ revoked permission is effective on the next statement
 
 Cover direct and privileged-function attempts to update/delete append-only tables, mutate a decided cycle, use a cross-cycle Recommendation/Clarification reference, insert a malformed evaluation, attach a baseline to the wrong completion event, populate an override for a matching outcome, and omit a meaningful override for a differing outcome.
 
-- [ ] **Step 3: Run pgTAP and observe the security/history failures**
+- [ ] **Step 3: Run the guarded Cloud DEV SQL suite and observe the security/history failures**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
 ```
 
 Expected: security and history suites FAIL because policies, grants, and guards do not exist.
@@ -864,8 +914,10 @@ On baseline insert, verify the referenced event is `completed`, has the same exe
 - [ ] **Step 7: Run the foundational security and history cases**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
 ```
 
 Expected: all security/history cases present at this task boundary PASS. Exact command-function privilege, direct-private-invocation, immediate permission-revocation, and Recommendation-currency cases are added with their functions in Tasks 8–10.
@@ -1035,8 +1087,10 @@ The success assertion must also prove no Project, parent Stage runtime, Stage 02
 - [ ] **Step 2: Run bootstrap tests and observe missing RPC failures**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
 ```
 
 Expected: bootstrap and Opportunity-command assertions FAIL.
@@ -1107,8 +1161,11 @@ Prove exactly one success for simultaneous Primary Contact replacement, Primary 
 - [ ] **Step 7: Run bootstrap, command, security, and history suites**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
+pnpm db:dev:stage01:concurrency
 ```
 
 Expected: `DB-S01-BOOT-001..003` PASS and every Task 8 command has exact grants and audit evidence.
@@ -1176,8 +1233,10 @@ The test must force a baseline insertion failure after the completion-event inse
 - [ ] **Step 3: Run command tests and observe missing Workflow RPC failures**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
 ```
 
 Expected: Task 9 command assertions FAIL.
@@ -1218,11 +1277,14 @@ Do not persist an “01.2 unlocked” flag; readiness is derived from current-va
 
 Prove exactly one valid mutation succeeds for double `01.1` Complete, duplicate-resolution race, simultaneous reassignment, stale execution mutation, and blocker resolution race.
 
-- [ ] **Step 7: Apply exact grants and run all pgTAP suites**
+- [ ] **Step 7: Apply exact grants and run all guarded Cloud DEV SQL suites**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
+pnpm db:dev:stage01:concurrency
 ```
 
 Expected: Workflow/`01.1`, security, history, and `DB-S01-COMP-001` PASS.
@@ -1292,8 +1354,10 @@ Prove explicit completion gates, retained `not_proceeding` Opportunity, current-
 - [ ] **Step 4: Run the command suite and observe missing Decision RPC failures**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
 ```
 
 Expected: Evaluation/Decision/Reactivation assertions FAIL.
@@ -1323,8 +1387,11 @@ reactivate → lock Opportunity/current 01.1/current 01.2/latest cycle
 - [ ] **Step 7: Apply exact grants and run all database tests**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
+pnpm db:dev:stage01:concurrency
 ```
 
 Expected: all schema, definition, bootstrap, security, history, and command tests PASS.
@@ -1520,7 +1587,7 @@ Call `requirePermission` with the exact Section 33 permission before each reposi
 expect(stage01RequestPathSources).not.toMatch(/service[_-]?role|createSupabaseAdminClient/u)
 ```
 
-Scan the new `server/features/{opportunities,workflow,stage01}` modules and all Stage 01 Nitro adapters. Do not scan the local test fixture directory as a normal request path.
+Scan the new `server/features/{opportunities,workflow,stage01}` modules and all Stage 01 Nitro adapters. Do not classify the fixed Cloud DEV test harness as a normal request path.
 
 - [ ] **Step 7: Run focused tests, typecheck, and lint**
 
@@ -1801,12 +1868,12 @@ git commit -m "feat: add stage 01 http repositories"
 
 **Interfaces:**
 
-- Produces acceptance evidence `E2E 1–33` by executing the public RPC boundary as authenticated local test actors.
+- Produces acceptance evidence `E2E 1–33` by executing the public RPC boundary as authenticated test actors on canonical Cloud DEV.
 - Produces fresh generated database types matching all eight migrations.
 
 - [ ] **Step 1: Add the 33 public-RPC business flows**
 
-Group the exact Technical Spec Section 47 flows into pgTAP subtests:
+Group the exact Technical Spec Section 47 flows into transaction-wrapped PostgreSQL assertion blocks that raise on failure:
 
 ```text
 1–3   definition/bootstrap fail-closed and exact aggregate shape
@@ -1855,11 +1922,13 @@ Name and assert the flows individually:
 
 Use two companies and only rolled-back synthetic definition/authority fixture setup. Every business mutation in the flow must call a public RPC as `authenticated`; direct privileged writes are restricted to fixture setup.
 
-- [ ] **Step 2: Run the complete local database suite**
+- [ ] **Step 2: Run the complete guarded Cloud DEV database suite**
 
 ```bash
-pnpm db:local:reset
-pnpm db:local:test
+pnpm db:dev:status
+pnpm db:dev:dry-run
+pnpm db:dev:push
+pnpm db:dev:stage01:test
 ```
 
 Expected: all schema, definition, bootstrap, security, history, command, and flow tests PASS.
@@ -1867,7 +1936,7 @@ Expected: all schema, definition, bootstrap, security, history, command, and flo
 - [ ] **Step 3: Generate database types and review only expected changes**
 
 ```bash
-pnpm db:local:types
+pnpm db:dev:types
 git diff -- shared/types/database.types.ts
 ```
 
@@ -1885,13 +1954,17 @@ pnpm test:e2e
 
 Expected: Vitest, Nuxt typecheck, ESLint, Nuxt build, and existing Playwright regression all PASS. Playwright proves existing UI remains unaffected; Stage 01 business-flow evidence comes from `stage01_flows.test.sql` because Phase A adds no Stage 01 UI.
 
-- [ ] **Step 5: Run the aggregate local backend verifier**
+- [ ] **Step 5: Run the aggregate no-Docker Cloud DEV backend verifier**
 
 ```bash
-pnpm verify:backend:local
+pnpm verify:dev
+pnpm db:dev:stage01:test
+pnpm db:dev:stage01:concurrency
+pnpm db:dev:advisors:security
+pnpm db:dev:advisors:performance
 ```
 
-Expected: destructive local reset, pgTAP, generated types, unit tests, typecheck, lint, and build PASS.
+Expected: guarded Cloud DEV migration status/dry-run, rollback-safe Stage 01 SQL assertions, fixed concurrency cleanup, generated types, advisors, unit tests, typecheck, lint, and build PASS without Docker or local Supabase.
 
 - [ ] **Step 6: Commit flow evidence and generated types**
 
@@ -1907,7 +1980,7 @@ git commit -m "test: verify stage 01 phase a flows"
 **Files:**
 
 - Modify only focused tests or documentation when an audit exposes a task-introduced gap.
-- Do not add configuration seeds, UI files, deployment files, or Cloud DEV changes.
+- Do not add configuration seeds, UI files, deployment files, or Cloud DEV changes beyond the packet-authorized Stage 01 migrations and verification fixtures.
 
 **Interfaces:**
 
@@ -1934,7 +2007,11 @@ Expected: no task-introduced concrete VQH Stage 01 taxonomy, criterion, authorit
 - [ ] **Step 3: Re-run fresh full verification**
 
 ```bash
-pnpm verify:backend:local
+pnpm verify:dev
+pnpm db:dev:stage01:test
+pnpm db:dev:stage01:concurrency
+pnpm db:dev:advisors:security
+pnpm db:dev:advisors:performance
 pnpm test:e2e
 git diff --check
 git status --short
@@ -1992,10 +2069,11 @@ The business-decision traceability in Technical Spec Section 52 uses these same 
 [x] Security, history, concurrency, and acceptance evidence are named
 [x] Phase A and all four BDG boundaries are preserved
 [x] No worktree or subagent execution is planned
+[x] Canonical Cloud DEV is the only Stage 01 database target; Docker/local Supabase are excluded
 [x] Corrected written Execution Plan reviewed and approved
 ```
 
-Written-plan approval authorizes preparation of a new Implementation Packet only. It does not authorize implementation, Cloud DEV mutation, production mutation, deployment, merge, or force-push.
+Written-plan approval authorizes preparation of a new Implementation Packet only. It does not authorize implementation or Cloud DEV mutation by itself; the packet must scope those operations explicitly. Production mutation, deployment, merge, and force-push remain unauthorized.
 
 ---
 
@@ -2010,7 +2088,7 @@ Before a separately approved Phase B:
 - `BDG-AUTH-01` must approve owner/authority resolution, clarification/completion policy, and operational role mappings.
 - `BDG-HIER-01` is required before any canonical parent Stage 01 runtime is introduced.
 
-Phase B requires a separate approved Technical Spec/Execution Plan or controlled amendment for configuration publication, concrete authority resolution, operational role mappings, UI interaction design, Cloud DEV rollout, and production enablement. Phase A must not infer any of those behaviors.
+Phase B requires a separate approved Technical Spec/Execution Plan or controlled amendment for configuration publication, concrete authority resolution, operational role mappings, UI interaction design, and production enablement. The Phase A Cloud DEV schema/test rollout does not authorize any of those operational behaviors.
 
 ---
 
@@ -2024,8 +2102,9 @@ The packet must:
 - identify a fetched remote base ref containing both corrected documents;
 - record concrete `analysis_base_sha`, `remote_base_sha`, and `execution_base_sha` values at packet/preflight time;
 - authorize branch `feat/vqh-stage-01-foundation` without creating a worktree;
-- authorize `local_db_destructive: true` for the specified local reset/test commands;
-- set `cloud_dev_mutating: false` and `production_mutating: false`;
+- set `local_db_destructive: false`; Docker and local Supabase are not prerequisites;
+- set `cloud_dev_mutating: true` only for the eight reviewed forward migrations, rollback-safe fixed SQL suites, deterministic concurrency fixtures with mandatory cleanup, linked type generation, and advisors on the canonical Taskovia Cloud DEV project;
+- set `production_mutating: false`;
 - set delivery to `push: true`, `create_pr: false`, `merge: false`, `force_push: false`;
 - require technical preflight to return `READY` or `READY_WITH_NON_MATERIAL_DRIFT` before implementation;
 - require stop-and-report on `PACKET_STALE` or `BLOCKED`.
