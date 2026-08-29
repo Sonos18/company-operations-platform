@@ -35,11 +35,7 @@ export async function runStage01CloudDevConcurrency({
     bodyError = error
   }
 
-  try {
-    await runMode('stage01-concurrency-cleanup')
-  } catch (cleanupError) {
-    throw cleanupError
-  }
+  await runMode('stage01-concurrency-cleanup')
   if (bodyError) throw bodyError
 }
 
