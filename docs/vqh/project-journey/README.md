@@ -4,6 +4,8 @@
 >
 > **Authority scope:** VQH Project Journey only
 >
+> **Design maturity:** DISCOVERY / ARCHITECTURE BASELINE — NOT IMPLEMENTATION SPEC
+>
 > **Primary audience:** developers, coding/AI agents, technical leads, project handover owners, and VQH management
 >
 > **Last reviewed against repository:** 2026-08-29
@@ -19,6 +21,16 @@ It maps the confirmed VQH project lifecycle, the shared workflow semantics used 
 This README is an overview and navigation reference. It does not attempt to contain the full business design of all 11 Stages. A Stage-specific document is created only after that Stage has completed discovery/design and received approval.
 
 Confirmed decisions in this document are the business baseline for future VQH Project Journey work. Prototype behavior is evidence about the current implementation, not authority to silently redefine that baseline.
+
+Canonical authority does not mean the entire VQH Project Journey is fully designed or implementation-ready. This reference distinguishes three maturity states:
+
+| Maturity state | Meaning |
+| --- | --- |
+| `CONFIRMED` | Source of truth for currently approved VQH workflow behavior; implementations must preserve it. |
+| `UNRESOLVED` | Discovery, design, and approval are still required before implementation; an implementation must not fill the gap by assumption. |
+| `SUPERSEDED` | A historical decision retained after an approved replacement, with its replacement and rationale recorded. |
+
+The canonical authority of `CONFIRMED` decisions remains binding even while other parts of the Journey are `UNRESOLVED`.
 
 ## 2. Scope and boundary
 
@@ -231,6 +243,16 @@ Requirement applicability and requirement lifecycle are separate concerns (VQH-W
 pending → submitted → under_review → fulfilled
 ```
 
+The lifecycle semantics confirmed by VQH-WF-013, VQH-WF-015, and VQH-WF-016 are architectural and business requirements. Implementations must preserve the confirmed meanings and transitions for submission/review/fulfillment, rejection/resubmission, and fulfillment revocation.
+
+```text
+Confirmed lifecycle semantics
+!=
+Final persisted enum/schema representation
+```
+
+The physical database representation, persisted/API values, and final enum naming are not yet locked. This distinction does not make the confirmed lifecycle semantics optional or illustrative.
+
 VQH v1 does not add a generic requirement-to-requirement dependency engine. Business sequencing belongs in workflow-node dependencies; submit/review sequencing for one requirement belongs in its lifecycle. A requirement graph is added only when a real VQH case cannot be expressed by those mechanisms (VQH-WF-014).
 
 ### 8.3 Reject, resubmit, and revoke
@@ -365,7 +387,7 @@ flowchart LR
 
 ## 17. Stage 01 confirmed baseline
 
-Stage 01 detailed design is still in discovery. Only the following pre-Task-1A business baseline is confirmed.
+Stage 01 detailed design remains unresolved beyond the decisions below. Only the following currently confirmed Stage 01 business baseline is authoritative.
 
 ### 17.1 Opportunity history and outcome
 
@@ -384,7 +406,7 @@ Stage 01 detailed design is still in discovery. Only the following pre-Task-1A b
 Business sequence concept: 01.1 → 01.2
 ```
 
-This confirms the high-level breakdown and business sequence only. It does not decide the hierarchy mechanics under discovery in Task 1A (VQH-S01-003).
+This confirms the high-level breakdown and business sequence only. It does not decide the unresolved hierarchy mechanics listed in [Section 22](#22-open--intentionally-unresolved) (VQH-S01-003).
 
 ### 17.3 Controlled decision and intake
 
@@ -399,23 +421,6 @@ This confirms the high-level breakdown and business sequence only. It does not d
 - Evaluation criteria have required/optional semantics. Every required criterion must be evaluated before the final decision, but `evaluated != passed`; Decision Authority may proceed while acknowledging risk (VQH-S01-010).
 - A `not_proceeding` opportunity can be reactivated when it remains the same business opportunity. Reactivation requires permission, reason, actor, timestamp, and audit, and does not erase the prior decision (VQH-S01-011).
 - Each reconsideration/reactivation creates an immutable decision cycle. Prior assessments and decisions are not overwritten; current state may point to the latest cycle (VQH-S01-012).
-
-### 17.5 Explicit Task 1A exclusion
-
-This reference does not decide or infer:
-
-- whether the parent Stage is a real workflow node or a UI/container;
-- generic parent completion rules;
-- parent/child start gating;
-- how a blocked child affects parent status;
-- how reopening a child affects a completed parent;
-- N/A inheritance from parent to descendants;
-- the boundary between Stage-level and Sub-stage-level cross-Stage dependencies;
-- canonical outcome placement between Stage 01 and 01.2;
-- child `ready`/`locked` semantics while a parent is not active;
-- any other hierarchy mechanic being explored in Task 1A.
-
-Current code behavior touching these questions may be recorded only as a prototype observation. It is not a confirmed VQH decision.
 
 ## 18. Stage documentation contract
 
@@ -504,7 +509,7 @@ The approved VQH business flow is the 11-Stage lifecycle and confirmed semantics
 | Gate mode | Hard gates for required applicable requirements. | `EnforcementMode` is only `advisory`; UI copy states missing records do not block a Stage. | Prototype cannot enforce the confirmed VQH hard gate. |
 | Node states | `locked`, `ready`, `active`, `blocked`, `completed`, `not_applicable`. | `completed`, `active`, `upcoming`, `incomplete`, `not_applicable`. | Prototype cannot express confirmed lock/readiness/blocking semantics and contains non-target states. |
 | Dependencies | Explicit graph per workflow node; no implicit previous-Stage rule. | Stages are ordered arrays with no dependency contract or graph evaluation. | Prototype order is presentation data, not the confirmed dependency model. |
-| Node hierarchy | One generic recursive node model for Stage/Sub-stage. | `ProjectStage` embeds a fixed `subStages: StageStep[]` shape. | Prototype shape is not proof of final recursion or hierarchy mechanics. Task 1A remains unresolved. |
+| Node hierarchy | One generic recursive node model for Stage/Sub-stage. | `ProjectStage` embeds a fixed `subStages: StageStep[]` shape. | Prototype shape is not proof of final recursive behavior. Parent/child hierarchy mechanics remain unresolved. |
 | Requirements | Generic required/optional requirements with applicability, lifecycle, fulfillment, reject/resubmit, and revocation. | `records` are limited to `form`, `contract`, `document`, or `evidence` with `ready`, `missing`, or `draft`. | Prototype records are presentation fixtures, not the approved requirement engine. |
 | Governance | Separate Owner, Submitter, Verifier/Approver, Starter, Completer, and other authorities. | Stages and steps expose department/name labels; no workflow authority model or controlled transitions exist. | Prototype ownership labels do not implement approved governance. |
 | Blockers | Audited runtime entities; `blocked` is derived from open blocking records. | No workflow blocker entity or derived blocking state. | Confirmed blocker semantics are absent. |
@@ -547,11 +552,11 @@ An implementation of VQH Project Journey must not:
 
 ## 22. Open / intentionally unresolved
 
-The following are not final and must not be inferred by an implementation:
+Every item in this section has status `UNRESOLVED`. These questions require discovery, design, and approval before implementation and must not be inferred from prototype structure or filled by implementation assumptions.
 
 - exact database schema;
-- exact requirement status enum;
-- exact fulfillment enum;
+- final physical/persisted/API representation and enum naming for requirement status, while preserving the lifecycle semantics confirmed by VQH-WF-013, VQH-WF-015, and VQH-WF-016;
+- final physical/persisted/API representation and enum naming for fulfillment, while preserving confirmed fulfillment and revocation semantics;
 - exact blocker taxonomy;
 - exact permission names;
 - exact RBAC mapping;
@@ -563,8 +568,17 @@ The following are not final and must not be inferred by an implementation:
 - detailed requirements for each Stage;
 - concrete Owners, Approvers, and Completers for each Stage;
 - detailed Stage 02–11 designs;
-- every Task 1A hierarchy mechanic listed in [Section 17.5](#175-explicit-task-1a-exclusion);
-- Stage 01 questions assigned to future discovery tasks.
+- whether a parent Stage is a workflow node with runtime behavior or only a grouping/container;
+- parent completion semantics;
+- parent/child start gating;
+- how a blocked child affects parent state;
+- how reopening a child affects a completed parent;
+- whether and how parent applicability / N/A propagates to descendants;
+- the boundary between Stage-level and Sub-stage-level cross-Stage dependencies;
+- canonical business outcome placement between Stage 01 and 01.2;
+- child `ready` / `locked` semantics while a parent is not active;
+- other recursive parent/child hierarchy mechanics not yet approved;
+- remaining Stage 01 questions beyond the confirmed decisions in this reference.
 
 Potential examples and conceptual state names in this README remain non-final where explicitly marked. They must not be copied into schema or API contracts without approved design.
 
