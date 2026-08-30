@@ -530,9 +530,14 @@ export type Database = {
           created_at: string
           created_by: string
           currency_code: string | null
+          current_invalid_reason_code: string | null
+          current_invalid_reason_semantic_key: string | null
+          current_invalidation_reason: string | null
           customer_type_code: string | null
           engagement_status_code: string | null
           id: string
+          invalidated_at: string | null
+          invalidated_by: string | null
           location_status: string
           location_text: string | null
           need_description: string | null
@@ -558,9 +563,14 @@ export type Database = {
           created_at?: string
           created_by: string
           currency_code?: string | null
+          current_invalid_reason_code?: string | null
+          current_invalid_reason_semantic_key?: string | null
+          current_invalidation_reason?: string | null
           customer_type_code?: string | null
           engagement_status_code?: string | null
           id?: string
+          invalidated_at?: string | null
+          invalidated_by?: string | null
           location_status?: string
           location_text?: string | null
           need_description?: string | null
@@ -586,9 +596,14 @@ export type Database = {
           created_at?: string
           created_by?: string
           currency_code?: string | null
+          current_invalid_reason_code?: string | null
+          current_invalid_reason_semantic_key?: string | null
+          current_invalidation_reason?: string | null
           customer_type_code?: string | null
           engagement_status_code?: string | null
           id?: string
+          invalidated_at?: string | null
+          invalidated_by?: string | null
           location_status?: string
           location_text?: string | null
           need_description?: string | null

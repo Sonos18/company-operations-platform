@@ -15,7 +15,18 @@ export function resolvePlaywrightPort(value = process.env.PLAYWRIGHT_PORT) {
   return port
 }
 
-export function createPlaywrightConfig(port = resolvePlaywrightPort()) {
+export function resolvePlaywrightReuseExistingServer(
+  value = process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER,
+) {
+  if (value === undefined || value === 'false') return false
+  if (value === 'true') return true
+  throw new Error('PLAYWRIGHT_REUSE_EXISTING_SERVER must be true or false')
+}
+
+export function createPlaywrightConfig(
+  port = resolvePlaywrightPort(),
+  reuseExistingServer = resolvePlaywrightReuseExistingServer(),
+) {
   const baseURL = `http://127.0.0.1:${port}`
   return defineConfig({
     testDir: './tests/e2e',
@@ -52,7 +63,7 @@ export function createPlaywrightConfig(port = resolvePlaywrightPort()) {
     webServer: {
       command: `pnpm dev --host 127.0.0.1 --port ${port}`,
       url: baseURL,
-      reuseExistingServer: false,
+      reuseExistingServer,
       timeout: 120_000,
       env: {
         NUXT_PUBLIC_APP_URL: baseURL,
