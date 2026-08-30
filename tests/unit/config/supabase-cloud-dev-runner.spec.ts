@@ -253,28 +253,16 @@ describe('Cloud DEV fixed-mode runner', () => {
     expect(queriedFiles).toEqual([join(root, 'supabase/tests/database/stage01_schema.test.sql')])
   })
 
-  it('isolates the CLI state directory for each concurrent Cloud DEV actor', () => {
-    const root = makeWorktree()
-    const testDirectory = join(root, 'supabase/tests/database')
-    mkdirSync(testDirectory, { recursive: true })
-    writeFileSync(
-      join(testDirectory, 'stage01_concurrency_actor_a.sql'),
-      "-- STAGE01 CLOUD DEV FIXED CONCURRENCY FIXTURE\nselect 'PASS';\n",
-    )
-    let childEnvironment: NodeJS.ProcessEnv | undefined
+  it('does not expose obsolete per-actor CLI modes after the Management API harness owns concurrency', () => {
+    let spawnCalls = 0
 
-    runSupabaseDevMode('stage01-concurrency-actor-a', {
-      cwd: root,
-      env: { LOCALAPPDATA: 'C:\\Users\\developer\\AppData\\Local' },
-      spawn(_command, _args, options) {
-        childEnvironment = options.env
+    expect(() => runSupabaseDevMode('stage01-concurrency-actor-a', {
+      spawn() {
+        spawnCalls += 1
         return { status: 0 }
       },
-    })
-
-    expect(childEnvironment?.SUPABASE_HOME).toBe(
-      'C:\\Users\\developer\\AppData\\Local\\SupabaseCLI\\taskovia-dev\\stage01-concurrency-actor-a',
-    )
+    })).toThrow('Unsupported Cloud DEV operation')
+    expect(spawnCalls).toBe(0)
   })
 
   it('leaves generated types byte-identical when type generation fails or is implausible', () => {

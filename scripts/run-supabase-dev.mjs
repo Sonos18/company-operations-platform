@@ -14,13 +14,6 @@ const STAGE01_TEST_FILES = [
   'supabase/tests/database/stage01_commands.test.sql',
   'supabase/tests/database/stage01_flows.test.sql',
 ]
-const STAGE01_CONCURRENCY_MODE_FILES = {
-  'stage01-concurrency-setup': 'supabase/tests/database/stage01_concurrency_setup.sql',
-  'stage01-concurrency-actor-a': 'supabase/tests/database/stage01_concurrency_actor_a.sql',
-  'stage01-concurrency-actor-b': 'supabase/tests/database/stage01_concurrency_actor_b.sql',
-  'stage01-concurrency-assert': 'supabase/tests/database/stage01_concurrency_assert.sql',
-  'stage01-concurrency-cleanup': 'supabase/tests/database/stage01_concurrency_cleanup.sql',
-}
 const VQH_RLS_SMOKE_SQL = String.raw`begin;
 do $$
 declare
@@ -181,16 +174,12 @@ const REMOTE_MODE_ARGS = {
   'auth-check': ['projects', 'list', '--output-format', 'json'],
 }
 
-function readStage01Sql(cwd, relativePath, { mustRollback }) {
+function readStage01Sql(cwd, relativePath) {
   const absolutePath = resolve(cwd, relativePath)
   const sql = readFileSync(absolutePath, 'utf8').replace(/\r\n?/g, '\n').trim()
-  if (mustRollback) {
-    if (!/^begin\s*;/iu.test(sql)) throw new Error('Stage 01 SQL verification must start with begin')
-    if (!/rollback\s*;$/iu.test(sql)) throw new Error('Stage 01 SQL verification must end with rollback')
-    if (/\bcommit\s*;/iu.test(sql)) throw new Error('Stage 01 SQL verification cannot commit fixtures')
-  } else if (!sql.startsWith('-- STAGE01 CLOUD DEV FIXED CONCURRENCY FIXTURE')) {
-    throw new Error('Stage 01 concurrency SQL is missing its fixed-fixture marker')
-  }
+  if (!/^begin\s*;/iu.test(sql)) throw new Error('Stage 01 SQL verification must start with begin')
+  if (!/rollback\s*;$/iu.test(sql)) throw new Error('Stage 01 SQL verification must end with rollback')
+  if (/\bcommit\s*;/iu.test(sql)) throw new Error('Stage 01 SQL verification cannot commit fixtures')
   if (/supabase_migrations|\bmigration\s+repair\b|\bdb\s+reset\b|\binclude-seed\b/iu.test(sql)) {
     throw new Error('Stage 01 SQL contains a forbidden Cloud DEV operation')
   }
@@ -240,11 +229,7 @@ export function readDedicatedSupabaseDevAccessToken(cwd) {
 
 function isolatedSupabaseEnvironment(cwd, env, platform, mode) {
   const childEnv = { ...env }
-  const path = platform === 'win32' ? { join } : posix
-  const baseHome = resolveSupabaseDevHome({ env, platform })
-  const supabaseHome = Object.hasOwn(STAGE01_CONCURRENCY_MODE_FILES, mode)
-    ? path.join(baseHome, mode)
-    : baseHome
+  const supabaseHome = resolveSupabaseDevHome({ env, platform })
   delete childEnv.SUPABASE_ACCESS_TOKEN
   delete childEnv.SUPABASE_CLI_BINARY_OVERRIDE
   delete childEnv.SUPABASE_DB_PASSWORD
@@ -296,8 +281,7 @@ export function runSupabaseDevMode(mode, {
   spawn = spawnSync,
 } = {}) {
   const isStage01Test = mode === 'stage01-test'
-  const isStage01ConcurrencyMode = Object.hasOwn(STAGE01_CONCURRENCY_MODE_FILES, mode)
-  if (extraArgs.length > 0 || (!Object.hasOwn(REMOTE_MODE_ARGS, mode) && !isStage01Test && !isStage01ConcurrencyMode)) {
+  if (extraArgs.length > 0 || (!Object.hasOwn(REMOTE_MODE_ARGS, mode) && !isStage01Test)) {
     throw new Error('Unsupported Cloud DEV operation')
   }
 
@@ -307,18 +291,13 @@ export function runSupabaseDevMode(mode, {
   if (isStage01Test) {
     const files = STAGE01_TEST_FILES
       .filter(relativePath => existsSync(resolve(cwd, relativePath)))
-      .map(relativePath => readStage01Sql(cwd, relativePath, { mustRollback: true }))
+      .map(relativePath => readStage01Sql(cwd, relativePath))
     if (files.length === 0) throw new Error('No allowlisted Stage 01 SQL verification files exist')
     let result
     for (const file of files) {
       result = runCli(['db', 'query', '--linked', '--file', file], mode, { cwd, env, platform, spawn })
     }
     return result
-  }
-
-  if (isStage01ConcurrencyMode) {
-    const file = readStage01Sql(cwd, STAGE01_CONCURRENCY_MODE_FILES[mode], { mustRollback: false })
-    return runCli(['db', 'query', '--linked', '--file', file], mode, { cwd, env, platform, spawn })
   }
 
   const result = runCli(REMOTE_MODE_ARGS[mode], mode, { cwd, env, platform, spawn })
