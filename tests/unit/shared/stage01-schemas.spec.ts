@@ -5,6 +5,7 @@ import {
   createContactInputSchema,
   createOpportunityInputSchema,
   reliabilityStateSchema,
+  restoreOpportunityInputSchema,
   setPrimaryContactInputSchema,
 } from '../../../shared/schemas/opportunities'
 import {
@@ -14,6 +15,7 @@ import {
 } from '../../../shared/schemas/stage01'
 import {
   completeWorkflowNodeInputSchema,
+  revalidateWorkflowNodeInputSchema,
   startWorkflowNodeInputSchema,
   workflowInternalPhaseSchema,
   workflowNodeStateSchema,
@@ -113,6 +115,41 @@ describe('Stage 01 shared schemas', () => {
       rationale: '',
       evidence: [],
     }).success).toBe(false)
+  })
+
+  it('requires non-empty revalidation evidence and preserves nested JSON values', () => {
+    const input = {
+      reason: 'Prerequisites corrected',
+      evidence: [{ kind: 'baseline_ref', ref: 'baseline:2' }],
+      expectedExecutionVersion: 3,
+    }
+    expect(revalidateWorkflowNodeInputSchema.parse(input)).toEqual(input)
+    expect(revalidateWorkflowNodeInputSchema.safeParse({
+      reason: 'Prerequisites corrected',
+      expectedExecutionVersion: 3,
+    }).success).toBe(false)
+    expect(revalidateWorkflowNodeInputSchema.safeParse({
+      reason: 'Prerequisites corrected',
+      evidence: [],
+      expectedExecutionVersion: 3,
+    }).success).toBe(false)
+  })
+
+  it('accepts optional restore evidence without weakening strict input validation', () => {
+    expect(restoreOpportunityInputSchema.parse({
+      reason: 'Ordinary invalidation corrected',
+      expectedOpportunityVersion: 4,
+    })).toEqual({
+      reason: 'Ordinary invalidation corrected',
+      expectedOpportunityVersion: 4,
+    })
+    const evidenced = {
+      reason: 'Duplicate relationship separated',
+      evidence: [{ kind: 'separation_record', ref: 'case:42' }],
+      expectedOpportunityVersion: 5,
+    }
+    expect(restoreOpportunityInputSchema.parse(evidenced)).toEqual(evidenced)
+    expect(restoreOpportunityInputSchema.safeParse({ ...evidenced, companyId: ids.company }).success).toBe(false)
   })
 
   it('extends the existing catalogs with every approved Stage 01 permission and error', () => {

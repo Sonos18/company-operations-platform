@@ -54,4 +54,27 @@ describe('HTTP Workflow repository', () => {
       `/api/companies/${companyId}/workflow-blockers/82000000-0000-4000-8000-000000000041/resolve`,
     ])
   })
+
+  it('sends nested revalidation evidence through the fixed HTTP route', async () => {
+    const response = {
+      nodeInstanceId: '82000000-0000-4000-8000-000000000031', nodeExecutionId: executionId,
+      nodeKey: '01.1', nodeType: 'sub_stage', executionNo: 1, phase: 'active', state: 'active',
+      needsRevalidation: false, startedBy: '82000000-0000-4000-8000-000000000001',
+      startedAt: '2026-08-30T00:00:00.000Z', completedBy: null, completedAt: null,
+      version: 4, assignments: [], blockers: [],
+    }
+    const request = vi.fn(async ({ schema }: { schema: { parse(value: unknown): unknown } }) => schema.parse(response))
+    const repository = createHttpWorkflowRepository({ companyId, client: { request } as never })
+    const input = {
+      reason: 'Prerequisites corrected',
+      evidence: [{ kind: 'baseline_ref', ref: 'baseline:2' }],
+      expectedExecutionVersion: 3,
+    }
+    await expect(repository.revalidateNode(executionId, input)).resolves.toMatchObject({ version: 4 })
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      url: `/api/companies/${companyId}/workflow-nodes/${executionId}/revalidate`,
+      method: 'POST',
+      body: input,
+    }))
+  })
 })

@@ -48,6 +48,34 @@ describe('Stage 01 Workflow routes', () => {
     expect(assign).toHaveBeenCalledWith(context, nodeExecutionId, input)
   })
 
+  it('forwards nested revalidation evidence unchanged', async () => {
+    const input = {
+      reason: 'Prerequisites corrected',
+      evidence: [{ kind: 'baseline_ref', ref: 'baseline:2' }],
+      expectedExecutionVersion: 3,
+    }
+    readBody.mockResolvedValue(input)
+    const revalidateNode = vi.fn().mockResolvedValue({ nodeExecutionId })
+    await createWorkflowRoutes({
+      resolveContext: vi.fn().mockResolvedValue(context),
+      service: { revalidateNode } as never,
+    }).revalidateNode({})
+    expect(revalidateNode).toHaveBeenCalledWith(context, nodeExecutionId, input)
+  })
+
+  it.each([
+    { reason: 'Prerequisites corrected', expectedExecutionVersion: 3 },
+    { reason: 'Prerequisites corrected', evidence: [], expectedExecutionVersion: 3 },
+  ])('rejects revalidation without non-empty evidence', async input => {
+    readBody.mockResolvedValue(input)
+    const revalidateNode = vi.fn()
+    await expect(createWorkflowRoutes({
+      resolveContext: vi.fn().mockResolvedValue(context),
+      service: { revalidateNode } as never,
+    }).revalidateNode({})).rejects.toMatchObject({ statusCode: 400 })
+    expect(revalidateNode).not.toHaveBeenCalled()
+  })
+
   it.each(['companyId', 'tenantId', 'actorId', 'permissions', 'authorityRule'])(
     'rejects client-supplied field %s on mutation bodies', async field => {
     readBody.mockResolvedValue({ expectedExecutionVersion: 0, [field]: companyId })

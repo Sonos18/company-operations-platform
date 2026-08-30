@@ -177,6 +177,7 @@ export type ReopenWorkflowNodeInput = z.infer<typeof reopenWorkflowNodeInputSche
 
 export const revalidateWorkflowNodeInputSchema = z.object({
   reason: meaningfulTextSchema,
+  evidence: z.array(z.unknown()).min(1),
   expectedExecutionVersion: versionSchema,
 }).strict()
 export type RevalidateWorkflowNodeInput = z.infer<typeof revalidateWorkflowNodeInputSchema>

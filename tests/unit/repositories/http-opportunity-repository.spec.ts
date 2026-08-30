@@ -60,4 +60,20 @@ describe('HTTP Opportunity repository', () => {
       expect.objectContaining({ url: `/api/companies/${companyId}/opportunities/${opportunityId}/duplicate-concerns/81000000-0000-4000-8000-000000000042/resolve`, method: 'POST' }),
     ])
   })
+
+  it('sends duplicate-separation evidence through the fixed restore route', async () => {
+    const request = vi.fn(async ({ schema }: { schema: { parse(value: unknown): unknown } }) => schema.parse(null))
+    const repository = createHttpOpportunityRepository({ companyId, client: { request } as never })
+    const input = {
+      reason: 'Duplicate relationship separated',
+      evidence: [{ kind: 'separation_record', ref: 'case:42' }],
+      expectedOpportunityVersion: 5,
+    }
+    await repository.restore(opportunityId, input)
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      url: `/api/companies/${companyId}/opportunities/${opportunityId}/restore`,
+      method: 'POST',
+      body: input,
+    }))
+  })
 })

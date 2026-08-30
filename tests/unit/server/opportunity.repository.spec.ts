@@ -3,11 +3,12 @@ import { createSupabaseOpportunityRepository } from '../../../server/features/op
 
 const companyId = '61000000-0000-4000-8000-000000000020'
 const requestId = '61000000-0000-4000-8000-000000000021'
+const opportunityId = '61000000-0000-4000-8000-000000000030'
 
 describe('Stage 01 Opportunity repository', () => {
   it('calls only the explicit bootstrap RPC with server scope and parses its response', async () => {
     const data = {
-      opportunityId: '61000000-0000-4000-8000-000000000030',
+      opportunityId,
       workflowInstanceId: '61000000-0000-4000-8000-000000000031',
       intakeNodeInstanceId: '61000000-0000-4000-8000-000000000032',
       intakeExecutionId: '61000000-0000-4000-8000-000000000033',
@@ -37,5 +38,25 @@ describe('Stage 01 Opportunity repository', () => {
     } as never)
     await expect(repository.create(companyId, { primaryCustomerName: 'VQH Lead' }, requestId))
       .rejects.toMatchObject({ statusCode: 500, code: 'INTERNAL_ERROR' })
+  })
+
+  it('forwards duplicate-separation evidence to the fixed restore RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { opportunityId, validityState: 'valid', opportunityVersion: 6 },
+      error: null,
+    })
+    const repository = createSupabaseOpportunityRepository({ rpc } as never)
+    const input = {
+      reason: 'Duplicate relationship separated',
+      evidence: [{ kind: 'separation_record', ref: 'case:42' }],
+      expectedOpportunityVersion: 5,
+    }
+    await repository.restore(companyId, opportunityId, input, requestId)
+    expect(rpc).toHaveBeenCalledWith('restore_opportunity', {
+      target_company_id: companyId,
+      target_opportunity_id: opportunityId,
+      target_input: input,
+      target_request_id: requestId,
+    })
   })
 })

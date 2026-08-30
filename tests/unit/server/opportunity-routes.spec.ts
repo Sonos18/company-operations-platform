@@ -55,6 +55,21 @@ describe('Stage 01 Opportunity routes', () => {
     expect(addScope).toHaveBeenCalledWith(context, opportunityId, { scopeCode: 'design', expectedOpportunityVersion: 2 })
   })
 
+  it('forwards optional duplicate-separation evidence on restore', async () => {
+    const input = {
+      reason: 'Duplicate relationship separated',
+      evidence: [{ kind: 'separation_record', ref: 'case:42' }],
+      expectedOpportunityVersion: 5,
+    }
+    readBody.mockResolvedValue(input)
+    const restore = vi.fn()
+    await createOpportunityRoutes({
+      resolveContext: vi.fn().mockResolvedValue(context),
+      service: { restore } as never,
+    }).restore({})
+    expect(restore).toHaveBeenCalledWith(context, opportunityId, input)
+  })
+
   it('rejects malformed IDs before context resolution', async () => {
     getRouterParam.mockImplementation((_event, name: string) => name === 'companyId' ? companyId : 'not-a-uuid')
     const resolveContext = vi.fn()

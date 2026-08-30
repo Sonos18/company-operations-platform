@@ -316,6 +316,7 @@ export type InvalidateOpportunityInput = z.infer<typeof invalidateOpportunityInp
 
 export const restoreOpportunityInputSchema = z.object({
   reason: meaningfulTextSchema,
+  evidence: z.array(z.unknown()).optional(),
   expectedOpportunityVersion: versionSchema,
 }).strict()
 export type RestoreOpportunityInput = z.infer<typeof restoreOpportunityInputSchema>
