@@ -1,6 +1,7 @@
 import type { z } from 'zod'
 import { ClientError, type ClientErrorCode, type ClientErrorKind } from '../../errors/client-error'
 import { apiErrorBodySchema } from '../../../shared/schemas/api-error'
+import type { ApiErrorCode } from '../../../shared/schemas/api-error'
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 
@@ -108,7 +109,7 @@ function isInternalApiUrl(value: string): boolean {
     && url.pathname.startsWith('/api/')
 }
 
-function apiFailure(status: number, code: string, requestId: string): ClientError {
+function apiFailure(status: number, code: ApiErrorCode, requestId: string): ClientError {
   if (status === 429) {
     return clientError(
       'rate_limit',
@@ -143,7 +144,7 @@ function apiFailure(status: number, code: string, requestId: string): ClientErro
     return clientError('authorization', 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', false, requestId)
   }
 
-  return clientError('api', 'INTERNAL_ERROR', 'Hệ thống không thể xử lý yêu cầu. Vui lòng thử lại sau.', false, requestId)
+  return clientError('api', code, 'Yêu cầu không thể hoàn tất ở trạng thái hiện tại.', false, requestId)
 }
 
 export function createAuthenticatedHttpClient(options: AuthenticatedHttpClientOptions): AuthenticatedHttpClient {

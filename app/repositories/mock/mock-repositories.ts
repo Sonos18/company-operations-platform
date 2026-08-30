@@ -3,7 +3,7 @@ import type { ProjectSummary } from '../../features/projects/project.types'
 import type { TaskStatus } from '../../features/tasks/task.types'
 import { employeeUpdateInputSchema } from '../../../shared/schemas/employees'
 import type { CompanyContext } from '../../features/tenancy/tenancy.types'
-import type { RepositoryRegistry } from '../contracts'
+import type { PrototypeRepositoryRegistry } from '../contracts'
 import { INITIAL_MOCK_STATE } from './fixtures'
 import { validateMockState } from './schemas'
 import type { MockState } from './schemas'
@@ -18,7 +18,7 @@ function projectSummary(project: MockState['projects'][number]): ProjectSummary 
   return summary
 }
 
-export function createMockRepositories(store: StateStore, context: CompanyContext): RepositoryRegistry {
+export function createMockRepositories(store: StateStore, context: CompanyContext): PrototypeRepositoryRegistry {
   const initialState = validateMockState(structuredClone(INITIAL_MOCK_STATE))
 
   const read = (): MockState => {

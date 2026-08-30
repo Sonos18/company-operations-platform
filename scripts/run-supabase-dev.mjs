@@ -1,10 +1,19 @@
 import { spawnSync } from 'node:child_process'
 import { dirname, join, posix, resolve } from 'node:path'
-import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { CANONICAL_DEV_PROJECT_REF, assertCloudDevEnvironment, assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
 
 const SUPABASE_DEV_HOME_SEGMENTS = ['SupabaseCLI', 'taskovia-dev']
+const STAGE01_TEST_FILES = [
+  'supabase/tests/database/stage01_schema.test.sql',
+  'supabase/tests/database/stage01_definition.test.sql',
+  'supabase/tests/database/stage01_bootstrap.test.sql',
+  'supabase/tests/database/stage01_security.test.sql',
+  'supabase/tests/database/stage01_history.test.sql',
+  'supabase/tests/database/stage01_commands.test.sql',
+  'supabase/tests/database/stage01_flows.test.sql',
+]
 const VQH_RLS_SMOKE_SQL = String.raw`begin;
 do $$
 declare
@@ -39,6 +48,30 @@ begin
 end $$;
 select 'PASS' as result;
 rollback;`
+const STAGE01_PERMISSION_METADATA_SQL = String.raw`      ('opportunity.read', 'opportunity', 'Read opportunities', 'Read company Opportunity aggregates and Stage 01 decision data'),
+      ('opportunity.create', 'opportunity', 'Create opportunities', 'Create an Opportunity with its initial Stage 01 runtime'),
+      ('opportunity.update', 'opportunity', 'Update opportunities', 'Update current Opportunity-owned data'),
+      ('opportunity.contact.manage', 'opportunity', 'Manage Opportunity contacts', 'Manage Contact relationships and Contact Methods for an Opportunity'),
+      ('opportunity.scope.manage', 'opportunity', 'Manage Opportunity scopes', 'Manage lifecycle-preserving Opportunity Scope relationships'),
+      ('opportunity.referrer.manage', 'opportunity', 'Manage Opportunity referrers', 'Manage lifecycle-preserving Opportunity Referrer relationships'),
+      ('opportunity.intake_record.create', 'opportunity', 'Create Intake Records', 'Append Opportunity Intake Records and explicit corrections'),
+      ('opportunity.duplicate.raise', 'opportunity', 'Raise duplicate concerns', 'Raise an Opportunity duplicate concern'),
+      ('opportunity.duplicate.resolve', 'opportunity', 'Resolve duplicate concerns', 'Resolve an Opportunity duplicate concern without destructive merge'),
+      ('opportunity.invalidate', 'opportunity', 'Invalidate opportunities', 'Invalidate an Opportunity using an approved structured reason'),
+      ('opportunity.restore', 'opportunity', 'Restore opportunities', 'Restore an eligible invalid Opportunity'),
+      ('journey.read', 'journey', 'Read Journey runtime', 'Read company Workflow Core runtime and history'),
+      ('journey.assignment.manage', 'journey', 'Manage Journey assignments', 'Assign, reassign, or end Workflow node assignments'),
+      ('journey.node.start', 'journey', 'Start Journey nodes', 'Start an eligible Workflow node execution'),
+      ('journey.node.complete', 'journey', 'Complete Journey nodes', 'Complete an eligible Workflow node execution'),
+      ('journey.node.reopen', 'journey', 'Reopen Journey nodes', 'Reopen a completed Workflow node with history preservation'),
+      ('journey.node.revalidate', 'journey', 'Revalidate Journey nodes', 'Revalidate a Workflow node whose prerequisites changed'),
+      ('journey.blocker.raise', 'journey', 'Raise Journey blockers', 'Raise blocking or non-blocking Workflow blockers'),
+      ('journey.blocker.resolve', 'journey', 'Resolve Journey blockers', 'Resolve Workflow blockers with retained history'),
+      ('stage01.evaluation.update', 'stage01', 'Record Stage 01 evaluations', 'Append Stage 01 criterion evaluation revisions'),
+      ('stage01.recommendation.submit', 'stage01', 'Submit Stage 01 recommendations', 'Append Stage 01 Recommendation versions'),
+      ('stage01.clarification.return', 'stage01', 'Return Stage 01 clarification', 'Return a Stage 01 Recommendation for clarification'),
+      ('stage01.decision.record', 'stage01', 'Record Stage 01 decisions', 'Record the immutable Stage 01 Final Decision'),
+      ('stage01.reactivate', 'stage01', 'Reactivate Stage 01', 'Create a new Stage 01 evaluation execution and Decision Cycle')`
 const VQH_CANONICAL_CHECK_SQL = String.raw`begin;
 do $$
 begin
@@ -95,8 +128,14 @@ begin
   if exists (
     with expected_permissions(code, module, name, description) as (values
       ('employee.read_directory', 'employee', 'Read employee directory', 'Read the company employee directory'), ('employee.read_self_private', 'employee', 'Read own private details', 'Read the employee private record linked to the current account'), ('employee.read_all', 'employee', 'Read all employee records', 'Read all company employee directory records'), ('employee.read_private', 'employee', 'Read employee private details', 'Read private details for company employees'), ('employee.create', 'employee', 'Create employees', 'Create employee records during onboarding'), ('employee.update', 'employee', 'Update employees', 'Update employee and private-detail records'), ('employee.offboard', 'employee', 'Offboard employees', 'Offboard an employee and remove company access'), ('account.invite', 'account', 'Invite accounts', 'Invite an Auth account for onboarding'), ('account.disable', 'account', 'Disable accounts', 'Disable an Auth account during offboarding'), ('role.read', 'role', 'Read roles', 'Read the company role catalog and assignments'), ('role.assign', 'role', 'Assign roles', 'Grant company role assignments'), ('role.revoke', 'role', 'Revoke roles', 'Revoke company role assignments'), ('supplier.read', 'supplier', 'Read suppliers', 'Read supplier records'), ('supplier.create', 'supplier', 'Create suppliers', 'Create supplier records'), ('supplier.update', 'supplier', 'Update suppliers', 'Update supplier records'), ('quotation_request.create', 'quotation_request', 'Create quotation requests', 'Create supplier quotation requests'), ('quotation_request.update', 'quotation_request', 'Update quotation requests', 'Update supplier quotation requests'), ('inventory.read', 'inventory', 'Read inventory', 'Read inventory context'), ('stock_count.create', 'inventory', 'Create stock counts', 'Create stock count records'), ('stock_count.update', 'inventory', 'Update stock counts', 'Update stock count records'), ('stock_adjustment.read', 'inventory', 'Read stock adjustments', 'Read stock adjustment history'), ('stock_adjustment.approve', 'inventory', 'Approve stock adjustments', 'Approve stock adjustments'), ('technical_document.read', 'technical_document', 'Read technical documents', 'Read technical documents'), ('technical_document.update', 'technical_document', 'Update technical documents', 'Update technical documents'), ('drawing.read', 'drawing', 'Read drawings', 'Read design drawings'), ('drawing.create', 'drawing', 'Create drawings', 'Create design drawings'), ('drawing.update', 'drawing', 'Update drawings', 'Update design drawings'), ('accounting_document.read', 'accounting_document', 'Read accounting documents', 'Read accounting documents'), ('accounting_document.update', 'accounting_document', 'Update accounting documents', 'Update accounting documents'), ('supplier_payment.approve', 'accounting_document', 'Approve supplier payments', 'Approve supplier payments'), ('inventory_value.read', 'inventory', 'Read inventory value', 'Read inventory valuation'), ('project.read', 'project', 'Read projects', 'Read projects needed for assigned work'), ('task.read_assigned', 'task', 'Read assigned tasks', 'Read tasks assigned to the current employee'), ('task.update_assigned', 'task', 'Update assigned tasks', 'Update assigned tasks')
+    ), expected_stage01_permissions(code, module, name, description) as (values
+${STAGE01_PERMISSION_METADATA_SQL}
+    ), all_expected_permissions(code, module, name, description) as (
+      select * from expected_permissions
+      union all
+      select * from expected_stage01_permissions
     )
-    select 1 from expected_permissions expected
+    select 1 from all_expected_permissions expected
     left join public.permissions permission on permission.code = expected.code
     where permission.module is distinct from expected.module
       or permission.name is distinct from expected.name
@@ -107,11 +146,17 @@ begin
   if exists (
     with expected_permissions(code) as (values
       ('employee.read_directory'), ('employee.read_self_private'), ('employee.read_all'), ('employee.read_private'), ('employee.create'), ('employee.update'), ('employee.offboard'), ('account.invite'), ('account.disable'), ('role.read'), ('role.assign'), ('role.revoke'), ('supplier.read'), ('supplier.create'), ('supplier.update'), ('quotation_request.create'), ('quotation_request.update'), ('inventory.read'), ('stock_count.create'), ('stock_count.update'), ('stock_adjustment.read'), ('stock_adjustment.approve'), ('technical_document.read'), ('technical_document.update'), ('drawing.read'), ('drawing.create'), ('drawing.update'), ('accounting_document.read'), ('accounting_document.update'), ('supplier_payment.approve'), ('inventory_value.read'), ('project.read'), ('task.read_assigned'), ('task.update_assigned')
+    ), expected_stage01_permissions(code, module, name, description) as (values
+${STAGE01_PERMISSION_METADATA_SQL}
+    ), all_expected_permissions(code) as (
+      select code from expected_permissions
+      union all
+      select code from expected_stage01_permissions
     )
     select 1 from (
-      (select code from expected_permissions except select code from public.permissions)
+      (select code from all_expected_permissions except select code from public.permissions)
       union all
-      (select code from public.permissions except select code from expected_permissions)
+      (select code from public.permissions except select code from all_expected_permissions)
     ) as permission_code_difference
   ) then
     raise exception 'canonical VQH permission code contract check failed';
@@ -119,6 +164,12 @@ begin
   if exists (
     with expected_permissions(code) as (values
       ('employee.read_directory'), ('employee.read_self_private'), ('employee.read_all'), ('employee.read_private'), ('employee.create'), ('employee.update'), ('employee.offboard'), ('account.invite'), ('account.disable'), ('role.read'), ('role.assign'), ('role.revoke'), ('supplier.read'), ('supplier.create'), ('supplier.update'), ('quotation_request.create'), ('quotation_request.update'), ('inventory.read'), ('stock_count.create'), ('stock_count.update'), ('stock_adjustment.read'), ('stock_adjustment.approve'), ('technical_document.read'), ('technical_document.update'), ('drawing.read'), ('drawing.create'), ('drawing.update'), ('accounting_document.read'), ('accounting_document.update'), ('supplier_payment.approve'), ('inventory_value.read'), ('project.read'), ('task.read_assigned'), ('task.update_assigned')
+    ), expected_stage01_permissions(code, module, name, description) as (values
+${STAGE01_PERMISSION_METADATA_SQL}
+    ), all_expected_permissions(code) as (
+      select code from expected_permissions
+      union all
+      select code from expected_stage01_permissions
     ), explicit_role_permissions(role_code, permission_code) as (values
       ('employee','employee.read_directory'), ('employee','employee.read_self_private'), ('employee','project.read'), ('employee','task.read_assigned'), ('employee','task.update_assigned'),
       ('hr_manager','employee.read_directory'), ('hr_manager','employee.read_all'), ('hr_manager','employee.read_private'), ('hr_manager','employee.create'), ('hr_manager','employee.update'), ('hr_manager','account.invite'), ('hr_manager','role.read'),
@@ -129,7 +180,7 @@ begin
       ('accountant','accounting_document.read'), ('accountant','accounting_document.update'), ('accountant','supplier.read'), ('accountant','inventory_value.read')
     ), expected_role_permissions(role_code, permission_code) as (
       select role_code, permission_code from explicit_role_permissions
-      union all select 'company_admin', code from expected_permissions
+      union all select 'company_admin', code from all_expected_permissions
     ), actual_role_permissions(role_code, permission_code) as (
       select role.code, role_permission.permission_code
       from public.role_permissions role_permission
@@ -165,6 +216,31 @@ const REMOTE_MODE_ARGS = {
   'auth-check': ['projects', 'list', '--output-format', 'json'],
 }
 
+function readStage01Sql(cwd, relativePath) {
+  const absolutePath = resolve(cwd, relativePath)
+  const sql = readFileSync(absolutePath, 'utf8').replace(/\r\n?/g, '\n').trim()
+  if (!/^begin\s*;/iu.test(sql)) throw new Error('Stage 01 SQL verification must start with begin')
+  if (!/rollback\s*;$/iu.test(sql)) throw new Error('Stage 01 SQL verification must end with rollback')
+  if (/\bcommit\s*;/iu.test(sql)) throw new Error('Stage 01 SQL verification cannot commit fixtures')
+  if (/supabase_migrations|\bmigration\s+repair\b|\bdb\s+reset\b|\binclude-seed\b/iu.test(sql)) {
+    throw new Error('Stage 01 SQL contains a forbidden Cloud DEV operation')
+  }
+  return absolutePath
+}
+
+function runCli(cliArgs, mode, { cwd, env, platform, spawn }) {
+  const cliEntrypoint = resolve(cwd, 'node_modules/supabase/dist/supabase.js')
+  const result = spawn(process.execPath, [cliEntrypoint, ...cliArgs], {
+    cwd,
+    encoding: mode === 'types' || mode === 'auth-check' ? 'utf8' : undefined,
+    env: isolatedSupabaseEnvironment(cwd, env, platform),
+    stdio: mode === 'types' || mode === 'auth-check' ? 'pipe' : 'inherit',
+  })
+  if (result.error) throw result.error
+  if (result.status !== 0) throw new Error(`Supabase ${mode} operation failed`)
+  return result
+}
+
 export function resolveSupabaseDevHome({ env = process.env, platform = process.platform } = {}) {
   const path = platform === 'win32' ? { join } : posix
   const stateHome = platform === 'win32'
@@ -175,7 +251,7 @@ export function resolveSupabaseDevHome({ env = process.env, platform = process.p
   return path.join(stateHome, ...SUPABASE_DEV_HOME_SEGMENTS)
 }
 
-function readDedicatedSupabaseDevAccessToken(cwd) {
+export function readDedicatedSupabaseDevAccessToken(cwd) {
   let contents
   try {
     contents = readFileSync(resolve(cwd, '.supabase.dev.env.local'), 'utf8')
@@ -195,6 +271,7 @@ function readDedicatedSupabaseDevAccessToken(cwd) {
 
 function isolatedSupabaseEnvironment(cwd, env, platform) {
   const childEnv = { ...env }
+  const supabaseHome = resolveSupabaseDevHome({ env, platform })
   delete childEnv.SUPABASE_ACCESS_TOKEN
   delete childEnv.SUPABASE_CLI_BINARY_OVERRIDE
   delete childEnv.SUPABASE_DB_PASSWORD
@@ -202,7 +279,7 @@ function isolatedSupabaseEnvironment(cwd, env, platform) {
   return {
     ...childEnv,
     SUPABASE_ACCESS_TOKEN: readDedicatedSupabaseDevAccessToken(cwd),
-    SUPABASE_HOME: resolveSupabaseDevHome({ env, platform }),
+    SUPABASE_HOME: supabaseHome,
   }
 }
 
@@ -245,23 +322,27 @@ export function runSupabaseDevMode(mode, {
   platform = process.platform,
   spawn = spawnSync,
 } = {}) {
-  if (extraArgs.length > 0 || !Object.hasOwn(REMOTE_MODE_ARGS, mode)) {
+  const isStage01Test = mode === 'stage01-test'
+  if (extraArgs.length > 0 || (!Object.hasOwn(REMOTE_MODE_ARGS, mode) && !isStage01Test)) {
     throw new Error('Unsupported Cloud DEV operation')
   }
 
-  const cliArgs = REMOTE_MODE_ARGS[mode]
   if (mode === 'auth-check' || mode === 'link') assertCloudDevEnvironment({ cwd })
   else assertCloudDevTarget({ cwd })
 
-  const cliEntrypoint = resolve(cwd, 'node_modules/supabase/dist/supabase.js')
-  const result = spawn(process.execPath, [cliEntrypoint, ...cliArgs], {
-    cwd,
-    encoding: mode === 'types' || mode === 'auth-check' ? 'utf8' : undefined,
-    env: isolatedSupabaseEnvironment(cwd, env, platform),
-    stdio: mode === 'types' || mode === 'auth-check' ? 'pipe' : 'inherit',
-  })
-  if (result.error) throw result.error
-  if (result.status !== 0) throw new Error(`Supabase ${mode} operation failed`)
+  if (isStage01Test) {
+    const files = STAGE01_TEST_FILES
+      .filter(relativePath => existsSync(resolve(cwd, relativePath)))
+      .map(relativePath => readStage01Sql(cwd, relativePath))
+    if (files.length === 0) throw new Error('No allowlisted Stage 01 SQL verification files exist')
+    let result
+    for (const file of files) {
+      result = runCli(['db', 'query', '--linked', '--file', file], mode, { cwd, env, platform, spawn })
+    }
+    return result
+  }
+
+  const result = runCli(REMOTE_MODE_ARGS[mode], mode, { cwd, env, platform, spawn })
   if (mode === 'link') assertCloudDevTarget({ cwd })
   if (mode === 'types') writeGeneratedTypes(cwd, String(result.stdout ?? ''))
   if (mode === 'auth-check') assertExactProjectVisibility(String(result.stdout ?? ''))

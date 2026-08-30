@@ -1,3 +1,5 @@
+import type { ApiErrorCode } from '../../shared/schemas/api-error'
+
 export type ClientErrorKind =
   | 'validation'
   | 'authentication'
@@ -7,21 +9,18 @@ export type ClientErrorKind =
   | 'api'
   | 'unexpected'
 
-export type ClientErrorCode =
+export type ClientOnlyErrorCode =
   | 'VALIDATION_FAILED'
   | 'INVALID_CREDENTIALS'
   | 'ACCOUNT_NOT_READY'
   | 'PASSWORD_RESET_FAILED'
   | 'PASSWORD_COMPROMISED'
   | 'PASSWORD_POLICY_REJECTED'
-  | 'AUTH_REQUIRED'
-  | 'AUTH_INVALID'
-  | 'COMPANY_FORBIDDEN'
-  | 'PERMISSION_DENIED'
   | 'RATE_LIMITED'
   | 'NETWORK_ERROR'
   | 'MALFORMED_RESPONSE'
-  | 'INTERNAL_ERROR'
+
+export type ClientErrorCode = ApiErrorCode | ClientOnlyErrorCode
 
 export interface ClientErrorOptions {
   kind: ClientErrorKind

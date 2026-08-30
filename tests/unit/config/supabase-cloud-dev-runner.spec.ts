@@ -185,13 +185,86 @@ describe('Cloud DEV fixed-mode runner', () => {
     expect(sql).toContain('department.is_active is distinct from true')
     expect(sql).toContain('expected_roles')
     expect(sql).toContain("'Complete explicit company permission set'")
+    expect(sql).toContain("('opportunity.read', 'opportunity', 'Read opportunities'")
+    expect(sql).toContain("('stage01.reactivate', 'stage01', 'Reactivate Stage 01'")
     expect(sql).toContain('role.is_privileged is distinct from expected.is_privileged')
     expect(sql).toContain('role.is_system is distinct from true')
     expect(sql).toContain('role.is_active is distinct from true')
     expect(sql).toContain('expected_role_permissions')
-    expect(sql).toContain("union all select 'company_admin', code from expected_permissions")
-    expect(sql).toContain('select code from public.permissions except select code from expected_permissions')
+    expect(sql).toContain("union all select 'company_admin', code from all_expected_permissions")
+    expect(sql).toContain('select code from public.permissions except select code from all_expected_permissions')
     expect(sql).toContain('company_role_assignments')
+  })
+
+  it('executes only allowlisted transaction-wrapped Stage 01 SQL files', () => {
+    const root = makeWorktree()
+    const testDirectory = join(root, 'supabase/tests/database')
+    mkdirSync(testDirectory, { recursive: true })
+    writeFileSync(
+      join(testDirectory, 'stage01_schema.test.sql'),
+      "begin;\nselect 'PASS';\nrollback;\n",
+    )
+    const calls: string[][] = []
+
+    runSupabaseDevMode('stage01-test', {
+      cwd: root,
+      spawn(_command, args) {
+        calls.push(args)
+        return { status: 0 }
+      },
+    })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.slice(1, 5)).toEqual(['db', 'query', '--linked', '--file'])
+    expect(calls[0]?.[5]).toBe(join(root, 'supabase/tests/database/stage01_schema.test.sql'))
+  })
+
+  it('fails before Cloud DEV access when an allowlisted Stage 01 SQL file can retain fixtures', () => {
+    const root = makeWorktree()
+    const testDirectory = join(root, 'supabase/tests/database')
+    mkdirSync(testDirectory, { recursive: true })
+    writeFileSync(join(testDirectory, 'stage01_schema.test.sql'), "begin;\nselect 'unsafe';\ncommit;\n")
+    let spawnCalls = 0
+
+    expect(() => runSupabaseDevMode('stage01-test', {
+      cwd: root,
+      spawn() {
+        spawnCalls += 1
+        return { status: 0 }
+      },
+    })).toThrow('Stage 01 SQL verification must end with rollback')
+    expect(spawnCalls).toBe(0)
+  })
+
+  it('does not discover arbitrary Stage 01-looking SQL files outside the fixed inventory', () => {
+    const root = makeWorktree()
+    const testDirectory = join(root, 'supabase/tests/database')
+    mkdirSync(testDirectory, { recursive: true })
+    writeFileSync(join(testDirectory, 'stage01_schema.test.sql'), "begin;\nselect 'PASS';\nrollback;\n")
+    writeFileSync(join(testDirectory, 'stage01_operator_supplied.test.sql'), "begin;\ndrop schema public cascade;\nrollback;\n")
+    const queriedFiles: string[] = []
+
+    runSupabaseDevMode('stage01-test', {
+      cwd: root,
+      spawn(_command, args) {
+        queriedFiles.push(args[5] ?? '')
+        return { status: 0 }
+      },
+    })
+
+    expect(queriedFiles).toEqual([join(root, 'supabase/tests/database/stage01_schema.test.sql')])
+  })
+
+  it('does not expose obsolete per-actor CLI modes after the Management API harness owns concurrency', () => {
+    let spawnCalls = 0
+
+    expect(() => runSupabaseDevMode('stage01-concurrency-actor-a', {
+      spawn() {
+        spawnCalls += 1
+        return { status: 0 }
+      },
+    })).toThrow('Unsupported Cloud DEV operation')
+    expect(spawnCalls).toBe(0)
   })
 
   it('leaves generated types byte-identical when type generation fails or is implausible', () => {

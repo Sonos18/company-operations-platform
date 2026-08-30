@@ -145,6 +145,24 @@ describe('authenticated HTTP client', () => {
     expect(JSON.stringify(error)).not.toContain('never expose')
   })
 
+  it.each([
+    'STAGE01_DEFINITION_CONFIG_UNAVAILABLE',
+    'STAGE01_HISTORY_IMMUTABLE',
+    'VERSION_CONFLICT',
+  ] as const)('preserves parsed Stage 01 API code %s', async code => {
+    const response = apiErrorResponse(code, 'stage01-request-id')
+    const client = createAuthenticatedHttpClient({
+      getAccessToken: () => 'token',
+      fetch: async () => new Response(response.body, { status: 409, headers: response.headers }),
+    })
+
+    await expect(client.request({ url: '/api/stage-01', schema: valueSchema })).rejects.toMatchObject({
+      code,
+      kind: 'api',
+      requestId: 'stage01-request-id',
+    })
+  })
+
   it('rejects malformed JSON, error envelopes, and successful bodies as safe malformed responses', async () => {
     const responses = [
       new Response('not JSON at all', { status: 200 }),

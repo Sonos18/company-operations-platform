@@ -376,6 +376,21 @@ describe('Supabase Auth admin boundary', () => {
     ])
   })
 
+  it('keeps every Stage 01 request-path feature on the caller-scoped Supabase client', () => {
+    const stage01RequestPathSources = [
+      'server/features/opportunities',
+      'server/features/workflow',
+      'server/features/stage01',
+    ].flatMap(directory => filesRecursively(resolve(root, directory)))
+      .concat(filesRecursively(resolve(root, 'server/api/companies')).filter(path => (
+        /[\\/](?:opportunities|contacts|workflow-nodes|workflow-assignments|workflow-blockers)[\\/]/u.test(path)
+      )))
+      .map(path => readFileSync(path, 'utf8'))
+      .join('\n')
+
+    expect(stage01RequestPathSources).not.toMatch(/service[_-]?role|createSupabaseAdminClient/u)
+  })
+
   it('keeps the historical onboarding migration unchanged from the Task 8 baseline', () => {
     const historical = readFileSync(resolve(root, historicalOnboardingMigration), 'utf8')
     const baseline = execFileSync(
