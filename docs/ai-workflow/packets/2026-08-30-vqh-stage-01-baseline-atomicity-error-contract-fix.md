@@ -1,7 +1,7 @@
 # Codex Fix Packet — VQH Stage 01 Baseline Atomicity and Error Contract
 
-> **Packet status:** PENDING SƠN APPROVAL
-> **Implementation authorization:** NOT YET AUTHORIZED
+> **Packet status:** APPROVED
+> **Implementation authorization:** AUTHORIZED AFTER READY OR READY_WITH_NON_MATERIAL_DRIFT PREFLIGHT
 > **Reviewed implementation:** `feat/vqh-stage-01-foundation@3956aab68bc652859a071de457bfdb160e7ff659`
 > **Fix scope:** Two verified baseline defects and one HTTP error-contract defect only
 > **Created:** 2026-08-30
@@ -22,11 +22,11 @@ review:
     Technical Spec, the approved correction design, PostgreSQL snapshot semantics, and current tests.
 
 authorization:
-  status: PENDING_FIX_PACKET_APPROVAL
-  approved_by: null
+  status: APPROVED_FOR_FIX
+  approved_by: Son
   approval_reference: >-
-    Sơn approved the corrective direction in chat on 2026-08-30. Separate approval of this complete
-    Fix Packet is still required before implementation or any Cloud DEV mutation.
+    Sơn explicitly approved this complete Fix Packet and its Cloud DEV side-effect scope in chat on
+    2026-08-30.
 
 scope:
   findings_only: true
@@ -178,7 +178,6 @@ delivery:
   dispatch_subagents: false
 
 stop_conditions:
-  - This packet has not been explicitly approved by Sơn and changed to APPROVED_FOR_FIX.
   - Preflight returns PACKET_STALE or BLOCKED instead of READY or READY_WITH_NON_MATERIAL_DRIFT.
   - Remote reviewed head 3956aab68bc652859a071de457bfdb160e7ff659 is not the exact ancestor before the declared documentation-only amendment/packet commits.
   - The delta after reviewed_head_sha contains any undeclared production, migration, generated-type, test, or configuration change before implementation starts.
@@ -214,8 +213,8 @@ acceptance_impact:
 [x] Same-branch, no-worktree, no-subagent delivery is explicit.
 [x] Proposed Cloud DEV mutation is limited to one forward migration and fixed rollback-safe fixtures.
 [x] Local Supabase, Docker, production mutation, deployment, PR, merge, and force-push remain forbidden.
-[ ] Sơn has explicitly approved this complete Fix Packet and its Cloud DEV side-effect scope.
+[x] Sơn has explicitly approved this complete Fix Packet and its Cloud DEV side-effect scope.
 ```
 
-This draft does not authorize implementation. After Sơn approves the complete packet, its authorization
-metadata must be changed to `APPROVED_FOR_FIX` and committed before Codex technical preflight begins.
+This approved Fix Packet authorizes implementation only after technical preflight returns `READY` or
+`READY_WITH_NON_MATERIAL_DRIFT`.
