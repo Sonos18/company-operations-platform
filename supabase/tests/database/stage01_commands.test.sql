@@ -491,21 +491,22 @@ insert into public.workflow_definition_snapshots (
 
 insert into public.opportunities (
   id, tenant_id, company_id, primary_customer_name, customer_type_code,
-  need_description, location_status, primary_lead_source_code,
+  need_description, location_status, location_text, primary_lead_source_code,
   engagement_status_code, created_by
 ) values
   (
     '56000000-0000-4000-8000-000000000030',
     '55000000-0000-4000-8000-000000000010',
     '55000000-0000-4000-8000-000000000020',
-    'Lifecycle Opportunity', 'customer', 'A qualified governed need', 'unknown',
+    'Lifecycle Opportunity', 'customer', 'A qualified governed need', 'area_known',
+    'District 1, Ho Chi Minh City',
     'direct', 'grounded', '55000000-0000-4000-8000-000000000001'
   ),
   (
     '56000000-0000-4000-8000-000000000031',
     '55000000-0000-4000-8000-000000000010',
     '55000000-0000-4000-8000-000000000020',
-    'Canonical candidate', 'customer', 'A separate need', 'unknown',
+    'Canonical candidate', 'customer', 'A separate need', 'unknown', null,
     'direct', 'grounded', '55000000-0000-4000-8000-000000000001'
   );
 
@@ -772,6 +773,7 @@ begin
 
   if baseline_snapshot_before ->> 'schemaVersion' <> '1'
      or baseline_snapshot_before #>> '{opportunity,id}' <> opportunity_id::text
+     or baseline_snapshot_before #>> '{opportunity,locationText}' <> 'District 1, Ho Chi Minh City'
      or baseline_snapshot_before #>> '{primaryContact,relationshipId}' <> '56000000-0000-4000-8000-000000000082'
      or baseline_snapshot_before #>> '{usableContactMethods,0,contactMethodId}' <> '56000000-0000-4000-8000-000000000081'
      or baseline_snapshot_before #>> '{usableContactMethods,0,isUsableAtCompletion}' <> 'true'
@@ -858,10 +860,28 @@ begin
     pg_catalog.gen_random_uuid()
   );
 
+  perform public.update_opportunity_current_data(
+    company_id, opportunity_id,
+    '{"locationText":"Thu Duc City, Ho Chi Minh City","expectedOpportunityVersion":1}'::jsonb,
+    pg_catalog.gen_random_uuid()
+  );
+  if (select location_text from public.opportunities where id = opportunity_id)
+       <> 'Thu Duc City, Ho Chi Minh City'
+     or exists (
+       select 1
+       from public.stage01_intake_completion_baselines as baseline
+       where baseline.node_execution_id = intake_execution_id
+         and baseline.baseline_version = 1
+         and (baseline.snapshot is distinct from baseline_snapshot_before
+              or baseline.snapshot_hash is distinct from baseline_hash_before)
+     ) then
+    raise exception 'DB-S01-CMD later Location mutation changed historical baseline evidence';
+  end if;
+
   begin
     perform public.invalidate_opportunity(
       company_id, opportunity_id,
-      '{"invalidReasonCode":"unknown_code","reason":"Invalid taxonomy","expectedOpportunityVersion":1}'::jsonb,
+      '{"invalidReasonCode":"unknown_code","reason":"Invalid taxonomy","expectedOpportunityVersion":2}'::jsonb,
       pg_catalog.gen_random_uuid()
     );
     raise exception 'DB-S01-CMD unknown invalid reason unexpectedly succeeded';
@@ -871,12 +891,12 @@ begin
 
   perform public.invalidate_opportunity(
     company_id, opportunity_id,
-    '{"invalidReasonCode":"test_invalid","reason":"Temporary invalidation","expectedOpportunityVersion":1}'::jsonb,
+    '{"invalidReasonCode":"test_invalid","reason":"Temporary invalidation","expectedOpportunityVersion":2}'::jsonb,
     '56000000-0000-4000-8000-000000000208'
   );
   perform public.restore_opportunity(
     company_id, opportunity_id,
-    '{"reason":"Evidence restored validity","expectedOpportunityVersion":2}'::jsonb,
+    '{"reason":"Evidence restored validity","expectedOpportunityVersion":3}'::jsonb,
     '56000000-0000-4000-8000-000000000209'
   );
 
@@ -958,11 +978,24 @@ begin
     '{"reason":"Intake evidence changed","expectedExecutionVersion":5}'::jsonb,
     '56000000-0000-4000-8000-000000000210'
   );
+  perform public.update_opportunity_current_data(
+    company_id, opportunity_id,
+    '{"locationText":null,"expectedOpportunityVersion":4}'::jsonb,
+    pg_catalog.gen_random_uuid()
+  );
   perform public.complete_stage01_intake(
     company_id, intake_execution_id,
-    '{"expectedOpportunityVersion":3,"expectedExecutionVersion":6}'::jsonb,
+    '{"expectedOpportunityVersion":5,"expectedExecutionVersion":6}'::jsonb,
     '56000000-0000-4000-8000-000000000211'
   );
+  if pg_catalog.jsonb_typeof((
+       select baseline.snapshot #> '{opportunity,locationText}'
+       from public.stage01_intake_completion_baselines as baseline
+       where baseline.node_execution_id = intake_execution_id
+         and baseline.baseline_version = 2
+     )) <> 'null' then
+    raise exception 'DB-S01-CMD nullable Location value is not explicit JSON null in baseline';
+  end if;
 
   select execution.version,
          (select pg_catalog.count(*) from public.workflow_node_events as event
@@ -1085,7 +1118,7 @@ begin
     perform public.complete_stage01_intake(
       '55000000-0000-4000-8000-000000000020',
       '56000000-0000-4000-8000-000000000070',
-      '{"expectedOpportunityVersion":3,"expectedExecutionVersion":8}'::jsonb,
+      '{"expectedOpportunityVersion":5,"expectedExecutionVersion":8}'::jsonb,
       '56000000-0000-4000-8000-000000000218'
     );
     raise exception 'DB-S01-COMP-001 forced baseline failure unexpectedly committed';

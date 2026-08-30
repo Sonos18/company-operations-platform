@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createSupabaseOpportunityRepository } from '../../../server/features/opportunities/opportunity.repository'
 import { createOpportunityRoutes } from '../../../server/features/opportunities/opportunity.routes'
+import { createOpportunityService } from '../../../server/features/opportunities/opportunity.service'
+import { runApiRoute } from '../../../server/utils/api-error'
 
-const { getRouterParam, readBody } = vi.hoisted(() => ({ getRouterParam: vi.fn(), readBody: vi.fn() }))
+const { getRouterParam, readBody, setResponseStatus } = vi.hoisted(() => ({
+  getRouterParam: vi.fn(), readBody: vi.fn(), setResponseStatus: vi.fn(),
+}))
 vi.mock('h3', async importOriginal => ({
-  ...await importOriginal<typeof import('h3')>(), getRouterParam, readBody,
+  ...await importOriginal<typeof import('h3')>(), getRouterParam, readBody, setResponseStatus,
 }))
 
 const companyId = '71000000-0000-4000-8000-000000000020'
@@ -17,6 +22,41 @@ describe('Stage 01 Opportunity routes', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getRouterParam.mockImplementation((_event, name: string) => ({ companyId, opportunityId, contactId, scopeId })[name])
+  })
+
+  it('returns the stable HTTP 400 contract when a dynamic taxonomy code is unknown', async () => {
+    readBody.mockResolvedValue({
+      primaryLeadSourceCode: 'unknown-code',
+      expectedOpportunityVersion: 1,
+    })
+    const service = createOpportunityService(createSupabaseOpportunityRepository({
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: {
+          code: 'P0001',
+          message: 'INVALID_COMMAND_INPUT',
+          details: 'primaryLeadSourceCode=unknown-code',
+        },
+      }),
+    } as never))
+    const event = { context: { requestId: context.requestId } }
+    const routes = createOpportunityRoutes({
+      resolveContext: vi.fn().mockResolvedValue({
+        ...context,
+        permissions: ['opportunity.update'],
+      }),
+      service,
+    })
+
+    await expect(runApiRoute(event as never, () => routes.update(event))).resolves.toEqual({
+      error: {
+        code: 'OPPORTUNITY_INVALID',
+        message: 'Dữ liệu Opportunity không hợp lệ.',
+        requestId: context.requestId,
+        details: {},
+      },
+    })
+    expect(setResponseStatus).toHaveBeenCalledWith(event, 400)
   })
 
   it('forwards only strict server-scoped create input', async () => {

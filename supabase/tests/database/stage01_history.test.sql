@@ -137,7 +137,15 @@ insert into public.stage01_intake_completion_baselines (
   '53000000-0000-4000-8000-000000000020', '53000000-0000-4000-8000-000000000030',
   '53000000-0000-4000-8000-000000000070',
   (select id from public.workflow_node_events where request_id = '53000000-0000-4000-8000-000000000201'),
-  1, '{"gateResult":"satisfied"}'::jsonb, 'history-baseline',
+  1, '{
+    "schemaVersion":1,
+    "opportunity":{"id":"53000000-0000-4000-8000-000000000030","locationText":null},
+    "usableContactMethods":[],
+    "activeScopes":[],
+    "intakeRecordRefs":[],
+    "gates":{},
+    "completion":{}
+  }'::jsonb, 'history-baseline',
   '53000000-0000-4000-8000-000000000001'
 );
 
@@ -377,7 +385,15 @@ begin
       '53000000-0000-4000-8000-000000000020', '53000000-0000-4000-8000-000000000031',
       '53000000-0000-4000-8000-000000000071',
       (select id from public.workflow_node_events where request_id = '53000000-0000-4000-8000-000000000202'),
-      1, '{}'::jsonb, 'invalid-baseline', '53000000-0000-4000-8000-000000000001'
+      1, '{
+        "schemaVersion":1,
+        "opportunity":{"id":"53000000-0000-4000-8000-000000000031","locationText":null},
+        "usableContactMethods":[],
+        "activeScopes":[],
+        "intakeRecordRefs":[],
+        "gates":{},
+        "completion":{}
+      }'::jsonb, 'invalid-baseline', '53000000-0000-4000-8000-000000000001'
     );
     raise exception 'DB-S01-HIST malformed baseline-event link unexpectedly succeeded';
   exception when raise_exception then

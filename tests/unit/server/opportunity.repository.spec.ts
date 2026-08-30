@@ -59,4 +59,48 @@ describe('Stage 01 Opportunity repository', () => {
       target_request_id: requestId,
     })
   })
+
+  it('maps the private INVALID_COMMAND_INPUT taxonomy boundary to the stable 400 contract', async () => {
+    const repository = createSupabaseOpportunityRepository({
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: {
+          code: 'P0001',
+          message: 'INVALID_COMMAND_INPUT',
+          details: 'primaryLeadSourceCode=unknown-code',
+        },
+      }),
+    } as never)
+
+    await expect(repository.update(companyId, opportunityId, {
+      primaryLeadSourceCode: 'unknown-code',
+      expectedOpportunityVersion: 1,
+    }, requestId)).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'OPPORTUNITY_INVALID',
+      details: {},
+    })
+  })
+
+  it('keeps an unrecognized private P0001 error on the sanitized 500 fallback', async () => {
+    const repository = createSupabaseOpportunityRepository({
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: {
+          code: 'P0001',
+          message: 'UNEXPECTED_PRIVATE_DIAGNOSTIC',
+          details: 'secret database detail',
+        },
+      }),
+    } as never)
+
+    await expect(repository.update(companyId, opportunityId, {
+      primaryLeadSourceCode: 'unknown-code',
+      expectedOpportunityVersion: 1,
+    }, requestId)).rejects.toMatchObject({
+      statusCode: 500,
+      code: 'INTERNAL_ERROR',
+      details: {},
+    })
+  })
 })

@@ -12,6 +12,7 @@ const mappings: Record<string, { status: number, code: ApiErrorCode, message: st
   COMPANY_FORBIDDEN: { status: 403, code: 'COMPANY_FORBIDDEN', message: 'Bạn không có quyền truy cập công ty này.' },
   PERMISSION_DENIED: { status: 403, code: 'PERMISSION_DENIED', message: 'Bạn không có quyền thực hiện thao tác này.' },
   OPPORTUNITY_NOT_FOUND: { status: 404, code: 'OPPORTUNITY_NOT_FOUND', message: 'Không tìm thấy Opportunity.' },
+  INVALID_COMMAND_INPUT: { status: 400, code: 'OPPORTUNITY_INVALID', message: 'Dữ liệu Opportunity không hợp lệ.' },
   WORKFLOW_RESOURCE_NOT_FOUND: { status: 404, code: 'OPPORTUNITY_NOT_FOUND', message: 'Không tìm thấy Workflow runtime.' },
   VERSION_CONFLICT: { status: 409, code: 'VERSION_CONFLICT', message: 'Dữ liệu đã thay đổi. Vui lòng tải lại và thử lại.' },
   STAGE01_DEFINITION_CONFIG_UNAVAILABLE: { status: 409, code: 'STAGE01_DEFINITION_CONFIG_UNAVAILABLE', message: 'Cấu hình Stage 01 chưa sẵn sàng.' },
