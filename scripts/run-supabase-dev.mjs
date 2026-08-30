@@ -220,7 +220,7 @@ export function resolveSupabaseDevHome({ env = process.env, platform = process.p
   return path.join(stateHome, ...SUPABASE_DEV_HOME_SEGMENTS)
 }
 
-function readDedicatedSupabaseDevAccessToken(cwd) {
+export function readDedicatedSupabaseDevAccessToken(cwd) {
   let contents
   try {
     contents = readFileSync(resolve(cwd, '.supabase.dev.env.local'), 'utf8')
