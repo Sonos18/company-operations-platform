@@ -9,6 +9,8 @@ const development = read('docs/development/backend-cloud-dev.md')
 const deployment = read('docs/deployment/supabase-cloud-vercel.md')
 const onboarding = read('docs/development/sql/onboard-vqh-dev-admin.sql')
 const employeeRunbook = read('docs/runbooks/employee-onboarding-and-rbac.md')
+const backendFoundationPlan = read('docs/superpowers/plans/2026-08-14-backend-foundation-auth-tenancy.md')
+const localCloudEnvironmentsPlan = read('docs/superpowers/plans/2026-08-14-supabase-local-cloud-environments.md')
 const oldVqhProjectRef = ['ykrurrum', 'qlsxnqfqunjc'].join('')
 const activeTrackedSetupPaths = [
   '.env.example',
@@ -145,6 +147,18 @@ describe('Supabase Cloud DEV runbooks', () => {
     for (const document of [agents, workflow, implementationPacket, fixPacket]) {
       expect(document).not.toContain('local_db_destructive')
     }
+  })
+
+  it('keeps the renamed backend-guide links resolvable in historical plans', () => {
+    expect(backendFoundationPlan).toContain(
+      '[Cloud DEV backend development](../../development/backend-cloud-dev.md)',
+    )
+    expect(localCloudEnvironmentsPlan).toContain(
+      '[Cloud DEV backend development](../../development/backend-cloud-dev.md)',
+    )
+    expect(localCloudEnvironmentsPlan).toContain(
+      '[Supabase Cloud and Vercel production](../../deployment/supabase-cloud-vercel.md)',
+    )
   })
 
   it('provides a guarded, idempotent VQH admin onboarding snippet', () => {

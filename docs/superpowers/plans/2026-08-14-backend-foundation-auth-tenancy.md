@@ -1225,7 +1225,7 @@ The frontend remains on mock repositories in this phase. The next plan consumes 
 Add under `## Cài đặt và chạy` in `README.md`:
 
 ~~~markdown
-Backend local cần Docker Desktop và Supabase CLI. Xem [Cloud DEV backend development](docs/development/backend-cloud-dev.md) để khởi động, reset migration, chạy RLS test và generate database types.
+Backend local cần Docker Desktop và Supabase CLI. Xem [Cloud DEV backend development](../../development/backend-cloud-dev.md) để khởi động, reset migration, chạy RLS test và generate database types.
 ~~~
 
 - [ ] **Step 4: Run the backend release gate**

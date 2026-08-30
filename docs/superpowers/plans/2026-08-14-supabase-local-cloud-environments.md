@@ -253,7 +253,7 @@ Add a concise “Môi trường Supabase” section to `README.md`:
 - Database delivery: local Supabase CLI linked to the VQH Cloud project.
 - Production app: Supabase Cloud variables supplied by Vercel Production.
 
-See [Cloud DEV backend development](docs/development/backend-cloud-dev.md) and [Supabase Cloud and Vercel production](docs/deployment/supabase-cloud-vercel.md).
+See [Cloud DEV backend development](../../development/backend-cloud-dev.md) and [Supabase Cloud and Vercel production](../../deployment/supabase-cloud-vercel.md).
 ```
 
 - [ ] **Step 4: Verify local environment and regression suite**
