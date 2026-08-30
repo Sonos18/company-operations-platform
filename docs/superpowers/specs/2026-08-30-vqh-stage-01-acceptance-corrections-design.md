@@ -1,6 +1,6 @@
 # VQH Stage 01 Phase A Acceptance Corrections — Technical Design
 
-> **Status:** DRAFT — pending written-document review by Sơn
+> **Status:** APPROVED — reviewed by Sơn on 2026-08-30
 > **Approved direction:** Forward-only corrective migration and real acceptance evidence
 > **Reviewed implementation:** `feat/vqh-stage-01-foundation@78bf5151f3c46527f53350edd18a79f7f1778677`
 > **Scope:** Correct the four verified runtime defects and one concurrency-evidence gap only
