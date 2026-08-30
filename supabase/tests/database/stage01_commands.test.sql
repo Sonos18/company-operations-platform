@@ -72,6 +72,7 @@ insert into public.roles (id, tenant_id, company_id, code, name, description, is
   );
 
 insert into public.role_permissions (role_id, permission_code) values
+  ('55000000-0000-4000-8000-000000000100', 'opportunity.read'),
   ('55000000-0000-4000-8000-000000000100', 'opportunity.update'),
   ('55000000-0000-4000-8000-000000000100', 'opportunity.contact.manage'),
   ('55000000-0000-4000-8000-000000000100', 'opportunity.scope.manage'),
@@ -81,6 +82,7 @@ insert into public.role_permissions (role_id, permission_code) values
   ('55000000-0000-4000-8000-000000000100', 'opportunity.duplicate.resolve'),
   ('55000000-0000-4000-8000-000000000100', 'opportunity.invalidate'),
   ('55000000-0000-4000-8000-000000000100', 'opportunity.restore'),
+  ('55000000-0000-4000-8000-000000000100', 'journey.read'),
   ('55000000-0000-4000-8000-000000000100', 'journey.assignment.manage'),
   ('55000000-0000-4000-8000-000000000100', 'journey.blocker.raise'),
   ('55000000-0000-4000-8000-000000000100', 'journey.blocker.resolve'),
@@ -138,7 +140,7 @@ insert into public.workflow_definition_snapshots (
       "engagement_status":[{"code":"grounded","label":"Grounded"}],
       "invalid_reason":[
         {"code":"test_invalid","label":"Test invalid","semanticKey":"invalid"},
-        {"code":"system_same_need_duplicate","label":"Same-need duplicate","semanticKey":"duplicate_merged"}
+        {"code":"test_duplicate_invalid","label":"Test duplicate invalid","semanticKey":"duplicate_merged"}
       ],
       "budget_status":[{"code":"unknown","label":"Unknown"}],
       "timeline_status":[{"code":"unknown","label":"Unknown"}],
@@ -463,7 +465,7 @@ insert into public.workflow_definition_snapshots (
       "engagement_status":[{"code":"grounded","label":"Grounded"}],
       "invalid_reason":[
         {"code":"test_invalid","label":"Test invalid","semanticKey":"invalid"},
-        {"code":"system_same_need_duplicate","label":"Same-need duplicate","semanticKey":"duplicate_merged"}
+        {"code":"test_duplicate_invalid","label":"Test duplicate invalid","semanticKey":"duplicate_merged"}
       ],
       "budget_status":[{"code":"unknown","label":"Unknown"}],
       "timeline_status":[{"code":"unknown","label":"Unknown"}],
@@ -643,6 +645,31 @@ $$;
 revoke all on function private.stage01_test_set_persisted_lead_source(text) from public, anon;
 grant execute on function private.stage01_test_set_persisted_lead_source(text) to authenticated;
 
+create function private.stage01_test_audit_probe(
+  target_company_id uuid,
+  target_action text,
+  target_resource_id text
+)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select pg_catalog.jsonb_build_object(
+    'count', pg_catalog.count(*),
+    'afterSummary', (
+      pg_catalog.jsonb_agg(audit.after_summary order by audit.id desc) -> 0
+    )
+  )
+  from public.audit_events as audit
+  where audit.company_id = target_company_id
+    and (target_action is null or audit.action = target_action)
+    and (target_resource_id is null or audit.resource_id = target_resource_id);
+$$;
+revoke all on function private.stage01_test_audit_probe(uuid, text, text) from public, anon;
+grant execute on function private.stage01_test_audit_probe(uuid, text, text) to authenticated;
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -772,12 +799,45 @@ begin
      or baseline_snapshot_before::text like '%0900000001%'
      or baseline_hash_before <> pg_catalog.encode(
        extensions.digest(baseline_snapshot_before::text, 'sha256'), 'hex'
+     )
+     or exists (
+       select 1
+       from public.stage01_intake_completion_baselines as baseline
+       join public.workflow_node_events as event
+         on event.id = baseline.completion_event_id
+       join public.workflow_node_executions as execution
+         on execution.id = baseline.node_execution_id
+       where baseline.node_execution_id = intake_execution_id
+         and baseline.baseline_version = 1
+         and (
+           (baseline.snapshot #>> '{completion,completedAt}')::timestamptz
+             is distinct from execution.completed_at
+           or (event.payload ->> 'completedAt')::timestamptz
+             is distinct from execution.completed_at
+         )
      ) then
-    raise exception 'DB-S01-CMD explicit immutable Intake baseline evidence is incomplete';
+    raise exception using
+      message = 'DB-S01-CMD explicit immutable Intake baseline evidence is incomplete',
+      detail = pg_catalog.jsonb_build_object(
+        'snapshot', baseline_snapshot_before,
+        'expectedOwnerAssignmentId', second_assignment_id,
+        'hashMatches', baseline_hash_before = pg_catalog.encode(
+          extensions.digest(baseline_snapshot_before::text, 'sha256'), 'hex'
+        ),
+        'eventPayload', (
+          select event.payload
+          from public.stage01_intake_completion_baselines as baseline
+          join public.workflow_node_events as event
+            on event.id = baseline.completion_event_id
+          where baseline.node_execution_id = intake_execution_id
+            and baseline.baseline_version = 1
+        )
+      )::text;
   end if;
 
   perform public.update_contact_method(
-    company_id, '56000000-0000-4000-8000-000000000081',
+    company_id, '56000000-0000-4000-8000-000000000080',
+    '56000000-0000-4000-8000-000000000081',
     '{"isUsable":false,"expectedContactVersion":0}'::jsonb,
     pg_catalog.gen_random_uuid()
   );
@@ -792,7 +852,8 @@ begin
     raise exception 'DB-S01-CMD later Contact Method mutation changed historical baseline evidence';
   end if;
   perform public.update_contact_method(
-    company_id, '56000000-0000-4000-8000-000000000081',
+    company_id, '56000000-0000-4000-8000-000000000080',
+    '56000000-0000-4000-8000-000000000081',
     '{"isUsable":true,"expectedContactVersion":1}'::jsonb,
     pg_catalog.gen_random_uuid()
   );
@@ -873,6 +934,24 @@ begin
   ) then
     raise exception 'DB-S01-CMD evidenced duplicate restore did not atomically clear invalidation metadata';
   end if;
+  if (private.stage01_test_audit_probe(
+        company_id, 'opportunity.restored',
+        '56000000-0000-4000-8000-000000000031'
+      ) ->> 'count')::bigint <> 1
+     or pg_catalog.jsonb_typeof(
+       private.stage01_test_audit_probe(
+         company_id, 'opportunity.restored',
+         '56000000-0000-4000-8000-000000000031'
+       ) #> '{afterSummary,evidence}'
+     ) <> 'array'
+     or pg_catalog.jsonb_array_length(
+       private.stage01_test_audit_probe(
+         company_id, 'opportunity.restored',
+         '56000000-0000-4000-8000-000000000031'
+       ) #> '{afterSummary,evidence}'
+     ) <> 1 then
+    raise exception 'DB-S01-CMD evidenced duplicate restore audit transition is incomplete';
+  end if;
 
   perform public.reopen_workflow_node(
     company_id, intake_execution_id,
@@ -887,14 +966,14 @@ begin
 
   select execution.version,
          (select pg_catalog.count(*) from public.workflow_node_events as event
-          where event.node_execution_id = evaluation_execution_id),
-         (select pg_catalog.count(*) from public.audit_events as audit
-          where audit.company_id = company_id)
+          where event.node_execution_id = evaluation_execution_id)
   into revalidation_execution_version_before,
-       revalidation_event_count_before,
-       revalidation_audit_count_before
+       revalidation_event_count_before
   from public.workflow_node_executions as execution
   where execution.id = evaluation_execution_id;
+  revalidation_audit_count_before := (
+    private.stage01_test_audit_probe(company_id, null, null) ->> 'count'
+  )::bigint;
 
   begin
     perform public.revalidate_workflow_node(
@@ -931,8 +1010,7 @@ begin
      or (select pg_catalog.count(*) from public.workflow_node_events as event
          where event.node_execution_id = evaluation_execution_id)
        <> revalidation_event_count_before
-     or (select pg_catalog.count(*) from public.audit_events as audit
-         where audit.company_id = company_id)
+     or (private.stage01_test_audit_probe(company_id, null, null) ->> 'count')::bigint
        <> revalidation_audit_count_before then
     raise exception 'DB-S01-CMD rejected revalidation left partial effects';
   end if;
@@ -942,6 +1020,18 @@ begin
     '{"reason":"Current Intake completion verified","evidence":["baseline:2"],"expectedExecutionVersion":1}'::jsonb,
     '56000000-0000-4000-8000-000000000212'
   );
+  if not exists (
+       select 1
+       from public.workflow_node_events as event
+       where event.node_execution_id = evaluation_execution_id
+         and event.event_type = 'revalidated'
+         and event.payload -> 'evidence' = '["baseline:2"]'::jsonb
+     )
+     or private.stage01_test_audit_probe(
+       company_id, 'journey.node_revalidated', evaluation_execution_id::text
+     ) #> '{afterSummary,evidence}' <> '["baseline:2"]'::jsonb then
+    raise exception 'DB-S01-CMD successful revalidation did not preserve evidence in event and audit';
+  end if;
 
   perform public.assign_workflow_node(
     company_id, evaluation_execution_id,
@@ -1085,7 +1175,7 @@ insert into public.workflow_definition_snapshots (
       "engagement_status":[{"code":"grounded","label":"Grounded"}],
       "invalid_reason":[
         {"code":"test_invalid","label":"Test invalid","semanticKey":"invalid"},
-        {"code":"system_same_need_duplicate","label":"Same-need duplicate","semanticKey":"duplicate_merged"}
+        {"code":"test_duplicate_invalid","label":"Test duplicate invalid","semanticKey":"duplicate_merged"}
       ],
       "budget_status":[{"code":"unknown","label":"Unknown"}],
       "timeline_status":[{"code":"unknown","label":"Unknown"}],

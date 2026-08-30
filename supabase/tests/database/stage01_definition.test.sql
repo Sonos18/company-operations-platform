@@ -30,7 +30,7 @@ as $$
       "engagement_status":[{"code":"test_grounded","label":"Test grounded","semanticKey":"grounded"}],
       "invalid_reason":[
         {"code":"test_invalid","label":"Test invalid","semanticKey":"invalid"},
-        {"code":"system_same_need_duplicate","label":"Same-need duplicate","semanticKey":"duplicate_merged"}
+        {"code":"test_duplicate_invalid","label":"Test duplicate invalid","semanticKey":"duplicate_merged"}
       ],
       "budget_status":[{"code":"test_unknown","label":"Test unknown","semanticKey":"unknown"}],
       "timeline_status":[{"code":"test_unknown","label":"Test unknown","semanticKey":"unknown"}],

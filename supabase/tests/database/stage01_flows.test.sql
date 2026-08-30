@@ -28,7 +28,7 @@ as $$
       "engagement_status":[{"code":"grounded","label":"Grounded"}],
       "invalid_reason":[
         {"code":"test_invalid","label":"Test invalid","semanticKey":"invalid"},
-        {"code":"system_same_need_duplicate","label":"Same-need duplicate","semanticKey":"duplicate_merged"}
+        {"code":"test_duplicate_invalid","label":"Test duplicate invalid","semanticKey":"duplicate_merged"}
       ],
       "budget_status":[{"code":"unknown","label":"Unknown"}],
       "timeline_status":[{"code":"unknown","label":"Unknown"}],
