@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task in the current session. Inline execution is the user-selected mode; do not dispatch subagents. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
 > **Status:** APPROVED — reviewed by Sơn on 2026-08-30
-> **Implementation authorization:** NONE — an approved Fix Packet is required before Task 0
+> **Implementation authorization:** AUTHORIZED BY APPROVED FIX PACKET AFTER `READY` OR `READY_WITH_NON_MATERIAL_DRIFT` PREFLIGHT
 > **Plan date:** 2026-08-30
 > **Reviewed implementation:** `feat/vqh-stage-01-foundation@78bf5151f3c46527f53350edd18a79f7f1778677`
 > **Corrective design source commit:** `e228b739ffffb2e1a5b12fba1e5460fa4da86abd`; approval metadata is recorded with this plan

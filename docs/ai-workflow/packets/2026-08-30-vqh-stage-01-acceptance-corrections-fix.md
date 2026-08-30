@@ -1,7 +1,7 @@
 # Codex Fix Packet — VQH Stage 01 Phase A Acceptance Corrections
 
-> **Packet status:** DRAFT — pending explicit approval by Sơn
-> **Implementation authorization:** NONE
+> **Packet status:** APPROVED
+> **Implementation authorization:** AUTHORIZED AFTER `READY` OR `READY_WITH_NON_MATERIAL_DRIFT` PREFLIGHT
 > **Reviewed implementation:** `feat/vqh-stage-01-foundation@78bf5151f3c46527f53350edd18a79f7f1778677`
 > **Fix scope:** Four verified runtime defects and one acceptance-evidence gap only
 > **Created:** 2026-08-30
@@ -21,9 +21,9 @@ review:
     independently checked against the reviewed implementation before corrective design work.
 
 authorization:
-  status: PENDING_APPROVAL
-  approved_by: null
-  approval_reference: null
+  status: APPROVED_FOR_FIX
+  approved_by: Son
+  approval_reference: Sơn explicitly approved this Fix Packet in chat on 2026-08-30.
 
 scope:
   findings_only: true
@@ -256,9 +256,8 @@ acceptance_impact:
 [x] Approved corrective execution plan is referenced.
 [x] Same-branch, no-worktree, no-subagent delivery is explicit.
 [x] Cloud DEV mutation is narrowly scoped; local Supabase and production mutation remain forbidden.
-[ ] This Fix Packet is explicitly approved by Sơn.
+[x] This Fix Packet is explicitly approved by Sơn.
 ```
 
-This draft does not authorize implementation. After written approval, `authorization.status` becomes
-`APPROVED_FOR_FIX`, `approved_by` becomes `Son`, and the packet authorizes only the five findings above,
-subject to the mandatory repository technical preflight.
+This approval authorizes only the five findings above, subject to the mandatory repository technical
+preflight. `PACKET_STALE` or `BLOCKED` remains a stop-and-report result and does not authorize a workaround.
