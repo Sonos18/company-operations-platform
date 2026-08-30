@@ -43,7 +43,7 @@ This phase does not add a login page, switch `repositories.client.ts` to HTTP, o
 
 **Create — server:** `server/utils/supabase-config.ts`, `request-id.ts`, `api-error.ts`, `supabase-client.ts`, `auth-context.ts`, `server/features/tenancy/tenancy.service.ts`, request middleware, health/session/company-context routes, and `server/types/h3.d.ts`.
 
-**Create — contracts/tests/docs:** `shared/schemas/api-error.ts`, `shared/schemas/session.ts`, focused tests under `tests/unit/server/`, and `docs/development/backend-local.md`.
+**Create — contracts/tests/docs:** `shared/schemas/api-error.ts`, `shared/schemas/session.ts`, focused tests under `tests/unit/server/`, and `docs/development/backend-cloud-dev.md`.
 
 ---
 
@@ -1156,7 +1156,7 @@ Expected: all checks PASS; the service accepts only user and company IDs; commit
 **Files:**
 - Modify: `package.json`
 - Modify: `README.md`
-- Create: `docs/development/backend-local.md`
+- Create: `docs/development/backend-cloud-dev.md`
 
 **Interfaces:**
 - Produces `pnpm verify:backend` as the release gate.
@@ -1169,7 +1169,7 @@ Expected: all checks PASS; the service accepts only user and company IDs; commit
 
 - [ ] **Step 2: Write the local runbook**
 
-Create `docs/development/backend-local.md`:
+Create `docs/development/backend-cloud-dev.md`:
 
 ~~~~markdown
 # Local backend development
@@ -1225,7 +1225,7 @@ The frontend remains on mock repositories in this phase. The next plan consumes 
 Add under `## Cài đặt và chạy` in `README.md`:
 
 ~~~markdown
-Backend local cần Docker Desktop và Supabase CLI. Xem [Local backend development](docs/development/backend-local.md) để khởi động, reset migration, chạy RLS test và generate database types.
+Backend local cần Docker Desktop và Supabase CLI. Xem [Cloud DEV backend development](docs/development/backend-cloud-dev.md) để khởi động, reset migration, chạy RLS test và generate database types.
 ~~~
 
 - [ ] **Step 4: Run the backend release gate**
@@ -1256,7 +1256,7 @@ Expected: the first command has no matches. The second finds no client tenant-ID
 - [ ] **Step 7: Commit documentation**
 
 ~~~powershell
-git add package.json README.md docs/development/backend-local.md
+git add package.json README.md docs/development/backend-cloud-dev.md
 git commit -m "docs: add backend development workflow"
 ~~~
 

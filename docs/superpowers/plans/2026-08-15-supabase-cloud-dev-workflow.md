@@ -309,7 +309,7 @@ git commit -m "test: isolate Cloud DEV RLS fixtures"
 - Create: `tests/unit/config/supabase-cloud-dev-docs.spec.ts`
 - Create: `docs/development/sql/onboard-vqh-dev-admin.sql`
 - Modify: `README.md`
-- Modify: `docs/development/backend-local.md`
+- Modify: `docs/development/backend-cloud-dev.md`
 - Modify: `docs/deployment/supabase-cloud-vercel.md`
 
 **Interfaces:**
@@ -328,7 +328,7 @@ import { describe, expect, it } from 'vitest'
 const root = resolve(import.meta.dirname, '../../..')
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8')
 const readme = read('README.md')
-const development = read('docs/development/backend-local.md')
+const development = read('docs/development/backend-cloud-dev.md')
 const deployment = read('docs/deployment/supabase-cloud-vercel.md')
 const onboarding = read('docs/development/sql/onboard-vqh-dev-admin.sql')
 
@@ -417,7 +417,7 @@ This file is an operator snippet, not a migration. The sentinel prevents acciden
 
 - [ ] **Step 4: Rewrite the daily-development runbook**
 
-Update `docs/development/backend-local.md` with these sections and commands:
+Update `docs/development/backend-cloud-dev.md` with these sections and commands:
 
 1. `Prerequisites`: Node 24.x, pnpm 10.29.3, a dedicated Supabase Cloud DEV project, and an ignored dedicated CLI PAT; explicitly state Docker is not required for the daily workflow.
 2. `Prepare .env.local`: run `Copy-Item .env.example .env.local`, fill only Cloud DEV URL/public key, and never add database password, access token, or service-role key.
@@ -477,7 +477,7 @@ Expected: 3 focused documentation tests and the full unit suite PASS; typecheck,
 - [ ] **Step 7: Commit Task 3**
 
 ```powershell
-git add README.md docs/development/backend-local.md docs/deployment/supabase-cloud-vercel.md docs/development/sql/onboard-vqh-dev-admin.sql tests/unit/config/supabase-cloud-dev-docs.spec.ts
+git add README.md docs/development/backend-cloud-dev.md docs/deployment/supabase-cloud-vercel.md docs/development/sql/onboard-vqh-dev-admin.sql tests/unit/config/supabase-cloud-dev-docs.spec.ts
 git diff --cached --check
 git commit -m "docs: add Cloud DEV and VQH onboarding workflow"
 ```

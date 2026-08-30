@@ -37,7 +37,6 @@ validation:
   required: []
   side_effect_authorization:
     workspace_mutating: false
-    local_db_destructive: false
     cloud_dev_mutating: false
     production_mutating: false
 

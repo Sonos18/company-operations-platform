@@ -20,7 +20,7 @@ Giai đoạn production đầu tiên cho VQH sẽ dùng TypeScript end-to-end:
 - Zod tại request/response boundary
 - Supabase Storage private bucket cho giai đoạn VQH
 - Supabase Realtime có chọn lọc cho task/activity
-- Vitest, Supabase Cloud DEV for daily development; Supabase local only for CI/fallback, và Playwright cho unit, integration/RLS và E2E
+- Vitest, Supabase Cloud DEV as the sole development database, và Playwright cho unit, integration/RLS và E2E
 
 Backend được tổ chức như modular monolith. Domain service không phụ thuộc trực tiếp vào Nitro để có thể tách sang NestJS khi mobile/public API, background job hoặc nhu cầu deploy độc lập xuất hiện. Go, Rust, microservices, Kubernetes, Kafka và Redis chưa thuộc giai đoạn đầu.
 
@@ -36,17 +36,17 @@ pnpm dev
 
 Mở `http://127.0.0.1:3000`. Dữ liệu mẫu nằm trong browser local storage và được giới hạn trong phạm vi công ty VQH.
 
-Daily development uses Supabase Cloud DEV and does not require Docker. Taskovia owns the one canonical Supabase Cloud DEV database. VQH is its first tenant/company; there is no separate VQH database. `.env.local` points to Cloud DEV; see [Cloud DEV backend development](docs/development/backend-local.md) for the daily database workflow and [Supabase Cloud and Vercel Production](docs/deployment/supabase-cloud-vercel.md) for the DEV/Production boundary. `pnpm db:dev:test` is an optional Docker-backed pgTAP check, not part of the daily no-Docker workflow or `pnpm verify:dev`.
+Supabase Cloud DEV is Taskovia's sole development database environment and does not require Docker for the daily workflow. Taskovia owns the one canonical Supabase Cloud DEV database. VQH is its first tenant/company; there is no separate VQH database. `.env.local` points to Cloud DEV; see [Cloud DEV backend development](docs/development/backend-cloud-dev.md) for the daily database workflow and [Supabase Cloud and Vercel Production](docs/deployment/supabase-cloud-vercel.md) for the DEV/Production boundary. `pnpm db:dev:test` is an optional Docker-backed pgTAP check, not part of the daily no-Docker workflow or `pnpm verify:dev`.
 
 Luồng Auth v1 đã hỗ trợ đăng nhập invite-only, phiên bền vững, quên/đặt lại mật khẩu, chọn công ty, điều hướng theo permission và logout. Quy trình vận hành, callback, biến môi trường, lỗi an toàn và giới hạn cấu hình email hiện tại của Cloud DEV nằm tại [Taskovia Auth flow operations](docs/runbooks/auth-flow.md).
 
 ## Môi trường Supabase
 
-- Development app: Supabase Cloud DEV through `.env.local`.
+- Development app and database: Supabase Cloud DEV through `.env.local`.
 - Database delivery: the Supabase CLI linked to the dedicated Cloud DEV project.
 - Production app: separate Supabase Cloud variables supplied by Vercel Production.
 
-See [Cloud DEV backend development](docs/development/backend-local.md) and [Supabase Cloud and Vercel Production](docs/deployment/supabase-cloud-vercel.md).
+See [Cloud DEV backend development](docs/development/backend-cloud-dev.md) and [Supabase Cloud and Vercel Production](docs/deployment/supabase-cloud-vercel.md).
 
 ## Kiểm thử và build
 

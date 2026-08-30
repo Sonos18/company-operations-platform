@@ -68,9 +68,9 @@ After the DEV administrator has been onboarded, run `pnpm db:dev:canonical-check
 
 Create the login-capable user in Dashboard Auth first. Then open `docs/development/sql/onboard-vqh-dev-admin.sql`, replace only the sentinel email, and run it once in Supabase SQL Editor. If the committed file was edited locally, restore it after the operator run.
 
-## CI/fallback
+## Cloud DEV-only policy
 
-`db:local:*`, `supabase:start`, and `supabase:stop` exist only for an isolated CI/fallback environment. They are not invoked by `verify:dev` and are not part of the daily Cloud DEV workflow.
+Supabase Cloud DEV is Taskovia's only supported development and database-validation environment. Local Supabase is not a development, validation, CI, or agent fallback. If a task requires Cloud DEV access that is unavailable or unauthorized, stop and report `BLOCKED` rather than selecting another database environment.
 
 ## Safety
 

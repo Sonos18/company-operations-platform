@@ -85,7 +85,7 @@ describe('Supabase environment wiring', () => {
     expect(nuxtConfig).not.toMatch(/(?:TASKOVIA_SUPABASE|taskoviaSupabase)/)
   })
 
-  it('exposes an explicit linked DEV workflow and an isolated local fallback', () => {
+  it('exposes an explicit guarded Cloud DEV workflow without a Local DB fallback', () => {
     expect(packageJson.scripts['db:dev:target']).toBe('node scripts/assert-cloud-dev-target.mjs')
     expect(packageJson.scripts).not.toHaveProperty('db:dev:login')
     expect(packageJson.scripts['db:dev:auth-check']).toBe('node scripts/run-supabase-dev.mjs auth-check')
@@ -106,21 +106,23 @@ describe('Supabase environment wiring', () => {
       'pnpm db:dev:status && pnpm db:dev:dry-run && pnpm db:dev:types && pnpm verify:app',
     )
     expect(packageJson.scripts['verify:dev']).not.toContain('pnpm db:dev:test')
-    expect(packageJson.scripts['verify:backend:local']).toContain('pnpm db:local:reset')
+    expect(packageJson.scripts).not.toHaveProperty('supabase:start')
+    expect(packageJson.scripts).not.toHaveProperty('supabase:stop')
+    expect(packageJson.scripts).not.toHaveProperty('db:local:reset')
+    expect(packageJson.scripts).not.toHaveProperty('db:local:test')
+    expect(packageJson.scripts).not.toHaveProperty('db:local:types')
+    expect(packageJson.scripts).not.toHaveProperty('verify:backend:local')
   })
 
-  it('rejects legacy aliases and every remote reset or seed variant', () => {
+  it('rejects legacy aliases, Local DB scripts, and every remote reset or seed variant', () => {
     expect(packageJson.scripts).not.toHaveProperty('db:reset')
     expect(packageJson.scripts).not.toHaveProperty('db:test')
     expect(packageJson.scripts).not.toHaveProperty('db:types')
     expect(Object.keys(packageJson.scripts).filter(name => name.startsWith('db:cloud:'))).toEqual([])
 
-    const remoteTarget = /(?:--linked\b|--project-ref(?:=|\s)|--db-url(?:=|\s))/
     for (const [name, script] of Object.entries(packageJson.scripts)) {
-      if (/\bsupabase db reset\b/.test(script)) {
-        expect(script, `${name} must reset only the local fallback`).toMatch(/--local\b/)
-        expect(script, `${name} must not reset a remote target`).not.toMatch(remoteTarget)
-      }
+      expect(script, `${name} must not use a Local DB target`).not.toMatch(/--local\b/)
+      expect(script, `${name} must not reset a database`).not.toMatch(/\bsupabase db reset\b/)
       expect(script, `${name} must not deploy seed data remotely`).not.toMatch(/--include-seed\b/)
     }
   })
