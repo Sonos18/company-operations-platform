@@ -3,7 +3,8 @@
 > **Status:** APPROVED — reviewed by Sơn on 2026-08-30
 > **Approved direction:** Forward-only corrective migration and real acceptance evidence
 > **Reviewed implementation:** `feat/vqh-stage-01-foundation@78bf5151f3c46527f53350edd18a79f7f1778677`
-> **Scope:** Correct the four verified runtime defects and one concurrency-evidence gap only
+> **Original scope:** Correct the four verified runtime defects and one concurrency-evidence gap only
+> **Round 2 amendment:** APPROVED by Sơn on 2026-08-30 against `feat/vqh-stage-01-foundation@3956aab68bc652859a071de457bfdb160e7ff659`
 
 ## 1. Purpose
 
@@ -16,6 +17,12 @@ This correction closes five findings without redesigning the approved VQH Stage 
 5. an Opportunity invalidated with `duplicate_merged` semantics can be restored without explicit separation or correction evidence.
 
 The correction preserves Opportunity as the Stage 01 aggregate root, the reusable Workflow Core, immutable definition snapshots, explicit public RPCs, user-scoped Supabase request paths, RLS, permission checks, and append-only history.
+
+The approved Round 2 amendment closes three defects found after the first correction implementation without reopening those architectural decisions:
+
+1. completion and Contact Method mutation do not share a lock boundary, so the gate and trigger-built baseline can observe different `is_usable` states;
+2. the explicit baseline omitted nullable `locationText` even though the original Technical Spec requires Location status/value;
+3. the database correctly rejects unknown taxonomy codes, but the supported HTTP path converts `INVALID_COMMAND_INPUT` into `INTERNAL_ERROR` status `500`.
 
 ## 2. Non-goals and boundaries
 
@@ -59,7 +66,7 @@ Every corrected command continues to:
 - expose no direct authenticated DML on protected Stage 01 relations;
 - use the workflow's bound immutable definition, never the company's latest definition, for in-flight runtime behavior.
 
-No new stable public error code is introduced. A supplied taxonomy code that does not exist in the bound definition is a semantically invalid request and returns `INVALID_COMMAND_INPUT`.
+No new stable public error code is introduced. `INVALID_COMMAND_INPUT` remains a private PostgreSQL command-boundary token. A supplied taxonomy code that does not exist in the bound definition is a semantically invalid request: the database returns `INVALID_COMMAND_INPUT`, while the supported HTTP path maps it to status `400` with the existing stable public code `OPPORTUNITY_INVALID`. Raw PostgreSQL diagnostics are never exposed to the client.
 
 ## 5. Real Stage 01 concurrency evidence
 
@@ -180,6 +187,7 @@ New completion baselines use a deterministic payload with `schemaVersion: 1`:
     "customerTypeCode": "code",
     "needDescription": "text",
     "locationStatus": "unknown",
+    "locationText": "text-or-null",
     "primaryLeadSourceCode": "code",
     "engagementStatusCode": "code"
   },
@@ -237,16 +245,21 @@ The actual snapshot contains no Contact Method value such as a phone number or e
 
 The command captures one `completion_at` timestamp and uses it for the execution transition, completion event, baseline evidence, and audit context. Arrays use explicit stable ordering by creation timestamp and ID. Optional values are represented consistently as `null` or an empty array, never omitted unpredictably.
 
+The Contact Method evidence shares the owning Contact as its concurrency boundary. After locking the Opportunity and current 01.1 execution, completion resolves the active Primary Contact relationship, locks that owning Contact row, and only then reads its usable Contact Methods. Every Contact Method add/update command already locks that same Contact row, so no Contact Method can be inserted or changed between gate evaluation and baseline insertion.
+
+The command captures `locationStatus`, nullable `locationText`, Primary Contact, usable Contact Method refs, active Scopes, conditional Referrer, Intake Record refs, Intake Owner assignment, and gate results into local variables before the execution transition. Gate evaluation and the immutable baseline consume the same captured values. A baseline trigger may validate shape, linkage, immutability, and hash invariants, but MUST NOT query mutable Opportunity, Contact, Contact Method, relationship, assignment, blocker, or other live business state to construct completion evidence.
+
 The existing event-first order remains unchanged:
 
 1. lock Opportunity and execution;
-2. check versions and all gates;
-3. capture the explicit snapshot in local variables;
-4. transition the execution;
-5. insert the completion event carrying the preallocated baseline ID;
-6. insert the immutable baseline linked to that event;
-7. insert audit evidence;
-8. commit atomically.
+2. resolve the active Primary Contact and lock its owning Contact row;
+3. check expected versions;
+4. capture the explicit completion evidence in local variables and evaluate every gate from that capture;
+5. transition the execution;
+6. insert the completion event carrying the preallocated baseline ID;
+7. insert the immutable baseline linked to that event using the captured evidence;
+8. insert audit evidence;
+9. commit atomically.
 
 The SHA-256 hash continues to cover the complete JSONB snapshot.
 
@@ -256,8 +269,20 @@ After a successful completion, a rollback-wrapped database test changes the Cont
 
 - the prior snapshot and hash are byte-for-byte unchanged;
 - the snapshot still names the Contact Method that was usable at completion;
+- the snapshot retains the nullable `locationText` value captured at completion after later Opportunity location changes;
 - the owner and gate results remain reconstructable;
 - later mutable state cannot rewrite the reason the earlier completion was valid.
+
+### 7.4 Mixed-command concurrency proof
+
+A dedicated Cloud DEV integrity race uses separate PostgreSQL sessions and calls the real public RPCs `complete_stage01_intake` and `update_contact_method`. It is separate from the nine same-command optimistic-concurrency scenarios because both operations may validly succeed and they do not share one expected version.
+
+The race suite proves both serialization orders:
+
+1. completion locks/captures the Contact evidence first, produces a baseline with the usable Contact Method, commits, and the Contact Method update then succeeds; the final current method may be unusable while the baseline remains internally consistent;
+2. the Contact Method update commits first, after which completion fails the intake gate and writes no completion event, baseline, or audit residue.
+
+Test-only coordination may delay an actor only after or before a real public RPC as required to establish the intended ordering. A fixture is invalid if it merely contends on an advisory lock or sleep without executing both business RPCs. Assertions must inspect the persisted execution, event, audit, baseline, Contact version, and Contact Method state rather than treating Promise settlement alone as proof.
 
 ## 8. Required revalidation evidence
 
@@ -333,6 +358,9 @@ Implementation follows TDD for each finding.
 - every supplied taxonomy code absent from the bound snapshot is rejected;
 - an unknown Lead Source cannot satisfy 01.1 completion or bypass the Referrer gate;
 - the baseline contains every approved evidence group and remains unchanged after later mutable updates;
+- completion and Contact Method mutation serialize through the owning Contact, and the baseline/gate remain consistent in both race orders;
+- the baseline retains nullable `locationText` after later Opportunity location mutation;
+- an unknown taxonomy error maps through the repository and HTTP route to status `400` with `OPPORTUNITY_INVALID`, never `INTERNAL_ERROR`;
 - revalidation evidence is required by shared schema, HTTP adapter, and public RPC;
 - `duplicate_merged` restore without evidence fails and restore with separation evidence succeeds atomically.
 
@@ -350,6 +378,7 @@ After the corrective migration and tests are complete, verification includes:
 guarded Cloud DEV target/auth/status/dry-run/push
 Stage 01 rollback-safe SQL suite
 real Stage 01 concurrency suite
+mixed complete-intake versus Contact Method integrity races
 Cloud DEV generated database types
 security and performance advisors
 unit tests, typecheck, lint, build
@@ -375,6 +404,8 @@ The prior result is reclassified until correction evidence exists:
 
 The implementation branch remains review status `CHANGES_REQUIRED` and delivery status `PARTIAL` until all reopened evidence passes on the corrected remote HEAD.
 
+At reviewed Round 2 HEAD `3956aab68bc652859a071de457bfdb160e7ff659`, the new evidence reopens `AC-S01-05` for atomic/contact/location historical proof and reopens the HTTP-contract portion of `AC-S01-08` and `AC-S01-10`. The nine same-command optimistic-concurrency races remain valid evidence; the mixed-command race is additional baseline-integrity evidence and does not require a synthetic `VERSION_CONFLICT`.
+
 ## 12. Review focus
 
 Review should concentrate on:
@@ -384,6 +415,9 @@ Review should concentrate on:
 - row-lock and version-check order in every real race scenario;
 - exact loser error and one-winner persisted state;
 - completeness and minimal-PII content of baseline schema version 1;
+- use of the owning Contact lock before reading Contact Methods and absence of live mutable-state reads in baseline construction;
+- preservation of `locationText` and consistency between captured gate results and captured evidence;
+- private `INVALID_COMMAND_INPUT` to public `400 OPPORTUNITY_INVALID` mapping without raw database diagnostics;
 - preservation of historical baselines, events, audits, cycles, and executions;
 - conditional duplicate restore evidence and atomic canonical clearing;
 - user-scoped request paths, RLS, direct-private invocation safety, and lack of `service_role`;
