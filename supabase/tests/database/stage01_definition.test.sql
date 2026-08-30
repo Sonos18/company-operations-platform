@@ -28,7 +28,15 @@ as $$
       "lead_source":[{"code":"test_direct","label":"Test direct","behavior":{"requiresReferrer":false}}],
       "referrer_type":[{"code":"test_person","label":"Test person","semanticKey":"person"}],
       "engagement_status":[{"code":"test_grounded","label":"Test grounded","semanticKey":"grounded"}],
-      "invalid_reason":[{"code":"test_invalid","label":"Test invalid","semanticKey":"invalid"}]
+      "invalid_reason":[
+        {"code":"test_invalid","label":"Test invalid","semanticKey":"invalid"},
+        {"code":"system_same_need_duplicate","label":"Same-need duplicate","semanticKey":"duplicate_merged"}
+      ],
+      "budget_status":[{"code":"test_unknown","label":"Test unknown","semanticKey":"unknown"}],
+      "timeline_status":[{"code":"test_unknown","label":"Test unknown","semanticKey":"unknown"}],
+      "priority":[{"code":"test_normal","label":"Test normal","semanticKey":"normal"}],
+      "intake_channel":[{"code":"test_phone","label":"Test phone","semanticKey":"phone"}],
+      "blocker_category":[{"code":"test_follow_up","label":"Test follow up","semanticKey":"follow_up"}]
     },
     "criteria": [
       {"key":"test_customer_need","dimensionKey":"customer_need","label":"Test customer need","description":"Synthetic test criterion","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":1},
@@ -72,6 +80,36 @@ $$;
 
 select private.assert_valid_stage01_definition(pg_temp.stage01_valid_definition());
 
+do $$
+declare
+  taxonomy_entry jsonb;
+begin
+  taxonomy_entry := private.stage01_taxonomy_entry(
+    pg_temp.stage01_valid_definition(), 'lead_source', 'test_direct'
+  );
+  if taxonomy_entry ->> 'code' <> 'test_direct' then
+    raise exception 'DB-S01-DEFINITION taxonomy lookup did not return the configured entry';
+  end if;
+
+  begin
+    perform private.stage01_taxonomy_entry(
+      pg_temp.stage01_valid_definition(), 'lead_source', 'unknown_code'
+    );
+    raise exception 'DB-S01-DEFINITION unknown taxonomy code unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+
+  begin
+    perform private.stage01_taxonomy_entry(
+      pg_temp.stage01_valid_definition(), 'missing_taxonomy', 'test_direct'
+    );
+    raise exception 'DB-S01-DEFINITION missing taxonomy unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+end $$;
+
 select pg_temp.expect_stage01_definition_invalid(null, 'null definition');
 select pg_temp.expect_stage01_definition_invalid('[]'::jsonb, 'non-object definition');
 select pg_temp.expect_stage01_definition_invalid(
@@ -90,6 +128,19 @@ select pg_temp.expect_stage01_definition_invalid(
   pg_temp.stage01_valid_definition() #- '{taxonomies,lead_source}',
   'missing taxonomy'
 );
+do $$
+declare
+  taxonomy_key text;
+begin
+  foreach taxonomy_key in array array[
+    'budget_status', 'timeline_status', 'priority', 'intake_channel', 'blocker_category'
+  ] loop
+    perform pg_temp.expect_stage01_definition_invalid(
+      pg_temp.stage01_valid_definition() #- array['taxonomies', taxonomy_key],
+      'missing taxonomy ' || taxonomy_key
+    );
+  end loop;
+end $$;
 select pg_temp.expect_stage01_definition_invalid(
   jsonb_set(pg_temp.stage01_valid_definition(), '{criteria,0,criticality}', '"unknown"'::jsonb),
   'unknown criterion criticality'

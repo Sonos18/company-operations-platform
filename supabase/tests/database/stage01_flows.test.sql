@@ -26,7 +26,18 @@ as $$
       ],
       "referrer_type":[{"code":"person","label":"Person"}],
       "engagement_status":[{"code":"grounded","label":"Grounded"}],
-      "invalid_reason":[{"code":"test_invalid","label":"Test invalid"}]
+      "invalid_reason":[
+        {"code":"test_invalid","label":"Test invalid","semanticKey":"invalid"},
+        {"code":"system_same_need_duplicate","label":"Same-need duplicate","semanticKey":"duplicate_merged"}
+      ],
+      "budget_status":[{"code":"unknown","label":"Unknown"}],
+      "timeline_status":[{"code":"unknown","label":"Unknown"}],
+      "priority":[{"code":"normal","label":"Normal"}],
+      "intake_channel":[{"code":"phone","label":"Phone"}],
+      "blocker_category":[
+        {"code":"follow_up","label":"Follow up"},
+        {"code":"approval","label":"Approval"}
+      ]
     },
     "criteria":[
       {"key":"required_fit","dimensionKey":"customer_need","label":"Required fit","description":"Synthetic required criterion","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":1},
@@ -572,10 +583,23 @@ begin
         and event.event_type = 'completed'
         and event.payload ->> 'baselineId' = baseline.id::text
        where baseline.node_execution_id = intake_execution_id and event.id is null
+     )
+     or exists (
+       select 1
+       from public.stage01_intake_completion_baselines as baseline
+       where baseline.node_execution_id = intake_execution_id
+         and (
+           baseline.snapshot ->> 'schemaVersion' <> '1'
+           or baseline.snapshot #>> '{usableContactMethods,0,isUsableAtCompletion}' <> 'true'
+           or baseline.snapshot -> 'intakeOwnerAssignment' is null
+           or baseline.snapshot -> 'gates' is null
+           or baseline.snapshot #>> '{completion,actorId}' <> actor_id::text
+           or baseline.snapshot #>> '{completion,completedAt}' is null
+         )
      ) then
-    raise exception 'E2E 15 immutable Intake baseline is not linked to its completion event';
+    raise exception 'E2E 15 immutable Intake baseline lacks its event-linked completion evidence';
   end if;
-  raise notice 'PASS E2E 15 01.1 Complete creates immutable baseline linked to completion event';
+  raise notice 'PASS E2E 15 01.1 Complete creates explicit immutable baseline linked to completion event';
 
   begin
     perform public.start_workflow_node(

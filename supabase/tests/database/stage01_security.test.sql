@@ -358,6 +358,21 @@ begin
   end loop;
 end $$;
 
+do $$
+begin
+  if has_function_privilege(
+       'authenticated', 'private.stage01_taxonomy_entry(jsonb,text,text)', 'execute'
+     )
+     or has_function_privilege(
+       'anon', 'private.stage01_taxonomy_entry(jsonb,text,text)', 'execute'
+     )
+     or has_function_privilege(
+       'public', 'private.stage01_taxonomy_entry(jsonb,text,text)', 'execute'
+     ) then
+    raise exception 'DB-S01-SEC private taxonomy helper must not be executable by API roles';
+  end if;
+end $$;
+
 set local role authenticated;
 
 do $$

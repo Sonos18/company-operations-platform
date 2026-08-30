@@ -79,6 +79,11 @@ begin
     ('opportunities', 'company_id'),
     ('opportunities', 'validity_state'),
     ('opportunities', 'canonical_opportunity_id'),
+    ('opportunities', 'current_invalid_reason_code'),
+    ('opportunities', 'current_invalid_reason_semantic_key'),
+    ('opportunities', 'current_invalidation_reason'),
+    ('opportunities', 'invalidated_by'),
+    ('opportunities', 'invalidated_at'),
     ('opportunities', 'primary_customer_name'),
     ('opportunities', 'customer_type_code'),
     ('opportunities', 'need_description'),
@@ -386,6 +391,8 @@ begin
   from (values
     ('opportunities_company_fk', 'f'),
     ('opportunities_canonical_fk', 'f'),
+    ('opportunities_invalidated_by_fk', 'f'),
+    ('opportunities_current_invalidation_check', 'c'),
     ('stage01_taxonomy_values_company_fk', 'f'),
     ('contacts_company_fk', 'f'),
     ('contact_methods_contact_fk', 'f'),
@@ -427,6 +434,23 @@ begin
 
   if missing_constraint is not null then
     raise exception 'DB-S01-SCHEMA required constraint % is missing', missing_constraint;
+  end if;
+end $$;
+
+do $$
+begin
+  if to_regprocedure('private.stage01_taxonomy_entry(jsonb,text,text)') is null then
+    raise exception 'DB-S01-SCHEMA private taxonomy helper is missing';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_proc as procedure
+    where procedure.oid = 'private.stage01_taxonomy_entry(jsonb,text,text)'::regprocedure
+      and procedure.prosecdef
+      and coalesce(procedure.proconfig, array[]::text[]) @> array['search_path=""']
+  ) then
+    raise exception 'DB-S01-SCHEMA private taxonomy helper is not hardened SECURITY DEFINER';
   end if;
 end $$;
 
@@ -519,6 +543,18 @@ do $$
 declare
   violated_constraint text;
 begin
+  begin
+    update public.opportunities
+    set current_invalid_reason_code = 'partial_invalid_state'
+    where id = '51000000-0000-4000-8000-000000000030';
+    raise exception 'DB-S01-SCHEMA accepted partial current invalidation metadata';
+  exception when check_violation then
+    get stacked diagnostics violated_constraint = constraint_name;
+    if violated_constraint <> 'opportunities_current_invalidation_check' then
+      raise;
+    end if;
+  end;
+
   begin
     update public.stage01_decision_cycles
     set final_rationale = 'decision-bearing field without outcome'

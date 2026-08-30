@@ -28,7 +28,15 @@ as $$
       "lead_source":[{"code":"test_direct","label":"Test direct","behavior":{"requiresReferrer":false}}],
       "referrer_type":[{"code":"test_person","label":"Test person","semanticKey":"person"}],
       "engagement_status":[{"code":"test_grounded","label":"Test grounded","semanticKey":"grounded"}],
-      "invalid_reason":[{"code":"test_invalid","label":"Test invalid","semanticKey":"invalid"}]
+      "invalid_reason":[
+        {"code":"test_invalid","label":"Test invalid","semanticKey":"invalid"},
+        {"code":"system_same_need_duplicate","label":"Same-need duplicate","semanticKey":"duplicate_merged"}
+      ],
+      "budget_status":[{"code":"test_unknown","label":"Test unknown","semanticKey":"unknown"}],
+      "timeline_status":[{"code":"test_unknown","label":"Test unknown","semanticKey":"unknown"}],
+      "priority":[{"code":"test_normal","label":"Test normal","semanticKey":"normal"}],
+      "intake_channel":[{"code":"test_phone","label":"Test phone","semanticKey":"phone"}],
+      "blocker_category":[{"code":"test_follow_up","label":"Test follow up","semanticKey":"follow_up"}]
     },
     "criteria": [
       {"key":"test_customer_need","dimensionKey":"customer_need","label":"Test customer need","description":"Synthetic test criterion","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":1},
@@ -172,10 +180,21 @@ do $$
 declare
   result jsonb;
 begin
+  begin
+    perform public.create_stage01_opportunity(
+      '54000000-0000-4000-8000-000000000020',
+      '{"primaryCustomerName":"Unknown taxonomy","customerTypeCode":"unknown_code"}'::jsonb,
+      '54000000-0000-4000-8000-000000000203'
+    );
+    raise exception 'DB-S01-BOOT-004 unknown taxonomy code unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+
   result := public.create_stage01_opportunity(
     '54000000-0000-4000-8000-000000000020',
     '{"primaryCustomerName":"Successful bootstrap"}'::jsonb,
-    '54000000-0000-4000-8000-000000000203'
+    '54000000-0000-4000-8000-000000000204'
   );
 
   if not (result ?& array[
@@ -234,6 +253,6 @@ begin
   end if;
 end $$;
 
-select 'PASS DB-S01-BOOT-001..003 atomic bootstrap' as result;
+select 'PASS DB-S01-BOOT-001..004 atomic bootstrap and taxonomy boundary' as result;
 
 rollback;

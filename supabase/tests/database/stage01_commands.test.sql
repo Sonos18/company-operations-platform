@@ -120,6 +120,56 @@ insert into public.opportunities (id, tenant_id, company_id, primary_customer_na
     '55000000-0000-4000-8000-000000000001'
   );
 
+insert into public.workflow_definition_snapshots (
+  id, tenant_id, company_id, workflow_key, template_version, schema_version,
+  definition, definition_hash
+) values (
+  '55000000-0000-4000-8000-000000000040',
+  '55000000-0000-4000-8000-000000000010',
+  '55000000-0000-4000-8000-000000000020',
+  'vqh.stage01', 100, 1,
+  '{
+    "taxonomies":{
+      "customer_type":[{"code":"customer","label":"Customer"}],
+      "contact_relationship":[{"code":"decision_maker","label":"Decision maker"}],
+      "scope":[{"code":"design","label":"Design"}],
+      "lead_source":[{"code":"direct","label":"Direct","behavior":{"requiresReferrer":false}}],
+      "referrer_type":[{"code":"partner","label":"Partner"}],
+      "engagement_status":[{"code":"grounded","label":"Grounded"}],
+      "invalid_reason":[
+        {"code":"test_invalid","label":"Test invalid","semanticKey":"invalid"},
+        {"code":"system_same_need_duplicate","label":"Same-need duplicate","semanticKey":"duplicate_merged"}
+      ],
+      "budget_status":[{"code":"unknown","label":"Unknown"}],
+      "timeline_status":[{"code":"unknown","label":"Unknown"}],
+      "priority":[{"code":"normal","label":"Normal"}],
+      "intake_channel":[{"code":"phone","label":"Phone"}],
+      "blocker_category":[{"code":"follow_up","label":"Follow up"}]
+    }
+  }'::jsonb,
+  'stage01-direct-command-definition'
+);
+
+insert into public.workflow_instances (
+  id, tenant_id, company_id, subject_type, subject_id, definition_snapshot_id, created_by
+) values
+  (
+    '55000000-0000-4000-8000-000000000050',
+    '55000000-0000-4000-8000-000000000010',
+    '55000000-0000-4000-8000-000000000020', 'opportunity',
+    '55000000-0000-4000-8000-000000000030',
+    '55000000-0000-4000-8000-000000000040',
+    '55000000-0000-4000-8000-000000000001'
+  ),
+  (
+    '55000000-0000-4000-8000-000000000051',
+    '55000000-0000-4000-8000-000000000010',
+    '55000000-0000-4000-8000-000000000020', 'opportunity',
+    '55000000-0000-4000-8000-000000000031',
+    '55000000-0000-4000-8000-000000000040',
+    '55000000-0000-4000-8000-000000000001'
+  );
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -137,7 +187,31 @@ declare
   scope_id uuid;
   current_referrer_id uuid;
   intake_id uuid;
+  invalid_input jsonb;
 begin
+  for invalid_input in
+    select value
+    from pg_catalog.jsonb_array_elements(
+      '[
+        {"customerTypeCode":"unknown_code","expectedOpportunityVersion":0},
+        {"primaryLeadSourceCode":"unknown_code","expectedOpportunityVersion":0},
+        {"engagementStatusCode":"unknown_code","expectedOpportunityVersion":0},
+        {"budgetStatusCode":"unknown_code","expectedOpportunityVersion":0},
+        {"timelineStatusCode":"unknown_code","expectedOpportunityVersion":0},
+        {"priorityCode":"unknown_code","expectedOpportunityVersion":0}
+      ]'::jsonb
+    )
+  loop
+    begin
+      perform public.update_opportunity_current_data(
+        company_id, opportunity_id, invalid_input, pg_catalog.gen_random_uuid()
+      );
+      raise exception 'DB-S01-CMD unknown Opportunity taxonomy code unexpectedly succeeded: %', invalid_input;
+    exception when raise_exception then
+      if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+    end;
+  end loop;
+
   result := public.create_contact(
     company_id, '{"displayName":"Primary contact"}'::jsonb,
     '55000000-0000-4000-8000-000000000201'
@@ -179,6 +253,20 @@ begin
     '55000000-0000-4000-8000-000000000206'
   );
 
+  begin
+    perform public.set_opportunity_primary_contact(
+      company_id, opportunity_id,
+      pg_catalog.jsonb_build_object(
+        'contactId', first_contact_id, 'relationshipCode', 'unknown_code',
+        'expectedOpportunityVersion', 1
+      ),
+      pg_catalog.gen_random_uuid()
+    );
+    raise exception 'DB-S01-CMD unknown contact relationship unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+
   perform public.set_opportunity_primary_contact(
     company_id, opportunity_id,
     pg_catalog.jsonb_build_object(
@@ -211,6 +299,17 @@ begin
     if sqlerrm <> 'VERSION_CONFLICT' then raise; end if;
   end;
 
+  begin
+    perform public.add_opportunity_scope(
+      company_id, opportunity_id,
+      '{"scopeCode":"unknown_code","expectedOpportunityVersion":3}'::jsonb,
+      pg_catalog.gen_random_uuid()
+    );
+    raise exception 'DB-S01-CMD unknown scope code unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+
   result := public.add_opportunity_scope(
     company_id, opportunity_id,
     '{"scopeCode":"design","reliabilityState":"unverified","expectedOpportunityVersion":3}'::jsonb,
@@ -235,6 +334,17 @@ begin
     if sqlerrm <> 'STAGE01_RESOURCE_ALREADY_RETIRED' then raise; end if;
   end;
 
+  begin
+    perform public.add_opportunity_referrer(
+      company_id, opportunity_id,
+      '{"referrerTypeCode":"unknown_code","displayName":"Invalid referrer","expectedOpportunityVersion":5}'::jsonb,
+      pg_catalog.gen_random_uuid()
+    );
+    raise exception 'DB-S01-CMD unknown referrer type unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+
   perform public.add_opportunity_referrer(
     company_id, opportunity_id,
     '{"referrerTypeCode":"partner","displayName":"Initial referrer","isPrimary":true,"expectedOpportunityVersion":5}'::jsonb,
@@ -253,6 +363,17 @@ begin
     '{"endReason":"No longer active","expectedOpportunityVersion":7}'::jsonb,
     '55000000-0000-4000-8000-000000000215'
   );
+
+  begin
+    perform public.append_opportunity_intake_record(
+      company_id, opportunity_id,
+      '{"channelCode":"unknown_code","summary":"Invalid intake","expectedOpportunityVersion":8}'::jsonb,
+      pg_catalog.gen_random_uuid()
+    );
+    raise exception 'DB-S01-CMD unknown intake channel unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
 
   result := public.append_opportunity_intake_record(
     company_id, opportunity_id,
@@ -340,7 +461,18 @@ insert into public.workflow_definition_snapshots (
       "lead_source":[{"code":"direct","label":"Direct","behavior":{"requiresReferrer":false}}],
       "referrer_type":[{"code":"person","label":"Person"}],
       "engagement_status":[{"code":"grounded","label":"Grounded"}],
-      "invalid_reason":[{"code":"test_invalid","label":"Test invalid"}]
+      "invalid_reason":[
+        {"code":"test_invalid","label":"Test invalid","semanticKey":"invalid"},
+        {"code":"system_same_need_duplicate","label":"Same-need duplicate","semanticKey":"duplicate_merged"}
+      ],
+      "budget_status":[{"code":"unknown","label":"Unknown"}],
+      "timeline_status":[{"code":"unknown","label":"Unknown"}],
+      "priority":[{"code":"normal","label":"Normal"}],
+      "intake_channel":[{"code":"phone","label":"Phone"}],
+      "blocker_category":[
+        {"code":"follow_up","label":"Follow up"},
+        {"code":"approval","label":"Approval"}
+      ]
     },
     "criteria":[
       {"key":"customer_need","dimensionKey":"customer_need","label":"Customer need","description":"Test","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":1},
@@ -432,14 +564,23 @@ insert into public.opportunity_duplicate_concerns (
 
 insert into public.workflow_instances (
   id, tenant_id, company_id, subject_type, subject_id, definition_snapshot_id, created_by
-) values (
-  '56000000-0000-4000-8000-000000000060',
-  '55000000-0000-4000-8000-000000000010',
-  '55000000-0000-4000-8000-000000000020', 'opportunity',
-  '56000000-0000-4000-8000-000000000030',
-  '56000000-0000-4000-8000-000000000040',
-  '55000000-0000-4000-8000-000000000001'
-);
+) values
+  (
+    '56000000-0000-4000-8000-000000000060',
+    '55000000-0000-4000-8000-000000000010',
+    '55000000-0000-4000-8000-000000000020', 'opportunity',
+    '56000000-0000-4000-8000-000000000030',
+    '56000000-0000-4000-8000-000000000040',
+    '55000000-0000-4000-8000-000000000001'
+  ),
+  (
+    '56000000-0000-4000-8000-000000000063',
+    '55000000-0000-4000-8000-000000000010',
+    '55000000-0000-4000-8000-000000000020', 'opportunity',
+    '56000000-0000-4000-8000-000000000031',
+    '56000000-0000-4000-8000-000000000040',
+    '55000000-0000-4000-8000-000000000001'
+  );
 insert into public.workflow_node_instances (
   id, tenant_id, company_id, workflow_instance_id, node_key, node_type
 ) values
@@ -489,6 +630,19 @@ create trigger stage01_force_baseline_failure
   before insert on public.stage01_intake_completion_baselines
   for each row execute function private.stage01_force_baseline_failure();
 
+create function private.stage01_test_set_persisted_lead_source(target_code text)
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  update public.opportunities
+  set primary_lead_source_code = target_code
+  where id = '56000000-0000-4000-8000-000000000030'::uuid;
+$$;
+revoke all on function private.stage01_test_set_persisted_lead_source(text) from public, anon;
+grant execute on function private.stage01_test_set_persisted_lead_source(text) to authenticated;
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -504,7 +658,14 @@ declare
   evaluation_execution_id constant uuid := '56000000-0000-4000-8000-000000000071';
   result jsonb;
   first_assignment_id uuid;
+  second_assignment_id uuid;
   blocker_id uuid;
+  duplicate_concern_id uuid;
+  baseline_snapshot_before jsonb;
+  baseline_hash_before text;
+  revalidation_execution_version_before bigint;
+  revalidation_event_count_before bigint;
+  revalidation_audit_count_before bigint;
 begin
   result := public.assign_workflow_node(
     company_id, intake_execution_id,
@@ -513,11 +674,12 @@ begin
   );
   first_assignment_id := (result ->> 'assignmentId')::uuid;
 
-  perform public.assign_workflow_node(
+  result := public.assign_workflow_node(
     company_id, intake_execution_id,
     '{"assignmentKind":"accountable_owner","assigneeUserId":"55000000-0000-4000-8000-000000000001","assignmentReason":"Replacement owner","expectedExecutionVersion":1}'::jsonb,
     '56000000-0000-4000-8000-000000000202'
   );
+  second_assignment_id := (result ->> 'assignmentId')::uuid;
 
   begin
     perform public.end_workflow_assignment(
@@ -528,6 +690,17 @@ begin
     raise exception 'DB-S01-CMD ended assignment unexpectedly ended twice';
   exception when raise_exception then
     if sqlerrm <> 'STAGE01_RESOURCE_ALREADY_ENDED' then raise; end if;
+  end;
+
+  begin
+    perform public.raise_workflow_blocker(
+      company_id, intake_execution_id,
+      '{"effect":"non_blocking","categoryCode":"unknown_code","description":"Invalid category","expectedExecutionVersion":2}'::jsonb,
+      pg_catalog.gen_random_uuid()
+    );
+    raise exception 'DB-S01-CMD unknown blocker category unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
   end;
 
   perform public.raise_workflow_blocker(
@@ -544,11 +717,96 @@ begin
     '{"resolution":"different_need","resolutionNote":"Verified as a separate need","expectedOpportunityVersion":0}'::jsonb,
     '56000000-0000-4000-8000-000000000206'
   );
+
+  perform private.stage01_test_set_persisted_lead_source('unknown_code');
+  begin
+    perform public.complete_stage01_intake(
+      company_id, intake_execution_id,
+      '{"expectedOpportunityVersion":1,"expectedExecutionVersion":4}'::jsonb,
+      pg_catalog.gen_random_uuid()
+    );
+    raise exception 'DB-S01-CMD persisted unknown Lead Source bypassed completion taxonomy validation';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+  perform private.stage01_test_set_persisted_lead_source('direct');
+
   perform public.complete_stage01_intake(
     company_id, intake_execution_id,
     '{"expectedOpportunityVersion":1,"expectedExecutionVersion":4}'::jsonb,
     '56000000-0000-4000-8000-000000000207'
   );
+
+  select baseline.snapshot, baseline.snapshot_hash
+  into baseline_snapshot_before, baseline_hash_before
+  from public.stage01_intake_completion_baselines as baseline
+  where baseline.node_execution_id = intake_execution_id
+    and baseline.baseline_version = 1;
+
+  if baseline_snapshot_before ->> 'schemaVersion' <> '1'
+     or baseline_snapshot_before #>> '{opportunity,id}' <> opportunity_id::text
+     or baseline_snapshot_before #>> '{primaryContact,relationshipId}' <> '56000000-0000-4000-8000-000000000082'
+     or baseline_snapshot_before #>> '{usableContactMethods,0,contactMethodId}' <> '56000000-0000-4000-8000-000000000081'
+     or baseline_snapshot_before #>> '{usableContactMethods,0,isUsableAtCompletion}' <> 'true'
+     or baseline_snapshot_before #>> '{activeScopes,0,scopeId}' <> '56000000-0000-4000-8000-000000000083'
+     or baseline_snapshot_before #>> '{intakeRecordRefs,0,intakeRecordId}' <> '56000000-0000-4000-8000-000000000084'
+     or baseline_snapshot_before #>> '{intakeOwnerAssignment,assignmentId}' <> second_assignment_id::text
+     or baseline_snapshot_before #>> '{completion,actorId}' <> '55000000-0000-4000-8000-000000000001'
+     or baseline_snapshot_before #>> '{completion,completedAt}' is null
+     or baseline_snapshot_before #>> '{completion,opportunityVersion}' <> '1'
+     or baseline_snapshot_before #>> '{completion,executionVersion}' <> '5'
+     or baseline_snapshot_before -> 'gates' is distinct from '{
+       "opportunityValid":true,
+       "meaningfulNeed":true,
+       "hasPrimaryContact":true,
+       "hasUsableContactMethod":true,
+       "hasActiveScope":true,
+       "hasIntakeRecord":true,
+       "noOpenBlockingBlocker":true,
+       "noUnresolvedDuplicateConcern":true,
+       "leadSourceRequiresReferrer":false,
+       "conditionalReferrerSatisfied":true,
+       "actorHadCompletionPermission":true,
+       "executionWasActive":true
+     }'::jsonb
+     or baseline_snapshot_before::text like '%0900000001%'
+     or baseline_hash_before <> pg_catalog.encode(
+       extensions.digest(baseline_snapshot_before::text, 'sha256'), 'hex'
+     ) then
+    raise exception 'DB-S01-CMD explicit immutable Intake baseline evidence is incomplete';
+  end if;
+
+  perform public.update_contact_method(
+    company_id, '56000000-0000-4000-8000-000000000081',
+    '{"isUsable":false,"expectedContactVersion":0}'::jsonb,
+    pg_catalog.gen_random_uuid()
+  );
+  if exists (
+    select 1
+    from public.stage01_intake_completion_baselines as baseline
+    where baseline.node_execution_id = intake_execution_id
+      and baseline.baseline_version = 1
+      and (baseline.snapshot is distinct from baseline_snapshot_before
+           or baseline.snapshot_hash is distinct from baseline_hash_before)
+  ) then
+    raise exception 'DB-S01-CMD later Contact Method mutation changed historical baseline evidence';
+  end if;
+  perform public.update_contact_method(
+    company_id, '56000000-0000-4000-8000-000000000081',
+    '{"isUsable":true,"expectedContactVersion":1}'::jsonb,
+    pg_catalog.gen_random_uuid()
+  );
+
+  begin
+    perform public.invalidate_opportunity(
+      company_id, opportunity_id,
+      '{"invalidReasonCode":"unknown_code","reason":"Invalid taxonomy","expectedOpportunityVersion":1}'::jsonb,
+      pg_catalog.gen_random_uuid()
+    );
+    raise exception 'DB-S01-CMD unknown invalid reason unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
 
   perform public.invalidate_opportunity(
     company_id, opportunity_id,
@@ -561,6 +819,61 @@ begin
     '56000000-0000-4000-8000-000000000209'
   );
 
+  result := public.raise_opportunity_duplicate_concern(
+    company_id, '56000000-0000-4000-8000-000000000031',
+    '{"suspectedDuplicateOpportunityId":"56000000-0000-4000-8000-000000000030","description":"Same governed need","expectedOpportunityVersion":0}'::jsonb,
+    pg_catalog.gen_random_uuid()
+  );
+  duplicate_concern_id := (result ->> 'duplicateConcernId')::uuid;
+  perform public.resolve_opportunity_duplicate(
+    company_id, '56000000-0000-4000-8000-000000000031', duplicate_concern_id,
+    '{"resolution":"same_need","canonicalOpportunityId":"56000000-0000-4000-8000-000000000030","resolutionNote":"Merged after review","expectedOpportunityVersion":1}'::jsonb,
+    pg_catalog.gen_random_uuid()
+  );
+
+  begin
+    perform public.restore_opportunity(
+      company_id, '56000000-0000-4000-8000-000000000031',
+      '{"reason":"Unsupported separation","expectedOpportunityVersion":2}'::jsonb,
+      pg_catalog.gen_random_uuid()
+    );
+    raise exception 'DB-S01-CMD duplicate_merged restore without evidence unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+  begin
+    perform public.restore_opportunity(
+      company_id, '56000000-0000-4000-8000-000000000031',
+      '{"reason":"Unsupported separation","evidence":[],"expectedOpportunityVersion":2}'::jsonb,
+      pg_catalog.gen_random_uuid()
+    );
+    raise exception 'DB-S01-CMD duplicate_merged restore with empty evidence unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+  perform public.restore_opportunity(
+    company_id, '56000000-0000-4000-8000-000000000031',
+    '{"reason":"Separated after correction","evidence":[{"kind":"separation_record","ref":"case:42"}],"expectedOpportunityVersion":2}'::jsonb,
+    pg_catalog.gen_random_uuid()
+  );
+  if exists (
+    select 1
+    from public.opportunities as opportunity
+    where opportunity.id = '56000000-0000-4000-8000-000000000031'
+      and (
+        opportunity.version <> 3
+        or opportunity.validity_state <> 'valid'
+        or opportunity.canonical_opportunity_id is not null
+        or opportunity.current_invalid_reason_code is not null
+        or opportunity.current_invalid_reason_semantic_key is not null
+        or opportunity.current_invalidation_reason is not null
+        or opportunity.invalidated_by is not null
+        or opportunity.invalidated_at is not null
+      )
+  ) then
+    raise exception 'DB-S01-CMD evidenced duplicate restore did not atomically clear invalidation metadata';
+  end if;
+
   perform public.reopen_workflow_node(
     company_id, intake_execution_id,
     '{"reason":"Intake evidence changed","expectedExecutionVersion":5}'::jsonb,
@@ -571,6 +884,59 @@ begin
     '{"expectedOpportunityVersion":3,"expectedExecutionVersion":6}'::jsonb,
     '56000000-0000-4000-8000-000000000211'
   );
+
+  select execution.version,
+         (select pg_catalog.count(*) from public.workflow_node_events as event
+          where event.node_execution_id = evaluation_execution_id),
+         (select pg_catalog.count(*) from public.audit_events as audit
+          where audit.company_id = company_id)
+  into revalidation_execution_version_before,
+       revalidation_event_count_before,
+       revalidation_audit_count_before
+  from public.workflow_node_executions as execution
+  where execution.id = evaluation_execution_id;
+
+  begin
+    perform public.revalidate_workflow_node(
+      company_id, evaluation_execution_id,
+      '{"reason":"Missing evidence","expectedExecutionVersion":1}'::jsonb,
+      pg_catalog.gen_random_uuid()
+    );
+    raise exception 'DB-S01-CMD revalidation without evidence unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+  begin
+    perform public.revalidate_workflow_node(
+      company_id, evaluation_execution_id,
+      '{"reason":"Wrong evidence type","evidence":{},"expectedExecutionVersion":1}'::jsonb,
+      pg_catalog.gen_random_uuid()
+    );
+    raise exception 'DB-S01-CMD revalidation with non-array evidence unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+  begin
+    perform public.revalidate_workflow_node(
+      company_id, evaluation_execution_id,
+      '{"reason":"Empty evidence","evidence":[],"expectedExecutionVersion":1}'::jsonb,
+      pg_catalog.gen_random_uuid()
+    );
+    raise exception 'DB-S01-CMD revalidation with empty evidence unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+  if (select version from public.workflow_node_executions where id = evaluation_execution_id)
+       is distinct from revalidation_execution_version_before
+     or (select pg_catalog.count(*) from public.workflow_node_events as event
+         where event.node_execution_id = evaluation_execution_id)
+       <> revalidation_event_count_before
+     or (select pg_catalog.count(*) from public.audit_events as audit
+         where audit.company_id = company_id)
+       <> revalidation_audit_count_before then
+    raise exception 'DB-S01-CMD rejected revalidation left partial effects';
+  end if;
+
   perform public.revalidate_workflow_node(
     company_id, evaluation_execution_id,
     '{"reason":"Current Intake completion verified","evidence":["baseline:2"],"expectedExecutionVersion":1}'::jsonb,
@@ -717,7 +1083,18 @@ insert into public.workflow_definition_snapshots (
       "lead_source":[{"code":"direct","label":"Direct","behavior":{"requiresReferrer":false}}],
       "referrer_type":[{"code":"person","label":"Person"}],
       "engagement_status":[{"code":"grounded","label":"Grounded"}],
-      "invalid_reason":[{"code":"test_invalid","label":"Test invalid"}]
+      "invalid_reason":[
+        {"code":"test_invalid","label":"Test invalid","semanticKey":"invalid"},
+        {"code":"system_same_need_duplicate","label":"Same-need duplicate","semanticKey":"duplicate_merged"}
+      ],
+      "budget_status":[{"code":"unknown","label":"Unknown"}],
+      "timeline_status":[{"code":"unknown","label":"Unknown"}],
+      "priority":[{"code":"normal","label":"Normal"}],
+      "intake_channel":[{"code":"phone","label":"Phone"}],
+      "blocker_category":[
+        {"code":"follow_up","label":"Follow up"},
+        {"code":"approval","label":"Approval"}
+      ]
     },
     "criteria":[
       {"key":"required_fit","dimensionKey":"customer_need","label":"Required fit","description":"Required gate criterion","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":1},
