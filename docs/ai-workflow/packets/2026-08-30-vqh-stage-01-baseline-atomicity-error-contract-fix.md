@@ -27,6 +27,16 @@ authorization:
   approval_reference: >-
     Sơn explicitly approved this complete Fix Packet and its Cloud DEV side-effect scope in chat on
     2026-08-30.
+  followup_migration:
+    status: APPROVED
+    approved_by: Son
+    approval_reference: >-
+      After the first migration was applied, the rollback-wrapped Stage 01 flow suite proved that a
+      missing Lead Source incorrectly returned INVALID_COMMAND_INPUT before the existing Intake gate.
+      Sơn explicitly approved one minimal forward follow-up migration in chat on 2026-08-30.
+    scope: >-
+      Preserve the existing STAGE01_INTAKE_GATES_NOT_SATISFIED behavior when the Lead Source is absent;
+      do not edit or repair the applied migration and do not change any other business behavior.
 
 scope:
   findings_only: true
@@ -42,7 +52,7 @@ scope:
     - Add nullable locationText to new schemaVersion 1 completion baselines.
     - Map private P0001 INVALID_COMMAND_INPUT to HTTP 400 with existing public code OPPORTUNITY_INVALID.
     - Add focused database, repository, route, historical-proof, and mixed-command concurrency tests.
-    - Deliver one forward-only migration, commit, and push the same implementation branch.
+    - Deliver the applied primary migration plus the explicitly approved minimal forward follow-up migration, commit, and push the same implementation branch.
   out:
     - Rewriting any existing completion baseline or hash.
     - Changing public RPC names, signatures, aggregate versions, or approved Stage 01 business behavior.
@@ -161,7 +171,8 @@ validation:
     cloud_dev_mutating: true
     production_mutating: false
   cloud_dev_scope:
-    - Apply only one CLI-generated forward migration named stage01_baseline_atomicity_error_contract through the guarded runner.
+    - Apply the CLI-generated stage01_baseline_atomicity_error_contract migration through the guarded runner.
+    - Apply one CLI-generated stage01_incomplete_intake_error_contract_followup migration that only restores the missing-Lead-Source Intake gate contract diagnosed after the first migration.
     - Run only the fixed rollback-safe Stage 01 SQL suite, existing nine-scenario concurrency suite, and two fixed mixed-command integrity race orders.
     - Run read-only target, auth, status, dry-run, RLS, canonical, security-advisor, and performance-advisor checks.
   cloud_dev_forbidden:
@@ -211,7 +222,7 @@ acceptance_impact:
 [x] All three findings were independently verified and bounded.
 [x] The approved Round 2 design amendment is committed and referenced.
 [x] Same-branch, no-worktree, no-subagent delivery is explicit.
-[x] Proposed Cloud DEV mutation is limited to one forward migration and fixed rollback-safe fixtures.
+[x] Cloud DEV mutation is limited to the primary migration, one explicitly approved diagnosed follow-up, and fixed rollback-safe fixtures.
 [x] Local Supabase, Docker, production mutation, deployment, PR, merge, and force-push remain forbidden.
 [x] Sơn has explicitly approved this complete Fix Packet and its Cloud DEV side-effect scope.
 ```
