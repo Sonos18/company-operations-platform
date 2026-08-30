@@ -52,28 +52,33 @@ export function createStage01Routes(dependencies: Stage01RouteDependencies) {
     },
     async evaluateCriterion(event: unknown) {
       const context = await scoped(event)
-      return dependencies.service.evaluateCriterion(context, routeId(event, 'opportunityId'), criterionKeyFrom(event),
+      await dependencies.service.evaluateCriterion(context, routeId(event, 'opportunityId'), criterionKeyFrom(event),
         body(criterionEvaluationRevisionInputSchema, await readBody(event as never)))
+      return null
     },
     async submitRecommendation(event: unknown) {
       const context = await scoped(event)
-      return dependencies.service.submitRecommendation(context, routeId(event, 'opportunityId'),
+      await dependencies.service.submitRecommendation(context, routeId(event, 'opportunityId'),
         body(submitRecommendationInputSchema, await readBody(event as never)))
+      return null
     },
     async returnForClarification(event: unknown) {
       const context = await scoped(event)
-      return dependencies.service.returnForClarification(context, routeId(event, 'opportunityId'),
+      await dependencies.service.returnForClarification(context, routeId(event, 'opportunityId'),
         body(returnForClarificationInputSchema, await readBody(event as never)))
+      return null
     },
     async recordFinalDecision(event: unknown) {
       const context = await scoped(event)
-      return dependencies.service.recordFinalDecision(context, routeId(event, 'opportunityId'),
+      await dependencies.service.recordFinalDecision(context, routeId(event, 'opportunityId'),
         body(recordFinalDecisionInputSchema, await readBody(event as never)))
+      return null
     },
     async reactivate(event: unknown) {
       const context = await scoped(event)
-      return dependencies.service.reactivate(context, routeId(event, 'opportunityId'),
+      await dependencies.service.reactivate(context, routeId(event, 'opportunityId'),
         body(reactivateStage01InputSchema, await readBody(event as never)))
+      return null
     },
   }
 }

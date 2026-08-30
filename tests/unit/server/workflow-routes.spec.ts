@@ -19,6 +19,19 @@ describe('Stage 01 Workflow routes', () => {
     getRouterParam.mockImplementation((_event, name: string) => ({ companyId, nodeExecutionId, assignmentId, blockerId })[name])
   })
 
+  it('reads the complete Workflow runtime through the approved Opportunity scope', async () => {
+    getRouterParam.mockImplementation((_event, name: string) => ({
+      companyId,
+      opportunityId: '72000000-0000-4000-8000-000000000050',
+    })[name])
+    const getForOpportunity = vi.fn().mockResolvedValue({ workflowInstanceId: 'runtime' })
+    await createWorkflowRoutes({
+      resolveContext: vi.fn().mockResolvedValue(context),
+      service: { getForOpportunity } as never,
+    }).getForOpportunity({})
+    expect(getForOpportunity).toHaveBeenCalledWith(context, '72000000-0000-4000-8000-000000000050')
+  })
+
   it('keeps generic complete dispatch in the service boundary', async () => {
     const input = { expectedExecutionVersion: 1, expectedOpportunityVersion: 2 }
     readBody.mockResolvedValue(input)

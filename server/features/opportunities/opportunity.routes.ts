@@ -106,7 +106,8 @@ export function createOpportunityRoutes(dependencies: OpportunityRouteDependenci
       const { context } = await scoped(event)
       const opportunityId = routeId(event, 'opportunityId')
       const relationshipId = routeId(event, 'opportunityContactId')
-      return dependencies.service.endContact(context, opportunityId, relationshipId, body(endOpportunityContactInputSchema, await readBody(event as never)))
+      await dependencies.service.endContact(context, opportunityId, relationshipId, body(endOpportunityContactInputSchema, await readBody(event as never)))
+      return null
     },
     async addScope(event: unknown) {
       const { context } = await scoped(event)
@@ -117,7 +118,8 @@ export function createOpportunityRoutes(dependencies: OpportunityRouteDependenci
       const { context } = await scoped(event)
       const opportunityId = routeId(event, 'opportunityId')
       const scopeId = routeId(event, 'scopeId')
-      return dependencies.service.retireScope(context, opportunityId, scopeId, body(retireOpportunityScopeInputSchema, await readBody(event as never)))
+      await dependencies.service.retireScope(context, opportunityId, scopeId, body(retireOpportunityScopeInputSchema, await readBody(event as never)))
+      return null
     },
     async addReferrer(event: unknown) {
       const { context } = await scoped(event)
@@ -133,7 +135,8 @@ export function createOpportunityRoutes(dependencies: OpportunityRouteDependenci
       const { context } = await scoped(event)
       const opportunityId = routeId(event, 'opportunityId')
       const referrerId = routeId(event, 'referrerId')
-      return dependencies.service.endReferrer(context, opportunityId, referrerId, body(endOpportunityReferrerInputSchema, await readBody(event as never)))
+      await dependencies.service.endReferrer(context, opportunityId, referrerId, body(endOpportunityReferrerInputSchema, await readBody(event as never)))
+      return null
     },
     async addIntakeRecord(event: unknown) {
       const { context } = await scoped(event)
@@ -155,17 +158,20 @@ export function createOpportunityRoutes(dependencies: OpportunityRouteDependenci
       const { context } = await scoped(event)
       const opportunityId = routeId(event, 'opportunityId')
       const concernId = routeId(event, 'concernId')
-      return dependencies.service.resolveDuplicateConcern(context, opportunityId, concernId, body(resolveDuplicateConcernInputSchema, await readBody(event as never)))
+      await dependencies.service.resolveDuplicateConcern(context, opportunityId, concernId, body(resolveDuplicateConcernInputSchema, await readBody(event as never)))
+      return null
     },
     async invalidate(event: unknown) {
       const { context } = await scoped(event)
       const opportunityId = routeId(event, 'opportunityId')
-      return dependencies.service.invalidate(context, opportunityId, body(invalidateOpportunityInputSchema, await readBody(event as never)))
+      await dependencies.service.invalidate(context, opportunityId, body(invalidateOpportunityInputSchema, await readBody(event as never)))
+      return null
     },
     async restore(event: unknown) {
       const { context } = await scoped(event)
       const opportunityId = routeId(event, 'opportunityId')
-      return dependencies.service.restore(context, opportunityId, body(restoreOpportunityInputSchema, await readBody(event as never)))
+      await dependencies.service.restore(context, opportunityId, body(restoreOpportunityInputSchema, await readBody(event as never)))
+      return null
     },
   }
 }

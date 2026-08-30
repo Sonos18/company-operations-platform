@@ -9,6 +9,7 @@ const routeFiles = [
   'server/api/companies/[companyId]/opportunities/[opportunityId].get.ts',
   'server/api/companies/[companyId]/opportunities/[opportunityId].patch.ts',
   'server/api/companies/[companyId]/opportunities/[opportunityId]/stage-01.get.ts',
+  'server/api/companies/[companyId]/opportunities/[opportunityId]/workflow.get.ts',
   'server/api/companies/[companyId]/contacts/index.post.ts',
   'server/api/companies/[companyId]/contacts/[contactId].patch.ts',
   'server/api/companies/[companyId]/contacts/[contactId]/methods/index.post.ts',

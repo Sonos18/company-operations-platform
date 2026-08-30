@@ -43,6 +43,10 @@ export function createWorkflowRoutes(dependencies: WorkflowRouteDependencies) {
     return dependencies.resolveContext(event, companyId)
   }
   return {
+    async getForOpportunity(event: unknown) {
+      const context = await scoped(event)
+      return dependencies.service.getForOpportunity(context, routeId(event, 'opportunityId'))
+    },
     async startNode(event: unknown) {
       const context = await scoped(event)
       return dependencies.service.startNode(context, routeId(event, 'nodeExecutionId'), body(startWorkflowNodeInputSchema, await readBody(event as never)))
@@ -61,19 +65,23 @@ export function createWorkflowRoutes(dependencies: WorkflowRouteDependencies) {
     },
     async assign(event: unknown) {
       const context = await scoped(event)
-      return dependencies.service.assign(context, routeId(event, 'nodeExecutionId'), body(assignWorkflowNodeInputSchema, await readBody(event as never)))
+      await dependencies.service.assign(context, routeId(event, 'nodeExecutionId'), body(assignWorkflowNodeInputSchema, await readBody(event as never)))
+      return null
     },
     async endAssignment(event: unknown) {
       const context = await scoped(event)
-      return dependencies.service.endAssignment(context, routeId(event, 'assignmentId'), body(endWorkflowAssignmentInputSchema, await readBody(event as never)))
+      await dependencies.service.endAssignment(context, routeId(event, 'assignmentId'), body(endWorkflowAssignmentInputSchema, await readBody(event as never)))
+      return null
     },
     async raiseBlocker(event: unknown) {
       const context = await scoped(event)
-      return dependencies.service.raiseBlocker(context, routeId(event, 'nodeExecutionId'), body(raiseWorkflowBlockerInputSchema, await readBody(event as never)))
+      await dependencies.service.raiseBlocker(context, routeId(event, 'nodeExecutionId'), body(raiseWorkflowBlockerInputSchema, await readBody(event as never)))
+      return null
     },
     async resolveBlocker(event: unknown) {
       const context = await scoped(event)
-      return dependencies.service.resolveBlocker(context, routeId(event, 'blockerId'), body(resolveWorkflowBlockerInputSchema, await readBody(event as never)))
+      await dependencies.service.resolveBlocker(context, routeId(event, 'blockerId'), body(resolveWorkflowBlockerInputSchema, await readBody(event as never)))
+      return null
     },
   }
 }
