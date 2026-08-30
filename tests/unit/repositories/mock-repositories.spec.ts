@@ -48,6 +48,12 @@ describe('mock repositories', () => {
 
   beforeEach(async () => repositories.prototype.reset())
 
+  it('keeps Stage 01 out of the legacy mock registry', () => {
+    expect(repositories).not.toHaveProperty('opportunities')
+    expect(repositories).not.toHaveProperty('workflow')
+    expect(repositories).not.toHaveProperty('stage01')
+  })
+
   it('keeps exactly one circulating version without erasing approval history', async () => {
     await repositories.drawings.setCurrent('drawing-livingroom-v2')
     const versions = await repositories.drawings.listByStage('stage-design-3d')

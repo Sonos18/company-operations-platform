@@ -39,4 +39,11 @@ describe('ClientError', () => {
     })
     expect(error).not.toHaveProperty('cause')
   })
+
+  it('accepts shared Stage 01 API codes without widening to arbitrary strings', () => {
+    const error = new ClientError({
+      kind: 'api', code: 'VERSION_CONFLICT', message: 'Dữ liệu đã thay đổi.', retryable: false,
+    })
+    expect(error.code).toBe('VERSION_CONFLICT')
+  })
 })
