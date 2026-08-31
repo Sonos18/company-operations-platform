@@ -270,14 +270,14 @@ async function reloadConfiguration(): Promise<void> {
       </div>
 
       <template v-else-if="view.draft && editable">
-        <Stage01TaxonomyEditor
+        <Stage01ConfigStage01TaxonomyEditor
           :model-value="editable.taxonomies"
           :published="view.published.taxonomies"
           :readonly="!canUpdate"
           @update:model-value="editable.taxonomies = $event"
           @update:local-dirty="taxonomyEditorDirty = $event"
         />
-        <Stage01CriteriaEditor
+        <Stage01ConfigStage01CriteriaEditor
           :model-value="editable.criteria"
           :published="view.published.criteria"
           :readonly="!canUpdate"
@@ -287,19 +287,19 @@ async function reloadConfiguration(): Promise<void> {
       </template>
 
       <template v-else>
-        <Stage01TaxonomyEditor
+        <Stage01ConfigStage01TaxonomyEditor
           :model-value="view.published.taxonomies"
           :published="view.published.taxonomies"
           :readonly="true"
         />
-        <Stage01CriteriaEditor
+        <Stage01ConfigStage01CriteriaEditor
           :model-value="view.published.criteria"
           :published="view.published.criteria"
           :readonly="true"
         />
       </template>
 
-      <Stage01SystemConfigViewer :system="view.published.system" />
+      <Stage01ConfigStage01SystemConfigViewer :system="view.published.system" />
 
       <Stage01ConfigActionBar
         :has-draft="hasDraft"

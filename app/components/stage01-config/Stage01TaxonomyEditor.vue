@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { toRaw } from 'vue'
 import {
   stage01BusinessTaxonomiesSchema,
   stage01BusinessTaxonomyKeySchema,
@@ -21,10 +22,10 @@ const emit = defineEmits<{
 }>()
 
 const taxonomyKeys = stage01BusinessTaxonomyKeySchema.options
-const editorValue = ref<Stage01BusinessTaxonomies>(structuredClone(props.modelValue))
+const editorValue = ref<Stage01BusinessTaxonomies>(structuredClone(toRaw(props.modelValue)))
 
 watch(() => props.modelValue, (value) => {
-  editorValue.value = structuredClone(value)
+  editorValue.value = structuredClone(toRaw(value))
   emit('update:localDirty', false)
 }, { deep: true })
 

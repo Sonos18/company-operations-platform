@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { toRaw } from 'vue'
 import {
   stage01CriteriaSchema,
   type Stage01Criteria,
@@ -21,14 +22,14 @@ const emit = defineEmits<{
   'update:localDirty': [value: boolean]
 }>()
 
-const editorValue = ref<Stage01Criteria>(structuredClone(props.modelValue))
+const editorValue = ref<Stage01Criteria>(structuredClone(toRaw(props.modelValue)))
 const publishedKeys = computed(() => new Set(props.published.map(criterion => criterion.key)))
 const dimensionItems = [...stage01DimensionOptions]
 const criticalityItems = [...stage01CriterionCriticalityOptions]
 const applicabilityModeItems = [...stage01ApplicabilityModeOptions]
 
 watch(() => props.modelValue, (value) => {
-  editorValue.value = structuredClone(value)
+  editorValue.value = structuredClone(toRaw(value))
   emit('update:localDirty', false)
 }, { deep: true })
 
