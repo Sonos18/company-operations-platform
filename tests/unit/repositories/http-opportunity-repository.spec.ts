@@ -28,6 +28,9 @@ describe('HTTP Opportunity repository', () => {
     expect(request).toHaveBeenCalledWith(expect.objectContaining({
       url: `/api/companies/${companyId}/opportunities/create-options`, method: 'GET',
     }))
+
+    request.mockImplementationOnce(async ({ schema }: { schema: { parse(value: unknown): unknown } }) => schema.parse({ ...data, draft: {} }))
+    await expect(repository.getCreateOptions()).rejects.toThrow()
   })
 
   it('uses fixed company-scoped list/create routes and strict response schemas', async () => {

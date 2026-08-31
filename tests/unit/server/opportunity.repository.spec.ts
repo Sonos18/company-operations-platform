@@ -29,6 +29,21 @@ describe('Stage 01 Opportunity repository', () => {
     await expect(repository.getCreateOptions(companyId)).rejects.toMatchObject({ statusCode: 500, code: 'INTERNAL_ERROR' })
   })
 
+  it('maps missing published create options to the stable configuration-unavailable app error', async () => {
+    const repository = createSupabaseOpportunityRepository({
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'P0001', message: 'STAGE01_DEFINITION_CONFIG_UNAVAILABLE' },
+      }),
+    } as never)
+
+    await expect(repository.getCreateOptions(companyId)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'STAGE01_DEFINITION_CONFIG_UNAVAILABLE',
+      details: {},
+    })
+  })
+
   it('calls only the explicit bootstrap RPC with server scope and parses its response', async () => {
     const data = {
       opportunityId,

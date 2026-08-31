@@ -58,6 +58,21 @@ insert into public.workflow_definition_snapshots (id, tenant_id, company_id, wor
   ('63000000-0000-4000-8000-000000000031', '63000000-0000-4000-8000-000000000010', '63000000-0000-4000-8000-000000000020', 'vqh.stage01', 2, 1,
    '{"taxonomies":{"customer_type":[{"code":"customer","label":"Khách hàng","semanticKey":"customer_hidden"}],"lead_source":[{"code":"referral","label":"Giới thiệu","behavior":{"requiresReferrer":true,"hidden":"no"}}],"engagement_status":[{"code":"active","label":"Đang trao đổi"}],"budget_status":[{"code":"unknown","label":"Chưa xác định"}],"timeline_status":[{"code":"unknown","label":"Chưa xác định"}],"priority":[{"code":"normal","label":"Bình thường"}],"scope":[{"code":"hidden_scope","label":"Hidden scope"}]},"criteria":[{"key":"hidden"}],"system":{"nodes":[{"key":"hidden"}]}}'::jsonb, 'create-options-v2');
 
+insert into public.workflow_definition_drafts (
+  id, tenant_id, company_id, workflow_key, base_snapshot_id, definition, version,
+  created_by, updated_by
+) values (
+  '63000000-0000-4000-8000-000000000032',
+  '63000000-0000-4000-8000-000000000010',
+  '63000000-0000-4000-8000-000000000020',
+  'vqh.stage01',
+  '63000000-0000-4000-8000-000000000031',
+  '{"taxonomies":{"customer_type":[{"code":"draft_customer","label":"Draft customer"}]},"criteria":[{"key":"draft_only"}]}'::jsonb,
+  3,
+  '63000000-0000-4000-8000-000000000004',
+  '63000000-0000-4000-8000-000000000004'
+);
+
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"63000000-0000-4000-8000-000000000001","role":"authenticated"}', true);
 do $$
@@ -74,6 +89,18 @@ begin
   end if;
 end $$;
 reset role;
+
+do $$
+begin
+  if not exists (
+    select 1
+      from public.workflow_definition_drafts
+     where id = '63000000-0000-4000-8000-000000000032'
+       and definition = '{"taxonomies":{"customer_type":[{"code":"draft_customer","label":"Draft customer"}]},"criteria":[{"key":"draft_only"}]}'::jsonb
+  ) then
+    raise exception 'DB-S01-CREATE-OPTIONS privileged inspection could not find non-empty draft fixture';
+  end if;
+end $$;
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"63000000-0000-4000-8000-000000000002","role":"authenticated"}', true);
@@ -108,8 +135,9 @@ do $$ begin
   exception when sqlstate 'P0001' then
     if sqlerrm <> 'PERMISSION_DENIED' then raise; end if;
   end;
-  if (select count(*) from public.workflow_definition_snapshots) <> 2 then
-    raise exception 'DB-S01-CREATE-OPTIONS existing config read policy changed';
+  if (select count(*) from public.workflow_definition_snapshots) <> 2
+     or (select count(*) from public.workflow_definition_drafts) <> 1 then
+    raise exception 'DB-S01-CREATE-OPTIONS existing config direct-read policy changed';
   end if;
 end $$;
 reset role;

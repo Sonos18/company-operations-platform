@@ -104,6 +104,31 @@ test('does not expose the create action to an opportunity reader without create 
   await expect(page.getByRole('button', { name: 'Tạo cơ hội mới' })).toHaveCount(0)
 })
 
+test('shows create-options loading before a pending options response completes', async ({ page }) => {
+  let resolvePendingResponse: (() => void) | undefined
+  const pendingResponse = new Promise<void>(resolve => { resolvePendingResponse = resolve })
+  let resolveRequestObserved: (() => void) | undefined
+  const requestObserved = new Promise<void>(resolve => { resolveRequestObserved = resolve })
+
+  await installOpportunityListRoute(page, [])
+  await page.route(/\/api\/companies\/[^/]+\/opportunities\/create-options$/, async route => {
+    if (route.request().method() !== 'GET') return route.fallback()
+    resolveRequestObserved?.()
+    await pendingResponse
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(createOptions()) })
+  })
+  await goToOpportunities(page)
+
+  await page.getByRole('button', { name: 'Tạo cơ hội mới' }).click()
+  await requestObserved
+  const dialog = page.getByRole('dialog', { name: 'Tạo cơ hội mới' })
+  await expect(dialog.getByLabel('Đang tải cấu hình tạo cơ hội')).toBeVisible()
+  await expect(dialog.getByRole('textbox', { name: 'Tên khách hàng chính' })).toHaveCount(0)
+
+  resolvePendingResponse?.()
+  await expect(dialog.getByRole('textbox', { name: 'Tên khách hàng chính' })).toBeVisible()
+})
+
 test('keeps the list usable and preserves form values when create-options loading fails after a prior success', async ({ page }) => {
   await installOpportunityListRoute(page, [opportunity()])
   await installCreateOptionsRoute(page, [createOptions(), 500])
