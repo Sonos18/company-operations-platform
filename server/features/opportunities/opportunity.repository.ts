@@ -11,6 +11,7 @@ import {
   opportunityScopeSchema,
   opportunitySummarySchema,
 } from '../../../shared/schemas/opportunities'
+import { opportunityCreateOptionsSchema, type OpportunityCreateOptions } from '../../../shared/schemas/opportunity-create-options'
 import type {
   AddContactMethodInput,
   AddOpportunityReferrerInput,
@@ -48,6 +49,7 @@ import { failStage01Database, mapStage01RpcError } from '../stage01/stage01-erro
 
 export interface OpportunityDataRepository {
   list(companyId: string): Promise<OpportunitySummary[]>
+  getCreateOptions(companyId: string): Promise<OpportunityCreateOptions>
   getById(companyId: string, opportunityId: string): Promise<OpportunityDetail | null>
   create(companyId: string, input: CreateOpportunityInput, requestId: string): Promise<CreateStage01OpportunityResult>
   update(companyId: string, opportunityId: string, input: UpdateOpportunityInput, requestId: string): Promise<OpportunityDetail>
@@ -266,6 +268,9 @@ export function createSupabaseOpportunityRepository(db: UserSupabaseClient): Opp
       const { data, error } = await client.from('opportunities').select(opportunityColumns).eq('company_id', companyId).order('created_at', { ascending: false })
       if (error) return failStage01Database('Không thể đọc danh sách Opportunity.')
       return parse(z.array(opportunityRowSchema), data, 'Không thể đọc danh sách Opportunity.').map(row => mapOpportunity(row) as OpportunitySummary)
+    },
+    async getCreateOptions(companyId) {
+      return rpc('get_stage01_opportunity_create_options', { target_company_id: companyId }, opportunityCreateOptionsSchema, 'Không thể đọc tùy chọn tạo Opportunity.')
     },
     async getById(companyId, opportunityId) {
       const result = await client.from('opportunities').select(opportunityColumns).eq('company_id', companyId).eq('id', opportunityId).maybeSingle()

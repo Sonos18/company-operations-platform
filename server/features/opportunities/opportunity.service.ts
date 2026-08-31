@@ -41,6 +41,11 @@ export function createOpportunityService(repository: OpportunityDataRepository) 
       requirePermission(context, 'opportunity.read')
       return repository.list(context.companyId)
     },
+    async getCreateOptions(context: Stage01ServiceContext) {
+      requirePermission(context, 'opportunity.read')
+      requirePermission(context, 'opportunity.create')
+      return repository.getCreateOptions(context.companyId)
+    },
     async get(context: Stage01ServiceContext, opportunityId: string) {
       requirePermission(context, 'opportunity.read')
       return await repository.getById(context.companyId, opportunityId) ?? notFound()

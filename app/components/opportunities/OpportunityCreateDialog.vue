@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import type { CreateOpportunityInput } from '../../features/opportunities/opportunity.types'
-import type { Stage01BusinessConfigView } from '../../../shared/schemas/stage01-config'
+import type { OpportunityCreateOptions } from '../../../shared/schemas/opportunity-create-options'
 
 const props = defineProps<{
   open: boolean
-  config: Stage01BusinessConfigView | null
+  options: OpportunityCreateOptions | null
   loading: boolean
   error: unknown | null
   submitting: boolean
@@ -56,7 +56,7 @@ function optionalLocationStatus(): CreateOpportunityInput['locationStatus'] {
 
 function submit(): void {
   const name = optional(primaryCustomerName.value)
-  if (!name || props.submitting || !props.config) return
+  if (!name || props.submitting || !props.options) return
   emit('submit', {
     primaryCustomerName: name,
     customerTypeCode: optional(customerTypeCode.value),
@@ -86,19 +86,22 @@ function close(): void {
 <template>
   <UModal v-model:open="dialogOpen" title="Tạo cơ hội mới" description="Ghi nhận cơ hội và khởi tạo Stage 01 theo cấu hình mới nhất." :dismissible="!submitting">
     <template #body>
-      <div v-if="loading" class="opportunity-create__loading" aria-label="Đang tải cấu hình tạo cơ hội"><USkeleton class="h-12 w-full" /><USkeleton class="h-40 w-full" /></div>
-      <UAlert v-else-if="error" role="alert" color="error" variant="subtle" icon="i-lucide-circle-alert" title="Không thể tải cấu hình tạo cơ hội" description="Vui lòng thử lại trước khi tạo cơ hội.">
+      <div v-if="loading && !options" class="opportunity-create__loading" aria-label="Đang tải cấu hình tạo cơ hội"><USkeleton class="h-12 w-full" /><USkeleton class="h-40 w-full" /></div>
+      <UAlert v-else-if="error && !options" role="alert" color="error" variant="subtle" icon="i-lucide-circle-alert" title="Không thể tải cấu hình tạo cơ hội" description="Vui lòng thử lại trước khi tạo cơ hội.">
         <template #actions><UButton color="error" variant="outline" @click="emit('retry')">Thử lại</UButton></template>
       </UAlert>
-      <form v-else-if="config" class="opportunity-create" @submit.prevent="submit">
+      <form v-else-if="options" class="opportunity-create" @submit.prevent="submit">
+        <UAlert v-if="error" role="alert" color="error" variant="subtle" icon="i-lucide-circle-alert" title="Không thể làm mới tùy chọn tạo cơ hội" description="Các lựa chọn đã tải trước đó vẫn được giữ nguyên.">
+          <template #actions><UButton color="error" variant="outline" @click="emit('retry')">Thử lại</UButton></template>
+        </UAlert>
         <div class="opportunity-create__intro"><p class="eyebrow">Cơ hội mới</p><p>Danh mục bên dưới được lấy từ cấu hình Stage 01 đang xuất bản.</p></div>
         <label>Tên khách hàng chính<input v-model="primaryCustomerName" name="primaryCustomerName" required autocomplete="organization"></label>
-        <label>Loại khách hàng<select v-model="customerTypeCode" name="customerTypeCode"><option value="">Chưa xác định</option><option v-for="item in config.published.taxonomies.customer_type" :key="item.code" :value="item.code">{{ item.label }}</option></select></label>
+        <label>Loại khách hàng<select v-model="customerTypeCode" name="customerTypeCode"><option value="">Chưa xác định</option><option v-for="item in options.taxonomies.customer_type" :key="item.code" :value="item.code">{{ item.label }}</option></select></label>
         <label>Nhu cầu<input v-model="needDescription" name="needDescription"></label>
         <div class="opportunity-create__two"><label>Trạng thái vị trí<select v-model="locationStatus" name="locationStatus"><option value="">Chưa xác định</option><option value="unknown">Chưa rõ</option><option value="area_known">Đã biết khu vực</option><option value="relative">Tương đối</option><option value="exact">Chính xác</option></select></label><label>Vị trí<input v-model="locationText" name="locationText"></label></div>
-        <div class="opportunity-create__two"><label>Nguồn khách hàng<select v-model="primaryLeadSourceCode" name="primaryLeadSourceCode"><option value="">Chưa xác định</option><option v-for="item in config.published.taxonomies.lead_source" :key="item.code" :value="item.code">{{ item.label }}</option></select></label><label>Mức độ tương tác<select v-model="engagementStatusCode" name="engagementStatusCode"><option value="">Chưa xác định</option><option v-for="item in config.published.taxonomies.engagement_status" :key="item.code" :value="item.code">{{ item.label }}</option></select></label></div>
-        <fieldset><legend>Ngân sách</legend><div class="opportunity-create__two"><label>Trạng thái ngân sách<select v-model="budgetStatusCode" name="budgetStatusCode"><option value="">Chưa xác định</option><option v-for="item in config.published.taxonomies.budget_status" :key="item.code" :value="item.code">{{ item.label }}</option></select></label><label>Đơn vị tiền tệ<input v-model="currencyCode" name="currencyCode" maxlength="3" placeholder="VND"></label><label>Ngân sách từ<input v-model="budgetMin" name="budgetMin" type="number" min="0"></label><label>Ngân sách đến<input v-model="budgetMax" name="budgetMax" type="number" min="0"></label></div><label>Ghi chú ngân sách<input v-model="budgetNote" name="budgetNote"></label></fieldset>
-        <fieldset><legend>Tiến độ</legend><div class="opportunity-create__two"><label>Trạng thái tiến độ<select v-model="timelineStatusCode" name="timelineStatusCode"><option value="">Chưa xác định</option><option v-for="item in config.published.taxonomies.timeline_status" :key="item.code" :value="item.code">{{ item.label }}</option></select></label><label>Mức độ ưu tiên<select v-model="priorityCode" name="priorityCode"><option value="">Chưa xác định</option><option v-for="item in config.published.taxonomies.priority" :key="item.code" :value="item.code">{{ item.label }}</option></select></label><label>Ngày bắt đầu<input v-model="timelineStartDate" name="timelineStartDate" type="date"></label><label>Ngày kết thúc<input v-model="timelineEndDate" name="timelineEndDate" type="date"></label></div><label>Ghi chú tiến độ<input v-model="timelineNote" name="timelineNote"></label></fieldset>
+        <div class="opportunity-create__two"><label>Nguồn khách hàng<select v-model="primaryLeadSourceCode" name="primaryLeadSourceCode"><option value="">Chưa xác định</option><option v-for="item in options.taxonomies.lead_source" :key="item.code" :value="item.code">{{ item.label }}</option></select></label><label>Mức độ tương tác<select v-model="engagementStatusCode" name="engagementStatusCode"><option value="">Chưa xác định</option><option v-for="item in options.taxonomies.engagement_status" :key="item.code" :value="item.code">{{ item.label }}</option></select></label></div>
+        <fieldset><legend>Ngân sách</legend><div class="opportunity-create__two"><label>Trạng thái ngân sách<select v-model="budgetStatusCode" name="budgetStatusCode"><option value="">Chưa xác định</option><option v-for="item in options.taxonomies.budget_status" :key="item.code" :value="item.code">{{ item.label }}</option></select></label><label>Đơn vị tiền tệ<input v-model="currencyCode" name="currencyCode" maxlength="3" placeholder="VND"></label><label>Ngân sách từ<input v-model="budgetMin" name="budgetMin" type="number" min="0"></label><label>Ngân sách đến<input v-model="budgetMax" name="budgetMax" type="number" min="0"></label></div><label>Ghi chú ngân sách<input v-model="budgetNote" name="budgetNote"></label></fieldset>
+        <fieldset><legend>Tiến độ</legend><div class="opportunity-create__two"><label>Trạng thái tiến độ<select v-model="timelineStatusCode" name="timelineStatusCode"><option value="">Chưa xác định</option><option v-for="item in options.taxonomies.timeline_status" :key="item.code" :value="item.code">{{ item.label }}</option></select></label><label>Mức độ ưu tiên<select v-model="priorityCode" name="priorityCode"><option value="">Chưa xác định</option><option v-for="item in options.taxonomies.priority" :key="item.code" :value="item.code">{{ item.label }}</option></select></label><label>Ngày bắt đầu<input v-model="timelineStartDate" name="timelineStartDate" type="date"></label><label>Ngày kết thúc<input v-model="timelineEndDate" name="timelineEndDate" type="date"></label></div><label>Ghi chú tiến độ<input v-model="timelineNote" name="timelineNote"></label></fieldset>
         <div class="opportunity-create__actions"><UButton color="neutral" variant="outline" type="button" :disabled="submitting" @click="close">Hủy</UButton><UButton type="submit" :loading="submitting">Tạo cơ hội</UButton></div>
       </form>
     </template>

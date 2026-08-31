@@ -16,6 +16,7 @@ const STAGE01_TEST_FILES = [
   'supabase/tests/database/stage01_config_schema.test.sql',
   'supabase/tests/database/stage01_config_security.test.sql',
   'supabase/tests/database/stage01_config_commands.test.sql',
+  'supabase/tests/database/stage01_opportunity_create_options_security.test.sql',
 ]
 const VQH_RLS_SMOKE_SQL = String.raw`begin;
 do $$

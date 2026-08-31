@@ -16,6 +16,7 @@ import type {
   SetPrimaryContactInput, SetPrimaryReferrerInput, UpdateContactInput,
   UpdateContactMethodInput, UpdateOpportunityInput,
 } from '../features/opportunities/opportunity.types'
+import type { OpportunityCreateOptions } from '../../shared/schemas/opportunity-create-options'
 import type {
   AssignWorkflowNodeInput, CompleteWorkflowNodeInput, EndWorkflowAssignmentInput,
   RaiseWorkflowBlockerInput, ReopenWorkflowNodeInput, ResolveWorkflowBlockerInput,
@@ -69,6 +70,7 @@ export interface PrototypeRepository {
 
 export interface OpportunityRepository {
   list(): Promise<OpportunitySummary[]>
+  getCreateOptions(): Promise<OpportunityCreateOptions>
   getById(id: string): Promise<OpportunityDetail | null>
   create(input: CreateOpportunityInput): Promise<CreateStage01OpportunityResult>
   update(id: string, input: UpdateOpportunityInput): Promise<OpportunityDetail>

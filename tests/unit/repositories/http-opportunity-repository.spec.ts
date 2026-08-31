@@ -8,6 +8,28 @@ const requestId = '81000000-0000-4000-8000-000000000099'
 const timestamp = '2026-08-30T00:00:00.000Z'
 
 describe('HTTP Opportunity repository', () => {
+  it('uses the narrow company-scoped create-options endpoint and rejects widened responses', async () => {
+    const data = {
+      workflowKey: 'vqh.stage01',
+      publishedSnapshotId: '81000000-0000-4000-8000-000000000050',
+      taxonomies: {
+        customer_type: [{ code: 'customer', label: 'Khách hàng' }],
+        lead_source: [{ code: 'referral', label: 'Giới thiệu', behavior: { requiresReferrer: true } }],
+        engagement_status: [{ code: 'active', label: 'Đang trao đổi' }],
+        budget_status: [{ code: 'unknown', label: 'Chưa xác định' }],
+        timeline_status: [{ code: 'unknown', label: 'Chưa xác định' }],
+        priority: [{ code: 'normal', label: 'Bình thường' }],
+      },
+    }
+    const request = vi.fn(async ({ schema }: { schema: { parse(value: unknown): unknown } }) => schema.parse(data))
+    const repository = createHttpOpportunityRepository({ companyId, client: { request } as never })
+
+    await expect(repository.getCreateOptions()).resolves.toEqual(data)
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      url: `/api/companies/${companyId}/opportunities/create-options`, method: 'GET',
+    }))
+  })
+
   it('uses fixed company-scoped list/create routes and strict response schemas', async () => {
     const responses: unknown[] = [[{
       id: opportunityId, validityState: 'valid', canonicalOpportunityId: null,

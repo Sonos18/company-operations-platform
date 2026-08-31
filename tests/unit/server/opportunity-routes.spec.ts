@@ -68,6 +68,14 @@ describe('Stage 01 Opportunity routes', () => {
     expect(create).toHaveBeenCalledWith(context, { primaryCustomerName: 'VQH Lead' })
   })
 
+  it('forwards the company-scoped create-options request without a client body', async () => {
+    const getCreateOptions = vi.fn().mockResolvedValue({ workflowKey: 'vqh.stage01' })
+    const resolveContext = vi.fn().mockResolvedValue(context)
+    await createOpportunityRoutes({ resolveContext, service: { getCreateOptions } as never }).getCreateOptions({})
+    expect(resolveContext).toHaveBeenCalledWith(expect.anything(), companyId)
+    expect(getCreateOptions).toHaveBeenCalledWith(context)
+  })
+
   it.each(['companyId', 'tenantId', 'actorId', 'permissions', 'decisionAuthorityUserId'])(
     'rejects client-supplied scope field %s', async field => {
     readBody.mockResolvedValue({ primaryCustomerName: 'VQH Lead', [field]: companyId })

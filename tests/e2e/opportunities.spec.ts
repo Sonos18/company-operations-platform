@@ -1,13 +1,13 @@
 import type { Page } from '@playwright/test'
 import { createCompany } from './fixtures/auth-routes'
 import { expect, test } from './fixtures/authenticated'
-import { createStage01ConfigView, installStage01ConfigRoutes } from './fixtures/stage01-config'
 import {
   createOpportunityInputSchema,
   createStage01OpportunityResultSchema,
   opportunitySummarySchema,
   type OpportunitySummary,
 } from '../../shared/schemas/opportunities'
+import { opportunityCreateOptionsSchema, type OpportunityCreateOptions } from '../../shared/schemas/opportunity-create-options'
 
 const opportunityId = '80000000-0000-4000-8000-000000000001'
 const timestamp = '2026-08-31T00:00:00.000Z'
@@ -46,6 +46,33 @@ async function goToOpportunities(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/opportunities$/)
 }
 
+function createOptions(): OpportunityCreateOptions {
+  return opportunityCreateOptionsSchema.parse({
+    workflowKey: 'vqh.stage01',
+    publishedSnapshotId: '80000000-0000-4000-8000-000000000050',
+    taxonomies: {
+      customer_type: [{ code: 'customer', label: 'Khách hàng' }],
+      lead_source: [{ code: 'referral', label: 'Giới thiệu', behavior: { requiresReferrer: true } }],
+      engagement_status: [{ code: 'active', label: 'Đang trao đổi' }],
+      budget_status: [{ code: 'unknown', label: 'Chưa xác định' }],
+      timeline_status: [{ code: 'unknown', label: 'Chưa xác định' }],
+      priority: [{ code: 'normal', label: 'Bình thường' }],
+    },
+  })
+}
+
+async function installCreateOptionsRoute(page: Page, responses: Array<OpportunityCreateOptions | 500>): Promise<void> {
+  await page.route(/\/api\/companies\/[^/]+\/opportunities\/create-options$/, async route => {
+    if (route.request().method() !== 'GET') return route.fallback()
+    const response = responses.shift() ?? 500
+    if (response === 500) {
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'Lỗi kiểm thử', requestId: 'create-options-error', details: {} } }) })
+      return
+    }
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(response) })
+  })
+}
+
 test('gates the opportunity navigation and route on opportunity.read only', async ({ page, authState }) => {
   authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'opportunity.create'] })]
 
@@ -70,6 +97,31 @@ test('loads opportunity summaries and exposes a keyboard-accessible create actio
   await create.focus()
 })
 
+test('does not expose the create action to an opportunity reader without create permission', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'opportunity.read'] })]
+  await installOpportunityListRoute(page, [])
+  await goToOpportunities(page)
+  await expect(page.getByRole('button', { name: 'Tạo cơ hội mới' })).toHaveCount(0)
+})
+
+test('keeps the list usable and preserves form values when create-options loading fails after a prior success', async ({ page }) => {
+  await installOpportunityListRoute(page, [opportunity()])
+  await installCreateOptionsRoute(page, [createOptions(), 500])
+  await goToOpportunities(page)
+
+  await page.getByRole('button', { name: 'Tạo cơ hội mới' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Tạo cơ hội mới' })
+  const customerName = dialog.getByRole('textbox', { name: 'Tên khách hàng chính' })
+  await customerName.fill('Khách hàng cần giữ lại')
+  await dialog.getByRole('button', { name: 'Hủy' }).click()
+  await expect(page.getByTestId('opportunity-list')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Tạo cơ hội mới' }).click()
+  await expect(dialog.getByRole('alert').filter({ hasText: 'Không thể làm mới tùy chọn tạo cơ hội' })).toBeVisible()
+  await expect(customerName).toHaveValue('Khách hàng cần giữ lại')
+  await expect(page.getByTestId('opportunity-list')).toBeVisible()
+})
+
 test('shows an empty state and a retryable list error', async ({ page }) => {
   await installOpportunityListRoute(page, [])
   await goToOpportunities(page)
@@ -83,16 +135,11 @@ test('shows an empty state and a retryable list error', async ({ page }) => {
   await expect(listError.getByRole('button', { name: 'Thử lại' })).toBeVisible()
 })
 
-test('loads the latest Stage 01 config only for a new opportunity and navigates after create', async ({ page, authState }) => {
+test('loads narrow create options for a new opportunity and navigates after create', async ({ page, authState }) => {
   authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'opportunity.read', 'opportunity.create'] })]
   const requests: Array<{ method: string, body: unknown }> = []
   await installOpportunityListRoute(page, [])
-  await installStage01ConfigRoutes(page, {
-    view: createStage01ConfigView(),
-    requests: [],
-    nextFailure: null,
-    initialConfigUnavailable: false,
-  })
+  await installCreateOptionsRoute(page, [createOptions()])
   await page.route(/\/api\/companies\/[^/]+\/opportunities$/, async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({ contentType: 'application/json', body: '[]' })

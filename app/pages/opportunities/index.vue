@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import type { CreateOpportunityInput, OpportunitySummary } from '../../features/opportunities/opportunity.types'
-import type { Stage01BusinessConfigView } from '../../../shared/schemas/stage01-config'
+import type { OpportunityCreateOptions } from '../../../shared/schemas/opportunity-create-options'
 
 definePageMeta({ requiredPermission: 'opportunity.read' })
 
 const repositories = useRepositories()
 const companyAccessStore = useNuxtApp().$companyAccessStore
 const createOpen = ref(false)
-const createConfig = ref<Stage01BusinessConfigView | null>(null)
+const createOptions = ref<OpportunityCreateOptions | null>(null)
 const createConfigError = ref<unknown | null>(null)
 const createConfigLoading = ref(false)
 const submitting = ref(false)
@@ -27,14 +27,13 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
-async function loadCreateConfig(): Promise<void> {
+async function loadCreateOptions(): Promise<void> {
   createConfigLoading.value = true
   createConfigError.value = null
   try {
-    createConfig.value = await repositories.stage01Config.get()
+    createOptions.value = await repositories.opportunities.getCreateOptions()
   }
   catch (caught) {
-    createConfig.value = null
     createConfigError.value = caught
   }
   finally {
@@ -46,8 +45,7 @@ async function openCreate(): Promise<void> {
   if (!canCreate.value) return
   createOpen.value = true
   createError.value = null
-  createConfig.value = null
-  await loadCreateConfig()
+  await loadCreateOptions()
 }
 
 async function createOpportunity(input: CreateOpportunityInput): Promise<void> {
@@ -80,7 +78,7 @@ async function createOpportunity(input: CreateOpportunityInput): Promise<void> {
     <UAlert v-else color="neutral" variant="subtle" icon="i-lucide-target" title="Chưa có cơ hội" description="Tạo cơ hội mới để bắt đầu quy trình Stage 01." />
     <UAlert v-if="createError" role="alert" color="error" variant="subtle" icon="i-lucide-circle-alert" title="Không thể tạo cơ hội" :description="errorMessage(createError, 'Vui lòng thử lại.')" />
 
-    <OpportunitiesOpportunityCreateDialog v-model:open="createOpen" :config="createConfig" :loading="createConfigLoading" :error="createConfigError" :submitting="submitting" @retry="loadCreateConfig" @submit="createOpportunity" />
+    <OpportunitiesOpportunityCreateDialog v-model:open="createOpen" :options="createOptions" :loading="createConfigLoading" :error="createConfigError" :submitting="submitting" @retry="loadCreateOptions" @submit="createOpportunity" />
   </section>
 </template>
 

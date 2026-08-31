@@ -59,6 +59,10 @@ export function createOpportunityRoutes(dependencies: OpportunityRouteDependenci
       const { context } = await scoped(event)
       return dependencies.service.list(context)
     },
+    async getCreateOptions(event: unknown) {
+      const { context } = await scoped(event)
+      return dependencies.service.getCreateOptions(context)
+    },
     async get(event: unknown) {
       const { context } = await scoped(event)
       return dependencies.service.get(context, routeId(event, 'opportunityId'))

@@ -2084,6 +2084,10 @@ export type Database = {
           roles: string[]
         }[]
       }
+      get_stage01_opportunity_create_options: {
+        Args: { target_company_id: string }
+        Returns: Json
+      }
       grant_company_role_assignment: {
         Args: {
           target_company_id: string
