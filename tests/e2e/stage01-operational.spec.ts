@@ -89,3 +89,28 @@ test('requires an explicit draft decision after VERSION_CONFLICT and rehydrates 
     expectedOpportunityVersion: 4,
   })
 })
+
+test('keeps a retained conflicted Opportunity draft inspection-only until it is discarded and reloaded', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.update'] })]
+  const detail = createStage01OperationalDetail()
+  const updateRequests: Record<string, unknown>[] = []
+  await installStage01OperationalRoutes(page, detail)
+  await page.route(new RegExp(`/api/companies/[^/]+/opportunities/${stage01OpportunityId}$`), async route => {
+    if (route.request().method() !== 'PATCH') return route.fallback()
+    updateRequests.push(JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>)
+    await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify(versionConflictBody()) })
+  })
+  await goToWorkspace(page)
+  await page.getByRole('button', { name: 'Chỉnh sửa cơ hội' }).click()
+  await page.getByRole('textbox', { name: 'Tên khách hàng chính' }).fill('Tên bản nháp xung đột')
+  await page.getByRole('button', { name: 'Lưu cơ hội' }).click()
+  await expect(page.getByRole('button', { name: 'Giữ bản nháp để xem' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Giữ bản nháp để xem' }).click()
+  const save = page.getByRole('button', { name: 'Lưu cơ hội' })
+  await expect(save).toBeDisabled()
+  await expect(page.getByText('Bản nháp chỉ dùng để xem. Hãy bỏ bản nháp và tải lại trước khi lưu tiếp.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Bỏ bản nháp và tải lại' })).toBeVisible()
+  await save.evaluate((button: HTMLButtonElement) => button.click())
+  await expect.poll(() => updateRequests).toHaveLength(1)
+})

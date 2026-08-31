@@ -27,6 +27,7 @@ const resolvingConcernId = ref<string | null>(null)
 const canonicalOptions = ref<Awaited<ReturnType<typeof repositories.opportunities.list>> | null>(null)
 const opportunityEditorVersion = ref<number | null>(null)
 const opportunityConflict = ref(false)
+const opportunityDraftInspectionOnly = ref(false)
 
 function opportunityDraft(source: Stage01OperationalDetail['opportunity']) {
   return {
@@ -91,6 +92,7 @@ async function command(label: string, action: () => Promise<unknown>): Promise<b
 }
 
 async function saveOpportunity(): Promise<void> {
+  if (opportunityDraftInspectionOnly.value) return
   const didSave = await command('Đã lưu thông tin cơ hội chính tắc.', () => repositories.opportunities.update(props.detail.opportunity.id, {
     primaryCustomerName: opportunity.primaryCustomerName.trim() || undefined, needDescription: opportunity.needDescription.trim() || undefined,
     customerTypeCode: opportunity.customerTypeCode || undefined, primaryLeadSourceCode: opportunity.primaryLeadSourceCode || undefined,
@@ -219,13 +221,16 @@ function toggleOpportunityEditor(): void {
   if (editingOpportunity.value) {
     editingOpportunity.value = false
     opportunityEditorVersion.value = null
+    opportunityDraftInspectionOnly.value = false
     return
   }
   rehydrateOpportunityDraft()
+  opportunityDraftInspectionOnly.value = false
   editingOpportunity.value = true
 }
 function retainOpportunityDraft(): void {
   opportunityConflict.value = false
+  opportunityDraftInspectionOnly.value = true
   clearNotice()
 }
 async function discardOpportunityDraftAndReload(): Promise<void> {
@@ -234,6 +239,7 @@ async function discardOpportunityDraftAndReload(): Promise<void> {
   await nextTick()
   rehydrateOpportunityDraft()
   opportunityConflict.value = false
+  opportunityDraftInspectionOnly.value = false
 }
 function toggleInvalidation(): void { invalidating.value = !invalidating.value }
 function toggleRestore(): void { restoring.value = !restoring.value }
@@ -257,11 +263,14 @@ function onResolutionChange(): void { if (resolution.resolution === 'same_need')
         <UButton v-else color="error" variant="outline" @click="reloadCanonical">Tải lại chính tắc</UButton>
       </template>
     </UAlert>
+    <UAlert v-if="opportunityDraftInspectionOnly" color="warning" variant="subtle" icon="i-lucide-eye" title="Bản nháp đang ở chế độ chỉ xem" description="Bản nháp chỉ dùng để xem. Hãy bỏ bản nháp và tải lại trước khi lưu tiếp.">
+      <template #actions><UButton color="warning" @click="discardOpportunityDraftAndReload">Bỏ bản nháp và tải lại</UButton></template>
+    </UAlert>
     <UAlert v-if="success" color="success" variant="subtle" icon="i-lucide-circle-check" :title="success" />
 
     <article class="intake-controls__card">
       <header><div><p class="eyebrow">Cơ hội</p><h2>Thông tin và hiệu lực</h2></div><div class="intake-controls__actions"><UButton v-if="canUpdate" size="sm" variant="outline" @click="toggleOpportunityEditor">Chỉnh sửa cơ hội</UButton><UButton v-if="canInvalidate && detail.opportunity.validityState === 'valid'" size="sm" color="error" variant="outline" @click="toggleInvalidation">Làm mất hiệu lực</UButton><UButton v-if="canRestore && detail.opportunity.validityState === 'invalid'" size="sm" color="primary" variant="outline" @click="toggleRestore">Khôi phục hiệu lực</UButton></div></header>
-      <form v-if="editingOpportunity" class="intake-controls__form" @submit.prevent="saveOpportunity"><label>Tên khách hàng chính<input v-model="opportunity.primaryCustomerName" required></label><label>Nhu cầu<input v-model="opportunity.needDescription"></label><label>Trạng thái vị trí<select v-model="opportunity.locationStatus"><option value="unknown">Chưa rõ</option><option value="area_known">Đã biết khu vực</option><option value="relative">Tương đối</option><option value="exact">Chính xác</option></select></label><label>Vị trí<input v-model="opportunity.locationText"></label><label>Loại khách hàng<select v-model="opportunity.customerTypeCode"><option value="">Chưa xác định</option><option v-for="entry in detail.configuration.taxonomies.customer_type" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Nguồn khách hàng<select v-model="opportunity.primaryLeadSourceCode"><option value="">Chưa xác định</option><option v-for="entry in detail.configuration.taxonomies.lead_source" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Mức độ tương tác<select v-model="opportunity.engagementStatusCode"><option value="">Chưa xác định</option><option v-for="entry in detail.configuration.taxonomies.engagement_status" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Trạng thái ngân sách<select v-model="opportunity.budgetStatusCode"><option value="">Chưa xác định</option><option v-for="entry in detail.configuration.taxonomies.budget_status" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Ngân sách từ<input v-model="opportunity.budgetMin" type="number" min="0"></label><label>Ngân sách đến<input v-model="opportunity.budgetMax" type="number" min="0"></label><label>Tiền tệ<input v-model="opportunity.currencyCode" maxlength="3"></label><label>Ghi chú ngân sách<input v-model="opportunity.budgetNote"></label><label>Trạng thái tiến độ<select v-model="opportunity.timelineStatusCode"><option value="">Chưa xác định</option><option v-for="entry in detail.configuration.taxonomies.timeline_status" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Ngày bắt đầu<input v-model="opportunity.timelineStartDate" type="date"></label><label>Ngày kết thúc<input v-model="opportunity.timelineEndDate" type="date"></label><label>Ghi chú tiến độ<input v-model="opportunity.timelineNote"></label><label>Ưu tiên<select v-model="opportunity.priorityCode"><option value="">Chưa xác định</option><option v-for="entry in detail.configuration.taxonomies.priority" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><UButton type="submit">Lưu cơ hội</UButton></form>
+      <form v-if="editingOpportunity" class="intake-controls__form" @submit.prevent="saveOpportunity"><label>Tên khách hàng chính<input v-model="opportunity.primaryCustomerName" required></label><label>Nhu cầu<input v-model="opportunity.needDescription"></label><label>Trạng thái vị trí<select v-model="opportunity.locationStatus"><option value="unknown">Chưa rõ</option><option value="area_known">Đã biết khu vực</option><option value="relative">Tương đối</option><option value="exact">Chính xác</option></select></label><label>Vị trí<input v-model="opportunity.locationText"></label><label>Loại khách hàng<select v-model="opportunity.customerTypeCode"><option value="">Chưa xác định</option><option v-for="entry in detail.configuration.taxonomies.customer_type" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Nguồn khách hàng<select v-model="opportunity.primaryLeadSourceCode"><option value="">Chưa xác định</option><option v-for="entry in detail.configuration.taxonomies.lead_source" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Mức độ tương tác<select v-model="opportunity.engagementStatusCode"><option value="">Chưa xác định</option><option v-for="entry in detail.configuration.taxonomies.engagement_status" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Trạng thái ngân sách<select v-model="opportunity.budgetStatusCode"><option value="">Chưa xác định</option><option v-for="entry in detail.configuration.taxonomies.budget_status" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Ngân sách từ<input v-model="opportunity.budgetMin" type="number" min="0"></label><label>Ngân sách đến<input v-model="opportunity.budgetMax" type="number" min="0"></label><label>Tiền tệ<input v-model="opportunity.currencyCode" maxlength="3"></label><label>Ghi chú ngân sách<input v-model="opportunity.budgetNote"></label><label>Trạng thái tiến độ<select v-model="opportunity.timelineStatusCode"><option value="">Chưa xác định</option><option v-for="entry in detail.configuration.taxonomies.timeline_status" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Ngày bắt đầu<input v-model="opportunity.timelineStartDate" type="date"></label><label>Ngày kết thúc<input v-model="opportunity.timelineEndDate" type="date"></label><label>Ghi chú tiến độ<input v-model="opportunity.timelineNote"></label><label>Ưu tiên<select v-model="opportunity.priorityCode"><option value="">Chưa xác định</option><option v-for="entry in detail.configuration.taxonomies.priority" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><UButton type="submit" :disabled="opportunityDraftInspectionOnly">Lưu cơ hội</UButton></form>
       <form v-if="invalidating" class="intake-controls__form" @submit.prevent="invalidate"><label>Lý do làm mất hiệu lực<select v-model="invalidReasonCode" required><option disabled value="">Chọn lý do</option><option v-for="entry in detail.configuration.taxonomies.invalid_reason" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Diễn giải<textarea v-model="invalidReason" required /></label><UButton type="submit" color="error">Xác nhận làm mất hiệu lực</UButton></form>
       <form v-if="restoring" class="intake-controls__form" @submit.prevent="restore"><label>Lý do khôi phục<textarea v-model="restoreReason" required /></label><UButton type="submit">Xác nhận khôi phục</UButton></form>
     </article>
