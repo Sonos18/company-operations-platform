@@ -57,6 +57,48 @@ test('gates the header link and direct route on stage01.config.read', async ({ p
   expect(state.requests).toEqual([])
 })
 
+test('renders a no-draft published configuration read-only for a read-only administrator', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['stage01.config.read'] })]
+  const state = configState()
+  await installStage01ConfigRoutes(page, state)
+
+  await page.goto('/settings/stage-01')
+
+  const customerType = page.locator('.taxonomy-group').filter({ has: page.getByRole('heading', { name: 'Loại khách hàng', exact: true }) })
+  await expect(customerType.getByText('Khách hàng', { exact: true })).toBeVisible()
+  const firstCriterion = page.locator('.criterion-card').first()
+  await expect(firstCriterion.locator('code').filter({ hasText: 'customer_need' })).toBeVisible()
+  await expect(page.locator('.taxonomy-editor input')).toHaveCount(0)
+  await expect(page.locator('.criteria-editor input')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Bắt đầu chỉnh sửa' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^Thêm giá trị/u })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Thêm tiêu chí' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^Xóa/u })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Lưu bản nháp' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Hủy bản nháp' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Xuất bản', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('complementary', { name: 'Thao tác bản nháp' })).toHaveCount(0)
+})
+
+test('keeps a no-draft configuration read-only until an updater creates the draft', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['stage01.config.read', 'stage01.config.update'] })]
+  const state = configState()
+  await installStage01ConfigRoutes(page, state)
+
+  await page.goto('/settings/stage-01')
+
+  const customerType = page.locator('.taxonomy-group').filter({ has: page.getByRole('heading', { name: 'Loại khách hàng', exact: true }) })
+  await expect(customerType.getByText('Khách hàng', { exact: true })).toBeVisible()
+  await expect(page.locator('.criteria-editor').first().locator('.criterion-card').first().locator('code').filter({ hasText: 'customer_need' })).toBeVisible()
+  await expect(page.locator('.taxonomy-editor input')).toHaveCount(0)
+  await expect(page.locator('.criteria-editor input')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Bắt đầu chỉnh sửa' }).click()
+
+  await expect(customerType.getByRole('textbox', { name: 'Nhãn Loại khách hàng: Khách hàng' })).toBeEditable()
+  await expect(page.locator('.criterion-card').first().getByRole('textbox', { name: 'Nhãn hiển thị' })).toBeEditable()
+  await expect(page.getByRole('complementary', { name: 'Thao tác bản nháp' })).toBeVisible()
+})
+
 test('resumes an existing draft as a publisher without update permission', async ({ page, authState }) => {
   const state = configState()
   authState.sessionCompanies = [createCompany()]

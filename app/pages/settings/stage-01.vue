@@ -269,7 +269,7 @@ async function reloadConfiguration(): Promise<void> {
         </UButton>
       </div>
 
-      <template v-else-if="view.draft && editable">
+      <template v-if="view.draft && editable">
         <Stage01ConfigStage01TaxonomyEditor
           :model-value="editable.taxonomies"
           :published="view.published.taxonomies"
