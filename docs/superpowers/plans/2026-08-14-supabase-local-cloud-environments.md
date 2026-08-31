@@ -162,7 +162,7 @@ git commit -m "build: separate Supabase environment targets"
 
 **Files:**
 - Modify: `README.md`
-- Modify: `docs/development/backend-local.md`
+- Modify: `docs/development/backend-cloud-dev.md`
 - Create: `docs/deployment/supabase-cloud-vercel.md`
 
 **Interfaces:**
@@ -171,7 +171,7 @@ git commit -m "build: separate Supabase environment targets"
 
 - [ ] **Step 1: Update the local-development runbook**
 
-Change `docs/development/backend-local.md` so first startup is:
+Change `docs/development/backend-cloud-dev.md` so first startup is:
 
 ```powershell
 pnpm install
@@ -253,7 +253,7 @@ Add a concise “Môi trường Supabase” section to `README.md`:
 - Database delivery: local Supabase CLI linked to the VQH Cloud project.
 - Production app: Supabase Cloud variables supplied by Vercel Production.
 
-See [Local backend development](docs/development/backend-local.md) and [Supabase Cloud and Vercel production](docs/deployment/supabase-cloud-vercel.md).
+See [Cloud DEV backend development](../../development/backend-cloud-dev.md) and [Supabase Cloud and Vercel production](../../deployment/supabase-cloud-vercel.md).
 ```
 
 - [ ] **Step 4: Verify local environment and regression suite**
@@ -299,6 +299,6 @@ Expected: the first scan finds only explanatory “do not use” documentation, 
 - [ ] **Step 7: Commit Task 2**
 
 ```powershell
-git add README.md docs/development/backend-local.md docs/deployment/supabase-cloud-vercel.md
+git add README.md docs/development/backend-cloud-dev.md docs/deployment/supabase-cloud-vercel.md
 git commit -m "docs: add Supabase Cloud deployment runbook"
 ```

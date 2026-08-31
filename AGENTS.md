@@ -96,7 +96,6 @@ Codex MUST stop when implementation requires:
 
 - `read_only`: allowed by default.
 - `workspace_mutating`: allowed only when required by the task; resulting tracked changes MUST be reviewed.
-- `local_db_destructive`: requires explicit packet authorization.
 - `cloud_dev_mutating`: defaults to false and requires explicit packet authorization.
 - `production_mutating`: always requires separate, current authorization from Sơn.
 - Deployment and destructive production operations always require separate authorization.
@@ -113,14 +112,13 @@ Current command matrix:
 | `pnpm verify:app` | `read_only` | Unit, typecheck, lint, and build |
 | `pnpm db:dev:types` | `workspace_mutating` | May update tracked generated database types |
 | `pnpm verify:dev` | `workspace_mutating` | May update tracked generated database types |
-| `pnpm db:local:reset` | `local_db_destructive` | Resets the local database |
-| `pnpm verify:backend:local` | `local_db_destructive` | Includes a local database reset |
 | `pnpm db:dev:push` | `cloud_dev_mutating` | Pushes migrations to Supabase Cloud DEV |
 
 `package.json` is the command source of truth. Update this matrix when scripts change.
 
 ## Environment safety
 
+- Supabase Cloud DEV is the only supported development database target. If required Cloud DEV access is unavailable or unauthorized, Codex must BLOCK rather than fall back to a Local DB.
 - Supabase Cloud DEV and production are separate authorization boundaries.
 - A normal implementation packet never implies production database, deployment, or destructive production authorization.
 - Secrets MUST NOT be printed or committed.

@@ -15,7 +15,7 @@ Copy `.env.example` to the ignored `.env.local` and set:
 
 The application URL must be an absolute origin without credentials, query, or fragment. HTTPS is mandatory except for `localhost` and `127.0.0.1`. Taskovia derives the callback as `<origin>/auth/callback`; it never trusts a request `Host` header for this value.
 
-Cloud DEV CLI operations use only `SUPABASE_DEV_ACCESS_TOKEN` from ignored `.supabase.dev.env.local`, as described in [Cloud DEV backend development](../development/backend-local.md). The PAT is not an application variable. Never put a PAT, service-role key, access token, refresh token, password, or email token in source control, logs, tickets, screenshots, or shell history.
+Cloud DEV CLI operations use only `SUPABASE_DEV_ACCESS_TOKEN` from ignored `.supabase.dev.env.local`, as described in [Cloud DEV backend development](../development/backend-cloud-dev.md). The PAT is not an application variable. Never put a PAT, service-role key, access token, refresh token, password, or email token in source control, logs, tickets, screenshots, or shell history.
 
 ## Invite and first password
 

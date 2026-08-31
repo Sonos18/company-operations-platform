@@ -5,12 +5,12 @@ import { describe, expect, it } from 'vitest'
 const root = resolve(import.meta.dirname, '../../..')
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8')
 const readme = read('README.md')
-const development = read('docs/development/backend-local.md')
+const development = read('docs/development/backend-cloud-dev.md')
 const deployment = read('docs/deployment/supabase-cloud-vercel.md')
-const design = read('docs/superpowers/specs/2026-08-15-supabase-cloud-dev-workflow-design.md')
 const onboarding = read('docs/development/sql/onboard-vqh-dev-admin.sql')
 const employeeRunbook = read('docs/runbooks/employee-onboarding-and-rbac.md')
-const implementationPlan = read('docs/superpowers/plans/2026-08-15-supabase-cloud-dev-workflow.md')
+const backendFoundationPlan = read('docs/superpowers/plans/2026-08-14-backend-foundation-auth-tenancy.md')
+const localCloudEnvironmentsPlan = read('docs/superpowers/plans/2026-08-14-supabase-local-cloud-environments.md')
 const oldVqhProjectRef = ['ykrurrum', 'qlsxnqfqunjc'].join('')
 const activeTrackedSetupPaths = [
   '.env.example',
@@ -21,12 +21,10 @@ const activeTrackedSetupPaths = [
   'scripts/assert-cloud-dev-target.mjs',
   'scripts/run-supabase-dev.mjs',
   'supabase/config.toml',
-  'docs/development/backend-local.md',
+  'docs/development/backend-cloud-dev.md',
   'docs/development/sql/onboard-vqh-dev-admin.sql',
   'docs/deployment/supabase-cloud-vercel.md',
   'docs/runbooks/employee-onboarding-and-rbac.md',
-  'docs/superpowers/specs/2026-08-15-supabase-cloud-dev-workflow-design.md',
-  'docs/superpowers/plans/2026-08-15-supabase-cloud-dev-workflow.md',
   'tests/unit/config/supabase-advisor-remediation.spec.ts',
   'tests/unit/config/supabase-cloud-dev-data.spec.ts',
   'tests/unit/config/supabase-cloud-dev-docs.spec.ts',
@@ -49,18 +47,6 @@ const deploymentWorkflow = deployment.slice(
 )
 const dailyCommands = commandsIn(dailyWorkflow)
 const deploymentCommands = commandsIn(deploymentWorkflow)
-const task4Plan = implementationPlan.slice(
-  implementationPlan.indexOf('### Task 4:'),
-)
-const task4OptionalPgtap = task4Plan.slice(
-  task4Plan.indexOf('### Optional Docker/container-capable pgTAP verification'),
-  task4Plan.indexOf('- [ ] **Step 11:'),
-)
-const task4ReleaseGate = task4Plan.slice(
-  task4Plan.indexOf('- [ ] **Step 13:'),
-  task4Plan.indexOf('- [ ] **Step 14:'),
-)
-
 describe('Supabase Cloud DEV runbooks', () => {
   it('directs operators to the existing canonical Taskovia Cloud DEV project only', () => {
     for (const document of [development, deployment]) {
@@ -71,7 +57,7 @@ describe('Supabase Cloud DEV runbooks', () => {
   })
 
   it('assigns the one canonical database to Taskovia while preserving VQH as its first tenant/company', () => {
-    for (const document of [readme, development, deployment, design, implementationPlan]) {
+    for (const document of [readme, development, deployment]) {
       expect(document).toContain('Taskovia owns the one canonical Supabase Cloud DEV database.')
       expect(document).toContain('VQH is its first tenant/company; there is no separate VQH database.')
     }
@@ -92,6 +78,9 @@ describe('Supabase Cloud DEV runbooks', () => {
     expect(deploymentCommands).not.toContain('pnpm db:dev:test')
     expect(development).not.toContain('Docker Desktop running')
     expect(development).not.toContain('pnpm supabase:start')
+    expect(development).not.toContain('## CI/fallback')
+    expect(development).not.toContain('db:local:')
+    expect(readme).not.toContain('Supabase local only for CI/fallback')
   })
 
   it('keeps DEV and Vercel Production credentials separate', () => {
@@ -112,28 +101,14 @@ describe('Supabase Cloud DEV runbooks', () => {
     expect(deployment).toContain('SUPABASE_DEV_ACCESS_TOKEN')
   })
 
-  it('keeps Task 4 pgTAP optional and outside the no-Docker release gate', () => {
-    expect(task4OptionalPgtap).toContain('pnpm db:dev:test')
-    expect(task4OptionalPgtap).toContain('Docker/container-capable environment')
-    expect(task4OptionalPgtap).toContain('optional')
-    expect(commandsIn(task4ReleaseGate)).not.toContain('pnpm db:dev:test')
-    expect(task4ReleaseGate).not.toContain('pgTAP, unit tests')
-    expect(task4ReleaseGate).toContain('Docker remains stopped')
-  })
-
-  it('keeps every active plan and design workflow no-Docker and guarded', () => {
-    expect(implementationPlan).not.toContain(
-      'pnpm db:dev:status && pnpm db:dev:test && pnpm db:dev:types && pnpm verify:app',
-    )
-    expect(implementationPlan).not.toContain('pnpm db:dev:push\npnpm db:dev:test\npnpm db:dev:types')
-    expect(design).not.toContain('6. Chạy `db:dev:test` và `db:dev:types`.')
-    expect(design).toContain('Docker/container-capable')
-    expect(development).toContain('canonical DEV target guard')
-    expect(deployment).toContain('canonical DEV target guard')
+  it('keeps the optional Cloud DEV pgTAP command outside the daily no-Docker workflow', () => {
+    expect(development).toContain('pnpm db:dev:test')
+    expect(development).toContain('Docker/container-capable environment')
+    expect(dailyCommands).not.toContain('pnpm db:dev:test')
   })
 
   it('uses the dedicated ignored DEV PAT for every documented DEV authentication check', () => {
-    for (const document of [development, deployment, design, implementationPlan]) {
+    for (const document of [development, deployment]) {
       expect(document).not.toContain('pnpm exec supabase login')
       expect(document).not.toContain('pnpm exec supabase link')
       expect(document).not.toContain('pnpm db:dev:login')
@@ -141,8 +116,6 @@ describe('Supabase Cloud DEV runbooks', () => {
 
     expect(development).toContain('pnpm db:dev:auth-check')
     expect(deployment).toContain('pnpm db:dev:auth-check')
-    expect(design).toContain('pnpm db:dev:auth-check')
-    expect(implementationPlan).toContain('pnpm db:dev:auth-check')
     expect(development).toContain('.supabase.dev.env.local')
     expect(deployment).toContain('PAT is authoritative')
     expect(development).toContain('SUPABASE_HOME')
@@ -155,14 +128,37 @@ describe('Supabase Cloud DEV runbooks', () => {
   })
 
   it('keeps all active linked Cloud DEV operations behind fixed runner modes', () => {
-    for (const document of [development, deployment, design, implementationPlan]) {
+    for (const document of [development, deployment]) {
       expect(document).not.toMatch(/pnpm\s+exec\s+supabase\s+.*--linked/)
       expect(document).not.toMatch(/run-supabase-dev\.mjs\s+(?:db|migration|gen|test)\b/)
     }
     expect(development).toContain('pnpm db:dev:advisors:security')
     expect(deployment).toContain('pnpm db:dev:advisors:performance')
-    expect(implementationPlan).toContain('pnpm db:dev:canonical-check')
-    expect(implementationPlan).toContain('pnpm db:dev:rls-smoke')
+  })
+
+  it('defines Cloud DEV as the sole development database in active AI policy', () => {
+    const agents = read('AGENTS.md')
+    const workflow = read('docs/ai-workflow/README.md')
+    const implementationPacket = read('docs/ai-workflow/templates/implementation-packet.md')
+    const fixPacket = read('docs/ai-workflow/templates/fix-packet.md')
+
+    expect(agents).toContain('Supabase Cloud DEV is the only supported development database target.')
+    expect(agents).toContain('must BLOCK rather than fall back to a Local DB')
+    for (const document of [agents, workflow, implementationPacket, fixPacket]) {
+      expect(document).not.toContain('local_db_destructive')
+    }
+  })
+
+  it('keeps the renamed backend-guide links resolvable in historical plans', () => {
+    expect(backendFoundationPlan).toContain(
+      '[Cloud DEV backend development](../../development/backend-cloud-dev.md)',
+    )
+    expect(localCloudEnvironmentsPlan).toContain(
+      '[Cloud DEV backend development](../../development/backend-cloud-dev.md)',
+    )
+    expect(localCloudEnvironmentsPlan).toContain(
+      '[Supabase Cloud and Vercel production](../../deployment/supabase-cloud-vercel.md)',
+    )
   })
 
   it('provides a guarded, idempotent VQH admin onboarding snippet', () => {

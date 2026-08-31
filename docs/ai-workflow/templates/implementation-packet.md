@@ -52,7 +52,6 @@ validation:
   optional: []
   side_effect_authorization:
     workspace_mutating: false
-    local_db_destructive: false
     cloud_dev_mutating: false
     production_mutating: false
 
@@ -101,7 +100,6 @@ Phân loại từng command:
 
 - `read_only`: không thay đổi tracked workspace hoặc external data.
 - `workspace_mutating`: có thể cập nhật tracked/generated files; diff phải được review.
-- `local_db_destructive`: reset/xóa/thay đổi destructive trên local database.
 - `cloud_dev_mutating`: thay đổi shared Cloud DEV.
 - `production_mutating`: thay đổi production hoặc deployment.
 

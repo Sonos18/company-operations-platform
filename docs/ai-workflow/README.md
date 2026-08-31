@@ -132,7 +132,6 @@ Codex phải dừng khi cần đổi approved business behavior/architecture/con
 | --- | --- |
 | `read_only` | Được phép |
 | `workspace_mutating` | Chỉ khi task cần; tracked diff phải được review |
-| `local_db_destructive` | Packet phải cho phép rõ |
 | `cloud_dev_mutating` | Mặc định false; packet phải cho phép rõ |
 | `production_mutating` | Luôn cần authorization riêng và hiện tại của Sơn |
 
@@ -140,7 +139,7 @@ Codex phải dừng khi cần đổi approved business behavior/architecture/con
 
 ## 14. Cloud DEV và production boundary
 
-Supabase Cloud DEV và production là hai authorization boundary độc lập. Normal implementation packet không mặc định cho phép production database mutation, deployment hoặc destructive production operation.
+Supabase Cloud DEV là database environment duy nhất được hỗ trợ cho development và validation. Nếu task cần Cloud DEV nhưng access không khả dụng hoặc không được authorize, Codex phải `BLOCKED`, không dùng Local DB hay database environment khác làm fallback. Supabase Cloud DEV và production là hai authorization boundary độc lập. Normal implementation packet không mặc định cho phép production database mutation, deployment hoặc destructive production operation.
 
 Codex không in/commit secret. Generated types được review như mọi tracked change. Dependency production mới cần packet approval. Command thay đổi Cloud DEV hoặc production phải đúng target và đúng authorization class.
 
