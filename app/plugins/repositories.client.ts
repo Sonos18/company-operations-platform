@@ -5,6 +5,7 @@ import { BrowserStateStore } from '../repositories/mock/state-store'
 import { createHttpOpportunityRepository } from '../repositories/http/http-opportunity-repository'
 import { createHttpWorkflowRepository } from '../repositories/http/http-workflow-repository'
 import { createHttpStage01Repository } from '../repositories/http/http-stage01-repository'
+import { createHttpStage01ConfigRepository } from '../repositories/http/http-stage01-config-repository'
 import type { AuthenticatedHttpClient } from '../repositories/http/authenticated-http-client'
 import type { CompanyAccessStore } from '../stores/company/company-access.store'
 
@@ -26,6 +27,7 @@ export default defineNuxtPlugin({
       opportunities: createHttpOpportunityRepository({ companyId, client }),
       workflow: createHttpWorkflowRepository({ companyId, client }),
       stage01: createHttpStage01Repository({ companyId, client }),
+      stage01Config: createHttpStage01ConfigRepository({ companyId, client }),
     }
 
     return { provide: { repositories } }

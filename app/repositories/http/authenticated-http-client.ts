@@ -8,7 +8,7 @@ type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 export interface AuthenticatedHttpClient {
   request<T>(input: {
     url: string
-    method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+    method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
     schema: z.ZodType<T>
     body?: unknown
   }): Promise<T>
@@ -153,7 +153,7 @@ export function createAuthenticatedHttpClient(options: AuthenticatedHttpClientOp
   return {
     async request<T>(input: {
       url: string
-      method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+      method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
       schema: z.ZodType<T>
       body?: unknown
     }): Promise<T> {
