@@ -22,6 +22,7 @@ export const canonicalNavigationLinks: readonly NavigationLink[] = [
     icon: 'i-lucide-users-round',
     requiredAnyPermissions: ['employee.read_directory', 'employee.read_all'],
   },
+  { to: '/opportunities', label: 'Cơ hội', icon: 'i-lucide-target', requiredPermission: 'opportunity.read' },
 ]
 
 export const canonicalAdminLinks: readonly NavigationLink[] = [

@@ -191,14 +191,16 @@ test('keeps the Stage 01 configuration action outside primary and mobile navigat
 
   const header = page.getByTestId('app-header')
   await expect(header.getByRole('link', { name: 'Cấu hình', exact: true })).toHaveAttribute('href', '/settings/stage-01')
-  await expect(page.getByTestId('app-sidebar').getByRole('link')).toHaveCount(3)
+  await expect(page.getByTestId('app-sidebar').getByRole('link')).toHaveCount(4)
+  await expect(page.getByTestId('app-sidebar').getByRole('link', { name: 'Cơ hội', exact: true })).toHaveAttribute('href', '/opportunities')
 
   await page.setViewportSize({ width: 390, height: 844 })
 
   await expect(header.getByRole('link', { name: 'Cấu hình', exact: true })).toBeVisible()
 
   const mobileNavigation = page.locator('.mobile-nav')
-  await expect(mobileNavigation.getByRole('link')).toHaveCount(3)
+  await expect(mobileNavigation.getByRole('link')).toHaveCount(4)
+  await expect(mobileNavigation.getByRole('link', { name: 'Cơ hội', exact: true })).toHaveAttribute('href', '/opportunities')
   await expect(mobileNavigation.getByRole('link', { name: 'Cấu hình', exact: true })).toHaveCount(0)
 })
 
