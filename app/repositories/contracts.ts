@@ -23,7 +23,7 @@ import type {
 } from '../features/workflow/workflow.types'
 import type {
   CriterionEvaluationRevisionInput, ReactivateStage01Input, RecordFinalDecisionInput,
-  ReturnForClarificationInput, Stage01Detail, SubmitRecommendationInput,
+  ReturnForClarificationInput, Stage01OperationalDetail, SubmitRecommendationInput,
 } from '../features/stage01/stage01.types'
 import type {
   CreateStage01ConfigDraftInput, DiscardStage01ConfigDraftInput, PublishStage01ConfigDraftInput,
@@ -105,7 +105,7 @@ export interface WorkflowRepository {
 }
 
 export interface Stage01Repository {
-  get(opportunityId: string): Promise<Stage01Detail>
+  get(opportunityId: string): Promise<Stage01OperationalDetail>
   evaluateCriterion(opportunityId: string, criterionKey: string, input: CriterionEvaluationRevisionInput): Promise<void>
   submitRecommendation(opportunityId: string, input: SubmitRecommendationInput): Promise<void>
   returnForClarification(opportunityId: string, input: ReturnForClarificationInput): Promise<void>

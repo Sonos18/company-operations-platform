@@ -4,9 +4,9 @@ import {
   reactivateStage01InputSchema,
   recordFinalDecisionInputSchema,
   returnForClarificationInputSchema,
-  stage01DetailSchema,
   submitRecommendationInputSchema,
 } from '../../../shared/schemas/stage01'
+import { stage01OperationalDetailSchema } from '../../../shared/schemas/stage01-operational'
 import type { Stage01Repository } from '../contracts'
 import type { AuthenticatedHttpClient } from './authenticated-http-client'
 
@@ -25,7 +25,7 @@ export function createHttpStage01Repository(options: HttpStage01RepositoryOption
 
   return {
     get: opportunityId => options.client.request({
-      url: stage(opportunityId), method: 'GET', schema: stage01DetailSchema,
+      url: stage(opportunityId), method: 'GET', schema: stage01OperationalDetailSchema,
     }),
     evaluateCriterion: (opportunityId, criterionKey, input) => postVoid(
       `${stage(opportunityId)}/evaluations/${id(criterionKey)}/revisions`,
