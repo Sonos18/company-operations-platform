@@ -95,14 +95,14 @@ begin
       and referenced_schema.nspname = 'public'
       and referenced_relation.relname = 'companies'
       and (
-        select array_agg(attribute.attname order by key_column.ordinality)
+        select array_agg(attribute.attname::text order by key_column.ordinality)
         from unnest(draft_constraint.conkey) with ordinality as key_column(attnum, ordinality)
         join pg_attribute as attribute
           on attribute.attrelid = draft_constraint.conrelid
          and attribute.attnum = key_column.attnum
       ) = array['company_id', 'tenant_id']::text[]
       and (
-        select array_agg(attribute.attname order by reference_column.ordinality)
+        select array_agg(attribute.attname::text order by reference_column.ordinality)
         from unnest(draft_constraint.confkey) with ordinality as reference_column(attnum, ordinality)
         join pg_attribute as attribute
           on attribute.attrelid = draft_constraint.confrelid
@@ -122,14 +122,14 @@ begin
       and referenced_schema.nspname = 'public'
       and referenced_relation.relname = 'workflow_definition_snapshots'
       and (
-        select array_agg(attribute.attname order by key_column.ordinality)
+        select array_agg(attribute.attname::text order by key_column.ordinality)
         from unnest(draft_constraint.conkey) with ordinality as key_column(attnum, ordinality)
         join pg_attribute as attribute
           on attribute.attrelid = draft_constraint.conrelid
          and attribute.attnum = key_column.attnum
       ) = array['base_snapshot_id', 'tenant_id', 'company_id']::text[]
       and (
-        select array_agg(attribute.attname order by reference_column.ordinality)
+        select array_agg(attribute.attname::text order by reference_column.ordinality)
         from unnest(draft_constraint.confkey) with ordinality as reference_column(attnum, ordinality)
         join pg_attribute as attribute
           on attribute.attrelid = draft_constraint.confrelid
@@ -154,7 +154,7 @@ begin
     left join lateral (
       select
         index_definition.indisunique as is_unique,
-        array_agg(attribute.attname order by index_column.ordinality) as column_names
+        array_agg(attribute.attname::text order by index_column.ordinality) as column_names
       from pg_class as index_relation
       join pg_namespace as index_schema on index_schema.oid = index_relation.relnamespace
       join pg_index as index_definition on index_definition.indexrelid = index_relation.oid

@@ -433,6 +433,8 @@ begin
   end;
 end $$;
 
+reset role;
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -473,22 +475,6 @@ begin
     raise exception 'DB-S01-CONFIG-CMD create result did not expose the expected business-safe draft';
   end if;
 
-  if not exists (
-    select 1 from public.workflow_definition_drafts as draft
-    where draft.company_id = '63000000-0000-4000-8000-000000000020'
-      and draft.workflow_key = 'vqh.stage01'
-      and draft.base_snapshot_id = '63000000-0000-4000-8000-000000000030'
-      and draft.version = 0
-      and draft.definition = pg_temp.stage01_config_definition()
-  ) or not exists (
-    select 1 from public.audit_events as audit
-    where audit.company_id = '63000000-0000-4000-8000-000000000020'
-      and audit.action = 'stage01.config_draft.created'
-      and audit.request_id = '63000000-0000-4000-8000-000000000202'
-  ) then
-    raise exception 'DB-S01-CONFIG-CMD create did not copy the newest definition and audit it';
-  end if;
-
   begin
     perform public.create_stage01_config_draft(
       '63000000-0000-4000-8000-000000000020',
@@ -513,6 +499,26 @@ begin
 end $$;
 
 reset role;
+
+do $$
+begin
+  if not exists (
+    select 1 from public.workflow_definition_drafts as draft
+    where draft.company_id = '63000000-0000-4000-8000-000000000020'
+      and draft.workflow_key = 'vqh.stage01'
+      and draft.base_snapshot_id = '63000000-0000-4000-8000-000000000030'
+      and draft.version = 0
+      and draft.definition = pg_temp.stage01_config_definition()
+  ) or not exists (
+    select 1 from public.audit_events as audit
+    where audit.company_id = '63000000-0000-4000-8000-000000000020'
+      and audit.action = 'stage01.config_draft.created'
+      and audit.request_id = '63000000-0000-4000-8000-000000000202'
+  ) then
+    raise exception 'DB-S01-CONFIG-CMD create did not copy the newest definition and audit it';
+  end if;
+end $$;
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -545,11 +551,8 @@ select set_config(
 do $$
 declare
   result jsonb;
-  draft_id uuid;
+  returned_draft_id uuid;
   base_snapshot_id uuid;
-  system_before jsonb;
-  definition_before jsonb;
-  audit_before bigint;
 begin
   result := public.update_stage01_config_draft(
     '63000000-0000-4000-8000-000000000020',
@@ -560,9 +563,10 @@ begin
     ),
     '63000000-0000-4000-8000-000000000206'
   );
-  draft_id := (result ->> 'id')::uuid;
+  returned_draft_id := (result ->> 'id')::uuid;
   base_snapshot_id := (result ->> 'baseSnapshotId')::uuid;
-  if result ->> 'version' <> '1'
+  if returned_draft_id is null
+     or result ->> 'version' <> '1'
      or jsonb_typeof(result -> 'version') <> 'number'
      or (result ->> 'version')::numeric < 0
      or (result ->> 'version')::numeric <> trunc((result ->> 'version')::numeric)
@@ -570,47 +574,7 @@ begin
      or base_snapshot_id <> '63000000-0000-4000-8000-000000000030'::uuid then
     raise exception 'DB-S01-CONFIG-CMD update did not increment the draft version exactly once';
   end if;
-
-  if (
-    select count(*)
-    from public.audit_events as audit
-    where audit.request_id = '63000000-0000-4000-8000-000000000206'
-  ) <> 1 or not exists (
-    select 1
-    from public.audit_events as audit
-    where audit.tenant_id = '63000000-0000-4000-8000-000000000010'::uuid
-      and audit.company_id = '63000000-0000-4000-8000-000000000020'::uuid
-      and audit.actor_id = '63000000-0000-4000-8000-000000000001'::uuid
-      and audit.action = 'stage01.config_draft.updated'
-      and audit.resource_type = 'workflow_definition_draft'
-      and audit.resource_id = draft_id::text
-      and audit.request_id = '63000000-0000-4000-8000-000000000206'::uuid
-      and audit.before_summary = jsonb_build_object(
-        'draftId', draft_id,
-        'draftVersion', 0
-      )
-      and audit.after_summary = jsonb_build_object(
-        'companyId', '63000000-0000-4000-8000-000000000020'::uuid,
-        'actorId', '63000000-0000-4000-8000-000000000001'::uuid,
-        'draftId', draft_id,
-        'draftVersion', 1,
-        'requestId', '63000000-0000-4000-8000-000000000206'::uuid
-      )
-  ) then
-    raise exception 'DB-S01-CONFIG-CMD update audit row did not match the complete production write';
-  end if;
-
-  select draft.definition - 'taxonomies' - 'criteria', draft.definition
-    into system_before, definition_before
-    from public.workflow_definition_drafts as draft
-   where draft.company_id = '63000000-0000-4000-8000-000000000020'
-     and draft.workflow_key = 'vqh.stage01';
-  if system_before is distinct from (pg_temp.stage01_config_definition() - 'taxonomies' - 'criteria')
-     or definition_before #>> '{taxonomies,customer_type,0,semanticKey}' <> 'customer'
-     or (definition_before #> '{taxonomies,priority,1}') ? 'semanticKey'
-     or definition_before #>> '{criteria,0,label}' <> 'Updated customer need' then
-    raise exception 'DB-S01-CONFIG-CMD update changed system data or failed to preserve reserved identity';
-  end if;
+  perform set_config('stage01_test.updated_draft_id', returned_draft_id::text, true);
 
   begin
     perform public.update_stage01_config_draft(
@@ -623,8 +587,6 @@ begin
     if sqlerrm <> 'VERSION_CONFLICT' then raise; end if;
   end;
 
-  select count(*) into audit_before from public.audit_events
-   where company_id = '63000000-0000-4000-8000-000000000020';
   begin
     perform public.update_stage01_config_draft(
       '63000000-0000-4000-8000-000000000020',
@@ -639,11 +601,6 @@ begin
   exception when raise_exception then
     if sqlerrm <> 'STAGE01_DEFINITION_CONFIG_INVALID' then raise; end if;
   end;
-  if (select definition from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000020') is distinct from definition_before
-     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') <> audit_before then
-    raise exception 'DB-S01-CONFIG-CMD rejected update partially changed draft or audit history';
-  end if;
-
   begin
     perform public.update_stage01_config_draft(
       '63000000-0000-4000-8000-000000000020',
@@ -735,22 +692,68 @@ begin
   end;
 end $$;
 
+reset role;
+
+do $$
+declare
+  draft_id uuid;
+  returned_draft_id uuid := current_setting('stage01_test.updated_draft_id')::uuid;
+  system_before jsonb;
+  definition_before jsonb;
+begin
+  select draft.id, draft.definition - 'taxonomies' - 'criteria', draft.definition
+    into draft_id, system_before, definition_before
+    from public.workflow_definition_drafts as draft
+   where draft.company_id = '63000000-0000-4000-8000-000000000020'
+     and draft.workflow_key = 'vqh.stage01';
+  if returned_draft_id is distinct from draft_id or (
+    select count(*)
+    from public.audit_events as audit
+    where audit.request_id = '63000000-0000-4000-8000-000000000206'
+  ) <> 1 or not exists (
+    select 1
+    from public.audit_events as audit
+    where audit.tenant_id = '63000000-0000-4000-8000-000000000010'::uuid
+      and audit.company_id = '63000000-0000-4000-8000-000000000020'::uuid
+      and audit.actor_id = '63000000-0000-4000-8000-000000000001'::uuid
+      and audit.action = 'stage01.config_draft.updated'
+      and audit.resource_type = 'workflow_definition_draft'
+      and audit.resource_id = returned_draft_id::text
+      and audit.request_id = '63000000-0000-4000-8000-000000000206'::uuid
+      and audit.before_summary = jsonb_build_object('draftId', returned_draft_id, 'draftVersion', 0)
+      and audit.after_summary = jsonb_build_object(
+        'companyId', '63000000-0000-4000-8000-000000000020'::uuid,
+        'actorId', '63000000-0000-4000-8000-000000000001'::uuid,
+        'draftId', returned_draft_id,
+        'draftVersion', 1,
+        'requestId', '63000000-0000-4000-8000-000000000206'::uuid
+      )
+  ) then
+    raise exception 'DB-S01-CONFIG-CMD update audit row did not match the complete production write';
+  end if;
+  if system_before is distinct from (pg_temp.stage01_config_definition() - 'taxonomies' - 'criteria')
+     or definition_before #>> '{taxonomies,customer_type,0,semanticKey}' <> 'customer'
+     or (definition_before #> '{taxonomies,priority,1}') ? 'semanticKey'
+     or definition_before #>> '{criteria,0,label}' <> 'Updated customer need' then
+    raise exception 'DB-S01-CONFIG-CMD update changed system data or failed to preserve reserved identity';
+  end if;
+end $$;
+
+create temporary table stage01_config_update_before as
+select
+  draft.definition,
+  (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') as audit_count
+from public.workflow_definition_drafts as draft
+where draft.company_id = '63000000-0000-4000-8000-000000000020'
+  and draft.workflow_key = 'vqh.stage01';
+
+set local role authenticated;
+
 -- The direct private command path must reject malformed JSON without altering
 -- the locked draft or creating an audit row.  These cases mirror the strict
 -- Zod contract rather than relying on jsonb text coercion.
 do $$
-declare
-  definition_before jsonb;
-  audit_before bigint;
 begin
-  select definition into definition_before
-  from public.workflow_definition_drafts
-  where company_id = '63000000-0000-4000-8000-000000000020'
-    and workflow_key = 'vqh.stage01';
-  select count(*) into audit_before
-  from public.audit_events
-  where company_id = '63000000-0000-4000-8000-000000000020';
-
   perform pg_temp.assert_stage01_config_private_update_invalid(
     jsonb_set(pg_temp.stage01_config_business_taxonomies(), '{priority,1,code}', '17'::jsonb),
     pg_temp.stage01_config_business_criteria(),
@@ -874,20 +877,32 @@ begin
     if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
   end;
 
-  if (select definition from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000020') is distinct from definition_before
-     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') <> audit_before then
+end $$;
+
+reset role;
+
+do $$
+begin
+  if (select definition from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000020') is distinct from (select definition from stage01_config_update_before)
+     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') <> (select audit_count from stage01_config_update_before) then
     raise exception 'DB-S01-CONFIG-CMD malformed private updates changed draft or audit history';
   end if;
 end $$;
 
+create temporary table stage01_config_discard_before as
+select
+  (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000020') as snapshot_count,
+  draft.id as draft_id,
+  draft.base_snapshot_id
+from public.workflow_definition_drafts as draft
+where draft.company_id = '63000000-0000-4000-8000-000000000020'
+  and draft.workflow_key = 'vqh.stage01'
+  and draft.version = 1;
+
+set local role authenticated;
+
 do $$
-declare
-  snapshot_count bigint;
-  draft_id uuid;
-  base_snapshot_id uuid;
 begin
-  select count(*) into snapshot_count from public.workflow_definition_snapshots
-   where company_id = '63000000-0000-4000-8000-000000000020';
   begin
     perform public.discard_stage01_config_draft(
       '63000000-0000-4000-8000-000000000020',
@@ -899,55 +914,11 @@ begin
     if sqlerrm <> 'VERSION_CONFLICT' then raise; end if;
   end;
 
-  select draft.id, draft.base_snapshot_id
-    into draft_id, base_snapshot_id
-    from public.workflow_definition_drafts as draft
-   where draft.company_id = '63000000-0000-4000-8000-000000000020'
-     and draft.workflow_key = 'vqh.stage01'
-     and draft.version = 1;
-  if draft_id is null or base_snapshot_id <> '63000000-0000-4000-8000-000000000030'::uuid then
-    raise exception 'DB-S01-CONFIG-CMD discard fixture did not retain the expected draft/base identity';
-  end if;
-
   perform public.discard_stage01_config_draft(
     '63000000-0000-4000-8000-000000000020',
     jsonb_build_object('expectedDraftVersion', 1),
     '63000000-0000-4000-8000-000000000214'
   );
-  if exists (select 1 from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000020')
-     or (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000020') <> snapshot_count
-     or (
-       select count(*)
-       from public.audit_events as audit
-       where audit.request_id = '63000000-0000-4000-8000-000000000214'
-     ) <> 1
-     or not exists (
-       select 1
-       from public.audit_events as audit
-       where audit.tenant_id = '63000000-0000-4000-8000-000000000010'::uuid
-         and audit.company_id = '63000000-0000-4000-8000-000000000020'::uuid
-         and audit.actor_id = '63000000-0000-4000-8000-000000000001'::uuid
-         and audit.action = 'stage01.config_draft.discarded'
-         and audit.resource_type = 'workflow_definition_draft'
-         and audit.resource_id = draft_id::text
-         and audit.request_id = '63000000-0000-4000-8000-000000000214'::uuid
-         and audit.before_summary = jsonb_build_object(
-           'draftId', draft_id,
-           'baseSnapshotId', base_snapshot_id,
-           'draftVersion', 1
-         )
-         and audit.after_summary = jsonb_build_object(
-           'companyId', '63000000-0000-4000-8000-000000000020'::uuid,
-           'actorId', '63000000-0000-4000-8000-000000000001'::uuid,
-           'draftId', draft_id,
-           'baseSnapshotId', base_snapshot_id,
-           'draftVersion', 1,
-           'requestId', '63000000-0000-4000-8000-000000000214'::uuid
-         )
-     ) then
-    raise exception 'DB-S01-CONFIG-CMD discard audit row or deletion was not exact';
-  end if;
-
   begin
     perform public.discard_stage01_config_draft(
       '63000000-0000-4000-8000-000000000020',
@@ -959,6 +930,45 @@ begin
     if sqlerrm <> 'STAGE01_CONFIG_DRAFT_NOT_FOUND' then raise; end if;
   end;
 end $$;
+
+reset role;
+
+do $$
+declare
+  before_row stage01_config_discard_before%rowtype;
+begin
+  select * into before_row from stage01_config_discard_before;
+  if before_row.draft_id is null
+     or before_row.base_snapshot_id <> '63000000-0000-4000-8000-000000000030'::uuid then
+    raise exception 'DB-S01-CONFIG-CMD discard fixture did not retain the expected draft/base identity';
+  end if;
+  if exists (select 1 from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000020')
+     or (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000020') <> before_row.snapshot_count
+     or (select count(*) from public.audit_events as audit where audit.request_id = '63000000-0000-4000-8000-000000000214') <> 1
+     or not exists (
+       select 1 from public.audit_events as audit
+       where audit.tenant_id = '63000000-0000-4000-8000-000000000010'::uuid
+         and audit.company_id = '63000000-0000-4000-8000-000000000020'::uuid
+         and audit.actor_id = '63000000-0000-4000-8000-000000000001'::uuid
+         and audit.action = 'stage01.config_draft.discarded'
+         and audit.resource_type = 'workflow_definition_draft'
+         and audit.resource_id = before_row.draft_id::text
+         and audit.request_id = '63000000-0000-4000-8000-000000000214'::uuid
+         and audit.before_summary = jsonb_build_object('draftId', before_row.draft_id, 'baseSnapshotId', before_row.base_snapshot_id, 'draftVersion', 1)
+         and audit.after_summary = jsonb_build_object(
+           'companyId', '63000000-0000-4000-8000-000000000020'::uuid,
+           'actorId', '63000000-0000-4000-8000-000000000001'::uuid,
+           'draftId', before_row.draft_id,
+           'baseSnapshotId', before_row.base_snapshot_id,
+           'draftVersion', 1,
+           'requestId', '63000000-0000-4000-8000-000000000214'::uuid
+         )
+     ) then
+    raise exception 'DB-S01-CONFIG-CMD discard audit row or deletion was not exact';
+  end if;
+end $$;
+
+set local role authenticated;
 
 do $$
 begin
@@ -1075,32 +1085,40 @@ begin
     '63000000-0000-4000-8000-000000000223'
   );
 
-  insert into public.stage01_taxonomy_values (
-    tenant_id, company_id, taxonomy_key, code, label, semantic_key, behavior, is_active
-  ) values (
-    '63000000-0000-4000-8000-000000000010', '63000000-0000-4000-8000-000000000020',
-    'customer_type', 'legacy_business', 'Legacy business', null, '{}'::jsonb, true
-  );
 end $$;
 
 do $$
 declare
   opportunity_result jsonb;
-  workflow_id uuid;
 begin
   opportunity_result := public.create_stage01_opportunity(
     '63000000-0000-4000-8000-000000000020',
     '{"primaryCustomerName":"Opportunity A before configuration publication"}'::jsonb,
     '63000000-0000-4000-8000-000000000224'
   );
-  workflow_id := (opportunity_result ->> 'workflowInstanceId')::uuid;
-  if (select definition_snapshot_id from public.workflow_instances where id = workflow_id)
-       <> '63000000-0000-4000-8000-000000000031'::uuid then
+end $$;
+
+reset role;
+
+insert into public.stage01_taxonomy_values (
+  tenant_id, company_id, taxonomy_key, code, label, semantic_key, behavior, is_active
+) values (
+  '63000000-0000-4000-8000-000000000010', '63000000-0000-4000-8000-000000000020',
+  'customer_type', 'legacy_business', 'Legacy business', null, '{}'::jsonb, true
+);
+
+do $$
+begin
+  if (select workflow.definition_snapshot_id
+      from public.workflow_instances as workflow
+      join public.opportunities as opportunity on opportunity.id = workflow.subject_id
+      where opportunity.company_id = '63000000-0000-4000-8000-000000000020'
+        and opportunity.primary_customer_name = 'Opportunity A before configuration publication')
+     <> '63000000-0000-4000-8000-000000000031'::uuid then
     raise exception 'DB-S01-CONFIG-CMD Opportunity A did not bind the pre-publication snapshot';
   end if;
 end $$;
 
-reset role;
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -1111,14 +1129,12 @@ select set_config(
 do $$
 declare
   result jsonb;
-  new_snapshot_id uuid;
 begin
   result := public.publish_stage01_config_draft(
     '63000000-0000-4000-8000-000000000020',
     jsonb_build_object('expectedDraftVersion', 1),
     '63000000-0000-4000-8000-000000000225'
   );
-  new_snapshot_id := (result ->> 'snapshotId')::uuid;
   if result ->> 'templateVersion' <> '3'
      or result ->> 'schemaVersion' <> '1'
      or jsonb_typeof(result -> 'templateVersion') <> 'number'
@@ -1130,7 +1146,22 @@ begin
      or (result ->> 'templateVersion')::numeric > 9007199254740991
      or (result ->> 'schemaVersion')::numeric > 9007199254740991
      or coalesce(nullif(result ->> 'definitionHash', ''), '') = ''
-     or new_snapshot_id is null
+     or nullif(result ->> 'snapshotId', '') is null then
+    raise exception 'DB-S01-CONFIG-CMD publish result did not expose the expected snapshot metadata';
+  end if;
+end $$;
+
+reset role;
+
+do $$
+declare
+  new_snapshot_id uuid;
+begin
+  select id into new_snapshot_id
+  from public.workflow_definition_snapshots
+  where company_id = '63000000-0000-4000-8000-000000000020'
+    and template_version = 3;
+  if new_snapshot_id is null
      or (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000020' and template_version = 3) <> 1
      or (select schema_version from public.workflow_definition_snapshots where id = new_snapshot_id) <> 1
      or (select definition_hash from public.workflow_definition_snapshots where id = new_snapshot_id)
@@ -1139,7 +1170,6 @@ begin
      or exists (select 1 from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000020') then
     raise exception 'DB-S01-CONFIG-CMD publish did not atomically create the required immutable next snapshot';
   end if;
-
   if not exists (
     select 1 from public.stage01_taxonomy_values
     where company_id = '63000000-0000-4000-8000-000000000020'
@@ -1158,7 +1188,6 @@ begin
   ) then
     raise exception 'DB-S01-CONFIG-CMD publish did not synchronize active, inactive, and reserved taxonomy catalog rows';
   end if;
-
   if not exists (
     select 1 from public.audit_events as audit
     where audit.company_id = '63000000-0000-4000-8000-000000000020'
@@ -1173,7 +1202,6 @@ begin
   end if;
 end $$;
 
-reset role;
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -1183,8 +1211,20 @@ select set_config(
 
 do $$
 declare
-  workflow_a_snapshot uuid;
   opportunity_result jsonb;
+begin
+  opportunity_result := public.create_stage01_opportunity(
+    '63000000-0000-4000-8000-000000000020',
+    '{"primaryCustomerName":"Opportunity B after configuration publication"}'::jsonb,
+    '63000000-0000-4000-8000-000000000226'
+  );
+end $$;
+
+reset role;
+
+do $$
+declare
+  workflow_a_snapshot uuid;
   workflow_b_snapshot uuid;
 begin
   select workflow.definition_snapshot_id into workflow_a_snapshot
@@ -1192,33 +1232,37 @@ begin
   join public.opportunities as opportunity on opportunity.id = workflow.subject_id
   where opportunity.company_id = '63000000-0000-4000-8000-000000000020'
     and opportunity.primary_customer_name = 'Opportunity A before configuration publication';
+  select workflow.definition_snapshot_id into workflow_b_snapshot
+  from public.workflow_instances as workflow
+  join public.opportunities as opportunity on opportunity.id = workflow.subject_id
+  where opportunity.company_id = '63000000-0000-4000-8000-000000000020'
+    and opportunity.primary_customer_name = 'Opportunity B after configuration publication';
   if workflow_a_snapshot <> '63000000-0000-4000-8000-000000000031'::uuid then
     raise exception 'DB-S01-CONFIG-CMD publication rewrote Opportunity A workflow binding';
   end if;
-
-  opportunity_result := public.create_stage01_opportunity(
-    '63000000-0000-4000-8000-000000000020',
-    '{"primaryCustomerName":"Opportunity B after configuration publication"}'::jsonb,
-    '63000000-0000-4000-8000-000000000226'
-  );
-  select definition_snapshot_id into workflow_b_snapshot
-  from public.workflow_instances
-  where id = (opportunity_result ->> 'workflowInstanceId')::uuid;
   if workflow_b_snapshot = workflow_a_snapshot
      or (select template_version from public.workflow_definition_snapshots where id = workflow_b_snapshot) <> 3 then
     raise exception 'DB-S01-CONFIG-CMD Opportunity B did not bind the newly published snapshot';
   end if;
 end $$;
 
+select set_config(
+  'stage01_config.published_snapshot_id',
+  id::text,
+  true
+)
+from public.workflow_definition_snapshots
+where company_id = '63000000-0000-4000-8000-000000000020'
+  and workflow_key = 'vqh.stage01'
+  and template_version = 3;
+
+set local role authenticated;
+
 do $$
 begin
   perform public.create_stage01_config_draft(
     '63000000-0000-4000-8000-000000000020',
-    jsonb_build_object('expectedPublishedSnapshotId', (
-      select id from public.workflow_definition_snapshots
-      where company_id = '63000000-0000-4000-8000-000000000020'
-        and workflow_key = 'vqh.stage01' and template_version = 3
-    )),
+    jsonb_build_object('expectedPublishedSnapshotId', current_setting('stage01_config.published_snapshot_id')::uuid),
     '63000000-0000-4000-8000-000000000227'
   );
 end $$;
@@ -1228,8 +1272,25 @@ update public.stage01_taxonomy_values
    set semantic_key = 'mismatched_customer'
  where company_id = '63000000-0000-4000-8000-000000000020'
    and taxonomy_key = 'customer_type'
-   and code = 'reserved_customer'
-   and semantic_key = 'customer';
+    and code = 'reserved_customer'
+    and semantic_key = 'customer';
+
+create temporary table stage01_config_catalog_before as
+select
+  (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000020') as snapshot_count,
+  (
+    select jsonb_agg(
+      jsonb_build_object(
+        'id', id, 'tenantId', tenant_id, 'companyId', company_id,
+        'taxonomyKey', taxonomy_key, 'code', code, 'label', label,
+        'semanticKey', semantic_key, 'behavior', behavior, 'isActive', is_active,
+        'createdAt', created_at, 'updatedAt', updated_at
+      ) order by id
+    )
+    from public.stage01_taxonomy_values
+    where company_id = '63000000-0000-4000-8000-000000000020'
+  ) as catalog_state,
+  (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') as audit_count;
 
 set local role authenticated;
 select set_config(
@@ -1239,35 +1300,7 @@ select set_config(
 );
 
 do $$
-declare
-  snapshot_count bigint;
-  catalog_state jsonb;
-  audit_count bigint;
 begin
-  select count(*) into snapshot_count
-  from public.workflow_definition_snapshots
-  where company_id = '63000000-0000-4000-8000-000000000020';
-  select jsonb_agg(
-    jsonb_build_object(
-      'id', id,
-      'tenantId', tenant_id,
-      'companyId', company_id,
-      'taxonomyKey', taxonomy_key,
-      'code', code,
-      'label', label,
-      'semanticKey', semantic_key,
-      'behavior', behavior,
-      'isActive', is_active,
-      'createdAt', created_at,
-      'updatedAt', updated_at
-    ) order by id
-  ) into catalog_state
-  from public.stage01_taxonomy_values
-  where company_id = '63000000-0000-4000-8000-000000000020';
-  select count(*) into audit_count
-  from public.audit_events
-  where company_id = '63000000-0000-4000-8000-000000000020';
-
   begin
     perform public.publish_stage01_config_draft(
       '63000000-0000-4000-8000-000000000020',
@@ -1279,30 +1312,31 @@ begin
     if sqlerrm <> 'STAGE01_DEFINITION_CONFIG_INVALID' then raise; end if;
   end;
 
-  if (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000020') <> snapshot_count
+end $$;
+
+reset role;
+
+do $$
+declare
+  before_row stage01_config_catalog_before%rowtype;
+begin
+  select * into before_row from stage01_config_catalog_before;
+  if (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000020') <> before_row.snapshot_count
      or (
        select jsonb_agg(
          jsonb_build_object(
-           'id', id,
-           'tenantId', tenant_id,
-           'companyId', company_id,
-           'taxonomyKey', taxonomy_key,
-           'code', code,
-           'label', label,
-           'semanticKey', semantic_key,
-           'behavior', behavior,
-           'isActive', is_active,
-           'createdAt', created_at,
-           'updatedAt', updated_at
+           'id', id, 'tenantId', tenant_id, 'companyId', company_id,
+           'taxonomyKey', taxonomy_key, 'code', code, 'label', label,
+           'semanticKey', semantic_key, 'behavior', behavior, 'isActive', is_active,
+           'createdAt', created_at, 'updatedAt', updated_at
          ) order by id
        )
        from public.stage01_taxonomy_values
        where company_id = '63000000-0000-4000-8000-000000000020'
-     ) is distinct from catalog_state
-     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') <> audit_count
+     ) is distinct from before_row.catalog_state
+     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') <> before_row.audit_count
      or not exists (
-       select 1
-       from public.workflow_definition_drafts
+       select 1 from public.workflow_definition_drafts
        where company_id = '63000000-0000-4000-8000-000000000020'
          and workflow_key = 'vqh.stage01'
          and version = 0
@@ -1311,7 +1345,6 @@ begin
   end if;
 end $$;
 
-reset role;
 update public.stage01_taxonomy_values
    set semantic_key = 'customer'
  where company_id = '63000000-0000-4000-8000-000000000020'
@@ -1334,6 +1367,23 @@ for each row
 when (old.company_id = '63000000-0000-4000-8000-000000000020'::uuid and old.workflow_key = 'vqh.stage01')
 execute function pg_temp.fail_stage01_config_draft_delete();
 
+create temporary table stage01_config_late_publish_before as
+select
+  (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000020') as snapshot_count,
+  (
+    select jsonb_agg(
+      jsonb_build_object(
+        'id', id, 'tenantId', tenant_id, 'companyId', company_id,
+        'taxonomyKey', taxonomy_key, 'code', code, 'label', label,
+        'semanticKey', semantic_key, 'behavior', behavior, 'isActive', is_active,
+        'createdAt', created_at, 'updatedAt', updated_at
+      ) order by id
+    )
+    from public.stage01_taxonomy_values
+    where company_id = '63000000-0000-4000-8000-000000000020'
+  ) as taxonomy_state,
+  (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') as audit_count;
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -1342,34 +1392,7 @@ select set_config(
 );
 
 do $$
-declare
-  snapshot_count bigint;
-  taxonomy_state jsonb;
-  audit_count bigint;
 begin
-  select count(*) into snapshot_count from public.workflow_definition_snapshots
-   where company_id = '63000000-0000-4000-8000-000000000020';
-  select jsonb_agg(
-    jsonb_build_object(
-      'id', id,
-      'tenantId', tenant_id,
-      'companyId', company_id,
-      'taxonomyKey', taxonomy_key,
-      'code', code,
-      'label', label,
-      'semanticKey', semantic_key,
-      'behavior', behavior,
-      'isActive', is_active,
-      'createdAt', created_at,
-      'updatedAt', updated_at
-    ) order by id
-  )
-    into taxonomy_state
-    from public.stage01_taxonomy_values
-   where company_id = '63000000-0000-4000-8000-000000000020';
-  select count(*) into audit_count from public.audit_events
-   where company_id = '63000000-0000-4000-8000-000000000020';
-
   begin
     perform public.publish_stage01_config_draft(
       '63000000-0000-4000-8000-000000000020',
@@ -1381,33 +1404,34 @@ begin
     if sqlerrm <> 'DB-S01-CONFIG-CMD forced late publication failure' then raise; end if;
   end;
 
-  if (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000020') <> snapshot_count
+end $$;
+
+reset role;
+
+do $$
+declare
+  before_row stage01_config_late_publish_before%rowtype;
+begin
+  select * into before_row from stage01_config_late_publish_before;
+  if (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000020') <> before_row.snapshot_count
      or (
        select jsonb_agg(
          jsonb_build_object(
-           'id', id,
-           'tenantId', tenant_id,
-           'companyId', company_id,
-           'taxonomyKey', taxonomy_key,
-           'code', code,
-           'label', label,
-           'semanticKey', semantic_key,
-           'behavior', behavior,
-           'isActive', is_active,
-           'createdAt', created_at,
-           'updatedAt', updated_at
+           'id', id, 'tenantId', tenant_id, 'companyId', company_id,
+           'taxonomyKey', taxonomy_key, 'code', code, 'label', label,
+           'semanticKey', semantic_key, 'behavior', behavior, 'isActive', is_active,
+           'createdAt', created_at, 'updatedAt', updated_at
          ) order by id
        )
        from public.stage01_taxonomy_values
        where company_id = '63000000-0000-4000-8000-000000000020'
-     ) is distinct from taxonomy_state
-     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') <> audit_count
+     ) is distinct from before_row.taxonomy_state
+     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') <> before_row.audit_count
      or not exists (select 1 from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000020' and version = 0) then
     raise exception 'DB-S01-CONFIG-CMD late publish failure was not fully atomic';
   end if;
 end $$;
 
-reset role;
 drop trigger stage01_config_commands_forced_late_failure on public.workflow_definition_drafts;
 
 set local role authenticated;
@@ -1436,6 +1460,11 @@ insert into public.workflow_definition_snapshots (
   'vqh.stage01', 4, 1, pg_temp.stage01_config_definition() #- '{capabilities,decision}', 'stage01-config-invalid-v4'
 );
 
+create temporary table stage01_config_invalid_definition_before as
+select count(*) as audit_count
+from public.audit_events
+where company_id = '63000000-0000-4000-8000-000000000020';
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -1444,11 +1473,7 @@ select set_config(
 );
 
 do $$
-declare
-  audit_count bigint;
 begin
-  select count(*) into audit_count from public.audit_events
-   where company_id = '63000000-0000-4000-8000-000000000020';
   begin
     perform public.create_stage01_config_draft(
       '63000000-0000-4000-8000-000000000020',
@@ -1459,13 +1484,18 @@ begin
   exception when raise_exception then
     if sqlerrm <> 'STAGE01_DEFINITION_CONFIG_INVALID' then raise; end if;
   end;
+end $$;
+
+reset role;
+
+do $$
+begin
   if exists (select 1 from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000020')
-     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') <> audit_count then
+     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') <> (select audit_count from stage01_config_invalid_definition_before) then
     raise exception 'DB-S01-CONFIG-CMD invalid newest definition partially created a draft or audit';
   end if;
 end $$;
 
-reset role;
 insert into public.workflow_definition_snapshots (
   id, tenant_id, company_id, workflow_key, template_version, schema_version, definition, definition_hash
 ) values
@@ -1490,23 +1520,30 @@ select set_config(
 );
 
 do $$
-declare
-  definition_before jsonb;
-  audit_count bigint;
 begin
   perform public.create_stage01_config_draft(
     '63000000-0000-4000-8000-000000000022',
     jsonb_build_object('expectedPublishedSnapshotId', '63000000-0000-4000-8000-000000000034'::uuid),
     '63000000-0000-4000-8000-000000000243'
   );
-  select definition into definition_before
-  from public.workflow_definition_drafts
-  where company_id = '63000000-0000-4000-8000-000000000022'
-    and workflow_key = 'vqh.stage01';
-  select count(*) into audit_count
-  from public.audit_events
-  where company_id = '63000000-0000-4000-8000-000000000022';
+end $$;
 
+reset role;
+
+create temporary table stage01_config_history_identity_before as
+select
+  (select definition from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000022' and workflow_key = 'vqh.stage01') as definition,
+  (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000022') as audit_count;
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"63000000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
+
+do $$
+begin
   begin
     perform public.update_stage01_config_draft(
       '63000000-0000-4000-8000-000000000022',
@@ -1522,8 +1559,14 @@ begin
     if sqlerrm <> 'STAGE01_DEFINITION_CONFIG_INVALID' then raise; end if;
   end;
 
-  if (select definition from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000022') is distinct from definition_before
-     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000022') <> audit_count
+end $$;
+
+reset role;
+
+do $$
+begin
+  if (select definition from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000022') is distinct from (select definition from stage01_config_history_identity_before)
+     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000022') <> (select audit_count from stage01_config_history_identity_before)
      or not exists (
        select 1 from public.workflow_definition_drafts
        where company_id = '63000000-0000-4000-8000-000000000022'
@@ -1534,7 +1577,11 @@ begin
   end if;
 end $$;
 
-reset role;
+create temporary table stage01_config_history_identity_publish_before as
+select
+  (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000022') as snapshot_count,
+  (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000022') as audit_count;
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -1543,17 +1590,7 @@ select set_config(
 );
 
 do $$
-declare
-  snapshot_count bigint;
-  audit_count bigint;
 begin
-  select count(*) into snapshot_count
-  from public.workflow_definition_snapshots
-  where company_id = '63000000-0000-4000-8000-000000000022';
-  select count(*) into audit_count
-  from public.audit_events
-  where company_id = '63000000-0000-4000-8000-000000000022';
-
   begin
     perform public.publish_stage01_config_draft(
       '63000000-0000-4000-8000-000000000022',
@@ -1565,8 +1602,14 @@ begin
     if sqlerrm <> 'STAGE01_DEFINITION_CONFIG_INVALID' then raise; end if;
   end;
 
-  if (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000022') <> snapshot_count
-     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000022') <> audit_count
+end $$;
+
+reset role;
+
+do $$
+begin
+  if (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000022') <> (select snapshot_count from stage01_config_history_identity_publish_before)
+     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000022') <> (select audit_count from stage01_config_history_identity_publish_before)
      or not exists (
        select 1 from public.workflow_definition_drafts
        where company_id = '63000000-0000-4000-8000-000000000022'
@@ -1577,7 +1620,6 @@ begin
   end if;
 end $$;
 
-reset role;
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -1612,23 +1654,30 @@ select set_config(
 );
 
 do $$
-declare
-  definition_before jsonb;
-  audit_count bigint;
 begin
   perform public.create_stage01_config_draft(
     '63000000-0000-4000-8000-000000000022',
     jsonb_build_object('expectedPublishedSnapshotId', '63000000-0000-4000-8000-000000000035'::uuid),
     '63000000-0000-4000-8000-000000000254'
   );
-  select definition into definition_before
-  from public.workflow_definition_drafts
-  where company_id = '63000000-0000-4000-8000-000000000022'
-    and workflow_key = 'vqh.stage01';
-  select count(*) into audit_count
-  from public.audit_events
-  where company_id = '63000000-0000-4000-8000-000000000022';
+end $$;
 
+reset role;
+
+create temporary table stage01_config_history_criterion_before as
+select
+  (select definition from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000022' and workflow_key = 'vqh.stage01') as definition,
+  (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000022') as audit_count;
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"63000000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
+
+do $$
+begin
   begin
     perform public.update_stage01_config_draft(
       '63000000-0000-4000-8000-000000000022',
@@ -1644,8 +1693,14 @@ begin
     if sqlerrm <> 'STAGE01_DEFINITION_CONFIG_INVALID' then raise; end if;
   end;
 
-  if (select definition from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000022') is distinct from definition_before
-     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000022') <> audit_count
+end $$;
+
+reset role;
+
+do $$
+begin
+  if (select definition from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000022') is distinct from (select definition from stage01_config_history_criterion_before)
+     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000022') <> (select audit_count from stage01_config_history_criterion_before)
      or not exists (
        select 1 from public.workflow_definition_drafts
        where company_id = '63000000-0000-4000-8000-000000000022'
@@ -1656,7 +1711,11 @@ begin
   end if;
 end $$;
 
-reset role;
+create temporary table stage01_config_history_criterion_publish_before as
+select
+  (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000022') as snapshot_count,
+  (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000022') as audit_count;
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -1665,17 +1724,7 @@ select set_config(
 );
 
 do $$
-declare
-  snapshot_count bigint;
-  audit_count bigint;
 begin
-  select count(*) into snapshot_count
-  from public.workflow_definition_snapshots
-  where company_id = '63000000-0000-4000-8000-000000000022';
-  select count(*) into audit_count
-  from public.audit_events
-  where company_id = '63000000-0000-4000-8000-000000000022';
-
   begin
     perform public.publish_stage01_config_draft(
       '63000000-0000-4000-8000-000000000022',
@@ -1687,8 +1736,14 @@ begin
     if sqlerrm <> 'STAGE01_DEFINITION_CONFIG_INVALID' then raise; end if;
   end;
 
-  if (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000022') <> snapshot_count
-     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000022') <> audit_count
+end $$;
+
+reset role;
+
+do $$
+begin
+  if (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000022') <> (select snapshot_count from stage01_config_history_criterion_publish_before)
+     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000022') <> (select audit_count from stage01_config_history_criterion_publish_before)
      or not exists (
        select 1 from public.workflow_definition_drafts
        where company_id = '63000000-0000-4000-8000-000000000022'
@@ -1699,7 +1754,6 @@ begin
   end if;
 end $$;
 
-reset role;
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -1747,18 +1801,25 @@ begin
     jsonb_build_object('expectedDraftVersion', 1),
     '63000000-0000-4000-8000-000000000258'
   );
-  if publish_result ->> 'templateVersion' <> '4'
-     or not exists (
-       select 1 from public.workflow_definition_snapshots
-       where company_id = '63000000-0000-4000-8000-000000000022'
-         and template_version = 4
-         and definition #>> '{criteria,5,key}' = 'legacy_contract'
-     ) then
-    raise exception 'DB-S01-CONFIG-CMD retaining the historical criterion key did not unlock publication';
+  if publish_result ->> 'templateVersion' <> '4' then
+    raise exception 'DB-S01-CONFIG-CMD publication result did not report template version 4';
   end if;
 end $$;
 
 reset role;
+
+do $$
+begin
+  if not exists (
+    select 1 from public.workflow_definition_snapshots
+    where company_id = '63000000-0000-4000-8000-000000000022'
+      and template_version = 4
+      and definition #>> '{criteria,5,key}' = 'legacy_contract'
+  ) then
+    raise exception 'DB-S01-CONFIG-CMD retaining the historical criterion key did not unlock publication';
+  end if;
+end $$;
+
 select 'PASS DB-S01-CONFIG-CMD transactional Stage 01 configuration command contract' as result;
 
 ROLLBACK;
