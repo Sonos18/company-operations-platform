@@ -111,6 +111,9 @@ test('keeps a retained conflicted Opportunity draft inspection-only until it is 
   await expect(save).toBeDisabled()
   await expect(page.getByText('Bản nháp chỉ dùng để xem. Hãy bỏ bản nháp và tải lại trước khi lưu tiếp.', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Bỏ bản nháp và tải lại' })).toBeVisible()
-  await save.evaluate((button: HTMLButtonElement) => button.click())
+  await save.evaluate((button: HTMLButtonElement) => {
+    if (!button.form) throw new Error('Opportunity save button is not contained by its form')
+    button.form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
   await expect.poll(() => updateRequests).toHaveLength(1)
 })
