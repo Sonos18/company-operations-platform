@@ -142,6 +142,47 @@ end $$;
 
 do $$
 begin
+  if to_regclass('public.workflow_taxonomy_values') is null
+     or to_regclass(format('public.%s%s', 'stage01_', 'taxonomy_values')) is not null then
+    raise exception 'DB-S01-CONFIG-SCHEMA workflow taxonomy relation replacement mismatch';
+  end if;
+
+  if exists (
+    select 1
+    from (values
+      ('id', 'uuid', 'NO'),
+      ('tenant_id', 'uuid', 'NO'),
+      ('company_id', 'uuid', 'NO'),
+      ('workflow_key', 'text', 'NO'),
+      ('taxonomy_key', 'text', 'NO'),
+      ('code', 'text', 'NO'),
+      ('label', 'text', 'NO'),
+      ('semantic_key', 'text', 'YES'),
+      ('behavior', 'jsonb', 'NO'),
+      ('is_active', 'boolean', 'NO'),
+      ('created_at', 'timestamp with time zone', 'NO'),
+      ('updated_at', 'timestamp with time zone', 'NO')
+    ) as expected(column_name, data_type, is_nullable)
+    left join information_schema.columns as actual
+      on actual.table_schema = 'public'
+     and actual.table_name = 'workflow_taxonomy_values'
+     and actual.column_name = expected.column_name
+    where actual.data_type is distinct from expected.data_type
+       or actual.is_nullable is distinct from expected.is_nullable
+  ) then
+    raise exception 'DB-S01-CONFIG-SCHEMA workflow taxonomy type or nullability contract mismatch';
+  end if;
+
+  if (select count(*)
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'workflow_taxonomy_values') <> 12 then
+    raise exception 'DB-S01-CONFIG-SCHEMA workflow taxonomy column contract is incomplete';
+  end if;
+end $$;
+
+do $$
+begin
   if exists (
     select 1
     from (values

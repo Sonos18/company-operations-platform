@@ -49,6 +49,29 @@ begin
      or has_table_privilege('anon', 'public.workflow_definition_drafts', 'delete') then
     raise exception 'DB-S01-CONFIG-SEC draft table privilege contract mismatch';
   end if;
+
+  if not has_table_privilege('authenticated', 'public.workflow_taxonomy_values', 'select')
+     or has_table_privilege('authenticated', 'public.workflow_taxonomy_values', 'insert')
+     or has_table_privilege('authenticated', 'public.workflow_taxonomy_values', 'update')
+     or has_table_privilege('authenticated', 'public.workflow_taxonomy_values', 'delete')
+     or has_table_privilege('anon', 'public.workflow_taxonomy_values', 'select')
+     or has_table_privilege('anon', 'public.workflow_taxonomy_values', 'insert')
+     or has_table_privilege('anon', 'public.workflow_taxonomy_values', 'update')
+     or has_table_privilege('anon', 'public.workflow_taxonomy_values', 'delete') then
+    raise exception 'DB-S01-CONFIG-SEC workflow taxonomy table privilege contract mismatch';
+  end if;
+
+  if has_function_privilege(
+       'public', 'private.sync_stage01_config_taxonomy_values(uuid,uuid,jsonb)', 'execute'
+     )
+     or has_function_privilege(
+       'anon', 'private.sync_stage01_config_taxonomy_values(uuid,uuid,jsonb)', 'execute'
+     )
+     or has_function_privilege(
+       'authenticated', 'private.sync_stage01_config_taxonomy_values(uuid,uuid,jsonb)', 'execute'
+     ) then
+    raise exception 'DB-S01-CONFIG-SEC private workflow taxonomy synchronizer must not be executable by API roles';
+  end if;
 end $$;
 
 insert into auth.users (id, email) values
@@ -235,6 +258,10 @@ begin
     raise exception 'DB-S01-CONFIG-SEC update/publish permissions unexpectedly granted config read';
   end if;
 
+  if (select count(*) from public.workflow_taxonomy_values) <> 0 then
+    raise exception 'DB-S01-CONFIG-SEC config permissions unexpectedly granted workflow taxonomy read';
+  end if;
+
   begin
     insert into public.workflow_definition_drafts (
       tenant_id, company_id, workflow_key, base_snapshot_id, definition, version,
@@ -260,6 +287,17 @@ begin
     delete from public.workflow_definition_drafts
      where id = '62000000-0000-4000-8000-000000000040';
     raise exception 'DB-S01-CONFIG-SEC direct draft delete unexpectedly succeeded';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    insert into public.workflow_taxonomy_values (
+      tenant_id, company_id, workflow_key, taxonomy_key, code, label, semantic_key, behavior, is_active
+    ) values (
+      '62000000-0000-4000-8000-000000000010', '62000000-0000-4000-8000-000000000020',
+      'vqh.stage01', 'customer_type', 'forbidden_config_direct_insert', 'Forbidden config direct insert', null, '{}'::jsonb, true
+    );
+    raise exception 'DB-S01-CONFIG-SEC config permissions unexpectedly granted workflow taxonomy insert';
   exception when insufficient_privilege then null;
   end;
 end $$;

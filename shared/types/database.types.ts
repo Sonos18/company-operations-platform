@@ -1400,56 +1400,6 @@ export type Database = {
           },
         ]
       }
-      stage01_taxonomy_values: {
-        Row: {
-          behavior: Json
-          code: string
-          company_id: string
-          created_at: string
-          id: string
-          is_active: boolean
-          label: string
-          semantic_key: string | null
-          taxonomy_key: string
-          tenant_id: string
-          updated_at: string
-        }
-        Insert: {
-          behavior?: Json
-          code: string
-          company_id: string
-          created_at?: string
-          id?: string
-          is_active?: boolean
-          label: string
-          semantic_key?: string | null
-          taxonomy_key: string
-          tenant_id: string
-          updated_at?: string
-        }
-        Update: {
-          behavior?: Json
-          code?: string
-          company_id?: string
-          created_at?: string
-          id?: string
-          is_active?: boolean
-          label?: string
-          semantic_key?: string | null
-          taxonomy_key?: string
-          tenant_id?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "stage01_taxonomy_values_company_fk"
-            columns: ["company_id", "tenant_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id", "tenant_id"]
-          },
-        ]
-      }
       tenant_memberships: {
         Row: {
           created_at: string
@@ -1911,6 +1861,59 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "workflow_instances"
             referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      workflow_taxonomy_values: {
+        Row: {
+          behavior: Json
+          code: string
+          company_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          label: string
+          semantic_key: string | null
+          taxonomy_key: string
+          tenant_id: string
+          updated_at: string
+          workflow_key: string
+        }
+        Insert: {
+          behavior?: Json
+          code: string
+          company_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label: string
+          semantic_key?: string | null
+          taxonomy_key: string
+          tenant_id: string
+          updated_at?: string
+          workflow_key: string
+        }
+        Update: {
+          behavior?: Json
+          code?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+          semantic_key?: string | null
+          taxonomy_key?: string
+          tenant_id?: string
+          updated_at?: string
+          workflow_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_taxonomy_values_company_fk"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
           },
         ]
       }

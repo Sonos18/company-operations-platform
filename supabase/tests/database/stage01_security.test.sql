@@ -134,7 +134,7 @@ begin
     'workflow_node_assignments',
     'workflow_blockers',
     'opportunities',
-    'stage01_taxonomy_values',
+    'workflow_taxonomy_values',
     'contacts',
     'contact_methods',
     'opportunity_contacts',
@@ -169,11 +169,13 @@ insert into auth.users (id, email) values
   ('52000000-0000-4000-8000-000000000001', 'stage01-security@test.invalid');
 
 insert into public.tenants (id, code, name) values
-  ('52000000-0000-4000-8000-000000000010', 'stage01-security', 'Stage 01 security test');
+  ('52000000-0000-4000-8000-000000000010', 'stage01-security', 'Stage 01 security test'),
+  ('52000000-0000-4000-8000-000000000011', 'stage01-security-other', 'Stage 01 security other tenant');
 
 insert into public.companies (id, tenant_id, code, name) values
   ('52000000-0000-4000-8000-000000000020', '52000000-0000-4000-8000-000000000010', 'S01-SEC-A', 'Stage 01 security A'),
-  ('52000000-0000-4000-8000-000000000021', '52000000-0000-4000-8000-000000000010', 'S01-SEC-B', 'Stage 01 security B');
+  ('52000000-0000-4000-8000-000000000021', '52000000-0000-4000-8000-000000000010', 'S01-SEC-B', 'Stage 01 security B'),
+  ('52000000-0000-4000-8000-000000000022', '52000000-0000-4000-8000-000000000011', 'S01-SEC-C', 'Stage 01 security C');
 
 insert into public.tenant_memberships (user_id, tenant_id, roles) values
   ('52000000-0000-4000-8000-000000000001', '52000000-0000-4000-8000-000000000010', array['member']);
@@ -228,6 +230,26 @@ insert into public.opportunities (id, tenant_id, company_id, primary_customer_na
     '52000000-0000-4000-8000-000000000001'
   );
 
+insert into public.workflow_taxonomy_values (
+  tenant_id, company_id, workflow_key, taxonomy_key, code, label, semantic_key, behavior, is_active
+) values
+  (
+    '52000000-0000-4000-8000-000000000010', '52000000-0000-4000-8000-000000000020',
+    'vqh.stage01', 'customer_type', 'visible_catalog_value', 'Visible catalog value', null, '{}'::jsonb, true
+  ),
+  (
+    '52000000-0000-4000-8000-000000000010', '52000000-0000-4000-8000-000000000020',
+    'test.synthetic.workflow', 'customer_type', 'synthetic_catalog_value', 'Synthetic catalog value', null, '{}'::jsonb, true
+  ),
+  (
+    '52000000-0000-4000-8000-000000000010', '52000000-0000-4000-8000-000000000021',
+    'vqh.stage01', 'customer_type', 'hidden_catalog_value', 'Hidden catalog value', null, '{}'::jsonb, true
+  ),
+  (
+    '52000000-0000-4000-8000-000000000011', '52000000-0000-4000-8000-000000000022',
+    'vqh.stage01', 'customer_type', 'other_tenant_catalog_value', 'Other tenant catalog value', null, '{}'::jsonb, true
+  );
+
 insert into public.workflow_definition_snapshots (
   id, tenant_id, company_id, workflow_key, template_version, schema_version, definition, definition_hash
 ) values
@@ -279,6 +301,22 @@ begin
     raise exception 'DB-S01-SEC Workflow RLS did not require scoped journey.read';
   end if;
 
+  if (select count(*) from public.workflow_taxonomy_values) <> 1
+     or not exists (
+       select 1 from public.workflow_taxonomy_values
+       where company_id = '52000000-0000-4000-8000-000000000020'
+         and workflow_key = 'vqh.stage01'
+         and code = 'visible_catalog_value'
+     )
+     or exists (
+       select 1 from public.workflow_taxonomy_values
+       where company_id = '52000000-0000-4000-8000-000000000020'
+         and workflow_key = 'test.synthetic.workflow'
+         and code = 'synthetic_catalog_value'
+     ) then
+    raise exception 'DB-S01-SEC workflow taxonomy read exposed a non-Stage 01 workflow';
+  end if;
+
   begin
     insert into public.opportunities (tenant_id, company_id, primary_customer_name, created_by)
     values (
@@ -301,6 +339,17 @@ begin
     delete from public.opportunities
     where id = '52000000-0000-4000-8000-000000000030';
     raise exception 'DB-S01-SEC direct DELETE unexpectedly succeeded';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    insert into public.workflow_taxonomy_values (
+      tenant_id, company_id, workflow_key, taxonomy_key, code, label, semantic_key, behavior, is_active
+    ) values (
+      '52000000-0000-4000-8000-000000000010', '52000000-0000-4000-8000-000000000020',
+      'vqh.stage01', 'customer_type', 'forbidden_direct_insert', 'Forbidden direct insert', null, '{}'::jsonb, true
+    );
+    raise exception 'DB-S01-SEC direct workflow taxonomy INSERT unexpectedly succeeded';
   exception when insufficient_privilege then null;
   end;
 end $$;
@@ -341,6 +390,9 @@ do $$
 begin
   if (select count(*) from public.opportunities) <> 0 then
     raise exception 'DB-S01-SEC revoked opportunity.read was not effective immediately';
+  end if;
+  if (select count(*) from public.workflow_taxonomy_values) <> 0 then
+    raise exception 'DB-S01-SEC revoked opportunity.read still exposed workflow taxonomy values';
   end if;
 end $$;
 
@@ -411,6 +463,21 @@ begin
        'public', 'private.stage01_taxonomy_entry(jsonb,text,text)', 'execute'
      ) then
     raise exception 'DB-S01-SEC private taxonomy helper must not be executable by API roles';
+  end if;
+end $$;
+
+do $$
+begin
+  if has_function_privilege(
+       'authenticated', 'private.sync_stage01_config_taxonomy_values(uuid,uuid,jsonb)', 'execute'
+     )
+     or has_function_privilege(
+       'anon', 'private.sync_stage01_config_taxonomy_values(uuid,uuid,jsonb)', 'execute'
+     )
+     or has_function_privilege(
+       'public', 'private.sync_stage01_config_taxonomy_values(uuid,uuid,jsonb)', 'execute'
+     ) then
+    raise exception 'DB-S01-SEC private workflow taxonomy synchronizer must not be executable by API roles';
   end if;
 end $$;
 
