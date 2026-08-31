@@ -238,6 +238,10 @@ insert into public.workflow_taxonomy_values (
     'vqh.stage01', 'customer_type', 'visible_catalog_value', 'Visible catalog value', null, '{}'::jsonb, true
   ),
   (
+    '52000000-0000-4000-8000-000000000010', '52000000-0000-4000-8000-000000000020',
+    'test.synthetic.workflow', 'customer_type', 'synthetic_catalog_value', 'Synthetic catalog value', null, '{}'::jsonb, true
+  ),
+  (
     '52000000-0000-4000-8000-000000000010', '52000000-0000-4000-8000-000000000021',
     'vqh.stage01', 'customer_type', 'hidden_catalog_value', 'Hidden catalog value', null, '{}'::jsonb, true
   ),
@@ -303,8 +307,14 @@ begin
        where company_id = '52000000-0000-4000-8000-000000000020'
          and workflow_key = 'vqh.stage01'
          and code = 'visible_catalog_value'
+     )
+     or exists (
+       select 1 from public.workflow_taxonomy_values
+       where company_id = '52000000-0000-4000-8000-000000000020'
+         and workflow_key = 'test.synthetic.workflow'
+         and code = 'synthetic_catalog_value'
      ) then
-    raise exception 'DB-S01-SEC workflow taxonomy read did not remain governed by scoped opportunity.read';
+    raise exception 'DB-S01-SEC workflow taxonomy read exposed a non-Stage 01 workflow';
   end if;
 
   begin

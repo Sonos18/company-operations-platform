@@ -83,7 +83,10 @@ grant select on table public.workflow_taxonomy_values to authenticated;
 alter policy workflow_taxonomy_values_read
   on public.workflow_taxonomy_values
   to authenticated
-  using (private.has_company_permission(tenant_id, company_id, 'opportunity.read'));
+  using (
+    workflow_key = 'vqh.stage01'
+    and private.has_company_permission(tenant_id, company_id, 'opportunity.read')
+  );
 
 create or replace function private.sync_stage01_config_taxonomy_values(
   target_tenant_id uuid,
