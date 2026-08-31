@@ -58,14 +58,19 @@ begin
            )
          )
        )
+       or pg_catalog.jsonb_typeof(entry.value -> 'code') <> 'string'
+       or pg_catalog.jsonb_typeof(entry.value -> 'label') <> 'string'
        or nullif(pg_catalog.btrim(entry.value ->> 'code'), '') is null
        or nullif(pg_catalog.btrim(entry.value ->> 'label'), '') is null
+       or (entry.value ->> 'code') is distinct from pg_catalog.btrim(entry.value ->> 'code')
+       or (entry.value ->> 'label') is distinct from pg_catalog.btrim(entry.value ->> 'label')
        or (
          entry.value ? 'semanticKey'
          and (
            not allow_semantic_key
            or pg_catalog.jsonb_typeof(entry.value -> 'semanticKey') <> 'string'
            or nullif(pg_catalog.btrim(entry.value ->> 'semanticKey'), '') is null
+           or (entry.value ->> 'semanticKey') is distinct from pg_catalog.btrim(entry.value ->> 'semanticKey')
          )
        )
        or (
@@ -77,6 +82,7 @@ begin
          and entry.value ? 'behavior'
          and (
            pg_catalog.jsonb_typeof(entry.value -> 'behavior') <> 'object'
+           or not (entry.value -> 'behavior' ? 'requiresReferrer')
            or exists (
              select 1
              from pg_catalog.jsonb_object_keys(entry.value -> 'behavior') as behavior_key(key)
@@ -92,7 +98,7 @@ begin
     select 1
     from pg_catalog.jsonb_each(target_taxonomies) as taxonomy(taxonomy_key, values_json)
     cross join lateral pg_catalog.jsonb_array_elements(taxonomy.values_json) as entry(value)
-    group by taxonomy.taxonomy_key, entry.value ->> 'code'
+    group by taxonomy.taxonomy_key, pg_catalog.btrim(entry.value ->> 'code')
     having pg_catalog.count(*) > 1
   ) then
     raise exception using errcode = 'P0001', message = 'STAGE01_DEFINITION_CONFIG_INVALID';
@@ -137,19 +143,33 @@ begin
          from pg_catalog.jsonb_object_keys(criterion.value) as supplied(key)
          where not (supplied.key = any(allowed_criteria_keys))
        )
+       or pg_catalog.jsonb_typeof(criterion.value -> 'key') <> 'string'
+       or pg_catalog.jsonb_typeof(criterion.value -> 'dimensionKey') <> 'string'
+       or pg_catalog.jsonb_typeof(criterion.value -> 'label') <> 'string'
+       or pg_catalog.jsonb_typeof(criterion.value -> 'description') <> 'string'
+       or pg_catalog.jsonb_typeof(criterion.value -> 'criticality') <> 'string'
+       or pg_catalog.jsonb_typeof(criterion.value -> 'applicabilityMode') <> 'string'
        or nullif(pg_catalog.btrim(criterion.value ->> 'key'), '') is null
        or nullif(pg_catalog.btrim(criterion.value ->> 'label'), '') is null
        or nullif(pg_catalog.btrim(criterion.value ->> 'description'), '') is null
-       or criterion.value ->> 'dimensionKey' <> all(required_dimensions)
-       or criterion.value ->> 'criticality' not in ('required', 'optional', 'conditional')
-       or criterion.value ->> 'applicabilityMode' not in ('always', 'manual')
+       or (criterion.value ->> 'key') is distinct from pg_catalog.btrim(criterion.value ->> 'key')
+       or (criterion.value ->> 'dimensionKey') is distinct from pg_catalog.btrim(criterion.value ->> 'dimensionKey')
+       or (criterion.value ->> 'label') is distinct from pg_catalog.btrim(criterion.value ->> 'label')
+       or (criterion.value ->> 'description') is distinct from pg_catalog.btrim(criterion.value ->> 'description')
+       or (criterion.value ->> 'criticality') is distinct from pg_catalog.btrim(criterion.value ->> 'criticality')
+       or (criterion.value ->> 'applicabilityMode') is distinct from pg_catalog.btrim(criterion.value ->> 'applicabilityMode')
+       or not (coalesce(criterion.value ->> 'dimensionKey', '') = any(required_dimensions))
+       or not (coalesce(criterion.value ->> 'criticality', '') = any(array['required', 'optional', 'conditional']))
+       or not (coalesce(criterion.value ->> 'applicabilityMode', '') = any(array['always', 'manual']))
        or pg_catalog.jsonb_typeof(criterion.value -> 'allowsNotApplicable') <> 'boolean'
        or pg_catalog.jsonb_typeof(criterion.value -> 'displayOrder') <> 'number'
-       or not (criterion.value ->> 'displayOrder' ~ '^(0|[1-9][0-9]*)$')
+       or (criterion.value ->> 'displayOrder')::numeric < 0
+       or (criterion.value ->> 'displayOrder')::numeric
+            <> pg_catalog.trunc((criterion.value ->> 'displayOrder')::numeric)
   ) or exists (
     select 1
     from pg_catalog.jsonb_array_elements(target_criteria) as criterion(value)
-    group by criterion.value ->> 'key'
+    group by pg_catalog.btrim(criterion.value ->> 'key')
     having pg_catalog.count(*) > 1
   ) or exists (
     select 1
@@ -330,6 +350,39 @@ begin
 end;
 $$;
 
+create function private.assert_stage01_config_historical_identity(
+  target_tenant_id uuid,
+  target_company_id uuid,
+  target_candidate_definition jsonb
+)
+returns void
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  historical_definition jsonb;
+begin
+  for historical_definition in
+    select snapshot.definition
+    from public.workflow_definition_snapshots as snapshot
+    where snapshot.tenant_id = target_tenant_id
+      and snapshot.company_id = target_company_id
+      and snapshot.workflow_key = 'vqh.stage01'
+    order by snapshot.template_version asc
+  loop
+    perform private.assert_valid_stage01_config_definition(historical_definition);
+    perform private.assert_stage01_config_reserved_identity(
+      historical_definition, target_candidate_definition
+    );
+    perform private.assert_stage01_config_criterion_identity(
+      historical_definition, target_candidate_definition
+    );
+  end loop;
+end;
+$$;
+
 create function private.stage01_config_business_taxonomies(target_taxonomies jsonb)
 returns jsonb
 language sql
@@ -382,13 +435,19 @@ set search_path = ''
 as $$
 declare
   version_text text;
+  version_numeric numeric;
 begin
   version_text := target_input ->> 'expectedDraftVersion';
-  if pg_catalog.jsonb_typeof(target_input -> 'expectedDraftVersion') <> 'number'
-     or version_text !~ '^(0|[1-9][0-9]*)$' then
+  if pg_catalog.jsonb_typeof(target_input -> 'expectedDraftVersion') <> 'number' then
     raise exception using errcode = '22023', message = 'INVALID_COMMAND_INPUT';
   end if;
-  return version_text::bigint;
+  version_numeric := version_text::numeric;
+  if version_numeric < 0
+     or version_numeric <> pg_catalog.trunc(version_numeric)
+     or version_numeric > 9223372036854775807::numeric then
+    raise exception using errcode = '22023', message = 'INVALID_COMMAND_INPUT';
+  end if;
+  return version_numeric::bigint;
 end;
 $$;
 
@@ -410,7 +469,50 @@ declare
     'timeline_status', 'priority', 'intake_channel', 'blocker_category'
   ];
 begin
-  insert into public.stage01_taxonomy_values (
+  perform private.assert_valid_stage01_config_definition(target_definition);
+
+  if exists (
+    select 1
+    from public.stage01_taxonomy_values as catalog
+    where catalog.tenant_id = target_tenant_id
+      and catalog.company_id = target_company_id
+      and catalog.taxonomy_key = any(taxonomy_keys)
+      and catalog.semantic_key is not null
+      and (
+        not exists (
+          select 1
+          from pg_catalog.jsonb_array_elements(
+            target_definition #> array['taxonomies', catalog.taxonomy_key]
+          ) as candidate_entry(value)
+          where candidate_entry.value ->> 'code' = catalog.code
+        )
+        or exists (
+          select 1
+          from pg_catalog.jsonb_array_elements(
+            target_definition #> array['taxonomies', catalog.taxonomy_key]
+          ) as candidate_entry(value)
+          where candidate_entry.value ->> 'code' = catalog.code
+            and (candidate_entry.value ->> 'semanticKey') is distinct from catalog.semantic_key
+        )
+      )
+  ) or exists (
+    select 1
+    from public.stage01_taxonomy_values as catalog
+    join lateral pg_catalog.jsonb_array_elements(
+      target_definition #> array['taxonomies', catalog.taxonomy_key]
+    ) as candidate_entry(value) on true
+    where catalog.tenant_id = target_tenant_id
+      and catalog.company_id = target_company_id
+      and catalog.taxonomy_key = any(taxonomy_keys)
+      and catalog.semantic_key is not null
+      and candidate_entry.value ? 'semanticKey'
+      and candidate_entry.value ->> 'semanticKey' = catalog.semantic_key
+      and candidate_entry.value ->> 'code' is distinct from catalog.code
+  ) then
+    raise exception using errcode = 'P0001', message = 'STAGE01_DEFINITION_CONFIG_INVALID';
+  end if;
+
+  insert into public.stage01_taxonomy_values as catalog (
     tenant_id, company_id, taxonomy_key, code, label, semantic_key,
     behavior, is_active, updated_at
   )
@@ -428,7 +530,7 @@ begin
   cross join lateral pg_catalog.jsonb_array_elements(taxonomy.values_json) as entry(value)
   on conflict (company_id, taxonomy_key, code) do update
     set label = excluded.label,
-        semantic_key = excluded.semantic_key,
+        semantic_key = coalesce(catalog.semantic_key, excluded.semantic_key),
         behavior = excluded.behavior,
         is_active = true,
         updated_at = excluded.updated_at;
@@ -642,6 +744,9 @@ begin
   );
   perform private.assert_stage01_config_criterion_identity(
     base_definition, candidate_definition
+  );
+  perform private.assert_stage01_config_historical_identity(
+    tenant_id, target_company_id, candidate_definition
   );
 
   update public.workflow_definition_drafts as draft
@@ -858,6 +963,9 @@ begin
   perform private.assert_stage01_config_criterion_identity(
     latest_definition, draft_row.definition
   );
+  perform private.assert_stage01_config_historical_identity(
+    tenant_id, target_company_id, draft_row.definition
+  );
 
   new_template_version := latest_template_version + 1;
   definition_hash := pg_catalog.encode(
@@ -939,6 +1047,7 @@ revoke all on function private.assert_valid_stage01_config_definition(jsonb) fro
 revoke all on function private.merge_stage01_config_taxonomies(jsonb, jsonb) from public, anon, authenticated;
 revoke all on function private.assert_stage01_config_reserved_identity(jsonb, jsonb) from public, anon, authenticated;
 revoke all on function private.assert_stage01_config_criterion_identity(jsonb, jsonb) from public, anon, authenticated;
+revoke all on function private.assert_stage01_config_historical_identity(uuid, uuid, jsonb) from public, anon, authenticated;
 revoke all on function private.stage01_config_business_taxonomies(jsonb) from public, anon, authenticated;
 revoke all on function private.stage01_config_draft_result(public.workflow_definition_drafts) from public, anon, authenticated;
 revoke all on function private.stage01_config_expected_draft_version(jsonb) from public, anon, authenticated;
