@@ -382,15 +382,15 @@ begin
   begin
     perform private.create_stage01_config_draft('63000000-0000-4000-8000-000000000020', '{"unexpected":true}'::jsonb, '63000000-0000-4000-8000-000000000193');
     raise exception 'DB-S01-CONFIG-CMD malformed private create unexpectedly succeeded';
-  exception when raise_exception then if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if; end;
+  exception when invalid_parameter_value then if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if; end;
   begin
     perform private.discard_stage01_config_draft('63000000-0000-4000-8000-000000000020', '{"expectedDraftVersion":"0"}'::jsonb, '63000000-0000-4000-8000-000000000194');
     raise exception 'DB-S01-CONFIG-CMD malformed private discard unexpectedly succeeded';
-  exception when raise_exception then if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if; end;
+  exception when invalid_parameter_value then if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if; end;
   begin
     perform private.publish_stage01_config_draft('63000000-0000-4000-8000-000000000020', '{"expectedDraftVersion":"0"}'::jsonb, '63000000-0000-4000-8000-000000000195');
     raise exception 'DB-S01-CONFIG-CMD malformed private publish unexpectedly succeeded';
-  exception when raise_exception then if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if; end;
+  exception when invalid_parameter_value then if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if; end;
 end $$;
 
 do $$
@@ -428,7 +428,7 @@ begin
       '63000000-0000-4000-8000-000000000197'
     );
     raise exception 'DB-S01-CONFIG-CMD malformed UUID unexpectedly reached draft comparison';
-  exception when raise_exception then
+  exception when invalid_parameter_value then
     if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
   end;
 end $$;
@@ -833,7 +833,7 @@ begin
       '63000000-0000-4000-8000-000000000247'
     );
     raise exception 'DB-S01-CONFIG-CMD direct private update accepted a fractional draft version';
-  exception when raise_exception then
+  exception when invalid_parameter_value then
     if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
   end;
 
@@ -848,7 +848,7 @@ begin
       '63000000-0000-4000-8000-000000000250'
     );
     raise exception 'DB-S01-CONFIG-CMD direct private update accepted an unsafe draft version';
-  exception when raise_exception then
+  exception when invalid_parameter_value then
     if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
   end;
 
@@ -859,7 +859,7 @@ begin
       '63000000-0000-4000-8000-000000000251'
     );
     raise exception 'DB-S01-CONFIG-CMD direct private discard accepted an unsafe draft version';
-  exception when raise_exception then
+  exception when invalid_parameter_value then
     if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
   end;
 
@@ -870,7 +870,7 @@ begin
       '63000000-0000-4000-8000-000000000252'
     );
     raise exception 'DB-S01-CONFIG-CMD direct private publish accepted an unsafe draft version';
-  exception when raise_exception then
+  exception when invalid_parameter_value then
     if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
   end;
 
