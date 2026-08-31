@@ -17,6 +17,8 @@ const mappings: Record<string, { status: number, code: ApiErrorCode, message: st
   VERSION_CONFLICT: { status: 409, code: 'VERSION_CONFLICT', message: 'Dữ liệu đã thay đổi. Vui lòng tải lại và thử lại.' },
   STAGE01_DEFINITION_CONFIG_UNAVAILABLE: { status: 409, code: 'STAGE01_DEFINITION_CONFIG_UNAVAILABLE', message: 'Cấu hình Stage 01 chưa sẵn sàng.' },
   STAGE01_DEFINITION_CONFIG_INVALID: { status: 409, code: 'STAGE01_DEFINITION_CONFIG_INVALID', message: 'Cấu hình Stage 01 không hợp lệ.' },
+  STAGE01_CONFIG_DRAFT_EXISTS: { status: 409, code: 'STAGE01_CONFIG_DRAFT_EXISTS', message: 'Configuration draft đã tồn tại.' },
+  STAGE01_CONFIG_DRAFT_NOT_FOUND: { status: 404, code: 'STAGE01_CONFIG_DRAFT_NOT_FOUND', message: 'Không tìm thấy configuration draft.' },
   STAGE01_EVALUATION_CONFIG_UNAVAILABLE: { status: 409, code: 'STAGE01_EVALUATION_CONFIG_UNAVAILABLE', message: 'Cấu hình đánh giá Stage 01 chưa sẵn sàng.' },
   STAGE01_NODE_NOT_STARTABLE: { status: 409, code: 'WORKFLOW_NODE_NOT_READY', message: 'Workflow node chưa sẵn sàng.' },
   STAGE01_ACCOUNTABLE_OWNER_REQUIRED: { status: 409, code: 'WORKFLOW_OWNER_REQUIRED', message: 'Workflow node cần Accountable Owner.' },

@@ -1565,6 +1565,63 @@ export type Database = {
           },
         ]
       }
+      workflow_definition_drafts: {
+        Row: {
+          base_snapshot_id: string
+          company_id: string
+          created_at: string
+          created_by: string
+          definition: Json
+          id: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string
+          version: number
+          workflow_key: string
+        }
+        Insert: {
+          base_snapshot_id: string
+          company_id: string
+          created_at?: string
+          created_by: string
+          definition: Json
+          id?: string
+          tenant_id: string
+          updated_at?: string
+          updated_by: string
+          version?: number
+          workflow_key: string
+        }
+        Update: {
+          base_snapshot_id?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          definition?: Json
+          id?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string
+          version?: number
+          workflow_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_definition_drafts_base_snapshot_fk"
+            columns: ["base_snapshot_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_definition_snapshots"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "workflow_definition_drafts_company_fk"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+        ]
+      }
       workflow_definition_snapshots: {
         Row: {
           company_id: string
@@ -1956,7 +2013,23 @@ export type Database = {
         }
         Returns: Json
       }
+      create_stage01_config_draft: {
+        Args: {
+          target_company_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
       create_stage01_opportunity: {
+        Args: {
+          target_company_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      discard_stage01_config_draft: {
         Args: {
           target_company_id: string
           target_input: Json
@@ -2068,6 +2141,14 @@ export type Database = {
           employee_id: string
           user_id: string
         }[]
+      }
+      publish_stage01_config_draft: {
+        Args: {
+          target_company_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
       }
       raise_opportunity_duplicate_concern: {
         Args: {
@@ -2300,6 +2381,14 @@ export type Database = {
           target_company_id: string
           target_input: Json
           target_opportunity_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      update_stage01_config_draft: {
+        Args: {
+          target_company_id: string
+          target_input: Json
           target_request_id: string
         }
         Returns: Json

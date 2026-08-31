@@ -25,6 +25,11 @@ import type {
   CriterionEvaluationRevisionInput, ReactivateStage01Input, RecordFinalDecisionInput,
   ReturnForClarificationInput, Stage01Detail, SubmitRecommendationInput,
 } from '../features/stage01/stage01.types'
+import type {
+  CreateStage01ConfigDraftInput, DiscardStage01ConfigDraftInput, PublishStage01ConfigDraftInput,
+  PublishStage01ConfigResult, Stage01BusinessConfigView, Stage01ConfigDraft,
+  UpdateStage01ConfigDraftInput,
+} from '../../shared/schemas/stage01-config'
 
 export interface CompanyRepository {
   getCurrent(): Promise<Company>
@@ -108,6 +113,14 @@ export interface Stage01Repository {
   reactivate(opportunityId: string, input: ReactivateStage01Input): Promise<void>
 }
 
+export interface Stage01ConfigRepository {
+  get(): Promise<Stage01BusinessConfigView>
+  createDraft(input: CreateStage01ConfigDraftInput): Promise<Stage01ConfigDraft>
+  updateDraft(input: UpdateStage01ConfigDraftInput): Promise<Stage01ConfigDraft>
+  discardDraft(input: DiscardStage01ConfigDraftInput): Promise<void>
+  publishDraft(input: PublishStage01ConfigDraftInput): Promise<PublishStage01ConfigResult>
+}
+
 export interface RepositoryRegistry {
   context: Readonly<CompanyContext>
   company: CompanyRepository
@@ -119,7 +132,8 @@ export interface RepositoryRegistry {
   opportunities: OpportunityRepository
   workflow: WorkflowRepository
   stage01: Stage01Repository
+  stage01Config: Stage01ConfigRepository
   prototype: PrototypeRepository
 }
 
-export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01'>
+export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01' | 'stage01Config'>

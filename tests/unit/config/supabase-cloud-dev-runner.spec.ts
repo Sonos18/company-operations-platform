@@ -7,6 +7,24 @@ import { runSupabaseDevMode } from '../../../scripts/run-supabase-dev.mjs'
 
 const worktrees: string[] = []
 const oldVqhProjectRef = ['ykrurrum', 'qlsxnqfqunjc'].join('')
+const stage01SqlInventory = [
+  'stage01_schema.test.sql',
+  'stage01_definition.test.sql',
+  'stage01_bootstrap.test.sql',
+  'stage01_security.test.sql',
+  'stage01_history.test.sql',
+  'stage01_commands.test.sql',
+  'stage01_flows.test.sql',
+  'stage01_config_schema.test.sql',
+  'stage01_config_security.test.sql',
+  'stage01_config_commands.test.sql',
+]
+
+const stage01ConfigPermissionMetadata = [
+  "('stage01.config.read', 'stage01', 'Read Stage 01 configuration', 'Read published Stage 01 configuration and active drafts')",
+  "('stage01.config.update', 'stage01', 'Update Stage 01 configuration', 'Create, update, and discard Stage 01 configuration drafts')",
+  "('stage01.config.publish', 'stage01', 'Publish Stage 01 configuration', 'Publish immutable Stage 01 configuration snapshots')",
+]
 
 function makeWorktree({ linked = true }: { linked?: boolean } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'taskovia-cloud-dev-runner-'))
@@ -187,13 +205,66 @@ describe('Cloud DEV fixed-mode runner', () => {
     expect(sql).toContain("'Complete explicit company permission set'")
     expect(sql).toContain("('opportunity.read', 'opportunity', 'Read opportunities'")
     expect(sql).toContain("('stage01.reactivate', 'stage01', 'Reactivate Stage 01'")
+    expect(stage01ConfigPermissionMetadata.every(metadata => sql.includes(metadata))).toBe(true)
+    for (const metadata of stage01ConfigPermissionMetadata) {
+      expect(sql.split(metadata)).toHaveLength(4)
+    }
     expect(sql).toContain('role.is_privileged is distinct from expected.is_privileged')
     expect(sql).toContain('role.is_system is distinct from true')
     expect(sql).toContain('role.is_active is distinct from true')
     expect(sql).toContain('expected_role_permissions')
     expect(sql).toContain("union all select 'company_admin', code from all_expected_permissions")
     expect(sql).toContain('select code from public.permissions except select code from all_expected_permissions')
+    expect(sql).toContain('select code from all_expected_permissions except select code from public.permissions')
+    expect(sql).toContain('select role_code, permission_code from expected_role_permissions except select role_code, permission_code from actual_role_permissions')
+    expect(sql).toContain('select role_code, permission_code from actual_role_permissions except select role_code, permission_code from expected_role_permissions')
+    const explicitRolePermissions = sql.slice(
+      sql.indexOf('explicit_role_permissions(role_code, permission_code) as (values'),
+      sql.indexOf('expected_role_permissions(role_code, permission_code) as ('),
+    )
+    expect(explicitRolePermissions).not.toContain('stage01.config.')
     expect(sql).toContain('company_role_assignments')
+  })
+
+  it('executes the complete fixed Stage 01 inventory exactly once, including B1 configuration verification files', () => {
+    const root = makeWorktree()
+    const testDirectory = join(root, 'supabase/tests/database')
+    mkdirSync(testDirectory, { recursive: true })
+    for (const filename of stage01SqlInventory) {
+      writeFileSync(join(testDirectory, filename), "begin;\nselect 'PASS';\nrollback;\n")
+    }
+    const queriedFiles: string[] = []
+
+    runSupabaseDevMode('stage01-test', {
+      cwd: root,
+      spawn(_command, args) {
+        queriedFiles.push(args[5] ?? '')
+        return { status: 0 }
+      },
+    })
+
+    expect(queriedFiles).toEqual(stage01SqlInventory.map(filename => join(testDirectory, filename)))
+  })
+
+  it.each([
+    ['stage01_config_schema.test.sql', "begin;\nselect 'unsafe';\ncommit;\n", 'Stage 01 SQL verification must end with rollback'],
+    ['stage01_config_security.test.sql', "begin;\nmigration repair --status;\nrollback;\n", 'Stage 01 SQL contains a forbidden Cloud DEV operation'],
+    ['stage01_config_commands.test.sql', "select 'unsafe';\nrollback;\n", 'Stage 01 SQL verification must start with begin'],
+  ])('rejects unsafe B1 Stage 01 verification fixture %s before Cloud DEV access', (filename, sql, error) => {
+    const root = makeWorktree()
+    const testDirectory = join(root, 'supabase/tests/database')
+    mkdirSync(testDirectory, { recursive: true })
+    writeFileSync(join(testDirectory, filename), sql)
+    let spawnCalls = 0
+
+    expect(() => runSupabaseDevMode('stage01-test', {
+      cwd: root,
+      spawn() {
+        spawnCalls += 1
+        return { status: 0 }
+      },
+    })).toThrow(error)
+    expect(spawnCalls).toBe(0)
   })
 
   it('executes only allowlisted transaction-wrapped Stage 01 SQL files', () => {

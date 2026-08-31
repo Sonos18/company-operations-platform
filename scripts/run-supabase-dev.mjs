@@ -13,6 +13,9 @@ const STAGE01_TEST_FILES = [
   'supabase/tests/database/stage01_history.test.sql',
   'supabase/tests/database/stage01_commands.test.sql',
   'supabase/tests/database/stage01_flows.test.sql',
+  'supabase/tests/database/stage01_config_schema.test.sql',
+  'supabase/tests/database/stage01_config_security.test.sql',
+  'supabase/tests/database/stage01_config_commands.test.sql',
 ]
 const VQH_RLS_SMOKE_SQL = String.raw`begin;
 do $$
@@ -71,7 +74,10 @@ const STAGE01_PERMISSION_METADATA_SQL = String.raw`      ('opportunity.read', 'o
       ('stage01.recommendation.submit', 'stage01', 'Submit Stage 01 recommendations', 'Append Stage 01 Recommendation versions'),
       ('stage01.clarification.return', 'stage01', 'Return Stage 01 clarification', 'Return a Stage 01 Recommendation for clarification'),
       ('stage01.decision.record', 'stage01', 'Record Stage 01 decisions', 'Record the immutable Stage 01 Final Decision'),
-      ('stage01.reactivate', 'stage01', 'Reactivate Stage 01', 'Create a new Stage 01 evaluation execution and Decision Cycle')`
+      ('stage01.reactivate', 'stage01', 'Reactivate Stage 01', 'Create a new Stage 01 evaluation execution and Decision Cycle'),
+      ('stage01.config.read', 'stage01', 'Read Stage 01 configuration', 'Read published Stage 01 configuration and active drafts'),
+      ('stage01.config.update', 'stage01', 'Update Stage 01 configuration', 'Create, update, and discard Stage 01 configuration drafts'),
+      ('stage01.config.publish', 'stage01', 'Publish Stage 01 configuration', 'Publish immutable Stage 01 configuration snapshots')`
 const VQH_CANONICAL_CHECK_SQL = String.raw`begin;
 do $$
 begin
