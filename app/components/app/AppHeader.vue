@@ -15,7 +15,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   toggle: []
-  selectCompany: [companyId: string]
+  selectCompany: [companyId: string, control: HTMLSelectElement]
   signOut: []
 }>()
 
@@ -29,8 +29,8 @@ const initials = computed(() => {
 })
 
 function selectCompany(event: Event): void {
-  const companyId = (event.target as HTMLSelectElement).value
-  if (companyId) emit('selectCompany', companyId)
+  const control = event.currentTarget as HTMLSelectElement
+  if (control.value) emit('selectCompany', control.value, control)
 }
 </script>
 

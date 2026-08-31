@@ -1,20 +1,27 @@
 <script setup lang="ts">
 import { PRODUCT_BRAND } from '../../shared/constants/product-brand'
-import { switchCompanyAndReload } from '../components/app/shell-actions'
+import { selectCompanyWithUnsavedChanges } from '../components/app/company-switcher'
 
 const nuxtApp = useNuxtApp()
 const authStore = nuxtApp.$authStore
 const companyAccessStore = nuxtApp.$companyAccessStore
+const unsavedChangesGuard = useUnsavedChangesGuard()
 const headerCollapsed = ref(false)
 const sidebarCollapsed = ref(false)
 const companyName = computed(() => companyAccessStore.activeCompany?.companyName ?? 'Đang chọn công ty')
 const signingOut = computed(() => authStore.operations.signOut.status === 'pending')
 
-async function selectCompany(companyId: string): Promise<void> {
-  await switchCompanyAndReload(companyId, {
-    selectCompany: companyAccessStore.selectCompany,
-    clearRuntimeData: clearNuxtData,
-    reloadNuxtApp,
+async function selectCompany(companyId: string, control: HTMLSelectElement): Promise<void> {
+  await selectCompanyWithUnsavedChanges(companyId, {
+    activeCompanyId: companyAccessStore.activeCompanyId ?? '',
+    control,
+    confirmLeave: unsavedChangesGuard.confirmLeave,
+    clear: unsavedChangesGuard.clear,
+    actions: {
+      selectCompany: companyAccessStore.selectCompany,
+      clearRuntimeData: clearNuxtData,
+      reloadNuxtApp,
+    },
   })
 }
 
