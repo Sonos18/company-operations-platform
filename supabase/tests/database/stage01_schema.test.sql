@@ -576,7 +576,7 @@ begin
       ('workflow_taxonomy_values_key_not_blank', '%btrim(taxonomy_key) <> ''''%'::text),
       ('workflow_taxonomy_values_code_not_blank', '%btrim(code) <> ''''%'::text),
       ('workflow_taxonomy_values_label_not_blank', '%btrim(label) <> ''''%'::text),
-      ('workflow_taxonomy_values_semantic_not_blank', '%semantic_key IS NULL OR btrim(semantic_key) <> ''''%'::text),
+      ('workflow_taxonomy_values_semantic_not_blank', '%semantic_key IS NULL%) OR (btrim(semantic_key) <> ''''%'::text),
       ('workflow_taxonomy_values_behavior_object', '%jsonb_typeof(behavior) = ''object''%'::text)
     ) as expected(constraint_name, definition_pattern)
     left join pg_catalog.pg_constraint as actual
@@ -803,6 +803,11 @@ begin
   end;
 end $$;
 
-select 'PASS DB-S01-SCHEMA Stage 01 foundation relations' as result;
+select
+  'PASS DB-S01-SCHEMA Stage 01 foundation relations' as result,
+  current_setting('stage01_schema.catalog_preservation_count', true)::bigint
+    as catalog_preservation_count,
+  current_setting('stage01_schema.catalog_preservation_sha256', true)
+    as catalog_preservation_sha256;
 
 rollback;
