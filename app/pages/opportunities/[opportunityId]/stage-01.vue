@@ -167,6 +167,11 @@ async function returnToOpportunities(): Promise<void> {
         :reload="retry"
       />
 
+      <Stage01OperationalStage01WorkflowRuntimeControls
+        :detail="detail"
+        :run-and-reload="operational!.runAndReload"
+      />
+
       <section class="stage01-workspace__section" aria-labelledby="stage01-evaluation-heading">
         <div><p class="eyebrow">Đánh giá theo snapshot đã gắn</p><h2 id="stage01-evaluation-heading">Tiêu chí hiện tại</h2></div>
         <ul class="stage01-workspace__criteria">

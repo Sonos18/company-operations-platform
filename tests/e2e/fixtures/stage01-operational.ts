@@ -5,6 +5,17 @@ import { apiErrorBodySchema } from '../../../shared/schemas/api-error'
 export const stage01OpportunityId = '81000000-0000-4000-8000-000000000001'
 const timestamp = '2026-09-01T00:00:00.000Z'
 
+export interface WorkflowCommandRequest {
+  method: string
+  pathname: string
+  body: Record<string, unknown>
+}
+
+export interface Stage01OperationalRouteOptions {
+  onCanonicalRead?: () => void
+  onWorkflowCommand?: (request: WorkflowCommandRequest) => void | Promise<void>
+}
+
 export function createStage01OperationalDetail(): Stage01OperationalDetail {
   const intakeExecutionId = '81000000-0000-4000-8000-000000000010'
   const evaluationExecutionId = '81000000-0000-4000-8000-000000000011'
@@ -39,10 +50,29 @@ export function createStage01OperationalDetail(): Stage01OperationalDetail {
   })
 }
 
-export async function installStage01OperationalRoutes(page: Page, detail = createStage01OperationalDetail()): Promise<void> {
+export async function installStage01OperationalRoutes(
+  page: Page,
+  detail = createStage01OperationalDetail(),
+  options: Stage01OperationalRouteOptions = {},
+): Promise<void> {
   await page.route(/\/api\/companies\/[^/]+\/opportunities\/[^/]+\/stage-01$/, async route => {
     if (route.request().method() !== 'GET') return route.fallback()
+    options.onCanonicalRead?.()
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(detail) })
+  })
+  await page.route(/\/api\/companies\/[^/]+\/(?:workflow-nodes|workflow-assignments|workflow-blockers)\//, async route => {
+    const request = route.request()
+    if (request.method() !== 'POST') return route.fallback()
+    const pathname = new URL(request.url()).pathname
+    const body = JSON.parse(request.postData() ?? '{}') as Record<string, unknown>
+    await options.onWorkflowCommand?.({ method: request.method(), pathname, body })
+    const executionId = pathname.split('/').find(segment => segment === detail.intake.runtime.nodeExecutionId || segment === detail.evaluation.runtime.nodeExecutionId)
+    if (executionId && /\/(?:start|complete|reopen|revalidate)$/u.test(pathname)) {
+      const runtime = executionId === detail.intake.runtime.nodeExecutionId ? detail.intake.runtime : detail.evaluation.runtime
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(runtime) })
+      return
+    }
+    await route.fulfill({ contentType: 'application/json', body: 'null' })
   })
   await page.route(/\/api\/companies\/[^/]+\/opportunities(?:\/[^/]+)?(?:\/.*)?$/, async route => {
     const request = route.request()

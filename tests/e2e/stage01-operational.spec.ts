@@ -117,3 +117,161 @@ test('keeps a retained conflicted Opportunity draft inspection-only until it is 
   })
   await expect.poll(() => updateRequests).toHaveLength(1)
 })
+
+test('workflow starts a ready node then reloads the canonical aggregate', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.intake.runtime.phase = 'not_started'
+  detail.intake.runtime.state = 'ready'
+  let canonicalReads = 0
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.node.start'] })]
+  await installStage01OperationalRoutes(page, detail, {
+    onCanonicalRead: () => { canonicalReads += 1 },
+    onWorkflowCommand: request => { commands.push(request) },
+  })
+  await goToWorkspace(page)
+  await page.getByRole('button', { name: 'Khởi động node' }).click()
+  await expect.poll(() => commands).toHaveLength(1)
+  expect(commands[0]).toMatchObject({
+    pathname: expect.stringContaining(`/workflow-nodes/${detail.intake.runtime.nodeExecutionId}/start`),
+    body: { expectedExecutionVersion: detail.intake.runtime.version },
+  })
+  await expect.poll(() => canonicalReads).toBe(2)
+})
+
+test('workflow completes each node with its exact owning aggregate version', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.intake.gates.satisfied = true
+  detail.evaluation.runtime.phase = 'active'
+  detail.evaluation.runtime.state = 'active'
+  detail.evaluation.gates.satisfied = true
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.node.complete'] })]
+  await installStage01OperationalRoutes(page, detail, { onWorkflowCommand: request => { commands.push(request) } })
+  await goToWorkspace(page)
+  await page.getByRole('button', { name: 'Hoàn tất node' }).nth(0).click()
+  await expect.poll(() => commands).toHaveLength(1)
+  expect(commands[0]).toMatchObject({
+    pathname: expect.stringContaining(`/workflow-nodes/${detail.intake.runtime.nodeExecutionId}/complete`),
+    body: { expectedExecutionVersion: detail.intake.runtime.version, expectedOpportunityVersion: detail.opportunity.version },
+  })
+  expect(commands[0].body).not.toHaveProperty('expectedCycleVersion')
+  await page.getByRole('button', { name: 'Hoàn tất node' }).nth(1).click()
+  await expect.poll(() => commands).toHaveLength(2)
+  expect(commands[1]).toMatchObject({
+    pathname: expect.stringContaining(`/workflow-nodes/${detail.evaluation.runtime.nodeExecutionId}/complete`),
+    body: { expectedExecutionVersion: detail.evaluation.runtime.version, expectedCycleVersion: detail.currentDecisionCycle.version },
+  })
+  expect(commands[1].body).not.toHaveProperty('expectedOpportunityVersion')
+})
+
+test('workflow requires a reason and trimmed evidence to revalidate', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.intake.runtime.needsRevalidation = true
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.node.revalidate'] })]
+  await installStage01OperationalRoutes(page, detail, { onWorkflowCommand: request => { commands.push(request) } })
+  await goToWorkspace(page)
+  await page.getByRole('button', { name: 'Tái xác thực node' }).click()
+  await page.getByRole('textbox', { name: 'Lý do tái xác thực' }).fill('Điều kiện đã được cập nhật')
+  await page.getByRole('textbox', { name: 'Bằng chứng' }).fill('  Biên bản khảo sát  ')
+  await page.getByRole('button', { name: 'Xác nhận tái xác thực' }).click()
+  await expect.poll(() => commands).toHaveLength(1)
+  expect(commands[0]).toMatchObject({
+    pathname: expect.stringContaining(`/workflow-nodes/${detail.intake.runtime.nodeExecutionId}/revalidate`),
+    body: { reason: 'Điều kiện đã được cập nhật', evidence: ['Biên bản khảo sát'], expectedExecutionVersion: detail.intake.runtime.version },
+  })
+})
+
+test('workflow reopens a completed node with its current execution version', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.intake.runtime.phase = 'completed'
+  detail.intake.runtime.state = 'completed'
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.node.reopen'] })]
+  await installStage01OperationalRoutes(page, detail, { onWorkflowCommand: request => { commands.push(request) } })
+  await goToWorkspace(page)
+  await page.getByRole('button', { name: 'Mở lại node' }).click()
+  await page.getByRole('textbox', { name: 'Lý do mở lại' }).fill('Cần bổ sung hồ sơ')
+  await page.getByRole('button', { name: 'Xác nhận mở lại' }).click()
+  await expect.poll(() => commands).toHaveLength(1)
+  expect(commands[0]).toMatchObject({ body: { reason: 'Cần bổ sung hồ sơ', expectedExecutionVersion: detail.intake.runtime.version } })
+})
+
+test('assignment only exposes a directory-backed picker and retains assignment history', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.intake.runtime.assignments.push({
+    id: '81000000-0000-4000-8000-000000000040', nodeExecutionId: detail.intake.runtime.nodeExecutionId,
+    assignmentKind: 'accountable_owner', assigneeUserId: '81000000-0000-4000-8000-000000000041', assignedBy: '81000000-0000-4000-8000-000000000042', assignedAt: '2026-09-01T00:00:00.000Z', assignmentReason: 'Phụ trách tiếp nhận', endedBy: null, endedAt: null, endReason: null,
+  })
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.assignment.manage', 'employee.read_directory'] })]
+  await installStage01OperationalRoutes(page, detail, { onWorkflowCommand: request => { commands.push(request) } })
+  await goToWorkspace(page)
+  await page.getByLabel('Phân công của 01.1 Tiếp nhận').getByRole('button', { name: 'Phân công', exact: true }).click()
+  const assigneePicker = page.getByRole('combobox', { name: 'Người được phân công' })
+  const assigneeUserId = await assigneePicker.locator('option').nth(1).getAttribute('value')
+  expect(assigneeUserId).toBeTruthy()
+  await assigneePicker.selectOption(assigneeUserId!)
+  await page.getByRole('button', { name: 'Lưu phân công' }).click()
+  await expect.poll(() => commands).toHaveLength(1)
+  expect(commands[0]).toMatchObject({
+    pathname: expect.stringContaining(`/workflow-nodes/${detail.intake.runtime.nodeExecutionId}/assignments`),
+    body: { assigneeUserId, expectedExecutionVersion: detail.intake.runtime.version },
+  })
+  await page.getByRole('button', { name: 'Kết thúc phân công' }).click()
+  await page.getByRole('textbox', { name: 'Lý do kết thúc phân công' }).fill('Bàn giao công việc')
+  await page.getByRole('button', { name: 'Xác nhận kết thúc phân công' }).click()
+  await expect.poll(() => commands).toHaveLength(2)
+  expect(commands[1]).toMatchObject({
+    pathname: expect.stringContaining(`/workflow-assignments/${detail.intake.runtime.assignments[0].id}/end`),
+    body: { endReason: 'Bàn giao công việc', expectedExecutionVersion: detail.intake.runtime.version },
+  })
+})
+
+test('blocker uses bound category values and keeps resolved blockers as history', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.intake.runtime.blockers.push({
+    id: '81000000-0000-4000-8000-000000000050', nodeExecutionId: detail.intake.runtime.nodeExecutionId,
+    effect: 'blocking', categoryCode: 'follow_up', description: 'Chờ xác nhận', raisedBy: '81000000-0000-4000-8000-000000000051', raisedAt: '2026-09-01T00:00:00.000Z', responsibleUserId: null, resolvedBy: '81000000-0000-4000-8000-000000000052', resolvedAt: '2026-09-01T01:00:00.000Z', resolution: 'Đã xử lý', version: 1,
+  })
+  detail.evaluation.runtime.blockers.push({
+    id: '81000000-0000-4000-8000-000000000053', nodeExecutionId: detail.evaluation.runtime.nodeExecutionId,
+    effect: 'non_blocking', categoryCode: 'follow_up', description: 'Chờ phản hồi', raisedBy: '81000000-0000-4000-8000-000000000054', raisedAt: '2026-09-01T00:00:00.000Z', responsibleUserId: null, resolvedBy: null, resolvedAt: null, resolution: null, version: 0,
+  })
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.blocker.raise', 'journey.blocker.resolve'] })]
+  await installStage01OperationalRoutes(page, detail, { onWorkflowCommand: request => { commands.push(request) } })
+  await goToWorkspace(page)
+  await expect(page.getByText('Đã giải quyết: Đã xử lý')).toBeVisible()
+  await page.getByRole('button', { name: 'Nêu blocker' }).nth(0).click()
+  await page.getByRole('combobox', { name: 'Danh mục blocker' }).selectOption('follow_up')
+  await page.getByRole('textbox', { name: 'Mô tả blocker' }).fill('Cần xác nhận thông tin')
+  await page.getByRole('button', { name: 'Lưu blocker' }).click()
+  await expect.poll(() => commands).toHaveLength(1)
+  expect(commands[0]).toMatchObject({ body: { categoryCode: 'follow_up', description: 'Cần xác nhận thông tin', expectedExecutionVersion: detail.intake.runtime.version } })
+  await page.getByRole('button', { name: 'Giải quyết blocker' }).click()
+  await page.getByRole('textbox', { name: 'Kết luận giải quyết blocker' }).fill('Đã có phản hồi')
+  await page.getByRole('button', { name: 'Xác nhận giải quyết blocker' }).click()
+  await expect.poll(() => commands).toHaveLength(2)
+  expect(commands[1]).toMatchObject({
+    pathname: expect.stringContaining(`/workflow-blockers/${detail.evaluation.runtime.blockers[0].id}/resolve`),
+    body: { resolution: 'Đã có phản hồi', expectedExecutionVersion: detail.evaluation.runtime.version },
+  })
+})
+
+test('workflow actions are hidden without their exact permissions', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.intake.runtime.needsRevalidation = true
+  detail.intake.runtime.blockers.push({
+    id: '81000000-0000-4000-8000-000000000060', nodeExecutionId: detail.intake.runtime.nodeExecutionId,
+    effect: 'blocking', categoryCode: 'follow_up', description: 'Chờ xác nhận', raisedBy: '81000000-0000-4000-8000-000000000061', raisedAt: '2026-09-01T00:00:00.000Z', responsibleUserId: null, resolvedBy: null, resolvedAt: null, resolution: null, version: 0,
+  })
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.node.start'] })]
+  await installStage01OperationalRoutes(page, detail)
+  await goToWorkspace(page)
+  await expect(page.getByRole('button', { name: 'Tái xác thực node' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Phân công' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Nêu blocker' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Giải quyết blocker' })).toHaveCount(0)
+})
