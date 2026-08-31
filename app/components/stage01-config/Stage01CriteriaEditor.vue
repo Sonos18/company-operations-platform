@@ -18,6 +18,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: Stage01Criteria]
+  'update:localDirty': [value: boolean]
 }>()
 
 const editorValue = ref<Stage01Criteria>(structuredClone(props.modelValue))
@@ -28,11 +29,18 @@ const applicabilityModeItems = [...stage01ApplicabilityModeOptions]
 
 watch(() => props.modelValue, (value) => {
   editorValue.value = structuredClone(value)
+  emit('update:localDirty', false)
 }, { deep: true })
 
 function publishIfValid(): void {
   const parsed = stage01CriteriaSchema.safeParse(editorValue.value)
-  if (parsed.success) emit('update:modelValue', parsed.data)
+  if (parsed.success) {
+    emit('update:modelValue', parsed.data)
+    emit('update:localDirty', false)
+  }
+  else {
+    emit('update:localDirty', true)
+  }
 }
 
 function updateText(index: number, field: 'key' | 'label' | 'description', value: unknown): void {
@@ -104,6 +112,7 @@ function addCriterion(): void {
     allowsNotApplicable: false,
     displayOrder,
   })
+  emit('update:localDirty', true)
 }
 </script>
 

@@ -17,6 +17,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: Stage01BusinessTaxonomies]
+  'update:localDirty': [value: boolean]
 }>()
 
 const taxonomyKeys = stage01BusinessTaxonomyKeySchema.options
@@ -24,11 +25,18 @@ const editorValue = ref<Stage01BusinessTaxonomies>(structuredClone(props.modelVa
 
 watch(() => props.modelValue, (value) => {
   editorValue.value = structuredClone(value)
+  emit('update:localDirty', false)
 }, { deep: true })
 
 function publishIfValid(): void {
   const parsed = stage01BusinessTaxonomiesSchema.safeParse(editorValue.value)
-  if (parsed.success) emit('update:modelValue', parsed.data)
+  if (parsed.success) {
+    emit('update:modelValue', parsed.data)
+    emit('update:localDirty', false)
+  }
+  else {
+    emit('update:localDirty', true)
+  }
 }
 
 function isPublishedCode(taxonomyKey: Stage01BusinessTaxonomyKey, code: string): boolean {
@@ -66,6 +74,7 @@ function addEntry(taxonomyKey: Stage01BusinessTaxonomyKey): void {
   else {
     ;(entries as Stage01BusinessTaxonomyEntry[]).push({ code: '', label: '' })
   }
+  emit('update:localDirty', true)
 }
 
 function removeEntry(taxonomyKey: Stage01BusinessTaxonomyKey, index: number): void {

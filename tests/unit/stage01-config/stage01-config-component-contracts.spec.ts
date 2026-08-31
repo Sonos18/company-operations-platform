@@ -6,6 +6,11 @@ const componentSource = (name: string) => readFile(
   'utf8',
 )
 
+const pageSource = () => readFile(
+  new URL('../../../app/pages/settings/stage-01.vue', import.meta.url),
+  'utf8',
+)
+
 describe('Stage 01 configuration component source contracts', () => {
   // Defect caught: a new local row could take a published identity, become disabled,
   // and never reach a valid emitted state. Task 7 covers the rendered interaction.
@@ -42,5 +47,47 @@ describe('Stage 01 configuration component source contracts', () => {
       criteriaEditor.indexOf('function addCriterion'),
     )
     expect(removeHandler).not.toContain('publishedKeys')
+  })
+
+  // Defect caught: intentionally invalid in-progress field values stay in leaf editor
+  // state, so the page must still protect them as unsaved changes without persisting them.
+  it('wires local invalid editor state into page-level dirty protection', async () => {
+    const [taxonomyEditor, criteriaEditor, page] = await Promise.all([
+      componentSource('Stage01TaxonomyEditor.vue'),
+      componentSource('Stage01CriteriaEditor.vue'),
+      pageSource(),
+    ])
+
+    for (const editor of [taxonomyEditor, criteriaEditor]) {
+      expect(editor).toContain("'update:localDirty': [value: boolean]")
+      expect(editor).toContain("emit('update:localDirty', true)")
+      expect(editor).toContain("emit('update:localDirty', false)")
+    }
+
+    expect(page).toContain('const pageDirty = computed(() => dirty.value || taxonomyEditorDirty.value || criteriaEditorDirty.value)')
+    expect(page).toContain('@update:local-dirty="taxonomyEditorDirty = $event"')
+    expect(page).toContain('@update:local-dirty="criteriaEditorDirty = $event"')
+    expect(page).toContain(':dirty="pageDirty"')
+    expect(page).toContain('if (hasLocalEditorChanges.value)')
+  })
+
+  // Defect caught: a failed destructive mutation left its dialog over the accessible
+  // page alert, obscuring the server error and its recovery action.
+  it('closes destructive confirmations after request failure so the page alert is visible', async () => {
+    const page = await pageSource()
+
+    const discardHandler = page.slice(
+      page.indexOf("if (confirmation.value === 'discard')"),
+      page.indexOf("if (confirmation.value === 'publish')"),
+    )
+    const publishHandler = page.slice(
+      page.indexOf("if (confirmation.value === 'publish')"),
+      page.indexOf('async function reloadConfiguration'),
+    )
+
+    expect(discardHandler).toContain('confirmation.value = null')
+    expect(discardHandler).toMatch(/if \(!actionError\.value\) clearLocalEditorChanges\(\)\s*confirmation\.value = null/)
+    expect(publishHandler).toContain('confirmation.value = null')
+    expect(publishHandler).toMatch(/catch \(caught\) \{\s*actionError\.value = caught\s*confirmation\.value = null/)
   })
 })
