@@ -1100,11 +1100,20 @@ end $$;
 
 reset role;
 
-insert into public.stage01_taxonomy_values (
-  tenant_id, company_id, taxonomy_key, code, label, semantic_key, behavior, is_active
+insert into public.workflow_taxonomy_values (
+  tenant_id, company_id, workflow_key, taxonomy_key, code, label, semantic_key, behavior, is_active
 ) values (
   '63000000-0000-4000-8000-000000000010', '63000000-0000-4000-8000-000000000020',
-  'customer_type', 'legacy_business', 'Legacy business', null, '{}'::jsonb, true
+  'vqh.stage01', 'customer_type', 'legacy_business', 'Legacy business', null, '{}'::jsonb, true
+), (
+  '63000000-0000-4000-8000-000000000010', '63000000-0000-4000-8000-000000000020',
+  'vqh.stage01', 'priority', 'business_priority', 'Inactive business priority', null, '{}'::jsonb, false
+), (
+  '63000000-0000-4000-8000-000000000010', '63000000-0000-4000-8000-000000000020',
+  'vqh.stage01', 'lead_source', 'reserved_direct', 'Legacy reserved direct', 'direct', '{"requiresReferrer":true}'::jsonb, true
+), (
+  '63000000-0000-4000-8000-000000000010', '63000000-0000-4000-8000-000000000020',
+  'test.synthetic.workflow', 'customer_type', 'legacy_business', 'Synthetic workflow legacy business', null, '{}'::jsonb, true
 );
 
 do $$
@@ -1171,22 +1180,37 @@ begin
     raise exception 'DB-S01-CONFIG-CMD publish did not atomically create the required immutable next snapshot';
   end if;
   if not exists (
-    select 1 from public.stage01_taxonomy_values
+    select 1 from public.workflow_taxonomy_values
     where company_id = '63000000-0000-4000-8000-000000000020'
+      and workflow_key = 'vqh.stage01'
       and taxonomy_key = 'priority' and code = 'business_priority'
-      and semantic_key is null and is_active
+      and semantic_key is null and label = 'Business priority' and behavior = '{}'::jsonb and is_active
   ) or not exists (
-    select 1 from public.stage01_taxonomy_values
+    select 1 from public.workflow_taxonomy_values
     where company_id = '63000000-0000-4000-8000-000000000020'
+      and workflow_key = 'vqh.stage01'
       and taxonomy_key = 'customer_type' and code = 'legacy_business'
       and not is_active
   ) or not exists (
-    select 1 from public.stage01_taxonomy_values
+    select 1 from public.workflow_taxonomy_values
     where company_id = '63000000-0000-4000-8000-000000000020'
+      and workflow_key = 'vqh.stage01'
       and taxonomy_key = 'customer_type' and code = 'reserved_customer'
       and semantic_key = 'customer' and is_active
+  ) or not exists (
+    select 1 from public.workflow_taxonomy_values
+    where company_id = '63000000-0000-4000-8000-000000000020'
+      and workflow_key = 'vqh.stage01'
+      and taxonomy_key = 'lead_source' and code = 'reserved_direct'
+      and label = 'Reserved direct' and behavior = '{"requiresReferrer":false}'::jsonb and is_active
+  ) or not exists (
+    select 1 from public.workflow_taxonomy_values
+    where company_id = '63000000-0000-4000-8000-000000000020'
+      and workflow_key = 'test.synthetic.workflow'
+      and taxonomy_key = 'customer_type' and code = 'legacy_business'
+      and label = 'Synthetic workflow legacy business' and is_active
   ) then
-    raise exception 'DB-S01-CONFIG-CMD publish did not synchronize active, inactive, and reserved taxonomy catalog rows';
+    raise exception 'DB-S01-CONFIG-CMD publish did not synchronize workflow-scoped active, inactive, reactivated, updated, reserved, and isolated taxonomy catalog rows';
   end if;
   if not exists (
     select 1 from public.audit_events as audit
@@ -1268,9 +1292,10 @@ begin
 end $$;
 
 reset role;
-update public.stage01_taxonomy_values
+update public.workflow_taxonomy_values
    set semantic_key = 'mismatched_customer'
  where company_id = '63000000-0000-4000-8000-000000000020'
+   and workflow_key = 'vqh.stage01'
    and taxonomy_key = 'customer_type'
     and code = 'reserved_customer'
     and semantic_key = 'customer';
@@ -1281,14 +1306,15 @@ select
   (
     select jsonb_agg(
       jsonb_build_object(
-        'id', id, 'tenantId', tenant_id, 'companyId', company_id,
+        'id', id, 'tenantId', tenant_id, 'companyId', company_id, 'workflowKey', workflow_key,
         'taxonomyKey', taxonomy_key, 'code', code, 'label', label,
         'semanticKey', semantic_key, 'behavior', behavior, 'isActive', is_active,
         'createdAt', created_at, 'updatedAt', updated_at
       ) order by id
     )
-    from public.stage01_taxonomy_values
+    from public.workflow_taxonomy_values
     where company_id = '63000000-0000-4000-8000-000000000020'
+      and workflow_key = 'vqh.stage01'
   ) as catalog_state,
   (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') as audit_count;
 
@@ -1325,14 +1351,15 @@ begin
      or (
        select jsonb_agg(
          jsonb_build_object(
-           'id', id, 'tenantId', tenant_id, 'companyId', company_id,
+         'id', id, 'tenantId', tenant_id, 'companyId', company_id, 'workflowKey', workflow_key,
            'taxonomyKey', taxonomy_key, 'code', code, 'label', label,
            'semanticKey', semantic_key, 'behavior', behavior, 'isActive', is_active,
            'createdAt', created_at, 'updatedAt', updated_at
          ) order by id
        )
-       from public.stage01_taxonomy_values
+       from public.workflow_taxonomy_values
        where company_id = '63000000-0000-4000-8000-000000000020'
+         and workflow_key = 'vqh.stage01'
      ) is distinct from before_row.catalog_state
      or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') <> before_row.audit_count
      or not exists (
@@ -1345,9 +1372,10 @@ begin
   end if;
 end $$;
 
-update public.stage01_taxonomy_values
+update public.workflow_taxonomy_values
    set semantic_key = 'customer'
  where company_id = '63000000-0000-4000-8000-000000000020'
+   and workflow_key = 'vqh.stage01'
    and taxonomy_key = 'customer_type'
    and code = 'reserved_customer'
    and semantic_key = 'mismatched_customer';
@@ -1373,14 +1401,15 @@ select
   (
     select jsonb_agg(
       jsonb_build_object(
-        'id', id, 'tenantId', tenant_id, 'companyId', company_id,
+        'id', id, 'tenantId', tenant_id, 'companyId', company_id, 'workflowKey', workflow_key,
         'taxonomyKey', taxonomy_key, 'code', code, 'label', label,
         'semanticKey', semantic_key, 'behavior', behavior, 'isActive', is_active,
         'createdAt', created_at, 'updatedAt', updated_at
       ) order by id
     )
-    from public.stage01_taxonomy_values
+    from public.workflow_taxonomy_values
     where company_id = '63000000-0000-4000-8000-000000000020'
+      and workflow_key = 'vqh.stage01'
   ) as taxonomy_state,
   (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') as audit_count;
 
@@ -1417,14 +1446,15 @@ begin
      or (
        select jsonb_agg(
          jsonb_build_object(
-           'id', id, 'tenantId', tenant_id, 'companyId', company_id,
+         'id', id, 'tenantId', tenant_id, 'companyId', company_id, 'workflowKey', workflow_key,
            'taxonomyKey', taxonomy_key, 'code', code, 'label', label,
            'semanticKey', semantic_key, 'behavior', behavior, 'isActive', is_active,
            'createdAt', created_at, 'updatedAt', updated_at
          ) order by id
        )
-       from public.stage01_taxonomy_values
+       from public.workflow_taxonomy_values
        where company_id = '63000000-0000-4000-8000-000000000020'
+         and workflow_key = 'vqh.stage01'
      ) is distinct from before_row.taxonomy_state
      or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') <> before_row.audit_count
      or not exists (select 1 from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000020' and version = 0) then

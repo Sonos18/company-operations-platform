@@ -2,6 +2,82 @@ begin;
 
 do $$
 declare
+  catalog_relation regclass;
+  catalog_row_count bigint;
+  catalog_fingerprint text;
+begin
+  if to_regclass('public.workflow_taxonomy_values') is not null then
+    catalog_relation := 'public.workflow_taxonomy_values'::regclass;
+    execute format(
+      $query$
+        select
+          count(*),
+          encode(
+            extensions.digest(
+              coalesce(
+                string_agg(
+                  jsonb_build_array(
+                    id, tenant_id, company_id, taxonomy_key, code, label,
+                    semantic_key, behavior, is_active,
+                    to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+                    to_char(updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+                  )::text,
+                  E'\\n'
+                  order by id, tenant_id, company_id, taxonomy_key, code, label,
+                    semantic_key, behavior::text, is_active, created_at, updated_at
+                ),
+                ''
+              ),
+              'sha256'
+            ),
+            'hex'
+          )
+        from %s
+        where workflow_key = 'vqh.stage01'
+      $query$,
+      catalog_relation
+    ) into catalog_row_count, catalog_fingerprint;
+  elsif to_regclass(format('public.%s%s', 'stage01_', 'taxonomy_values')) is not null then
+    catalog_relation := to_regclass(format('public.%s%s', 'stage01_', 'taxonomy_values'));
+    execute format(
+      $query$
+        select
+          count(*),
+          encode(
+            extensions.digest(
+              coalesce(
+                string_agg(
+                  jsonb_build_array(
+                    id, tenant_id, company_id, taxonomy_key, code, label,
+                    semantic_key, behavior, is_active,
+                    to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+                    to_char(updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+                  )::text,
+                  E'\\n'
+                  order by id, tenant_id, company_id, taxonomy_key, code, label,
+                    semantic_key, behavior::text, is_active, created_at, updated_at
+                ),
+                ''
+              ),
+              'sha256'
+            ),
+            'hex'
+          )
+        from %s
+      $query$,
+      catalog_relation
+    ) into catalog_row_count, catalog_fingerprint;
+  else
+    raise exception 'DB-S01-SCHEMA neither current nor legacy taxonomy catalog relation is available for preservation checkpoint';
+  end if;
+
+  perform set_config('stage01_schema.catalog_preservation_count', catalog_row_count::text, true);
+  perform set_config('stage01_schema.catalog_preservation_sha256', catalog_fingerprint, true);
+  raise notice 'DB-S01-SCHEMA catalog preservation checkpoint count=% sha256=%', catalog_row_count, catalog_fingerprint;
+end $$;
+
+do $$
+declare
   relation_name text;
 begin
   foreach relation_name in array array[
@@ -13,7 +89,7 @@ begin
     'workflow_node_assignments',
     'workflow_blockers',
     'opportunities',
-    'stage01_taxonomy_values',
+    'workflow_taxonomy_values',
     'contacts',
     'contact_methods',
     'opportunity_contacts',
@@ -28,7 +104,10 @@ begin
     'stage01_clarification_returns'
   ] loop
     if to_regclass(format('public.%I', relation_name)) is null then
-      raise exception 'DB-S01-SCHEMA relation public.% is missing', relation_name;
+      raise exception 'DB-S01-SCHEMA relation public.% is missing; catalog preservation checkpoint count=% sha256=%',
+        relation_name,
+        current_setting('stage01_schema.catalog_preservation_count', true),
+        current_setting('stage01_schema.catalog_preservation_sha256', true);
     end if;
   end loop;
 end $$;
@@ -105,17 +184,18 @@ begin
     ('opportunities', 'created_by'),
     ('opportunities', 'created_at'),
     ('opportunities', 'updated_at'),
-    ('stage01_taxonomy_values', 'id'),
-    ('stage01_taxonomy_values', 'tenant_id'),
-    ('stage01_taxonomy_values', 'company_id'),
-    ('stage01_taxonomy_values', 'taxonomy_key'),
-    ('stage01_taxonomy_values', 'code'),
-    ('stage01_taxonomy_values', 'label'),
-    ('stage01_taxonomy_values', 'semantic_key'),
-    ('stage01_taxonomy_values', 'behavior'),
-    ('stage01_taxonomy_values', 'is_active'),
-    ('stage01_taxonomy_values', 'created_at'),
-    ('stage01_taxonomy_values', 'updated_at'),
+    ('workflow_taxonomy_values', 'id'),
+    ('workflow_taxonomy_values', 'tenant_id'),
+    ('workflow_taxonomy_values', 'company_id'),
+    ('workflow_taxonomy_values', 'workflow_key'),
+    ('workflow_taxonomy_values', 'taxonomy_key'),
+    ('workflow_taxonomy_values', 'code'),
+    ('workflow_taxonomy_values', 'label'),
+    ('workflow_taxonomy_values', 'semantic_key'),
+    ('workflow_taxonomy_values', 'behavior'),
+    ('workflow_taxonomy_values', 'is_active'),
+    ('workflow_taxonomy_values', 'created_at'),
+    ('workflow_taxonomy_values', 'updated_at'),
     ('contacts', 'id'),
     ('contacts', 'tenant_id'),
     ('contacts', 'company_id'),
@@ -280,7 +360,7 @@ begin
     'workflow_node_assignments',
     'workflow_blockers',
     'opportunities',
-    'stage01_taxonomy_values',
+    'workflow_taxonomy_values',
     'contacts',
     'contact_methods',
     'opportunity_contacts',
@@ -393,7 +473,7 @@ begin
     ('opportunities_canonical_fk', 'f'),
     ('opportunities_invalidated_by_fk', 'f'),
     ('opportunities_current_invalidation_check', 'c'),
-    ('stage01_taxonomy_values_company_fk', 'f'),
+    ('workflow_taxonomy_values_company_fk', 'f'),
     ('contacts_company_fk', 'f'),
     ('contact_methods_contact_fk', 'f'),
     ('opportunity_contacts_opportunity_fk', 'f'),
@@ -417,7 +497,7 @@ begin
     ('stage01_clarification_returns_cycle_fk', 'f'),
     ('stage01_clarification_returns_recommendation_fk', 'f'),
     ('opportunities_id_scope_key', 'u'),
-    ('stage01_taxonomy_values_company_key_code', 'u'),
+    ('workflow_taxonomy_values_company_workflow_taxonomy_code_key', 'u'),
     ('stage01_intake_baselines_execution_version_key', 'u'),
     ('stage01_decision_cycles_opportunity_cycle_key', 'u'),
     ('stage01_decision_cycles_node_execution_key', 'u'),
@@ -434,6 +514,89 @@ begin
 
   if missing_constraint is not null then
     raise exception 'DB-S01-SCHEMA required constraint % is missing', missing_constraint;
+  end if;
+end $$;
+
+do $$
+begin
+  if to_regclass(format('public.%s%s', 'stage01_', 'taxonomy_values')) is not null then
+    raise exception 'DB-S01-SCHEMA legacy Stage 01 taxonomy catalog must not remain after generalization';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint as taxonomy_constraint
+    join pg_catalog.pg_class as referenced_relation on referenced_relation.oid = taxonomy_constraint.confrelid
+    join pg_catalog.pg_namespace as referenced_schema on referenced_schema.oid = referenced_relation.relnamespace
+    where taxonomy_constraint.conrelid = 'public.workflow_taxonomy_values'::regclass
+      and taxonomy_constraint.conname = 'workflow_taxonomy_values_company_fk'
+      and taxonomy_constraint.contype = 'f'
+      and taxonomy_constraint.confdeltype = 'r'
+      and referenced_schema.nspname = 'public'
+      and referenced_relation.relname = 'companies'
+      and (
+        select array_agg(attribute.attname::text order by key_column.ordinality)
+        from unnest(taxonomy_constraint.conkey) with ordinality as key_column(attnum, ordinality)
+        join pg_catalog.pg_attribute as attribute
+          on attribute.attrelid = taxonomy_constraint.conrelid
+         and attribute.attnum = key_column.attnum
+      ) = array['company_id', 'tenant_id']::text[]
+      and (
+        select array_agg(attribute.attname::text order by reference_column.ordinality)
+        from unnest(taxonomy_constraint.confkey) with ordinality as reference_column(attnum, ordinality)
+        join pg_catalog.pg_attribute as attribute
+          on attribute.attrelid = taxonomy_constraint.confrelid
+         and attribute.attnum = reference_column.attnum
+      ) = array['id', 'tenant_id']::text[]
+  ) then
+    raise exception 'DB-S01-SCHEMA workflow taxonomy company scope foreign key mismatch';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint as taxonomy_constraint
+    where taxonomy_constraint.conrelid = 'public.workflow_taxonomy_values'::regclass
+      and taxonomy_constraint.conname = 'workflow_taxonomy_values_company_workflow_taxonomy_code_key'
+      and taxonomy_constraint.contype = 'u'
+      and (
+        select array_agg(attribute.attname::text order by key_column.ordinality)
+        from unnest(taxonomy_constraint.conkey) with ordinality as key_column(attnum, ordinality)
+        join pg_catalog.pg_attribute as attribute
+          on attribute.attrelid = taxonomy_constraint.conrelid
+         and attribute.attnum = key_column.attnum
+      ) = array['company_id', 'workflow_key', 'taxonomy_key', 'code']::text[]
+  ) then
+    raise exception 'DB-S01-SCHEMA workflow taxonomy uniqueness mismatch';
+  end if;
+
+  if exists (
+    select 1
+    from (values
+      ('workflow_taxonomy_values_workflow_key_not_blank', '%btrim(workflow_key) <> ''''%'::text),
+      ('workflow_taxonomy_values_key_not_blank', '%btrim(taxonomy_key) <> ''''%'::text),
+      ('workflow_taxonomy_values_code_not_blank', '%btrim(code) <> ''''%'::text),
+      ('workflow_taxonomy_values_label_not_blank', '%btrim(label) <> ''''%'::text),
+      ('workflow_taxonomy_values_semantic_not_blank', '%semantic_key IS NULL OR btrim(semantic_key) <> ''''%'::text),
+      ('workflow_taxonomy_values_behavior_object', '%jsonb_typeof(behavior) = ''object''%'::text)
+    ) as expected(constraint_name, definition_pattern)
+    left join pg_catalog.pg_constraint as actual
+      on actual.conrelid = 'public.workflow_taxonomy_values'::regclass
+     and actual.conname = expected.constraint_name
+     and actual.contype = 'c'
+     and pg_get_constraintdef(actual.oid) like expected.definition_pattern
+    where actual.oid is null
+  ) then
+    raise exception 'DB-S01-SCHEMA workflow taxonomy validation check mismatch';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_indexes as taxonomy_index
+    where taxonomy_index.schemaname = 'public'
+      and taxonomy_index.tablename = 'workflow_taxonomy_values'
+      and taxonomy_index.indexdef like '%(tenant_id, company_id, workflow_key%'
+  ) then
+    raise exception 'DB-S01-SCHEMA workflow taxonomy scope index is missing';
   end if;
 end $$;
 
