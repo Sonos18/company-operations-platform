@@ -128,6 +128,48 @@ as $$
   );
 $$;
 
+create function pg_temp.stage01_config_historical_v1_definition()
+returns jsonb
+language sql
+immutable
+as $$
+  select jsonb_set(
+    pg_temp.stage01_config_definition(),
+    '{criteria}',
+    (pg_temp.stage01_config_definition() -> 'criteria') || jsonb_build_array(
+      jsonb_build_object(
+        'key', 'legacy_contract',
+        'dimensionKey', 'customer_need',
+        'label', 'Legacy contract',
+        'description', 'Synthetic legacy contract criterion',
+        'criticality', 'optional',
+        'applicabilityMode', 'manual',
+        'allowsNotApplicable', true,
+        'displayOrder', 6
+      )
+    )
+  );
+$$;
+
+create function pg_temp.stage01_config_historical_v1_business_criteria()
+returns jsonb
+language sql
+immutable
+as $$
+  select pg_temp.stage01_config_business_criteria() || jsonb_build_array(
+    jsonb_build_object(
+      'key', 'legacy_contract',
+      'dimensionKey', 'customer_need',
+      'label', 'Legacy contract',
+      'description', 'Synthetic legacy contract criterion',
+      'criticality', 'optional',
+      'applicabilityMode', 'manual',
+      'allowsNotApplicable', true,
+      'displayOrder', 6
+    )
+  );
+$$;
+
 create function pg_temp.assert_stage01_config_private_update_invalid(
   target_taxonomies jsonb,
   target_criteria jsonb,
@@ -351,6 +393,46 @@ begin
   exception when raise_exception then if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if; end;
 end $$;
 
+do $$
+declare
+  accepted_uuid text;
+begin
+  foreach accepted_uuid in array array[
+    '11111111-1111-1111-8111-111111111111',
+    '22222222-2222-2222-8222-222222222222',
+    '33333333-3333-3333-8333-333333333333',
+    '44444444-4444-4444-8444-444444444444',
+    '55555555-5555-5555-8555-555555555555',
+    '66666666-6666-6666-8666-666666666666',
+    '77777777-7777-7777-8777-777777777777',
+    '88888888-8888-8888-8888-888888888888',
+    '00000000-0000-0000-0000-000000000000',
+    'ffffffff-ffff-ffff-ffff-ffffffffffff'
+  ] loop
+    begin
+      perform private.create_stage01_config_draft(
+        '63000000-0000-4000-8000-000000000020',
+        jsonb_build_object('expectedPublishedSnapshotId', accepted_uuid),
+        '63000000-0000-4000-8000-000000000196'
+      );
+      raise exception 'DB-S01-CONFIG-CMD Zod-valid UUID unexpectedly created a draft: %', accepted_uuid;
+    exception when raise_exception then
+      if sqlerrm <> 'VERSION_CONFLICT' then raise; end if;
+    end;
+  end loop;
+
+  begin
+    perform private.create_stage01_config_draft(
+      '63000000-0000-4000-8000-000000000020',
+      jsonb_build_object('expectedPublishedSnapshotId', '00000000-0000-0000-0000-00000000000g'),
+      '63000000-0000-4000-8000-000000000197'
+    );
+    raise exception 'DB-S01-CONFIG-CMD malformed UUID unexpectedly reached draft comparison';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+end $$;
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -383,6 +465,10 @@ begin
   );
   if result ->> 'baseSnapshotId' <> '63000000-0000-4000-8000-000000000030'
      or result ->> 'version' <> '0'
+     or jsonb_typeof(result -> 'version') <> 'number'
+     or (result ->> 'version')::numeric < 0
+     or (result ->> 'version')::numeric <> trunc((result ->> 'version')::numeric)
+     or (result ->> 'version')::numeric > 9007199254740991
      or (result #> '{taxonomies,customer_type,0}') ? 'semanticKey' then
     raise exception 'DB-S01-CONFIG-CMD create result did not expose the expected business-safe draft';
   end if;
@@ -459,6 +545,8 @@ select set_config(
 do $$
 declare
   result jsonb;
+  draft_id uuid;
+  base_snapshot_id uuid;
   system_before jsonb;
   definition_before jsonb;
   audit_before bigint;
@@ -472,22 +560,44 @@ begin
     ),
     '63000000-0000-4000-8000-000000000206'
   );
-  if result ->> 'version' <> '1' then
+  draft_id := (result ->> 'id')::uuid;
+  base_snapshot_id := (result ->> 'baseSnapshotId')::uuid;
+  if result ->> 'version' <> '1'
+     or jsonb_typeof(result -> 'version') <> 'number'
+     or (result ->> 'version')::numeric < 0
+     or (result ->> 'version')::numeric <> trunc((result ->> 'version')::numeric)
+     or (result ->> 'version')::numeric > 9007199254740991
+     or base_snapshot_id <> '63000000-0000-4000-8000-000000000030'::uuid then
     raise exception 'DB-S01-CONFIG-CMD update did not increment the draft version exactly once';
   end if;
 
   if (
     select count(*)
     from public.audit_events as audit
-    where audit.company_id = '63000000-0000-4000-8000-000000000020'
+    where audit.request_id = '63000000-0000-4000-8000-000000000206'
+  ) <> 1 or not exists (
+    select 1
+    from public.audit_events as audit
+    where audit.tenant_id = '63000000-0000-4000-8000-000000000010'::uuid
+      and audit.company_id = '63000000-0000-4000-8000-000000000020'::uuid
+      and audit.actor_id = '63000000-0000-4000-8000-000000000001'::uuid
       and audit.action = 'stage01.config_draft.updated'
-      and audit.request_id = '63000000-0000-4000-8000-000000000206'
-      and audit.after_summary ?& array[
-        'companyId', 'actorId', 'draftId', 'draftVersion', 'requestId'
-      ]
-      and audit.after_summary ->> 'draftVersion' = '1'
-  ) <> 1 then
-    raise exception 'DB-S01-CONFIG-CMD update audit action or metadata is incomplete';
+      and audit.resource_type = 'workflow_definition_draft'
+      and audit.resource_id = draft_id::text
+      and audit.request_id = '63000000-0000-4000-8000-000000000206'::uuid
+      and audit.before_summary = jsonb_build_object(
+        'draftId', draft_id,
+        'draftVersion', 0
+      )
+      and audit.after_summary = jsonb_build_object(
+        'companyId', '63000000-0000-4000-8000-000000000020'::uuid,
+        'actorId', '63000000-0000-4000-8000-000000000001'::uuid,
+        'draftId', draft_id,
+        'draftVersion', 1,
+        'requestId', '63000000-0000-4000-8000-000000000206'::uuid
+      )
+  ) then
+    raise exception 'DB-S01-CONFIG-CMD update audit row did not match the complete production write';
   end if;
 
   select draft.definition - 'taxonomies' - 'criteria', draft.definition
@@ -706,6 +816,11 @@ begin
     jsonb_set(pg_temp.stage01_config_business_criteria(), '{0,displayOrder}', '1.5'::jsonb),
     '63000000-0000-4000-8000-000000000246'
   );
+  perform pg_temp.assert_stage01_config_private_update_invalid(
+    pg_temp.stage01_config_business_taxonomies(),
+    jsonb_set(pg_temp.stage01_config_business_criteria(), '{0,displayOrder}', '9007199254740992'::jsonb),
+    '63000000-0000-4000-8000-000000000249'
+  );
 
   begin
     perform private.update_stage01_config_draft(
@@ -722,6 +837,43 @@ begin
     if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
   end;
 
+  begin
+    perform private.update_stage01_config_draft(
+      '63000000-0000-4000-8000-000000000020',
+      jsonb_build_object(
+        'expectedDraftVersion', 9007199254740992,
+        'taxonomies', pg_temp.stage01_config_business_taxonomies(),
+        'criteria', pg_temp.stage01_config_business_criteria()
+      ),
+      '63000000-0000-4000-8000-000000000250'
+    );
+    raise exception 'DB-S01-CONFIG-CMD direct private update accepted an unsafe draft version';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+
+  begin
+    perform private.discard_stage01_config_draft(
+      '63000000-0000-4000-8000-000000000020',
+      jsonb_build_object('expectedDraftVersion', 9007199254740992),
+      '63000000-0000-4000-8000-000000000251'
+    );
+    raise exception 'DB-S01-CONFIG-CMD direct private discard accepted an unsafe draft version';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+
+  begin
+    perform private.publish_stage01_config_draft(
+      '63000000-0000-4000-8000-000000000020',
+      jsonb_build_object('expectedDraftVersion', 9007199254740992),
+      '63000000-0000-4000-8000-000000000252'
+    );
+    raise exception 'DB-S01-CONFIG-CMD direct private publish accepted an unsafe draft version';
+  exception when raise_exception then
+    if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if;
+  end;
+
   if (select definition from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000020') is distinct from definition_before
      or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000020') <> audit_before then
     raise exception 'DB-S01-CONFIG-CMD malformed private updates changed draft or audit history';
@@ -731,6 +883,8 @@ end $$;
 do $$
 declare
   snapshot_count bigint;
+  draft_id uuid;
+  base_snapshot_id uuid;
 begin
   select count(*) into snapshot_count from public.workflow_definition_snapshots
    where company_id = '63000000-0000-4000-8000-000000000020';
@@ -745,6 +899,16 @@ begin
     if sqlerrm <> 'VERSION_CONFLICT' then raise; end if;
   end;
 
+  select draft.id, draft.base_snapshot_id
+    into draft_id, base_snapshot_id
+    from public.workflow_definition_drafts as draft
+   where draft.company_id = '63000000-0000-4000-8000-000000000020'
+     and draft.workflow_key = 'vqh.stage01'
+     and draft.version = 1;
+  if draft_id is null or base_snapshot_id <> '63000000-0000-4000-8000-000000000030'::uuid then
+    raise exception 'DB-S01-CONFIG-CMD discard fixture did not retain the expected draft/base identity';
+  end if;
+
   perform public.discard_stage01_config_draft(
     '63000000-0000-4000-8000-000000000020',
     jsonb_build_object('expectedDraftVersion', 1),
@@ -755,16 +919,33 @@ begin
      or (
        select count(*)
        from public.audit_events as audit
-       where audit.company_id = '63000000-0000-4000-8000-000000000020'
+       where audit.request_id = '63000000-0000-4000-8000-000000000214'
+     ) <> 1
+     or not exists (
+       select 1
+       from public.audit_events as audit
+       where audit.tenant_id = '63000000-0000-4000-8000-000000000010'::uuid
+         and audit.company_id = '63000000-0000-4000-8000-000000000020'::uuid
+         and audit.actor_id = '63000000-0000-4000-8000-000000000001'::uuid
          and audit.action = 'stage01.config_draft.discarded'
-         and audit.request_id = '63000000-0000-4000-8000-000000000214'
-         and audit.after_summary ?& array[
-           'companyId', 'actorId', 'draftId', 'baseSnapshotId',
-           'draftVersion', 'requestId'
-         ]
-         and audit.after_summary ->> 'draftVersion' = '1'
-     ) <> 1 then
-    raise exception 'DB-S01-CONFIG-CMD discard changed published snapshots or retained the draft';
+         and audit.resource_type = 'workflow_definition_draft'
+         and audit.resource_id = draft_id::text
+         and audit.request_id = '63000000-0000-4000-8000-000000000214'::uuid
+         and audit.before_summary = jsonb_build_object(
+           'draftId', draft_id,
+           'baseSnapshotId', base_snapshot_id,
+           'draftVersion', 1
+         )
+         and audit.after_summary = jsonb_build_object(
+           'companyId', '63000000-0000-4000-8000-000000000020'::uuid,
+           'actorId', '63000000-0000-4000-8000-000000000001'::uuid,
+           'draftId', draft_id,
+           'baseSnapshotId', base_snapshot_id,
+           'draftVersion', 1,
+           'requestId', '63000000-0000-4000-8000-000000000214'::uuid
+         )
+     ) then
+    raise exception 'DB-S01-CONFIG-CMD discard audit row or deletion was not exact';
   end if;
 
   begin
@@ -940,6 +1121,14 @@ begin
   new_snapshot_id := (result ->> 'snapshotId')::uuid;
   if result ->> 'templateVersion' <> '3'
      or result ->> 'schemaVersion' <> '1'
+     or jsonb_typeof(result -> 'templateVersion') <> 'number'
+     or jsonb_typeof(result -> 'schemaVersion') <> 'number'
+     or (result ->> 'templateVersion')::numeric <= 0
+     or (result ->> 'schemaVersion')::numeric <= 0
+     or (result ->> 'templateVersion')::numeric <> trunc((result ->> 'templateVersion')::numeric)
+     or (result ->> 'schemaVersion')::numeric <> trunc((result ->> 'schemaVersion')::numeric)
+     or (result ->> 'templateVersion')::numeric > 9007199254740991
+     or (result ->> 'schemaVersion')::numeric > 9007199254740991
      or coalesce(nullif(result ->> 'definitionHash', ''), '') = ''
      or new_snapshot_id is null
      or (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000020' and template_version = 3) <> 1
@@ -1284,7 +1473,7 @@ insert into public.workflow_definition_snapshots (
     '63000000-0000-4000-8000-000000000033',
     '63000000-0000-4000-8000-000000000010',
     '63000000-0000-4000-8000-000000000022',
-    'vqh.stage01', 1, 1, pg_temp.stage01_config_definition(), 'stage01-history-v1'
+    'vqh.stage01', 1, 1, pg_temp.stage01_config_historical_v1_definition(), 'stage01-history-v1'
   ),
   (
     '63000000-0000-4000-8000-000000000034',
@@ -1385,6 +1574,187 @@ begin
          and version = 0
      ) then
     raise exception 'DB-S01-CONFIG-CMD historical identity publish failure was not atomic';
+  end if;
+end $$;
+
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"63000000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
+
+do $$
+begin
+  perform public.discard_stage01_config_draft(
+    '63000000-0000-4000-8000-000000000022',
+    jsonb_build_object('expectedDraftVersion', 0),
+    '63000000-0000-4000-8000-000000000253'
+  );
+end $$;
+
+reset role;
+insert into public.workflow_definition_snapshots (
+  id, tenant_id, company_id, workflow_key, template_version, schema_version, definition, definition_hash
+) values (
+  '63000000-0000-4000-8000-000000000035',
+  '63000000-0000-4000-8000-000000000010',
+  '63000000-0000-4000-8000-000000000022',
+  'vqh.stage01', 3, 1, pg_temp.stage01_config_definition(), 'stage01-history-v3'
+);
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"63000000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
+
+do $$
+declare
+  definition_before jsonb;
+  audit_count bigint;
+begin
+  perform public.create_stage01_config_draft(
+    '63000000-0000-4000-8000-000000000022',
+    jsonb_build_object('expectedPublishedSnapshotId', '63000000-0000-4000-8000-000000000035'::uuid),
+    '63000000-0000-4000-8000-000000000254'
+  );
+  select definition into definition_before
+  from public.workflow_definition_drafts
+  where company_id = '63000000-0000-4000-8000-000000000022'
+    and workflow_key = 'vqh.stage01';
+  select count(*) into audit_count
+  from public.audit_events
+  where company_id = '63000000-0000-4000-8000-000000000022';
+
+  begin
+    perform public.update_stage01_config_draft(
+      '63000000-0000-4000-8000-000000000022',
+      jsonb_build_object(
+        'expectedDraftVersion', 0,
+        'taxonomies', pg_temp.stage01_config_business_taxonomies(),
+        'criteria', pg_temp.stage01_config_business_criteria()
+      ),
+      '63000000-0000-4000-8000-000000000255'
+    );
+    raise exception 'DB-S01-CONFIG-CMD historical v1 criterion key was not protected by update';
+  exception when raise_exception then
+    if sqlerrm <> 'STAGE01_DEFINITION_CONFIG_INVALID' then raise; end if;
+  end;
+
+  if (select definition from public.workflow_definition_drafts where company_id = '63000000-0000-4000-8000-000000000022') is distinct from definition_before
+     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000022') <> audit_count
+     or not exists (
+       select 1 from public.workflow_definition_drafts
+       where company_id = '63000000-0000-4000-8000-000000000022'
+         and workflow_key = 'vqh.stage01'
+         and version = 0
+     ) then
+    raise exception 'DB-S01-CONFIG-CMD historical criterion update failure was not atomic';
+  end if;
+end $$;
+
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"63000000-0000-4000-8000-000000000002","role":"authenticated"}',
+  true
+);
+
+do $$
+declare
+  snapshot_count bigint;
+  audit_count bigint;
+begin
+  select count(*) into snapshot_count
+  from public.workflow_definition_snapshots
+  where company_id = '63000000-0000-4000-8000-000000000022';
+  select count(*) into audit_count
+  from public.audit_events
+  where company_id = '63000000-0000-4000-8000-000000000022';
+
+  begin
+    perform public.publish_stage01_config_draft(
+      '63000000-0000-4000-8000-000000000022',
+      jsonb_build_object('expectedDraftVersion', 0),
+      '63000000-0000-4000-8000-000000000256'
+    );
+    raise exception 'DB-S01-CONFIG-CMD historical v1 criterion key was not protected by publish';
+  exception when raise_exception then
+    if sqlerrm <> 'STAGE01_DEFINITION_CONFIG_INVALID' then raise; end if;
+  end;
+
+  if (select count(*) from public.workflow_definition_snapshots where company_id = '63000000-0000-4000-8000-000000000022') <> snapshot_count
+     or (select count(*) from public.audit_events where company_id = '63000000-0000-4000-8000-000000000022') <> audit_count
+     or not exists (
+       select 1 from public.workflow_definition_drafts
+       where company_id = '63000000-0000-4000-8000-000000000022'
+         and workflow_key = 'vqh.stage01'
+         and version = 0
+     ) then
+    raise exception 'DB-S01-CONFIG-CMD historical criterion publish failure was not atomic';
+  end if;
+end $$;
+
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"63000000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
+
+do $$
+declare
+  update_result jsonb;
+begin
+  update_result := public.update_stage01_config_draft(
+    '63000000-0000-4000-8000-000000000022',
+    jsonb_build_object(
+      'expectedDraftVersion', 0,
+      'taxonomies', pg_temp.stage01_config_business_taxonomies(),
+      'criteria', pg_temp.stage01_config_historical_v1_business_criteria()
+    ),
+    '63000000-0000-4000-8000-000000000257'
+  );
+  if update_result ->> 'version' <> '1'
+     or not exists (
+       select 1
+       from jsonb_array_elements(update_result -> 'criteria') as criterion(value)
+       where criterion.value ->> 'key' = 'legacy_contract'
+     ) then
+    raise exception 'DB-S01-CONFIG-CMD retaining the historical criterion key did not unlock the draft';
+  end if;
+end $$;
+
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"63000000-0000-4000-8000-000000000002","role":"authenticated"}',
+  true
+);
+
+do $$
+declare
+  publish_result jsonb;
+begin
+  publish_result := public.publish_stage01_config_draft(
+    '63000000-0000-4000-8000-000000000022',
+    jsonb_build_object('expectedDraftVersion', 1),
+    '63000000-0000-4000-8000-000000000258'
+  );
+  if publish_result ->> 'templateVersion' <> '4'
+     or not exists (
+       select 1 from public.workflow_definition_snapshots
+       where company_id = '63000000-0000-4000-8000-000000000022'
+         and template_version = 4
+         and definition #>> '{criteria,5,key}' = 'legacy_contract'
+     ) then
+    raise exception 'DB-S01-CONFIG-CMD retaining the historical criterion key did not unlock publication';
   end if;
 end $$;
 

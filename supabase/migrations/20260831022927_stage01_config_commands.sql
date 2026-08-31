@@ -166,6 +166,7 @@ begin
        or (criterion.value ->> 'displayOrder')::numeric < 0
        or (criterion.value ->> 'displayOrder')::numeric
             <> pg_catalog.trunc((criterion.value ->> 'displayOrder')::numeric)
+       or (criterion.value ->> 'displayOrder')::numeric > 9007199254740991
   ) or exists (
     select 1
     from pg_catalog.jsonb_array_elements(target_criteria) as criterion(value)
@@ -406,12 +407,18 @@ create function private.stage01_config_draft_result(
   target_draft public.workflow_definition_drafts
 )
 returns jsonb
-language sql
+language plpgsql
 stable
 security definer
 set search_path = ''
 as $$
-  select pg_catalog.jsonb_build_object(
+begin
+  if target_draft.version < 0
+     or target_draft.version > 9007199254740991 then
+    raise exception using errcode = 'P0001', message = 'INTERNAL_ERROR';
+  end if;
+
+  return pg_catalog.jsonb_build_object(
     'id', target_draft.id,
     'baseSnapshotId', target_draft.base_snapshot_id,
     'version', target_draft.version,
@@ -424,6 +431,7 @@ as $$
     ),
     'criteria', target_draft.definition -> 'criteria'
   );
+end;
 $$;
 
 create function private.stage01_config_expected_draft_version(target_input jsonb)
@@ -444,7 +452,7 @@ begin
   version_numeric := version_text::numeric;
   if version_numeric < 0
      or version_numeric <> pg_catalog.trunc(version_numeric)
-     or version_numeric > 9223372036854775807::numeric then
+     or version_numeric > 9007199254740991::numeric then
     raise exception using errcode = '22023', message = 'INVALID_COMMAND_INPUT';
   end if;
   return version_numeric::bigint;
@@ -584,7 +592,11 @@ begin
     target_input, array['expectedPublishedSnapshotId']
   );
   if pg_catalog.jsonb_typeof(target_input -> 'expectedPublishedSnapshotId') <> 'string'
-     or not (target_input ->> 'expectedPublishedSnapshotId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$') then
+     or not (
+       target_input ->> 'expectedPublishedSnapshotId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+       or target_input ->> 'expectedPublishedSnapshotId' = '00000000-0000-0000-0000-000000000000'
+       or target_input ->> 'expectedPublishedSnapshotId' = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
+     ) then
     raise exception using errcode = '22023', message = 'INVALID_COMMAND_INPUT';
   end if;
   expected_snapshot_id := (target_input ->> 'expectedPublishedSnapshotId')::uuid;
@@ -715,6 +727,9 @@ begin
     raise exception using errcode = 'P0001', message = 'STAGE01_CONFIG_DRAFT_NOT_FOUND';
   end if;
   if draft_row.version is distinct from expected_draft_version then
+    raise exception using errcode = 'P0001', message = 'VERSION_CONFLICT';
+  end if;
+  if draft_row.version >= 9007199254740991 then
     raise exception using errcode = 'P0001', message = 'VERSION_CONFLICT';
   end if;
 
