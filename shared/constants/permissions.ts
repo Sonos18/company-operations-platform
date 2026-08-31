@@ -57,6 +57,9 @@ export const permissionCodes = [
   'stage01.clarification.return',
   'stage01.decision.record',
   'stage01.reactivate',
+  'stage01.config.read',
+  'stage01.config.update',
+  'stage01.config.publish',
 ] as const
 
 export type PermissionCode = (typeof permissionCodes)[number]
