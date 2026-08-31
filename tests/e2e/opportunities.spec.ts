@@ -161,7 +161,7 @@ test('shows an empty state and a retryable list error', async ({ page }) => {
 })
 
 test('loads narrow create options for a new opportunity and navigates after create', async ({ page, authState }) => {
-  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'opportunity.read', 'opportunity.create'] })]
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.create'] })]
   const requests: Array<{ method: string, body: unknown }> = []
   await installOpportunityListRoute(page, [])
   await installCreateOptionsRoute(page, [createOptions()])
