@@ -26,8 +26,11 @@ function opportunity(overrides: Partial<OpportunitySummary> = {}): OpportunitySu
   })
 }
 
-async function installOpportunityListRoute(page: Page, response: OpportunitySummary[] | 500): Promise<void> {
-  await page.route('**/api/companies/**/opportunities', async (route) => {
+async function installOpportunityListRoute(
+  page: Page,
+  response: OpportunitySummary[] | 500,
+): Promise<void> {
+  await page.route(/\/api\/companies\/[^/]+\/opportunities$/, async (route) => {
     if (route.request().method() !== 'GET') return route.fallback()
     if (response === 500) {
       await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'Lỗi kiểm thử', requestId: 'opportunity-list-error', details: {} } }) })
@@ -59,8 +62,9 @@ test('loads opportunity summaries and exposes a keyboard-accessible create actio
   await goToOpportunities(page)
 
   await expect(page.getByRole('heading', { name: 'Cơ hội', exact: true })).toBeVisible()
-  await expect(page.getByText('Công ty Việt Quốc Huy', { exact: true })).toBeVisible()
-  await expect(page.getByText('Thiết kế văn phòng mới', { exact: true })).toBeVisible()
+  const opportunityTable = page.getByTestId('opportunity-list').getByRole('table', { name: 'Danh sách cơ hội' })
+  await expect(opportunityTable.getByText('Công ty Việt Quốc Huy', { exact: true })).toBeVisible()
+  await expect(opportunityTable.getByText('Thiết kế văn phòng mới', { exact: true })).toBeVisible()
   const create = page.getByRole('button', { name: 'Tạo cơ hội mới' })
   await expect(create).toBeVisible()
   await create.focus()
@@ -74,12 +78,13 @@ test('shows an empty state and a retryable list error', async ({ page }) => {
   await installOpportunityListRoute(page, 500)
   await page.goto('/projects')
   await page.getByTestId('app-sidebar').getByRole('link', { name: 'Cơ hội', exact: true }).click()
-  await expect(page.getByRole('alert')).toContainText('Không thể tải danh sách cơ hội')
-  await expect(page.getByRole('button', { name: 'Thử lại' })).toBeVisible()
+  const listError = page.getByRole('alert').filter({ hasText: 'Không thể tải danh sách cơ hội' })
+  await expect(listError).toBeVisible()
+  await expect(listError.getByRole('button', { name: 'Thử lại' })).toBeVisible()
 })
 
 test('loads the latest Stage 01 config only for a new opportunity and navigates after create', async ({ page, authState }) => {
-  authState.sessionCompanies = [createCompany({ permissions: ['opportunity.read', 'opportunity.create'] })]
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'opportunity.read', 'opportunity.create'] })]
   const requests: Array<{ method: string, body: unknown }> = []
   await installOpportunityListRoute(page, [])
   await installStage01ConfigRoutes(page, {
@@ -88,7 +93,7 @@ test('loads the latest Stage 01 config only for a new opportunity and navigates 
     nextFailure: null,
     initialConfigUnavailable: false,
   })
-  await page.route('**/api/companies/**/opportunities', async (route) => {
+  await page.route(/\/api\/companies\/[^/]+\/opportunities$/, async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({ contentType: 'application/json', body: '[]' })
       return

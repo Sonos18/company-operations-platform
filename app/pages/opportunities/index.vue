@@ -76,11 +76,11 @@ async function createOpportunity(input: CreateOpportunityInput): Promise<void> {
 
     <div v-if="pending" class="opportunities-loading" aria-label="Đang tải danh sách cơ hội"><USkeleton v-for="index in 4" :key="index" class="h-16 w-full" /></div>
     <UAlert v-else-if="error" role="alert" color="error" variant="subtle" icon="i-lucide-circle-alert" title="Không thể tải danh sách cơ hội" description="Vui lòng thử lại sau."><template #actions><UButton color="error" variant="outline" @click="() => refresh()">Thử lại</UButton></template></UAlert>
-    <OpportunityListTable v-else-if="visibleOpportunities.length" :opportunities="visibleOpportunities" />
+    <OpportunitiesOpportunityListTable v-else-if="visibleOpportunities.length" :opportunities="visibleOpportunities" />
     <UAlert v-else color="neutral" variant="subtle" icon="i-lucide-target" title="Chưa có cơ hội" description="Tạo cơ hội mới để bắt đầu quy trình Stage 01." />
     <UAlert v-if="createError" role="alert" color="error" variant="subtle" icon="i-lucide-circle-alert" title="Không thể tạo cơ hội" :description="errorMessage(createError, 'Vui lòng thử lại.')" />
 
-    <OpportunityCreateDialog v-model:open="createOpen" :config="createConfig" :loading="createConfigLoading" :error="createConfigError" :submitting="submitting" @retry="loadCreateConfig" @submit="createOpportunity" />
+    <OpportunitiesOpportunityCreateDialog v-model:open="createOpen" :config="createConfig" :loading="createConfigLoading" :error="createConfigError" :submitting="submitting" @retry="loadCreateConfig" @submit="createOpportunity" />
   </section>
 </template>
 
