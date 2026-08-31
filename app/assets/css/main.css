@@ -1,14 +1,14 @@
-@import '@fontsource-variable/space-grotesk';
-@import '@fontsource-variable/dm-sans';
-@import '@fontsource-variable/jetbrains-mono';
-@import '@fontsource-variable/manrope/wght.css';
-@import '@fontsource/be-vietnam-pro/400.css';
-@import '@fontsource/be-vietnam-pro/500.css';
-@import '@fontsource/be-vietnam-pro/600.css';
-@import 'tailwindcss';
-@import '@nuxt/ui';
+@import "@fontsource-variable/space-grotesk";
+@import "@fontsource-variable/dm-sans";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource-variable/manrope/wght.css";
+@import "@fontsource/be-vietnam-pro/400.css";
+@import "@fontsource/be-vietnam-pro/500.css";
+@import "@fontsource/be-vietnam-pro/600.css";
+@import "tailwindcss";
+@import "@nuxt/ui";
 
-@theme {
+@theme static {
   --color-creative-50: #f2fcf8;
   --color-creative-100: #d9f4ec;
   --color-creative-200: #b7e6d9;
@@ -45,9 +45,9 @@
   --color-coral-900: #87372e;
   --color-coral-950: #491914;
 
-  --font-journey-display: 'Manrope Variable', sans-serif;
-  --font-journey-body: 'Be Vietnam Pro', sans-serif;
-  --font-journey-mono: 'JetBrains Mono Variable', monospace;
+  --font-journey-display: "Manrope Variable", sans-serif;
+  --font-journey-body: "Be Vietnam Pro", sans-serif;
+  --font-journey-mono: "JetBrains Mono Variable", monospace;
 }
 
 .creative-momentum {
@@ -92,7 +92,7 @@
   --header-height: 64px;
   --sidebar-width: 224px;
   color-scheme: light;
-  font-family: 'DM Sans Variable', sans-serif;
+  font-family: "DM Sans Variable", sans-serif;
 }
 
 * {
@@ -111,7 +111,7 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font-family: 'DM Sans Variable', sans-serif;
+  font-family: "DM Sans Variable", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -121,7 +121,7 @@ h3,
 h4 {
   margin: 0;
   color: var(--forest-deep);
-  font-family: 'Space Grotesk Variable', sans-serif;
+  font-family: "Space Grotesk Variable", sans-serif;
   letter-spacing: -0.025em;
 }
 
@@ -148,7 +148,7 @@ select {
 
 .eyebrow {
   color: var(--ink-muted);
-  font-family: 'JetBrains Mono Variable', monospace;
+  font-family: "JetBrains Mono Variable", monospace;
   font-size: 0.72rem;
   font-weight: 650;
   letter-spacing: 0.1em;
@@ -169,7 +169,7 @@ select {
 
 @media (max-width: 767px) {
   button,
-  [role='button'] {
+  [role="button"] {
     min-width: 44px;
     min-height: 44px;
   }
