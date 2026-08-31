@@ -188,7 +188,6 @@ async function returnToOpportunities(): Promise<void> {
         </ol>
       </section>
 
-      <UAlert color="neutral" variant="subtle" icon="i-lucide-lock-keyhole" title="Không gian xem trạng thái" description="Các thao tác Tiếp nhận, workflow và quyết định sẽ được mở theo quyền riêng ở các phần tiếp theo của Stage 01." />
     </template>
   </section>
 </template>

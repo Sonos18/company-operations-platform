@@ -54,12 +54,21 @@ test('exposes restore only to the restore permission when the Opportunity is inv
   await expect(page.getByRole('button', { name: 'Làm mất hiệu lực' })).toHaveCount(0)
 })
 
-test('preserves local Opportunity edits after VERSION_CONFLICT until explicitly reloaded', async ({ page, authState }) => {
+test('requires an explicit draft decision after VERSION_CONFLICT and rehydrates the Opportunity editor before a later save', async ({ page, authState }) => {
   authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.update'] })]
-  await installStage01OperationalRoutes(page, createStage01OperationalDetail())
+  const detail = createStage01OperationalDetail()
+  const updateRequests: Record<string, unknown>[] = []
+  await installStage01OperationalRoutes(page, detail)
   await page.route(new RegExp(`/api/companies/[^/]+/opportunities/${stage01OpportunityId}$`), async route => {
     if (route.request().method() !== 'PATCH') return route.fallback()
-    await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify(versionConflictBody()) })
+    updateRequests.push(JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>)
+    if (updateRequests.length === 1) {
+      detail.opportunity.primaryCustomerName = 'Tên chính tắc mới'
+      detail.opportunity.version = 4
+      await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify(versionConflictBody()) })
+      return
+    }
+    await route.fulfill({ contentType: 'application/json', body: 'null' })
   })
   await goToWorkspace(page)
   await page.getByRole('button', { name: 'Chỉnh sửa cơ hội' }).click()
@@ -68,5 +77,15 @@ test('preserves local Opportunity edits after VERSION_CONFLICT until explicitly 
   await page.getByRole('button', { name: 'Lưu cơ hội' }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'Không thể hoàn tất thao tác' })).toBeVisible()
   await expect(name).toHaveValue('Tên đang chỉnh sửa')
-  await expect(page.getByRole('button', { name: 'Tải lại chính tắc' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Giữ bản nháp để xem' })).toBeVisible()
+  await page.getByRole('button', { name: 'Bỏ bản nháp và tải lại' }).click()
+  await expect(name).toHaveValue('Tên chính tắc mới')
+
+  await name.fill('Tên chỉnh sửa sau tải lại')
+  await page.getByRole('button', { name: 'Lưu cơ hội' }).click()
+  await expect.poll(() => updateRequests).toHaveLength(2)
+  expect(updateRequests[1]).toMatchObject({
+    primaryCustomerName: 'Tên chỉnh sửa sau tải lại',
+    expectedOpportunityVersion: 4,
+  })
 })

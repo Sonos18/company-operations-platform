@@ -25,17 +25,23 @@ const addingRecord = ref(false)
 const raisingDuplicate = ref(false)
 const resolvingConcernId = ref<string | null>(null)
 const canonicalOptions = ref<Awaited<ReturnType<typeof repositories.opportunities.list>> | null>(null)
+const opportunityEditorVersion = ref<number | null>(null)
+const opportunityConflict = ref(false)
 
-const opportunity = reactive({
-  primaryCustomerName: props.detail.opportunity.primaryCustomerName ?? '', needDescription: props.detail.opportunity.needDescription ?? '',
-  customerTypeCode: props.detail.opportunity.customerTypeCode ?? '', primaryLeadSourceCode: props.detail.opportunity.primaryLeadSourceCode ?? '',
-  engagementStatusCode: props.detail.opportunity.engagementStatusCode ?? '', budgetStatusCode: props.detail.opportunity.budgetStatusCode ?? '',
-  timelineStatusCode: props.detail.opportunity.timelineStatusCode ?? '', priorityCode: props.detail.opportunity.priorityCode ?? '',
-  locationStatus: props.detail.opportunity.locationStatus, locationText: props.detail.opportunity.locationText ?? '',
-  budgetMin: props.detail.opportunity.budgetMin?.toString() ?? '', budgetMax: props.detail.opportunity.budgetMax?.toString() ?? '',
-  currencyCode: props.detail.opportunity.currencyCode ?? '', budgetNote: props.detail.opportunity.budgetNote ?? '',
-  timelineStartDate: props.detail.opportunity.timelineStartDate ?? '', timelineEndDate: props.detail.opportunity.timelineEndDate ?? '', timelineNote: props.detail.opportunity.timelineNote ?? '',
-})
+function opportunityDraft(source: Stage01OperationalDetail['opportunity']) {
+  return {
+    primaryCustomerName: source.primaryCustomerName ?? '', needDescription: source.needDescription ?? '',
+    customerTypeCode: source.customerTypeCode ?? '', primaryLeadSourceCode: source.primaryLeadSourceCode ?? '',
+    engagementStatusCode: source.engagementStatusCode ?? '', budgetStatusCode: source.budgetStatusCode ?? '',
+    timelineStatusCode: source.timelineStatusCode ?? '', priorityCode: source.priorityCode ?? '',
+    locationStatus: source.locationStatus, locationText: source.locationText ?? '',
+    budgetMin: source.budgetMin?.toString() ?? '', budgetMax: source.budgetMax?.toString() ?? '',
+    currencyCode: source.currencyCode ?? '', budgetNote: source.budgetNote ?? '',
+    timelineStartDate: source.timelineStartDate ?? '', timelineEndDate: source.timelineEndDate ?? '', timelineNote: source.timelineNote ?? '',
+  }
+}
+
+const opportunity = reactive(opportunityDraft(props.detail.opportunity))
 const invalidReasonCode = ref('')
 const invalidReason = ref('')
 const restoreReason = ref('')
@@ -66,6 +72,10 @@ function message(value: unknown, fallback = 'Không thể hoàn tất thao tác.
 function clearNotice(): void { error.value = null; success.value = null }
 function optionalText(value: string): string | undefined { return value.trim() || undefined }
 function optionalNumber(value: string): number | undefined { return value.trim() && Number.isFinite(Number(value)) ? Number(value) : undefined }
+function rehydrateOpportunityDraft(): void {
+  Object.assign(opportunity, opportunityDraft(props.detail.opportunity))
+  opportunityEditorVersion.value = props.detail.opportunity.version
+}
 
 async function command(label: string, action: () => Promise<unknown>): Promise<boolean> {
   clearNotice()
@@ -88,9 +98,14 @@ async function saveOpportunity(): Promise<void> {
     timelineStatusCode: opportunity.timelineStatusCode || undefined, priorityCode: opportunity.priorityCode || undefined,
     locationStatus: opportunity.locationStatus, locationText: optionalText(opportunity.locationText), budgetMin: optionalNumber(opportunity.budgetMin), budgetMax: optionalNumber(opportunity.budgetMax),
     currencyCode: optionalText(opportunity.currencyCode)?.toUpperCase(), budgetNote: optionalText(opportunity.budgetNote), timelineStartDate: optionalText(opportunity.timelineStartDate), timelineEndDate: optionalText(opportunity.timelineEndDate), timelineNote: optionalText(opportunity.timelineNote),
-    expectedOpportunityVersion: props.detail.opportunity.version,
+    expectedOpportunityVersion: opportunityEditorVersion.value ?? props.detail.opportunity.version,
   }))
-  if (didSave) editingOpportunity.value = false
+  if (didSave) {
+    editingOpportunity.value = false
+    opportunityEditorVersion.value = null
+    return
+  }
+  opportunityConflict.value = error.value instanceof ClientError && error.value.code === 'VERSION_CONFLICT'
 }
 
 async function invalidate(): Promise<void> {
@@ -200,7 +215,26 @@ async function resolveConcern(id: string): Promise<void> {
   if (didSave) resolvingConcernId.value = null
 }
 async function reloadCanonical(): Promise<void> { await props.reload() }
-function toggleOpportunityEditor(): void { editingOpportunity.value = !editingOpportunity.value }
+function toggleOpportunityEditor(): void {
+  if (editingOpportunity.value) {
+    editingOpportunity.value = false
+    opportunityEditorVersion.value = null
+    return
+  }
+  rehydrateOpportunityDraft()
+  editingOpportunity.value = true
+}
+function retainOpportunityDraft(): void {
+  opportunityConflict.value = false
+  clearNotice()
+}
+async function discardOpportunityDraftAndReload(): Promise<void> {
+  clearNotice()
+  await props.reload()
+  await nextTick()
+  rehydrateOpportunityDraft()
+  opportunityConflict.value = false
+}
 function toggleInvalidation(): void { invalidating.value = !invalidating.value }
 function toggleRestore(): void { restoring.value = !restoring.value }
 function toggleContactForm(): void { addingContact.value = !addingContact.value }
@@ -215,7 +249,13 @@ function onResolutionChange(): void { if (resolution.resolution === 'same_need')
 <template>
   <section class="intake-controls" aria-label="Nghiệp vụ tiếp nhận">
     <UAlert v-if="error" role="alert" color="error" variant="subtle" icon="i-lucide-circle-alert" title="Không thể hoàn tất thao tác" :description="message(error)">
-      <template v-if="error instanceof ClientError && error.code === 'VERSION_CONFLICT'" #actions><UButton color="error" variant="outline" @click="reloadCanonical">Tải lại chính tắc</UButton></template>
+      <template v-if="error instanceof ClientError && error.code === 'VERSION_CONFLICT'" #actions>
+        <template v-if="opportunityConflict">
+          <UButton color="error" variant="outline" @click="retainOpportunityDraft">Giữ bản nháp để xem</UButton>
+          <UButton color="error" @click="discardOpportunityDraftAndReload">Bỏ bản nháp và tải lại</UButton>
+        </template>
+        <UButton v-else color="error" variant="outline" @click="reloadCanonical">Tải lại chính tắc</UButton>
+      </template>
     </UAlert>
     <UAlert v-if="success" color="success" variant="subtle" icon="i-lucide-circle-check" :title="success" />
 
