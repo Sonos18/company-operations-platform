@@ -52,47 +52,83 @@ begin
 end $$;
 
 insert into auth.users (id, email) values
-  ('62000000-0000-4000-8000-000000000001', 'stage01-config-security@test.invalid');
+  ('62000000-0000-4000-8000-000000000001', 'stage01-config-reader-a@test.invalid'),
+  ('62000000-0000-4000-8000-000000000002', 'stage01-config-updater-a@test.invalid'),
+  ('62000000-0000-4000-8000-000000000003', 'stage01-config-journey-a@test.invalid'),
+  ('62000000-0000-4000-8000-000000000004', 'stage01-config-reader-b@test.invalid');
 
 insert into public.tenants (id, code, name) values
-  ('62000000-0000-4000-8000-000000000010', 'stage01-config-security', 'Stage 01 config security test');
+  ('62000000-0000-4000-8000-000000000010', 'stage01-config-security-a', 'Stage 01 config security tenant A'),
+  ('62000000-0000-4000-8000-000000000011', 'stage01-config-security-b', 'Stage 01 config security tenant B');
 
 insert into public.companies (id, tenant_id, code, name) values
-  ('62000000-0000-4000-8000-000000000020', '62000000-0000-4000-8000-000000000010', 'S01-CONFIG-SEC-A', 'Stage 01 config security A'),
-  ('62000000-0000-4000-8000-000000000021', '62000000-0000-4000-8000-000000000010', 'S01-CONFIG-SEC-B', 'Stage 01 config security B');
+  ('62000000-0000-4000-8000-000000000020', '62000000-0000-4000-8000-000000000010', 'S01-CONFIG-SEC-A', 'Stage 01 config security company A'),
+  ('62000000-0000-4000-8000-000000000021', '62000000-0000-4000-8000-000000000011', 'S01-CONFIG-SEC-B', 'Stage 01 config security company B');
 
 insert into public.tenant_memberships (user_id, tenant_id, roles) values
-  ('62000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000010', array['member']);
+  ('62000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000010', array['member']),
+  ('62000000-0000-4000-8000-000000000002', '62000000-0000-4000-8000-000000000010', array['member']),
+  ('62000000-0000-4000-8000-000000000003', '62000000-0000-4000-8000-000000000010', array['member']),
+  ('62000000-0000-4000-8000-000000000004', '62000000-0000-4000-8000-000000000011', array['member']);
 
 insert into public.company_memberships (user_id, tenant_id, company_id, roles) values
   ('62000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000010', '62000000-0000-4000-8000-000000000020', array['member']),
-  ('62000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000010', '62000000-0000-4000-8000-000000000021', array['member']);
+  ('62000000-0000-4000-8000-000000000002', '62000000-0000-4000-8000-000000000010', '62000000-0000-4000-8000-000000000020', array['member']),
+  ('62000000-0000-4000-8000-000000000003', '62000000-0000-4000-8000-000000000010', '62000000-0000-4000-8000-000000000020', array['member']),
+  ('62000000-0000-4000-8000-000000000004', '62000000-0000-4000-8000-000000000011', '62000000-0000-4000-8000-000000000021', array['member']);
 
 insert into public.roles (id, tenant_id, company_id, code, name, description, is_system) values
   (
     '62000000-0000-4000-8000-000000000101', '62000000-0000-4000-8000-000000000010',
-    '62000000-0000-4000-8000-000000000020', 'stage01_config_security_admin',
-    'Stage 01 config security admin', 'Test-only Stage 01 configuration role', false
+    '62000000-0000-4000-8000-000000000020', 'stage01_config_read_a',
+    'Stage 01 config read A', 'Test-only Stage 01 configuration read role', false
   ),
   (
     '62000000-0000-4000-8000-000000000102', '62000000-0000-4000-8000-000000000010',
-    '62000000-0000-4000-8000-000000000020', 'stage01_config_security_journey_reader',
-    'Stage 01 config security Journey reader', 'Test-only Journey read role', false
+    '62000000-0000-4000-8000-000000000020', 'stage01_config_update_publish_a',
+    'Stage 01 config update/publish A', 'Test-only Stage 01 configuration mutation role', false
+  ),
+  (
+    '62000000-0000-4000-8000-000000000103', '62000000-0000-4000-8000-000000000010',
+    '62000000-0000-4000-8000-000000000020', 'stage01_config_journey_a',
+    'Stage 01 config Journey A', 'Test-only Journey reader role', false
+  ),
+  (
+    '62000000-0000-4000-8000-000000000104', '62000000-0000-4000-8000-000000000011',
+    '62000000-0000-4000-8000-000000000021', 'stage01_config_read_b',
+    'Stage 01 config read B', 'Test-only second-tenant configuration read role', false
   );
 
 insert into public.role_permissions (role_id, permission_code) values
   ('62000000-0000-4000-8000-000000000101', 'stage01.config.read'),
-  ('62000000-0000-4000-8000-000000000101', 'stage01.config.update'),
-  ('62000000-0000-4000-8000-000000000101', 'stage01.config.publish'),
-  ('62000000-0000-4000-8000-000000000102', 'journey.read');
+  ('62000000-0000-4000-8000-000000000102', 'stage01.config.update'),
+  ('62000000-0000-4000-8000-000000000102', 'stage01.config.publish'),
+  ('62000000-0000-4000-8000-000000000103', 'journey.read'),
+  ('62000000-0000-4000-8000-000000000104', 'stage01.config.read');
 
 insert into public.company_role_assignments (
   tenant_id, company_id, user_id, role_id, granted_by, grant_reason
-) values (
-  '62000000-0000-4000-8000-000000000010', '62000000-0000-4000-8000-000000000020',
-  '62000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000101',
-  '62000000-0000-4000-8000-000000000001', 'Stage 01 config security fixture'
-);
+) values
+  (
+    '62000000-0000-4000-8000-000000000010', '62000000-0000-4000-8000-000000000020',
+    '62000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000101',
+    '62000000-0000-4000-8000-000000000001', 'Stage 01 config reader A fixture'
+  ),
+  (
+    '62000000-0000-4000-8000-000000000010', '62000000-0000-4000-8000-000000000020',
+    '62000000-0000-4000-8000-000000000002', '62000000-0000-4000-8000-000000000102',
+    '62000000-0000-4000-8000-000000000002', 'Stage 01 config update/publish fixture'
+  ),
+  (
+    '62000000-0000-4000-8000-000000000010', '62000000-0000-4000-8000-000000000020',
+    '62000000-0000-4000-8000-000000000003', '62000000-0000-4000-8000-000000000103',
+    '62000000-0000-4000-8000-000000000003', 'Stage 01 Journey reader fixture'
+  ),
+  (
+    '62000000-0000-4000-8000-000000000011', '62000000-0000-4000-8000-000000000021',
+    '62000000-0000-4000-8000-000000000004', '62000000-0000-4000-8000-000000000104',
+    '62000000-0000-4000-8000-000000000004', 'Stage 01 config reader B fixture'
+  );
 
 insert into public.workflow_definition_snapshots (
   id, tenant_id, company_id, workflow_key, template_version, schema_version, definition, definition_hash
@@ -106,7 +142,7 @@ insert into public.workflow_definition_snapshots (
     '62000000-0000-4000-8000-000000000020', 'other.workflow', 1, 1, '{}'::jsonb, 'config-security-other-a'
   ),
   (
-    '62000000-0000-4000-8000-000000000032', '62000000-0000-4000-8000-000000000010',
+    '62000000-0000-4000-8000-000000000032', '62000000-0000-4000-8000-000000000011',
     '62000000-0000-4000-8000-000000000021', 'vqh.stage01', 1, 1, '{}'::jsonb, 'config-security-stage01-b'
   );
 
@@ -121,10 +157,10 @@ insert into public.workflow_definition_drafts (
     '62000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000001'
   ),
   (
-    '62000000-0000-4000-8000-000000000041', '62000000-0000-4000-8000-000000000010',
+    '62000000-0000-4000-8000-000000000041', '62000000-0000-4000-8000-000000000011',
     '62000000-0000-4000-8000-000000000021', 'vqh.stage01',
     '62000000-0000-4000-8000-000000000032', '{}'::jsonb, 0,
-    '62000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000001'
+    '62000000-0000-4000-8000-000000000004', '62000000-0000-4000-8000-000000000004'
   );
 
 set local role authenticated;
@@ -141,7 +177,7 @@ begin
        select 1 from public.workflow_definition_drafts
        where id = '62000000-0000-4000-8000-000000000040'
      ) then
-    raise exception 'DB-S01-CONFIG-SEC draft RLS did not enforce tenant/company scope';
+    raise exception 'DB-S01-CONFIG-SEC read permission did not isolate tenant A drafts';
   end if;
 
   if (select count(*) from public.workflow_definition_snapshots) <> 1
@@ -150,7 +186,53 @@ begin
        where id = '62000000-0000-4000-8000-000000000030'
           and workflow_key = 'vqh.stage01'
      ) then
-    raise exception 'DB-S01-CONFIG-SEC config read did not limit snapshots to scoped vqh.stage01';
+    raise exception 'DB-S01-CONFIG-SEC read permission did not limit tenant A snapshots to vqh.stage01';
+  end if;
+end $$;
+
+reset role;
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"62000000-0000-4000-8000-000000000004","role":"authenticated"}',
+  true
+);
+
+do $$
+begin
+  if (select count(*) from public.workflow_definition_drafts) <> 1
+     or not exists (
+       select 1 from public.workflow_definition_drafts
+       where id = '62000000-0000-4000-8000-000000000041'
+     ) then
+    raise exception 'DB-S01-CONFIG-SEC read permission did not isolate tenant B drafts';
+  end if;
+
+  if (select count(*) from public.workflow_definition_snapshots) <> 1
+     or not exists (
+       select 1 from public.workflow_definition_snapshots
+       where id = '62000000-0000-4000-8000-000000000032'
+          and workflow_key = 'vqh.stage01'
+     ) then
+    raise exception 'DB-S01-CONFIG-SEC read permission did not isolate tenant B snapshots';
+  end if;
+end $$;
+
+reset role;
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"62000000-0000-4000-8000-000000000002","role":"authenticated"}',
+  true
+);
+
+do $$
+begin
+  if (select count(*) from public.workflow_definition_drafts) <> 0
+     or (select count(*) from public.workflow_definition_snapshots) <> 0 then
+    raise exception 'DB-S01-CONFIG-SEC update/publish permissions unexpectedly granted config read';
   end if;
 
   begin
@@ -160,7 +242,7 @@ begin
     ) values (
       '62000000-0000-4000-8000-000000000010', '62000000-0000-4000-8000-000000000020',
       'vqh.stage01.direct-insert', '62000000-0000-4000-8000-000000000030', '{}'::jsonb, 0,
-      '62000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000001'
+      '62000000-0000-4000-8000-000000000002', '62000000-0000-4000-8000-000000000002'
     );
     raise exception 'DB-S01-CONFIG-SEC direct draft insert unexpectedly succeeded';
   exception when insufficient_privilege then null;
@@ -184,18 +266,19 @@ end $$;
 
 reset role;
 
-insert into public.company_role_assignments (
-  tenant_id, company_id, user_id, role_id, granted_by, grant_reason
-) values (
-  '62000000-0000-4000-8000-000000000010', '62000000-0000-4000-8000-000000000020',
-  '62000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000102',
-  '62000000-0000-4000-8000-000000000001', 'Verify Journey read remains independent'
-);
-
 set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"62000000-0000-4000-8000-000000000003","role":"authenticated"}',
+  true
+);
 
 do $$
 begin
+  if (select count(*) from public.workflow_definition_drafts) <> 0 then
+    raise exception 'DB-S01-CONFIG-SEC Journey permission unexpectedly granted draft read';
+  end if;
+
   if (select count(*) from public.workflow_definition_snapshots) <> 2
      or not exists (
        select 1 from public.workflow_definition_snapshots
@@ -208,6 +291,6 @@ end $$;
 
 reset role;
 
-select 'PASS DB-S01-CONFIG-SEC draft grants, RLS, and snapshot config-read policy' as result;
+select 'PASS DB-S01-CONFIG-SEC draft grants, tenant isolation, and snapshot config-read policy' as result;
 
 ROLLBACK;

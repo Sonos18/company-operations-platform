@@ -24,6 +24,10 @@ create index workflow_definition_drafts_scope_key_idx
   on public.workflow_definition_drafts (tenant_id, company_id, workflow_key);
 create index workflow_definition_drafts_base_snapshot_scope_idx
   on public.workflow_definition_drafts (base_snapshot_id, tenant_id, company_id);
+create index workflow_definition_drafts_created_by_idx
+  on public.workflow_definition_drafts (created_by);
+create index workflow_definition_drafts_updated_by_idx
+  on public.workflow_definition_drafts (updated_by);
 
 insert into public.permissions (code, module, name, description) values
   ('stage01.config.read', 'stage01', 'Read Stage 01 configuration', 'Read published Stage 01 configuration and active drafts'),

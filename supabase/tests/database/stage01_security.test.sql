@@ -30,7 +30,10 @@ begin
     ('stage01.recommendation.submit'),
     ('stage01.clarification.return'),
     ('stage01.decision.record'),
-    ('stage01.reactivate')
+    ('stage01.reactivate'),
+    ('stage01.config.read'),
+    ('stage01.config.update'),
+    ('stage01.config.publish')
   ) as expected(code)
   where not exists (
     select 1 from public.permissions as actual where actual.code = expected.code
@@ -51,11 +54,18 @@ begin
     where (
       role_permission.permission_code like 'opportunity.%'
       or role_permission.permission_code like 'journey.%'
-      or role_permission.permission_code like 'stage01.%'
+      or (
+        role_permission.permission_code like 'stage01.%'
+        and role_permission.permission_code not in (
+          'stage01.config.read',
+          'stage01.config.update',
+          'stage01.config.publish'
+        )
+      )
     )
       and company_role.code <> 'company_admin'
   ) then
-    raise exception 'DB-S01-SEC Stage 01 permission was inferred for an operational role';
+    raise exception 'DB-S01-SEC non-config Stage 01 permission was inferred for an operational role';
   end if;
 
   if exists (
@@ -67,7 +77,14 @@ begin
       and (
         permission.code like 'opportunity.%'
         or permission.code like 'journey.%'
-        or permission.code like 'stage01.%'
+        or (
+          permission.code like 'stage01.%'
+          and permission.code not in (
+            'stage01.config.read',
+            'stage01.config.update',
+            'stage01.config.publish'
+          )
+        )
       )
       and not exists (
         select 1
@@ -76,7 +93,31 @@ begin
           and role_permission.permission_code = permission.code
       )
   ) then
-    raise exception 'DB-S01-SEC company_admin does not have the complete Stage 01 catalog';
+    raise exception 'DB-S01-SEC company_admin does not have the complete non-config Stage 01 catalog';
+  end if;
+
+  if (select count(*)
+      from public.role_permissions as role_permission
+      where role_permission.role_id = '10000000-0000-4000-8000-000000000308'::uuid
+        and role_permission.permission_code in (
+          'stage01.config.read',
+          'stage01.config.update',
+          'stage01.config.publish'
+        )) <> 3 then
+    raise exception 'DB-S01-SEC canonical VQH company_admin config permissions are incomplete';
+  end if;
+
+  if exists (
+    select 1
+    from public.role_permissions as role_permission
+    where role_permission.permission_code in (
+      'stage01.config.read',
+      'stage01.config.update',
+      'stage01.config.publish'
+    )
+      and role_permission.role_id <> '10000000-0000-4000-8000-000000000308'::uuid
+  ) then
+    raise exception 'DB-S01-SEC config permission leaked beyond canonical VQH company_admin';
   end if;
 end $$;
 
