@@ -24,6 +24,10 @@ export const canonicalNavigationLinks: readonly NavigationLink[] = [
   },
 ]
 
+export const canonicalAdminLinks: readonly NavigationLink[] = [
+  { to: '/settings/stage-01', label: 'Cấu hình', icon: 'i-lucide-settings-2', requiredPermission: 'stage01.config.read' },
+]
+
 export function hasNavigationPermission(link: NavigationLink, access: NavigationPermissionAccess): boolean {
   return (!link.requiredPermission || access.hasPermission(link.requiredPermission))
     && (!link.requiredAnyPermissions || access.hasAnyPermission(link.requiredAnyPermissions))

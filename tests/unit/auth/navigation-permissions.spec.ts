@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
+  canonicalAdminLinks,
   canonicalNavigationLinks,
   filterNavigationLinks,
   type NavigationLink,
@@ -26,6 +27,20 @@ describe('navigation permissions', () => {
 
     expect(filterNavigationLinks(canonicalNavigationLinks, accessFor(['task.read_assigned', 'employee.read_directory'])).map(link => link.to))
       .toEqual(['/my-work', '/employees'])
+  })
+
+  it('exposes the Stage 01 configuration admin link only to users with its read permission', () => {
+    expect(canonicalAdminLinks).toEqual([
+      {
+        to: '/settings/stage-01',
+        label: 'Cấu hình',
+        icon: 'i-lucide-settings-2',
+        requiredPermission: 'stage01.config.read',
+      },
+    ])
+    expect(filterNavigationLinks(canonicalAdminLinks, accessFor([]))).toEqual([])
+    expect(filterNavigationLinks(canonicalAdminLinks, accessFor(['stage01.config.read']))).toEqual(canonicalAdminLinks)
+    expect(canonicalNavigationLinks.map(link => link.to)).toEqual(['/projects', '/my-work', '/employees'])
   })
 
   it('requires both project access and drawing access for a drawing route', () => {

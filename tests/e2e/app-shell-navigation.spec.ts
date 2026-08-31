@@ -186,6 +186,22 @@ test('preserves the mobile header and bottom navigation', async ({ page }) => {
   await expect.poll(async () => (await page.getByTestId('app-header').boundingBox())?.height).toBe(64)
 })
 
+test('keeps the Stage 01 configuration action outside primary and mobile navigation', async ({ page }) => {
+  await page.goto('/projects')
+
+  const header = page.getByTestId('app-header')
+  await expect(header.getByRole('link', { name: 'Cấu hình', exact: true })).toHaveAttribute('href', '/settings/stage-01')
+  await expect(page.getByTestId('app-sidebar').getByRole('link')).toHaveCount(3)
+
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await expect(header.getByRole('link', { name: 'Cấu hình', exact: true })).toBeVisible()
+
+  const mobileNavigation = page.locator('.mobile-nav')
+  await expect(mobileNavigation.getByRole('link')).toHaveCount(3)
+  await expect(mobileNavigation.getByRole('link', { name: 'Cấu hình', exact: true })).toHaveCount(0)
+})
+
 test('avoids horizontal overflow on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/projects')
