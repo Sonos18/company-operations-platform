@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CompanyAccess } from '../../../shared/schemas/session'
+import { canonicalAdminLinks, filterNavigationLinks } from './navigation-permissions'
 
 const props = defineProps<{
   productName: string
@@ -14,20 +15,22 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   toggle: []
-  selectCompany: [companyId: string]
+  selectCompany: [companyId: string, control: HTMLSelectElement]
   signOut: []
 }>()
 
 const { resetting, resetPrototype } = usePrototypeReset()
+const companyAccessStore = useNuxtApp().$companyAccessStore
 const displayValue = computed(() => props.userEmail ?? '')
+const visibleAdminLinks = computed(() => filterNavigationLinks(canonicalAdminLinks, companyAccessStore))
 const initials = computed(() => {
   const parts = displayValue.value.split(/[^\p{L}\p{N}]+/u).filter(Boolean)
   return parts.slice(0, 2).map(part => part.slice(0, 1).toLocaleUpperCase()).join('') || '?'
 })
 
 function selectCompany(event: Event): void {
-  const companyId = (event.target as HTMLSelectElement).value
-  if (companyId) emit('selectCompany', companyId)
+  const control = event.currentTarget as HTMLSelectElement
+  if (control.value) emit('selectCompany', control.value, control)
 }
 </script>
 
@@ -74,6 +77,16 @@ function selectCompany(event: Event): void {
         <UIcon name="i-lucide-rotate-ccw" aria-hidden="true" />
         <span>{{ resetting ? 'Đang khôi phục' : 'Khôi phục dữ liệu mẫu' }}</span>
       </button>
+      <NuxtLink
+        v-for="link in visibleAdminLinks"
+        :key="link.to"
+        :to="link.to"
+        class="admin-action"
+        :aria-label="link.label"
+      >
+        <UIcon :name="link.icon" aria-hidden="true" />
+        <span>{{ link.label }}</span>
+      </NuxtLink>
       <button class="header-action" type="button" aria-label="Mở thông báo">
         <UIcon name="i-lucide-bell" aria-hidden="true" />
       </button>
@@ -167,6 +180,8 @@ function selectCompany(event: Event): void {
 }
 .prototype-pill span { width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mint) 30%, transparent); }
 .reset-action { display: flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 10px; border: 1px solid #d6d8d1; background: white; color: var(--forest); cursor: pointer; font: inherit; font-size: .68rem; font-weight: 750; }.reset-action :deep(svg),.reset-action :deep(.iconify) { display: block; width: 17px; height: 17px; flex: 0 0 17px; }.reset-action :deep(svg) { stroke-width: 2.2; }.reset-action:disabled { cursor: wait; opacity: .55; }
+.admin-action { display: flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 10px; border: 1px solid #d6d8d1; border-radius: var(--radius-md); background: white; color: var(--forest); font-size: .72rem; font-weight: 750; }
+.admin-action :deep(svg) { width: 17px; height: 17px; }
 
 .header-action,
 .avatar {
@@ -206,8 +221,10 @@ function selectCompany(event: Event): void {
   .brand__copy small,
   .prototype-pill,
   .reset-action span,
+  .admin-action span,
   .logout-action span { display: none; }
   .reset-action { width: 38px; padding: 0; justify-content: center; }
+  .admin-action { width: 38px; padding: 0; justify-content: center; }
   .logout-action { width: 38px; padding: 0; justify-content: center; }
   .company-switcher select { max-width: 120px; }
 }
