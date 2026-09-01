@@ -29,6 +29,12 @@ function requirePermission(context: EmployeeServiceContext, permission: Permissi
   }
 }
 
+function requireAnyPermission(context: EmployeeServiceContext, permissions: readonly PermissionCode[]) {
+  if (!permissions.some(permission => context.permissions.includes(permission))) {
+    throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.')
+  }
+}
+
 function notFound(): never {
   throw new AppApiError(404, 'EMPLOYEE_NOT_FOUND', 'Không tìm thấy nhân viên.')
 }
@@ -154,7 +160,7 @@ export function createEmployeeService(repository: EmployeeRepository) {
       }
     },
     async list(context: EmployeeServiceContext, query: EmployeeListQuery): Promise<EmployeeListResponse> {
-      requirePermission(context, 'employee.read_directory')
+      requireAnyPermission(context, ['employee.read_directory', 'employee.read_all'])
       const result = await repository.listDirectory(context.companyId, query.page, query.pageSize)
       return { items: result.items, page: query.page, pageSize: query.pageSize, total: result.total }
     },

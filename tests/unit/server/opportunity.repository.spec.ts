@@ -6,6 +6,44 @@ const requestId = '61000000-0000-4000-8000-000000000021'
 const opportunityId = '61000000-0000-4000-8000-000000000030'
 
 describe('Stage 01 Opportunity repository', () => {
+  it('calls only the narrow create-options RPC and rejects a widened payload', async () => {
+    const data = {
+      workflowKey: 'vqh.stage01',
+      publishedSnapshotId: '61000000-0000-4000-8000-000000000050',
+      taxonomies: {
+        customer_type: [{ code: 'customer', label: 'Khách hàng' }],
+        lead_source: [{ code: 'referral', label: 'Giới thiệu', behavior: { requiresReferrer: true } }],
+        engagement_status: [{ code: 'active', label: 'Đang trao đổi' }],
+        budget_status: [{ code: 'unknown', label: 'Chưa xác định' }],
+        timeline_status: [{ code: 'unknown', label: 'Chưa xác định' }],
+        priority: [{ code: 'normal', label: 'Bình thường' }],
+      },
+    }
+    const rpc = vi.fn().mockResolvedValue({ data, error: null })
+    const repository = createSupabaseOpportunityRepository({ rpc } as never)
+
+    await expect(repository.getCreateOptions(companyId)).resolves.toEqual(data)
+    expect(rpc).toHaveBeenCalledWith('get_stage01_opportunity_create_options', { target_company_id: companyId })
+
+    rpc.mockResolvedValueOnce({ data: { ...data, draft: {} }, error: null })
+    await expect(repository.getCreateOptions(companyId)).rejects.toMatchObject({ statusCode: 500, code: 'INTERNAL_ERROR' })
+  })
+
+  it('maps missing published create options to the stable configuration-unavailable app error', async () => {
+    const repository = createSupabaseOpportunityRepository({
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'P0001', message: 'STAGE01_DEFINITION_CONFIG_UNAVAILABLE' },
+      }),
+    } as never)
+
+    await expect(repository.getCreateOptions(companyId)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'STAGE01_DEFINITION_CONFIG_UNAVAILABLE',
+      details: {},
+    })
+  })
+
   it('calls only the explicit bootstrap RPC with server scope and parses its response', async () => {
     const data = {
       opportunityId,

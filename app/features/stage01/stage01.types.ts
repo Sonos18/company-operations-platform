@@ -11,3 +11,4 @@ export type {
   Stage01Recommendation,
   SubmitRecommendationInput,
 } from '../../../shared/schemas/stage01'
+export type { Stage01OperationalDetail } from '../../../shared/schemas/stage01-operational'

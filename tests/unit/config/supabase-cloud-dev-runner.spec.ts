@@ -18,6 +18,7 @@ const stage01SqlInventory = [
   'stage01_config_schema.test.sql',
   'stage01_config_security.test.sql',
   'stage01_config_commands.test.sql',
+  'stage01_opportunity_create_options_security.test.sql',
 ]
 
 const stage01ConfigPermissionMetadata = [

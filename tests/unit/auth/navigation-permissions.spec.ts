@@ -27,6 +27,9 @@ describe('navigation permissions', () => {
 
     expect(filterNavigationLinks(canonicalNavigationLinks, accessFor(['task.read_assigned', 'employee.read_directory'])).map(link => link.to))
       .toEqual(['/my-work', '/employees'])
+
+    expect(filterNavigationLinks(canonicalNavigationLinks, accessFor(['opportunity.read'])).map(link => link.to))
+      .toEqual(['/opportunities'])
   })
 
   it('exposes the Stage 01 configuration admin link only to users with its read permission', () => {
@@ -40,7 +43,12 @@ describe('navigation permissions', () => {
     ])
     expect(filterNavigationLinks(canonicalAdminLinks, accessFor([]))).toEqual([])
     expect(filterNavigationLinks(canonicalAdminLinks, accessFor(['stage01.config.read']))).toEqual(canonicalAdminLinks)
-    expect(canonicalNavigationLinks.map(link => link.to)).toEqual(['/projects', '/my-work', '/employees'])
+    expect(canonicalNavigationLinks).toEqual([
+      { to: '/projects', label: 'Dự án', icon: 'i-lucide-panels-top-left', requiredPermission: 'project.read' },
+      { to: '/my-work', label: 'Công việc của tôi', icon: 'i-lucide-circle-check-big', requiredPermission: 'task.read_assigned' },
+      { to: '/employees', label: 'Nhân sự', icon: 'i-lucide-users-round', requiredAnyPermissions: ['employee.read_directory', 'employee.read_all'] },
+      { to: '/opportunities', label: 'Cơ hội', icon: 'i-lucide-target', requiredPermission: 'opportunity.read' },
+    ])
   })
 
   it('requires both project access and drawing access for a drawing route', () => {

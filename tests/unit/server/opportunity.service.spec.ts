@@ -10,6 +10,20 @@ const context = {
 }
 
 describe('Stage 01 Opportunity service', () => {
+  it('requires both opportunity permissions before loading create options', async () => {
+    const getCreateOptions = vi.fn().mockResolvedValue({ workflowKey: 'vqh.stage01' })
+    const service = createOpportunityService({ getCreateOptions } as never)
+    const authorized = { ...context, permissions: ['opportunity.read', 'opportunity.create'] as const }
+
+    await expect(service.getCreateOptions(authorized)).resolves.toEqual({ workflowKey: 'vqh.stage01' })
+    expect(getCreateOptions).toHaveBeenCalledWith(context.companyId)
+
+    await expect(service.getCreateOptions({ ...context, permissions: ['opportunity.read'] as const }))
+      .rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    await expect(service.getCreateOptions({ ...context, permissions: ['opportunity.create'] as const }))
+      .rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+  })
+
   it('checks permission and forwards server company/request scope', async () => {
     const create = vi.fn().mockResolvedValue({ opportunityId: 'ok' })
     const service = createOpportunityService({ create } as never)

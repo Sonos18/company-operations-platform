@@ -30,3 +30,4 @@ export type {
   UpdateContactMethodInput,
   UpdateOpportunityInput,
 } from '../../../shared/schemas/opportunities'
+export type { OpportunityCreateOptions } from '../../../shared/schemas/opportunity-create-options'

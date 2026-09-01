@@ -31,6 +31,7 @@ import {
   updateContactMethodInputSchema,
   updateOpportunityInputSchema,
 } from '../../../shared/schemas/opportunities'
+import { opportunityCreateOptionsSchema } from '../../../shared/schemas/opportunity-create-options'
 import { ClientError } from '../../errors/client-error'
 import type { OpportunityRepository } from '../contracts'
 import type { AuthenticatedHttpClient } from './authenticated-http-client'
@@ -53,6 +54,7 @@ export function createHttpOpportunityRepository(options: HttpOpportunityReposito
 
   return {
     list: () => options.client.request({ url: opportunityBase, method: 'GET', schema: z.array(opportunitySummarySchema) }),
+    getCreateOptions: () => options.client.request({ url: `${opportunityBase}/create-options`, method: 'GET', schema: opportunityCreateOptionsSchema }),
     async getById(opportunityId) {
       try {
         return await options.client.request({ url: `${opportunityBase}/${id(opportunityId)}`, method: 'GET', schema: opportunityDetailSchema })
