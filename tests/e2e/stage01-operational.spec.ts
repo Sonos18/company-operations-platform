@@ -1,6 +1,6 @@
 import { createCompany } from './fixtures/auth-routes'
 import { expect, test } from './fixtures/authenticated'
-import { createStage01OperationalDetail, installStage01OperationalRoutes, stage01OpportunityId, versionConflictBody } from './fixtures/stage01-operational'
+import { createStage01OperationalDetail, createStage01OperationalRouteState, installStage01OperationalRoutes, installStatefulStage01OperationalRoutes, stage01OpportunityId, versionConflictBody } from './fixtures/stage01-operational'
 import { MOCK_STORAGE_KEY } from '../../app/repositories/mock/state-store'
 
 async function goToWorkspace(page: import('@playwright/test').Page): Promise<void> {
@@ -661,4 +661,247 @@ test('completed decision is read-only and reactivation sends canonical versions 
   await expect(page.getByText('Chu kỳ #1 · Đã hoàn tất', { exact: true })).toBeVisible()
   await expect(page.getByText('Chu kỳ #2 · Đang xử lý', { exact: true })).toBeVisible()
   await expect(page.getByText('Kích hoạt lại: Cần đánh giá lại điều kiện triển khai', { exact: true })).toBeVisible()
+})
+
+test('stateful acceptance fixture drives canonical Stage 01 commands and preserves immutable decision-cycle history', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  state.detail.actorCapabilities = ['start', 'complete', 'decision']
+  state.detail.opportunity.duplicateConcerns = []
+  state.detail.intake.runtime.state = 'ready'
+  state.detail.intake.runtime.phase = 'not_started'
+  authState.sessionCompanies = [createCompany({ permissions: [
+    'project.read', 'journey.read', 'opportunity.read',
+    'journey.node.start', 'journey.node.complete', 'journey.assignment.manage', 'employee.read_directory',
+    'stage01.evaluation.update', 'stage01.recommendation.submit',
+    'stage01.decision.record', 'stage01.reactivate',
+  ] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await goToWorkspace(page)
+
+  await page.getByRole('button', { name: 'Khởi động node' }).click()
+  await expect(page.getByLabel('Điều hành node, phân công và blocker').getByText('Trạng thái: active', { exact: false }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Hoàn tất node' })).toBeDisabled()
+  await page.getByLabel('Phân công của 01.1 Tiếp nhận').getByRole('button', { name: 'Phân công' }).click()
+  const assignee = page.getByRole('combobox', { name: 'Người được phân công' })
+  const assigneeUserId = await assignee.locator('option').nth(1).getAttribute('value')
+  expect(assigneeUserId).toBeTruthy()
+  await assignee.selectOption(assigneeUserId!)
+  await page.getByRole('textbox', { name: 'Lý do phân công' }).fill('Chịu trách nhiệm tiếp nhận')
+  await page.getByRole('button', { name: 'Lưu phân công' }).click()
+  await expect(page.getByRole('button', { name: 'Hoàn tất node' })).toBeEnabled()
+  await page.getByRole('button', { name: 'Hoàn tất node' }).first().click()
+  await page.getByRole('button', { name: 'Khởi động node' }).click()
+
+  for (const criterion of state.detail.configuration.criteria) {
+    await page.getByRole('combobox', { name: `Kết quả đánh giá: ${criterion.label}` }).selectOption('fit')
+    await page.getByRole('textbox', { name: `Lý do: ${criterion.label}` }).fill('Đủ điều kiện tiếp tục')
+    await page.getByRole('button', { name: `Lưu đánh giá: ${criterion.label}` }).click()
+  }
+  await page.getByRole('textbox', { name: 'Lý do đề xuất' }).fill('Nên tiếp tục')
+  await page.getByRole('button', { name: 'Gửi đề xuất' }).click()
+  await expect(page.getByRole('button', { name: 'Hoàn tất node' })).toBeDisabled()
+  await page.getByRole('textbox', { name: 'Lý do quyết định' }).fill('Đồng ý triển khai')
+  await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click()
+  await expect(page.getByText('Quyết định đã ghi nhận: Tiếp tục', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Hoàn tất node' })).toBeEnabled()
+  await page.getByRole('button', { name: 'Hoàn tất node' }).click()
+  await page.getByRole('button', { name: 'Kích hoạt lại Stage 01' }).click()
+  await page.getByRole('textbox', { name: 'Lý do kích hoạt lại' }).fill('Cần đánh giá lại')
+  await page.getByRole('button', { name: 'Xác nhận kích hoạt lại' }).click()
+
+  await expect(page.getByText('Chu kỳ #1 · Đã hoàn tất', { exact: true })).toBeVisible()
+  await expect(page.getByText('Chu kỳ #2 · Đang xử lý', { exact: true })).toBeVisible()
+  expect(state.requests.map(request => request.path)).toEqual(expect.arrayContaining([
+    expect.stringContaining('/workflow-nodes/'),
+    expect.stringContaining('/evaluations/'),
+    expect.stringContaining('/recommendations'),
+    expect.stringContaining('/final-decision'),
+    expect.stringContaining('/reactivate'),
+  ]))
+})
+
+test('creates an opportunity and completes the Stage 01 happy path through the public workspace', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  state.opportunities = []
+  state.detail.actorCapabilities = ['start', 'complete', 'decision']
+  state.detail.intake.runtime.state = 'ready'
+  state.detail.intake.runtime.phase = 'not_started'
+  authState.sessionCompanies = [createCompany({ permissions: [
+    'project.read', 'journey.read', 'opportunity.read', 'opportunity.create',
+    'opportunity.contact.manage', 'opportunity.scope.manage', 'opportunity.referrer.manage',
+    'opportunity.intake_record.create', 'journey.assignment.manage', 'employee.read_directory',
+    'journey.node.start', 'journey.node.complete', 'stage01.evaluation.update',
+    'stage01.recommendation.submit', 'stage01.decision.record',
+  ] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+
+  await page.goto('/opportunities')
+  await page.getByRole('button', { name: 'Tạo cơ hội mới' }).click()
+  const createDialog = page.getByRole('dialog', { name: 'Tạo cơ hội mới' })
+  await createDialog.getByRole('textbox', { name: 'Tên khách hàng chính' }).fill('Khách hàng Stage 01 mới')
+  await createDialog.getByRole('combobox', { name: 'Loại khách hàng' }).selectOption('business')
+  await createDialog.getByRole('textbox', { name: 'Nhu cầu' }).fill('Hoàn thiện không gian làm việc')
+  await createDialog.getByRole('combobox', { name: 'Trạng thái vị trí' }).selectOption('area_known')
+  await createDialog.getByRole('combobox', { name: 'Nguồn khách hàng' }).selectOption('referral')
+  await createDialog.getByRole('combobox', { name: 'Mức độ tương tác' }).selectOption('active')
+  await createDialog.getByRole('button', { name: 'Tạo cơ hội' }).click()
+
+  await expect(page).toHaveURL(new RegExp(`/opportunities/${stage01OpportunityId}/stage-01$`))
+  await expect(page.getByRole('heading', { name: 'Khách hàng Stage 01 mới' })).toBeVisible()
+  await page.getByRole('button', { name: 'Khởi động node' }).click()
+  await expect(page.getByRole('button', { name: 'Hoàn tất node' })).toBeDisabled()
+
+  await page.getByRole('button', { name: 'Thêm liên hệ' }).click()
+  await page.getByRole('textbox', { name: 'Tên liên hệ' }).fill('Chị Minh')
+  await page.getByRole('combobox', { name: 'Quan hệ' }).selectOption('primary_contact')
+  await page.getByRole('textbox', { name: 'Giá trị phương thức (không bắt buộc)' }).fill('minh@example.com')
+  await page.getByRole('checkbox', { name: 'Liên hệ chính' }).check()
+  await page.getByRole('button', { name: 'Tạo và liên kết liên hệ' }).click()
+  await expect(page.getByText('Đã tạo và liên kết liên hệ.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Hoàn tất node' })).toBeDisabled()
+
+  const scopeCard = page.getByRole('heading', { name: 'Phạm vi', exact: true }).locator('..').locator('..').locator('..')
+  await scopeCard.getByRole('button', { name: 'Thêm phạm vi' }).click()
+  await scopeCard.getByRole('combobox', { name: 'Phạm vi' }).selectOption('full_design')
+  await scopeCard.getByRole('button', { name: 'Lưu phạm vi' }).click()
+  await expect(page.getByText('Đã thêm phạm vi.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Hoàn tất node' })).toBeDisabled()
+
+  const referrerCard = page.getByRole('heading', { name: 'Người giới thiệu', exact: true }).locator('..').locator('..').locator('..')
+  await referrerCard.getByRole('button', { name: 'Thêm người giới thiệu' }).click()
+  await referrerCard.getByRole('combobox', { name: 'Loại người giới thiệu' }).selectOption('partner')
+  await referrerCard.getByRole('textbox', { name: 'Tên hiển thị' }).fill('Đối tác mới')
+  await referrerCard.getByRole('checkbox', { name: 'Là người giới thiệu chính' }).check()
+  await referrerCard.getByRole('button', { name: 'Lưu người giới thiệu' }).click()
+  await expect(page.getByText('Đã thêm người giới thiệu.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Hoàn tất node' })).toBeDisabled()
+
+  await page.getByRole('button', { name: 'Ghi nhận tiếp nhận' }).click()
+  await page.getByRole('combobox', { name: 'Kênh tiếp nhận' }).selectOption('phone')
+  await page.getByRole('textbox', { name: 'Tóm tắt' }).fill('Đã xác nhận nhu cầu tiếp nhận')
+  await page.getByRole('button', { name: 'Lưu bản ghi mới' }).click()
+  await expect(page.getByText('Đã ghi nhận bản ghi tiếp nhận mới.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Hoàn tất node' })).toBeDisabled()
+  await page.getByLabel('Phân công của 01.1 Tiếp nhận').getByRole('button', { name: 'Phân công' }).click()
+  const assignee = page.getByRole('combobox', { name: 'Người được phân công' })
+  await expect(assignee.locator('option').nth(1)).toBeAttached()
+  const assigneeUserId = await assignee.locator('option').nth(1).getAttribute('value')
+  expect(assigneeUserId).toBeTruthy()
+  await assignee.selectOption(assigneeUserId!)
+  await page.getByRole('textbox', { name: 'Lý do phân công' }).fill('Chịu trách nhiệm tiếp nhận')
+  await page.getByRole('button', { name: 'Lưu phân công' }).click()
+  await expect(page.getByText('Đã cập nhật phân công.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Hoàn tất node' })).toBeEnabled()
+  await page.getByRole('button', { name: 'Hoàn tất node' }).click()
+  await page.getByRole('button', { name: 'Khởi động node' }).click()
+
+  for (const criterion of state.detail.configuration.criteria) {
+    await page.getByRole('combobox', { name: `Kết quả đánh giá: ${criterion.label}` }).selectOption('fit')
+    await page.getByRole('textbox', { name: `Lý do: ${criterion.label}` }).fill(`Đủ điều kiện: ${criterion.label}`)
+    await page.getByRole('button', { name: `Lưu đánh giá: ${criterion.label}` }).click()
+  }
+  await page.getByRole('textbox', { name: 'Lý do đề xuất' }).fill('Đủ điều kiện để tiếp tục')
+  await page.getByRole('button', { name: 'Gửi đề xuất' }).click()
+  await expect(page.getByRole('button', { name: 'Hoàn tất node' })).toBeDisabled()
+  await page.getByRole('textbox', { name: 'Lý do quyết định' }).fill('Đồng ý triển khai Stage 01')
+  await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click()
+  await page.getByRole('button', { name: 'Hoàn tất node' }).click()
+
+  await expect(page.getByText('Quyết định đã ghi nhận: Tiếp tục', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Ghi nhận quyết định' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Lưu đánh giá: Nhu cầu khách hàng' })).toHaveCount(0)
+  expect(state.detail.currentDecisionCycle.evaluations).toHaveLength(state.detail.configuration.criteria.length)
+  expect(state.detail.evaluation.runtime.state).toBe('completed')
+  expect(state.detail.opportunity.intakeRecords).toEqual([expect.objectContaining({ summary: 'Đã xác nhận nhu cầu tiếp nhận' })])
+  expect(state.detail.intake.runtime.assignments).toEqual([expect.objectContaining({ assigneeUserId, assignmentReason: 'Chịu trách nhiệm tiếp nhận' })])
+  expect(state.requests.map(request => request.path)).toEqual(expect.arrayContaining([
+    expect.stringContaining('/opportunities'),
+    expect.stringContaining('/intake-records'),
+    expect.stringContaining('/assignments'),
+    expect.stringContaining('/workflow-nodes/'),
+    expect.stringContaining('/evaluations/'),
+    expect.stringContaining('/recommendations'),
+    expect.stringContaining('/final-decision'),
+  ]))
+})
+
+test('keeps recommendation and clarification history immutable when the completed cycle is reactivated', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  state.detail.actorCapabilities = ['decision']
+  authState.sessionCompanies = [createCompany({ permissions: [
+    'project.read', 'journey.read', 'opportunity.read', 'stage01.recommendation.submit',
+    'stage01.clarification.return', 'stage01.decision.record', 'stage01.reactivate',
+  ] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await goToWorkspace(page)
+
+  await page.getByRole('textbox', { name: 'Lý do đề xuất' }).fill('Đề xuất cần được thẩm định')
+  await page.getByRole('button', { name: 'Gửi đề xuất' }).click()
+  await page.getByRole('textbox', { name: 'Lý do yêu cầu làm rõ' }).fill('Bổ sung phân tích ngân sách')
+  await page.getByRole('button', { name: 'Yêu cầu làm rõ' }).click()
+  await expect(page.getByText('Bổ sung phân tích ngân sách', { exact: true })).toBeVisible()
+  await page.getByRole('textbox', { name: 'Lý do quyết định' }).fill('Sau khi làm rõ, tiếp tục triển khai')
+  await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click()
+  await page.getByRole('button', { name: 'Kích hoạt lại Stage 01' }).click()
+  await page.getByRole('textbox', { name: 'Lý do kích hoạt lại' }).fill('Có thay đổi điều kiện thương mại')
+  await page.getByRole('button', { name: 'Xác nhận kích hoạt lại' }).click()
+
+  await expect(page.getByText('Chu kỳ #1 · Đã hoàn tất', { exact: true })).toBeVisible()
+  await expect(page.getByText('Chu kỳ #2 · Đang xử lý', { exact: true })).toBeVisible()
+  await expect(page.getByText('Kích hoạt lại: Có thay đổi điều kiện thương mại', { exact: true })).toBeVisible()
+  const prior = state.detail.decisionCycles[0]!
+  expect(prior.recommendations).toEqual([expect.objectContaining({ rationale: 'Đề xuất cần được thẩm định' })])
+  expect(prior.clarificationReturns).toEqual([expect.objectContaining({ reason: 'Bổ sung phân tích ngân sách' })])
+  expect(state.detail.currentDecisionCycle.recommendations).toEqual([])
+  expect(state.detail.currentDecisionCycle.clarificationReturns).toEqual([])
+})
+
+test('shows stateful 403, 409, and 500 command failures without false success or losing the entered recommendation', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  authState.sessionCompanies = [createCompany({ permissions: [
+    'project.read', 'journey.read', 'opportunity.read', 'stage01.recommendation.submit',
+  ] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await goToWorkspace(page)
+
+  const rationale = page.getByRole('textbox', { name: 'Lý do đề xuất' })
+  const commandAlert = page.getByRole('region', { name: 'Đánh giá, đề xuất và quyết định' }).getByRole('alert')
+  const expectedMessages: Record<403 | 409 | 500, string> = {
+    403: 'Bạn không có quyền thực hiện thao tác này.',
+    409: 'Yêu cầu không thể hoàn tất ở trạng thái hiện tại.',
+    500: 'Hệ thống không thể xử lý yêu cầu. Vui lòng thử lại sau.',
+  }
+  for (const status of [403, 409, 500] as const) {
+    const entered = `Bản nháp phải được giữ lại (${status})`
+    await rationale.fill(entered)
+    state.nextFailure = status
+    await page.getByRole('button', { name: 'Gửi đề xuất' }).click()
+    await expect(commandAlert.filter({ hasText: expectedMessages[status] })).toBeVisible()
+    await expect(rationale).toHaveValue(entered)
+    await expect(page.getByText('Đã gửi đề xuất.', { exact: true })).toHaveCount(0)
+    expect(state.detail.currentDecisionCycle.recommendations).toHaveLength(0)
+  }
+  expect(state.requests.filter(request => request.path.endsWith('/recommendations'))).toHaveLength(3)
+})
+
+test('keeps Stage 01 controls labelled, keyboard-operable, and within a 390px viewport', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  state.detail.actorCapabilities = ['start']
+  state.detail.intake.runtime.state = 'ready'
+  state.detail.intake.runtime.phase = 'not_started'
+  authState.sessionCompanies = [createCompany({ permissions: [
+    'project.read', 'journey.read', 'opportunity.read', 'journey.node.start', 'stage01.evaluation.update',
+  ] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await goToWorkspace(page)
+
+  const start = page.getByRole('button', { name: 'Khởi động node' })
+  await start.focus()
+  await expect(start).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page.getByLabel('Điều hành node, phân công và blocker').getByText('Trạng thái: active', { exact: false }).first()).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Kết quả đánh giá: Nhu cầu khách hàng' })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'Lý do: Nhu cầu khách hàng' })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
