@@ -3,9 +3,7 @@ import { z } from 'zod'
 import { ClientError } from '../../../errors/client-error'
 import {
   activeAssignments,
-  latestCriterionRevision,
   openBlockers,
-  orderedDecisionCycles,
   taxonomyLabel,
 } from '../../../features/stage01-operational/stage01-operational'
 
@@ -28,8 +26,6 @@ const detail = computed(() => operational?.detail.value ?? null)
 const pending = computed(() => operational?.pending.value ?? false)
 const error = computed(() => operational?.error.value ?? null)
 const isNotFound = computed(() => error.value instanceof ClientError && error.value.code === 'OPPORTUNITY_NOT_FOUND')
-const orderedCycles = computed(() => detail.value ? orderedDecisionCycles(detail.value.decisionCycles) : [])
-
 const hasBlockingWarning = computed(() => {
   if (!detail.value) return false
   return [detail.value.intake.runtime, detail.value.evaluation.runtime].some(runtime => (
@@ -172,32 +168,16 @@ async function returnToOpportunities(): Promise<void> {
         :run-and-reload="operational!.runAndReload"
       />
 
-      <section class="stage01-workspace__section" aria-labelledby="stage01-evaluation-heading">
-        <div><p class="eyebrow">Đánh giá theo snapshot đã gắn</p><h2 id="stage01-evaluation-heading">Tiêu chí hiện tại</h2></div>
-        <ul class="stage01-workspace__criteria">
-          <li v-for="criterion in [...detail.configuration.criteria].sort((left, right) => left.displayOrder - right.displayOrder)" :key="criterion.key">
-            <div><strong>{{ criterion.label }}</strong><p>{{ criterion.description }}</p></div>
-            <span v-if="latestCriterionRevision(detail.currentDecisionCycle.evaluations, criterion.key)">Lần {{ latestCriterionRevision(detail.currentDecisionCycle.evaluations, criterion.key)?.revision }}</span>
-            <span v-else>Chưa đánh giá</span>
-          </li>
-        </ul>
-      </section>
-
-      <section class="stage01-workspace__section" aria-labelledby="stage01-history-heading">
-        <div><p class="eyebrow">Lịch sử bất biến</p><h2 id="stage01-history-heading">Chu kỳ quyết định</h2></div>
-        <ol class="stage01-workspace__cycles">
-          <li v-for="cycle in orderedCycles" :key="cycle.id">
-            <strong>Chu kỳ #{{ cycle.cycleNo }}</strong>
-            <span>{{ cycle.finalOutcome ? (cycle.finalOutcome === 'proceed' ? 'Tiếp tục' : 'Không tiếp tục') : 'Đang xử lý' }}</span>
-          </li>
-        </ol>
-      </section>
+      <Stage01OperationalStage01EvaluationDecisionControls
+        :detail="detail"
+        :run-and-reload="operational!.runAndReload"
+      />
 
     </template>
   </section>
 </template>
 
 <style scoped>
-.stage01-workspace { display: grid; max-width: 1260px; margin: 0 auto; gap: 18px; }.stage01-workspace__loading { display: grid; gap: 12px; }.stage01-workspace__header { display: grid; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }.stage01-workspace__header h1 { margin: 4px 0 7px; font-size: clamp(2.1rem, 5vw, 3.8rem); line-height: .98; }.stage01-workspace__header > div > p:not(.eyebrow) { color: var(--ink-muted); line-height: 1.5; }.stage01-workspace__facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; }.stage01-workspace__facts div,.stage01-workspace__node,.stage01-workspace__criteria,.stage01-workspace__cycles { border: 1px solid var(--line); background: var(--paper-raised); }.stage01-workspace__facts div { padding: 12px; }.stage01-workspace dt { color: var(--ink-muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; }.stage01-workspace dd { margin: 5px 0 0; color: var(--forest-deep); font-weight: 650; font-size: .84rem; }.stage01-workspace__section { display: grid; gap: 12px; }.stage01-workspace__section h2 { margin-top: 4px; font-size: 1.3rem; }.stage01-workspace__nodes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }.stage01-workspace__node { padding: 15px; }.stage01-workspace__node header { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; }.stage01-workspace__node h3 { font-size: 1rem; }.stage01-workspace__node header span { padding: 4px 8px; border-radius: 999px; background: var(--mint); color: var(--forest-deep); font-family: var(--font-journey-mono); font-size: .68rem; }.stage01-workspace__node dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }.stage01-workspace__criteria,.stage01-workspace__cycles { display: grid; padding: 0; margin: 0; list-style: none; }.stage01-workspace__criteria li,.stage01-workspace__cycles li { display: flex; align-items: start; justify-content: space-between; gap: 16px; padding: 13px 15px; border-bottom: 1px solid var(--line); }.stage01-workspace__criteria li:last-child,.stage01-workspace__cycles li:last-child { border-bottom: 0; }.stage01-workspace__criteria strong,.stage01-workspace__cycles strong { color: var(--forest-deep); font-size: .88rem; }.stage01-workspace__criteria p { margin-top: 4px; color: var(--ink-muted); font-size: .78rem; line-height: 1.45; }.stage01-workspace__criteria span,.stage01-workspace__cycles span { color: var(--ink-muted); font-size: .75rem; white-space: nowrap; }
-@media (max-width: 767px) { .stage01-workspace { gap: 15px; }.stage01-workspace__facts,.stage01-workspace__nodes { grid-template-columns: 1fr; }.stage01-workspace__node dl { grid-template-columns: 1fr; }.stage01-workspace__criteria li,.stage01-workspace__cycles li { flex-direction: column; gap: 7px; }.stage01-workspace__criteria span,.stage01-workspace__cycles span { white-space: normal; } }
+.stage01-workspace { display: grid; max-width: 1260px; margin: 0 auto; gap: 18px; }.stage01-workspace__loading { display: grid; gap: 12px; }.stage01-workspace__header { display: grid; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }.stage01-workspace__header h1 { margin: 4px 0 7px; font-size: clamp(2.1rem, 5vw, 3.8rem); line-height: .98; }.stage01-workspace__header > div > p:not(.eyebrow) { color: var(--ink-muted); line-height: 1.5; }.stage01-workspace__facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; }.stage01-workspace__facts div,.stage01-workspace__node { border: 1px solid var(--line); background: var(--paper-raised); }.stage01-workspace__facts div { padding: 12px; }.stage01-workspace dt { color: var(--ink-muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; }.stage01-workspace dd { margin: 5px 0 0; color: var(--forest-deep); font-weight: 650; font-size: .84rem; }.stage01-workspace__section { display: grid; gap: 12px; }.stage01-workspace__section h2 { margin-top: 4px; font-size: 1.3rem; }.stage01-workspace__nodes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }.stage01-workspace__node { padding: 15px; }.stage01-workspace__node header { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; }.stage01-workspace__node h3 { font-size: 1rem; }.stage01-workspace__node header span { padding: 4px 8px; border-radius: 999px; background: var(--mint); color: var(--forest-deep); font-family: var(--font-journey-mono); font-size: .68rem; }.stage01-workspace__node dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+@media (max-width: 767px) { .stage01-workspace { gap: 15px; }.stage01-workspace__facts,.stage01-workspace__nodes { grid-template-columns: 1fr; }.stage01-workspace__node dl { grid-template-columns: 1fr; } }
 </style>

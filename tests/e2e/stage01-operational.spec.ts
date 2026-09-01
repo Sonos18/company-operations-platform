@@ -459,3 +459,206 @@ test('workflow actions are hidden without their exact permissions', async ({ pag
   await expect(page.getByRole('button', { name: 'Nêu blocker' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Giải quyết blocker' })).toHaveCount(0)
 })
+
+test('criterion evaluation renders the bound definition, keeps revisions immutable, and sends applicability-owned fields', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  const criterion = detail.configuration.criteria.find(item => item.dimensionKey === 'commercial_viability')!
+  criterion.label = 'Mức độ phù hợp đã gắn'
+  criterion.description = 'Mô tả từ snapshot đã gắn.'
+  criterion.allowsNotApplicable = true
+  detail.currentDecisionCycle.evaluations.push({
+    id: '81000000-0000-4000-8000-000000000070', decisionCycleId: detail.currentDecisionCycle.id,
+    criterionKey: criterion.key, revision: 1, applicability: 'applicable', result: 'concern', rationale: 'Đánh giá trước đó', evidence: ['Biên bản cũ'],
+    evaluatedBy: '81000000-0000-4000-8000-000000000071', evaluatedAt: '2026-09-01T01:00:00.000Z',
+  })
+  detail.currentDecisionCycle.evaluations.push({
+    id: '81000000-0000-4000-8000-000000000072', decisionCycleId: detail.currentDecisionCycle.id,
+    criterionKey: criterion.key, revision: 2, applicability: 'applicable', result: 'fit', rationale: 'Đánh giá mới nhất', evidence: ['Biên bản mới'],
+    evaluatedBy: '81000000-0000-4000-8000-000000000071', evaluatedAt: '2026-09-01T02:00:00.000Z',
+  })
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'stage01.evaluation.update'] })]
+  await installStage01OperationalRoutes(page, detail, { onStage01Command: request => { commands.push(request) } })
+  await goToWorkspace(page)
+
+  await expect(page.getByText('Mọi bản sửa và chu kỳ trước được giữ nguyên; thao tác thành công luôn tải lại dữ liệu chính thức.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Mức độ phù hợp đã gắn' })).toBeVisible()
+  await expect(page.getByText('Mô tả từ snapshot đã gắn.', { exact: true })).toBeVisible()
+  await expect(page.getByText('Tính khả thi thương mại · Bắt buộc', { exact: true })).toBeVisible()
+  await expect(page.getByText('Bản sửa #2', { exact: true })).toBeVisible()
+  await expect(page.getByText('Bản sửa #1', { exact: true })).toBeVisible()
+    await expect(page.getByRole('combobox', { name: 'Khả năng áp dụng: Mức độ phù hợp đã gắn' })).toContainText('Không áp dụng')
+
+  await page.getByRole('combobox', { name: 'Khả năng áp dụng: Mức độ phù hợp đã gắn' }).selectOption('not_applicable')
+  await page.getByRole('textbox', { name: 'Bằng chứng: Mức độ phù hợp đã gắn' }).fill('  Không thuộc phạm vi dự án  ')
+  await page.getByRole('button', { name: 'Lưu đánh giá: Mức độ phù hợp đã gắn' }).click()
+  await expect.poll(() => commands).toHaveLength(1)
+  expect(commands[0]).toMatchObject({
+    pathname: expect.stringContaining(`/stage-01/evaluations/${criterion.key}/revisions`),
+    body: { expectedCycleVersion: detail.currentDecisionCycle.version, applicability: 'not_applicable', result: null, rationale: '', evidence: ['Không thuộc phạm vi dự án'] },
+  })
+})
+
+test('criterion evaluation requires a result when applicable and does not offer not-applicable when the bound definition forbids it', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  const criterion = detail.configuration.criteria[1]!
+  criterion.label = 'Tiêu chí bắt buộc'
+  criterion.allowsNotApplicable = false
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'stage01.evaluation.update'] })]
+  await installStage01OperationalRoutes(page, detail, { onStage01Command: request => { commands.push(request) } })
+  await goToWorkspace(page)
+
+  const form = page.getByRole('heading', { name: 'Tiêu chí bắt buộc' }).locator('..')
+  await expect(form.getByRole('option', { name: 'Không áp dụng' })).toHaveCount(0)
+  await page.getByRole('textbox', { name: 'Lý do: Tiêu chí bắt buộc' }).fill('Cần quyết định rõ')
+  await page.getByRole('button', { name: 'Lưu đánh giá: Tiêu chí bắt buộc' }).click()
+  await expect(page.getByRole('alert').filter({ hasText: 'Chọn kết quả đánh giá' })).toBeVisible()
+  expect(commands).toHaveLength(0)
+})
+
+test('recommendation and clarification use the current cycle and retain immutable versions', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.currentDecisionCycle.recommendations.push({
+    id: '81000000-0000-4000-8000-000000000073', decisionCycleId: detail.currentDecisionCycle.id, version: 1,
+    recommendation: 'recommend_proceed', rationale: 'Đề xuất đầu tiên', evidence: ['Bằng chứng đầu tiên'],
+    submittedBy: '81000000-0000-4000-8000-000000000071', submittedAt: '2026-09-01T01:00:00.000Z',
+  })
+  detail.currentDecisionCycle.recommendations.push({
+    id: '81000000-0000-4000-8000-000000000074', decisionCycleId: detail.currentDecisionCycle.id, version: 2,
+    recommendation: 'recommend_not_proceeding', rationale: 'Đề xuất hiện hành', evidence: [],
+    submittedBy: '81000000-0000-4000-8000-000000000071', submittedAt: '2026-09-01T02:00:00.000Z',
+  })
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'stage01.recommendation.submit', 'stage01.clarification.return'] })]
+  await installStage01OperationalRoutes(page, detail, { onStage01Command: request => { commands.push(request) } })
+  await goToWorkspace(page)
+
+  await expect(page.getByText('Phiên bản đề xuất #1', { exact: true })).toBeVisible()
+  await expect(page.getByText('Phiên bản đề xuất #2', { exact: true })).toBeVisible()
+  await page.getByRole('combobox', { name: 'Loại đề xuất' }).selectOption('recommend_proceed')
+  await page.getByRole('textbox', { name: 'Lý do đề xuất' }).fill('  Đã đủ điều kiện  ')
+  await page.getByRole('button', { name: 'Gửi đề xuất' }).click()
+  await expect.poll(() => commands).toHaveLength(1)
+  expect(commands[0]).toMatchObject({
+    pathname: expect.stringContaining('/stage-01/recommendations'),
+    body: { expectedCycleVersion: detail.currentDecisionCycle.version, recommendation: 'recommend_proceed', rationale: 'Đã đủ điều kiện', evidence: [] },
+  })
+
+  await page.getByRole('textbox', { name: 'Lý do yêu cầu làm rõ' }).fill('  Vui lòng bổ sung dữ liệu  ')
+  await page.getByRole('button', { name: 'Yêu cầu làm rõ' }).click()
+  await expect.poll(() => commands).toHaveLength(2)
+  expect(commands[1]).toMatchObject({
+    pathname: expect.stringContaining('/stage-01/clarification-returns'),
+    body: { expectedCycleVersion: detail.currentDecisionCycle.version, recommendationId: '81000000-0000-4000-8000-000000000074', reason: 'Vui lòng bổ sung dữ liệu' },
+  })
+})
+
+test('final decision requires its permission and bound decision capability, preserves a rejected draft, then accepts explicit override rationale', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.actorCapabilities = ['decision']
+  detail.currentDecisionCycle.recommendations.push({
+    id: '81000000-0000-4000-8000-000000000075', decisionCycleId: detail.currentDecisionCycle.id, version: 1,
+    recommendation: 'recommend_proceed', rationale: 'Nên tiếp tục', evidence: [],
+    submittedBy: '81000000-0000-4000-8000-000000000071', submittedAt: '2026-09-01T01:00:00.000Z',
+  })
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'stage01.decision.record'] })]
+  await installStage01OperationalRoutes(page, detail, {
+    requireOverrideRationaleOnce: true,
+    onStage01Command: request => { commands.push(request) },
+  })
+  await goToWorkspace(page)
+  await page.getByRole('combobox', { name: 'Kết quả quyết định' }).selectOption('not_proceeding')
+  await page.getByRole('textbox', { name: 'Lý do quyết định' }).fill('  Rủi ro hiện tại quá cao  ')
+  await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click()
+  await expect(page.getByRole('textbox', { name: 'Lý do ghi đè quyết định' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Kết quả quyết định' })).toHaveValue('not_proceeding')
+    await expect(page.getByRole('textbox', { name: 'Lý do quyết định' })).toHaveValue('  Rủi ro hiện tại quá cao  ')
+  await page.getByRole('textbox', { name: 'Lý do ghi đè quyết định' }).fill('  Chấp nhận rủi ro có kiểm soát  ')
+  await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click()
+  await expect.poll(() => commands).toHaveLength(2)
+  expect(commands[1]).toMatchObject({
+    pathname: expect.stringContaining('/stage-01/final-decision'),
+    body: { expectedCycleVersion: detail.currentDecisionCycle.version, outcome: 'not_proceeding', rationale: 'Rủi ro hiện tại quá cao', overrideRationale: 'Chấp nhận rủi ro có kiểm soát' },
+  })
+})
+
+test('decision actions remain hidden without their exact permission or the required bound decision capability', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.currentDecisionCycle.recommendations.push({
+    id: '81000000-0000-4000-8000-000000000076', decisionCycleId: detail.currentDecisionCycle.id, version: 1,
+    recommendation: 'recommend_proceed', rationale: 'Nên tiếp tục', evidence: [],
+    submittedBy: '81000000-0000-4000-8000-000000000071', submittedAt: '2026-09-01T01:00:00.000Z',
+  })
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'stage01.decision.record'] })]
+  await installStage01OperationalRoutes(page, detail)
+  await goToWorkspace(page)
+  await expect(page.getByRole('button', { name: 'Ghi nhận quyết định' })).toHaveCount(0)
+
+  detail.actorCapabilities = ['decision']
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read'] })]
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Ghi nhận quyết định' })).toHaveCount(0)
+})
+
+test('completed decision is read-only and reactivation sends canonical versions then retains ordered previous cycles', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.currentDecisionCycle.finalOutcome = 'proceed'
+  detail.currentDecisionCycle.finalRationale = 'Đã phê duyệt.'
+  detail.currentDecisionCycle.finalDecisionBy = '81000000-0000-4000-8000-000000000071'
+  detail.currentDecisionCycle.finalDecisionAt = '2026-09-01T03:00:00.000Z'
+  detail.currentDecisionCycle.finalRecommendationId = '81000000-0000-4000-8000-000000000077'
+  detail.currentDecisionCycle.version = 5
+  detail.evaluation.runtime.phase = 'completed'
+  detail.evaluation.runtime.state = 'completed'
+  detail.evaluation.runtime.version = 7
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  let canonicalReads = 0
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'stage01.reactivate'] })]
+  await installStage01OperationalRoutes(page, detail, {
+    onCanonicalRead: () => { canonicalReads += 1 },
+    onStage01Command: request => {
+      commands.push(request)
+      if (!request.pathname.endsWith('/reactivate')) return
+      const previous = structuredClone(detail.currentDecisionCycle)
+      const current = structuredClone(detail.currentDecisionCycle)
+      current.id = '81000000-0000-4000-8000-000000000078'
+      current.nodeExecutionId = '81000000-0000-4000-8000-000000000079'
+      current.cycleNo = 2
+      current.reactivationReason = 'Cần đánh giá lại điều kiện triển khai'
+      current.finalOutcome = null
+      current.finalDecisionBy = null
+      current.finalDecisionAt = null
+      current.finalRationale = null
+      current.finalRecommendationId = null
+      current.overrideRationale = null
+      current.version = 0
+      current.evaluations = []
+      current.recommendations = []
+      current.clarificationReturns = []
+      detail.decisionCycles = [previous, current]
+      detail.currentDecisionCycle = current
+      detail.evaluation.runtime.nodeExecutionId = current.nodeExecutionId
+      detail.evaluation.runtime.executionNo = 2
+      detail.evaluation.runtime.version = 0
+      detail.evaluation.runtime.phase = 'active'
+      detail.evaluation.runtime.state = 'active'
+    },
+  })
+  await goToWorkspace(page)
+  await expect(page.getByText('Quyết định đã ghi nhận: Tiếp tục', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Ghi nhận quyết định' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Kích hoạt lại Stage 01' }).click()
+  await page.getByRole('textbox', { name: 'Lý do kích hoạt lại' }).fill('  Cần đánh giá lại điều kiện triển khai  ')
+  await page.getByRole('button', { name: 'Xác nhận kích hoạt lại' }).click()
+  await expect.poll(() => commands).toHaveLength(1)
+  expect(commands[0]).toMatchObject({
+    pathname: expect.stringContaining('/stage-01/reactivate'),
+    body: { expectedOpportunityVersion: 3, expectedExecutionVersion: 7, expectedCycleVersion: 5, reason: 'Cần đánh giá lại điều kiện triển khai' },
+  })
+  await expect.poll(() => canonicalReads).toBe(2)
+  await expect(page.getByText('Chu kỳ #1 · Đã hoàn tất', { exact: true })).toBeVisible()
+  await expect(page.getByText('Chu kỳ #2 · Đang xử lý', { exact: true })).toBeVisible()
+  await expect(page.getByText('Kích hoạt lại: Cần đánh giá lại điều kiện triển khai', { exact: true })).toBeVisible()
+})

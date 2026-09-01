@@ -11,16 +11,24 @@ export interface WorkflowCommandRequest {
   body: Record<string, unknown>
 }
 
+export interface Stage01CommandRequest {
+  method: string
+  pathname: string
+  body: Record<string, unknown>
+}
+
 export interface Stage01OperationalRouteOptions {
   onCanonicalRead?: () => void
   onWorkflowCommand?: (request: WorkflowCommandRequest) => void | Promise<void>
+  onStage01Command?: (request: Stage01CommandRequest) => void | Promise<void>
+  requireOverrideRationaleOnce?: boolean
 }
 
 export function createStage01OperationalDetail(): Stage01OperationalDetail {
   const intakeExecutionId = '81000000-0000-4000-8000-000000000010'
   const evaluationExecutionId = '81000000-0000-4000-8000-000000000011'
   const cycleId = '81000000-0000-4000-8000-000000000012'
-  return stage01OperationalDetailSchema.parse({
+  const detail = stage01OperationalDetailSchema.parse({
     opportunity: {
       id: stage01OpportunityId, validityState: 'valid', canonicalOpportunityId: null,
       primaryCustomerName: 'Công ty Việt Quốc Huy', customerTypeCode: 'business',
@@ -48,6 +56,8 @@ export function createStage01OperationalDetail(): Stage01OperationalDetail {
     relatedContacts: [{ id: '81000000-0000-4000-8000-000000000021', displayName: 'Chị Lan', notes: null, version: 4, methods: [{ id: '81000000-0000-4000-8000-000000000026', contactId: '81000000-0000-4000-8000-000000000021', methodType: 'phone', value: '0900000000', isUsable: true, reliabilityState: 'confirmed', createdAt: timestamp, updatedAt: timestamp }], createdAt: timestamp, updatedAt: timestamp }],
     decisionCycles: [{ id: cycleId, opportunityId: stage01OpportunityId, nodeExecutionId: evaluationExecutionId, cycleNo: 1, decisionAuthorityUserId: null, authorityResolutionReference: null, reactivationReason: null, finalOutcome: null, finalDecisionBy: null, finalDecisionAt: null, finalRationale: null, finalRecommendationId: null, overrideRationale: null, version: 0, evaluations: [], recommendations: [], clarificationReturns: [], createdAt: timestamp }],
   })
+  detail.decisionCycles = [detail.currentDecisionCycle]
+  return detail
 }
 
 export async function installStage01OperationalRoutes(
@@ -55,11 +65,6 @@ export async function installStage01OperationalRoutes(
   detail = createStage01OperationalDetail(),
   options: Stage01OperationalRouteOptions = {},
 ): Promise<void> {
-  await page.route(/\/api\/companies\/[^/]+\/opportunities\/[^/]+\/stage-01$/, async route => {
-    if (route.request().method() !== 'GET') return route.fallback()
-    options.onCanonicalRead?.()
-    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(detail) })
-  })
   await page.route(/\/api\/companies\/[^/]+\/(?:workflow-nodes|workflow-assignments|workflow-blockers)\//, async route => {
     const request = route.request()
     if (request.method() !== 'POST') return route.fallback()
@@ -83,8 +88,33 @@ export async function installStage01OperationalRoutes(
     }
     await route.fulfill({ contentType: 'application/json', body: 'null' })
   })
+  let overrideRationaleRequired = options.requireOverrideRationaleOnce === true
+  await page.route(/\/api\/companies\/[^/]+\/opportunities\/[^/]+\/stage-01\/(?:evaluations\/[^/]+\/revisions|recommendations|clarification-returns|final-decision|reactivate)$/, async route => {
+    const request = route.request()
+    if (request.method() !== 'POST') return route.fallback()
+    const pathname = new URL(request.url()).pathname
+    const body = JSON.parse(request.postData() ?? '{}') as Record<string, unknown>
+    await options.onStage01Command?.({ method: request.method(), pathname, body })
+    if (overrideRationaleRequired && pathname.endsWith('/final-decision')) {
+      overrideRationaleRequired = false
+      await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify(overrideRationaleRequiredBody()) })
+      return
+    }
+    await route.fulfill({ contentType: 'application/json', body: 'null' })
+  })
+  await page.route(/\/api\/companies\/[^/]+\/opportunities\/[^/]+\/stage-01$/, async route => {
+    if (route.request().method() !== 'GET') return route.fallback()
+    options.onCanonicalRead?.()
+    const parsed = stage01OperationalDetailSchema.safeParse(detail)
+    if (!parsed.success) throw new Error(`Invalid Stage 01 operational fixture: ${JSON.stringify(parsed.error.issues)}`)
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(parsed.data) })
+  })
 }
 
 export function versionConflictBody() {
   return apiErrorBodySchema.parse({ error: { code: 'VERSION_CONFLICT', message: 'Dữ liệu đã thay đổi. Vui lòng tải lại và thử lại.', requestId: 'stage01-version-conflict', details: {} } })
+}
+
+export function overrideRationaleRequiredBody() {
+  return apiErrorBodySchema.parse({ error: { code: 'STAGE01_OVERRIDE_RATIONALE_REQUIRED', message: 'Cần ghi rõ lý do ghi đè quyết định.', requestId: 'stage01-override-rationale-required', details: {} } })
 }
