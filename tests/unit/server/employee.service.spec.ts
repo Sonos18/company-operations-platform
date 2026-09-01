@@ -323,30 +323,40 @@ describe('employee service', () => {
     expect(authFactory).not.toHaveBeenCalled()
   })
 
-  it('denies directory access without the normalized directory permission', async () => {
-    const employeeRepository = repository()
-    const service = createEmployeeService(employeeRepository)
-
-    await expect(service.list({
-      actorId,
-      companyId,
-      tenantId: '10000000-0000-4000-8000-000000000010',
-      permissions: [],
-    }, { page: 1, pageSize: 25 })).rejects.toMatchObject({
-      statusCode: 403,
-      code: 'PERMISSION_DENIED',
-    })
-    expect(employeeRepository.listDirectory).not.toHaveBeenCalled()
-  })
-
-  it('returns the requested directory page within the authenticated company scope', async () => {
+  it.each([
+    ['employee.read_directory', ['employee.read_directory']],
+    ['employee.read_all', ['employee.read_all']],
+    ['both directory permissions', ['employee.read_directory', 'employee.read_all']],
+  ] as const)('returns the same redacted directory page for %s', async (_caseName, permissions) => {
     const employeeRepository = repository()
 
     await expect(createEmployeeService(employeeRepository).list(
-      context(['employee.read_directory']),
+      context([...permissions]),
       { page: 2, pageSize: 10 },
     )).resolves.toEqual({ items: [summary], page: 2, pageSize: 10, total: 1 })
     expect(employeeRepository.listDirectory).toHaveBeenCalledWith(companyId, 2, 10)
+    expect(employeeRepository.getPrivateDetails).not.toHaveBeenCalled()
+  })
+
+  it('denies directory access when neither directory permission is present', async () => {
+    const employeeRepository = repository()
+
+    await expect(createEmployeeService(employeeRepository).list(
+      context([]),
+      { page: 1, pageSize: 25 },
+    )).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    expect(employeeRepository.listDirectory).not.toHaveBeenCalled()
+  })
+
+  it('does not let employee.read_all grant or fetch private details', async () => {
+    const employeeRepository = repository()
+
+    await expect(createEmployeeService(employeeRepository).detail(
+      context(['employee.read_all']),
+      employeeId,
+    )).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    expect(employeeRepository.getDirectoryEmployee).not.toHaveBeenCalled()
+    expect(employeeRepository.getPrivateDetails).not.toHaveBeenCalled()
   })
 
   it('returns private details for an employee reading their own profile', async () => {

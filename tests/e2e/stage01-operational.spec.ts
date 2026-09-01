@@ -1,10 +1,39 @@
 import { createCompany } from './fixtures/auth-routes'
 import { expect, test } from './fixtures/authenticated'
 import { createStage01OperationalDetail, installStage01OperationalRoutes, stage01OpportunityId, versionConflictBody } from './fixtures/stage01-operational'
+import { MOCK_STORAGE_KEY } from '../../app/repositories/mock/state-store'
 
 async function goToWorkspace(page: import('@playwright/test').Page): Promise<void> {
   await page.goto(`/opportunities/${stage01OpportunityId}/stage-01`)
   await expect(page.getByRole('heading', { name: 'Công ty Việt Quốc Huy' })).toBeVisible()
+}
+
+const mockStorageReadSpyKey = '__stage01MockStorageReadSpy'
+
+async function installMockStorageReadSpy(page: import('@playwright/test').Page): Promise<void> {
+  await page.evaluate(({ storageKey, spyKey }) => {
+    const original = Storage.prototype.getItem
+    ;(window as typeof window & { [key: string]: { count: number } })[spyKey] = { count: 0 }
+    Storage.prototype.getItem = function(key: string): string | null {
+      if (key === storageKey) (window as typeof window & { [key: string]: { count: number } })[spyKey].count += 1
+      return original.call(this, key)
+    }
+  }, { storageKey: MOCK_STORAGE_KEY, spyKey: mockStorageReadSpyKey })
+}
+
+async function mockStorageReadCount(page: import('@playwright/test').Page): Promise<number> {
+  return page.evaluate(spyKey => (window as typeof window & { [key: string]: { count: number } })[spyKey]?.count ?? 0, mockStorageReadSpyKey)
+}
+
+async function failMockStorageWrite(page: import('@playwright/test').Page): Promise<void> {
+  await page.evaluate(storageKey => {
+    localStorage.removeItem(storageKey)
+    const original = Storage.prototype.setItem
+    Storage.prototype.setItem = function(key: string, value: string): void {
+      if (key === storageKey) throw new Error('Synthetic mock employee directory failure')
+      original.call(this, key, value)
+    }
+  }, MOCK_STORAGE_KEY)
 }
 
 test('keeps intake business controls read-only for a route-authorized reader', async ({ page, authState }) => {
@@ -120,6 +149,7 @@ test('keeps a retained conflicted Opportunity draft inspection-only until it is 
 
 test('workflow starts a ready node then reloads the canonical aggregate', async ({ page, authState }) => {
   const detail = createStage01OperationalDetail()
+  detail.actorCapabilities = ['start']
   detail.intake.runtime.phase = 'not_started'
   detail.intake.runtime.state = 'ready'
   let canonicalReads = 0
@@ -141,6 +171,7 @@ test('workflow starts a ready node then reloads the canonical aggregate', async 
 
 test('workflow completes each node with its exact owning aggregate version', async ({ page, authState }) => {
   const detail = createStage01OperationalDetail()
+  detail.actorCapabilities = ['complete']
   detail.intake.gates.satisfied = true
   detail.evaluation.runtime.phase = 'active'
   detail.evaluation.runtime.state = 'active'
@@ -258,6 +289,97 @@ test('blocker uses bound category values and keeps resolved blockers as history'
     pathname: expect.stringContaining(`/workflow-blockers/${detail.evaluation.runtime.blockers[0].id}/resolve`),
     body: { resolution: 'Đã có phản hồi', expectedExecutionVersion: detail.evaluation.runtime.version },
   })
+})
+
+for (const [capability, permission, label] of [
+  ['start', 'journey.node.start', 'Khởi động node'],
+  ['complete', 'journey.node.complete', 'Hoàn tất node'],
+] as const) {
+  test(`shows ${label} only when ${permission} and the ${capability} capability are both bound`, async ({ page, authState }) => {
+    const detail = createStage01OperationalDetail()
+    detail.actorCapabilities = [capability]
+    if (capability === 'start') {
+      detail.intake.runtime.phase = 'not_started'
+      detail.intake.runtime.state = 'ready'
+    } else {
+      detail.intake.gates.satisfied = true
+    }
+    authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', permission] })]
+    await installStage01OperationalRoutes(page, detail)
+    await goToWorkspace(page)
+    await expect(page.getByRole('button', { name: label }).first()).toBeVisible()
+  })
+
+  test(`hides ${label} when ${permission} is present but ${capability} is missing or unrelated`, async ({ page, authState }) => {
+    const detail = createStage01OperationalDetail()
+    detail.actorCapabilities = [capability === 'start' ? 'complete' : 'start']
+    if (capability === 'start') {
+      detail.intake.runtime.phase = 'not_started'
+      detail.intake.runtime.state = 'ready'
+    } else {
+      detail.intake.gates.satisfied = true
+    }
+    authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', permission] })]
+    await installStage01OperationalRoutes(page, detail)
+    await goToWorkspace(page)
+    await expect(page.getByRole('button', { name: label })).toHaveCount(0)
+  })
+
+  test(`hides ${label} when ${capability} is bound but ${permission} is missing`, async ({ page, authState }) => {
+    const detail = createStage01OperationalDetail()
+    detail.actorCapabilities = [capability]
+    if (capability === 'start') {
+      detail.intake.runtime.phase = 'not_started'
+      detail.intake.runtime.state = 'ready'
+    } else {
+      detail.intake.gates.satisfied = true
+    }
+    authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read'] })]
+    await installStage01OperationalRoutes(page, detail)
+    await goToWorkspace(page)
+    await expect(page.getByRole('button', { name: label })).toHaveCount(0)
+  })
+}
+
+for (const permission of ['employee.read_directory', 'employee.read_all'] as const) {
+  test(`loads responsible users for a blocker with ${permission}`, async ({ page, authState }) => {
+    authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.blocker.raise', permission] })]
+    await installStage01OperationalRoutes(page)
+    await goToWorkspace(page)
+    await installMockStorageReadSpy(page)
+    await page.getByRole('button', { name: 'Nêu blocker' }).first().click()
+    const responsiblePicker = page.getByRole('combobox', { name: 'Người phụ trách' })
+    await expect(responsiblePicker.locator('option').nth(1)).toHaveText('Như')
+    await responsiblePicker.selectOption({ label: 'Như' })
+    await expect.poll(() => mockStorageReadCount(page)).toBe(1)
+  })
+}
+
+test('does not request or offer a responsible-user input without directory permission', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.blocker.raise'] })]
+  await installStage01OperationalRoutes(page)
+  await goToWorkspace(page)
+  await installMockStorageReadSpy(page)
+  await page.getByRole('button', { name: 'Nêu blocker' }).first().click()
+  await expect(page.getByRole('combobox', { name: 'Người phụ trách' })).toHaveCount(0)
+  await expect(page.locator('input[type="text"][name*="responsible" i]')).toHaveCount(0)
+  expect(await mockStorageReadCount(page)).toBe(0)
+})
+
+test('keeps an optional responsible user submitable after the directory request fails', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.blocker.raise', 'employee.read_directory'] })]
+  await installStage01OperationalRoutes(page, detail, { onWorkflowCommand: request => { commands.push(request) } })
+  await goToWorkspace(page)
+  await failMockStorageWrite(page)
+  await page.getByRole('button', { name: 'Nêu blocker' }).first().click()
+  await expect(page.getByText('Không thể tải danh bạ người phụ trách.', { exact: true })).toBeVisible()
+  await page.getByRole('combobox', { name: 'Danh mục blocker' }).selectOption('follow_up')
+  await page.getByRole('textbox', { name: 'Mô tả blocker' }).fill('Cần xác nhận thông tin')
+  await page.getByRole('button', { name: 'Lưu blocker' }).click()
+  await expect.poll(() => commands).toHaveLength(1)
+  expect(commands[0]?.body).not.toHaveProperty('responsibleUserId')
 })
 
 test('workflow actions are hidden without their exact permissions', async ({ page, authState }) => {

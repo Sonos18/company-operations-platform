@@ -15,6 +15,9 @@ const error = ref<unknown | null>(null)
 const success = ref<string | null>(null)
 const employees = ref<EmployeeSummary[]>([])
 const employeesLoading = ref(false)
+const employeesLoadAttempted = ref(false)
+const employeesLoadError = ref<unknown | null>(null)
+const responsibleUserPickerError = ref<unknown | null>(null)
 const assignmentNodeId = ref<string | null>(null)
 const endingAssignmentId = ref<string | null>(null)
 const blockerNodeId = ref<string | null>(null)
@@ -29,8 +32,8 @@ const reopenReason = ref('')
 const revalidate = reactive({ reason: '', evidence: '' })
 
 const canAssign = computed(() => access.hasPermission('journey.assignment.manage'))
-const canStart = computed(() => access.hasPermission('journey.node.start'))
-const canComplete = computed(() => access.hasPermission('journey.node.complete'))
+const canStart = computed(() => access.hasPermission('journey.node.start') && props.detail.actorCapabilities.includes('start'))
+const canComplete = computed(() => access.hasPermission('journey.node.complete') && props.detail.actorCapabilities.includes('complete'))
 const canReopen = computed(() => access.hasPermission('journey.node.reopen'))
 const canRevalidate = computed(() => access.hasPermission('journey.node.revalidate'))
 const canRaiseBlocker = computed(() => access.hasPermission('journey.blocker.raise'))
@@ -76,14 +79,21 @@ async function command(label: string, action: () => Promise<unknown>): Promise<b
   }
 }
 
-async function loadEmployees(): Promise<void> {
-  if (!canReadDirectory.value || employeesLoading.value || employees.value.length) return
+async function loadEmployees(forResponsibleUserPicker = false): Promise<void> {
+  if (!canReadDirectory.value || employeesLoading.value) return
+  if (employeesLoadAttempted.value) {
+    if (forResponsibleUserPicker && employeesLoadError.value) responsibleUserPickerError.value = employeesLoadError.value
+    return
+  }
+  employeesLoadAttempted.value = true
   employeesLoading.value = true
   try {
     employees.value = await repositories.employees.list()
   }
   catch (caught) {
-    error.value = caught
+    employeesLoadError.value = caught
+    if (forResponsibleUserPicker) responsibleUserPickerError.value = caught
+    else error.value = caught
   }
   finally {
     employeesLoading.value = false
@@ -158,6 +168,8 @@ function openBlocker(nodeExecutionId: string): void {
   blockerNodeId.value = nodeExecutionId
   blocker.categoryCode = props.detail.configuration.taxonomies.blocker_category[0]?.code ?? ''
   blocker.effect = 'blocking'; blocker.description = ''; blocker.responsibleUserId = ''
+  responsibleUserPickerError.value = employeesLoadError.value
+  void loadEmployees(true)
 }
 
 async function submitBlocker(): Promise<void> {
@@ -210,7 +222,7 @@ async function submitResolution(): Promise<void> {
       <form v-if="endingAssignmentId && activeAssignments(node.runtime.assignments).some(item => item.id === endingAssignmentId)" class="workflow-runtime__form" @submit.prevent="submitEndAssignment"><label>Lý do kết thúc phân công<textarea v-model="endAssignment" required /></label><UButton type="submit">Xác nhận kết thúc phân công</UButton></form>
 
       <section class="workflow-runtime__section" :aria-label="`Blocker của ${node.label}`"><header><h4>Blocker</h4><UButton v-if="canRaiseBlocker" size="xs" @click="openBlocker(node.runtime.nodeExecutionId)">Nêu blocker</UButton></header><ul><li v-for="item in node.runtime.blockers" :key="item.id"><div><strong>{{ taxonomyLabel(detail.configuration.taxonomies.blocker_category, item.categoryCode) }}</strong><span>{{ item.description }} · {{ item.resolvedAt ? `Đã giải quyết: ${item.resolution}` : 'Đang mở' }}</span></div><UButton v-if="canResolveBlocker && !item.resolvedAt" size="xs" variant="outline" @click="openResolution(item.id)">Giải quyết blocker</UButton></li><li v-if="!node.runtime.blockers.length">Chưa có blocker.</li></ul></section>
-      <form v-if="blockerNodeId === node.runtime.nodeExecutionId" class="workflow-runtime__form" @submit.prevent="submitBlocker"><label>Ảnh hưởng<select v-model="blocker.effect"><option value="blocking">Chặn tiến độ</option><option value="non_blocking">Không chặn tiến độ</option></select></label><label>Danh mục blocker<select v-model="blocker.categoryCode" required><option v-for="entry in detail.configuration.taxonomies.blocker_category" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Mô tả blocker<textarea v-model="blocker.description" required /></label><label v-if="canReadDirectory">Người phụ trách<select v-model="blocker.responsibleUserId"><option value="">Chưa phân công</option><option v-for="employee in employees.filter(item => item.account?.userId)" :key="employee.id" :value="employee.account!.userId">{{ employee.fullName }}</option></select></label><UButton type="submit">Lưu blocker</UButton></form>
+      <form v-if="blockerNodeId === node.runtime.nodeExecutionId" class="workflow-runtime__form" @submit.prevent="submitBlocker"><label>Ảnh hưởng<select v-model="blocker.effect"><option value="blocking">Chặn tiến độ</option><option value="non_blocking">Không chặn tiến độ</option></select></label><label>Danh mục blocker<select v-model="blocker.categoryCode" required><option v-for="entry in detail.configuration.taxonomies.blocker_category" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Mô tả blocker<textarea v-model="blocker.description" required /></label><label v-if="canReadDirectory">Người phụ trách<select v-model="blocker.responsibleUserId" :disabled="employeesLoading"><option value="">Chưa phân công</option><option v-for="employee in employees.filter(item => item.account?.userId)" :key="employee.id" :value="employee.account!.userId">{{ employee.fullName }}</option></select><span v-if="employeesLoading">Đang tải danh bạ người phụ trách…</span><span v-else-if="responsibleUserPickerError">Không thể tải danh bạ người phụ trách.</span></label><UButton type="submit">Lưu blocker</UButton></form>
       <form v-if="resolvingBlockerId && openBlockers(node.runtime.blockers).some(item => item.id === resolvingBlockerId)" class="workflow-runtime__form" @submit.prevent="submitResolution"><label>Kết luận giải quyết blocker<textarea v-model="blockerResolution" required /></label><UButton type="submit">Xác nhận giải quyết blocker</UButton></form>
     </article>
   </section>
