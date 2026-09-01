@@ -36,6 +36,25 @@ async function failMockStorageWrite(page: import('@playwright/test').Page): Prom
   }, MOCK_STORAGE_KEY)
 }
 
+async function addAccountlessMockEmployee(page: import('@playwright/test').Page): Promise<void> {
+  await page.evaluate(storageKey => {
+    const serialized = localStorage.getItem(storageKey)
+    if (!serialized) throw new Error('Mock state is unavailable')
+    const state = JSON.parse(serialized) as { employees: Array<Record<string, unknown>> }
+    const template = state.employees[0]
+    if (!template) throw new Error('Mock employee is unavailable')
+    state.employees.push({
+      ...template,
+      id: '10000000-0000-4000-8000-000000000407',
+      employeeCode: 'VQH-NO-ACCOUNT',
+      fullName: 'Không có tài khoản',
+      workEmail: 'no-account@vqh.local',
+      account: undefined,
+    })
+    localStorage.setItem(storageKey, JSON.stringify(state))
+  }, MOCK_STORAGE_KEY)
+}
+
 test('keeps intake business controls read-only for a route-authorized reader', async ({ page, authState }) => {
   authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read'] })]
   await installStage01OperationalRoutes(page)
@@ -258,6 +277,48 @@ test('assignment only exposes a directory-backed picker and retains assignment h
     pathname: expect.stringContaining(`/workflow-assignments/${detail.intake.runtime.assignments[0].id}/end`),
     body: { endReason: 'Bàn giao công việc', expectedExecutionVersion: detail.intake.runtime.version },
   })
+})
+
+test('assignment picker loads account-backed users for employee.read_all', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.assignment.manage', 'employee.read_all'] })]
+  await installStage01OperationalRoutes(page)
+  await goToWorkspace(page)
+  await installMockStorageReadSpy(page)
+  await page.getByLabel('Phân công của 01.1 Tiếp nhận').getByRole('button', { name: 'Phân công', exact: true }).click()
+  const assigneePicker = page.getByRole('combobox', { name: 'Người được phân công' })
+  await expect(assigneePicker.locator('option').nth(1)).toHaveText('Như')
+  await assigneePicker.selectOption({ label: 'Như' })
+  await expect.poll(() => mockStorageReadCount(page)).toBe(1)
+})
+
+test('does not open an assignment picker or load employees without a directory permission', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.assignment.manage'] })]
+  await installStage01OperationalRoutes(page)
+  await goToWorkspace(page)
+  await installMockStorageReadSpy(page)
+  await expect(page.getByRole('button', { name: 'Phân công', exact: true })).toHaveCount(0)
+  await expect(page.getByLabel('Phân công của 01.1 Tiếp nhận').getByText('Bạn không có quyền đọc danh bạ nên chỉ có thể xem lịch sử phân công; không thể chọn một mã người dùng tự do.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Người được phân công' })).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: /người dùng/i })).toHaveCount(0)
+  expect(await mockStorageReadCount(page)).toBe(0)
+})
+
+test('assignment and responsible pickers exclude accountless employees', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.assignment.manage', 'journey.blocker.raise', 'employee.read_directory'] })]
+  await installStage01OperationalRoutes(page)
+  await goToWorkspace(page)
+  await page.goto('/projects')
+  await expect(page.getByRole('heading', { name: 'Dự án' })).toBeVisible()
+  await goToWorkspace(page)
+  await addAccountlessMockEmployee(page)
+  await page.getByLabel('Phân công của 01.1 Tiếp nhận').getByRole('button', { name: 'Phân công', exact: true }).click()
+  const assigneePicker = page.getByRole('combobox', { name: 'Người được phân công' })
+  await expect(assigneePicker.getByRole('option', { name: 'Không có tài khoản' })).toHaveCount(0)
+  await expect(assigneePicker.locator('option').nth(1)).toHaveText('Như')
+  await page.getByRole('button', { name: 'Nêu blocker' }).first().click()
+  const responsiblePicker = page.getByRole('combobox', { name: 'Người phụ trách' })
+  await expect(responsiblePicker.getByRole('option', { name: 'Không có tài khoản' })).toHaveCount(0)
+  await expect(responsiblePicker.locator('option').nth(1)).toHaveText('Như')
 })
 
 test('blocker uses bound category values and keeps resolved blockers as history', async ({ page, authState }) => {
