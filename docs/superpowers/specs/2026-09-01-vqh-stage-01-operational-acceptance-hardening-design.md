@@ -12,13 +12,9 @@
 
 B4 closes VQH Stage 01 as a real operational product.
 
-The objective is not to add business features. The objective is to prove, against the real Cloud DEV backend and the merged B3 UI, that Stage 01 is safe and reliable enough for a controlled VQH pilot.
+The objective is not to add business features. It is to prove that the merged Stage 01 backend, configuration layer, operational UI, permission model, concurrency model, immutable history, and practical performance are safe enough for a controlled VQH pilot.
 
-B4 answers one question:
-
-> **Can VQH operate Stage 01 with real business data without an unresolved correctness, authorization, concurrency, history-integrity, usability, or practical performance defect?**
-
-The final B4 output is a deterministic readiness verdict:
+Final readiness verdict:
 
 ```text
 READY_FOR_VQH_PILOT
@@ -26,50 +22,40 @@ or
 NOT_READY_FOR_VQH_PILOT
 ```
 
-A mergeable B4 implementation must end with `READY_FOR_VQH_PILOT`.
+A mergeable B4 result must be `READY_FOR_VQH_PILOT`.
 
 ---
 
 ## Core principle
 
-B4 is **acceptance-first**.
-
-The order is:
+B4 is **acceptance-first**:
 
 ```text
 Measure / reproduce
-        ↓
-Classify defect or limitation
-        ↓
-Apply the smallest approved correction
-        ↓
-Re-run the affected scenario
-        ↓
-Re-run the Stage 01 acceptance gate
+→ classify
+→ smallest correction
+→ regression test
+→ rerun acceptance gate
 ```
 
-Do not perform speculative refactoring before a failing acceptance scenario or measured performance problem exists.
-
-B4 may harden existing B3 behavior. It must not redesign Stage 01 business semantics.
+Do not refactor speculatively. B4 may harden merged behavior, but it must not redesign Stage 01 business semantics.
 
 ---
 
-## Current baseline
+## Baseline
 
 At the B4 source anchor:
 
 - Stage 01 backend/workflow engine is implemented.
 - B1 configuration control plane is implemented.
-- B1.5 reusable taxonomy storage boundary is implemented.
+- B1.5 taxonomy storage boundary is implemented.
 - B2 Business Configuration Admin UI is implemented.
 - B3 Opportunity-centric Operational UI is merged.
-- B3 deterministic browser suite passed.
-- B3 Cloud DEV security migration for narrow Opportunity create options is merged.
-- Existing Cloud DEV Stage 01 database, concurrency, integrity-race, RLS, and advisor runners already exist.
+- B3 deterministic unit/E2E verification passed.
+- B3 narrow Opportunity create-options security RPC is merged.
+- Guarded Cloud DEV database, RLS, concurrency, integrity-race, and advisor runners already exist.
 
-B4 reuses these assets instead of creating a parallel test platform.
-
-Existing relevant commands include:
+Relevant existing commands include:
 
 ```text
 pnpm db:dev:stage01:test
@@ -82,322 +68,275 @@ pnpm verify:app
 pnpm test:e2e
 ```
 
+B4 reuses these assets instead of creating a parallel platform.
+
 ---
 
-## Product boundary
+# 1. Product boundary
 
-B4 covers only the already-approved Stage 01 product:
+B4 covers only:
 
 ```text
 Opportunity
-  → 01.1 Intake
-  → 01.2 Evaluation
-  → Recommendation / Clarification / Final Decision
-  → Stage 01 completion
-  → optional Reactivation
+→ 01.1 Intake
+→ 01.2 Evaluation
+→ Recommendation / Clarification / Final Decision
+→ Stage 01 completion
+→ optional Reactivation
 ```
 
-B4 does not implement conversion to Project or Stage 02.
+A `proceed` decision still ends at completed Stage 01.
 
-A `proceed` decision ends the B4 journey at a correctly completed Stage 01 state. What happens after that belongs to a later phase.
+B4 does **not** create a Project or implement Stage 02.
 
 ---
 
-# 1. Acceptance architecture
+# 2. Acceptance architecture
 
-B4 uses four complementary acceptance layers.
+B4 uses four complementary layers.
 
-## Layer A — Existing deterministic application regression
+## Layer A — Deterministic application regression
 
-Keep the existing intercepted/local Playwright and unit suite as the fast regression layer.
+Keep the existing local/intercepted unit and Playwright coverage for:
 
-Purpose:
-
-- deterministic UI state coverage;
-- exact request-body assertions;
+- exact frontend permission behavior;
+- exact request bodies and version ownership;
+- deterministic failure states;
 - responsive/accessibility checks;
-- failure-state reproduction without Cloud DEV variability.
+- regression reproduction.
 
-This layer remains required but is not sufficient to declare Stage 01 ready.
+This remains required but is not sufficient for readiness.
 
 ## Layer B — Cloud DEV database/runtime acceptance
 
-Use the existing guarded Cloud DEV runner and database fixtures for:
+Reuse and extend the guarded Cloud DEV runners for:
 
-- RLS and company isolation;
-- public RPC authorization;
+- RLS/company isolation;
+- RPC authorization;
 - immutable history;
-- exact version conflicts;
-- concurrency races;
-- integrity races;
+- exact version conflict;
+- concurrency and integrity races;
 - bound workflow-definition behavior;
-- database-level business constraints.
+- DB-level business constraints.
 
-All Cloud DEV setup must use fixed/isolated fixtures and explicit cleanup.
+## Layer C — Real full-stack Cloud DEV acceptance
 
-## Layer C — Real full-stack operational acceptance
-
-Add a small full-stack acceptance suite that does **not** intercept Stage 01 business API routes.
+Add a small Playwright acceptance project with **no Stage 01 business-route interception**.
 
 Required path:
 
 ```text
 Playwright browser
-  → real Taskovia login
-  → local Nuxt/Nitro server
-  → bearer authentication
-  → API route
-  → service
-  → repository
-  → Supabase user-scoped client
-  → Cloud DEV RLS/RPC/tables
+→ real /login
+→ local Nuxt/Nitro
+→ bearer authentication
+→ API route
+→ service
+→ repository
+→ user-scoped Supabase client
+→ Cloud DEV RLS / RPC / tables
 ```
 
-This is the B4 proof that the layers tested separately in B3 actually operate together.
-
-### Real-auth fixture rule
-
-The B4 harness may use the existing server-only Cloud DEV service-role credential **only in fixture setup and cleanup** to provision isolated test Auth users.
-
-It must never use service-role credentials for the business requests being accepted.
-
-The accepted path must log in as a normal test actor and use the resulting real JWT through the normal application flow.
-
-Preferred lifecycle:
-
-```text
-fixture setup process
-  → create isolated Cloud DEV auth actor
-  → set known test-only password
-  → create company membership / role assignment / employee fixture
-  → browser signs in through /login
-  → business flow uses normal user JWT
-  → assertions
-  → fixture cleanup in finally
-```
-
-The fixture helper must be clearly test-only and unreachable from production routes.
-
-### No route interception
-
-The full-stack Cloud DEV acceptance project must not intercept or fulfill these route families:
+The following route families must not be replaced/fulfilled by Playwright in this project:
 
 - `/api/companies/*/opportunities*`
 - `/api/companies/*/workflow*`
 - `/api/companies/*/stage-01*`
-- `/api/companies/*/employees*` when used by Stage 01 employee pickers.
+- `/api/companies/*/employees*` when Stage 01 uses the employee picker.
 
 Network observation is allowed; request replacement is not.
 
-## Layer D — Performance, security, and readiness evidence
+## Layer D — Readiness evidence
 
-B4 records explicit evidence for:
+Collect:
 
-- Stage01OperationalDetail performance;
-- Supabase advisor state;
-- security review;
-- browser accessibility/responsive behavior;
-- known limitations.
-
-This produces the final readiness report.
+- performance profile;
+- Supabase advisor results;
+- dynamic security evidence;
+- final static security diff scan;
+- accessibility/responsive evidence;
+- known limitations and risks.
 
 ---
 
-# 2. Cloud DEV fixture isolation
+# 3. Cloud DEV acceptance fixture boundary
 
-B4 may mutate **Supabase Cloud DEV only** for acceptance fixture setup and cleanup.
+## Canonical VQH business company must not receive test Opportunities
 
-Production mutation is forbidden.
+Real full-stack B4 acceptance must **not** create acceptance Opportunities, Contacts, decision cycles, assignments, or blockers inside the canonical VQH business company.
 
-## Fixture identity
+Reason: Stage 01 deliberately preserves immutable history, so destructive cleanup is neither possible nor desirable.
 
-Every B4 run uses a unique marker such as:
+## Dedicated acceptance tenant/company
+
+B4 uses a clearly named, test-only Cloud DEV acceptance boundary, conceptually:
 
 ```text
-b4-stage01-<timestamp-or-random-id>
+tenant:  taskovia-b4-acceptance
+company: VQH_STAGE01_ACCEPTANCE
 ```
 
-All created users, Opportunities, Contacts, and fixture descriptions must be attributable to that marker where the schema allows it.
+Exact stable IDs/codes are implementation details, but they must be deterministic and unmistakably test-only.
 
-## Existing business data
+The boundary exists only in the approved Cloud DEV project and must never be bootstrapped in production.
 
-The acceptance suite must not edit, invalidate, restore, reassign, or delete existing VQH operational records.
+## Idempotent fixture bootstrap
 
-Tests create their own data.
+A guarded test helper may provision/update this Cloud DEV acceptance boundary using the existing server-only Cloud DEV service-role credential or the already-approved guarded Management API mechanism.
 
-## Cleanup
+Service role is allowed only for **fixture bootstrap/maintenance**, never for accepted business requests.
 
-Cleanup is mandatory and must run in `finally` semantics.
+The fixture boundary may contain:
 
-A failed assertion must not skip cleanup.
+- test-only Auth users;
+- company memberships;
+- test-only roles/assignments required for the permission matrix;
+- employee directory fixtures;
+- published `vqh.stage01` definition copied from the current canonical VQH published definition;
+- immutable acceptance Opportunities/history.
 
-The harness must support pre-cleaning stale B4 fixtures left by a previously interrupted run.
+The bootstrap must be idempotent and guarded by the canonical Cloud DEV project assertion.
 
-Cleanup must target only records owned by the current/stale B4 fixture marker; broad table truncation/reset is forbidden.
+## Real accepted requests use normal JWTs
 
-## Cloud DEV guards
+Test actors sign in through the normal application login flow with real Cloud DEV Auth credentials.
 
-Reuse the canonical Cloud DEV project assertion. Do not accept arbitrary Supabase refs through a CLI argument for a mutating acceptance command.
+Business requests must use the actor JWT and the existing user-scoped database client.
 
-Any target mismatch is a hard stop.
+No acceptance assertion counts if the business request uses service-role authorization.
+
+## Retained history is intentional
+
+Because Stage 01 and RBAC/audit history are append-only, B4 does not promise destructive cleanup of immutable acceptance history.
+
+Instead, completion requires:
+
+- zero active fixture data inside the canonical VQH business company;
+- no production mutation;
+- no unmarked test data;
+- current run records identifiable by a unique run marker;
+- temporary credentials/sessions cleaned or disabled where appropriate;
+- any retained acceptance-company history documented as intentional test evidence.
+
+The readiness report records the acceptance company/code and run marker.
 
 ---
 
-# 3. Required business acceptance scenarios
+# 4. Real-auth actor model
 
-B4 groups checks by complete business scenarios rather than multiplying low-level UI tests.
+The acceptance company should expose stable test actor shapes sufficient to exercise Stage 01:
 
-The canonical scenario set contains ten scenarios.
+- **reader** — read-only Stage 01 visibility;
+- **operator** — Opportunity/Workflow/Evaluation operations but no final decision authority;
+- **decision actor** — decision permission plus bound decision capability;
+- **admin/setup actor** — only when a scenario requires broad setup capability;
+- **non-member / foreign-company actor** — isolation checks.
+
+These are test-only actors. Do not modify VQH production-role semantics merely to create the matrix.
+
+Permission matrix details may also be validated transactionally in Cloud DEV DB tests where that provides cleaner isolation.
+
+---
+
+# 5. Required business acceptance scenarios
+
+B4 has ten canonical scenarios.
 
 ## B4-S01 — Happy path: Proceed
-
-Prove the normal positive journey:
 
 ```text
 Create Opportunity
 → complete required Intake data
 → assign Intake Owner
-→ Start 01.1 if required by runtime state
-→ Complete 01.1
+→ Start/Complete 01.1
 → Start 01.2
 → evaluate required criteria
 → submit Recommendation
-→ record Final Decision = proceed
+→ Final Decision = proceed
 → Complete 01.2
 ```
 
-Assertions:
+Prove canonical version use, gate transitions, immutable final decision, completed state, and browser reload stability.
 
-- each command uses current canonical versions;
-- gates transition from incomplete to satisfied at the correct points;
-- final decision is immutable;
-- Stage 01 ends completed and valid;
-- browser reload preserves the same canonical result.
-
-This scenario must run through the real full-stack Cloud DEV browser path.
+**Full-stack Cloud DEV browser execution is required.**
 
 ## B4-S02 — Happy path: Not proceeding
 
-Complete an Opportunity with:
-
-```text
-Recommendation
-→ Final Decision = not_proceeding
-→ Complete 01.2
-```
-
-Verify the Opportunity remains inspectable and historical decision data is read-only.
+Complete with `not_proceeding` and verify the completed Opportunity remains inspectable and historical decision data is read-only.
 
 ## B4-S03 — Clarification loop
 
-Prove:
-
 ```text
-Evaluation
-→ Recommendation v1
+Recommendation v1
 → Return for clarification
-→ additional/corrected evidence
+→ corrected/additional evidence
 → Recommendation v2
 → Final Decision
 ```
 
-Verify Recommendation v1 and clarification history remain visible and immutable.
+Verify v1 and clarification history remain immutable.
 
-## B4-S04 — Blocking blocker lifecycle
+## B4-S04 — Blocking blocker
 
-Raise a blocking blocker on the relevant execution.
+Verify an open blocking blocker prevents completion, resolve it, reload canonical state, then continue while retaining blocker history.
 
-Verify:
+## B4-S05 — Duplicate concern
 
-- completion is prevented while it is open;
-- resolving it appends resolution history;
-- canonical reload changes gate/runtime eligibility correctly;
-- resolved blocker remains visible.
+Verify Intake completion is blocked by an unresolved duplicate concern and succeeds only after an approved resolution.
 
-## B4-S05 — Duplicate concern lifecycle
+No destructive Opportunity merge is added.
 
-Raise a duplicate concern during Intake.
+## B4-S06 — Revalidation
 
-Verify Intake cannot complete while the business gate is unsatisfied, then resolve the concern and successfully continue.
+After an Intake-dependent change, verify stale downstream state is not treated as valid and explicit reason/evidence revalidation is required when backend rules say so.
 
-No destructive Opportunity merge is introduced.
+## B4-S07 — Stale writer / concurrency
 
-## B4-S06 — Revalidation after Intake-dependent change
-
-Complete Intake, then perform an approved change that invalidates a dependency and requires revalidation.
-
-Verify:
-
-- stale downstream state is not treated as valid;
-- the UI shows the revalidation requirement;
-- explicit revalidation with reason/evidence restores eligibility only when backend rules permit it.
-
-## B4-S07 — Optimistic concurrency / stale writer
-
-Use the existing Cloud DEV concurrency runner plus one application-level stale-version scenario.
+Use the existing Cloud DEV concurrency runner plus one application-level stale-form scenario.
 
 Prove:
 
-- one competing write succeeds;
+- exactly one competing write wins where expected;
 - stale write receives `VERSION_CONFLICT`;
-- client does not overwrite or auto-retry;
-- relevant local form input is preserved until explicit reload/discard;
-- a retry after canonical reload uses the new version.
+- no auto-overwrite/retry occurs;
+- local input is retained where safe;
+- retry after explicit canonical reload uses the new version.
 
-## B4-S08 — Completed Stage 01 reactivation
+## B4-S08 — Reactivation
 
-Complete Stage 01, then reactivate it.
+Complete Stage 01, reactivate it, and verify:
 
-Verify:
-
-- exact Opportunity + execution + cycle versions are required;
+- Opportunity + execution + cycle versions are exact;
 - a new execution/cycle is created;
-- cycle 1 remains unchanged;
-- cycle 2 becomes canonical current state;
-- browser history shows both cycles in order.
+- prior cycle remains unchanged;
+- new cycle is canonical;
+- browser history shows both cycles.
 
-This scenario must exercise the real Cloud DEV runtime, not only an intercepted fixture.
+**Real Cloud DEV runtime execution is required.**
 
-## B4-S09 — Permission and isolation matrix
-
-Use at least these actor shapes:
-
-- reader;
-- operational editor without decision authority;
-- decision-capable actor;
-- actor from another company/non-member.
+## B4-S09 — Permission / isolation matrix
 
 Verify:
 
-- route visibility follows permissions;
-- server commands reject missing permissions even when called directly;
-- bound actor capabilities do not replace permission checks;
-- forged Opportunity/company/node identifiers do not cross company boundaries;
-- `employee.read_all` does not expose private employee details;
-- narrow Opportunity create-options RPC does not expose raw workflow definition/draft data.
+- route/action visibility follows explicit permissions;
+- direct server/RPC calls still reject missing permissions;
+- actor capabilities supplement, never replace, permissions;
+- forged company/Opportunity/node IDs cannot cross company boundaries;
+- `employee.read_all` does not expose private employee data;
+- narrow create-options RPC does not expose draft/raw workflow definition;
+- unauthenticated/invalid sessions fail safely.
 
-## B4-S10 — Bound-snapshot historical stability
+## B4-S10 — Bound-snapshot stability
 
-Create Opportunity A under published snapshot N.
+Prove an Opportunity remains bound to snapshot N after a newer snapshot N+1 exists, while a newly created Opportunity binds to N+1.
 
-Publish or stage an acceptance fixture snapshot N+1 using the already-approved configuration mechanism only if the fixture can be safely isolated; otherwise reproduce this at the database acceptance layer with isolated definition rows.
+Do this inside the dedicated acceptance boundary or transactional DB acceptance fixture.
 
-Verify:
-
-- Opportunity A continues rendering snapshot N labels/criteria;
-- a newly created Opportunity B binds to N+1;
-- A is not reinterpreted after publication;
-- no operational UI reads `workflow_taxonomy_values` directly.
-
-If exercising a real config publish would affect shared VQH Cloud DEV configuration, do **not** mutate the shared configuration. Use an isolated company/fixture boundary or the database acceptance layer instead.
+Do not publish test configuration into the canonical VQH business company merely for this scenario.
 
 ---
 
-# 4. Scenario execution allocation
-
-Not every scenario needs a slow full browser run.
-
-Minimum allocation:
+# 6. Scenario execution allocation
 
 | Scenario | Deterministic UI | Cloud DEV DB/runtime | Full-stack browser |
 | --- | --- | --- | --- |
@@ -412,133 +351,112 @@ Minimum allocation:
 | S09 Permission/isolation | yes | **required** | selected actors |
 | S10 Bound snapshot | yes | **required** | optional |
 
-The acceptance suite should be small enough to run intentionally before a Stage 01 release, not become the normal fast E2E suite.
+The slow acceptance project is a release/readiness gate, not the normal fast E2E suite.
 
 ---
 
-# 5. Reliability hardening targets
+# 7. Reliability hardening targets
 
-B4 explicitly tests these reliability edges.
+B4 explicitly exercises these edges.
 
 ## Double submit
 
-A second command while one is in flight must not produce a second business mutation.
+A second UI action while a command is in flight must not create a second business mutation.
 
-UI feedback may be disabled/loading or a safe client validation rejection, but the backend must see only one intended command.
+## Command succeeded, reload failed
 
-## Command succeeded, canonical reload failed
+Treat this separately from command failure.
 
-This is a distinct state from "command failed".
+If the server mutation succeeds but canonical GET fails, the UI must not encourage the user to repeat the command as if nothing happened.
 
-B4 must test it.
+Required behavior:
 
-If current UX implies the command itself failed after the server accepted it, fix the UI so the user is told that the update may have succeeded and canonical data must be reloaded before another mutation.
+- explain that the operation may already have succeeded;
+- block unsafe follow-up mutation until canonical state is reloaded;
+- provide explicit reload;
+- never auto-repeat the original command.
 
-Do not automatically repeat the command.
+## Stale canonical versions
 
-## Stale canonical state
-
-After any successful command the next mutation must use the versions returned by the subsequent canonical GET, not versions retained from the previous render.
+After success, later commands must use versions from the subsequent canonical GET.
 
 ## Local form retention
 
-For retriable network/5xx and `VERSION_CONFLICT` paths, preserve relevant user-entered data until the user explicitly reloads/discards where safe.
+Preserve relevant input for retriable 5xx/network and `VERSION_CONFLICT` paths until explicit reload/discard where safe.
 
-## Reload / navigation races
+## Navigation/company-switch race
 
-A route change or company switch during an in-flight mutation must not cause a false success or cross-company state render.
+An in-flight mutation must not produce a false success or render cross-company state after navigation/switch.
 
-Reuse existing shell/unsaved-change mechanisms where applicable; do not create a second global navigation guard.
+Reuse existing shell guards rather than creating another global navigation system.
 
 ---
 
-# 6. Performance acceptance
+# 8. Performance acceptance
 
-B4 performance work is measurement-driven.
+The main target is `Stage01OperationalDetail` GET.
 
-The primary target is the merged `Stage01OperationalDetail` GET because it aggregates Opportunity, workflow runtime, Contacts/Methods, decision cycles, evaluations, recommendations, clarifications, and bound configuration.
-
-## Synthetic profiles
-
-Profile at least:
+## Profiles
 
 ```text
-Profile P1 — normal
-1 decision cycle
-5 criteria
-2 contacts
-small history
+P1 normal:
+1 cycle, 5 criteria, 2 contacts, small history
 
-Profile P2 — growing
-5 decision cycles
-10 contacts
-multiple criterion revisions
+P2 growing:
+5 cycles, 10 contacts, repeated criterion revisions
 
-Profile P3 — stress/practical upper fixture
-20 decision cycles
-20 contacts
-5 criteria with repeated revisions
-recommendation/clarification history
+P3 practical stress fixture:
+20 cycles, 20 contacts, repeated evaluations,
+recommendations and clarification history
 ```
 
-These are acceptance fixtures, not claimed production limits.
+These are synthetic acceptance profiles, not declared production limits.
 
 ## Metrics
 
 Record:
 
-- full Stage 01 GET response size;
-- server-to-Supabase request count where test instrumentation can measure it;
-- warm end-to-end API latency from local Nitro to Cloud DEV;
-- advisor warnings relevant to the touched read path.
+- uncompressed response size;
+- server-to-Supabase request count through test instrumentation;
+- warm local-Nitro → Cloud DEV API latency;
+- relevant Supabase performance advisor output.
 
-## Practical envelope
+## Practical P3 envelope
 
-For P3, B4 targets:
+- server-to-Supabase requests: **<= 25** per Stage01OperationalDetail load;
+- response payload: **<= 2 MiB**;
+- warm Cloud DEV API p95: **<= 2.0 s** after warm-up across at least 20 measured reads;
+- individual measured request: **<= 3.0 s**, unless Cloud DEV degradation is independently demonstrated.
 
-- **server-to-Supabase requests:** `<= 25` for one Stage01OperationalDetail load;
-- **response payload:** `<= 2 MiB` uncompressed JSON;
-- **warm Cloud DEV API p95:** `<= 2.0 seconds` across at least 20 measured reads after warm-up;
-- **single measured request hard ceiling:** `<= 3.0 seconds` unless Cloud DEV is demonstrably degraded.
-
-Latency is environment-sensitive. If latency alone fails while request count and payload are within limits, rerun once after confirming Cloud DEV health. A persistent failure blocks the readiness verdict but does not authorize speculative architecture changes.
+If latency alone fails, confirm Cloud DEV health and rerun once. Persistent failure blocks readiness.
 
 ## Optimization rule
 
-If the baseline already meets the envelope, do not refactor it.
+If baseline passes, do not refactor.
 
-If it fails, optimize the smallest proven bottleneck.
+If it fails, fix the smallest measured bottleneck. Preferred correction is batching existing reads rather than per-cycle/per-contact network loops.
 
-Preferred fixes include batching existing reads, e.g. fetching resources for many cycle/contact IDs in one query rather than issuing per-item network calls.
+A database migration/index/schema change is **not automatically authorized**. If required, stop for a focused amendment.
 
-A DB migration/index/schema change is **not automatically authorized** by B4. If the measured solution requires a migration, stop and request a focused amendment.
-
-Do not generalize Stage 01 runtime tables as a performance fix.
+Do not generalize Stage 01 tables as a performance fix.
 
 ---
 
-# 7. Security acceptance
+# 9. Security acceptance
 
-B4 requires both static and dynamic security evidence.
-
-## Dynamic checks
-
-Verify:
+Dynamic checks include:
 
 - company/tenant isolation;
-- missing permission rejection;
+- operation-specific permissions;
 - direct public RPC authorization;
 - narrow create-options projection;
-- no `workflow_definition_drafts` leakage;
-- no raw published definition leakage to Opportunity creators;
-- `employee.read_all` remains directory-only and does not imply private details;
-- history-mutating attempts fail;
-- cross-company forged resource IDs fail;
-- unauthenticated/expired-token requests fail safely.
+- no draft/raw-definition leakage;
+- employee-directory vs private-data separation;
+- immutable-history enforcement;
+- forged resource IDs;
+- unauthenticated/invalid-token behavior.
 
-## Static security scan
-
-Run the repository-approved security diff scan on the final B4 implementation range.
+Final B4 implementation diff also receives the repository-approved static security scan.
 
 Exit condition:
 
@@ -549,168 +467,158 @@ Exit condition:
 
 Medium/low findings require explicit disposition in the readiness report.
 
-Security scan failure/finalization failure blocks completion even if application tests pass.
+Security scan finalization failure blocks completion even if tests are green.
 
 ---
 
-# 8. Accessibility and responsive acceptance
+# 10. Responsive / accessibility acceptance
 
-B4 does not redesign the UI.
+No visual redesign is planned.
 
-Test the existing Stage 01 workspace under realistic dense history.
+Test dense Stage 01 state at minimum around:
 
-Minimum viewport checks:
-
-- mobile approximately `390 × 844`;
-- desktop approximately `1440 × 900`.
+- mobile `390 × 844`;
+- desktop `1440 × 900`.
 
 Acceptance:
 
 - no page-level horizontal overflow;
-- dialogs/forms remain operable;
-- keyboard can reach critical actions;
-- form controls have programmatic labels;
-- error/success status is exposed accessibly;
-- dense decision/history content remains readable;
-- no critical axe violations in Stage 01 acceptance pages.
+- critical dialogs/forms remain operable;
+- keyboard access for critical actions;
+- programmatic labels;
+- accessible error/success status;
+- dense history remains readable;
+- no critical axe violations on Stage 01 acceptance pages.
 
-Only fix concrete acceptance defects.
+Fix only concrete defects.
 
 ---
 
-# 9. Readiness report
+# 11. Readiness report
 
-B4 creates a canonical report:
+Create:
 
 ```text
 docs/acceptance/vqh-stage-01-operational-readiness.md
 ```
 
-The report is evidence, not marketing copy.
+Required evidence:
 
-Required sections:
+- source/acceptance SHA;
+- Cloud DEV target confirmation;
+- dedicated acceptance boundary identity;
+- run marker;
+- S01–S10 matrix;
+- permission/isolation results;
+- concurrency/integrity races;
+- history immutability;
+- bound-snapshot stability;
+- security scan;
+- P1–P3 performance metrics;
+- responsive/accessibility results;
+- retained acceptance-history note;
+- known limitations/risks;
+- final verdict.
 
-```text
-Source SHA / acceptance SHA
-Cloud DEV target confirmation
-Business scenario matrix S01–S10
-Permissions / company isolation
-Concurrency / integrity races
-History immutability
-Bound-snapshot stability
-Security scan summary
-Performance profiles P1–P3
-Responsive / accessibility
-Known limitations
-Unresolved risks
-Final verdict
-```
-
-Final verdict values:
+Verdict values:
 
 ```text
 READY_FOR_VQH_PILOT
 NOT_READY_FOR_VQH_PILOT
 ```
 
-B4 may only report `READY_FOR_VQH_PILOT` when all mandatory exit conditions pass.
-
 ---
 
-# 10. B4 exit conditions
+# 12. Exit conditions
 
-Stage 01 is considered complete when all of the following are true:
+Stage 01 is considered DONE when all are true:
 
-1. S01–S10 mandatory acceptance checks pass at their required layers.
-2. Real Cloud DEV full-stack S01 passes.
-3. Real Cloud DEV reactivation S08 passes.
+1. Mandatory S01–S10 checks pass at their required layers.
+2. Real full-stack S01 passes.
+3. Real Cloud DEV S08 reactivation passes.
 4. Cloud DEV concurrency and integrity-race suites pass.
-5. No unresolved correctness or optimistic-concurrency defect remains.
+5. No unresolved correctness/concurrency defect remains.
 6. No unresolved high/critical security finding remains.
 7. Bound-snapshot stability is proven.
-8. Performance is inside the practical envelope or an approved correction brings it inside.
-9. Mobile/desktop operational workspace passes the acceptance checks.
+8. Performance is within the practical envelope or an approved correction brings it within.
+9. Mobile/desktop acceptance passes.
 10. `pnpm verify:app` passes.
 11. Full deterministic `pnpm test:e2e` passes.
-12. B4 acceptance suite passes from a clean checkout.
-13. Cleanup proves no B4 fixture residue remains in Cloud DEV.
-14. Readiness report says `READY_FOR_VQH_PILOT` with no contradictory unresolved blocker.
-15. Independent GPT immutable-diff review returns `MERGE` or an explicitly accepted equivalent non-blocking verdict.
+12. B4 acceptance project passes from a clean checkout.
+13. Canonical VQH business company contains no active B4 operational fixture data.
+14. Retained acceptance-company history is marked/documented and does not affect VQH canonical checks.
+15. Readiness report says `READY_FOR_VQH_PILOT` without contradiction.
+16. Independent GPT immutable-diff review returns `MERGE` or an explicitly accepted equivalent non-blocking verdict.
 
 ---
 
-# 11. Allowed corrections inside B4
+# 13. Corrections allowed inside B4
 
-B4 may make targeted corrections when directly justified by a failing acceptance check or measured profile.
+Only corrections justified by failing acceptance evidence or measured performance are allowed, for example:
 
-Examples:
+- command-success/reload-failure handling;
+- duplicate-submit prevention;
+- form retention on verified error paths;
+- permission/capability presentation mismatch;
+- batching a measured N+1 read pattern;
+- mobile overflow/accessibility defect;
+- deterministic regression coverage;
+- acceptance fixture safety.
 
-- distinguish command-success/reload-failure state;
-- prevent duplicate submit;
-- preserve local form values on a verified error path;
-- correct permission/capability presentation that contradicts server contract;
-- batch Stage01OperationalDetail reads to remove a measured N+1 pattern;
-- fix mobile overflow or inaccessible control;
-- add missing deterministic regression coverage;
-- harden test fixture cleanup.
-
-Every correction requires a regression test that fails before the fix or a captured performance baseline that proves the issue.
+Each correction needs a failing regression test or captured performance baseline before the fix.
 
 ---
 
-# 12. Stop conditions / separate-task boundary
+# 14. Stop / separate-task boundary
 
-B4 must stop and request a focused amendment/task if acceptance reveals that a correct fix requires any of the following:
+Stop and request a focused amendment if a correct fix requires:
 
 - changing Stage 01 business semantics;
-- adding Stage 02 behavior;
-- converting `proceed` into a Project;
+- Stage 02 or Project conversion;
 - generalizing/renaming `stage01_*` runtime tables;
-- replacing the current Workflow Engine model;
-- changing completion-baseline ownership;
-- adding a new business permission or changing the meaning of an existing permission beyond a clear implementation mismatch;
-- a database migration/index/schema change;
-- production data mutation;
-- production deployment;
-- a new external service/subsystem;
-- using service-role credentials in normal business requests;
-- weakening RLS/security boundaries to make acceptance easier.
+- replacing Workflow Engine ownership;
+- completion-baseline refactor;
+- a new business permission or material permission-semantic change;
+- DB migration/index/schema change;
+- production mutation/deployment;
+- a new external subsystem;
+- service-role use in normal business requests;
+- weakening RLS/security boundaries.
 
-Partial B4 evidence should be preserved when a stop condition is reached.
+Preserve B4 evidence when stopping.
 
 ---
 
-# 13. Explicit non-goals
+# 15. Explicit non-goals
 
 B4 does not include:
 
 - Stage 02;
 - Project creation/conversion;
-- a generic workflow builder/renderer;
-- Decision Runtime table generalization;
+- generic workflow builder/renderer;
+- Decision Runtime generalization;
 - completion-baseline refactor;
-- new notification system;
-- new audit/event subsystem;
+- notifications;
+- new audit subsystem;
 - file uploads;
 - analytics/dashboard work;
-- broad visual redesign;
+- broad UI redesign;
 - production deployment.
 
 ---
 
-# 14. Delivery model
+# 16. Delivery model
 
-B4 should follow the established repository workflow:
+Follow the established repository workflow:
 
-- one implementation task;
-- one implementation branch;
+- one B4 implementation task/branch;
 - no worktree;
-- TDD / evidence-first corrections;
-- Cloud DEV mutation only where the acceptance fixture requires it;
+- evidence-first / TDD corrections;
+- Cloud DEV mutation limited to guarded acceptance fixture maintenance;
 - production mutation forbidden;
 - focused commits;
 - fresh final verification;
-- push branch after completion;
+- push after completion;
 - no automatic merge;
 - independent GPT review on immutable SHA range;
 - Sơn makes the final merge decision.
@@ -719,8 +627,6 @@ B4 should follow the established repository workflow:
 
 ## Design decision summary
 
-B4 chooses **Acceptance-first Hardening** because Stage 01 already has substantial backend and UI coverage. The highest-value next action is to prove the merged product under real integration conditions, then fix only defects that acceptance or measurement demonstrates.
+B4 uses **Acceptance-first Hardening** because Stage 01 already has broad backend and UI implementation. The highest-value next step is to prove the merged product through real Cloud DEV integration, security, concurrency, history, usability, and performance evidence, then correct only demonstrated defects.
 
-Stage 01 is not marked DONE merely because B3 is merged.
-
-Stage 01 becomes DONE when B4 produces a reviewed `READY_FOR_VQH_PILOT` result.
+Stage 01 becomes DONE only after B4 produces a reviewed `READY_FOR_VQH_PILOT` result.
