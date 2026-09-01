@@ -50,6 +50,7 @@ async function addAccountlessMockEmployee(page: import('@playwright/test').Page)
       fullName: 'Không có tài khoản',
       workEmail: 'no-account@vqh.local',
       account: undefined,
+      roles: undefined,
     })
     localStorage.setItem(storageKey, JSON.stringify(state))
   }, MOCK_STORAGE_KEY)
