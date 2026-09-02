@@ -305,10 +305,46 @@ async function deactivateActorCredentials(client, actors) {
   }))
 }
 
+function assertB4RecoveryEvidence(evidence) {
+  if (
+    evidence?.tenantId !== B4_ACCEPTANCE_TENANT_ID
+    || evidence.companyId !== B4_ACCEPTANCE_COMPANY_ID
+    || evidence.companyCode !== B4_ACCEPTANCE_COMPANY_CODE
+    || typeof evidence.runMarker !== 'string'
+    || !evidence.runMarker.startsWith('b4-stage01-')
+  ) throw new Error('B4 acceptance recovery evidence is invalid')
+}
+
+async function findB4ActorsForRecovery(client) {
+  const emails = new Set(Object.values(B4_ACTOR_EMAILS))
+  const actors = []
+  let page = 1
+  while (true) {
+    const result = await client.auth.admin.listUsers({ page, perPage: 1000 })
+    if (result.error) throw new Error('B4 acceptance recovery actor lookup failed')
+    for (const user of result.data.users) {
+      if (user.email && emails.has(user.email.toLowerCase())) {
+        await assertExistingActorBoundary(client, user.id)
+        actors.push({ userId: user.id })
+      }
+    }
+    if (result.data.users.length < 1000) return actors
+    page += 1
+  }
+}
+
 export async function finalizeB4Acceptance({ cwd = process.cwd(), state }) {
   assertCloudDevTarget({ cwd })
   const client = adminClient(await loadB4Environment(cwd))
   await deactivateActorCredentials(client, state.actors)
+}
+
+export async function finalizeB4AcceptanceRecovery({ cwd = process.cwd(), evidence }) {
+  assertB4RecoveryEvidence(evidence)
+  assertCloudDevTarget({ cwd })
+  const client = adminClient(await loadB4Environment(cwd))
+  const actors = await findB4ActorsForRecovery(client)
+  await deactivateActorCredentials(client, actors)
 }
 
 export async function assertCanonicalVqhHasNoRunMarker({ cwd = process.cwd(), runMarker }) {

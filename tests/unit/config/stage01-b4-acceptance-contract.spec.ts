@@ -77,6 +77,28 @@ describe('B4 Cloud DEV acceptance boundary', () => {
     expect(calls).toEqual(['canonical', 'finalize', 'remove'])
   })
 
+  it('recovers B4 credentials from non-secret evidence when secret state is unreadable', async () => {
+    const calls: string[] = []
+    const readFailure = new Error('truncated secret state')
+    const teardown = createGlobalTeardown({
+      cwd: () => root,
+      readState: async () => { calls.push('read-state'); throw readFailure },
+      readEvidence: async () => {
+        calls.push('read-evidence')
+        return {
+          runMarker: state.runMarker, tenantId: state.tenantId, companyId: state.companyId,
+          companyCode: state.companyCode, acceptanceSnapshotId: state.acceptanceSnapshotId, profileOpportunityIds: [],
+        }
+      },
+      assertCanonical: async () => { calls.push('canonical') },
+      finalizeRecovery: async ({ evidence }) => { calls.push(`recover:${evidence.runMarker}`) },
+      removeSecretState: async () => { calls.push('remove') },
+    })
+
+    await expect(teardown()).rejects.toBe(readFailure)
+    expect(calls).toEqual(['read-state', 'read-evidence', 'canonical', `recover:${state.runMarker}`, 'remove'])
+  })
+
   it('finalizes and removes partial secret state when setup persistence fails', async () => {
     const calls: string[] = []
     const writeFailure = new Error('secret state write failed')
