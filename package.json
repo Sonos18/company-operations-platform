@@ -14,6 +14,7 @@
     "lint": "eslint .",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
+    "test:b4:cloud-dev": "playwright test --config=playwright.b4.config.ts",
     "test": "pnpm test:unit && pnpm test:e2e",
     "db:dev:target": "node scripts/assert-cloud-dev-target.mjs",
     "db:dev:auth-check": "node scripts/run-supabase-dev.mjs auth-check",
