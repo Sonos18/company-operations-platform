@@ -62,6 +62,26 @@ function perRunPassword() {
   return `B4-${randomBytes(32).toString('base64url')}!a1`
 }
 
+export function assertB4ActorBoundary({ tenantMemberships = [], memberships = [], assignments = [] }) {
+  const belongsToB4Tenant = membership => membership.tenant_id === B4_ACCEPTANCE_TENANT_ID
+  const belongsToB4Company = membership => (
+    membership.tenant_id === B4_ACCEPTANCE_TENANT_ID
+    && membership.company_id === B4_ACCEPTANCE_COMPANY_ID
+  )
+  if (!tenantMemberships.every(belongsToB4Tenant) || !memberships.every(belongsToB4Company) || !assignments.every(belongsToB4Company)) {
+    throw new Error('B4 acceptance actor identity is already scoped outside B4')
+  }
+}
+
+async function assertExistingActorBoundary(client, userId) {
+  const [tenantMemberships, memberships, assignments] = await Promise.all([
+    must(client.from('tenant_memberships').select('tenant_id').eq('user_id', userId), 'actor tenant boundary read'),
+    must(client.from('company_memberships').select('tenant_id, company_id').eq('user_id', userId), 'actor company boundary read'),
+    must(client.from('company_role_assignments').select('tenant_id, company_id').eq('user_id', userId).is('revoked_at', null), 'actor role boundary read'),
+  ])
+  assertB4ActorBoundary({ tenantMemberships, memberships, assignments })
+}
+
 async function ensureExactTenantAndCompany(client) {
   const tenantById = await must(client.from('tenants').select('id, code').eq('id', B4_ACCEPTANCE_TENANT_ID).maybeSingle(), 'tenant read')
   const tenantByCode = await must(client.from('tenants').select('id, code').eq('code', B4_ACCEPTANCE_TENANT_CODE).maybeSingle(), 'tenant code read')
@@ -97,6 +117,7 @@ async function findOrCreateActor(client, kind) {
   } while (!actor)
 
   if (actor) {
+    await assertExistingActorBoundary(client, actor.id)
     const updated = await client.auth.admin.updateUserById(actor.id, { password, ban_duration: 'none', email_confirm: true })
     if (updated.error) throw new Error('B4 acceptance actor rotation failed')
     actor = updated.data.user
@@ -180,10 +201,68 @@ async function ensureAcceptanceSnapshot(client) {
   return snapshot.id
 }
 
+const PROFILE_REQUIREMENTS = {
+  P1: { cycles: 1, contacts: 2, revisions: false, repeatedRecommendations: false },
+  P2: { cycles: 5, contacts: 10, revisions: true, repeatedRecommendations: false },
+  P3: { cycles: 20, contacts: 20, revisions: true, repeatedRecommendations: true },
+}
+
+export function assertRetainedProfileShape({ key, snapshotId, profile }) {
+  const requirement = PROFILE_REQUIREMENTS[key]
+  const invalid = () => { throw new Error(`B4 acceptance ${key} retained profile is invalid`) }
+  if (!requirement || !profile?.opportunity || !profile.workflow) invalid()
+  if (
+    profile.opportunity.primary_customer_name !== profileName(key)
+    || !profile.opportunity.need_description?.includes(SOURCE_ANCHOR)
+    || profile.workflow.subject_id !== profile.opportunity.id
+    || profile.workflow.definition_snapshot_id !== snapshotId
+  ) invalid()
+  const intake = profile.nodes.filter(node => node.node_key === '01.1')
+  const evaluation = profile.nodes.filter(node => node.node_key === '01.2')
+  if (profile.nodes.length !== 2 || intake.length !== 1 || evaluation.length !== 1) invalid()
+  const executionIds = new Set(profile.executions.map(execution => execution.id))
+  const evaluationExecutionIds = new Set(profile.executions.filter(execution => execution.node_instance_id === evaluation[0].id).map(execution => execution.id))
+  if (profile.cycles.length !== requirement.cycles || profile.cycles.some(cycle => !executionIds.has(cycle.node_execution_id) || !evaluationExecutionIds.has(cycle.node_execution_id))) invalid()
+  const cycleIds = new Set(profile.cycles.map(cycle => cycle.id))
+  if (cycleIds.size !== requirement.cycles || new Set(profile.contacts.map(contact => contact.contact_id)).size !== requirement.contacts) invalid()
+  for (const cycleId of cycleIds) {
+    const evaluations = profile.evaluations.filter(evaluation => evaluation.decision_cycle_id === cycleId)
+    const recommendations = profile.recommendations.filter(recommendation => recommendation.decision_cycle_id === cycleId)
+    const clarifications = profile.clarifications.filter(clarification => clarification.decision_cycle_id === cycleId)
+    if (evaluations.length < 5 || recommendations.length < 1) invalid()
+    if (requirement.revisions && !evaluations.some(evaluation => evaluation.revision >= 2)) invalid()
+    if (requirement.repeatedRecommendations && (recommendations.length < 2 || clarifications.length < 1)) invalid()
+  }
+  return profile.opportunity.id
+}
+
+async function readRetainedProfile(client, { key, snapshotId, opportunity }) {
+  const workflow = await must(client.from('workflow_instances').select('id, subject_id, definition_snapshot_id').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
+    .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('subject_type', 'opportunity').eq('subject_id', opportunity.id).maybeSingle(), `${key} profile workflow read`)
+  if (!workflow) return assertRetainedProfileShape({ key, snapshotId, profile: {} })
+  const nodes = await must(client.from('workflow_node_instances').select('id, node_key').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
+    .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('workflow_instance_id', workflow.id), `${key} profile node read`)
+  const nodeIds = nodes.map(node => node.id)
+  const executions = nodeIds.length === 0 ? [] : await must(client.from('workflow_node_executions').select('id, node_instance_id').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
+    .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).in('node_instance_id', nodeIds), `${key} profile execution read`)
+  const cycles = await must(client.from('stage01_decision_cycles').select('id, node_execution_id').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
+    .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('opportunity_id', opportunity.id), `${key} profile cycle read`)
+  const cycleIds = cycles.map(cycle => cycle.id)
+  const profileRows = async (table, columns, operation) => cycleIds.length === 0 ? [] : must(client.from(table).select(columns)
+    .eq('tenant_id', B4_ACCEPTANCE_TENANT_ID).eq('company_id', B4_ACCEPTANCE_COMPANY_ID).in('decision_cycle_id', cycleIds), operation)
+  const [evaluations, recommendations, clarifications, contacts] = await Promise.all([
+    profileRows('stage01_criterion_evaluations', 'decision_cycle_id, revision', `${key} profile evaluation read`),
+    profileRows('stage01_recommendations', 'decision_cycle_id, version', `${key} profile recommendation read`),
+    profileRows('stage01_clarification_returns', 'decision_cycle_id', `${key} profile clarification read`),
+    must(client.from('opportunity_contacts').select('contact_id').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID).eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('opportunity_id', opportunity.id).is('ended_at', null), `${key} profile contact read`),
+  ])
+  return assertRetainedProfileShape({ key, snapshotId, profile: { opportunity, workflow, nodes, executions, cycles, evaluations, recommendations, clarifications, contacts } })
+}
+
 async function ensureProfile(client, { key, cycles, contacts, snapshotId, actorId }) {
-  const existing = await must(client.from('opportunities').select('id').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
+  const existing = await must(client.from('opportunities').select('id, primary_customer_name, need_description').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
     .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('primary_customer_name', profileName(key)).maybeSingle(), `${key} profile read`)
-  if (existing) return existing.id
+  if (existing) return readRetainedProfile(client, { key, snapshotId, opportunity: existing })
   const opportunity = await must(client.from('opportunities').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, primary_customer_name: profileName(key), need_description: `Retained B4 ${key} profile anchored to ${SOURCE_ANCHOR}`, created_by: actorId }).select('id').single(), `${key} profile bootstrap`)
   const workflow = await must(client.from('workflow_instances').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, subject_type: 'opportunity', subject_id: opportunity.id, definition_snapshot_id: snapshotId, created_by: actorId }).select('id').single(), `${key} workflow bootstrap`)
   const intake = await must(client.from('workflow_node_instances').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, workflow_instance_id: workflow.id, node_key: '01.1', node_type: 'stage' }).select('id').single(), `${key} intake node bootstrap`)
