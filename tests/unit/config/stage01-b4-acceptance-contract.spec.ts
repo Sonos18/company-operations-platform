@@ -1,9 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { createGlobalSetup } from '../../acceptance/stage01-cloud-dev/global-setup'
 import { createGlobalTeardown } from '../../acceptance/stage01-cloud-dev/global-teardown'
 import { assertB4ActorBoundary, assertRetainedProfileShape } from '../../../scripts/stage01-b4-acceptance-fixture.mjs'
+import { B4_RESULTS_DIRECTORY, B4_SECRET_STATE_PATH } from '../../acceptance/stage01-cloud-dev/acceptance-state'
 
 const root = resolve(import.meta.dirname, '../../..')
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8')
@@ -90,6 +93,28 @@ describe('B4 Cloud DEV acceptance boundary', () => {
 
     await expect(setup()).rejects.toBe(writeFailure)
     expect(calls).toEqual(['mkdir', 'write-secret', 'finalize', 'remove'])
+  })
+
+  it('removes a written secret-state file with the default setup cleanup dependency', async () => {
+    const cwd = await mkdtemp(resolve(tmpdir(), 'taskovia-b4-setup-'))
+    const statePath = resolve(cwd, B4_SECRET_STATE_PATH)
+    const chmodFailure = new Error('chmod failed')
+    try {
+      const setup = createGlobalSetup({
+        cwd: () => cwd,
+        bootstrap: async () => state,
+        makeResultsDirectory: async directory => { await mkdir(resolve(directory, B4_RESULTS_DIRECTORY), { recursive: true }) },
+        writeSecretState: async () => { await writeFile(statePath, 'secret-state', 'utf8') },
+        chmodSecretState: async () => { throw chmodFailure },
+        writeEvidence: async () => { throw new Error('evidence must not be written') },
+        finalize: async () => {},
+      })
+
+      await expect(setup()).rejects.toBe(chmodFailure)
+      await expect(access(statePath)).rejects.toThrow()
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
   })
 
   it('rejects a reused actor with a canonical membership before credential rotation', () => {

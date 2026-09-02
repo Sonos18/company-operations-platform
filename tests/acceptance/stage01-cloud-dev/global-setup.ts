@@ -1,4 +1,4 @@
-import { chmod, mkdir, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { bootstrapB4Acceptance, finalizeB4Acceptance } from '../../../scripts/stage01-b4-acceptance-fixture.mjs'
 import { B4_EVIDENCE_PATH, B4_RESULTS_DIRECTORY, B4_SECRET_STATE_PATH, toB4AcceptanceEvidence, type B4AcceptanceState } from './acceptance-state'
