@@ -1,11 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CANONICAL_DEV_PROJECT_REF } from '../../../scripts/assert-cloud-dev-target.mjs'
 import { runSupabaseDevMode } from '../../../scripts/run-supabase-dev.mjs'
 
 const worktrees: string[] = []
+const root = resolve(import.meta.dirname, '../../..')
 const oldVqhProjectRef = ['ykrurrum', 'qlsxnqfqunjc'].join('')
 const stage01SqlInventory = [
   'stage01_schema.test.sql',
@@ -19,6 +20,7 @@ const stage01SqlInventory = [
   'stage01_config_security.test.sql',
   'stage01_config_commands.test.sql',
   'stage01_opportunity_create_options_security.test.sql',
+  'stage01_b4_acceptance.test.sql',
 ]
 
 const stage01ConfigPermissionMetadata = [
@@ -45,6 +47,12 @@ afterEach(() => {
 })
 
 describe('Cloud DEV fixed-mode runner', () => {
+  it('ships every allowlisted Stage 01 SQL verification file', () => {
+    for (const filename of stage01SqlInventory) {
+      expect(existsSync(resolve(root, 'supabase/tests/database', filename))).toBe(true)
+    }
+  })
+
   it('maps only the dedicated DEV PAT to the guarded child environment', () => {
     const root = makeWorktree()
     let childEnvironment: NodeJS.ProcessEnv | undefined
