@@ -4,7 +4,7 @@
 
 **Goal:** Prove the merged VQH Stage 01 product is ready for a controlled pilot by running real Cloud DEV acceptance, fixing only evidence-backed reliability/performance defects, and producing a deterministic `READY_FOR_VQH_PILOT` report.
 
-**Architecture:** B4 adds a test-only Cloud DEV acceptance boundary and a separate Playwright project that uses real `/login`, Nitro APIs, user JWTs, RLS and RPCs without Stage 01 route interception. It reuses existing DB/concurrency/security runners, hardens the merged B3 command/reload contract, measures `Stage01OperationalDetail`, and batches current N+1 reads only if the baseline proves the approved performance envelope is exceeded.
+**Architecture:** B4 adds a test-only Cloud DEV acceptance tenant/company and a separate Playwright project that uses real `/login`, Nitro APIs, user JWTs, RLS and RPCs without Stage 01 business-route interception. It reuses existing DB/concurrency/security runners, hardens the merged B3 command/reload contract, measures `Stage01OperationalDetail`, and batches current N+1 reads only after the baseline request-count test proves the approved performance envelope is exceeded.
 
 **Tech Stack:** Nuxt 4.3.1, Vue 3.5.28, TypeScript 5.9.3, Nuxt UI 4.4.0, Zod 4, Vitest 4.1.9, Playwright 1.61.1, Supabase JS 2.112+, Node 24, Supabase Cloud DEV, existing pgTAP/Management-API runners.
 
@@ -13,10 +13,10 @@
 ## Global Constraints
 
 - Source-code anchor is exactly `main@8e1abc746a81f5b9f3f2fc6431648b5a10e09d58`.
-- Design branch anchor before this plan is `7640a9fcbbd983477637c7392f1093916c5cc2de`.
+- Approved design commit is `7640a9fcbbd983477637c7392f1093916c5cc2de`.
 - B4 is acceptance-first: reproduce/measure before correction; no speculative refactor.
 - Do not create Stage 02, Project conversion, generic workflow rendering/building, runtime-table generalization, or completion-baseline redesign.
-- Canonical VQH business company must receive **zero** B4 operational fixture Opportunities/Contacts/decision cycles/assignments/blockers.
+- Canonical VQH business company must receive zero B4 operational fixture Opportunities, Contacts, decision cycles, assignments, or blockers.
 - Real browser acceptance uses a dedicated Cloud DEV test-only acceptance tenant/company.
 - Service-role access is test-fixture bootstrap/maintenance only. Accepted business requests must use normal JWTs and existing user-scoped application repositories.
 - No Stage 01 business API route interception is allowed in the B4 full-stack Playwright project.
@@ -34,56 +34,46 @@
 
 ## File Structure
 
-### New acceptance infrastructure
+### Acceptance infrastructure
 
-- `playwright.b4.config.ts` — slow Cloud DEV acceptance project; real `.env.local`; sequential; no fake Supabase target.
-- `scripts/stage01-b4-acceptance-fixture.mjs` — guarded Cloud DEV acceptance tenant/company/auth actor/bootstrap/credential lifecycle.
-- `scripts/run-stage01-b4-performance.mjs` — real JWT Stage01 GET warm-up, 20+ reads, p95/payload evidence.
-- `tests/acceptance/stage01-cloud-dev/global-setup.ts` — bootstrap acceptance boundary/run marker and write untracked runtime state.
-- `tests/acceptance/stage01-cloud-dev/global-teardown.ts` — rotate/disable temporary actor credentials and remove local runtime secret file.
+- `playwright.b4.config.ts` — slow real-Cloud-DEV Playwright project.
+- `scripts/stage01-b4-acceptance-fixture.mjs` — guarded acceptance boundary, actor credentials and read-profile bootstrap.
+- `tests/acceptance/stage01-cloud-dev/global-setup.ts` / `global-teardown.ts` — per-run credential lifecycle.
 - `tests/acceptance/stage01-cloud-dev/acceptance-state.ts` — strict runtime-state reader/types.
-- `tests/acceptance/stage01-cloud-dev/stage01-fullstack.spec.ts` — S01, S04/S06 selected browser checks, S08 and selected S09 checks using real API/backend.
-- `tests/acceptance/stage01-cloud-dev/stage01-performance.spec.ts` — P1/P2/P3 real API measurements or invokes the dedicated performance helper.
-- `tests/unit/config/stage01-b4-acceptance-contract.spec.ts` — acceptance target/secret/no-route-interception contract.
+- `tests/acceptance/stage01-cloud-dev/stage01-fullstack.spec.ts` — S01, S08, selected S04/S06/S09 through real browser/API/backend.
+- `tests/acceptance/stage01-cloud-dev/stage01-performance.spec.ts` — P1/P2/P3 real API latency/payload measurement during the same guarded Playwright run.
+- `tests/unit/config/stage01-b4-acceptance-contract.spec.ts` — target/secret/no-interception contract.
 
 ### DB/runtime acceptance
 
-- `supabase/tests/database/stage01_b4_acceptance.test.sql` — explicit B4-S02/S03/S04/S05/S06/S09/S10 acceptance evidence.
-- `scripts/run-supabase-dev.mjs` — add the B4 DB acceptance file to the guarded Stage 01 test inventory.
-- `tests/unit/config/supabase-cloud-dev-runner.spec.ts` — assert the new DB test remains in the fixed guarded inventory.
+- `supabase/tests/database/stage01_b4_acceptance.test.sql` — explicit S02/S03/S04/S05/S06/S09/S10 evidence.
+- `scripts/run-supabase-dev.mjs` + `tests/unit/config/supabase-cloud-dev-runner.spec.ts` — fixed guarded test inventory.
 
 ### Reliability hardening
 
-- `app/errors/client-error.ts` — add client-only `CANONICAL_RELOAD_REQUIRED`.
-- `app/composables/useStage01Operational.ts` — distinguish command failure from command-succeeded/reload-failed; expose canonical-sync-required state.
-- `app/pages/opportunities/[opportunityId]/stage-01.vue` — prominent stale-after-command alert and mutation lock until explicit canonical reload.
-- `tests/unit/stage01-operational/use-stage01-operational.spec.ts` — orchestration state machine regression.
-- `tests/e2e/stage01-operational.spec.ts` — command/reload failure, double-submit, stale-version, navigation/company-switch regression.
+- `app/errors/client-error.ts`
+- `app/composables/useStage01Operational.ts`
+- `app/pages/opportunities/[opportunityId]/stage-01.vue`
+- `tests/unit/stage01-operational/use-stage01-operational.spec.ts`
+- `tests/e2e/stage01-operational.spec.ts`
 
-### Performance hardening, only after measured failure
+### Performance hardening after measured failure
 
-- `server/features/stage01/stage01.repository.ts` — batch Contacts/Methods and cycle resources with `.in(...)` rather than per-contact/per-cycle requests.
-- `tests/unit/server/stage01.repository-performance.spec.ts` — P1/P2/P3 deterministic request-count instrumentation.
-- `tests/unit/server/stage01.repository.spec.ts` — preserve mapping/bound-snapshot/history correctness after batching.
+- `server/features/stage01/stage01.repository.ts`
+- `tests/unit/server/stage01.repository-performance.spec.ts`
+- `tests/unit/server/stage01.repository.spec.ts`
 
-### Dense UI acceptance and readiness evidence
+### Dense UI / readiness evidence
 
-- `tests/e2e/stage01-operational-hardening.spec.ts` — dense history, mobile 390×844, desktop 1440×900, axe/overflow/critical form behavior.
-- `docs/acceptance/vqh-stage-01-operational-readiness.md` — final evidence matrix and verdict.
-- `package.json` — explicit B4-only commands; do not add B4 Cloud DEV acceptance to normal `pnpm test:e2e`.
+- `tests/e2e/stage01-operational-hardening.spec.ts`
+- `docs/acceptance/vqh-stage-01-operational-readiness.md`
+- `package.json` — B4-only command; B4 Cloud DEV tests remain outside normal `pnpm test:e2e`.
 
 ---
 
 ### Task 1: Build the guarded B4 Cloud DEV acceptance boundary
 
-**Files:**
-- Create: `scripts/stage01-b4-acceptance-fixture.mjs`
-- Create: `playwright.b4.config.ts`
-- Create: `tests/acceptance/stage01-cloud-dev/global-setup.ts`
-- Create: `tests/acceptance/stage01-cloud-dev/global-teardown.ts`
-- Create: `tests/acceptance/stage01-cloud-dev/acceptance-state.ts`
-- Create: `tests/unit/config/stage01-b4-acceptance-contract.spec.ts`
-- Modify: `package.json`
+**Files:** Create the B4 Playwright config, fixture script, setup/teardown/state files and acceptance-contract unit test; modify `package.json`.
 
 **Interfaces:**
 
@@ -93,10 +83,16 @@ export interface B4AcceptanceState {
   tenantId: string
   companyId: string
   companyCode: 'VQH_STAGE01_ACCEPTANCE'
+  acceptanceSnapshotId: string
   actors: {
     reader: B4ActorCredential
     operator: B4ActorCredential
     decision: B4ActorCredential
+  }
+  profiles: {
+    p1OpportunityId: string
+    p2OpportunityId: string
+    p3OpportunityId: string
   }
 }
 
@@ -108,604 +104,159 @@ export interface B4ActorCredential {
 }
 ```
 
-The runtime state is written only to `test-results/b4-stage01/acceptance-state.json`, never committed or logged with plaintext passwords.
+Runtime state exists only at `test-results/b4-stage01/acceptance-state.json`; never commit or print passwords.
 
-- [ ] **Step 1: Write failing acceptance-contract tests**
+- [ ] **Step 1: Write the failing acceptance-contract unit test.** Lock the fixed constants `taskovia-b4-acceptance`, `VQH_STAGE01_ACCEPTANCE`, tenant ID `b4000000-0000-4000-8000-000000000010`, and company ID `b4000000-0000-4000-8000-000000000020`. Static-scan full-stack spec files and reject `page.route(`, `context.route(` and `route.fulfill(` business-route replacement. Run the test and confirm failure before the modules exist.
 
-Test that the B4 config/fixture modules do not exist yet, then lock these rules:
+- [ ] **Step 2: Implement guarded environment/credential handling.** In `scripts/stage01-b4-acceptance-fixture.mjs`, call `assertCloudDevTarget({ cwd })` before mutation, load `.env.local`, require the Cloud DEV URL/anon/service-role values, create per-run random passwords, and never log secrets. If bootstrap fails after rotating/creating any credential, execute credential deactivation/rotation in the helper's own `catch/finally` path; do not rely only on Playwright global teardown.
 
-```ts
-expect(B4_ACCEPTANCE_COMPANY_CODE).toBe('VQH_STAGE01_ACCEPTANCE')
-expect(B4_ACCEPTANCE_TENANT_CODE).toBe('taskovia-b4-acceptance')
-expect(FORBIDDEN_INTERCEPTION_PATTERNS).toEqual(expect.arrayContaining([
-  '/opportunities', '/workflow', '/stage-01',
-]))
-```
+- [ ] **Step 3: Bootstrap the stable acceptance tenant/company and exact test roles.** Service-role operations are allowed only inside this test helper. Ensure:
 
-Static-scan every `tests/acceptance/stage01-cloud-dev/*.spec.ts` and fail if it contains `page.route(`, `context.route(`, or `route.fulfill(` for business-route replacement.
+  - a fixed acceptance tenant/company;
+  - a reader role with `project.read`, `opportunity.read`, `journey.read`;
+  - an operator role with `project.read`, Stage 01 Opportunity/Workflow/evaluation/recommendation/clarification operational permissions and employee directory access, but no final-decision/reactivation permission;
+  - an acceptance-company `company_admin` role mirroring the canonical explicit permission catalog for the decision actor, so existing decision-authority resolution is exercised rather than bypassed;
+  - three stable Auth users, memberships, employee rows and active role assignments;
+  - no canonical VQH role/permission/member mutation.
 
-Run:
+- [ ] **Step 4: Copy current published `vqh.stage01` definition into the acceptance company without rewriting history.** Read canonical VQH's latest published snapshot using fixture-level service role. If that exact definition hash is absent in the acceptance company, append a new acceptance snapshot version. Never update/delete an old snapshot. Return the current acceptance snapshot ID in `B4AcceptanceState`.
 
-```bash
-pnpm test:unit -- tests/unit/config/stage01-b4-acceptance-contract.spec.ts
-```
+- [ ] **Step 5: Ensure three retained read-only performance profiles.** Profiles are test-only records in the acceptance company and keyed to source anchor `8e1abc74` so repeated B4 runs reuse them. P1 = 1 cycle/5 criteria/2 contacts; P2 = 5 cycles/10 contacts/revisions; P3 = 20 cycles/20 contacts/repeated evaluations/recommendations/clarifications. Fixture-level service role may synthesize these read profiles, but only inside the acceptance company and with valid foreign-key/schema relationships. If a profile for this source anchor already exists, validate and reuse it rather than mutate immutable history.
 
-Expected: FAIL because B4 acceptance infrastructure does not exist.
+- [ ] **Step 6: Implement setup/teardown state lifecycle.** `global-setup.ts` calls `bootstrapB4Acceptance()`, writes the strict state file with restrictive permissions, and records a non-secret run marker. `global-teardown.ts` rotates/disables actor credentials and removes the local state file in `finally`; intentional acceptance-company business/audit history remains. Teardown also asserts canonical VQH contains no current-run marker in Stage 01 business records.
 
-- [ ] **Step 2: Implement the fixture guard and environment reader**
+- [ ] **Step 7: Add `playwright.b4.config.ts`.** Use port 4327, workers=1, `testDir='./tests/acceptance/stage01-cloud-dev'`, 120s test timeout, global setup/teardown, and `pnpm dev --host 127.0.0.1 --port 4327`. Do not replace Cloud DEV URL/key with the fake normal-E2E target. Global setup must fail closed if `.env.local` or linked project is not canonical Cloud DEV.
 
-In `stage01-b4-acceptance-fixture.mjs`:
+- [ ] **Step 8: Add only `test:b4:cloud-dev` to `package.json`.** Value: `playwright test --config=playwright.b4.config.ts`. Do not include it in normal `test:e2e`.
 
-```js
-import { randomBytes, randomUUID } from 'node:crypto'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { createClient } from '@supabase/supabase-js'
-import { assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
-
-export const B4_ACCEPTANCE_TENANT_CODE = 'taskovia-b4-acceptance'
-export const B4_ACCEPTANCE_COMPANY_CODE = 'VQH_STAGE01_ACCEPTANCE'
-export const B4_ACCEPTANCE_TENANT_ID = 'b4000000-0000-4000-8000-000000000010'
-export const B4_ACCEPTANCE_COMPANY_ID = 'b4000000-0000-4000-8000-000000000020'
-
-function password() {
-  return `B4-${randomBytes(24).toString('base64url')}`
-}
-```
-
-Before any external mutation:
-
-```js
-assertCloudDevTarget({ cwd })
-process.loadEnvFile(resolve(cwd, '.env.local'))
-```
-
-Require non-empty `NUXT_PUBLIC_SUPABASE_URL`, `NUXT_PUBLIC_SUPABASE_ANON_KEY`, and `NUXT_SUPABASE_SERVICE_ROLE_KEY`. Never echo the service-role key or generated passwords.
-
-- [ ] **Step 3: Implement idempotent acceptance tenant/company + current snapshot bootstrap**
-
-Using a service-role Supabase client **only in this test helper**:
-
-1. upsert the fixed acceptance tenant/company;
-2. ensure stable non-system test roles for reader/operator/decision;
-3. make role-permission sets exact for the acceptance company;
-4. create/reuse three stable acceptance Auth users and rotate each to a per-run random password;
-5. ensure active memberships and employee rows for those users;
-6. copy the latest canonical VQH `vqh.stage01` published definition into the acceptance company only when the acceptance company lacks that definition hash;
-7. never write Opportunity/history records into canonical VQH.
-
-Reader permissions are exactly operational read permissions. Operator receives Opportunity/Workflow/evaluation/recommendation/clarification + employee directory permissions but no final-decision permission. Decision receives the operator operational set plus `stage01.decision.record` and `stage01.reactivate`.
-
-Do not change canonical VQH roles or role permissions.
-
-- [ ] **Step 4: Implement run state and credential teardown**
-
-`bootstrapB4Acceptance()` returns `B4AcceptanceState` and writes it to `test-results/b4-stage01/acceptance-state.json` with mode `0600` where supported.
-
-`teardownB4Acceptance()` must:
-
-- rotate acceptance-user passwords to fresh unknown values or disable temporary access;
-- remove the local runtime-state file in `finally`;
-- leave intentional test-only acceptance-company immutable business/audit history intact;
-- assert the canonical VQH business company has no records whose customer/fixture marker starts with the current B4 run marker.
-
-- [ ] **Step 5: Add a separate Playwright B4 config**
-
-`playwright.b4.config.ts`:
-
-```ts
-export default defineConfig({
-  testDir: './tests/acceptance/stage01-cloud-dev',
-  fullyParallel: false,
-  workers: 1,
-  timeout: 120_000,
-  expect: { timeout: 30_000 },
-  globalSetup: './tests/acceptance/stage01-cloud-dev/global-setup.ts',
-  globalTeardown: './tests/acceptance/stage01-cloud-dev/global-teardown.ts',
-  use: { baseURL: 'http://127.0.0.1:4327', trace: 'on-first-retry', screenshot: 'only-on-failure' },
-  webServer: {
-    command: 'pnpm dev --host 127.0.0.1 --port 4327',
-    url: 'http://127.0.0.1:4327',
-    reuseExistingServer: false,
-    timeout: 120_000,
-  },
-})
-```
-
-The config or global setup must call `assertCloudDevTarget()` before the browser/server acceptance run starts.
-
-- [ ] **Step 6: Add explicit scripts and verify unit contracts**
-
-Add:
-
-```json
-{
-  "test:b4:cloud-dev": "playwright test --config=playwright.b4.config.ts",
-  "db:dev:stage01:b4:performance": "node scripts/run-stage01-b4-performance.mjs"
-}
-```
-
-Do **not** add `test:b4:cloud-dev` to normal `test:e2e`.
-
-Run the focused unit test. Expected: PASS.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add package.json playwright.b4.config.ts scripts/stage01-b4-acceptance-fixture.mjs tests/acceptance/stage01-cloud-dev tests/unit/config/stage01-b4-acceptance-contract.spec.ts
-git commit -m "test(stage01): add guarded B4 Cloud DEV acceptance harness"
-```
+- [ ] **Step 9: Run focused unit tests, inspect tracked diff for secrets, then commit.** Commit message: `test(stage01): add guarded B4 Cloud DEV acceptance harness`.
 
 ---
 
-### Task 2: Add explicit Cloud DEV DB/runtime acceptance for S02–S06, S09 and S10
+### Task 2: Add Cloud DEV DB/runtime acceptance for S02–S06, S09 and S10
 
-**Files:**
-- Create: `supabase/tests/database/stage01_b4_acceptance.test.sql`
-- Modify: `scripts/run-supabase-dev.mjs`
-- Modify: `tests/unit/config/supabase-cloud-dev-runner.spec.ts`
+**Files:** Create `supabase/tests/database/stage01_b4_acceptance.test.sql`; modify the guarded Stage 01 test inventory and its unit test.
 
-**Interfaces:** Existing public Opportunity/Workflow/Stage01 RPCs only. No new production RPC/schema.
+- [ ] **Step 1: Add the new test filename to `STAGE01_TEST_FILES` and first make the runner unit test fail because the SQL file is absent.**
 
-- [ ] **Step 1: Register a failing fixed DB acceptance file**
+- [ ] **Step 2: Implement a transactional SQL acceptance file (`BEGIN`/`ROLLBACK`) with explicit sections named B4-S02, B4-S03, B4-S04, B4-S05, B4-S06, B4-S09 and B4-S10.** Reuse existing public Opportunity/Workflow/Stage01 RPC contracts. Do not add a production RPC/schema.
 
-Add `supabase/tests/database/stage01_b4_acceptance.test.sql` to the fixed `STAGE01_TEST_FILES` list and update the unit assertion. Run the runner unit test; expected FAIL until the file exists.
+  - S02: `not_proceeding` can complete and stays readable/immutable.
+  - S03: Recommendation v1 → clarification → new evidence → Recommendation v2; old records remain immutable.
+  - S04: blocking blocker prevents completion until resolved; resolved history remains.
+  - S05: unresolved duplicate blocks Intake completion until approved resolution.
+  - S06: dependency-changing Intake mutation marks downstream stale and explicit revalidation is required.
+  - S09: missing permission, forged company/resource IDs, history mutation, create-options projection and employee-private separation all fail safely.
+  - S10: create A while snapshot N is latest; append N+1; create B; prove A workflow instance remains bound to N and B binds N+1.
 
-- [ ] **Step 2: Implement transactional scenario sections with explicit B4 IDs**
+- [ ] **Step 3: Run `pnpm db:dev:target`, `pnpm db:dev:stage01:test`, `pnpm db:dev:stage01:concurrency`, `pnpm db:dev:stage01:integrity-races`, and `pnpm db:dev:rls-smoke`.** All must pass. A failure requiring migration/RLS/business-semantic change is a stop condition; an ordinary implementation defect inside approved semantics may be fixed with a focused regression.
 
-The SQL file must `BEGIN` and `ROLLBACK` and create isolated IDs, actors, company/definition/runtime fixtures. Include explicit assertions named:
-
-```text
-B4-S02 not proceeding remains readable/immutable
-B4-S03 clarification preserves recommendation v1 and creates v2 path
-B4-S04 blocking blocker prevents completion until resolution
-B4-S05 unresolved duplicate prevents Intake completion until resolution
-B4-S06 dependency change/revalidation is enforced
-B4-S09 permission/isolation and immutable-history rejection
-B4-S10 snapshot N remains bound while new Opportunity binds N+1
-```
-
-For S09, exercise at least one direct public RPC call for each negative permission/isolation class. Assert the narrow create-options RPC does not return draft/raw definition and `employee.read_all` does not authorize private-detail access.
-
-For S10, use two acceptance-definition snapshots inside the transactional test company. Create A while N is latest, insert N+1, create B, then prove A's workflow instance still references N and B references N+1.
-
-- [ ] **Step 3: Run guarded Cloud DEV database acceptance**
-
-```bash
-pnpm db:dev:target
-pnpm db:dev:stage01:test
-pnpm db:dev:stage01:concurrency
-pnpm db:dev:stage01:integrity-races
-pnpm db:dev:rls-smoke
-```
-
-Expected: PASS. If a failure demonstrates a business-semantic contradiction or requires migration/RLS correction, STOP for amendment. Ordinary implementation defect within existing semantics may be fixed in B4 with a focused regression.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add supabase/tests/database/stage01_b4_acceptance.test.sql scripts/run-supabase-dev.mjs tests/unit/config/supabase-cloud-dev-runner.spec.ts
-git commit -m "test(stage01): add B4 runtime acceptance scenarios"
-```
+- [ ] **Step 4: Commit.** Message: `test(stage01): add B4 runtime acceptance scenarios`.
 
 ---
 
-### Task 3: Prove S01/S08 and selected S04/S06/S09 through the real browser → Nitro → Cloud DEV path
+### Task 3: Prove S01/S08 and selected S04/S06/S09 through real browser → Nitro → Cloud DEV
 
-**Files:**
-- Create: `tests/acceptance/stage01-cloud-dev/stage01-fullstack.spec.ts`
-- Modify: `tests/acceptance/stage01-cloud-dev/acceptance-state.ts`
-- Modify: `scripts/stage01-b4-acceptance-fixture.mjs` only for test-fixture helpers required by this suite.
+**Files:** Create `tests/acceptance/stage01-cloud-dev/stage01-fullstack.spec.ts`; use the state/fixture helpers from Task 1.
 
-**Interfaces:** Business interactions occur through the merged UI/API. No Stage 01 business-route interception.
+- [ ] **Step 1: Add a real `/login` smoke test using the decision actor credential from runtime state.** After login, assert the active company is `VQH_STAGE01_ACCEPTANCE`, not canonical VQH.
 
-- [ ] **Step 1: Write a real login smoke test**
+- [ ] **Step 2: Implement B4-S01 entirely through the merged UI and real API.** Create a run-marked Opportunity; satisfy server-returned Intake gates; create/link a usable primary Contact; add required Scope/Referrer/Intake Record; assign an accountable owner through the real employee picker; start/complete 01.1; start 01.2; evaluate every non-optional applicable criterion; submit recommendation; record `proceed` as the acceptance company-admin/decision actor; complete 01.2; reload browser and prove both nodes/final decision/history remain canonical. Do not directly write `decision_authority_user_id` in fixture code to make this scenario pass.
 
-Use runtime state credentials:
+- [ ] **Step 3: Add selected real browser checks for S04 and S06.** An open blocking blocker must block completion until resolution; a post-Intake dependency mutation must expose revalidation and require explicit reason/evidence.
 
-```ts
-await page.goto('/login')
-await page.getByLabel('Email').fill(state.actors.decision.email)
-await page.getByLabel('Mật khẩu').fill(state.actors.decision.password)
-await page.getByRole('button', { name: 'Đăng nhập' }).click()
-await expect(page).toHaveURL(/\/projects|\/opportunities/)
-```
+- [ ] **Step 4: Implement B4-S08 using a completed run-marked Opportunity.** Reactivate through UI, verify exact canonical cycle increment, old cycle immutability and ordered history after browser reload.
 
-Assert active company is `VQH_STAGE01_ACCEPTANCE`, not canonical VQH.
+- [ ] **Step 5: Add selected S09 checks.** Reader sees no mutations; operator cannot final-decision/reactivate; decision actor sees decision action only with bound capability; an acceptance actor calling a canonical-VQH company API path is rejected; invalid/expired bearer fails safely.
 
-- [ ] **Step 2: Implement B4-S01 full UI journey**
-
-Create a unique Opportunity whose primary customer name contains `state.runMarker`. Through the UI:
-
-1. create Opportunity;
-2. complete all server-required Intake fields using labels/options from the acceptance snapshot;
-3. create/link a usable primary Contact;
-4. add required Scope/Referrer/Intake Record as dictated by gates;
-5. assign an Intake accountable owner from the real employee picker;
-6. start/complete 01.1;
-7. start 01.2;
-8. evaluate all non-optional applicable criteria with rationale/evidence;
-9. submit recommendation;
-10. record final decision `proceed` as decision actor;
-11. complete 01.2;
-12. reload the browser and assert both nodes remain completed and final decision/history remain visible.
-
-Do not hard-code taxonomy codes when the UI can read the bound labels.
-
-- [ ] **Step 3: Add selected real browser checks for blocker and revalidation**
-
-Use a second run-marked Opportunity or the dedicated acceptance scenario data. Prove an open blocking blocker prevents complete and resolution restores eligibility; prove a post-Intake dependent change produces visible revalidation and explicit reason/evidence flow.
-
-- [ ] **Step 4: Implement B4-S08 real reactivation**
-
-From a completed run-marked Opportunity:
-
-1. open Reactivation;
-2. submit reason;
-3. assert a new cycle is canonical;
-4. assert prior cycle remains visible/read-only;
-5. reload page and assert cycle ordering/stability.
-
-- [ ] **Step 5: Add selected S09 browser/API isolation checks**
-
-At minimum:
-
-- reader can view but has no mutation controls;
-- operator cannot record final decision;
-- decision actor sees decision action only when capability is bound;
-- an acceptance-company actor making a direct HTTP request with canonical VQH company ID receives authorization failure;
-- invalid/expired bearer call fails safely.
-
-- [ ] **Step 6: Run the B4 full-stack project from a clean state**
-
-```bash
-pnpm test:b4:cloud-dev -- --workers=1 --reporter=line
-```
-
-Expected: PASS. Verify no `page.route`/`route.fulfill` business replacement exists in this suite.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add tests/acceptance/stage01-cloud-dev scripts/stage01-b4-acceptance-fixture.mjs
-git commit -m "test(stage01): prove real Cloud DEV operational journeys"
-```
+- [ ] **Step 6: Run `pnpm test:b4:cloud-dev -- --workers=1 --reporter=line`.** The full-stack file must contain no business-route interception. Commit only after PASS. Message: `test(stage01): prove real Cloud DEV operational journeys`.
 
 ---
 
 ### Task 4: Harden command-success / canonical-reload failure and mutation locking
 
-**Files:**
-- Modify: `app/errors/client-error.ts`
-- Modify: `app/composables/useStage01Operational.ts`
-- Modify: `app/pages/opportunities/[opportunityId]/stage-01.vue`
-- Create: `tests/unit/stage01-operational/use-stage01-operational.spec.ts`
-- Modify: `tests/e2e/stage01-operational.spec.ts`
+**Files:** Modify `app/errors/client-error.ts`, `app/composables/useStage01Operational.ts`, the Stage 01 page, and focused unit/E2E tests.
 
-**Interfaces:**
+**Client-only error contract:** append `'CANONICAL_RELOAD_REQUIRED'` to the existing union after `'MALFORMED_RESPONSE'`; do not add a server API error code.
 
-```ts
-export type ClientOnlyErrorCode = ExistingCodes | 'CANONICAL_RELOAD_REQUIRED'
+**Composable contract:** expose `canonicalSyncRequired: Readonly<Ref<boolean>>` alongside existing `detail`, `operation`, `error`, `pending`, `load`, and `runAndReload`.
 
-useStage01Operational(...): {
-  detail: Ref<Stage01OperationalDetail | null>
-  operation: Ref<'load' | 'command' | null>
-  canonicalSyncRequired: Readonly<Ref<boolean>>
-  load(): Promise<Stage01OperationalDetail>
-  runAndReload<T>(action: () => Promise<T>): Promise<T>
-}
-```
+- [ ] **Step 1: Write failing unit tests** proving five distinct cases: command failure leaves sync fresh; command success + GET failure marks sync required and retains old detail; a second mutation is rejected before invoking its action while stale; successful explicit `load()` clears stale; rapid double invocation sends exactly one action.
 
-- [ ] **Step 1: Write failing orchestration tests**
+- [ ] **Step 2: Implement two-phase `runAndReload`.** After a successful mutation, canonical GET failure throws a client-only `CANONICAL_RELOAD_REQUIRED` with Vietnamese copy stating the operation may already have succeeded and the user must reload before continuing. Never replay the mutation. `load()` clears the flag only after a successful canonical GET.
 
-Cover separately:
+- [ ] **Step 3: On `/opportunities/:id/stage-01`, show a prominent stale-after-command alert with an explicit `Tải lại dữ liệu chính thức` button.** Keep content visible but disable operational form controls while `pending || canonicalSyncRequired` using a page-level disabled fieldset or an equally semantic single lock. Do not create a second global navigation guard.
 
-1. command fails → `canonicalSyncRequired=false`, original error returned;
-2. command succeeds then canonical GET fails → `canonicalSyncRequired=true`, old detail retained, error code `CANONICAL_RELOAD_REQUIRED`;
-3. while sync is required, another `runAndReload` is rejected before calling its mutation action;
-4. explicit successful `load()` clears `canonicalSyncRequired`;
-5. rapid double invocation yields exactly one mutation call.
+- [ ] **Step 4: Extend deterministic B3 E2E** to prove command-success/GET-500 copy, no second mutation while stale, reload restores controls, double-submit makes one request, and company switch/navigation during an in-flight mutation never renders another company's aggregate or a false global success.
 
-- [ ] **Step 2: Implement minimal composable state**
-
-`runAndReload()` must distinguish the two phases:
-
-```ts
-const result = await action()
-try {
-  await fetchCanonicalDetail()
-  canonicalSyncRequired.value = false
-  return result
-} catch (cause) {
-  canonicalSyncRequired.value = true
-  throw new ClientError({
-    kind: 'api',
-    code: 'CANONICAL_RELOAD_REQUIRED',
-    message: 'Thao tác có thể đã thành công nhưng chưa tải lại được dữ liệu chính thức. Hãy tải lại trước khi tiếp tục.',
-    retryable: true,
-  })
-}
-```
-
-Before any later mutation, reject while `canonicalSyncRequired` is true. Do not replay the original action.
-
-- [ ] **Step 3: Add page-level stale-after-command lock**
-
-Show a prominent alert with an explicit `Tải lại dữ liệu chính thức` action. Wrap Stage 01 mutation controls in a disabled fieldset while `pending || canonicalSyncRequired` so existing content remains visible but unsafe follow-up commands cannot be sent.
-
-Do not create a second global navigation guard.
-
-- [ ] **Step 4: Extend E2E reliability coverage**
-
-Intercept only the deterministic B3 E2E suite, not B4 full-stack tests. Prove:
-
-- mutation POST returns success, next canonical GET 500 → UI says operation may already have succeeded;
-- no second mutation request is sent while sync-required;
-- explicit reload restores controls;
-- double-click/in-flight action sends one mutation;
-- company switch/navigation during an in-flight mutation does not render another company's Stage 01 aggregate or show false global success.
-
-- [ ] **Step 5: Run focused + full application verification**
-
-```bash
-pnpm test:unit -- tests/unit/stage01-operational/use-stage01-operational.spec.ts
-pnpm exec playwright test tests/e2e/stage01-operational.spec.ts --workers=1
-pnpm verify:app
-```
-
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add app/errors/client-error.ts app/composables/useStage01Operational.ts 'app/pages/opportunities/[opportunityId]/stage-01.vue' tests/unit/stage01-operational/use-stage01-operational.spec.ts tests/e2e/stage01-operational.spec.ts
-git commit -m "fix(stage01): harden canonical reload recovery"
-```
+- [ ] **Step 5: Run focused unit/E2E and `pnpm verify:app`; commit.** Message: `fix(stage01): harden canonical reload recovery`.
 
 ---
 
-### Task 5: Measure P1/P2/P3 and remove proven Stage01 read N+1 without schema changes
+### Task 5: Measure P1/P2/P3 and remove the proven Stage01 read N+1 without schema changes
 
-**Files:**
-- Create: `tests/unit/server/stage01.repository-performance.spec.ts`
-- Modify: `server/features/stage01/stage01.repository.ts` only if the baseline exceeds the envelope.
-- Modify: `tests/unit/server/stage01.repository.spec.ts`
-- Create: `scripts/run-stage01-b4-performance.mjs`
-- Create: `tests/acceptance/stage01-cloud-dev/stage01-performance.spec.ts`
+**Files:** Create `tests/unit/server/stage01.repository-performance.spec.ts`; modify Stage01 repository only after baseline failure; create `tests/acceptance/stage01-cloud-dev/stage01-performance.spec.ts`.
 
-**Interfaces:** No response-contract change. `Stage01OperationalDetail` remains identical.
+- [ ] **Step 1: Build a deterministic fake Supabase client for P1/P2/P3 and count terminal query/RPC calls.** First run must capture the merged baseline before production optimization. Assert P3 <=25; if the current per-cycle/per-contact structure exceeds it, retain the failing number as evidence.
 
-- [ ] **Step 1: Add deterministic request-count instrumentation before optimization**
+- [ ] **Step 2: When the baseline exceeds 25, batch only the measured loops.** Add `.in(column, values)` to the repository-local query interface. Fetch all related Contacts in one query and all Contact Methods in one query; fetch evaluations/recommendations/clarification returns in one query per table for all cycle IDs; group rows in memory by `contact_id`/`decision_cycle_id`. Preserve strict schemas, ordering, bound snapshot, gates, actor capabilities and response shape. No migration/RLS/API change.
 
-Build a fake Stage01 data client capable of P1/P2/P3. Count each terminal Supabase query/RPC. Assert the approved P3 target is <=25.
+- [ ] **Step 3: Re-run mapping + performance unit tests.** P1/P2/P3 must remain schema-equivalent and P3 request count must be <=25.
 
-Run:
+- [ ] **Step 4: In `stage01-performance.spec.ts`, measure real API performance during the same B4 Playwright run while runtime credentials/local Nitro are available.** Sign in a normal acceptance actor with Cloud DEV anon client, use Bearer requests to the local Nitro Stage01 GET for the state-provided P1/P2/P3 IDs, warm each profile, then measure at least 20 P3 reads. Write non-secret evidence to `test-results/b4-stage01/performance.json`: request-count result from the deterministic test, response UTF-8 byte size, p95 milliseconds and max milliseconds. Do not print passwords/tokens.
 
-```bash
-pnpm test:unit -- tests/unit/server/stage01.repository-performance.spec.ts
-```
+- [ ] **Step 5: Run B4 Playwright and `pnpm db:dev:advisors:performance`.** P3 must meet <=25 requests, <=2 MiB, p95 <=2.0s and max <=3.0s. If only latency fails, independently check Cloud DEV health and use the single allowed rerun. A persistent failure that needs index/migration/schema change is a stop condition.
 
-Record the baseline. Current merged implementation is expected to reveal per-cycle/per-contact request growth; do not alter production code until the failing count is captured in test output/evidence.
-
-- [ ] **Step 2: If P3 exceeds 25, batch exactly the proven loops**
-
-Add `.in(column, values)` to the local query interface and replace:
-
-- per-contact `contacts` + `contact_methods` calls with one Contacts query and one Contact Methods query for all related contact IDs;
-- per-cycle evaluations/recommendations/clarification calls with one query per resource table for all decision-cycle IDs.
-
-Group returned rows in memory by `contact_id` / `decision_cycle_id`, then map through the existing strict schemas. Preserve ordering and current-cycle identity.
-
-Conceptual helper:
-
-```ts
-function groupBy<T>(values: readonly T[], key: (value: T) => string): Map<string, T[]> {
-  const groups = new Map<string, T[]>()
-  for (const value of values) groups.set(key(value), [...(groups.get(key(value)) ?? []), value])
-  return groups
-}
-```
-
-Do not change RLS, schema, migration, API shape, gates, or version semantics.
-
-- [ ] **Step 3: Re-run mapping and request-count tests**
-
-P1/P2/P3 must all return schema-valid equivalent aggregates and P3 request count must be <=25.
-
-- [ ] **Step 4: Implement real P1/P2/P3 latency/payload measurement**
-
-`run-stage01-b4-performance.mjs` must:
-
-1. assert canonical Cloud DEV target;
-2. read B4 acceptance runtime state without logging passwords;
-3. sign in a normal acceptance actor with anon client;
-4. identify/read P1/P2/P3 acceptance-profile Opportunity IDs prepared by the fixture helper;
-5. warm each endpoint;
-6. perform >=20 measured local-Nitro API reads for P3 with the user Bearer token;
-7. compute p95 and max duration;
-8. measure UTF-8 JSON payload byte size;
-9. print/write machine-readable evidence to `test-results/b4-stage01/performance.json`.
-
-If P3 fixture creation is needed, create/retain it only in the dedicated acceptance company and mark it clearly. It may use fixture-level service role to synthesize read-only history profiles, never the canonical VQH company.
-
-- [ ] **Step 5: Run performance and advisors**
-
-```bash
-pnpm db:dev:stage01:b4:performance
-pnpm db:dev:advisors:performance
-```
-
-Acceptance: request count <=25, payload <=2 MiB, p95 <=2.0 s, max <=3.0 s unless independently documented Cloud DEV degradation justifies the single allowed rerun.
-
-If an envelope failure remains and requires index/migration/schema changes, STOP for amendment.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add server/features/stage01/stage01.repository.ts tests/unit/server/stage01.repository.spec.ts tests/unit/server/stage01.repository-performance.spec.ts scripts/run-stage01-b4-performance.mjs tests/acceptance/stage01-cloud-dev/stage01-performance.spec.ts
-git commit -m "perf(stage01): batch operational aggregate reads"
-```
-
-If the baseline already satisfies the envelope without production changes, omit the repository modification and commit only measurement/evidence tests.
+- [ ] **Step 6: Commit.** If repository batching was required: `perf(stage01): batch operational aggregate reads`. If baseline already met the envelope: commit only measurement tests/evidence tooling with `test(stage01): measure operational aggregate performance`.
 
 ---
 
 ### Task 6: Dense responsive/accessibility acceptance
 
-**Files:**
-- Create: `tests/e2e/stage01-operational-hardening.spec.ts`
-- Modify existing Stage 01 UI only when this test exposes a concrete defect.
+**Files:** Create `tests/e2e/stage01-operational-hardening.spec.ts`; change UI files only for concrete failures.
 
-- [ ] **Step 1: Build a dense deterministic Stage01OperationalDetail fixture**
+- [ ] **Step 1: Create a dense deterministic `Stage01OperationalDetail` fixture** containing 20 cycles, 20 related Contacts and repeated criterion/recommendation/clarification history.
 
-Use 20 decision cycles, 20 related Contacts and repeated criterion/recommendation/clarification history. Keep this test intercepted/deterministic; it is the dense visual regression layer, not full-stack Cloud DEV.
+- [ ] **Step 2: At 390×844 and 1440×900, assert `document.documentElement.scrollWidth <= clientWidth`, critical forms/dialogs are keyboard-operable, critical controls have programmatic labels, alerts expose status, and dense history stays readable.
 
-- [ ] **Step 2: Add mobile and desktop assertions**
+- [ ] **Step 3: Run `@axe-core/playwright` and fail critical violations.** Do not suppress rules to obtain green tests.
 
-At `390×844` and `1440×900` assert:
-
-```ts
-const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)
-expect(overflow).toBe(false)
-```
-
-Verify critical forms/dialogs are operable with keyboard, labels exist, history remains readable, and error/success alerts expose programmatic status.
-
-- [ ] **Step 3: Run axe on Stage 01 acceptance pages**
-
-Use `@axe-core/playwright`; fail on critical violations. Do not suppress rules just to pass.
-
-- [ ] **Step 4: Apply only concrete UI fixes and rerun**
-
-No visual redesign. Add regression assertions for each correction.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add tests/e2e/stage01-operational-hardening.spec.ts app/components/stage01-operational app/pages/opportunities
-git commit -m "test(stage01): harden dense operational accessibility"
-```
-
-Stage only actual changed production files; do not stage directories mechanically if unrelated changes exist.
+- [ ] **Step 4: Apply only the smallest UI correction for reproduced defects, add regression assertions, rerun and commit.** Message: `test(stage01): harden dense operational accessibility` when test-only; use `fix(stage01): ...` if production UI correction is necessary.
 
 ---
 
-### Task 7: Run the complete B4 gate, security scan, and write the readiness report
+### Task 7: Run the complete B4 gate, finalize security scan, and write readiness evidence
 
-**Files:**
-- Create: `docs/acceptance/vqh-stage-01-operational-readiness.md`
-- Modify code/tests only for defects discovered by the gate and still inside B4 scope.
+**Files:** Create `docs/acceptance/vqh-stage-01-operational-readiness.md`; only fix additional defects that remain within B4 scope.
 
-- [ ] **Step 1: Run fresh deterministic and Cloud DEV gates**
+- [ ] **Step 1: Run fresh gates:** `pnpm db:dev:target`, `pnpm db:dev:status`, `pnpm db:dev:stage01:test`, `pnpm db:dev:stage01:concurrency`, `pnpm db:dev:stage01:integrity-races`, `pnpm db:dev:rls-smoke`, `pnpm db:dev:advisors:security`, `pnpm db:dev:advisors:performance`, `pnpm verify:app`, full sequential `pnpm test:e2e`, and sequential `pnpm test:b4:cloud-dev`. All must PASS under the one documented latency-rerun rule.
 
-```bash
-pnpm db:dev:target
-pnpm db:dev:status
-pnpm db:dev:stage01:test
-pnpm db:dev:stage01:concurrency
-pnpm db:dev:stage01:integrity-races
-pnpm db:dev:rls-smoke
-pnpm db:dev:advisors:security
-pnpm db:dev:advisors:performance
-pnpm verify:app
-pnpm test:e2e -- --workers=1 --reporter=line
-pnpm test:b4:cloud-dev -- --workers=1 --reporter=line
-pnpm db:dev:stage01:b4:performance
-```
+- [ ] **Step 2: Prove canonical VQH cleanliness** with the guarded fixture assertion: no current B4 run marker or active B4 operational fixture exists in canonical VQH. Retained acceptance-company history is allowed and listed as test evidence.
 
-All must PASS subject to the explicit latency rerun rule.
+- [ ] **Step 3: Run the repository-approved security diff scan on the immutable B4 implementation range.** Finalization itself must succeed; unresolved critical=0 and high=0. Record actual medium/low findings and dispositions.
 
-- [ ] **Step 2: Verify canonical VQH cleanliness**
+- [ ] **Step 4: Capture `VERIFIED_CODE_SHA=$(git rev-parse HEAD)` after all code/test corrections are complete.** This is the code SHA represented by the readiness evidence; source anchor remains `8e1abc746a81f5b9f3f2fc6431648b5a10e09d58`.
 
-Use a guarded read/assert helper to prove canonical VQH contains no active B4 run-marker Opportunity/Contact/assignment/blocker records. Acceptance-company retained history is allowed and listed separately.
+- [ ] **Step 5: Write `docs/acceptance/vqh-stage-01-operational-readiness.md` using observed values only.** Include exact source anchor, verified code SHA, Cloud DEV ref `gtgljlnhwvhqdnwrfdfj`, acceptance company/code, non-secret run marker, S01–S10 PASS/evidence matrix, concurrency/integrity results, bound-snapshot evidence, actual P1/P2/P3 metrics, actual security counts/dispositions, mobile/desktop/a11y evidence, retained-history note, known limitations and final `READY_FOR_VQH_PILOT`. Do not include credentials/tokens and do not use placeholder evidence.
 
-- [ ] **Step 3: Run the repository-approved security diff scan**
+- [ ] **Step 6: Commit the report, run `git diff --check`, then run the final security scan again on final HEAD including the report.** If the final scan changes findings, update the report with actual disposition and repeat until the final report and scan agree.
 
-Scan the immutable B4 implementation range. Completion requires successful finalization and:
-
-```text
-critical unresolved = 0
-high unresolved = 0
-```
-
-Disposition every medium/low finding in the readiness report. Security scan failure/finalization failure is `BLOCKED`, not a warning.
-
-- [ ] **Step 4: Capture the verified implementation SHA before report-only commit**
-
-```bash
-VERIFIED_CODE_SHA=$(git rev-parse HEAD)
-```
-
-The readiness report records this as `verified_code_sha`; it also records source anchor `8e1abc746a81f5b9f3f2fc6431648b5a10e09d58`.
-
-- [ ] **Step 5: Write the readiness report**
-
-Required structure:
-
-```markdown
-# VQH Stage 01 Operational Readiness
-
-source_anchor_sha: 8e1abc746a81f5b9f3f2fc6431648b5a10e09d58
-verified_code_sha: <captured SHA>
-cloud_dev_target: gtgljlnhwvhqdnwrfdfj
-acceptance_company: VQH_STAGE01_ACCEPTANCE
-run_marker: <non-secret marker>
-
-| Scenario | Required layer | Result | Evidence |
-| --- | --- | --- | --- |
-| B4-S01 | full-stack | PASS | ... |
-...
-| B4-S10 | Cloud DEV DB/runtime | PASS | ... |
-
-## Performance
-P1: ...
-P2: ...
-P3: request_count=..., payload_bytes=..., p95_ms=..., max_ms=...
-
-## Security
-critical=0, high=0, medium=..., low=...
-
-## Retained acceptance history
-...
-
-## Known limitations
-...
-
-## Verdict
-READY_FOR_VQH_PILOT
-```
-
-Do not claim PASS without fresh command evidence.
-
-- [ ] **Step 6: Commit report, then final scan/diff verification**
-
-```bash
-git add docs/acceptance/vqh-stage-01-operational-readiness.md
-git commit -m "docs(stage01): record B4 operational readiness"
-git diff --check $(git merge-base origin/docs/vqh-stage-01-operational-acceptance-hardening-design HEAD)..HEAD
-```
-
-Run the final security scan over the final HEAD including the report. If security findings differ, update the report and rescan until consistent.
-
-- [ ] **Step 7: Push and remote-verify**
-
-Push only after all B4 gates and scan pass. Verify `git ls-remote` equals local HEAD exactly.
+- [ ] **Step 7: Push only after all gates and scan pass; verify `git ls-remote` equals local HEAD.**
 
 ---
 
 ## Final Reviewer Checklist
 
-- B4 acceptance company is test-only and canonical VQH has no B4 operational fixture data.
-- Full-stack acceptance uses real `/login`, normal JWT and user-scoped DB path; no Stage 01 business-route interception.
-- S01 and S08 have real Cloud DEV evidence.
-- S02–S10 required layer matrix is complete.
+- Acceptance boundary is test-only and canonical VQH has no B4 operational fixture data.
+- Full-stack acceptance uses real `/login`, normal JWT and user-scoped DB; no Stage 01 business-route interception.
+- S01 and S08 have real Cloud DEV evidence; required S02–S10 layers are complete.
+- Final-decision authority is resolved by existing business machinery, not direct fixture mutation of the cycle.
 - Command-success/reload-failure cannot trigger duplicate mutation.
 - Optimistic concurrency remains explicit and no auto-overwrite occurs.
-- Bound snapshot N/N+1 behavior is proven.
-- Create-options RPC remains narrow; no draft/raw-definition leak.
-- `employee.read_all` still does not expose private details.
-- P3 request count/payload/latency are within envelope.
+- Snapshot N/N+1 stability is proven.
+- Create-options remains narrow; `employee.read_all` does not imply private details.
+- P3 request count/payload/latency are inside the approved envelope.
 - No migration/RLS/permission/schema change slipped into B4.
-- Dense mobile/desktop Stage 01 has no critical a11y/overflow defect.
+- Dense mobile/desktop Stage 01 has no critical accessibility/overflow defect.
 - Security scan finalized with zero unresolved high/critical findings.
-- Readiness report says `READY_FOR_VQH_PILOT` and its evidence is internally consistent.
+- Readiness report contains only observed evidence and ends `READY_FOR_VQH_PILOT` without contradiction.
