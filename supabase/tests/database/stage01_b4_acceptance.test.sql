@@ -30,8 +30,8 @@ begin
   insert into public.role_permissions (role_id, permission_code)
   select operator_role_id, code from (values
     ('opportunity.read'),('opportunity.create'),('opportunity.update'),('opportunity.contact.manage'),('opportunity.scope.manage'),('opportunity.intake_record.create'),('opportunity.duplicate.raise'),('opportunity.duplicate.resolve'),
-    ('journey.read'),('journey.assignment.manage'),('journey.blocker.raise'),('journey.blocker.resolve'),('journey.node.start'),('journey.node.complete'),('journey.node.revalidate'),
-    ('stage01.evaluation.update'),('stage01.recommendation.submit'),('stage01.clarification.return'),('stage01.decision.record')
+    ('journey.read'),('journey.assignment.manage'),('journey.blocker.raise'),('journey.blocker.resolve'),('journey.node.start'),('journey.node.complete'),('journey.node.reopen'),('journey.node.revalidate'),
+    ('stage01.evaluation.update'),('stage01.recommendation.submit'),('stage01.clarification.return'),('stage01.decision.record'),('employee.read_directory')
   ) as permission(code) on conflict do nothing;
   insert into public.role_permissions (role_id, permission_code) values (reader_role_id, 'opportunity.read') on conflict do nothing;
   insert into public.company_role_assignments (tenant_id, company_id, user_id, role_id, granted_by, grant_reason) values
@@ -53,62 +53,141 @@ insert into public.workflow_definition_snapshots (
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"b4000000-0000-4000-8000-000000000901","role":"authenticated"}', true);
 
-create temporary table b4_runtime as
-select
-  (public.create_stage01_opportunity('b4000000-0000-4000-8000-000000000020', '{"primaryCustomerName":"B4 snapshot A","customerTypeCode":"customer","needDescription":"Bound snapshot baseline","primaryLeadSourceCode":"direct","engagementStatusCode":"grounded","budgetStatusCode":"unknown","timelineStatusCode":"unknown","priorityCode":"normal"}'::jsonb, 'b4000000-0000-4000-8000-000000000a01') ->> 'opportunityId')::uuid as opportunity_a,
-  (public.create_stage01_opportunity('b4000000-0000-4000-8000-000000000020', '{"primaryCustomerName":"B4 lifecycle evidence","customerTypeCode":"customer","needDescription":"Transactional lifecycle fixture","primaryLeadSourceCode":"direct","engagementStatusCode":"grounded","budgetStatusCode":"unknown","timelineStatusCode":"unknown","priorityCode":"normal"}'::jsonb, 'b4000000-0000-4000-8000-000000000a02') ->> 'opportunityId')::uuid as lifecycle_opportunity;
+create temporary table b4_runtime (scenario text primary key, context jsonb not null);
 
--- B4-S02: not_proceeding history is readable and immutable once finalized.
-do $$ begin
-  if not exists (select 1 from b4_runtime runtime join public.workflow_instances workflow on workflow.subject_id = runtime.lifecycle_opportunity where workflow.company_id = 'b4000000-0000-4000-8000-000000000020') then
-    raise exception 'B4-S02 created Opportunity is not readable in the acceptance company';
-  end if;
-  if exists (select 1 from public.stage01_decision_cycles cycle where cycle.company_id <> 'b4000000-0000-4000-8000-000000000020' and cycle.id in (select null::uuid from b4_runtime)) then
-    raise exception 'B4-S02 crossed the acceptance company boundary';
-  end if;
-end $$;
-
--- B4-S03: recommendation v1, clarification, and v2 remain append-only history.
-do $$ begin
-  if exists (select 1 from public.stage01_recommendations where company_id = 'b4000000-0000-4000-8000-000000000020' and version < 1) then
-    raise exception 'B4-S03 recommendation history is invalid';
-  end if;
-end $$;
-
--- B4-S04: blocker lifecycle stays acceptance-scoped and append-only.
-do $$ begin
-  if exists (select 1 from public.workflow_blockers where company_id = '10000000-0000-4000-8000-000000000020' and description like 'B4 %') then
-    raise exception 'B4-S04 leaked a blocker into canonical VQH';
-  end if;
-end $$;
-
--- B4-S05: duplicate lifecycle is modeled without a destructive merge.
-do $$ begin
-  if exists (select 1 from public.opportunity_duplicate_concerns where company_id = '10000000-0000-4000-8000-000000000020' and description like 'B4 %') then
-    raise exception 'B4-S05 leaked a duplicate concern into canonical VQH';
-  end if;
-end $$;
-
--- B4-S06: downstream revalidation is available only through the public contract.
-do $$ begin
-  if to_regprocedure('public.revalidate_workflow_node(uuid,uuid,jsonb,uuid)') is null then
-    raise exception 'B4-S06 public revalidation contract is missing';
-  end if;
-end $$;
-
--- B4-S09: permission, isolation, history, create-options, and private-data boundary.
-do $$
+create function pg_temp.b4_prepare(scenario_name text)
+returns jsonb language plpgsql as $$
+declare created jsonb; contact jsonb; intake_assignment jsonb; context jsonb;
 begin
+  created := public.create_stage01_opportunity(
+    'b4000000-0000-4000-8000-000000000020',
+    jsonb_build_object('primaryCustomerName', 'B4 ' || scenario_name, 'customerTypeCode', 'customer', 'needDescription', 'B4 governed lifecycle', 'primaryLeadSourceCode', 'direct', 'engagementStatusCode', 'grounded', 'budgetStatusCode', 'unknown', 'timelineStatusCode', 'unknown', 'priorityCode', 'normal'),
+    gen_random_uuid()
+  );
+  contact := public.create_contact('b4000000-0000-4000-8000-000000000020', jsonb_build_object('displayName', 'B4 ' || scenario_name || ' contact'), gen_random_uuid());
+  perform public.add_contact_method('b4000000-0000-4000-8000-000000000020', (contact ->> 'contactId')::uuid, '{"methodType":"phone","value":"0900000000","isUsable":true,"expectedContactVersion":0}'::jsonb, gen_random_uuid());
+  perform public.set_opportunity_primary_contact('b4000000-0000-4000-8000-000000000020', (created ->> 'opportunityId')::uuid, jsonb_build_object('contactId', (contact ->> 'contactId')::uuid, 'relationshipCode', 'decision_maker', 'expectedOpportunityVersion', 0), gen_random_uuid());
+  perform public.add_opportunity_scope('b4000000-0000-4000-8000-000000000020', (created ->> 'opportunityId')::uuid, '{"scopeCode":"design","expectedOpportunityVersion":1}'::jsonb, gen_random_uuid());
+  perform public.append_opportunity_intake_record('b4000000-0000-4000-8000-000000000020', (created ->> 'opportunityId')::uuid, '{"channelCode":"phone","summary":"B4 verified intake","expectedOpportunityVersion":2}'::jsonb, gen_random_uuid());
+  intake_assignment := public.assign_workflow_node('b4000000-0000-4000-8000-000000000020', (created ->> 'intakeExecutionId')::uuid, jsonb_build_object('assignmentKind', 'accountable_owner', 'assigneeUserId', 'b4000000-0000-4000-8000-000000000901'::uuid, 'expectedExecutionVersion', 0), gen_random_uuid());
+  perform public.start_workflow_node('b4000000-0000-4000-8000-000000000020', (created ->> 'intakeExecutionId')::uuid, '{"expectedExecutionVersion":1}'::jsonb, gen_random_uuid());
+  context := created || jsonb_build_object('contactId', contact ->> 'contactId', 'intakeAssignmentId', intake_assignment ->> 'assignmentId');
+  insert into b4_runtime values (scenario_name, context);
+  return context;
+end $$;
+
+create function pg_temp.b4_open_evaluation(context jsonb)
+returns void language plpgsql as $$
+begin
+  perform public.complete_stage01_intake('b4000000-0000-4000-8000-000000000020', (context ->> 'intakeExecutionId')::uuid, '{"expectedOpportunityVersion":3,"expectedExecutionVersion":2}'::jsonb, gen_random_uuid());
+  perform public.assign_workflow_node('b4000000-0000-4000-8000-000000000020', (context ->> 'evaluationExecutionId')::uuid, jsonb_build_object('assignmentKind', 'accountable_owner', 'assigneeUserId', 'b4000000-0000-4000-8000-000000000901'::uuid, 'expectedExecutionVersion', 0), gen_random_uuid());
+  perform public.start_workflow_node('b4000000-0000-4000-8000-000000000020', (context ->> 'evaluationExecutionId')::uuid, '{"expectedExecutionVersion":1}'::jsonb, gen_random_uuid());
+end $$;
+
+create function pg_temp.b4_record_required_criteria(context jsonb)
+returns void language plpgsql as $$
+declare criterion text; version integer := 0;
+begin
+  foreach criterion in array array['customer_need','scope_capability','resources_schedule','commercial_viability','risk_special'] loop
+    perform public.record_stage01_criterion_evaluation('b4000000-0000-4000-8000-000000000020', (context ->> 'opportunityId')::uuid, criterion, jsonb_build_object('applicability', 'applicable', 'result', 'fit', 'rationale', 'B4 evidence ' || criterion, 'evidence', '[]'::jsonb, 'expectedCycleVersion', version), gen_random_uuid());
+    version := version + 1;
+  end loop;
+end $$;
+
+-- Create A through the normal public contract while snapshot N is current.
+select pg_temp.b4_prepare('s10-a');
+
+-- B4-S02: immutable decision authority is fixture-bound at cycle creation; all
+-- accepted evaluation, decision, and completion actions below use public RPCs.
+reset role;
+do $$
+declare opportunity_id uuid := gen_random_uuid(); workflow_id uuid := gen_random_uuid(); node_id uuid := gen_random_uuid(); execution_id uuid := gen_random_uuid(); cycle_id uuid := gen_random_uuid();
+begin
+  insert into public.opportunities (id, tenant_id, company_id, primary_customer_name, customer_type_code, need_description, location_status, primary_lead_source_code, engagement_status_code, budget_status_code, timeline_status_code, priority_code, created_by) values (opportunity_id, 'b4000000-0000-4000-8000-000000000010', 'b4000000-0000-4000-8000-000000000020', 'B4 S02 not proceeding', 'customer', 'B4 decision fixture', 'unknown', 'direct', 'grounded', 'unknown', 'unknown', 'normal', 'b4000000-0000-4000-8000-000000000901');
+  insert into public.workflow_instances (id, tenant_id, company_id, subject_type, subject_id, definition_snapshot_id, created_by) values (workflow_id, 'b4000000-0000-4000-8000-000000000010', 'b4000000-0000-4000-8000-000000000020', 'opportunity', opportunity_id, 'b4000000-0000-4000-8000-000000000910', 'b4000000-0000-4000-8000-000000000901');
+  insert into public.workflow_node_instances (id, tenant_id, company_id, workflow_instance_id, node_key, node_type) values (node_id, 'b4000000-0000-4000-8000-000000000010', 'b4000000-0000-4000-8000-000000000020', workflow_id, '01.2', 'sub_stage');
+  insert into public.workflow_node_executions (id, tenant_id, company_id, node_instance_id, execution_no, phase, started_by, started_at) values (execution_id, 'b4000000-0000-4000-8000-000000000010', 'b4000000-0000-4000-8000-000000000020', node_id, 1, 'active', 'b4000000-0000-4000-8000-000000000901', now());
+  insert into public.stage01_decision_cycles (id, tenant_id, company_id, opportunity_id, node_execution_id, cycle_no, decision_authority_user_id, authority_resolution_reference, created_by) values (cycle_id, 'b4000000-0000-4000-8000-000000000010', 'b4000000-0000-4000-8000-000000000020', opportunity_id, execution_id, 1, 'b4000000-0000-4000-8000-000000000901', 'b4-s02-fixture-authority', 'b4000000-0000-4000-8000-000000000901');
+  insert into b4_runtime values ('s02', jsonb_build_object('opportunityId', opportunity_id, 'evaluationExecutionId', execution_id, 'decisionCycleId', cycle_id));
+end $$;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"b4000000-0000-4000-8000-000000000901","role":"authenticated"}', true);
+do $$
+declare context jsonb;
+begin
+  select runtime.context into context from b4_runtime as runtime where scenario = 's02'; perform pg_temp.b4_record_required_criteria(context);
+  perform public.submit_stage01_recommendation('b4000000-0000-4000-8000-000000000020', (context ->> 'opportunityId')::uuid, '{"recommendation":"recommend_proceed","rationale":"B4 S02 recommendation","evidence":[],"expectedCycleVersion":5}'::jsonb, gen_random_uuid());
+  perform public.record_stage01_final_decision('b4000000-0000-4000-8000-000000000020', (context ->> 'opportunityId')::uuid, '{"outcome":"not_proceeding","rationale":"B4 S02 decline","overrideRationale":"B4 controlled decision","expectedCycleVersion":6}'::jsonb, gen_random_uuid());
+  perform public.complete_stage01_evaluation('b4000000-0000-4000-8000-000000000020', (context ->> 'evaluationExecutionId')::uuid, '{"expectedExecutionVersion":0,"expectedCycleVersion":7}'::jsonb, gen_random_uuid());
+  if not exists (select 1 from public.stage01_decision_cycles where id = (context ->> 'decisionCycleId')::uuid and company_id = 'b4000000-0000-4000-8000-000000000020' and final_outcome = 'not_proceeding') then raise exception 'B4-S02 not_proceeding was not readable in its acceptance company'; end if;
+  reset role;
+  begin update public.stage01_decision_cycles set final_rationale = 'rewrite' where id = (context ->> 'decisionCycleId')::uuid; raise exception 'B4-S02 decided history was mutable'; exception when raise_exception then if sqlerrm <> 'STAGE01_HISTORY_IMMUTABLE' then raise; end if; end;
+  set local role authenticated;
+end $$;
+
+-- B4-S03: Recommendation v1 survives clarification and v2 is appended through public commands.
+do $$
+declare context jsonb; recommendation_v1 uuid;
+begin
+  context := pg_temp.b4_prepare('s03'); perform pg_temp.b4_open_evaluation(context); perform pg_temp.b4_record_required_criteria(context);
+  recommendation_v1 := (public.submit_stage01_recommendation('b4000000-0000-4000-8000-000000000020', (context ->> 'opportunityId')::uuid, '{"recommendation":"recommend_proceed","rationale":"B4 S03 v1","evidence":[],"expectedCycleVersion":5}'::jsonb, gen_random_uuid()) ->> 'recommendationId')::uuid;
+  perform public.return_stage01_for_clarification('b4000000-0000-4000-8000-000000000020', (context ->> 'opportunityId')::uuid, jsonb_build_object('recommendationId', recommendation_v1, 'reason', 'B4 S03 clarification', 'expectedCycleVersion', 6), gen_random_uuid());
+  perform public.submit_stage01_recommendation('b4000000-0000-4000-8000-000000000020', (context ->> 'opportunityId')::uuid, '{"recommendation":"recommend_proceed","rationale":"B4 S03 v2","evidence":[],"expectedCycleVersion":7}'::jsonb, gen_random_uuid());
+  if (select count(*) from public.stage01_recommendations where decision_cycle_id = (context ->> 'decisionCycleId')::uuid) <> 2 or not exists (select 1 from public.stage01_recommendations where id = recommendation_v1 and version = 1 and rationale = 'B4 S03 v1') or not exists (select 1 from public.stage01_clarification_returns where recommendation_id = recommendation_v1) then raise exception 'B4-S03 did not retain v1 and clarification before v2'; end if;
+end $$;
+
+-- B4-S04: an open blocking blocker rejects Intake completion until public resolution.
+do $$
+declare context jsonb; blocker_id uuid;
+begin
+  context := pg_temp.b4_prepare('s04'); blocker_id := (public.raise_workflow_blocker('b4000000-0000-4000-8000-000000000020', (context ->> 'intakeExecutionId')::uuid, '{"effect":"blocking","categoryCode":"follow_up","description":"B4 S04 blocker","expectedExecutionVersion":2}'::jsonb, gen_random_uuid()) ->> 'blockerId')::uuid;
+  begin perform public.complete_stage01_intake('b4000000-0000-4000-8000-000000000020', (context ->> 'intakeExecutionId')::uuid, '{"expectedOpportunityVersion":3,"expectedExecutionVersion":3}'::jsonb, gen_random_uuid()); raise exception 'B4-S04 open blocker allowed completion'; exception when raise_exception then if sqlerrm <> 'STAGE01_INTAKE_GATES_NOT_SATISFIED' then raise; end if; end;
+  perform public.resolve_workflow_blocker('b4000000-0000-4000-8000-000000000020', blocker_id, '{"resolution":"B4 resolved","expectedExecutionVersion":3}'::jsonb, gen_random_uuid());
+  perform public.complete_stage01_intake('b4000000-0000-4000-8000-000000000020', (context ->> 'intakeExecutionId')::uuid, '{"expectedOpportunityVersion":3,"expectedExecutionVersion":4}'::jsonb, gen_random_uuid());
+  if not exists (select 1 from public.workflow_blockers where id = blocker_id and resolved_at is not null) then raise exception 'B4-S04 resolved blocker history missing'; end if;
+end $$;
+
+-- B4-S05: unresolved duplicate concern blocks Intake until public resolution without a destructive merge.
+do $$
+declare source_context jsonb; comparison_context jsonb; concern_id uuid;
+begin
+  source_context := pg_temp.b4_prepare('s05-source'); comparison_context := pg_temp.b4_prepare('s05-comparison');
+  concern_id := (public.raise_opportunity_duplicate_concern('b4000000-0000-4000-8000-000000000020', (source_context ->> 'opportunityId')::uuid, jsonb_build_object('suspectedDuplicateOpportunityId', (comparison_context ->> 'opportunityId')::uuid, 'description', 'B4 S05 concern', 'expectedOpportunityVersion', 3), gen_random_uuid()) ->> 'duplicateConcernId')::uuid;
+  begin perform public.complete_stage01_intake('b4000000-0000-4000-8000-000000000020', (source_context ->> 'intakeExecutionId')::uuid, '{"expectedOpportunityVersion":4,"expectedExecutionVersion":2}'::jsonb, gen_random_uuid()); raise exception 'B4-S05 unresolved duplicate allowed completion'; exception when raise_exception then if sqlerrm <> 'STAGE01_INTAKE_GATES_NOT_SATISFIED' then raise; end if; end;
+  perform public.resolve_opportunity_duplicate('b4000000-0000-4000-8000-000000000020', (source_context ->> 'opportunityId')::uuid, concern_id, '{"resolution":"different_need","resolutionNote":"B4 separate governed need","expectedOpportunityVersion":4}'::jsonb, gen_random_uuid());
+  perform public.complete_stage01_intake('b4000000-0000-4000-8000-000000000020', (source_context ->> 'intakeExecutionId')::uuid, '{"expectedOpportunityVersion":5,"expectedExecutionVersion":2}'::jsonb, gen_random_uuid());
+  if not exists (select 1 from public.opportunity_duplicate_concerns where id = concern_id and resolved_at is not null) then raise exception 'B4-S05 duplicate resolution history missing'; end if;
+end $$;
+
+-- B4-S06: reopening and recompleting Intake marks its active Evaluation descendant
+-- for revalidation; the public revalidation command then requires explicit evidence.
+do $$
+declare context jsonb;
+begin
+  context := pg_temp.b4_prepare('s06'); perform pg_temp.b4_open_evaluation(context);
+  perform public.reopen_workflow_node('b4000000-0000-4000-8000-000000000020', (context ->> 'intakeExecutionId')::uuid, '{"reason":"B4 Intake evidence changed","expectedExecutionVersion":3}'::jsonb, gen_random_uuid());
+  perform public.complete_stage01_intake('b4000000-0000-4000-8000-000000000020', (context ->> 'intakeExecutionId')::uuid, '{"expectedOpportunityVersion":3,"expectedExecutionVersion":4}'::jsonb, gen_random_uuid());
+  begin perform public.revalidate_workflow_node('b4000000-0000-4000-8000-000000000020', (context ->> 'evaluationExecutionId')::uuid, '{"reason":"B4 missing evidence","expectedExecutionVersion":3}'::jsonb, gen_random_uuid()); raise exception 'B4-S06 revalidated without evidence'; exception when raise_exception then if sqlerrm <> 'INVALID_COMMAND_INPUT' then raise; end if; end;
+  perform public.revalidate_workflow_node('b4000000-0000-4000-8000-000000000020', (context ->> 'evaluationExecutionId')::uuid, '{"reason":"B4 dependency rechecked","evidence":["intake:current"],"expectedExecutionVersion":3}'::jsonb, gen_random_uuid());
+  if not exists (select 1 from public.workflow_node_events where node_execution_id = (context ->> 'evaluationExecutionId')::uuid and event_type = 'revalidated' and payload -> 'evidence' = '["intake:current"]'::jsonb) then raise exception 'B4-S06 did not record explicit downstream revalidation'; end if;
+end $$;
+
+-- B4-S09: reader/forged-ID denials, immutable history, narrow create-options, and employee private-data denial.
+do $$
+declare options jsonb; s03_context jsonb;
+begin
+  select runtime.context into s03_context from b4_runtime as runtime where scenario = 's03';
   perform set_config('request.jwt.claims', '{"sub":"b4000000-0000-4000-8000-000000000902","role":"authenticated"}', true);
-  begin
-    perform public.create_stage01_opportunity('b4000000-0000-4000-8000-000000000020', '{"primaryCustomerName":"Forbidden reader write"}'::jsonb, 'b4000000-0000-4000-8000-000000000a09');
-    raise exception 'B4-S09 reader unexpectedly created an Opportunity';
-  exception when raise_exception then if sqlerrm <> 'PERMISSION_DENIED' then raise; end if; end;
-  begin
-    perform public.get_stage01_opportunity_create_options('b4000000-0000-4000-8000-000000000020');
-    raise exception 'B4-S09 reader unexpectedly received create options';
-  exception when raise_exception then if sqlerrm <> 'PERMISSION_DENIED' then raise; end if; end;
+  begin perform public.create_stage01_opportunity('b4000000-0000-4000-8000-000000000020', '{"primaryCustomerName":"Forbidden reader write"}'::jsonb, gen_random_uuid()); raise exception 'B4-S09 reader created Opportunity'; exception when raise_exception then if sqlerrm <> 'PERMISSION_DENIED' then raise; end if; end;
+  begin perform public.get_stage01_opportunity_create_options('b4000000-0000-4000-8000-000000000020'); raise exception 'B4-S09 reader received create options'; exception when raise_exception then if sqlerrm <> 'PERMISSION_DENIED' then raise; end if; end;
+  begin perform public.start_workflow_node('10000000-0000-4000-8000-000000000020', (s03_context ->> 'evaluationExecutionId')::uuid, '{"expectedExecutionVersion":2}'::jsonb, gen_random_uuid()); raise exception 'B4-S09 forged company/node was accepted'; exception when raise_exception then if sqlerrm <> 'COMPANY_FORBIDDEN' then raise; end if; end;
   perform set_config('request.jwt.claims', '{"sub":"b4000000-0000-4000-8000-000000000901","role":"authenticated"}', true);
+  options := public.get_stage01_opportunity_create_options('b4000000-0000-4000-8000-000000000020');
+  if options ? 'draft' or options ? 'criteria' or options::text like '%semanticKey%' or options::text like '%definition%' or options ->> 'publishedSnapshotId' <> 'b4000000-0000-4000-8000-000000000910' then raise exception 'B4-S09 create options leaked raw/draft definition data'; end if;
+  if exists (select 1 from public.employee_private_details where company_id = 'b4000000-0000-4000-8000-000000000020') then raise exception 'B4-S09 directory-only operator exposed private employee data'; end if;
+  reset role;
+  begin update public.stage01_recommendations set rationale = 'rewrite' where decision_cycle_id = (s03_context ->> 'decisionCycleId')::uuid and version = 1; raise exception 'B4-S09 recommendation history was mutable'; exception when raise_exception then if sqlerrm <> 'STAGE01_HISTORY_IMMUTABLE' then raise; end if; end;
+  set local role authenticated; perform set_config('request.jwt.claims', '{"sub":"b4000000-0000-4000-8000-000000000901","role":"authenticated"}', true);
 end $$;
 
 -- B4-S10: A remains pinned to N after N+1; B binds to N+1.
@@ -118,13 +197,14 @@ select 'b4000000-0000-4000-8000-000000000911', tenant_id, company_id, workflow_k
 from public.workflow_definition_snapshots where id = 'b4000000-0000-4000-8000-000000000910';
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"b4000000-0000-4000-8000-000000000901","role":"authenticated"}', true);
-insert into b4_runtime(opportunity_a, lifecycle_opportunity)
-select (public.create_stage01_opportunity('b4000000-0000-4000-8000-000000000020', '{"primaryCustomerName":"B4 snapshot B"}'::jsonb, 'b4000000-0000-4000-8000-000000000a10') ->> 'opportunityId')::uuid, null;
+select pg_temp.b4_prepare('s10-b');
 do $$
-declare a_snapshot uuid; b_snapshot uuid;
+declare a_snapshot uuid; b_snapshot uuid; a_context jsonb; b_context jsonb;
 begin
-  select workflow.definition_snapshot_id into a_snapshot from public.workflow_instances workflow where workflow.subject_id = (select opportunity_a from b4_runtime limit 1);
-  select workflow.definition_snapshot_id into b_snapshot from public.workflow_instances workflow where workflow.subject_id = (select opportunity_a from b4_runtime offset 1 limit 1);
+  select runtime.context into a_context from b4_runtime as runtime where scenario = 's10-a';
+  select runtime.context into b_context from b4_runtime as runtime where scenario = 's10-b';
+  select workflow.definition_snapshot_id into a_snapshot from public.workflow_instances workflow where workflow.subject_id = (a_context ->> 'opportunityId')::uuid;
+  select workflow.definition_snapshot_id into b_snapshot from public.workflow_instances workflow where workflow.subject_id = (b_context ->> 'opportunityId')::uuid;
   if a_snapshot <> 'b4000000-0000-4000-8000-000000000910'::uuid or b_snapshot <> 'b4000000-0000-4000-8000-000000000911'::uuid then
     raise exception 'B4-S10 snapshot binding is unstable: A %, B %', a_snapshot, b_snapshot;
   end if;
