@@ -53,9 +53,10 @@ function adminClient(environment) {
   })
 }
 
-async function must(result, operation) {
-  if (result.error) throw new Error(`B4 acceptance ${operation} failed`)
-  return result.data
+export async function must(result, operation) {
+  const response = await result
+  if (response.error) throw new Error(`B4 acceptance ${operation} failed`)
+  return response.data
 }
 
 function perRunPassword() {

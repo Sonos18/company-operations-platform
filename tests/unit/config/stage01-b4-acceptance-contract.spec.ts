@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { createGlobalSetup } from '../../acceptance/stage01-cloud-dev/global-setup'
 import { createGlobalTeardown } from '../../acceptance/stage01-cloud-dev/global-teardown'
 import { assertB4ActorBoundary, assertRetainedProfileShape, deactivateProvenB4Actors, selectFixedB4ActorCandidates } from '../../../scripts/stage01-b4-acceptance-fixture.mjs'
+import * as fixture from '../../../scripts/stage01-b4-acceptance-fixture.mjs'
 import { B4_RESULTS_DIRECTORY, B4_SECRET_STATE_PATH } from '../../acceptance/stage01-cloud-dev/acceptance-state'
 
 const root = resolve(import.meta.dirname, '../../..')
@@ -60,6 +61,22 @@ describe('B4 Cloud DEV acceptance boundary', () => {
       expect(source).not.toContain('context.route(')
       expect(source).not.toContain('route.fulfill(')
     }
+  })
+
+  it('awaits a B4 query-builder response before returning its data', async () => {
+    let awaited = false
+    const queryBuilder = {
+      then(resolve: (value: { data: { id: string }, error: null }) => void) {
+        awaited = true
+        resolve({ data: { id: 'canonical-role' }, error: null })
+      },
+    }
+    const fixtureWithMust = fixture as typeof fixture & {
+      must: (result: typeof queryBuilder, operation: string) => Promise<{ id: string }>
+    }
+
+    await expect(fixtureWithMust.must(queryBuilder, 'canonical role read')).resolves.toEqual({ id: 'canonical-role' })
+    expect(awaited).toBe(true)
   })
 
   it('finalizes credentials before deleting secret state when canonical cleanliness fails', async () => {
