@@ -305,32 +305,87 @@ async function deactivateActorCredentials(client, actors) {
   }))
 }
 
-function assertB4RecoveryEvidence(evidence) {
-  if (
-    evidence?.tenantId !== B4_ACCEPTANCE_TENANT_ID
-    || evidence.companyId !== B4_ACCEPTANCE_COMPANY_ID
-    || evidence.companyCode !== B4_ACCEPTANCE_COMPANY_CODE
-    || typeof evidence.runMarker !== 'string'
-    || !evidence.runMarker.startsWith('b4-stage01-')
-  ) throw new Error('B4 acceptance recovery evidence is invalid')
+export async function deactivateProvenB4Actors({ actors, proveB4Only, deactivate }) {
+  const failures = []
+  for (const actor of actors) {
+    try {
+      await proveB4Only(actor)
+    } catch (error) {
+      failures.push(error)
+      continue
+    }
+    try { await deactivate(actor) } catch (error) { failures.push(error) }
+  }
+  if (failures.length > 0) throw new AggregateError(failures, 'B4 acceptance recovery failed')
 }
 
-async function findB4ActorsForRecovery(client) {
+export function selectFixedB4ActorCandidates(users) {
+  return Object.entries(B4_ACTOR_EMAILS).map(([kind, email]) => {
+    const matches = users.filter(user => user.email?.toLowerCase() === email)
+    if (matches.length !== 1 || typeof matches[0].id !== 'string') {
+      return { kind, email, userId: undefined, invalid: `B4 acceptance ${kind} fixed actor lookup is ambiguous or missing` }
+    }
+    return { kind, email, userId: matches[0].id }
+  })
+}
+
+async function deactivateFixedB4Actors(client) {
   const emails = new Set(Object.values(B4_ACTOR_EMAILS))
-  const actors = []
+  const fixedEmailUsers = []
   let page = 1
   while (true) {
     const result = await client.auth.admin.listUsers({ page, perPage: 1000 })
     if (result.error) throw new Error('B4 acceptance recovery actor lookup failed')
     for (const user of result.data.users) {
       if (user.email && emails.has(user.email.toLowerCase())) {
-        await assertExistingActorBoundary(client, user.id)
-        actors.push({ userId: user.id })
+        fixedEmailUsers.push(user)
       }
     }
-    if (result.data.users.length < 1000) return actors
+    if (result.data.users.length < 1000) break
     page += 1
   }
+  const actors = selectFixedB4ActorCandidates(fixedEmailUsers)
+  await deactivateProvenB4Actors({
+    actors,
+    proveB4Only: async actor => {
+      if (!actor.userId) throw new Error(actor.invalid)
+      await assertExistingActorBoundary(client, actor.userId)
+    },
+    deactivate: async actor => {
+      if (!actor.userId) throw new Error(`B4 acceptance ${actor.kind} fixed actor is missing`)
+      const result = await client.auth.admin.updateUserById(actor.userId, { password: perRunPassword(), ban_duration: '876000h' })
+      if (result.error) throw new Error(`B4 acceptance ${actor.kind} credential deactivation failed`)
+    },
+  })
+}
+
+function assertAuthoritativeRunMarker(runMarker) {
+  if (typeof runMarker !== 'string' || !/^b4-stage01-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(runMarker)) {
+    throw new Error('B4 acceptance authoritative run marker is invalid')
+  }
+}
+
+async function recordB4RunMarker(client, { runMarker, actorId }) {
+  assertAuthoritativeRunMarker(runMarker)
+  await must(client.from('audit_events').insert({
+    tenant_id: B4_ACCEPTANCE_TENANT_ID,
+    company_id: B4_ACCEPTANCE_COMPANY_ID,
+    actor_id: actorId,
+    action: 'b4.acceptance.run_bootstrapped',
+    resource_type: 'b4_acceptance_run',
+    resource_id: runMarker,
+    request_id: randomUUID(),
+    after_summary: { sourceAnchor: SOURCE_ANCHOR },
+  }), 'authoritative B4 run marker append')
+}
+
+async function readAuthoritativeB4RunMarker(client) {
+  const row = await must(client.from('audit_events').select('resource_id').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
+    .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('action', 'b4.acceptance.run_bootstrapped')
+    .eq('resource_type', 'b4_acceptance_run').order('created_at', { ascending: false }).order('id', { ascending: false }).limit(1).maybeSingle(), 'authoritative B4 run marker read')
+  if (!row) throw new Error('B4 acceptance authoritative run marker is missing')
+  assertAuthoritativeRunMarker(row.resource_id)
+  return { runMarker: row.resource_id }
 }
 
 export async function finalizeB4Acceptance({ cwd = process.cwd(), state }) {
@@ -339,12 +394,16 @@ export async function finalizeB4Acceptance({ cwd = process.cwd(), state }) {
   await deactivateActorCredentials(client, state.actors)
 }
 
-export async function finalizeB4AcceptanceRecovery({ cwd = process.cwd(), evidence }) {
-  assertB4RecoveryEvidence(evidence)
+export async function finalizeB4AcceptanceRecovery({ cwd = process.cwd() } = {}) {
   assertCloudDevTarget({ cwd })
   const client = adminClient(await loadB4Environment(cwd))
-  const actors = await findB4ActorsForRecovery(client)
-  await deactivateActorCredentials(client, actors)
+  await deactivateFixedB4Actors(client)
+}
+
+export async function readB4AuthoritativeCleanupMetadata({ cwd = process.cwd() } = {}) {
+  assertCloudDevTarget({ cwd })
+  const client = adminClient(await loadB4Environment(cwd))
+  return readAuthoritativeB4RunMarker(client)
 }
 
 export async function assertCanonicalVqhHasNoRunMarker({ cwd = process.cwd(), runMarker }) {
@@ -370,6 +429,7 @@ export async function bootstrapB4Acceptance({ cwd = process.cwd() } = {}) {
     await ensureAssignments(client, actors)
     const acceptanceSnapshotId = await ensureAcceptanceSnapshot(client)
     const profiles = await ensureRetainedProfiles(client, acceptanceSnapshotId, actors.operator.userId)
+    await recordB4RunMarker(client, { runMarker, actorId: actors.decision.userId })
     return { runMarker, tenantId: B4_ACCEPTANCE_TENANT_ID, companyId: B4_ACCEPTANCE_COMPANY_ID, companyCode: B4_ACCEPTANCE_COMPANY_CODE, acceptanceSnapshotId, actors, profiles }
   } catch (error) {
     if (Object.keys(actors).length > 0) await deactivateActorCredentials(client, actors)

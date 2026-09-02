@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { createGlobalSetup } from '../../acceptance/stage01-cloud-dev/global-setup'
 import { createGlobalTeardown } from '../../acceptance/stage01-cloud-dev/global-teardown'
-import { assertB4ActorBoundary, assertRetainedProfileShape } from '../../../scripts/stage01-b4-acceptance-fixture.mjs'
+import { assertB4ActorBoundary, assertRetainedProfileShape, deactivateProvenB4Actors, selectFixedB4ActorCandidates } from '../../../scripts/stage01-b4-acceptance-fixture.mjs'
 import { B4_RESULTS_DIRECTORY, B4_SECRET_STATE_PATH } from '../../acceptance/stage01-cloud-dev/acceptance-state'
 
 const root = resolve(import.meta.dirname, '../../..')
@@ -67,9 +67,9 @@ describe('B4 Cloud DEV acceptance boundary', () => {
     const canonicalFailure = new Error('canonical marker')
     const teardown = createGlobalTeardown({
       cwd: () => root,
-      readState: async () => state,
+      readAuthoritativeMetadata: async () => ({ runMarker: 'b4-stage01-0f822dd1-8896-44cc-8e8f-a59cebe87df7' }),
       assertCanonical: async () => { calls.push('canonical'); throw canonicalFailure },
-      finalize: async () => { calls.push('finalize') },
+      finalizeFixedActors: async () => { calls.push('finalize') },
       removeSecretState: async () => { calls.push('remove') },
     })
 
@@ -77,26 +77,64 @@ describe('B4 Cloud DEV acceptance boundary', () => {
     expect(calls).toEqual(['canonical', 'finalize', 'remove'])
   })
 
-  it('recovers B4 credentials from non-secret evidence when secret state is unreadable', async () => {
+  it('recovers fixed B4 credentials and removes unreadable secret state without reading it', async () => {
     const calls: string[] = []
-    const readFailure = new Error('truncated secret state')
     const teardown = createGlobalTeardown({
       cwd: () => root,
-      readState: async () => { calls.push('read-state'); throw readFailure },
-      readEvidence: async () => {
-        calls.push('read-evidence')
-        return {
-          runMarker: state.runMarker, tenantId: state.tenantId, companyId: state.companyId,
-          companyCode: state.companyCode, acceptanceSnapshotId: state.acceptanceSnapshotId, profileOpportunityIds: [],
-        }
-      },
-      assertCanonical: async () => { calls.push('canonical') },
-      finalizeRecovery: async ({ evidence }) => { calls.push(`recover:${evidence.runMarker}`) },
+      readAuthoritativeMetadata: async () => { calls.push('metadata'); return { runMarker: 'b4-stage01-0f822dd1-8896-44cc-8e8f-a59cebe87df7' } },
+      assertCanonical: async ({ runMarker }) => { calls.push(`canonical:${runMarker}`) },
+      finalizeFixedActors: async () => { calls.push('recover-fixed-identities') },
       removeSecretState: async () => { calls.push('remove') },
     })
 
-    await expect(teardown()).rejects.toBe(readFailure)
-    expect(calls).toEqual(['read-state', 'read-evidence', 'canonical', `recover:${state.runMarker}`, 'remove'])
+    await teardown()
+    expect(calls).toEqual(['metadata', 'canonical:b4-stage01-0f822dd1-8896-44cc-8e8f-a59cebe87df7', 'recover-fixed-identities', 'remove'])
+  })
+
+  it('uses only the authoritative server marker when parseable local artifacts are tampered', async () => {
+    const calls: string[] = []
+    const tamperedState = {
+      ...state,
+      runMarker: 'b4-stage01-tampered',
+      actors: { ...state.actors, reader: { ...state.actors.reader, userId: 'arbitrary-auth-user' } },
+    }
+    const cwd = await mkdtemp(resolve(tmpdir(), 'taskovia-b4-teardown-'))
+    try {
+      await mkdir(resolve(cwd, B4_RESULTS_DIRECTORY), { recursive: true })
+      await writeFile(resolve(cwd, B4_SECRET_STATE_PATH), JSON.stringify(tamperedState), 'utf8')
+      await writeFile(resolve(cwd, B4_RESULTS_DIRECTORY, 'acceptance-evidence.json'), JSON.stringify({
+        runMarker: 'b4-stage01-tampered-evidence', tenantId: 'not-b4', companyId: 'not-b4',
+      }), 'utf8')
+      const teardown = createGlobalTeardown({
+        cwd: () => cwd,
+        readAuthoritativeMetadata: async () => { calls.push('metadata'); return { runMarker: 'b4-stage01-server-authoritative' } },
+        assertCanonical: async ({ runMarker }) => { calls.push(`canonical:${runMarker}`) },
+        finalizeFixedActors: async () => { calls.push('finalize-fixed-identities') },
+      })
+
+      await teardown()
+      expect(calls).toEqual(['metadata', 'canonical:b4-stage01-server-authoritative', 'finalize-fixed-identities'])
+      expect(existsSync(resolve(cwd, B4_SECRET_STATE_PATH))).toBe(false)
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
+  })
+
+  it('continues credential deactivation for safe fixed actors when one identity fails B4-only proof', async () => {
+    const finalized: string[] = []
+    const actors = selectFixedB4ActorCandidates([
+      { id: 'safe-reader', email: 'b4-stage01-reader@taskovia.invalid' },
+      { id: 'unsafe-operator', email: 'b4-stage01-operator@taskovia.invalid' },
+      { id: 'safe-decision', email: 'b4-stage01-decision@taskovia.invalid' },
+    ])
+    await expect(deactivateProvenB4Actors({
+      actors,
+      proveB4Only: async actor => {
+        if (actor.kind === 'operator') throw new Error('operator has non-B4 membership')
+      },
+      deactivate: async actor => { finalized.push(`${actor.kind}:${actor.userId}`) },
+    })).rejects.toThrow('B4 acceptance recovery failed')
+    expect(finalized).toEqual(['reader:safe-reader', 'decision:safe-decision'])
   })
 
   it('finalizes and removes partial secret state when setup persistence fails', async () => {
