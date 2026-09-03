@@ -28,6 +28,7 @@ const B4_ROLE_IDS = {
   companyAdmin: 'b4000000-0000-4000-8000-000000000303',
 }
 const B4_DEPARTMENT_ID = 'b4000000-0000-4000-8000-000000000401'
+const B4_PROFILE_HISTORY_START = Date.UTC(2026, 8, 2, 0, 0, 0)
 const profileName = name => `B4 ${name} performance profile [${SOURCE_ANCHOR}]`
 
 function requiredEnv(env, name) {
@@ -260,6 +261,21 @@ async function readRetainedProfile(client, { key, snapshotId, opportunity }) {
   return assertRetainedProfileShape({ key, snapshotId, profile: { opportunity, workflow, nodes, executions, cycles, evaluations, recommendations, clarifications, contacts } })
 }
 
+export function buildB4EvaluationExecution({ cycleNo, cycles, nodeInstanceId, actorId }) {
+  const createdAt = new Date(B4_PROFILE_HISTORY_START + ((cycleNo - 1) * 2_000)).toISOString()
+  return {
+    tenant_id: B4_ACCEPTANCE_TENANT_ID,
+    company_id: B4_ACCEPTANCE_COMPANY_ID,
+    node_instance_id: nodeInstanceId,
+    execution_no: cycleNo,
+    phase: 'active',
+    started_by: actorId,
+    started_at: createdAt,
+    created_at: createdAt,
+    superseded_at: cycleNo === cycles ? null : new Date(B4_PROFILE_HISTORY_START + ((cycleNo - 1) * 2_000) + 1_000).toISOString(),
+  }
+}
+
 async function ensureProfile(client, { key, cycles, contacts, snapshotId, actorId }) {
   const existing = await must(client.from('opportunities').select('id, primary_customer_name, need_description').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
     .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('primary_customer_name', profileName(key)).maybeSingle(), `${key} profile read`)
@@ -270,7 +286,7 @@ async function ensureProfile(client, { key, cycles, contacts, snapshotId, actorI
   await must(client.from('workflow_node_executions').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, node_instance_id: intake.id, execution_no: 1, phase: 'completed', started_by: actorId, started_at: new Date().toISOString(), completed_by: actorId, completed_at: new Date().toISOString() }), `${key} intake execution bootstrap`)
   const evaluation = await must(client.from('workflow_node_instances').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, workflow_instance_id: workflow.id, node_key: '01.2', node_type: 'stage' }).select('id').single(), `${key} evaluation node bootstrap`)
   for (let cycleNo = 1; cycleNo <= cycles; cycleNo += 1) {
-    const execution = await must(client.from('workflow_node_executions').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, node_instance_id: evaluation.id, execution_no: cycleNo, phase: 'active', started_by: actorId, started_at: new Date().toISOString(), superseded_at: cycleNo === cycles ? null : new Date().toISOString() }).select('id').single(), `${key} evaluation execution bootstrap`)
+    const execution = await must(client.from('workflow_node_executions').insert(buildB4EvaluationExecution({ cycleNo, cycles, nodeInstanceId: evaluation.id, actorId })).select('id').single(), `${key} evaluation execution bootstrap`)
     const cycle = await must(client.from('stage01_decision_cycles').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, opportunity_id: opportunity.id, node_execution_id: execution.id, cycle_no: cycleNo, created_by: actorId }).select('id').single(), `${key} decision cycle bootstrap`)
     const evaluations = Array.from({ length: 5 }, (_, index) => ({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, decision_cycle_id: cycle.id, criterion_key: `b4_${key.toLowerCase()}_criterion_${index + 1}`, revision: 1, applicability: 'applicable', result: 'fit', rationale: 'B4 retained performance profile', evidence: [], evaluated_by: actorId }))
     await must(client.from('stage01_criterion_evaluations').insert(evaluations), `${key} criterion profile bootstrap`)

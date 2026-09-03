@@ -79,6 +79,27 @@ describe('B4 Cloud DEV acceptance boundary', () => {
     expect(awaited).toBe(true)
   })
 
+  it('orders historical B4 evaluation executions after their explicit creation timestamps', () => {
+    const fixtureWithExecutionPayload = fixture as typeof fixture & {
+      buildB4EvaluationExecution: (input: { cycleNo: number, cycles: number, nodeInstanceId: string, actorId: string }) => {
+        created_at: string
+        superseded_at: string | null
+      }
+    }
+    for (const cycles of [5, 20]) {
+      const executions = Array.from({ length: cycles }, (_, index) => fixtureWithExecutionPayload.buildB4EvaluationExecution({
+        cycleNo: index + 1, cycles, nodeInstanceId: 'evaluation-node', actorId: 'b4-operator',
+      }))
+
+      for (const execution of executions.slice(0, -1)) {
+        expect(execution.superseded_at).not.toBeNull()
+        expect(Date.parse(execution.superseded_at!)).toBeGreaterThanOrEqual(Date.parse(execution.created_at))
+      }
+      expect(executions.at(-1)?.superseded_at).toBeNull()
+      expect(Date.parse(executions[0]!.superseded_at!)).toBeLessThan(Date.parse(executions[1]!.created_at))
+    }
+  })
+
   it('finalizes credentials before deleting secret state when canonical cleanliness fails', async () => {
     const calls: string[] = []
     const canonicalFailure = new Error('canonical marker')
