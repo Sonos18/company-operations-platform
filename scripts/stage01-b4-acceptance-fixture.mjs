@@ -240,7 +240,9 @@ export function assertRetainedProfileShape({ key, snapshotId, profile }) {
   if (!requirement || !profile?.opportunity || !profile.workflow) invalid()
   if (
     profile.opportunity.primary_customer_name !== identity.opportunityName
-    || profile.opportunity.need_description !== identity.opportunityDescription
+    || (key === 'P2'
+      ? profile.opportunity.need_description !== identity.opportunityDescription
+      : !profile.opportunity.need_description?.includes(SOURCE_ANCHOR))
     || profile.workflow.subject_id !== profile.opportunity.id
     || profile.workflow.definition_snapshot_id !== snapshotId
   ) invalid()
@@ -301,7 +303,7 @@ export function buildB4EvaluationExecution({ cycleNo, cycles, nodeInstanceId, ac
   }
 }
 
-async function ensureProfile(client, { key, cycles, contacts, snapshotId, actorId }) {
+export async function ensureProfile(client, { key, cycles, contacts, snapshotId, actorId }) {
   const identity = retainedProfileIdentity(key)
   const existing = await must(client.from('opportunities').select('id, primary_customer_name, need_description').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
     .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('primary_customer_name', identity.opportunityName).maybeSingle(), `${key} profile read`)

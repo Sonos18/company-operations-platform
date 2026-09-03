@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { createGlobalSetup } from '../../acceptance/stage01-cloud-dev/global-setup'
 import { createGlobalTeardown } from '../../acceptance/stage01-cloud-dev/global-teardown'
-import { assertB4ActorBoundary, assertRetainedProfileShape, deactivateProvenB4Actors, retainedProfileIdentity, selectFixedB4ActorCandidates, selectRetainedProfileAction } from '../../../scripts/stage01-b4-acceptance-fixture.mjs'
+import { assertB4ActorBoundary, assertRetainedProfileShape, deactivateProvenB4Actors, ensureProfile, retainedProfileIdentity, selectFixedB4ActorCandidates, selectRetainedProfileAction } from '../../../scripts/stage01-b4-acceptance-fixture.mjs'
 import * as fixture from '../../../scripts/stage01-b4-acceptance-fixture.mjs'
 import { B4_RESULTS_DIRECTORY, B4_SECRET_STATE_PATH } from '../../acceptance/stage01-cloud-dev/acceptance-state'
 
@@ -38,6 +38,97 @@ function completeP2Profile() {
     recommendations: Array.from({ length: 5 }, (_, index) => ({ decision_cycle_id: `cycle-${index + 1}`, version: 1 })),
     clarifications: [],
     contacts: Array.from({ length: 10 }, (_, index) => ({ contact_id: `contact-${index + 1}` })),
+  }
+}
+
+function b4Row<T extends Record<string, unknown>>(row: T): T & { tenant_id: string, company_id: string } {
+  return {
+    ...row,
+    tenant_id: 'b4000000-0000-4000-8000-000000000010',
+    company_id: 'b4000000-0000-4000-8000-000000000020',
+  }
+}
+
+function completeP2ProfileRows() {
+  const profile = completeP2Profile()
+  return {
+    opportunities: [b4Row(profile.opportunity)],
+    workflow_instances: [b4Row({ id: 'workflow-p2', ...profile.workflow, subject_type: 'opportunity' })],
+    workflow_node_instances: profile.nodes.map(node => b4Row({ ...node, workflow_instance_id: 'workflow-p2' })),
+    workflow_node_executions: profile.executions.map(b4Row),
+    stage01_decision_cycles: profile.cycles.map(cycle => b4Row({ ...cycle, opportunity_id: 'p2-r2' })),
+    stage01_criterion_evaluations: profile.evaluations.map(b4Row),
+    stage01_recommendations: profile.recommendations.map(b4Row),
+    stage01_clarification_returns: [],
+    opportunity_contacts: profile.contacts.map(contact => b4Row({ ...contact, opportunity_id: 'p2-r2', ended_at: null })),
+  }
+}
+
+function createProfileClient(initialRows: Record<string, Array<Record<string, unknown>>>) {
+  const rows = Object.fromEntries(Object.entries(initialRows).map(([table, tableRows]) => [table, tableRows.map(row => ({ ...row }))])) as Record<string, Array<Record<string, unknown>>>
+  const inserts: Array<{ table: string, value: Record<string, unknown> }> = []
+  let nextId = 1
+
+  return {
+    rows,
+    inserts,
+    client: {
+      from(table: string) {
+        const predicates: Array<(row: Record<string, unknown>) => boolean> = []
+        let action: 'select' | 'insert' = 'select'
+        let values: Array<Record<string, unknown>> = []
+        let single = false
+        let applied = false
+        const query = {
+          select: () => query,
+          eq: (column: string, value: unknown) => {
+            predicates.push(row => row[column] === value)
+            return query
+          },
+          in: (column: string, values: unknown[]) => {
+            predicates.push(row => values.includes(row[column]))
+            return query
+          },
+          is: (column: string, value: unknown) => {
+            predicates.push(row => row[column] === value)
+            return query
+          },
+          order: () => query,
+          limit: () => query,
+          maybeSingle: () => {
+            single = true
+            return query
+          },
+          single: () => {
+            single = true
+            return query
+          },
+          insert: (input: Record<string, unknown> | Array<Record<string, unknown>>) => {
+            action = 'insert'
+            values = Array.isArray(input) ? input : [input]
+            return query
+          },
+          then: (resolve: (value: { data: unknown, error: null }) => void) => {
+            if (action === 'insert' && !applied) {
+              const tableRows = rows[table] ?? (rows[table] = [])
+              values = values.map(value => ({
+                id: value.id ?? `${table}-${nextId++}`,
+                ...(table === 'opportunity_contacts' && value.ended_at === undefined ? { ended_at: null } : {}),
+                ...value,
+              }))
+              tableRows.push(...values)
+              inserts.push(...values.map(value => ({ table, value })))
+              applied = true
+            }
+            const result = action === 'insert'
+              ? values
+              : (rows[table] ?? []).filter(row => predicates.every(predicate => predicate(row)))
+            resolve({ data: single ? (result[0] ?? null) : result, error: null })
+          },
+        }
+        return query
+      },
+    },
   }
 }
 
@@ -254,6 +345,12 @@ describe('B4 Cloud DEV acceptance boundary', () => {
     }
 
     expect(assertRetainedProfileShape({ key: 'P3', snapshotId: 'snapshot', profile })).toBe('p3')
+    expect(assertRetainedProfileShape({
+      key: 'P3', snapshotId: 'snapshot', profile: {
+        ...profile,
+        opportunity: { ...profile.opportunity, need_description: 'Retained B4 P3 profile anchored to 8e1abc74; earlier accepted fixture metadata' },
+      },
+    })).toBe('p3')
     expect(() => assertRetainedProfileShape({ key: 'P3', snapshotId: 'snapshot', profile: { ...profile, contacts: profile.contacts.slice(0, 19) } })).toThrow('B4 acceptance P3 retained profile is invalid')
   })
 
@@ -304,5 +401,44 @@ describe('B4 Cloud DEV acceptance boundary', () => {
       snapshotId: 'snapshot',
       profile: { ...profile, contacts: profile.contacts.slice(0, 9) },
     })).toThrow('B4 acceptance P2 retained profile is invalid')
+  })
+
+  it('creates P2-r2 through the fixture path without mutating a partial legacy P2', async () => {
+    const legacy = b4Row({
+      id: 'legacy-p2',
+      primary_customer_name: 'B4 P2 performance profile [8e1abc74]',
+      need_description: 'Retained B4 P2 profile anchored to 8e1abc74',
+    })
+    const profileClient = createProfileClient({ opportunities: [legacy] })
+
+    const opportunityId = await ensureProfile(profileClient.client, {
+      key: 'P2', cycles: 5, contacts: 10, snapshotId: 'snapshot', actorId: 'operator',
+    })
+
+    const created = profileClient.rows.opportunities.find(opportunity => opportunity.primary_customer_name === 'B4 P2 performance profile [8e1abc74] [fixture-r2]')
+    expect(opportunityId).toBe(created?.id)
+    expect(profileClient.rows.opportunities.find(opportunity => opportunity.id === 'legacy-p2')).toEqual(legacy)
+    expect(profileClient.inserts.filter(insert => insert.table === 'opportunities').map(insert => insert.value.primary_customer_name)).toEqual([
+      'B4 P2 performance profile [8e1abc74] [fixture-r2]',
+    ])
+    expect(profileClient.rows.opportunities.some(opportunity => String(opportunity.primary_customer_name).includes('fixture-r3'))).toBe(false)
+  })
+
+  it('reuses a complete P2-r2 without profile inserts and fails closed for an invalid P2-r2', async () => {
+    const validClient = createProfileClient(completeP2ProfileRows())
+    await expect(ensureProfile(validClient.client, {
+      key: 'P2', cycles: 5, contacts: 10, snapshotId: 'snapshot', actorId: 'operator',
+    })).resolves.toBe('p2-r2')
+    expect(validClient.inserts).toEqual([])
+
+    const invalidClient = createProfileClient({ opportunities: [b4Row({
+      id: 'p2-r2',
+      primary_customer_name: 'B4 P2 performance profile [8e1abc74] [fixture-r2]',
+      need_description: 'Retained B4 P2 profile anchored to 8e1abc74; fixture revision 2; legacy locator B4 P2 performance profile [8e1abc74]; chronology recovery',
+    })] })
+    await expect(ensureProfile(invalidClient.client, {
+      key: 'P2', cycles: 5, contacts: 10, snapshotId: 'snapshot', actorId: 'operator',
+    })).rejects.toThrow('B4 acceptance P2 retained profile is invalid')
+    expect(invalidClient.inserts).toEqual([])
   })
 })
