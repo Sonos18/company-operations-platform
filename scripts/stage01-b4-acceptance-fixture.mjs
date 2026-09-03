@@ -29,7 +29,31 @@ const B4_ROLE_IDS = {
 }
 const B4_DEPARTMENT_ID = 'b4000000-0000-4000-8000-000000000401'
 const B4_PROFILE_HISTORY_START = Date.UTC(2026, 8, 2, 0, 0, 0)
-const profileName = name => `B4 ${name} performance profile [${SOURCE_ANCHOR}]`
+const legacyProfileName = key => `B4 ${key} performance profile [${SOURCE_ANCHOR}]`
+const P2_FIXTURE_REVISION = 2
+
+export function retainedProfileIdentity(key) {
+  const opportunityName = legacyProfileName(key)
+  if (key !== 'P2') {
+    return {
+      opportunityName,
+      opportunityDescription: `Retained B4 ${key} profile anchored to ${SOURCE_ANCHOR}`,
+    }
+  }
+  return {
+    opportunityName: `${opportunityName} [fixture-r${P2_FIXTURE_REVISION}]`,
+    opportunityDescription: `Retained B4 P2 profile anchored to ${SOURCE_ANCHOR}; fixture revision ${P2_FIXTURE_REVISION}; legacy locator ${opportunityName}; chronology recovery`,
+  }
+}
+
+export function selectRetainedProfileAction({ key, existing }) {
+  const identity = retainedProfileIdentity(key)
+  if (!existing) return { kind: 'create', identity }
+  if (existing.primary_customer_name !== identity.opportunityName) {
+    throw new Error(`B4 acceptance ${key} retained profile selector conflict`)
+  }
+  return { kind: 'reuse', identity, opportunity: existing }
+}
 
 function requiredEnv(env, name) {
   const matches = env.split(/\r?\n/).filter(line => line.startsWith(`${name}=`))
@@ -211,11 +235,12 @@ const PROFILE_REQUIREMENTS = {
 
 export function assertRetainedProfileShape({ key, snapshotId, profile }) {
   const requirement = PROFILE_REQUIREMENTS[key]
+  const identity = retainedProfileIdentity(key)
   const invalid = () => { throw new Error(`B4 acceptance ${key} retained profile is invalid`) }
   if (!requirement || !profile?.opportunity || !profile.workflow) invalid()
   if (
-    profile.opportunity.primary_customer_name !== profileName(key)
-    || !profile.opportunity.need_description?.includes(SOURCE_ANCHOR)
+    profile.opportunity.primary_customer_name !== identity.opportunityName
+    || profile.opportunity.need_description !== identity.opportunityDescription
     || profile.workflow.subject_id !== profile.opportunity.id
     || profile.workflow.definition_snapshot_id !== snapshotId
   ) invalid()
@@ -277,10 +302,12 @@ export function buildB4EvaluationExecution({ cycleNo, cycles, nodeInstanceId, ac
 }
 
 async function ensureProfile(client, { key, cycles, contacts, snapshotId, actorId }) {
+  const identity = retainedProfileIdentity(key)
   const existing = await must(client.from('opportunities').select('id, primary_customer_name, need_description').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
-    .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('primary_customer_name', profileName(key)).maybeSingle(), `${key} profile read`)
-  if (existing) return readRetainedProfile(client, { key, snapshotId, opportunity: existing })
-  const opportunity = await must(client.from('opportunities').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, primary_customer_name: profileName(key), need_description: `Retained B4 ${key} profile anchored to ${SOURCE_ANCHOR}`, created_by: actorId }).select('id').single(), `${key} profile bootstrap`)
+    .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('primary_customer_name', identity.opportunityName).maybeSingle(), `${key} profile read`)
+  const selection = selectRetainedProfileAction({ key, existing })
+  if (selection.kind === 'reuse') return readRetainedProfile(client, { key, snapshotId, opportunity: selection.opportunity })
+  const opportunity = await must(client.from('opportunities').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, primary_customer_name: selection.identity.opportunityName, need_description: selection.identity.opportunityDescription, created_by: actorId }).select('id').single(), `${key} profile bootstrap`)
   const workflow = await must(client.from('workflow_instances').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, subject_type: 'opportunity', subject_id: opportunity.id, definition_snapshot_id: snapshotId, created_by: actorId }).select('id').single(), `${key} workflow bootstrap`)
   const intake = await must(client.from('workflow_node_instances').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, workflow_instance_id: workflow.id, node_key: '01.1', node_type: 'stage' }).select('id').single(), `${key} intake node bootstrap`)
   await must(client.from('workflow_node_executions').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, node_instance_id: intake.id, execution_no: 1, phase: 'completed', started_by: actorId, started_at: new Date().toISOString(), completed_by: actorId, completed_at: new Date().toISOString() }), `${key} intake execution bootstrap`)
@@ -304,7 +331,10 @@ async function ensureProfile(client, { key, cycles, contacts, snapshotId, actorI
     await must(client.from('contact_methods').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, contact_id: contact.id, method_type: 'email', value: `b4-${key.toLowerCase()}-${index}@taskovia.invalid`, is_usable: true }), `${key} contact method bootstrap`)
     await must(client.from('opportunity_contacts').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, opportunity_id: opportunity.id, contact_id: contact.id, relationship_code: 'decision_maker', is_primary: index === 1, created_by: actorId }), `${key} opportunity contact bootstrap`)
   }
-  return opportunity.id
+  const persistedOpportunity = await must(client.from('opportunities').select('id, primary_customer_name, need_description').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
+    .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('id', opportunity.id).maybeSingle(), `${key} profile validation read`)
+  if (!persistedOpportunity) return assertRetainedProfileShape({ key, snapshotId, profile: {} })
+  return readRetainedProfile(client, { key, snapshotId, opportunity: persistedOpportunity })
 }
 
 async function ensureRetainedProfiles(client, snapshotId, actorId) {

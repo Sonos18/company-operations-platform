@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { createGlobalSetup } from '../../acceptance/stage01-cloud-dev/global-setup'
 import { createGlobalTeardown } from '../../acceptance/stage01-cloud-dev/global-teardown'
-import { assertB4ActorBoundary, assertRetainedProfileShape, deactivateProvenB4Actors, selectFixedB4ActorCandidates } from '../../../scripts/stage01-b4-acceptance-fixture.mjs'
+import { assertB4ActorBoundary, assertRetainedProfileShape, deactivateProvenB4Actors, retainedProfileIdentity, selectFixedB4ActorCandidates, selectRetainedProfileAction } from '../../../scripts/stage01-b4-acceptance-fixture.mjs'
 import * as fixture from '../../../scripts/stage01-b4-acceptance-fixture.mjs'
 import { B4_RESULTS_DIRECTORY, B4_SECRET_STATE_PATH } from '../../acceptance/stage01-cloud-dev/acceptance-state'
 
@@ -21,6 +21,24 @@ const state = {
     decision: { userId: 'decision', employeeId: 'decision-employee', email: 'decision@taskovia.invalid', password: 'secret' },
   },
   profiles: { p1OpportunityId: 'p1', p2OpportunityId: 'p2', p3OpportunityId: 'p3' },
+}
+
+function completeP2Profile() {
+  return {
+    opportunity: {
+      id: 'p2-r2',
+      primary_customer_name: 'B4 P2 performance profile [8e1abc74] [fixture-r2]',
+      need_description: 'Retained B4 P2 profile anchored to 8e1abc74; fixture revision 2; legacy locator B4 P2 performance profile [8e1abc74]; chronology recovery',
+    },
+    workflow: { subject_id: 'p2-r2', definition_snapshot_id: 'snapshot' },
+    nodes: [{ id: 'intake', node_key: '01.1' }, { id: 'evaluation', node_key: '01.2' }],
+    executions: [{ id: 'intake-execution', node_instance_id: 'intake' }, ...Array.from({ length: 5 }, (_, index) => ({ id: `evaluation-${index + 1}`, node_instance_id: 'evaluation' }))],
+    cycles: Array.from({ length: 5 }, (_, index) => ({ id: `cycle-${index + 1}`, node_execution_id: `evaluation-${index + 1}` })),
+    evaluations: Array.from({ length: 5 }, (_, cycle) => Array.from({ length: 6 }, (_, index) => ({ decision_cycle_id: `cycle-${cycle + 1}`, revision: index === 5 ? 2 : 1 }))).flat(),
+    recommendations: Array.from({ length: 5 }, (_, index) => ({ decision_cycle_id: `cycle-${index + 1}`, version: 1 })),
+    clarifications: [],
+    contacts: Array.from({ length: 10 }, (_, index) => ({ contact_id: `contact-${index + 1}` })),
+  }
 }
 
 describe('B4 Cloud DEV acceptance boundary', () => {
@@ -237,5 +255,54 @@ describe('B4 Cloud DEV acceptance boundary', () => {
 
     expect(assertRetainedProfileShape({ key: 'P3', snapshotId: 'snapshot', profile })).toBe('p3')
     expect(() => assertRetainedProfileShape({ key: 'P3', snapshotId: 'snapshot', profile: { ...profile, contacts: profile.contacts.slice(0, 19) } })).toThrow('B4 acceptance P3 retained profile is invalid')
+  })
+
+  it('selects only the fixed P2 revision 2 identity and preserves the P1/P3 locators', () => {
+    expect(retainedProfileIdentity('P1')).toEqual({
+      opportunityName: 'B4 P1 performance profile [8e1abc74]',
+      opportunityDescription: 'Retained B4 P1 profile anchored to 8e1abc74',
+    })
+    expect(retainedProfileIdentity('P2')).toEqual({
+      opportunityName: 'B4 P2 performance profile [8e1abc74] [fixture-r2]',
+      opportunityDescription: 'Retained B4 P2 profile anchored to 8e1abc74; fixture revision 2; legacy locator B4 P2 performance profile [8e1abc74]; chronology recovery',
+    })
+    expect(retainedProfileIdentity('P3')).toEqual({
+      opportunityName: 'B4 P3 performance profile [8e1abc74]',
+      opportunityDescription: 'Retained B4 P3 profile anchored to 8e1abc74',
+    })
+  })
+
+  it('creates only P2-r2 when the legacy P2 is not the selected locator', () => {
+    expect(selectRetainedProfileAction({ key: 'P2', existing: null })).toEqual({
+      kind: 'create',
+      identity: {
+        opportunityName: 'B4 P2 performance profile [8e1abc74] [fixture-r2]',
+        opportunityDescription: 'Retained B4 P2 profile anchored to 8e1abc74; fixture revision 2; legacy locator B4 P2 performance profile [8e1abc74]; chronology recovery',
+      },
+    })
+
+    expect(() => selectRetainedProfileAction({
+      key: 'P2',
+      existing: { id: 'legacy-p2', primary_customer_name: 'B4 P2 performance profile [8e1abc74]' },
+    })).toThrow('B4 acceptance P2 retained profile selector conflict')
+  })
+
+  it('reuses a complete P2-r2 and rejects an invalid P2-r2 without creating a later revision', () => {
+    const profile = completeP2Profile()
+
+    expect(assertRetainedProfileShape({ key: 'P2', snapshotId: 'snapshot', profile })).toBe('p2-r2')
+    expect(selectRetainedProfileAction({ key: 'P2', existing: profile.opportunity })).toEqual({
+      kind: 'reuse',
+      identity: {
+        opportunityName: 'B4 P2 performance profile [8e1abc74] [fixture-r2]',
+        opportunityDescription: 'Retained B4 P2 profile anchored to 8e1abc74; fixture revision 2; legacy locator B4 P2 performance profile [8e1abc74]; chronology recovery',
+      },
+      opportunity: profile.opportunity,
+    })
+    expect(() => assertRetainedProfileShape({
+      key: 'P2',
+      snapshotId: 'snapshot',
+      profile: { ...profile, contacts: profile.contacts.slice(0, 9) },
+    })).toThrow('B4 acceptance P2 retained profile is invalid')
   })
 })
