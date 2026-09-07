@@ -323,9 +323,9 @@ begin
     insert into public.workflow_node_instances (id, tenant_id, company_id, workflow_instance_id, node_key, node_type) values
       (fixture.intake_node_id, tenant_id, company_id, fixture.workflow_id, '01.1', 'sub_stage'),
       (fixture.evaluation_node_id, tenant_id, company_id, fixture.workflow_id, '01.2', 'sub_stage');
-    insert into public.workflow_node_executions (id, tenant_id, company_id, node_instance_id, execution_no, phase, completed_by, completed_at, version) values
-      (fixture.intake_execution_id, tenant_id, company_id, fixture.intake_node_id, 1, 'completed', actor_id, now(), 1),
-      (fixture.evaluation_execution_id, tenant_id, company_id, fixture.evaluation_node_id, 1, 'active', null, null, 0);
+    insert into public.workflow_node_executions (id, tenant_id, company_id, node_instance_id, execution_no, phase, started_by, started_at, completed_by, completed_at, version) values
+      (fixture.intake_execution_id, tenant_id, company_id, fixture.intake_node_id, 1, 'completed', actor_id, timestamptz '2026-09-01 09:00:00+00', actor_id, timestamptz '2026-09-01 09:01:00+00', 1),
+      (fixture.evaluation_execution_id, tenant_id, company_id, fixture.evaluation_node_id, 1, 'active', actor_id, timestamptz '2026-09-01 09:00:00+00', null, null, 0);
     insert into public.stage01_decision_cycles (id, tenant_id, company_id, opportunity_id, node_execution_id, cycle_no, created_by) values
       (fixture.evaluation_execution_id, tenant_id, company_id, fixture.opportunity_id, fixture.evaluation_execution_id, fixture.cycle_no, actor_id);
     foreach criterion in array array['customer_need','scope_capability','resources_schedule','commercial_viability','risk_special'] loop
@@ -395,11 +395,11 @@ begin
     ('25000000-0000-4000-8000-000000000456', tenant_id, '25000000-0000-4000-8000-000000000022', '25000000-0000-4000-8000-000000000436', '01.2', 'sub_stage'),
     ('25000000-0000-4000-8000-000000000457', tenant_id, '25000000-0000-4000-8000-000000000023', '25000000-0000-4000-8000-000000000437', '01.2', 'sub_stage'),
     ('25000000-0000-4000-8000-000000000458', tenant_id, '25000000-0000-4000-8000-000000000024', '25000000-0000-4000-8000-000000000438', '01.2', 'sub_stage');
-  insert into public.workflow_node_executions (id, tenant_id, company_id, node_instance_id, execution_no, phase, completed_by, completed_at) values
-    ('25000000-0000-4000-8000-000000000466', tenant_id, '25000000-0000-4000-8000-000000000022', '25000000-0000-4000-8000-000000000446', 1, 'completed', actor_id, clock_timestamp()),
-    ('25000000-0000-4000-8000-000000000476', tenant_id, '25000000-0000-4000-8000-000000000022', '25000000-0000-4000-8000-000000000456', 1, 'active', null, null),
-    ('25000000-0000-4000-8000-000000000477', tenant_id, '25000000-0000-4000-8000-000000000023', '25000000-0000-4000-8000-000000000457', 1, 'active', null, null),
-    ('25000000-0000-4000-8000-000000000478', tenant_id, '25000000-0000-4000-8000-000000000024', '25000000-0000-4000-8000-000000000458', 1, 'active', null, null);
+  insert into public.workflow_node_executions (id, tenant_id, company_id, node_instance_id, execution_no, phase, started_by, started_at, completed_by, completed_at) values
+    ('25000000-0000-4000-8000-000000000466', tenant_id, '25000000-0000-4000-8000-000000000022', '25000000-0000-4000-8000-000000000446', 1, 'completed', actor_id, timestamptz '2026-09-01 10:00:00+00', actor_id, timestamptz '2026-09-01 10:01:00+00'),
+    ('25000000-0000-4000-8000-000000000476', tenant_id, '25000000-0000-4000-8000-000000000022', '25000000-0000-4000-8000-000000000456', 1, 'active', actor_id, timestamptz '2026-09-01 10:00:00+00', null, null),
+    ('25000000-0000-4000-8000-000000000477', tenant_id, '25000000-0000-4000-8000-000000000023', '25000000-0000-4000-8000-000000000457', 1, 'active', actor_id, timestamptz '2026-09-01 10:00:00+00', null, null),
+    ('25000000-0000-4000-8000-000000000478', tenant_id, '25000000-0000-4000-8000-000000000024', '25000000-0000-4000-8000-000000000458', 1, 'active', actor_id, timestamptz '2026-09-01 10:00:00+00', null, null);
 end $$;
 
 select pg_temp.authority_assert_lives(
@@ -625,7 +625,7 @@ begin
     insert into public.opportunities (id, tenant_id, company_id, primary_customer_name, customer_type_code, need_description, location_status, primary_lead_source_code, engagement_status_code, budget_status_code, timeline_status_code, priority_code, created_by) values (fixture.opportunity_id, tenant_id, company_id, 'Authority B4 ' || fixture.cycle_id::text, 'customer', 'Authority B4 legacy transition', 'unknown', 'direct', 'grounded', 'unknown', 'unknown', 'normal', actor_id);
     insert into public.workflow_instances (id, tenant_id, company_id, subject_type, subject_id, definition_snapshot_id, created_by) values (fixture.workflow_id, tenant_id, company_id, 'opportunity', fixture.opportunity_id, snapshot_id, actor_id);
     insert into public.workflow_node_instances (id, tenant_id, company_id, workflow_instance_id, node_key, node_type) values (fixture.node_id, tenant_id, company_id, fixture.workflow_id, '01.2', 'sub_stage');
-    insert into public.workflow_node_executions (id, tenant_id, company_id, node_instance_id, execution_no, phase) values (fixture.execution_id, tenant_id, company_id, fixture.node_id, 1, 'active');
+    insert into public.workflow_node_executions (id, tenant_id, company_id, node_instance_id, execution_no, phase, started_by, started_at) values (fixture.execution_id, tenant_id, company_id, fixture.node_id, 1, 'active', actor_id, timestamptz '2026-09-01 11:00:00+00');
     perform set_config('session_replication_role', 'replica', true);
     insert into public.stage01_decision_cycles (id, tenant_id, company_id, opportunity_id, node_execution_id, cycle_no, decision_authority_user_id, authority_resolution_reference, final_outcome, decision_policy_snapshot_id, version, created_by)
     values (fixture.cycle_id, tenant_id, company_id, fixture.opportunity_id, fixture.execution_id, 1,

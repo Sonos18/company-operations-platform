@@ -502,6 +502,23 @@ describe('Cloud DEV fixed-mode runner', () => {
     expect(stage01Runner).not.toMatch(/\b(?:tap|plan|finish)\b/iu)
   })
 
+  it('requires every active or completed authority workflow execution fixture to include its valid started phase', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const executionInserts = Array.from(authoritySql.matchAll(
+      /insert into public\.workflow_node_executions \(([^)]+)\) values([\s\S]*?);/giu,
+    ))
+
+    expect(executionInserts).toHaveLength(3)
+    for (const [, columns, values] of executionInserts) {
+      expect(columns).toContain('started_by')
+      expect(columns).toContain('started_at')
+      expect(values).toMatch(/'(?:active|completed)'/u)
+    }
+    expect(executionInserts[0]?.[2]).toMatch(
+      /'completed', actor_id, timestamptz '[^']+', actor_id, timestamptz '[^']+', 1/u,
+    )
+  })
+
   it('evaluates PUBLIC function privileges through ACL pseudo-grantee semantics', () => {
     const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
     const helper = authoritySql.slice(
