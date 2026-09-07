@@ -49,10 +49,10 @@ create or replace function pg_temp.authority_assert_constraint(p_schema text, p_
 returns void language plpgsql as $authority_assert$
 begin
   if not exists (
-    select 1 from pg_catalog.pg_constraint constraint
-    join pg_catalog.pg_class relation on relation.oid = constraint.conrelid
+    select 1 from pg_catalog.pg_constraint pc
+    join pg_catalog.pg_class relation on relation.oid = pc.conrelid
     join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace
-    where namespace.nspname = p_schema and relation.relname = p_table and constraint.conname = p_constraint
+    where namespace.nspname = p_schema and relation.relname = p_table and pc.conname = p_constraint
   ) then raise exception 'AUTHORITY_ASSERTION_FAILED: %', p_description; end if;
 end
 $authority_assert$;
@@ -61,12 +61,12 @@ create or replace function pg_temp.authority_assert_foreign_key(p_schema text, p
 returns void language plpgsql as $authority_assert$
 begin
   if not exists (
-    select 1 from pg_catalog.pg_constraint constraint
-    join pg_catalog.pg_class relation on relation.oid = constraint.conrelid
+    select 1 from pg_catalog.pg_constraint pc
+    join pg_catalog.pg_class relation on relation.oid = pc.conrelid
     join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace
-    join unnest(constraint.conkey) as key(attnum) on true
+    join unnest(pc.conkey) as key(attnum) on true
     join pg_catalog.pg_attribute attribute on attribute.attrelid = relation.oid and attribute.attnum = key.attnum
-    where namespace.nspname = p_schema and relation.relname = p_table and constraint.contype = 'f' and attribute.attname = p_column
+    where namespace.nspname = p_schema and relation.relname = p_table and pc.contype = 'f' and attribute.attname = p_column
   ) then raise exception 'AUTHORITY_ASSERTION_FAILED: %', p_description; end if;
 end
 $authority_assert$;

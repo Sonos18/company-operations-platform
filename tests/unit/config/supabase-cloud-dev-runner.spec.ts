@@ -493,6 +493,8 @@ describe('Cloud DEV fixed-mode runner', () => {
     expect(authoritySql).not.toMatch(/\bselect\s+(?:\*\s+from\s+)?(?:plan|finish|ok|is|isnt|is_deeply|cmp_ok|throws_ok|lives_ok|results_eq|set_eq)\s*\(/iu)
     expect(authoritySql.match(/\bselect\s+pg_temp\.authority_assert_[a-z_]+\s*\(/giu)).toHaveLength(103)
     expect(authoritySql).toMatch(/\bpg_temp\.authority_assert_throws\b[\s\S]*?\braise\s+exception\b/iu)
+    expect(authoritySql).not.toContain('pg_catalog.pg_constraint constraint')
+    expect(authoritySql).toContain('pg_catalog.pg_constraint pc')
     expect(stage01Runner).toContain("runCli(['db', 'query', '--linked', '--file', file]")
     expect(stage01Runner).not.toMatch(/\b(?:tap|plan|finish)\b/iu)
   })
