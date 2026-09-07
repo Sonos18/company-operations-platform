@@ -25,6 +25,8 @@ import type {
 import type {
   CriterionEvaluationRevisionInput, ReactivateStage01Input, RecordFinalDecisionInput,
   ReturnForClarificationInput, Stage01OperationalDetail, SubmitRecommendationInput,
+  AssignOpportunityDecisionAuthorityInput, OpportunityDecisionAuthorityCandidate,
+  TransitionOpportunityDecisionPolicyInput,
 } from '../features/stage01/stage01.types'
 import type {
   CreateStage01ConfigDraftInput, DiscardStage01ConfigDraftInput, PublishStage01ConfigDraftInput,
@@ -112,6 +114,9 @@ export interface Stage01Repository {
   submitRecommendation(opportunityId: string, input: SubmitRecommendationInput): Promise<void>
   returnForClarification(opportunityId: string, input: ReturnForClarificationInput): Promise<void>
   recordFinalDecision(opportunityId: string, input: RecordFinalDecisionInput): Promise<void>
+  listDecisionAuthorityCandidates(opportunityId: string, decisionCycleId: string): Promise<OpportunityDecisionAuthorityCandidate[]>
+  assignDecisionAuthority(opportunityId: string, decisionCycleId: string, input: AssignOpportunityDecisionAuthorityInput): Promise<void>
+  transitionDecisionPolicy(opportunityId: string, decisionCycleId: string, input: TransitionOpportunityDecisionPolicyInput): Promise<void>
   reactivate(opportunityId: string, input: ReactivateStage01Input): Promise<void>
 }
 

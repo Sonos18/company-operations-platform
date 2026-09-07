@@ -101,7 +101,7 @@ cross join (values
   ('journey.node.reopen'), ('journey.node.revalidate'),
   ('journey.blocker.raise'), ('journey.blocker.resolve'),
   ('stage01.evaluation.update'), ('stage01.recommendation.submit'),
-  ('stage01.clarification.return'), ('stage01.decision.record'), ('stage01.reactivate')
+  ('stage01.clarification.return'), ('stage01.decision.record'), ('opportunity.decision.record'), ('stage01.reactivate')
 ) as permission(permission_code);
 
 insert into public.company_role_assignments (

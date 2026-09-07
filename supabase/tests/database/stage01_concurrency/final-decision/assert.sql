@@ -8,7 +8,7 @@ begin
   select * into strict target
   from public.stage01_decision_cycles
   where id = '7c000000-0000-4000-8000-000000000055';
-  if target.version <> 1
+  if target.version <> 2
      or target.final_outcome not in ('proceed', 'not_proceeding')
      or target.final_rationale not in ('Actor A final decision', 'Actor B final decision') then
     raise exception 'final-decision current cycle is invalid';

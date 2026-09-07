@@ -12,7 +12,7 @@ select public.record_stage01_final_decision(
   '{
     "outcome":"proceed",
     "rationale":"Actor A final decision",
-    "expectedCycleVersion":0
+    "expectedCycleVersion":1
   }'::jsonb,
   '7c000000-0000-4000-8000-00000000a008'
 );

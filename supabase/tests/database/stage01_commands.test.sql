@@ -48,7 +48,8 @@ end $$;
 
 insert into auth.users (id, email) values
   ('55000000-0000-4000-8000-000000000001', 'stage01-commands@test.invalid'),
-  ('55000000-0000-4000-8000-000000000002', 'stage01-commands-mismatch@test.invalid');
+  ('55000000-0000-4000-8000-000000000002', 'stage01-commands-mismatch@test.invalid'),
+  ('55000000-0000-4000-8000-000000000003', 'stage01-commands-permission-denied@test.invalid');
 
 insert into public.tenants (id, code, name) values
   ('55000000-0000-4000-8000-000000000010', 'stage01-commands', 'Stage 01 commands test');
@@ -58,11 +59,29 @@ insert into public.companies (id, tenant_id, code, name) values
 
 insert into public.tenant_memberships (user_id, tenant_id, roles) values
   ('55000000-0000-4000-8000-000000000001', '55000000-0000-4000-8000-000000000010', array['member']),
-  ('55000000-0000-4000-8000-000000000002', '55000000-0000-4000-8000-000000000010', array['member']);
+  ('55000000-0000-4000-8000-000000000002', '55000000-0000-4000-8000-000000000010', array['member']),
+  ('55000000-0000-4000-8000-000000000003', '55000000-0000-4000-8000-000000000010', array['member']);
 
 insert into public.company_memberships (user_id, tenant_id, company_id, roles) values
   ('55000000-0000-4000-8000-000000000001', '55000000-0000-4000-8000-000000000010', '55000000-0000-4000-8000-000000000020', array['member']),
-  ('55000000-0000-4000-8000-000000000002', '55000000-0000-4000-8000-000000000010', '55000000-0000-4000-8000-000000000020', array['member']);
+  ('55000000-0000-4000-8000-000000000002', '55000000-0000-4000-8000-000000000010', '55000000-0000-4000-8000-000000000020', array['member']),
+  ('55000000-0000-4000-8000-000000000003', '55000000-0000-4000-8000-000000000010', '55000000-0000-4000-8000-000000000020', array['member']);
+
+insert into public.departments (id, tenant_id, company_id, code, name) values
+  ('55000000-0000-4000-8000-000000000110', '55000000-0000-4000-8000-000000000010', '55000000-0000-4000-8000-000000000020', 'S01-CMD', 'Stage 01 commands');
+
+insert into public.employees (
+  id, tenant_id, company_id, user_id, employee_code, full_name, work_email,
+  department_id, employment_status, created_by
+) values (
+  '55000000-0000-4000-8000-000000000111',
+  '55000000-0000-4000-8000-000000000010',
+  '55000000-0000-4000-8000-000000000020',
+  '55000000-0000-4000-8000-000000000001',
+  'S01-CMD-ACTOR', 'Stage 01 command actor', 'stage01-commands@test.invalid',
+  '55000000-0000-4000-8000-000000000110', 'active',
+  '55000000-0000-4000-8000-000000000001'
+);
 
 insert into public.roles (id, tenant_id, company_id, code, name, description, is_system) values
   (
@@ -94,6 +113,7 @@ insert into public.role_permissions (role_id, permission_code) values
   ('55000000-0000-4000-8000-000000000100', 'stage01.recommendation.submit'),
   ('55000000-0000-4000-8000-000000000100', 'stage01.clarification.return'),
   ('55000000-0000-4000-8000-000000000100', 'stage01.decision.record'),
+  ('55000000-0000-4000-8000-000000000100', 'opportunity.decision.record'),
   ('55000000-0000-4000-8000-000000000100', 'stage01.reactivate');
 
 insert into public.company_role_assignments (
@@ -1288,6 +1308,24 @@ insert into public.workflow_node_executions (
     '55000000-0000-4000-8000-000000000001', now() - interval '30 seconds',
     null, null
   );
+insert into public.opportunity_decision_policy_snapshots (
+  tenant_id, company_id, policy_key, policy_version, policy, policy_hash, status, published_at, approved_at
+) values (
+  '55000000-0000-4000-8000-000000000010', '55000000-0000-4000-8000-000000000020', 'opportunity.decision_authority', 1,
+  jsonb_build_object('authority', jsonb_build_object(
+    'required', true, 'resolutionMode', 'explicit_per_cycle', 'requiredBeforeFinalDecision', true,
+    'requiredBeforeEvaluation', false, 'selfAssignmentAllowed', true, 'carryForwardOnNewCycle', false,
+    'showPreviousAuthorityAsSuggestion', true, 'assignPermission', 'opportunity.decision_authority.assign',
+    'decisionPermission', 'opportunity.decision.record',
+    'eligibility', jsonb_build_object('requireActiveMembership', true, 'requireAccountBacking', true, 'requireActiveEmployee', true)
+  )), 'stage01-commands-policy-v1', 'published', clock_timestamp(), clock_timestamp()
+);
+insert into public.company_opportunity_decision_capabilities (
+  tenant_id, company_id, capability_key, enabled
+) values (
+  '55000000-0000-4000-8000-000000000010', '55000000-0000-4000-8000-000000000020',
+  'opportunity.decision_authority', true
+);
 insert into public.stage01_decision_cycles (
   id, tenant_id, company_id, opportunity_id, node_execution_id, cycle_no,
   decision_authority_user_id, authority_resolution_reference, created_by
@@ -1300,6 +1338,28 @@ insert into public.stage01_decision_cycles (
   '55000000-0000-4000-8000-000000000001', 'test-authority-resolution',
   '55000000-0000-4000-8000-000000000001'
 );
+-- This legacy-style fixture isolates other Stage 01 command gates.  Amendments
+-- 25/31 require its authority triple to reference an append-only event.
+insert into public.opportunity_decision_authority_events (
+  id, tenant_id, company_id, opportunity_id, decision_cycle_id, request_id,
+  request_fingerprint, assignment_cycle_version, action, authority_user_id,
+  performed_by_user_id, authority_display_name_snapshot,
+  performer_display_name_snapshot
+) values (
+  '57000000-0000-4000-8000-000000000091',
+  '55000000-0000-4000-8000-000000000010',
+  '55000000-0000-4000-8000-000000000020',
+  '57000000-0000-4000-8000-000000000030',
+  '57000000-0000-4000-8000-000000000090',
+  '57000000-0000-4000-8000-000000000219', 'stage01-commands-authority', 0,
+  'assigned', '55000000-0000-4000-8000-000000000001',
+  '55000000-0000-4000-8000-000000000001', 'Stage01 commands authority',
+  'Stage01 commands authority'
+);
+update public.stage01_decision_cycles
+set authority_resolution_event_id = '57000000-0000-4000-8000-000000000091',
+    authority_resolution_reference = '57000000-0000-4000-8000-000000000091'
+where id = '57000000-0000-4000-8000-000000000090';
 
 set local role authenticated;
 select set_config(
@@ -1378,6 +1438,24 @@ begin
       'expectedCycleVersion', 6
     ),
     '57000000-0000-4000-8000-000000000209'
+  );
+  perform pg_catalog.set_config(
+    'request.jwt.claims',
+    '{"sub":"55000000-0000-4000-8000-000000000003","role":"authenticated"}', true
+  );
+  begin
+    perform public.record_stage01_final_decision(
+      company_id, opportunity_id,
+      '{"outcome":"proceed","rationale":"Permission denial control","expectedCycleVersion":7}'::jsonb,
+      '57000000-0000-4000-8000-000000000210'
+    );
+    raise exception 'DB-S01-CMD Final Decision without its domain permission unexpectedly succeeded';
+  exception when raise_exception then
+    if sqlerrm <> 'PERMISSION_DENIED' then raise; end if;
+  end;
+  perform pg_catalog.set_config(
+    'request.jwt.claims',
+    '{"sub":"55000000-0000-4000-8000-000000000001","role":"authenticated"}', true
   );
   begin
     perform public.record_stage01_final_decision(

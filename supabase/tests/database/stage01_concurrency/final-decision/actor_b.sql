@@ -13,7 +13,7 @@ select public.record_stage01_final_decision(
     "outcome":"not_proceeding",
     "rationale":"Actor B final decision",
     "overrideRationale":"Actor B documented override",
-    "expectedCycleVersion":0
+    "expectedCycleVersion":1
   }'::jsonb,
   '7c000000-0000-4000-8000-00000000b008'
 );

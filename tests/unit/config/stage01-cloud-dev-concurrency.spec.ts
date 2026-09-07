@@ -55,6 +55,12 @@ const expectedScenarios = [
     rpc: 'public.reactivate_stage01',
     versionKeys: ['expectedOpportunityVersion', 'expectedExecutionVersion', 'expectedCycleVersion'],
   },
+  {
+    name: 'authority-assignment-replay',
+    rpc: 'public.assign_opportunity_decision_authority',
+    versionKeys: ['expectedCycleVersion'],
+    outcome: 'same_request_replay',
+  },
 ] as const
 
 const roots: string[] = []
@@ -83,7 +89,7 @@ afterEach(() => {
 })
 
 describe('Stage 01 Cloud DEV concurrency harness', () => {
-  it('exposes exactly the approved nine-scenario public-RPC inventory', () => {
+  it('exposes exactly the approved ten-scenario public-RPC inventory', () => {
     expect(STAGE01_CONCURRENCY_SCENARIOS).toEqual(expectedScenarios)
   })
 
@@ -270,5 +276,23 @@ describe('Stage 01 Cloud DEV concurrency harness', () => {
         'utf8',
       )).toThrow()
     }
+  })
+
+  it('keeps the authority replay fixture isolated without mutating immutable workflow history', () => {
+    const root = process.cwd()
+    const setup = readFileSync(join(root, 'supabase/tests/database/stage01_concurrency/authority-assignment-replay/setup.sql'), 'utf8')
+    const cleanup = readFileSync(join(root, 'supabase/tests/database/stage01_concurrency/authority-assignment-replay/cleanup.sql'), 'utf8')
+    const commonSetup = readFileSync(join(root, 'supabase/tests/database/stage01_concurrency/common_setup.sql'), 'utf8')
+    const commonCleanup = readFileSync(join(root, 'supabase/tests/database/stage01_concurrency/common_cleanup.sql'), 'utf8')
+
+    expect(setup).not.toMatch(/update\s+public\.workflow_definition_snapshots/iu)
+    expect(setup).not.toMatch(/\bbegin\s*;/iu)
+    expect(setup).toMatch(/\bcommit\s*;/iu)
+    expect(cleanup).toMatch(/\bbegin\s*;/iu)
+    expect(cleanup).not.toMatch(/\bcommit\s*;/iu)
+    expect(commonSetup).toContain('"assignDecisionAuthority":"opportunity.decision_authority.assign"')
+    expect(commonCleanup).toContain('delete from public.opportunity_decision_policy_binding_events')
+    expect(commonCleanup).toContain('delete from public.opportunity_decision_policy_snapshots')
+    expect(commonCleanup).toContain('delete from public.company_opportunity_decision_capabilities')
   })
 })

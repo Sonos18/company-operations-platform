@@ -132,6 +132,88 @@ describe('HTTP Stage 01 configuration repository', () => {
 describe('Stage 01 configuration repository registration and PUT transport', () => {
   beforeEach(() => vi.restoreAllMocks())
 
+  it('registers employees from the active-company HTTP directory instead of the mock registry', async () => {
+    const values = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    })
+    const fetch = vi.fn(async () => new Response(JSON.stringify({
+      items: [{
+        id: 'b4000000-0000-4000-8000-000000000203', employeeCode: 'B4-DECISION', fullName: 'B4 decision',
+        workEmail: 'b4-stage01-decision@taskovia.invalid', account: {
+          userId: 'b4000000-0000-4000-8000-000000000903', email: 'b4-stage01-decision@taskovia.invalid',
+        }, department: { id: 'b4000000-0000-4000-8000-000000000401', code: 'B4', name: 'B4 Acceptance' },
+        position: null, hireDate: null, probationEndDate: null, employmentStatus: 'active', profileComplete: false,
+        roles: [{ id: 'b4000000-0000-4000-8000-000000000303', code: 'company_admin', name: 'B4 Company Administrator', description: 'B4', isPrivileged: true, isSystem: true }],
+      }], page: 1, pageSize: 100, total: 1,
+    }), { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
+    const token = vi.fn(() => 'test-access-token')
+    const result = await repositoriesPlugin.setup!({
+      $authReady: Promise.resolve(),
+      $authRepository: { getAccessToken: token },
+      $companyAccessStore: { activeCompanyId: companyId },
+      $authenticatedHttpClient: { request: vi.fn() },
+    } as never) as { provide: { repositories: RepositoryRegistry } }
+
+    await expect(result.provide.repositories.employees.list()).resolves.toMatchObject([{ employeeCode: 'B4-DECISION' }])
+    expect(fetch).toHaveBeenCalledWith(`/api/companies/${encodeURIComponent(companyId)}/employees?page=1&pageSize=100`, expect.objectContaining({
+      headers: { Authorization: 'Bearer test-access-token' },
+    }))
+  })
+
+  it('resolves the employee company at request time after anonymous plugin setup', async () => {
+    const values = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    })
+    const fetch = vi.fn(async () => new Response(JSON.stringify({
+      items: [], page: 1, pageSize: 100, total: 0,
+    }), { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
+    const companyAccess = { activeCompanyId: null as string | null }
+    const result = await repositoriesPlugin.setup!({
+      $authReady: Promise.resolve(),
+      $authRepository: { getAccessToken: () => 'test-access-token' },
+      $companyAccessStore: companyAccess,
+      $authenticatedHttpClient: { request: vi.fn() },
+    } as never) as { provide: { repositories: RepositoryRegistry } }
+
+    companyAccess.activeCompanyId = 'b4000000-0000-4000-8000-000000000020'
+    await expect(result.provide.repositories.employees.list()).resolves.toEqual([])
+    expect(fetch).toHaveBeenCalledWith('/api/companies/b4000000-0000-4000-8000-000000000020/employees?page=1&pageSize=100', expect.any(Object))
+  })
+
+  it('preserves the global receiver for the injected employee browser transport', async () => {
+    const values = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    })
+    let receivedGlobalThis = false
+    const fetch = vi.fn(function (this: unknown) {
+      receivedGlobalThis = this === globalThis
+      return Promise.resolve(new Response(JSON.stringify({
+        items: [], page: 1, pageSize: 100, total: 0,
+      }), { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetch)
+    const result = await repositoriesPlugin.setup!({
+      $authReady: Promise.resolve(),
+      $authRepository: { getAccessToken: () => 'test-access-token' },
+      $companyAccessStore: { activeCompanyId: companyId },
+      $authenticatedHttpClient: { request: vi.fn() },
+    } as never) as { provide: { repositories: RepositoryRegistry } }
+
+    await result.provide.repositories.employees.list()
+    expect(receivedGlobalThis).toBe(true)
+  })
+
   it('registers the repository against the active company', async () => {
     const values = new Map<string, string>()
     vi.stubGlobal('localStorage', {

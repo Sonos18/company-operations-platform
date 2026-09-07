@@ -1,10 +1,28 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createHttpStage01Repository } from '../../../app/repositories/http/http-stage01-repository'
+import { createAuthenticatedHttpClient } from '../../../app/repositories/http/authenticated-http-client'
 import { stage01DetailSchema } from '../../../shared/schemas/stage01'
+import { stage01OperationalDetailSchema } from '../../../shared/schemas/stage01-operational'
 
 const companyId = '83000000-0000-4000-8000-000000000020'
 const opportunityId = '83000000-0000-4000-8000-000000000030'
 const timestamp = '2026-08-31T00:00:00.000Z'
+const criteria = [
+  'customer_need',
+  'scope_capability',
+  'resources_schedule',
+  'commercial_viability',
+  'risk_special_conditions',
+].map((dimensionKey, index) => ({
+  key: dimensionKey,
+  dimensionKey,
+  label: `Criterion ${index + 1}`,
+  description: `Description ${index + 1}`,
+  criticality: 'required' as const,
+  applicabilityMode: 'always' as const,
+  allowsNotApplicable: false,
+  displayOrder: index + 1,
+}))
 const legacyDetail = stage01DetailSchema.parse({
   opportunity: {
     id: opportunityId, validityState: 'valid', canonicalOpportunityId: null,
@@ -30,6 +48,42 @@ describe('HTTP Stage 01 repository', () => {
     await expect(repository.get(opportunityId)).rejects.toBeDefined()
   })
 
+  it('preserves the bound blocker category through the authenticated HTTP parsing boundary', async () => {
+    const responseDetail = stage01OperationalDetailSchema.parse({
+      ...legacyDetail,
+      configuration: {
+        taxonomies: {
+          customer_type: [{ code: 'customer', label: 'Customer' }],
+          contact_relationship: [{ code: 'primary_contact', label: 'Primary contact' }],
+          scope: [{ code: 'scope', label: 'Scope' }],
+          lead_source: [{ code: 'referral', label: 'Referral' }],
+          referrer_type: [{ code: 'partner', label: 'Partner' }],
+          engagement_status: [{ code: 'active', label: 'Active' }],
+          invalid_reason: [{ code: 'invalid', label: 'Invalid' }],
+          budget_status: [{ code: 'known', label: 'Known' }],
+          timeline_status: [{ code: 'known', label: 'Known' }],
+          priority: [{ code: 'normal', label: 'Normal' }],
+          intake_channel: [{ code: 'phone', label: 'Phone' }],
+          blocker_category: [{ code: 'reserved_follow_up', label: 'Cần theo dõi thêm' }],
+        },
+        criteria,
+      },
+      relatedContacts: [],
+      decisionCycles: [legacyDetail.currentDecisionCycle],
+    })
+    const client = createAuthenticatedHttpClient({
+      getAccessToken: () => 'test-access-token',
+      fetch: async () => new Response(JSON.stringify(responseDetail), { status: 200 }),
+    })
+    const repository = createHttpStage01Repository({ companyId, client })
+
+    const detail = await repository.get(opportunityId)
+
+    expect(detail.configuration.taxonomies.blocker_category).toEqual([
+      { code: 'reserved_follow_up', label: 'Cần theo dõi thêm' },
+    ])
+  })
+
   it('uses a fixed encoded criterion revision route and exact body', async () => {
     const request = vi.fn(async ({ schema }: { schema: { parse(value: unknown): unknown } }) => schema.parse(null))
     const repository = createHttpStage01Repository({ companyId, client: { request } as never })
@@ -51,5 +105,21 @@ describe('HTTP Stage 01 repository', () => {
       `/api/companies/${companyId}/opportunities/${opportunityId}/stage-01/reactivate`,
     ])
     expect(request.mock.calls[0]![0].body).not.toHaveProperty('decisionAuthorityUserId')
+  })
+
+  it('uses the explicit decision-cycle policy-binding endpoint with a versioned transition body', async () => {
+    const request = vi.fn(async ({ schema }: { schema: { parse(value: unknown): unknown } }) => schema.parse(null))
+    const repository = createHttpStage01Repository({ companyId, client: { request } as never })
+    const cycleId = '83000000-0000-4000-8000-000000000035'
+    const input = {
+      requestId: '83000000-0000-4000-8000-000000000036', expectedCycleVersion: 2,
+      transitionCode: 'b4_acceptance_policy_transition' as const,
+      reason: 'Bind VQH Decision Policy v1 for this unresolved acceptance cycle.',
+    }
+    await repository.transitionDecisionPolicy(opportunityId, cycleId, input)
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      url: `/api/companies/${companyId}/opportunities/${opportunityId}/decision-cycles/${cycleId}/policy-binding`,
+      method: 'POST', body: input,
+    }))
   })
 })

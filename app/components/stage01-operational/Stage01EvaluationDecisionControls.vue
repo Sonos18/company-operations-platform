@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ClientError } from '../../errors/client-error'
 import { latestCriterionRevision, orderedDecisionCycles } from '../../features/stage01-operational/stage01-operational'
-import type { Stage01OperationalDetail } from '../../features/stage01/stage01.types'
+import type { OpportunityDecisionAuthorityCandidate, Stage01OperationalDetail } from '../../features/stage01/stage01.types'
 
 type EvaluationDraft = {
   applicability: 'applicable' | 'not_applicable'
@@ -26,6 +26,12 @@ const decision = reactive({ outcome: 'proceed' as 'proceed' | 'not_proceeding', 
 const overrideRationaleRequired = ref(false)
 const reactivationOpen = ref(false)
 const reactivationReason = ref('')
+const authorityOpen = ref(false)
+const authorityCandidates = ref<OpportunityDecisionAuthorityCandidate[]>([])
+const authorityUserId = ref('')
+const authorityReason = ref('')
+const authorityRequestId = ref<string | null>(null)
+const policyTransitionRequestId = ref<string | null>(null)
 
 const criteria = computed(() => [...props.detail.configuration.criteria].sort((left, right) => left.displayOrder - right.displayOrder))
 const cycles = computed(() => orderedDecisionCycles(props.detail.decisionCycles))
@@ -36,11 +42,20 @@ const canEvaluate = computed(() => access.hasPermission('stage01.evaluation.upda
 const canRecommend = computed(() => access.hasPermission('stage01.recommendation.submit') && !completed.value)
 const canClarify = computed(() => access.hasPermission('stage01.clarification.return') && !completed.value && currentRecommendation.value !== null)
 const canRecordDecision = computed(() => (
-  access.hasPermission('stage01.decision.record')
+  access.hasPermission('opportunity.decision.record')
   && props.detail.actorCapabilities.includes('decision')
+  && (props.detail.currentDecisionCycle.decisionAuthority.status === 'not_required'
+    || (props.detail.currentDecisionCycle.decisionAuthority.status === 'resolved'
+      && props.detail.currentDecisionCycle.decisionAuthority.currentActorIsAuthority))
   && !completed.value
   && currentRecommendation.value !== null
 ))
+const canAssignDecisionAuthority = computed(() => access.hasPermission('opportunity.decision_authority.assign')
+  && props.detail.actorCapabilities.includes('assignDecisionAuthority')
+  && props.detail.currentDecisionCycle.decisionAuthority.policyBinding.status === 'bound' && !completed.value)
+const canTransitionDecisionPolicy = computed(() => access.hasPermission('opportunity.decision_authority.assign')
+  && props.detail.currentDecisionCycle.decisionAuthority.policyBinding.transitionEligible && !completed.value)
+const decisionVisible = computed(() => access.hasPermission('opportunity.decision.record') && !completed.value)
 const canReactivate = computed(() => access.hasPermission('stage01.reactivate') && completed.value)
 
 function draftFor(criterionKey: string): EvaluationDraft {
@@ -184,6 +199,53 @@ async function submitDecision(): Promise<void> {
   }
 }
 
+async function openAuthorityAssignment(): Promise<void> {
+  clearNotice()
+  try {
+    authorityCandidates.value = await repositories.stage01.listDecisionAuthorityCandidates(
+      props.detail.opportunity.id, props.detail.currentDecisionCycle.id,
+    )
+    authorityUserId.value = authorityCandidates.value.find(candidate => candidate.userId === props.detail.currentDecisionCycle.decisionAuthority.userId)?.userId
+      ?? authorityCandidates.value[0]?.userId ?? ''
+    authorityRequestId.value = crypto.randomUUID()
+    authorityOpen.value = true
+  }
+  catch (caught) { error.value = caught }
+}
+
+async function submitAuthorityAssignment(): Promise<void> {
+  if (!authorityUserId.value) {
+    error.value = 'Chọn người có thẩm quyền quyết định.'
+    return
+  }
+  const reason = authorityReason.value.trim()
+  const completed = await command('Đã chỉ định người có thẩm quyền quyết định.', () => repositories.stage01.assignDecisionAuthority(
+    props.detail.opportunity.id, props.detail.currentDecisionCycle.id, {
+      requestId: authorityRequestId.value ??= crypto.randomUUID(), action: 'assign', authorityUserId: authorityUserId.value,
+      expectedCycleVersion: props.detail.currentDecisionCycle.version, reason: reason || null,
+    },
+  ))
+  if (completed) {
+    authorityOpen.value = false
+    authorityReason.value = ''
+    authorityRequestId.value = null
+  }
+}
+
+async function transitionDecisionPolicy(): Promise<void> {
+  const completed = await command('Đã áp dụng Decision Policy v1. Hãy chỉ định người có thẩm quyền quyết định.', () => repositories.stage01.transitionDecisionPolicy(
+    props.detail.opportunity.id,
+    props.detail.currentDecisionCycle.id,
+    {
+      requestId: policyTransitionRequestId.value ??= crypto.randomUUID(),
+      expectedCycleVersion: props.detail.currentDecisionCycle.version,
+      transitionCode: 'b4_acceptance_policy_transition',
+      reason: 'Bind VQH Decision Policy v1 for this unresolved acceptance cycle.',
+    },
+  ))
+  if (completed) policyTransitionRequestId.value = null
+}
+
 async function submitReactivation(): Promise<void> {
   const reason = reactivationReason.value.trim()
   if (!reason) {
@@ -287,13 +349,31 @@ function openReactivation(): void {
     </section>
 
     <section class="evaluation-decision__section" aria-labelledby="decision-heading">
+      <div><p class="eyebrow">Thẩm quyền quyết định</p><h3>Người có thẩm quyền quyết định</h3></div>
+      <UAlert v-if="detail.currentDecisionCycle.decisionAuthority.policyBinding.status === 'legacy_unbound'" color="warning" title="Decision Policy cần được áp dụng trước khi chỉ định thẩm quyền." />
+      <UButton v-if="canTransitionDecisionPolicy" variant="outline" @click="transitionDecisionPolicy">Áp dụng Decision Policy v1</UButton>
+      <p v-if="detail.currentDecisionCycle.decisionAuthority.status === 'not_required'" class="evaluation-decision__final">Không yêu cầu Decision Authority cho công ty này.</p>
+      <p v-if="detail.currentDecisionCycle.decisionAuthority.status === 'unresolved'" class="evaluation-decision__final">Chưa chỉ định</p>
+      <UAlert v-if="detail.currentDecisionCycle.decisionAuthority.status === 'unresolved'" color="warning" title="Chưa chỉ định người có thẩm quyền quyết định." />
+      <p v-if="detail.currentDecisionCycle.decisionAuthority.status === 'resolved'" class="evaluation-decision__final">
+        Đã chỉ định: {{ detail.currentDecisionCycle.decisionAuthority.displayName }}<span v-if="detail.currentDecisionCycle.decisionAuthority.positionTitle"> · {{ detail.currentDecisionCycle.decisionAuthority.positionTitle }}</span>
+      </p>
+      <UButton v-if="canAssignDecisionAuthority && !authorityOpen && detail.currentDecisionCycle.decisionAuthority.status === 'unresolved'" variant="outline" @click="openAuthorityAssignment">Chỉ định</UButton>
+      <form v-if="authorityOpen" class="evaluation-decision__form" @submit.prevent="submitAuthorityAssignment">
+        <label>Người có thẩm quyền quyết định<select v-model="authorityUserId"><option v-for="candidate in authorityCandidates" :key="candidate.userId" :value="candidate.userId">{{ candidate.displayName }}{{ candidate.positionTitle ? ` · ${candidate.positionTitle}` : '' }}</option></select></label>
+        <label>Lý do (tùy chọn)<textarea v-model="authorityReason" /></label>
+        <UButton type="submit">Xác nhận chỉ định</UButton>
+      </form>
+    </section>
+
+    <section class="evaluation-decision__section" aria-labelledby="decision-heading">
       <div><p class="eyebrow">Quyết định cuối cùng</p><h3 id="decision-heading">Quyết định và kích hoạt lại</h3></div>
       <p v-if="completed" class="evaluation-decision__final"><strong>Quyết định đã ghi nhận: {{ outcomeLabel(detail.currentDecisionCycle.finalOutcome!) }}</strong><span> · {{ detail.currentDecisionCycle.finalRationale }}</span></p>
-      <form v-if="canRecordDecision" class="evaluation-decision__form" @submit.prevent="submitDecision">
+      <form v-if="decisionVisible" class="evaluation-decision__form" @submit.prevent="submitDecision">
         <label>Kết quả quyết định<select v-model="decision.outcome"><option value="proceed">Tiếp tục</option><option value="not_proceeding">Không tiếp tục</option></select></label>
         <label>Lý do quyết định<textarea v-model="decision.rationale" /></label>
         <label v-if="overrideRationaleRequired">Lý do ghi đè quyết định<textarea v-model="decision.overrideRationale" required /></label>
-        <UButton type="submit">Ghi nhận quyết định</UButton>
+        <UButton type="submit" :disabled="!canRecordDecision">Ghi nhận quyết định</UButton>
       </form>
       <UButton v-if="canReactivate && !reactivationOpen" variant="outline" @click="openReactivation">Kích hoạt lại Stage 01</UButton>
       <form v-if="reactivationOpen" class="evaluation-decision__form" @submit.prevent="submitReactivation">

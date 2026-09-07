@@ -19,6 +19,14 @@ import type {
   Stage01Recommendation,
   SubmitRecommendationInput,
 } from '../../../shared/schemas/stage01'
+import {
+  assignOpportunityDecisionAuthorityInputSchema,
+  opportunityDecisionAuthorityCandidateSchema,
+  opportunityDecisionAuthorityProjectionSchema,
+  type AssignOpportunityDecisionAuthorityInput,
+  type OpportunityDecisionAuthorityCandidate,
+  type TransitionOpportunityDecisionPolicyInput,
+} from '../../../shared/schemas/opportunity-decision-authority'
 import type { UserSupabaseClient } from '../../utils/supabase-client'
 import { createSupabaseOpportunityRepository } from '../opportunities/opportunity.repository'
 import { createSupabaseWorkflowRepository } from '../workflow/workflow.repository'
@@ -31,6 +39,9 @@ export interface Stage01DataRepository {
   submitRecommendation(companyId: string, opportunityId: string, input: SubmitRecommendationInput, requestId: string): Promise<void>
   returnForClarification(companyId: string, opportunityId: string, input: ReturnForClarificationInput, requestId: string): Promise<void>
   recordFinalDecision(companyId: string, opportunityId: string, input: RecordFinalDecisionInput, requestId: string): Promise<void>
+  listDecisionAuthorityCandidates(companyId: string, opportunityId: string, decisionCycleId: string): Promise<OpportunityDecisionAuthorityCandidate[]>
+  assignDecisionAuthority(companyId: string, opportunityId: string, decisionCycleId: string, input: AssignOpportunityDecisionAuthorityInput): Promise<void>
+  transitionDecisionPolicy(companyId: string, opportunityId: string, decisionCycleId: string, input: TransitionOpportunityDecisionPolicyInput): Promise<void>
   reactivate(companyId: string, opportunityId: string, input: ReactivateStage01Input, requestId: string): Promise<void>
 }
 
@@ -52,7 +63,7 @@ const version = z.number().int().nonnegative()
 const timestamp = z.string().datetime({ offset: true })
 const cycleRowSchema = z.object({
   id: uuid, opportunity_id: uuid, node_execution_id: uuid, cycle_no: z.number().int().positive(),
-  decision_authority_user_id: uuid.nullable(), authority_resolution_reference: z.string().trim().min(1).nullable(),
+  decision_authority_user_id: uuid.nullable(), authority_resolution_event_id: uuid.nullable().default(null), authority_resolution_reference: z.string().trim().min(1).nullable(),
   reactivation_reason: z.string().trim().min(1).nullable(), final_outcome: z.enum(['proceed', 'not_proceeding']).nullable(),
   final_decision_by: uuid.nullable(), final_decision_at: timestamp.nullable(), final_rationale: z.string().trim().min(1).nullable(),
   final_recommendation_id: uuid.nullable(), override_rationale: z.string().trim().min(1).nullable(), version,
@@ -93,7 +104,7 @@ const definitionSchema = z.object({
 const definitionRowSchema = z.object({ definition: definitionSchema }).strict()
 const accessRowSchema = z.object({ roles: z.array(z.string()), permissions: z.array(z.string().trim().min(1)) }).strict()
 
-const cycleColumns = 'id, opportunity_id, node_execution_id, cycle_no, decision_authority_user_id, authority_resolution_reference, reactivation_reason, final_outcome, final_decision_by, final_decision_at, final_rationale, final_recommendation_id, override_rationale, version, created_at'
+const cycleColumns = 'id, opportunity_id, node_execution_id, cycle_no, decision_authority_user_id, authority_resolution_event_id, authority_resolution_reference, reactivation_reason, final_outcome, final_decision_by, final_decision_at, final_rationale, final_recommendation_id, override_rationale, version, created_at'
 const evaluationColumns = 'id, decision_cycle_id, criterion_key, revision, applicability, result, rationale, evidence, evaluated_by, evaluated_at'
 const recommendationColumns = 'id, decision_cycle_id, version, recommendation, rationale, evidence, submitted_by, submitted_at'
 const clarificationColumns = 'id, decision_cycle_id, recommendation_id, reason, returned_by, returned_at'
@@ -121,6 +132,8 @@ const reactivationResultSchema = z.object({
   nodeExecutionId: uuid, decisionCycleId: uuid, executionNo: z.number().int().positive(),
   cycleNo: z.number().int().positive(), executionVersion: version, cycleVersion: version, opportunityVersion: version,
 }).strict()
+const authorityCandidateResultSchema = z.object({ items: z.array(opportunityDecisionAuthorityCandidateSchema) }).strict()
+const authorityProjectionResultSchema = opportunityDecisionAuthorityProjectionSchema
 
 function parse<T>(schema: z.ZodType<T>, value: unknown, message: string): T {
   const result = schema.safeParse(value)
@@ -227,6 +240,7 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
         return stage01DecisionCycleSchema.parse({
           id: cycleRow.id, opportunityId: cycleRow.opportunity_id, nodeExecutionId: cycleRow.node_execution_id,
           cycleNo: cycleRow.cycle_no, decisionAuthorityUserId: cycleRow.decision_authority_user_id,
+          authorityResolutionEventId: cycleRow.authority_resolution_event_id,
           authorityResolutionReference: cycleRow.authority_resolution_reference, reactivationReason: cycleRow.reactivation_reason,
           finalOutcome: cycleRow.final_outcome, finalDecisionBy: cycleRow.final_decision_by,
           finalDecisionAt: cycleRow.final_decision_at, finalRationale: cycleRow.final_rationale,
@@ -238,7 +252,11 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
           createdAt: cycleRow.created_at,
         })
       }))
-      const decisionCycle = decisionCycles[decisionCycles.length - 1]!
+      const latestCycle = decisionCycles[decisionCycles.length - 1]!
+      const decisionAuthority = await rpc('get_opportunity_decision_authority_projection', {
+        target_company_id: companyId, target_opportunity_id: opportunityId, target_cycle_id: latestCycle.id,
+      }, authorityProjectionResultSchema, 'Không thể đọc Decision Authority.')
+      const decisionCycle = stage01DecisionCycleSchema.parse({ ...latestCycle, decisionAuthority })
 
       const primaryContact = opportunity.contacts.find(contact => contact.isPrimary && contact.endedAt === null)
       const usableContactMethodCount = primaryContact === undefined
@@ -271,10 +289,24 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
         needsRevalidation: evaluation.needsRevalidation, finalOutcome: decisionCycle.finalOutcome,
       })
       const allowedPermissions = new Set(access.permissions)
-      const actorCapabilities = Object.entries(definition.capabilities)
+      const workflowCapabilities = Object.entries(definition.capabilities)
         .filter(([, permission]) => allowedPermissions.has(permission))
         .map(([capability]) => capability)
-        .sort()
+      // Workflow capabilities remain owned by the immutable workflow snapshot.
+      // Assignment is an enabled-capability operation. Final Decision remains
+      // available to an actor with its ordinary RBAC permission when this
+      // company has not enabled Decision Authority.
+      const decisionPolicyCapabilities: string[] = []
+      if (decisionAuthority.policyBinding.status === 'bound'
+        && allowedPermissions.has('opportunity.decision_authority.assign')) {
+        decisionPolicyCapabilities.push('assignDecisionAuthority')
+      }
+      if ((decisionAuthority.policyBinding.status === 'bound'
+          || decisionAuthority.policyBinding.status === 'not_required')
+        && allowedPermissions.has('opportunity.decision.record')) {
+        decisionPolicyCapabilities.push('decision')
+      }
+      const actorCapabilities = [...new Set([...workflowCapabilities, ...decisionPolicyCapabilities])].sort()
       return stage01OperationalDetailSchema.parse({
         opportunity, intake: { runtime: intake, gates: intakeGates }, evaluation: { runtime: evaluation, gates: evaluationGates },
         currentDecisionCycle: decisionCycle, actorCapabilities, configuration: businessConfiguration(definition), relatedContacts, decisionCycles,
@@ -296,6 +328,25 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
     async recordFinalDecision(companyId, opportunityId, input, requestId) {
       await rpc('record_stage01_final_decision', { target_company_id: companyId, target_opportunity_id: opportunityId,
         target_input: input, target_request_id: requestId }, finalDecisionResultSchema, 'Không thể ghi nhận Final Decision.')
+    },
+    async listDecisionAuthorityCandidates(companyId, opportunityId, decisionCycleId) {
+      const result = await rpc('list_opportunity_decision_authority_candidates', {
+        target_company_id: companyId, target_opportunity_id: opportunityId, target_cycle_id: decisionCycleId,
+      }, authorityCandidateResultSchema, 'Không thể đọc danh sách người có thẩm quyền.')
+      return result.items
+    },
+    async assignDecisionAuthority(companyId, opportunityId, decisionCycleId, input) {
+      await rpc('assign_opportunity_decision_authority', {
+        target_company_id: companyId, target_opportunity_id: opportunityId, target_cycle_id: decisionCycleId,
+        target_input: assignOpportunityDecisionAuthorityInputSchema.parse(input),
+      }, z.object({ opportunityId: uuid, decisionCycleId: uuid, authorityResolutionEventId: uuid, authorityUserId: uuid, cycleVersion: version }).strict(),
+      'Không thể chỉ định người có thẩm quyền quyết định.')
+    },
+    async transitionDecisionPolicy(companyId, opportunityId, decisionCycleId, input) {
+      await rpc('transition_opportunity_decision_policy', {
+        target_company_id: companyId, target_opportunity_id: opportunityId, target_cycle_id: decisionCycleId, target_input: input,
+      }, z.object({ opportunityId: uuid, decisionCycleId: uuid, policySnapshotId: uuid, cycleVersion: version }).strict(),
+      'Không thể áp dụng Decision Policy cho chu kỳ này.')
     },
     async reactivate(companyId, opportunityId, input, requestId) {
       await rpc('reactivate_stage01', { target_company_id: companyId, target_opportunity_id: opportunityId,

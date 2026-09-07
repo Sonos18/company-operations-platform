@@ -30,6 +30,25 @@ describe('Stage 01 Workflow repository', () => {
     })
   })
 
+  it('maps a foreign assignee database validation error to safe employee-not-found instead of 500', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: 'P0001', message: 'COMPANY_MEMBER_NOT_FOUND' },
+    })
+    const repository = createSupabaseWorkflowRepository({ rpc } as never)
+
+    await expect(repository.assign(
+      '62000000-0000-4000-8000-000000000020',
+      '62000000-0000-4000-8000-000000000031',
+      { assignmentKind: 'accountable_owner', assigneeUserId: '62000000-0000-4000-8000-000000000001', expectedExecutionVersion: 0 },
+      '62000000-0000-4000-8000-000000000099',
+    )).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'EMPLOYEE_NOT_FOUND',
+      message: 'Không tìm thấy nhân viên hợp lệ trong công ty này.',
+    })
+  })
+
   it('forwards revalidation evidence to the fixed RPC before refreshing runtime', async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: {

@@ -7,6 +7,7 @@ import {
   submitRecommendationInputSchema,
 } from '../../../shared/schemas/stage01'
 import { stage01OperationalDetailSchema } from '../../../shared/schemas/stage01-operational'
+import { assignOpportunityDecisionAuthorityInputSchema, opportunityDecisionAuthorityCandidateSchema, transitionOpportunityDecisionPolicyInputSchema } from '../../../shared/schemas/opportunity-decision-authority'
 import type { Stage01Repository } from '../contracts'
 import type { AuthenticatedHttpClient } from './authenticated-http-client'
 
@@ -19,6 +20,7 @@ export function createHttpStage01Repository(options: HttpStage01RepositoryOption
   const base = `/api/companies/${encodeURIComponent(options.companyId)}/opportunities`
   const id = (value: string) => encodeURIComponent(value)
   const stage = (opportunityId: string) => `${base}/${id(opportunityId)}/stage-01`
+  const cycle = (opportunityId: string, decisionCycleId: string) => `${base}/${id(opportunityId)}/decision-cycles/${id(decisionCycleId)}`
   const postVoid = async (url: string, input: unknown) => {
     await options.client.request({ url, method: 'POST', body: input, schema: z.null() })
   }
@@ -39,6 +41,16 @@ export function createHttpStage01Repository(options: HttpStage01RepositoryOption
     ),
     recordFinalDecision: (opportunityId, input) => postVoid(
       `${stage(opportunityId)}/final-decision`, recordFinalDecisionInputSchema.parse(input),
+    ),
+    listDecisionAuthorityCandidates: (opportunityId, decisionCycleId) => options.client.request({
+      url: `${cycle(opportunityId, decisionCycleId)}/authority-candidates`, method: 'GET',
+      schema: z.object({ items: z.array(opportunityDecisionAuthorityCandidateSchema) }).strict(),
+    }).then(result => result.items),
+    assignDecisionAuthority: (opportunityId, decisionCycleId, input) => postVoid(
+      `${cycle(opportunityId, decisionCycleId)}/authority`, assignOpportunityDecisionAuthorityInputSchema.parse(input),
+    ),
+    transitionDecisionPolicy: (opportunityId, decisionCycleId, input) => postVoid(
+      `${cycle(opportunityId, decisionCycleId)}/policy-binding`, transitionOpportunityDecisionPolicyInputSchema.parse(input),
     ),
     reactivate: (opportunityId, input) => postVoid(
       `${stage(opportunityId)}/reactivate`, reactivateStage01InputSchema.parse(input),

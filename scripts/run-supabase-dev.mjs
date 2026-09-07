@@ -18,6 +18,7 @@ const STAGE01_TEST_FILES = [
   'supabase/tests/database/stage01_config_commands.test.sql',
   'supabase/tests/database/stage01_opportunity_create_options_security.test.sql',
   'supabase/tests/database/stage01_b4_acceptance.test.sql',
+  'supabase/tests/database/opportunity_decision_authority.test.sql',
 ]
 const VQH_RLS_SMOKE_SQL = String.raw`begin;
 do $$
@@ -64,6 +65,8 @@ const STAGE01_PERMISSION_METADATA_SQL = String.raw`      ('opportunity.read', 'o
       ('opportunity.duplicate.resolve', 'opportunity', 'Resolve duplicate concerns', 'Resolve an Opportunity duplicate concern without destructive merge'),
       ('opportunity.invalidate', 'opportunity', 'Invalidate opportunities', 'Invalidate an Opportunity using an approved structured reason'),
       ('opportunity.restore', 'opportunity', 'Restore opportunities', 'Restore an eligible invalid Opportunity'),
+      ('opportunity.decision_authority.assign', 'opportunity_decision', 'Assign decision authority', 'Assign the explicit authority for an Opportunity Decision cycle'),
+      ('opportunity.decision.record', 'opportunity_decision', 'Record Opportunity decisions', 'Record the immutable final decision for an Opportunity Decision cycle'),
       ('journey.read', 'journey', 'Read Journey runtime', 'Read company Workflow Core runtime and history'),
       ('journey.assignment.manage', 'journey', 'Manage Journey assignments', 'Assign, reassign, or end Workflow node assignments'),
       ('journey.node.start', 'journey', 'Start Journey nodes', 'Start an eligible Workflow node execution'),

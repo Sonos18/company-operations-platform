@@ -5,38 +5,71 @@ begin;
 
 do $$
 declare
-  tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010';
-  company_id constant uuid := 'b4000000-0000-4000-8000-000000000020';
+  v_tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010';
+  v_company_id constant uuid := 'b4000000-0000-4000-8000-000000000020';
   operator_id constant uuid := 'b4000000-0000-4000-8000-000000000901';
   reader_id constant uuid := 'b4000000-0000-4000-8000-000000000902';
   operator_role_id constant uuid := 'b4000000-0000-4000-8000-000000000903';
   reader_role_id constant uuid := 'b4000000-0000-4000-8000-000000000904';
+  operator_department_id constant uuid := 'b4000000-0000-4000-8000-000000000905';
+  operator_employee_id constant uuid := 'b4000000-0000-4000-8000-000000000906';
 begin
   insert into auth.users (id, email) values
     (operator_id, 'b4-db-operator@taskovia.invalid'),
     (reader_id, 'b4-db-reader@taskovia.invalid') on conflict (id) do nothing;
   insert into public.tenants (id, code, name) values
-    (tenant_id, 'taskovia-b4-acceptance', 'Taskovia B4 acceptance') on conflict (id) do nothing;
+    (v_tenant_id, 'taskovia-b4-acceptance', 'Taskovia B4 acceptance') on conflict (id) do nothing;
   insert into public.companies (id, tenant_id, code, name) values
-    (company_id, tenant_id, 'VQH_STAGE01_ACCEPTANCE', 'VQH Stage 01 acceptance') on conflict (id) do nothing;
+    (v_company_id, v_tenant_id, 'VQH_STAGE01_ACCEPTANCE', 'VQH Stage 01 acceptance') on conflict (id) do nothing;
+  -- Amendment 31 bootstrap ordering: configure capability and clone the
+  -- immutable canonical policy before any B4 Opportunity can create a cycle.
+  insert into public.company_opportunity_decision_capabilities (
+    tenant_id, company_id, capability_key, enabled, configured_by
+  ) values (
+    v_tenant_id, v_company_id, 'opportunity.decision_authority', true, operator_id
+  ) on conflict (tenant_id, company_id, capability_key) do update
+    set enabled = excluded.enabled, configured_by = excluded.configured_by;
+  insert into public.opportunity_decision_policy_snapshots (
+    tenant_id, company_id, policy_key, policy_version, policy, policy_hash,
+    status, published_at, approved_at, source_policy_snapshot_id, created_by
+  )
+  select v_tenant_id,
+    v_company_id,
+    canonical.policy_key, 1, canonical.policy,
+    'b4-transactional-authority-policy-v1', 'published', clock_timestamp(),
+    clock_timestamp(), canonical.id, operator_id
+  from public.opportunity_decision_policy_snapshots canonical
+  where canonical.tenant_id = '10000000-0000-4000-8000-000000000010'::uuid
+    and canonical.company_id = '10000000-0000-4000-8000-000000000020'::uuid
+    and canonical.policy_key = 'opportunity.decision_authority'
+    and canonical.status = 'published'
+    and canonical.published_at is not null
+    and canonical.approved_at is not null
+  order by canonical.policy_version desc
+  limit 1
+  on conflict (tenant_id, company_id, policy_key, policy_version) do nothing;
   insert into public.tenant_memberships (user_id, tenant_id, roles) values
-    (operator_id, tenant_id, array['member']), (reader_id, tenant_id, array['member']) on conflict do nothing;
+    (operator_id, v_tenant_id, array['member']), (reader_id, v_tenant_id, array['member']) on conflict do nothing;
   insert into public.company_memberships (user_id, tenant_id, company_id, roles) values
-    (operator_id, tenant_id, company_id, array['member']), (reader_id, tenant_id, company_id, array['member']) on conflict do nothing;
+    (operator_id, v_tenant_id, v_company_id, array['member']), (reader_id, v_tenant_id, v_company_id, array['member']) on conflict do nothing;
   insert into public.roles (id, tenant_id, company_id, code, name, description, is_system) values
-    (operator_role_id, tenant_id, company_id, 'b4_db_operator', 'B4 DB operator', 'Transactional B4 acceptance actor', false),
-    (reader_role_id, tenant_id, company_id, 'b4_db_reader', 'B4 DB reader', 'Transactional B4 read-only actor', false)
+    (operator_role_id, v_tenant_id, v_company_id, 'b4_db_operator', 'B4 DB operator', 'Transactional B4 acceptance actor', false),
+    (reader_role_id, v_tenant_id, v_company_id, 'b4_db_reader', 'B4 DB reader', 'Transactional B4 read-only actor', false)
   on conflict (id) do nothing;
   insert into public.role_permissions (role_id, permission_code)
   select operator_role_id, code from (values
     ('opportunity.read'),('opportunity.create'),('opportunity.update'),('opportunity.contact.manage'),('opportunity.scope.manage'),('opportunity.intake_record.create'),('opportunity.duplicate.raise'),('opportunity.duplicate.resolve'),
     ('journey.read'),('journey.assignment.manage'),('journey.blocker.raise'),('journey.blocker.resolve'),('journey.node.start'),('journey.node.complete'),('journey.node.reopen'),('journey.node.revalidate'),
-    ('stage01.evaluation.update'),('stage01.recommendation.submit'),('stage01.clarification.return'),('stage01.decision.record'),('employee.read_directory')
+    ('stage01.evaluation.update'),('stage01.recommendation.submit'),('stage01.clarification.return'),('stage01.decision.record'),('opportunity.decision_authority.assign'),('opportunity.decision.record'),('employee.read_directory')
   ) as permission(code) on conflict do nothing;
   insert into public.role_permissions (role_id, permission_code) values (reader_role_id, 'opportunity.read') on conflict do nothing;
   insert into public.company_role_assignments (tenant_id, company_id, user_id, role_id, granted_by, grant_reason) values
-    (tenant_id, company_id, operator_id, operator_role_id, operator_id, 'Transactional B4 acceptance fixture'),
-    (tenant_id, company_id, reader_id, reader_role_id, operator_id, 'Transactional B4 acceptance fixture') on conflict do nothing;
+    (v_tenant_id, v_company_id, operator_id, operator_role_id, operator_id, 'Transactional B4 acceptance fixture'),
+    (v_tenant_id, v_company_id, reader_id, reader_role_id, operator_id, 'Transactional B4 acceptance fixture') on conflict do nothing;
+  insert into public.departments (id, tenant_id, company_id, code, name) values
+    (operator_department_id, v_tenant_id, v_company_id, 'B4-OPS', 'B4 Operations') on conflict (id) do nothing;
+  insert into public.employees (id, tenant_id, company_id, user_id, employee_code, full_name, work_email, department_id, employment_status, created_by) values
+    (operator_employee_id, v_tenant_id, v_company_id, operator_id, 'B4-DB-OPERATOR', 'B4 DB operator', 'b4-db-operator@taskovia.invalid', operator_department_id, 'active', operator_id) on conflict (id) do nothing;
 end $$;
 
 -- A complete synthetic definition is deliberately scoped to the B4 company.
@@ -46,7 +79,7 @@ insert into public.workflow_definition_snapshots (
   'b4000000-0000-4000-8000-000000000910',
   'b4000000-0000-4000-8000-000000000010',
   'b4000000-0000-4000-8000-000000000020', 'vqh.stage01', 999001, 1,
-  '{"nodes":[{"key":"01.1","type":"sub_stage","parentNodeKey":null},{"key":"01.2","type":"sub_stage","parentNodeKey":null}],"dependencies":[{"from":"01.1","to":"01.2","requires":"completed_current_valid"}],"dimensions":["customer_need","scope_capability","resources_schedule","commercial_viability","risk_special_conditions"],"taxonomies":{"customer_type":[{"code":"customer","label":"Customer"}],"contact_relationship":[{"code":"decision_maker","label":"Decision maker"}],"scope":[{"code":"design","label":"Design"}],"lead_source":[{"code":"direct","label":"Direct","behavior":{"requiresReferrer":false}}],"referrer_type":[{"code":"partner","label":"Partner"}],"engagement_status":[{"code":"grounded","label":"Grounded"}],"invalid_reason":[{"code":"invalid","label":"Invalid"}],"budget_status":[{"code":"unknown","label":"Unknown"}],"timeline_status":[{"code":"unknown","label":"Unknown"}],"priority":[{"code":"normal","label":"Normal"}],"intake_channel":[{"code":"phone","label":"Phone"}],"blocker_category":[{"code":"follow_up","label":"Follow up"}]},"criteria":[{"key":"customer_need","dimensionKey":"customer_need","label":"Customer need","description":"Required","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":1},{"key":"scope_capability","dimensionKey":"scope_capability","label":"Scope","description":"Required","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":2},{"key":"resources_schedule","dimensionKey":"resources_schedule","label":"Schedule","description":"Required","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":3},{"key":"commercial_viability","dimensionKey":"commercial_viability","label":"Commercial","description":"Required","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":4},{"key":"risk_special","dimensionKey":"risk_special_conditions","label":"Risk","description":"Required","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":5}],"capabilities":{"intakeOwner":"journey.assignment.manage","evaluationOwner":"journey.assignment.manage","start":"journey.node.start","complete":"journey.node.complete","decision":"stage01.decision.record"},"gates":{"intake":["approved_minimum","duplicate_resolved","no_blocking_blocker"],"evaluation":["required_applicable_evaluated","recommendation_current","final_decision_recorded"]}}'::jsonb,
+  '{"nodes":[{"key":"01.1","type":"sub_stage","parentNodeKey":null},{"key":"01.2","type":"sub_stage","parentNodeKey":null}],"dependencies":[{"from":"01.1","to":"01.2","requires":"completed_current_valid"}],"dimensions":["customer_need","scope_capability","resources_schedule","commercial_viability","risk_special_conditions"],"taxonomies":{"customer_type":[{"code":"customer","label":"Customer"}],"contact_relationship":[{"code":"decision_maker","label":"Decision maker"}],"scope":[{"code":"design","label":"Design"}],"lead_source":[{"code":"direct","label":"Direct","behavior":{"requiresReferrer":false}}],"referrer_type":[{"code":"partner","label":"Partner"}],"engagement_status":[{"code":"grounded","label":"Grounded"}],"invalid_reason":[{"code":"invalid","label":"Invalid"}],"budget_status":[{"code":"unknown","label":"Unknown"}],"timeline_status":[{"code":"unknown","label":"Unknown"}],"priority":[{"code":"normal","label":"Normal"}],"intake_channel":[{"code":"phone","label":"Phone"}],"blocker_category":[{"code":"follow_up","label":"Follow up"}]},"criteria":[{"key":"customer_need","dimensionKey":"customer_need","label":"Customer need","description":"Required","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":1},{"key":"scope_capability","dimensionKey":"scope_capability","label":"Scope","description":"Required","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":2},{"key":"resources_schedule","dimensionKey":"resources_schedule","label":"Schedule","description":"Required","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":3},{"key":"commercial_viability","dimensionKey":"commercial_viability","label":"Commercial","description":"Required","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":4},{"key":"risk_special","dimensionKey":"risk_special_conditions","label":"Risk","description":"Required","criticality":"required","applicabilityMode":"always","allowsNotApplicable":false,"displayOrder":5}],"capabilities":{"intakeOwner":"journey.assignment.manage","evaluationOwner":"journey.assignment.manage","start":"journey.node.start","complete":"journey.node.complete","assignDecisionAuthority":"opportunity.decision_authority.assign","decision":"opportunity.decision.record"},"decisionGovernance":{"authority":{"required":true,"resolutionMode":"explicit_per_cycle","requiredBeforeFinalDecision":true,"requiredBeforeEvaluation":false,"selfAssignmentAllowed":true,"carryForwardOnNewCycle":false,"showPreviousAuthorityAsSuggestion":true,"assignPermission":"opportunity.decision_authority.assign","decisionPermission":"opportunity.decision.record","eligibility":{"requireActiveMembership":true,"requireAccountBacking":true,"requireActiveEmployee":true}}},"gates":{"intake":["approved_minimum","duplicate_resolved","no_blocking_blocker"],"evaluation":["required_applicable_evaluated","recommendation_current","final_decision_recorded"]}}'::jsonb,
   'b4-transactional-runtime-definition'
 );
 
@@ -97,8 +130,7 @@ end $$;
 -- Create A through the normal public contract while snapshot N is current.
 select pg_temp.b4_prepare('s10-a');
 
--- B4-S02: immutable decision authority is fixture-bound at cycle creation; all
--- accepted evaluation, decision, and completion actions below use public RPCs.
+-- B4-S02: authority is established by its public command before final decision.
 reset role;
 do $$
 declare opportunity_id uuid := gen_random_uuid(); workflow_id uuid := gen_random_uuid(); node_id uuid := gen_random_uuid(); execution_id uuid := gen_random_uuid(); cycle_id uuid := gen_random_uuid();
@@ -107,18 +139,34 @@ begin
   insert into public.workflow_instances (id, tenant_id, company_id, subject_type, subject_id, definition_snapshot_id, created_by) values (workflow_id, 'b4000000-0000-4000-8000-000000000010', 'b4000000-0000-4000-8000-000000000020', 'opportunity', opportunity_id, 'b4000000-0000-4000-8000-000000000910', 'b4000000-0000-4000-8000-000000000901');
   insert into public.workflow_node_instances (id, tenant_id, company_id, workflow_instance_id, node_key, node_type) values (node_id, 'b4000000-0000-4000-8000-000000000010', 'b4000000-0000-4000-8000-000000000020', workflow_id, '01.2', 'sub_stage');
   insert into public.workflow_node_executions (id, tenant_id, company_id, node_instance_id, execution_no, phase, started_by, started_at) values (execution_id, 'b4000000-0000-4000-8000-000000000010', 'b4000000-0000-4000-8000-000000000020', node_id, 1, 'active', 'b4000000-0000-4000-8000-000000000901', now());
-  insert into public.stage01_decision_cycles (id, tenant_id, company_id, opportunity_id, node_execution_id, cycle_no, decision_authority_user_id, authority_resolution_reference, created_by) values (cycle_id, 'b4000000-0000-4000-8000-000000000010', 'b4000000-0000-4000-8000-000000000020', opportunity_id, execution_id, 1, 'b4000000-0000-4000-8000-000000000901', 'b4-s02-fixture-authority', 'b4000000-0000-4000-8000-000000000901');
+  insert into public.stage01_decision_cycles (id, tenant_id, company_id, opportunity_id, node_execution_id, cycle_no, created_by) values (cycle_id, 'b4000000-0000-4000-8000-000000000010', 'b4000000-0000-4000-8000-000000000020', opportunity_id, execution_id, 1, 'b4000000-0000-4000-8000-000000000901');
   insert into b4_runtime values ('s02', jsonb_build_object('opportunityId', opportunity_id, 'evaluationExecutionId', execution_id, 'decisionCycleId', cycle_id));
 end $$;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"b4000000-0000-4000-8000-000000000901","role":"authenticated"}', true);
 do $$
-declare context jsonb;
+declare context jsonb; intake_node_id uuid; intake_execution_id uuid; intake_fixture_at constant timestamptz := clock_timestamp();
 begin
   select runtime.context into context from b4_runtime as runtime where scenario = 's02'; perform pg_temp.b4_record_required_criteria(context);
   perform public.submit_stage01_recommendation('b4000000-0000-4000-8000-000000000020', (context ->> 'opportunityId')::uuid, '{"recommendation":"recommend_proceed","rationale":"B4 S02 recommendation","evidence":[],"expectedCycleVersion":5}'::jsonb, gen_random_uuid());
-  perform public.record_stage01_final_decision('b4000000-0000-4000-8000-000000000020', (context ->> 'opportunityId')::uuid, '{"outcome":"not_proceeding","rationale":"B4 S02 decline","overrideRationale":"B4 controlled decision","expectedCycleVersion":6}'::jsonb, gen_random_uuid());
-  perform public.complete_stage01_evaluation('b4000000-0000-4000-8000-000000000020', (context ->> 'evaluationExecutionId')::uuid, '{"expectedExecutionVersion":0,"expectedCycleVersion":7}'::jsonb, gen_random_uuid());
+  perform public.assign_opportunity_decision_authority('b4000000-0000-4000-8000-000000000020', (context ->> 'opportunityId')::uuid, (context ->> 'decisionCycleId')::uuid, jsonb_build_object('requestId', gen_random_uuid(), 'action', 'assign', 'authorityUserId', 'b4000000-0000-4000-8000-000000000901'::uuid, 'expectedCycleVersion', 6, 'reason', null));
+  begin
+    perform public.record_stage01_final_decision('b4000000-0000-4000-8000-000000000020', (context ->> 'opportunityId')::uuid, '{"outcome":"not_proceeding","rationale":"B4 S02 missing Intake","overrideRationale":"B4 controlled decision","expectedCycleVersion":7}'::jsonb, gen_random_uuid());
+    raise exception 'B4-S02 Final Decision accepted without a current Intake execution';
+  exception when raise_exception then
+    if sqlerrm <> 'STAGE01_EVALUATION_GATES_NOT_SATISFIED' then raise; end if;
+  end;
+  reset role;
+  intake_node_id := gen_random_uuid(); intake_execution_id := gen_random_uuid();
+  insert into public.workflow_node_instances (id, tenant_id, company_id, workflow_instance_id, node_key, node_type)
+  values (intake_node_id, 'b4000000-0000-4000-8000-000000000010', 'b4000000-0000-4000-8000-000000000020',
+    (select workflow.id from public.workflow_instances workflow where workflow.subject_id = (context ->> 'opportunityId')::uuid), '01.1', 'sub_stage');
+  insert into public.workflow_node_executions (id, tenant_id, company_id, node_instance_id, execution_no, phase, started_by, started_at, completed_by, completed_at)
+  values (intake_execution_id, 'b4000000-0000-4000-8000-000000000010', 'b4000000-0000-4000-8000-000000000020', intake_node_id, 1, 'completed', 'b4000000-0000-4000-8000-000000000901', intake_fixture_at - interval '1 minute', 'b4000000-0000-4000-8000-000000000901', intake_fixture_at);
+  set local role authenticated;
+  perform set_config('request.jwt.claims', '{"sub":"b4000000-0000-4000-8000-000000000901","role":"authenticated"}', true);
+  perform public.record_stage01_final_decision('b4000000-0000-4000-8000-000000000020', (context ->> 'opportunityId')::uuid, '{"outcome":"not_proceeding","rationale":"B4 S02 decline","overrideRationale":"B4 controlled decision","expectedCycleVersion":7}'::jsonb, gen_random_uuid());
+  perform public.complete_stage01_evaluation('b4000000-0000-4000-8000-000000000020', (context ->> 'evaluationExecutionId')::uuid, '{"expectedExecutionVersion":0,"expectedCycleVersion":8}'::jsonb, gen_random_uuid());
   if not exists (select 1 from public.stage01_decision_cycles where id = (context ->> 'decisionCycleId')::uuid and company_id = 'b4000000-0000-4000-8000-000000000020' and final_outcome = 'not_proceeding') then raise exception 'B4-S02 not_proceeding was not readable in its acceptance company'; end if;
   reset role;
   begin update public.stage01_decision_cycles set final_rationale = 'rewrite' where id = (context ->> 'decisionCycleId')::uuid; raise exception 'B4-S02 decided history was mutable'; exception when raise_exception then if sqlerrm <> 'STAGE01_HISTORY_IMMUTABLE' then raise; end if; end;
@@ -183,7 +231,7 @@ declare
   actor_id constant uuid := 'b4000000-0000-4000-8000-000000000905';
   private_user_id constant uuid := 'b4000000-0000-4000-8000-000000000906';
   role_id constant uuid := 'b4000000-0000-4000-8000-000000000907';
-  base_role_id constant uuid := 'b4000000-0000-4000-8000-00000000090b';
+  base_role_id uuid;
   actor_employee_id constant uuid := 'b4000000-0000-4000-8000-000000000908';
   private_employee_id constant uuid := 'b4000000-0000-4000-8000-000000000909';
   department_id constant uuid := 'b4000000-0000-4000-8000-00000000090a';
@@ -194,6 +242,15 @@ declare
   foreign_node_id constant uuid := 'b4000000-0000-4000-8000-000000000934';
   foreign_execution_id constant uuid := 'b4000000-0000-4000-8000-000000000935';
 begin
+  -- Reuse the B4 baseline for directory eligibility; the read-all actor keeps
+  -- its separate narrow role and receives no baseline assignment.
+  select baseline.id into strict base_role_id
+  from public.roles as baseline
+  where baseline.tenant_id = 'b4000000-0000-4000-8000-000000000010'::uuid
+    and baseline.company_id = 'b4000000-0000-4000-8000-000000000020'::uuid
+    and baseline.code = 'employee'
+    and baseline.is_active;
+
   insert into auth.users (id, email) values
     (actor_id, 'b4-s09-read-all@taskovia.invalid'),
     (private_user_id, 'b4-s09-private-target@taskovia.invalid');
@@ -204,8 +261,7 @@ begin
   insert into public.departments (id, tenant_id, company_id, code, name) values
     (department_id, tenant_id, company_id, 'B4-S09', 'B4 S09 transactional');
   insert into public.roles (id, tenant_id, company_id, code, name, description, is_system) values
-    (role_id, tenant_id, company_id, 'b4_s09_read_all', 'B4 S09 read all', 'Transactional employee.read_all-only actor', false),
-    (base_role_id, tenant_id, company_id, 'employee', 'Employee', 'Transactional active directory target role', false);
+    (role_id, tenant_id, company_id, 'b4_s09_read_all', 'B4 S09 read all', 'Transactional employee.read_all-only actor', false);
   insert into public.role_permissions (role_id, permission_code) values (role_id, 'employee.read_all');
   insert into public.company_role_assignments (tenant_id, company_id, user_id, role_id, granted_by, grant_reason) values
     (tenant_id, company_id, actor_id, role_id, actor_id, 'Transactional B4 S09 employee.read_all fixture'),

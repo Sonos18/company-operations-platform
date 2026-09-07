@@ -11,6 +11,10 @@ delete from public.stage01_criterion_evaluations
 where tenant_id = '7c000000-0000-4000-8000-000000000010';
 delete from public.stage01_recommendations
 where tenant_id = '7c000000-0000-4000-8000-000000000010';
+delete from public.opportunity_decision_policy_binding_events
+where tenant_id = '7c000000-0000-4000-8000-000000000010';
+delete from public.opportunity_decision_authority_events
+where tenant_id = '7c000000-0000-4000-8000-000000000010';
 delete from public.stage01_decision_cycles
 where tenant_id = '7c000000-0000-4000-8000-000000000010';
 delete from public.workflow_node_events
@@ -42,6 +46,10 @@ where tenant_id = '7c000000-0000-4000-8000-000000000010';
 delete from public.opportunities
 where tenant_id = '7c000000-0000-4000-8000-000000000010';
 delete from public.workflow_definition_snapshots
+where tenant_id = '7c000000-0000-4000-8000-000000000010';
+delete from public.opportunity_decision_policy_snapshots
+where tenant_id = '7c000000-0000-4000-8000-000000000010';
+delete from public.company_opportunity_decision_capabilities
 where tenant_id = '7c000000-0000-4000-8000-000000000010';
 delete from public.company_role_assignments
 where tenant_id = '7c000000-0000-4000-8000-000000000010';
@@ -76,6 +84,12 @@ begin
     where tenant_id = '7c000000-0000-4000-8000-000000000010'
   ) or exists (
     select 1 from public.stage01_recommendations
+    where tenant_id = '7c000000-0000-4000-8000-000000000010'
+  ) or exists (
+    select 1 from public.opportunity_decision_policy_binding_events
+    where tenant_id = '7c000000-0000-4000-8000-000000000010'
+  ) or exists (
+    select 1 from public.opportunity_decision_authority_events
     where tenant_id = '7c000000-0000-4000-8000-000000000010'
   ) or exists (
     select 1 from public.stage01_decision_cycles
@@ -124,6 +138,12 @@ begin
     where tenant_id = '7c000000-0000-4000-8000-000000000010'
   ) or exists (
     select 1 from public.workflow_definition_snapshots
+    where tenant_id = '7c000000-0000-4000-8000-000000000010'
+  ) or exists (
+    select 1 from public.opportunity_decision_policy_snapshots
+    where tenant_id = '7c000000-0000-4000-8000-000000000010'
+  ) or exists (
+    select 1 from public.company_opportunity_decision_capabilities
     where tenant_id = '7c000000-0000-4000-8000-000000000010'
   ) or exists (
     select 1 from public.company_role_assignments

@@ -54,6 +54,11 @@ describe('Stage 01 Decision repository', () => {
       final_outcome: null, final_decision_by: null, final_decision_at: null, final_rationale: null, final_recommendation_id: null, override_rationale: null, version: 1, created_at: timestamp,
     })
     const boundTaxonomies = Object.fromEntries(taxonomyKeys.map(key => [key, [{ code: key, label: `Bound ${key}`, semanticKey: `internal.${key}`, ...(key === 'lead_source' ? { behavior: { requiresReferrer: true } } : {}) }]]))
+    boundTaxonomies.blocker_category = [{
+      code: 'reserved_follow_up',
+      label: 'Cần theo dõi thêm',
+      semanticKey: 'internal.reserved_follow_up',
+    }]
     const newerTaxonomies = structuredClone(boundTaxonomies)
     newerTaxonomies.customer_type[0].label = 'Newer published customer type'
     const criteria = dimensions.map((dimensionKey, index) => ({ key: dimensionKey, dimensionKey, label: `Label ${index}`, description: `Description ${index}`, criticality: 'required', applicabilityMode: 'always', allowsNotApplicable: false, displayOrder: index + 1 }))
@@ -84,7 +89,13 @@ describe('Stage 01 Decision repository', () => {
       if (table === 'contact_methods') return query({ data: [{ id: id(80), contact_id: contactId, method_type: 'phone', value: '0900000000', is_usable: true, reliability_state: 'confirmed', created_at: timestamp, updated_at: timestamp }], error: null })
       return query({ data: [], error: null })
     })
-    const repository = createSupabaseStage01Repository({ from, rpc: async () => ({ data: [{ roles: [], permissions: [] }], error: null }) } as never)
+    const repository = createSupabaseStage01Repository({
+      from,
+      rpc: async (name: string) => name === 'get_opportunity_decision_authority_projection'
+        ? { data: { status: 'not_required', userId: null, employeeId: null, displayName: null, positionTitle: null, currentActorIsAuthority: false, locked: false,
+          policyBinding: { status: 'not_required', policySnapshotId: null, transitionEligible: false } }, error: null }
+        : { data: [{ roles: [], permissions: ['opportunity.decision_authority.assign', 'opportunity.decision.record'] }], error: null },
+    } as never)
 
     const detail = await repository.get(companyId, opportunityId)
 
@@ -92,9 +103,16 @@ describe('Stage 01 Decision repository', () => {
     expect(orderCalls).toContain('cycle_no')
     expect(detail?.configuration.taxonomies.customer_type[0]).toEqual({ code: 'customer_type', label: 'Bound customer_type' })
     expect(detail?.configuration.taxonomies.customer_type[0]?.label).not.toBe('Newer published customer type')
+    expect(detail?.configuration.taxonomies.blocker_category).toEqual([
+      { code: 'reserved_follow_up', label: 'Cần theo dõi thêm' },
+    ])
+    expect(detail?.configuration.taxonomies.blocker_category[0]).not.toHaveProperty('semanticKey')
+    expect(Object.values(detail?.configuration.taxonomies ?? {})).toHaveLength(taxonomyKeys.length)
+    expect(Object.values(detail?.configuration.taxonomies ?? {}).every(entries => entries.length > 0)).toBe(true)
     expect(detail?.relatedContacts).toEqual([expect.objectContaining({ id: contactId, version: 7, methods: [expect.objectContaining({ isUsable: true })] })])
     expect(detail?.decisionCycles.map(cycle => cycle.cycleNo)).toEqual([1, 2])
     expect(detail?.currentDecisionCycle.id).toBe(cycleTwo)
+    expect(detail?.actorCapabilities).toEqual(['decision'])
   })
 
   it('uses the fixed Final Decision RPC and maps a version conflict', async () => {

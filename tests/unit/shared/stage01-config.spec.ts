@@ -97,6 +97,13 @@ describe('Stage 01 business configuration contracts', () => {
     }).success).toBe(false)
   })
 
+  it('rejects an empty required blocker taxonomy instead of admitting an empty operational aggregate', () => {
+    expect(stage01BusinessTaxonomiesSchema.safeParse({
+      ...validTaxonomies,
+      blocker_category: [],
+    }).success).toBe(false)
+  })
+
   // Defect caught: invalid business taxonomy values could enter a draft and later make a published definition invalid.
   it('rejects blank labels or codes and duplicate business codes within a taxonomy', () => {
     expect(stage01BusinessTaxonomiesSchema.safeParse({

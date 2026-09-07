@@ -2,6 +2,9 @@ import { createCompany } from './fixtures/auth-routes'
 import { expect, test } from './fixtures/authenticated'
 import { createStage01OperationalDetail, createStage01OperationalRouteState, installStage01OperationalRoutes, installStatefulStage01OperationalRoutes, stage01OpportunityId, versionConflictBody } from './fixtures/stage01-operational'
 import { MOCK_STORAGE_KEY } from '../../app/repositories/mock/state-store'
+import { stage01OperationalDetailSchema } from '../../shared/schemas/stage01-operational'
+import { employeeListResponseSchema } from '../../shared/schemas/employees'
+import { workflowNodeRuntimeSchema } from '../../shared/schemas/workflow'
 
 async function goToWorkspace(page: import('@playwright/test').Page): Promise<void> {
   await page.goto(`/opportunities/${stage01OpportunityId}/stage-01`)
@@ -189,6 +192,154 @@ test('workflow starts a ready node then reloads the canonical aggregate', async 
   await expect.poll(() => canonicalReads).toBe(2)
 })
 
+test('locates the unique ready Evaluation Runtime article after Intake completion', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.actorCapabilities = ['start']
+  detail.intake.runtime.phase = 'completed'
+  detail.intake.runtime.state = 'completed'
+  detail.evaluation.runtime.phase = 'not_started'
+  detail.evaluation.runtime.state = 'ready'
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.node.start'] })]
+  await installStage01OperationalRoutes(page, detail)
+  await goToWorkspace(page)
+
+  const workflowRuntime = page.getByRole('region', {
+    name: 'Điều hành node, phân công và blocker',
+    exact: true,
+  })
+  const evaluationRuntime = workflowRuntime.locator('article').filter({
+    has: page.getByRole('heading', { name: '01.2 Đánh giá', exact: true }),
+  })
+  const startEvaluationButton = evaluationRuntime.getByRole('button', { name: 'Khởi động node', exact: true })
+
+  await expect(workflowRuntime).toHaveCount(1)
+  await expect(evaluationRuntime).toHaveCount(1)
+  await expect(evaluationRuntime.getByRole('heading', { name: '01.2 Đánh giá', exact: true })).toBeVisible()
+  await expect(startEvaluationButton).toBeVisible()
+  await expect(startEvaluationButton).toBeEnabled()
+})
+
+test('starts the ready Evaluation runtime with its canonical version then reloads the canonical aggregate', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  state.detail.actorCapabilities = ['start']
+  state.detail.intake.runtime.phase = 'completed'
+  state.detail.intake.runtime.state = 'completed'
+  state.detail.evaluation.runtime.phase = 'not_started'
+  state.detail.evaluation.runtime.state = 'ready'
+  const canonicalEvaluation = {
+    nodeExecutionId: state.detail.evaluation.runtime.nodeExecutionId,
+    version: state.detail.evaluation.runtime.version,
+  }
+  const company = createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.node.start'] })
+  const startPath = `/api/companies/${company.companyId}/workflow-nodes/${canonicalEvaluation.nodeExecutionId}/start`
+  const canonicalPath = `/api/companies/${company.companyId}/opportunities/${stage01OpportunityId}/stage-01`
+  const startResponses: import('@playwright/test').Response[] = []
+  const onResponse = (response: import('@playwright/test').Response): void => {
+    const url = new URL(response.url())
+    if (response.request().method() === 'POST' && url.pathname === startPath) startResponses.push(response)
+  }
+
+  authState.sessionCompanies = [company]
+  await installStatefulStage01OperationalRoutes(page, state)
+  page.on('response', onResponse)
+  try {
+    await goToWorkspace(page)
+    const workflowRuntime = page.getByRole('region', {
+      name: 'Điều hành node, phân công và blocker',
+      exact: true,
+    })
+    const evaluationRuntime = workflowRuntime.locator('article').filter({
+      has: page.getByRole('heading', { name: '01.2 Đánh giá', exact: true }),
+    })
+    const startEvaluationButton = evaluationRuntime.getByRole('button', { name: 'Khởi động node', exact: true })
+    const startResponse = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return response.request().method() === 'POST' && url.pathname === startPath
+    })
+    const canonicalReload = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return response.request().method() === 'GET' && url.pathname === canonicalPath
+    })
+
+    await expect(evaluationRuntime).toHaveCount(1)
+    await expect(startEvaluationButton).toBeEnabled()
+    await startEvaluationButton.click()
+    const response = await startResponse
+    expect(response.status()).toBeGreaterThanOrEqual(200)
+    expect(response.status()).toBeLessThan(300)
+    expect(new URL(response.url()).pathname).toBe(startPath)
+    expect(JSON.parse(response.request().postData() ?? '{}')).toEqual({
+      expectedExecutionVersion: canonicalEvaluation.version,
+    })
+    const startedRuntime = workflowNodeRuntimeSchema.parse(await response.json())
+    expect(startedRuntime.nodeExecutionId).toBe(canonicalEvaluation.nodeExecutionId)
+
+    const canonicalResponse = await canonicalReload
+    expect(canonicalResponse.ok()).toBe(true)
+    const canonicalDetail = stage01OperationalDetailSchema.parse(await canonicalResponse.json())
+    expect(canonicalDetail.evaluation.runtime).toMatchObject({
+      nodeExecutionId: canonicalEvaluation.nodeExecutionId,
+      state: 'active',
+    })
+    await expect(workflowRuntime.getByText('Đã khởi động node.', { exact: true })).toBeVisible()
+    expect(startResponses).toHaveLength(1)
+  } finally {
+    page.off('response', onResponse)
+  }
+})
+
+test('workflow blocker form dispatches the bound Intake command with the canonical runtime version', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.configuration.taxonomies.blocker_category = [{ code: 'reserved_follow_up', label: 'Cần theo dõi thêm' }]
+  const commands: { method: string, pathname: string, body: Record<string, unknown> }[] = []
+  const company = createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.blocker.raise'] })
+  authState.sessionCompanies = [company]
+  await installStage01OperationalRoutes(page, detail, { onWorkflowCommand: request => { commands.push(request) } })
+  await goToWorkspace(page)
+
+  const workflowRuntime = page.getByRole('region', {
+    name: 'Điều hành node, phân công và blocker',
+    exact: true,
+  })
+  const intakeBlockerRegion = workflowRuntime.getByRole('region', {
+    name: 'Blocker của 01.1 Tiếp nhận',
+    exact: true,
+  })
+  await intakeBlockerRegion.getByRole('button', { name: 'Nêu blocker', exact: true }).click()
+  const blockerForm = page.locator('form').filter({
+    has: page.getByRole('button', { name: 'Lưu blocker', exact: true }),
+  })
+  await expect(blockerForm).toHaveCount(1)
+  await blockerForm.getByRole('combobox', { name: 'Ảnh hưởng', exact: true }).selectOption('blocking')
+  await blockerForm.getByRole('combobox', { name: 'Danh mục blocker', exact: true }).selectOption('reserved_follow_up')
+  await blockerForm.getByLabel('Mô tả blocker', { exact: true }).fill('Theo dõi blocker Intake')
+  await blockerForm.getByRole('button', { name: 'Lưu blocker', exact: true }).click()
+
+  await expect.poll(() => commands).toEqual([{
+    method: 'POST',
+    pathname: `/api/companies/${company.companyId}/workflow-nodes/${detail.intake.runtime.nodeExecutionId}/blockers`,
+    body: {
+      effect: 'blocking',
+      categoryCode: 'reserved_follow_up',
+      description: 'Theo dõi blocker Intake',
+      expectedExecutionVersion: detail.intake.runtime.version,
+    },
+  }])
+})
+
+test('workflow prevents Intake completion when the canonical runtime is blocked', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.actorCapabilities = ['complete']
+  detail.intake.runtime.state = 'blocked'
+  detail.intake.gates.satisfied = false
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.node.complete'] })]
+  await installStage01OperationalRoutes(page, detail)
+  await goToWorkspace(page)
+
+  const intake = page.locator('article.workflow-runtime__node').filter({ hasText: '01.1 Tiếp nhận' })
+  await expect(intake.getByRole('button', { name: 'Hoàn tất node', exact: true })).toHaveCount(0)
+})
+
 test('workflow completes each node with its exact owning aggregate version', async ({ page, authState }) => {
   const detail = createStage01OperationalDetail()
   detail.actorCapabilities = ['complete']
@@ -320,6 +471,27 @@ test('assignment and responsible pickers exclude accountless employees', async (
   const responsiblePicker = page.getByRole('combobox', { name: 'Người phụ trách' })
   await expect(responsiblePicker.getByRole('option', { name: 'Không có tài khoản' })).toHaveCount(0)
   await expect(responsiblePicker.locator('option').nth(1)).toHaveText('Như')
+})
+
+test('renders the exact bound blocker category without a local fallback', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.configuration.taxonomies.blocker_category = [
+    { code: 'reserved_follow_up', label: 'Cần theo dõi thêm' },
+  ]
+  authState.sessionCompanies = [createCompany({
+    permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.blocker.raise'],
+  })]
+  await installStage01OperationalRoutes(page, detail)
+  await goToWorkspace(page)
+
+  await page.getByRole('button', { name: 'Nêu blocker' }).first().click()
+  const category = page.getByRole('combobox', { name: 'Danh mục blocker' })
+
+  await expect(category.locator('option')).toHaveCount(1)
+  await expect(category.locator('option')).toHaveText(['Cần theo dõi thêm'])
+  await expect(category).toHaveValue('reserved_follow_up')
+  await category.selectOption('reserved_follow_up')
+  await expect(category).toHaveValue('reserved_follow_up')
 })
 
 test('blocker uses bound category values and keeps resolved blockers as history', async ({ page, authState }) => {
@@ -517,6 +689,42 @@ test('criterion evaluation requires a result when applicable and does not offer 
   expect(commands).toHaveLength(0)
 })
 
+test('B4 resolves the unique required customer-need criterion through its visible combobox', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  const criterion = detail.configuration.criteria.find(item => item.dimensionKey === 'customer_need')!
+  const optionalCriterion = detail.configuration.criteria.find(item => item.dimensionKey === 'scope_capability')!
+  optionalCriterion.criticality = 'optional'
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'stage01.evaluation.update'] })]
+  await installStage01OperationalRoutes(page, detail, { onStage01Command: request => { commands.push(request) } })
+  await goToWorkspace(page)
+
+  const evaluation = page.getByRole('region', { name: 'Đánh giá, đề xuất và quyết định', exact: true })
+  const requiredCriterion = evaluation.getByRole('article').filter({
+    has: page.getByRole('heading', { name: criterion.label, level: 3, exact: true }),
+  })
+  const optionalArticle = evaluation.getByRole('article').filter({
+    has: page.getByRole('heading', { name: optionalCriterion.label, level: 3, exact: true }),
+  })
+  const result = requiredCriterion.getByRole('combobox', { name: `Kết quả đánh giá: ${criterion.label}`, exact: true })
+
+  await expect(requiredCriterion).toHaveCount(1)
+  await expect(requiredCriterion).toContainText(`${criterion.dimensionKey === 'customer_need' ? 'Nhu cầu khách hàng' : criterion.label} · Bắt buộc`)
+  await expect(optionalArticle).toHaveCount(1)
+  await expect(optionalArticle).toContainText('Tùy chọn')
+  await expect(result).toHaveCount(1)
+  await expect(result).toBeEnabled()
+  await result.selectOption('fit')
+  await expect(result).toHaveValue('fit')
+  await requiredCriterion.getByRole('textbox', { name: `Lý do: ${criterion.label}`, exact: true }).fill('Đủ điều kiện tiếp tục')
+  await requiredCriterion.getByRole('button', { name: `Lưu đánh giá: ${criterion.label}`, exact: true }).click()
+  await expect.poll(() => commands).toHaveLength(1)
+  expect(commands[0]).toMatchObject({
+    pathname: expect.stringContaining(`/stage-01/evaluations/${criterion.key}/revisions`),
+    body: { expectedCycleVersion: detail.currentDecisionCycle.version, applicability: 'applicable', result: 'fit', rationale: 'Đủ điều kiện tiếp tục', evidence: [] },
+  })
+})
+
 test('recommendation and clarification use the current cycle and retain immutable versions', async ({ page, authState }) => {
   const detail = createStage01OperationalDetail()
   detail.currentDecisionCycle.recommendations.push({
@@ -557,13 +765,23 @@ test('recommendation and clarification use the current cycle and retain immutabl
 test('final decision requires its permission and bound decision capability, preserves a rejected draft, then accepts explicit override rationale', async ({ page, authState }) => {
   const detail = createStage01OperationalDetail()
   detail.actorCapabilities = ['decision']
+  // This isolates the override/draft UI behavior.  Authority establishment itself is
+  // exercised through the public candidate/assignment path in the B4 journey below.
+  detail.currentDecisionCycle.decisionAuthorityUserId = '81000000-0000-4000-8000-000000000071'
+  detail.currentDecisionCycle.authorityResolutionEventId = '81000000-0000-4000-8000-000000000079'
+  detail.currentDecisionCycle.authorityResolutionReference = '81000000-0000-4000-8000-000000000079'
+  detail.currentDecisionCycle.decisionAuthority = {
+    status: 'resolved', userId: detail.currentDecisionCycle.decisionAuthorityUserId,
+    employeeId: '81000000-0000-4000-8000-000000000080', displayName: 'Decision actor', positionTitle: null,
+    currentActorIsAuthority: true, locked: false,
+  }
   detail.currentDecisionCycle.recommendations.push({
     id: '81000000-0000-4000-8000-000000000075', decisionCycleId: detail.currentDecisionCycle.id, version: 1,
     recommendation: 'recommend_proceed', rationale: 'Nên tiếp tục', evidence: [],
     submittedBy: '81000000-0000-4000-8000-000000000071', submittedAt: '2026-09-01T01:00:00.000Z',
   })
   const commands: { pathname: string, body: Record<string, unknown> }[] = []
-  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'stage01.decision.record'] })]
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.decision.record'] })]
   await installStage01OperationalRoutes(page, detail, {
     requireOverrideRationaleOnce: true,
     onStage01Command: request => { commands.push(request) },
@@ -663,9 +881,40 @@ test('completed decision is read-only and reactivation sends canonical versions 
   await expect(page.getByText('Kích hoạt lại: Cần đánh giá lại điều kiện triển khai', { exact: true })).toBeVisible()
 })
 
+test('loads the authenticated employee directory through the stateful fixture before selecting an accountable owner', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  state.detail.actorCapabilities = ['start']
+  state.detail.opportunity.duplicateConcerns = []
+  state.detail.intake.runtime.state = 'ready'
+  state.detail.intake.runtime.phase = 'not_started'
+  authState.sessionCompanies = [createCompany({ permissions: [
+    'project.read', 'journey.read', 'opportunity.read', 'journey.node.start', 'journey.assignment.manage', 'employee.read_directory',
+  ] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await goToWorkspace(page)
+
+  await page.getByRole('button', { name: 'Khởi động node' }).click()
+  await expect(page.getByLabel('Điều hành node, phân công và blocker').getByText('Trạng thái: active', { exact: false }).first()).toBeVisible()
+  const employeeDirectoryResponse = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return response.request().method() === 'GET'
+      && url.pathname === '/api/companies/10000000-0000-4000-8000-000000000002/employees'
+  })
+  await page.getByLabel('Phân công của 01.1 Tiếp nhận').getByRole('button', { name: 'Phân công' }).click()
+  const response = await employeeDirectoryResponse
+
+  expect(Boolean(response.request().headers().authorization)).toBe(true)
+  expect(response.status()).toBe(200)
+  const directory = employeeListResponseSchema.parse(await response.json())
+  const assignee = page.getByRole('combobox', { name: 'Người được phân công' })
+  await expect(assignee.locator('option')).toHaveCount(2)
+  await assignee.selectOption(directory.items[0]!.account!.userId!)
+  await expect(assignee).toHaveValue(directory.items[0]!.account!.userId!)
+})
+
 test('stateful acceptance fixture drives canonical Stage 01 commands and preserves immutable decision-cycle history', async ({ page, authState }) => {
   const state = createStage01OperationalRouteState()
-  state.detail.actorCapabilities = ['start', 'complete', 'decision']
+  state.detail.actorCapabilities = ['start', 'complete', 'assignDecisionAuthority', 'decision']
   state.detail.opportunity.duplicateConcerns = []
   state.detail.intake.runtime.state = 'ready'
   state.detail.intake.runtime.phase = 'not_started'
@@ -673,7 +922,7 @@ test('stateful acceptance fixture drives canonical Stage 01 commands and preserv
     'project.read', 'journey.read', 'opportunity.read',
     'journey.node.start', 'journey.node.complete', 'journey.assignment.manage', 'employee.read_directory',
     'stage01.evaluation.update', 'stage01.recommendation.submit',
-    'stage01.decision.record', 'stage01.reactivate',
+    'opportunity.decision_authority.assign', 'opportunity.decision.record', 'stage01.reactivate',
   ] })]
   await installStatefulStage01OperationalRoutes(page, state)
   await goToWorkspace(page)
@@ -700,6 +949,9 @@ test('stateful acceptance fixture drives canonical Stage 01 commands and preserv
   await page.getByRole('textbox', { name: 'Lý do đề xuất' }).fill('Nên tiếp tục')
   await page.getByRole('button', { name: 'Gửi đề xuất' }).click()
   await expect(page.getByRole('button', { name: 'Hoàn tất node' })).toBeDisabled()
+  await page.getByRole('button', { name: 'Chỉ định', exact: true }).click()
+  await page.getByRole('button', { name: 'Xác nhận chỉ định', exact: true }).click()
+  await expect(page.getByText('Đã chỉ định người có thẩm quyền quyết định.', { exact: true })).toBeVisible()
   await page.getByRole('textbox', { name: 'Lý do quyết định' }).fill('Đồng ý triển khai')
   await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click()
   await expect(page.getByText('Quyết định đã ghi nhận: Tiếp tục', { exact: true })).toBeVisible()
@@ -720,10 +972,394 @@ test('stateful acceptance fixture drives canonical Stage 01 commands and preserv
   ]))
 })
 
+test('self-assigns Decision Authority through the normal UI, reloads canonically, then enables Final Decision', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.actorCapabilities = ['assignDecisionAuthority', 'decision']
+  detail.currentDecisionCycle.recommendations.push({
+    id: '82000000-0000-4000-8000-000000000651', decisionCycleId: detail.currentDecisionCycle.id,
+    version: 1, recommendation: 'recommend_proceed', rationale: 'Recommendation current', evidence: [],
+    submittedBy: '82000000-0000-4000-8000-000000000900', submittedAt: '2026-09-01T00:00:00.000Z',
+  })
+  const company = createCompany({ permissions: [
+    'project.read', 'journey.read', 'opportunity.read', 'opportunity.decision_authority.assign', 'opportunity.decision.record',
+  ] })
+  const base = `/api/companies/${company.companyId}/opportunities/${stage01OpportunityId}/decision-cycles/${detail.currentDecisionCycle.id}`
+  const authorityPosts: Array<Record<string, unknown>> = []
+  authState.sessionCompanies = [company]
+  await installStage01OperationalRoutes(page, detail)
+  await page.route(`${base}/authority-candidates`, async route => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [{
+      userId: '82000000-0000-4000-8000-000000000900', employeeId: '82000000-0000-4000-8000-000000000901',
+      displayName: 'Decision actor', positionTitle: 'Director',
+    }] }) })
+  })
+  await page.route(`${base}/authority`, async route => {
+    authorityPosts.push(JSON.parse(route.request().postData() ?? '{}'))
+    if (authorityPosts.length === 1) {
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: {
+        code: 'INTERNAL_ERROR', message: 'Ambiguous authority command result', requestId: 'authority-ambiguous-result', details: {},
+      } }) })
+      return
+    }
+    detail.currentDecisionCycle.decisionAuthorityUserId = '82000000-0000-4000-8000-000000000900'
+    detail.currentDecisionCycle.authorityResolutionEventId = '82000000-0000-4000-8000-000000000652'
+    detail.currentDecisionCycle.authorityResolutionReference = '82000000-0000-4000-8000-000000000652'
+    detail.currentDecisionCycle.decisionAuthority = {
+      status: 'resolved', userId: detail.currentDecisionCycle.decisionAuthorityUserId,
+      employeeId: '82000000-0000-4000-8000-000000000901', displayName: 'Decision actor', positionTitle: 'Director',
+      currentActorIsAuthority: true, locked: false,
+    }
+    detail.decisionCycles = [detail.currentDecisionCycle]
+    detail.currentDecisionCycle.version += 1
+    await route.fulfill({ contentType: 'application/json', body: 'null' })
+  })
+
+  await goToWorkspace(page)
+  const evaluation = page.getByRole('region', { name: 'Đánh giá, đề xuất và quyết định', exact: true })
+  const decision = evaluation.getByRole('button', { name: 'Ghi nhận quyết định', exact: true })
+  await expect(evaluation.getByText('Chưa chỉ định người có thẩm quyền quyết định.', { exact: true })).toBeVisible()
+  await expect(decision).toBeDisabled()
+  await evaluation.getByRole('button', { name: 'Chỉ định', exact: true }).click()
+  await evaluation.getByRole('button', { name: 'Xác nhận chỉ định', exact: true }).click()
+  await expect.poll(() => authorityPosts).toHaveLength(1)
+  await evaluation.getByRole('button', { name: 'Xác nhận chỉ định', exact: true }).click()
+  await expect.poll(() => authorityPosts).toHaveLength(2)
+  expect(authorityPosts[0]?.requestId).toEqual(authorityPosts[1]?.requestId)
+  await expect.poll(() => authorityPosts).toHaveLength(2)
+  expect(authorityPosts[0]).toMatchObject({ action: 'assign', authorityUserId: '82000000-0000-4000-8000-000000000900', expectedCycleVersion: 0 })
+  await expect(evaluation.getByText('Đã chỉ định người có thẩm quyền quyết định.', { exact: true })).toBeVisible()
+  await expect(evaluation.getByText(/Đã chỉ định: Decision actor/u)).toBeVisible()
+  await expect(decision).toBeEnabled()
+})
+
+test('B4 legacy cycle explicitly binds Decision Policy before exposing normal authority assignment', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.actorCapabilities = []
+  detail.currentDecisionCycle.decisionAuthority = {
+    status: 'legacy_unknown', userId: null, employeeId: null, displayName: null, positionTitle: null,
+    currentActorIsAuthority: false, locked: false,
+    policyBinding: { status: 'legacy_unbound', policySnapshotId: null, transitionEligible: true },
+  }
+  detail.decisionCycles = [detail.currentDecisionCycle]
+  const company = createCompany({ permissions: [
+    'project.read', 'journey.read', 'opportunity.read', 'opportunity.decision_authority.assign', 'opportunity.decision.record',
+  ] })
+  const policyPath = `/api/companies/${company.companyId}/opportunities/${stage01OpportunityId}/decision-cycles/${detail.currentDecisionCycle.id}/policy-binding`
+  const policyPosts: Array<Record<string, unknown>> = []
+  let canonicalReads = 0
+  authState.sessionCompanies = [company]
+  await installStage01OperationalRoutes(page, detail, { onCanonicalRead: () => { canonicalReads += 1 } })
+  await page.route(policyPath, async route => {
+    policyPosts.push(JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>)
+    detail.currentDecisionCycle.decisionAuthority = {
+      status: 'unresolved', userId: null, employeeId: null, displayName: null, positionTitle: null,
+      currentActorIsAuthority: false, locked: false,
+      policyBinding: { status: 'bound', policySnapshotId: '82000000-0000-4000-8000-000000000610', transitionEligible: false },
+    }
+    detail.currentDecisionCycle.version += 1
+    // Canonical GET derives these Opportunity Decision capabilities from the
+    // newly bound policy, not from the legacy workflow snapshot.
+    detail.actorCapabilities = ['assignDecisionAuthority', 'decision']
+    detail.decisionCycles = [detail.currentDecisionCycle]
+    await route.fulfill({ contentType: 'application/json', body: 'null' })
+  })
+  await goToWorkspace(page)
+  const evaluation = page.getByRole('region', { name: 'Đánh giá, đề xuất và quyết định', exact: true })
+  await expect(evaluation.getByText('Decision Policy cần được áp dụng trước khi chỉ định thẩm quyền.', { exact: true })).toBeVisible()
+  await expect(evaluation.getByRole('button', { name: 'Chỉ định', exact: true })).toHaveCount(0)
+  await evaluation.getByRole('button', { name: 'Áp dụng Decision Policy v1', exact: true }).click()
+  await expect.poll(() => policyPosts).toHaveLength(1)
+  expect(policyPosts[0]).toMatchObject({ expectedCycleVersion: 0, transitionCode: 'b4_acceptance_policy_transition' })
+  await expect.poll(() => canonicalReads).toBe(2)
+  await expect(evaluation.getByText('Chưa chỉ định người có thẩm quyền quyết định.', { exact: true })).toBeVisible()
+  await expect(evaluation.getByRole('button', { name: 'Chỉ định', exact: true })).toBeVisible()
+})
+
+test('B4 observes exactly one post-reopen Intake completion command and canonical reload', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  const company = createCompany({ permissions: [
+    'project.read', 'journey.read', 'opportunity.read', 'journey.node.complete', 'journey.node.reopen',
+  ] })
+  state.detail.actorCapabilities = ['complete']
+  state.detail.opportunity.duplicateConcerns = []
+  state.detail.intake.runtime.phase = 'completed'
+  state.detail.intake.runtime.state = 'completed'
+  state.detail.intake.runtime.assignments = [{
+    id: '82000000-0000-4000-8000-000000000701',
+    nodeExecutionId: state.detail.intake.runtime.nodeExecutionId,
+    assignmentKind: 'accountable_owner',
+    assigneeUserId: '11111111-1111-4111-8111-111111111111',
+    assignedBy: '82000000-0000-4000-8000-000000000900',
+    assignedAt: '2026-09-01T00:00:00.000Z',
+    assignmentReason: 'Fixture accountable owner',
+    endedBy: null,
+    endedAt: null,
+    endReason: null,
+  }]
+  state.detail.evaluation.runtime.phase = 'active'
+  state.detail.evaluation.runtime.state = 'active'
+  authState.sessionCompanies = [company]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await goToWorkspace(page)
+
+  const canonicalPath = `/api/companies/${company.companyId}/opportunities/${stage01OpportunityId}/stage-01`
+  const reopenPath = `/api/companies/${company.companyId}/workflow-nodes/${state.detail.intake.runtime.nodeExecutionId}/reopen`
+  const intake = page.getByRole('region', { name: 'Điều hành node, phân công và blocker', exact: true })
+    .getByRole('article')
+    .filter({ has: page.getByRole('heading', { name: '01.1 Tiếp nhận', exact: true }) })
+  const reopenResponse = page.waitForResponse(response => (
+    response.request().method() === 'POST' && new URL(response.url()).pathname === reopenPath
+  ))
+  const reopenCanonical = page.waitForResponse(response => (
+    response.request().method() === 'GET' && new URL(response.url()).pathname === canonicalPath
+  ))
+  await intake.getByRole('button', { name: 'Mở lại node', exact: true }).click()
+  await intake.getByLabel('Lý do mở lại', { exact: true }).fill('B4 deterministic reopened intake')
+  await page.getByRole('button', { name: 'Xác nhận mở lại', exact: true }).click()
+  expect((await reopenResponse).ok()).toBe(true)
+  expect(stage01OperationalDetailSchema.parse(await (await reopenCanonical).json()).intake.runtime.state).toBe('active')
+
+  const completePath = `/api/companies/${company.companyId}/workflow-nodes/${state.detail.intake.runtime.nodeExecutionId}/complete`
+  const observedRequests: Array<{ method: string, pathname: string }> = []
+  let completePostWaiterResolved = false
+  let canonicalGetWaiterResolved = false
+  const onRequest = (request: import('@playwright/test').Request): void => {
+    const pathname = new URL(request.url()).pathname
+    if ((request.method() === 'POST' && pathname === completePath)
+      || (request.method() === 'GET' && pathname === canonicalPath)) {
+      observedRequests.push({ method: request.method(), pathname })
+    }
+  }
+  page.on('request', onRequest)
+  try {
+    const completePost = page.waitForResponse(response => (
+      response.request().method() === 'POST' && new URL(response.url()).pathname === completePath
+    )).then(response => {
+      completePostWaiterResolved = true
+      return response
+    })
+    const canonicalAfterComplete = page.waitForResponse(response => (
+      response.request().method() === 'GET' && new URL(response.url()).pathname === canonicalPath
+    )).then(response => {
+      canonicalGetWaiterResolved = true
+      return response
+    })
+
+    await intake.getByRole('button', { name: 'Hoàn tất node', exact: true }).click()
+    expect((await completePost).ok()).toBe(true)
+    const canonical = stage01OperationalDetailSchema.parse(await (await canonicalAfterComplete).json())
+
+    expect(completePostWaiterResolved).toBe(true)
+    expect(canonicalGetWaiterResolved).toBe(true)
+    expect(observedRequests).toEqual([
+      { method: 'POST', pathname: completePath },
+      { method: 'GET', pathname: canonicalPath },
+    ])
+    expect(canonical.intake.runtime).toMatchObject({
+      nodeExecutionId: state.detail.intake.runtime.nodeExecutionId,
+      state: 'completed',
+    })
+  } finally {
+    page.off('request', onRequest)
+  }
+})
+
+test('B4 serializes required criteria and proposal behind each canonical command reload', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  const company = createCompany({ permissions: [
+    'project.read', 'journey.read', 'opportunity.read', 'stage01.evaluation.update', 'stage01.recommendation.submit',
+  ] })
+  state.detail.intake.runtime.phase = 'completed'
+  state.detail.intake.runtime.state = 'completed'
+  state.detail.evaluation.runtime.phase = 'active'
+  state.detail.evaluation.runtime.state = 'active'
+  authState.sessionCompanies = [company]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await goToWorkspace(page)
+
+  const criteria = state.detail.configuration.criteria.filter(criterion => criterion.criticality !== 'optional')
+  const firstCriterion = criteria[0]!
+  const secondCriterion = criteria[1]!
+  const canonicalPath = `/api/companies/${company.companyId}/opportunities/${stage01OpportunityId}/stage-01`
+  const firstPath = `${canonicalPath}/evaluations/${firstCriterion.key}/revisions`
+  let releaseFirst: (() => void) | null = null
+  const firstHeld = new Promise<void>(resolve => { releaseFirst = resolve })
+  let firstObservedResolve: (() => void) | null = null
+  const firstObserved = new Promise<void>(resolve => { firstObservedResolve = resolve })
+  await page.route('**/*', async route => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (request.method() !== 'POST' || url.pathname !== firstPath) return route.fallback()
+    firstObservedResolve?.()
+    await firstHeld
+    await route.fallback()
+  })
+
+  const runAcceptanceFlow = (async () => {
+    for (const criterionDefinition of criteria) {
+      const evaluation = page.getByRole('region', { name: 'Đánh giá, đề xuất và quyết định', exact: true })
+      const criterion = evaluation.getByRole('article').filter({
+        has: page.getByRole('heading', { name: criterionDefinition.label, level: 3, exact: true }),
+      })
+      await criterion.getByRole('combobox', { name: `Kết quả đánh giá: ${criterionDefinition.label}`, exact: true }).selectOption('fit')
+      await criterion.getByRole('textbox', { name: `Lý do: ${criterionDefinition.label}`, exact: true }).fill(`B4 serial ${criterionDefinition.key}`)
+      const commandPath = `${canonicalPath}/evaluations/${criterionDefinition.key}/revisions`
+      const command = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === commandPath)
+      const canonicalReload = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === canonicalPath)
+      await criterion.getByRole('button', { name: `Lưu đánh giá: ${criterionDefinition.label}`, exact: true }).click()
+      expect((await command).ok()).toBe(true)
+      await canonicalReload
+    }
+    await page.getByLabel('Lý do đề xuất').fill('B4 serial proposal')
+    const proposal = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === `${canonicalPath}/recommendations`)
+    const proposalReload = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === canonicalPath)
+    await page.getByRole('button', { name: 'Gửi đề xuất' }).click()
+    expect((await proposal).ok()).toBe(true)
+    await proposalReload
+  })()
+
+  try {
+    await firstObserved
+    await page.evaluate(() => true)
+    await expect(page.getByRole('combobox', { name: `Kết quả đánh giá: ${secondCriterion.label}`, exact: true })).not.toHaveValue('fit')
+    expect(state.requests.filter(request => request.path.endsWith(`/evaluations/${secondCriterion.key}/revisions`))).toHaveLength(0)
+    expect(state.requests.filter(request => request.path.endsWith('/recommendations'))).toHaveLength(0)
+  } finally {
+    releaseFirst?.()
+    await runAcceptanceFlow
+    await page.unroute('**/*')
+  }
+
+  expect(state.detail.currentDecisionCycle.evaluations).toHaveLength(criteria.length)
+  expect(state.detail.currentDecisionCycle.recommendations).toHaveLength(1)
+})
+
+test('B4 serializes Evaluation completion after the real final-decision canonical reload', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  const company = createCompany({ permissions: [
+    'project.read', 'journey.read', 'opportunity.read', 'journey.node.complete',
+    'stage01.evaluation.update', 'stage01.recommendation.submit',
+    'opportunity.decision_authority.assign', 'opportunity.decision.record',
+  ] })
+  state.detail.actorCapabilities = ['complete', 'assignDecisionAuthority', 'decision']
+  state.detail.intake.runtime.phase = 'completed'
+  state.detail.intake.runtime.state = 'completed'
+  state.detail.evaluation.runtime.phase = 'active'
+  state.detail.evaluation.runtime.state = 'active'
+  authState.sessionCompanies = [company]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await goToWorkspace(page)
+
+  const criteria = state.detail.configuration.criteria.filter(criterion => criterion.criticality !== 'optional')
+  const canonicalPath = `/api/companies/${company.companyId}/opportunities/${stage01OpportunityId}/stage-01`
+  for (const criterionDefinition of criteria) {
+    const evaluation = page.getByRole('region', { name: 'Đánh giá, đề xuất và quyết định', exact: true })
+    const criterion = evaluation.getByRole('article').filter({
+      has: page.getByRole('heading', { name: criterionDefinition.label, level: 3, exact: true }),
+    })
+    await criterion.getByRole('combobox', { name: `Kết quả đánh giá: ${criterionDefinition.label}`, exact: true }).selectOption('fit')
+    await criterion.getByRole('textbox', { name: `Lý do: ${criterionDefinition.label}`, exact: true }).fill(`B4 decision pending ${criterionDefinition.key}`)
+    const criterionPath = `${canonicalPath}/evaluations/${criterionDefinition.key}/revisions`
+    const criterionResponse = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === criterionPath)
+    const criterionReload = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === canonicalPath)
+    await criterion.getByRole('button', { name: `Lưu đánh giá: ${criterionDefinition.label}`, exact: true }).click()
+    expect((await criterionResponse).ok()).toBe(true)
+    await criterionReload
+  }
+  await page.getByLabel('Lý do đề xuất').fill('B4 decision pending proposal')
+  const proposalResponse = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === `${canonicalPath}/recommendations`)
+  const proposalReload = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === canonicalPath)
+  await page.getByRole('button', { name: 'Gửi đề xuất' }).click()
+  expect((await proposalResponse).ok()).toBe(true)
+  await proposalReload
+
+  const authorityPath = `/api/companies/${company.companyId}/opportunities/${stage01OpportunityId}/decision-cycles/${state.detail.currentDecisionCycle.id}/authority`
+  const authorityPosts: Array<Record<string, unknown>> = []
+  const authorityResponse = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === authorityPath)
+  const authorityCanonicalReload = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === canonicalPath)
+  await page.getByRole('button', { name: 'Chỉ định', exact: true }).click()
+  await page.getByRole('button', { name: 'Xác nhận chỉ định', exact: true }).click()
+  expect((await authorityResponse).ok()).toBe(true)
+  const authorityCanonical = stage01OperationalDetailSchema.parse(await (await authorityCanonicalReload).json())
+  authorityPosts.push(...state.requests.filter(request => request.path === authorityPath).map(request => request.body as Record<string, unknown>))
+  expect(authorityPosts).toHaveLength(1)
+  expect(authorityCanonical.currentDecisionCycle.decisionAuthority).toMatchObject({
+    status: 'resolved', currentActorIsAuthority: true,
+  })
+
+  const decisionPath = `${canonicalPath}/final-decision`
+  const completionPath = `/api/companies/${company.companyId}/workflow-nodes/${state.detail.evaluation.runtime.nodeExecutionId}/complete`
+  let releaseDecision: (() => void) | null = null
+  const decisionHeld = new Promise<void>(resolve => { releaseDecision = resolve })
+  let resolveDecisionObserved: (() => void) | null = null
+  const decisionObserved = new Promise<void>(resolve => { resolveDecisionObserved = resolve })
+  let decisionRequestCount = 0
+  let completionRequestCount = 0
+  let completionInteractionAttempted = false
+  let canonicalReloadAfterDecision = false
+  let decisionResponseObserved = false
+  const onRequest = (request: import('@playwright/test').Request): void => {
+    const url = new URL(request.url())
+    if (request.method() === 'POST' && url.pathname === completionPath) completionRequestCount += 1
+  }
+  const onResponse = (response: import('@playwright/test').Response): void => {
+    const url = new URL(response.url())
+    if (response.request().method() === 'POST' && url.pathname === decisionPath) decisionResponseObserved = true
+    if (decisionResponseObserved && response.request().method() === 'GET' && url.pathname === canonicalPath) canonicalReloadAfterDecision = true
+  }
+  await page.route('**/*', async route => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (request.method() !== 'POST' || url.pathname !== decisionPath) return route.fallback()
+    decisionRequestCount += 1
+    resolveDecisionObserved?.()
+    await decisionHeld
+    await route.fallback()
+  })
+  page.on('request', onRequest)
+  page.on('response', onResponse)
+
+  const runDecisionAndCompletion = (async () => {
+    await page.getByRole('textbox', { name: 'Lý do quyết định', exact: true }).fill('B4 decision pending final decision')
+    const decisionResponse = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === decisionPath)
+    const decisionCanonicalReload = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === canonicalPath)
+    await page.getByRole('button', { name: 'Ghi nhận quyết định', exact: true }).click()
+    expect((await decisionResponse).ok()).toBe(true)
+    const canonical = stage01OperationalDetailSchema.parse(await (await decisionCanonicalReload).json())
+    expect(canonical.currentDecisionCycle.finalOutcome).toBe('proceed')
+    expect(canonical.evaluation.gates.checks.find(check => check.code === 'FINAL_DECISION_RECORDED')?.status).toBe('satisfied')
+    completionInteractionAttempted = true
+    await page.getByRole('button', { name: 'Hoàn tất node', exact: true }).click()
+  })()
+
+  try {
+    await decisionObserved
+    await page.evaluate(() => true)
+    await expect(page.getByRole('button', { name: 'Hoàn tất node', exact: true })).toBeDisabled()
+    expect(decisionRequestCount).toBe(1)
+    expect(completionInteractionAttempted).toBe(false)
+    expect(completionRequestCount).toBe(0)
+    expect(canonicalReloadAfterDecision).toBe(false)
+  } finally {
+    releaseDecision?.()
+    await runDecisionAndCompletion
+    page.off('request', onRequest)
+    page.off('response', onResponse)
+    await page.unroute('**/*')
+  }
+
+  expect(decisionRequestCount).toBe(1)
+  expect(canonicalReloadAfterDecision).toBe(true)
+  expect(completionRequestCount).toBe(1)
+  expect(state.detail.currentDecisionCycle.finalOutcome).toBe('proceed')
+  expect(state.detail.evaluation.gates.checks.find(check => check.code === 'FINAL_DECISION_RECORDED')?.status).toBe('satisfied')
+  expect(state.detail.evaluation.runtime.state).toBe('completed')
+})
+
 test('creates an opportunity and completes the Stage 01 happy path through the public workspace', async ({ page, authState }) => {
   const state = createStage01OperationalRouteState()
   state.opportunities = []
-  state.detail.actorCapabilities = ['start', 'complete', 'decision']
+  state.detail.actorCapabilities = ['start', 'complete', 'assignDecisionAuthority', 'decision']
   state.detail.intake.runtime.state = 'ready'
   state.detail.intake.runtime.phase = 'not_started'
   authState.sessionCompanies = [createCompany({ permissions: [
@@ -731,7 +1367,7 @@ test('creates an opportunity and completes the Stage 01 happy path through the p
     'opportunity.contact.manage', 'opportunity.scope.manage', 'opportunity.referrer.manage',
     'opportunity.intake_record.create', 'journey.assignment.manage', 'employee.read_directory',
     'journey.node.start', 'journey.node.complete', 'stage01.evaluation.update',
-    'stage01.recommendation.submit', 'stage01.decision.record',
+    'stage01.recommendation.submit', 'opportunity.decision_authority.assign', 'opportunity.decision.record',
   ] })]
   await installStatefulStage01OperationalRoutes(page, state)
 
@@ -803,6 +1439,9 @@ test('creates an opportunity and completes the Stage 01 happy path through the p
   await page.getByRole('textbox', { name: 'Lý do đề xuất' }).fill('Đủ điều kiện để tiếp tục')
   await page.getByRole('button', { name: 'Gửi đề xuất' }).click()
   await expect(page.getByRole('button', { name: 'Hoàn tất node' })).toBeDisabled()
+  await page.getByRole('button', { name: 'Chỉ định', exact: true }).click()
+  await page.getByRole('button', { name: 'Xác nhận chỉ định', exact: true }).click()
+  await expect(page.getByText('Đã chỉ định người có thẩm quyền quyết định.', { exact: true })).toBeVisible()
   await page.getByRole('textbox', { name: 'Lý do quyết định' }).fill('Đồng ý triển khai Stage 01')
   await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click()
   await page.getByRole('button', { name: 'Hoàn tất node' }).click()
@@ -827,10 +1466,10 @@ test('creates an opportunity and completes the Stage 01 happy path through the p
 
 test('keeps recommendation and clarification history immutable when the completed cycle is reactivated', async ({ page, authState }) => {
   const state = createStage01OperationalRouteState()
-  state.detail.actorCapabilities = ['decision']
+  state.detail.actorCapabilities = ['assignDecisionAuthority', 'decision']
   authState.sessionCompanies = [createCompany({ permissions: [
     'project.read', 'journey.read', 'opportunity.read', 'stage01.recommendation.submit',
-    'stage01.clarification.return', 'stage01.decision.record', 'stage01.reactivate',
+    'stage01.clarification.return', 'opportunity.decision_authority.assign', 'opportunity.decision.record', 'stage01.reactivate',
   ] })]
   await installStatefulStage01OperationalRoutes(page, state)
   await goToWorkspace(page)
@@ -840,6 +1479,9 @@ test('keeps recommendation and clarification history immutable when the complete
   await page.getByRole('textbox', { name: 'Lý do yêu cầu làm rõ' }).fill('Bổ sung phân tích ngân sách')
   await page.getByRole('button', { name: 'Yêu cầu làm rõ' }).click()
   await expect(page.getByText('Bổ sung phân tích ngân sách', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Chỉ định', exact: true }).click()
+  await page.getByRole('button', { name: 'Xác nhận chỉ định', exact: true }).click()
+  await expect(page.getByText('Đã chỉ định người có thẩm quyền quyết định.', { exact: true })).toBeVisible()
   await page.getByRole('textbox', { name: 'Lý do quyết định' }).fill('Sau khi làm rõ, tiếp tục triển khai')
   await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click()
   await page.getByRole('button', { name: 'Kích hoạt lại Stage 01' }).click()

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { opportunityDetailSchema } from './opportunities'
 import { gateReportSchema, workflowNodeRuntimeSchema } from './workflow'
+import { opportunityDecisionAuthorityProjectionSchema } from './opportunity-decision-authority'
 
 const uuidSchema = z.string().uuid()
 const versionSchema = z.number().int().nonnegative()
@@ -83,7 +84,13 @@ export const stage01DecisionCycleSchema = z.object({
   nodeExecutionId: uuidSchema,
   cycleNo: z.number().int().positive(),
   decisionAuthorityUserId: uuidSchema.nullable(),
+  authorityResolutionEventId: uuidSchema.nullable().default(null),
   authorityResolutionReference: meaningfulTextSchema.nullable(),
+  decisionAuthority: opportunityDecisionAuthorityProjectionSchema.default({
+    status: 'unresolved', userId: null, employeeId: null, displayName: null,
+    positionTitle: null, currentActorIsAuthority: false, locked: false,
+    policyBinding: { status: 'bound', policySnapshotId: null, transitionEligible: false },
+  }),
   reactivationReason: meaningfulTextSchema.nullable(),
   finalOutcome: stage01FinalOutcomeSchema.nullable(),
   finalDecisionBy: uuidSchema.nullable(),

@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CANONICAL_DEV_PROJECT_REF } from '../../../scripts/assert-cloud-dev-target.mjs'
 import { runSupabaseDevMode } from '../../../scripts/run-supabase-dev.mjs'
+import { STAGE01_CONCURRENCY_SCENARIOS, runStage01CloudDevConcurrency } from '../../../scripts/run-stage01-cloud-dev-concurrency.mjs'
 
 const worktrees: string[] = []
 const root = resolve(import.meta.dirname, '../../..')
@@ -21,6 +22,7 @@ const stage01SqlInventory = [
   'stage01_config_commands.test.sql',
   'stage01_opportunity_create_options_security.test.sql',
   'stage01_b4_acceptance.test.sql',
+  'opportunity_decision_authority.test.sql',
 ]
 
 const stage01ConfigPermissionMetadata = [
@@ -28,6 +30,134 @@ const stage01ConfigPermissionMetadata = [
   "('stage01.config.update', 'stage01', 'Update Stage 01 configuration', 'Create, update, and discard Stage 01 configuration drafts')",
   "('stage01.config.publish', 'stage01', 'Publish Stage 01 configuration', 'Publish immutable Stage 01 configuration snapshots')",
 ]
+
+type FinalDecisionDefinition = {
+  body: string
+  dollarQuoteTag: string
+  end: number
+  nextStatementStartsOutsideBody: boolean
+  start: number
+  statementTerminated: boolean
+}
+
+function skipSqlQuotedText(source: string, offset: number, quote: "'" | '"'): number {
+  let cursor = offset + 1
+  while (cursor < source.length) {
+    if (source[cursor] === quote) {
+      if (source[cursor + 1] === quote) cursor += 2
+      else return cursor + 1
+    }
+    else cursor += 1
+  }
+  throw new Error(`Unterminated ${quote} quoted SQL text`)
+}
+
+function dollarQuoteTagAt(source: string, offset: number): string | undefined {
+  return source.slice(offset).match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/u)?.[0]
+}
+
+function skipDollarQuotedText(source: string, offset: number, tag: string): number {
+  const closingOffset = source.indexOf(tag, offset + tag.length)
+  if (closingOffset === -1) throw new Error(`Unterminated ${tag} quoted SQL text`)
+  return closingOffset + tag.length
+}
+
+function findDollarQuoteClose(source: string, bodyStart: number, tag: string): number {
+  for (let cursor = bodyStart; cursor < source.length;) {
+    if (source.startsWith(tag, cursor)) return cursor
+    if (source[cursor] === "'" || source[cursor] === '"') {
+      cursor = skipSqlQuotedText(source, cursor, source[cursor] as "'" | '"')
+    }
+    else if (dollarQuoteTagAt(source, cursor)) {
+      const nestedTag = dollarQuoteTagAt(source, cursor)!
+      cursor = skipDollarQuotedText(source, cursor, nestedTag)
+    }
+    else if (source.startsWith('--', cursor)) {
+      const lineEnd = source.indexOf('\n', cursor + 2)
+      cursor = lineEnd === -1 ? source.length : lineEnd + 1
+    }
+    else if (source.startsWith('/*', cursor)) {
+      const commentEnd = source.indexOf('*/', cursor + 2)
+      if (commentEnd === -1) throw new Error('Unterminated SQL block comment')
+      cursor = commentEnd + 2
+    }
+    else cursor += 1
+  }
+  throw new Error(`Unterminated ${tag} function body`)
+}
+
+function extractFinalDecisionDefinitions(source: string): FinalDecisionDefinition[] {
+  const marker = /create or replace function private\.record_opportunity_decision_final_decision\(/giu
+  return [...source.matchAll(marker)].map(match => {
+    const start = match.index!
+    const headerEnd = source.indexOf('\n', start)
+    const header = source.slice(start, headerEnd === -1 ? source.length : headerEnd + 300)
+    const dollarQuoteTag = header.match(/\bas\s+(\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)/iu)?.[1]
+    if (!dollarQuoteTag) throw new Error('Final Decision function is missing an opening dollar quote')
+    const bodyStart = source.indexOf(dollarQuoteTag, start) + dollarQuoteTag.length
+    const end = findDollarQuoteClose(source, bodyStart, dollarQuoteTag)
+    const statementEnd = end + dollarQuoteTag.length
+    const nextStatement = source.slice(statementEnd + 1).trimStart()
+    return {
+      body: source.slice(bodyStart, end), dollarQuoteTag, end, start,
+      statementTerminated: source[statementEnd] === ';',
+      nextStatementStartsOutsideBody: /^(?:create|alter|revoke|grant|--)/iu.test(nextStatement),
+    }
+  })
+}
+
+function auditPlpgsqlStructure(body: string): { controlStack: string[], parentheses: number } {
+  const tokens: string[] = []
+  for (let cursor = 0; cursor < body.length;) {
+    if (body[cursor] === "'" || body[cursor] === '"') cursor = skipSqlQuotedText(body, cursor, body[cursor] as "'" | '"')
+    else if (dollarQuoteTagAt(body, cursor)) {
+      const tag = dollarQuoteTagAt(body, cursor)!
+      cursor = skipDollarQuotedText(body, cursor, tag)
+    }
+    else if (body.startsWith('--', cursor)) {
+      const lineEnd = body.indexOf('\n', cursor + 2)
+      cursor = lineEnd === -1 ? body.length : lineEnd + 1
+    }
+    else if (body.startsWith('/*', cursor)) {
+      const commentEnd = body.indexOf('*/', cursor + 2)
+      if (commentEnd === -1) throw new Error('Unterminated SQL block comment')
+      cursor = commentEnd + 2
+    }
+    else if (/[A-Za-z_]/u.test(body[cursor]!)) {
+      const word = body.slice(cursor).match(/^[A-Za-z_][A-Za-z0-9_]*/u)![0].toLowerCase()
+      tokens.push(word)
+      cursor += word.length
+    }
+    else if (body[cursor] === '(' || body[cursor] === ')') {
+      tokens.push(body[cursor]!)
+      cursor += 1
+    }
+    else cursor += 1
+  }
+
+  const controlStack: string[] = []
+  let parentheses = 0
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]
+    if (token === '(') parentheses += 1
+    else if (token === ')') parentheses -= 1
+    else if (token === 'begin') controlStack.push('BEGIN')
+    else if (token === 'if') controlStack.push('IF')
+    else if (token === 'case') controlStack.push('CASE')
+    else if (token === 'loop') controlStack.push('LOOP')
+    else if (token === 'end') {
+      const expected = tokens[index + 1] === 'if' ? 'IF' : tokens[index + 1] === 'loop' ? 'LOOP' : undefined
+      if (expected) index += 1
+      const actual = controlStack.pop()
+      if (actual !== (expected ?? actual)) throw new Error(`Expected END ${actual ?? 'without opener'}, found END ${expected ?? ''}`.trim())
+    }
+  }
+  return { controlStack, parentheses }
+}
+
+function hasUnparenthesizedCaseEqualityInIf(body: string): boolean {
+  return /\bif\b[^;]*?=\s*case\b[\s\S]*?\bend\s+then\b/iu.test(body)
+}
 
 function makeWorktree({ linked = true }: { linked?: boolean } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'taskovia-cloud-dev-runner-'))
@@ -47,10 +177,59 @@ afterEach(() => {
 })
 
 describe('Cloud DEV fixed-mode runner', () => {
+  it('ships a fixed two-session same-request authority replay scenario', async () => {
+    expect(STAGE01_CONCURRENCY_SCENARIOS).toContainEqual(expect.objectContaining({
+      name: 'authority-assignment-replay',
+      outcome: 'same_request_replay',
+    }))
+    const calls: string[] = []
+    await runStage01CloudDevConcurrency({
+      scenarios: STAGE01_CONCURRENCY_SCENARIOS.filter(scenario => scenario.name === 'authority-assignment-replay'),
+      runOperation: async (scenario, phase) => {
+        calls.push(`${scenario}/${phase}`)
+        return { ok: true }
+      },
+    })
+    expect(calls).toEqual([
+      'authority-assignment-replay/cleanup', 'authority-assignment-replay/setup',
+      'authority-assignment-replay/actor_a', 'authority-assignment-replay/actor_b',
+      'authority-assignment-replay/assert', 'authority-assignment-replay/cleanup',
+    ])
+    for (const phase of ['setup', 'actor_a', 'actor_b', 'assert', 'cleanup']) {
+      expect(existsSync(resolve(root, 'supabase/tests/database/stage01_concurrency/authority-assignment-replay', `${phase}.sql`))).toBe(true)
+    }
+  })
+
   it('ships every allowlisted Stage 01 SQL verification file', () => {
     for (const filename of stage01SqlInventory) {
       expect(existsSync(resolve(root, 'supabase/tests/database', filename))).toBe(true)
     }
+  })
+
+  it('closes the Final Decision override branch before continuing its Amendment 25 migration function', () => {
+    const migration = readFileSync(resolve(root, 'supabase/migrations/20260904050924_opportunity_decision_authority_slice1.sql'), 'utf8')
+    const definitions = extractFinalDecisionDefinitions(migration)
+
+    expect(definitions).toHaveLength(2)
+    for (const definition of definitions) {
+      expect(definition.dollarQuoteTag).toBe('$$')
+      expect(definition.statementTerminated).toBe(true)
+      expect(definition.nextStatementStartsOutsideBody).toBe(true)
+      expect(auditPlpgsqlStructure(definition.body)).toEqual({ controlStack: [], parentheses: 0 })
+      expect(hasUnparenthesizedCaseEqualityInIf(definition.body)).toBe(false)
+      expect(definition.body).toMatch(/\bif\b[^;]*?=\s*\(\s*case\b[\s\S]*?\bend\s*\)\s*then\b/iu)
+      expect(definition.body).toContain("elsif nullif(btrim(target_input ->> 'overrideRationale'),'') is null then raise exception using errcode = 'P0001', message = 'STAGE01_OVERRIDE_RATIONALE_REQUIRED'; end if;\n  update public.stage01_decision_cycles")
+    }
+  })
+
+  it('rejects an unparenthesized CASE equality in an IF while accepting the PostgreSQL-safe form', () => {
+    expect(hasUnparenthesizedCaseEqualityInIf("if lhs = case value when 'a' then 'b' else 'c' end then null; end if;")).toBe(true)
+    expect(hasUnparenthesizedCaseEqualityInIf("if lhs = (case value when 'a' then 'b' else 'c' end) then null; end if;")).toBe(false)
+  })
+
+  it('ignores nested dollar-quoted text while auditing PL/pgSQL control structure', () => {
+    expect(auditPlpgsqlStructure('begin perform $quoted$ if begin end $quoted$; end;'))
+      .toEqual({ controlStack: [], parentheses: 0 })
   })
 
   it('maps only the dedicated DEV PAT to the guarded child environment', () => {

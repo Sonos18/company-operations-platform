@@ -22,6 +22,8 @@ import {
   type OpportunitySummary,
 } from '../../../shared/schemas/opportunities'
 import { opportunityCreateOptionsSchema } from '../../../shared/schemas/opportunity-create-options'
+import { employeeListResponseSchema } from '../../../shared/schemas/employees'
+import { assignOpportunityDecisionAuthorityInputSchema } from '../../../shared/schemas/opportunity-decision-authority'
 import type { Stage01BusinessConfigView } from '../../../shared/schemas/stage01-config'
 import {
   criterionEvaluationRevisionInputSchema,
@@ -44,6 +46,39 @@ import { evaluateStage01EvaluationGates, evaluateStage01IntakeGates } from '../.
 
 export const stage01OpportunityId = '81000000-0000-4000-8000-000000000001'
 const timestamp = '2026-09-01T00:00:00.000Z'
+const statefulEmployeeDirectoryResponse = employeeListResponseSchema.parse({
+  items: [{
+    id: '82000000-0000-4000-8000-000000000901',
+    employeeCode: 'VQH-FIXTURE-OWNER',
+    fullName: 'Người phụ trách fixture',
+    workEmail: 'fixture-owner@taskovia.test',
+    account: {
+      userId: '11111111-1111-4111-8111-111111111111',
+      email: 'fixture-owner@taskovia.test',
+    },
+    department: {
+      id: '82000000-0000-4000-8000-000000000902',
+      code: 'OPS',
+      name: 'Vận hành',
+    },
+    position: null,
+    hireDate: null,
+    probationEndDate: null,
+    employmentStatus: 'active',
+    profileComplete: true,
+    roles: [{
+      id: '82000000-0000-4000-8000-000000000903',
+      code: 'employee',
+      name: 'Nhân viên',
+      description: 'Company directory and assigned-work access',
+      isPrivileged: false,
+      isSystem: true,
+    }],
+  }],
+  page: 1,
+  pageSize: 100,
+  total: 1,
+})
 
 export interface WorkflowCommandRequest {
   method: string
@@ -236,6 +271,18 @@ export async function installStatefulStage01OperationalRoutes(
   page: Page,
   state = createStage01OperationalRouteState(),
 ): Promise<void> {
+  await page.route(/\/api\/companies\/[^/]+\/employees(?:\?.*)?$/, async route => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (request.method() !== 'GET'
+      || url.searchParams.get('page') !== '1'
+      || url.searchParams.get('pageSize') !== '100') return route.fallback()
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify(statefulEmployeeDirectoryResponse),
+    })
+  })
+
   await page.route(/\/api\/companies\/[^/]+\/opportunities(?:\/.*)?$/, async route => {
     const request = route.request()
     const pathname = new URL(request.url()).pathname
@@ -527,6 +574,36 @@ export async function installStatefulStage01OperationalRoutes(
     await route.fulfill({ contentType: 'application/json', body: pathname.endsWith('/start') || pathname.endsWith('/complete') || pathname.endsWith('/reopen') || pathname.endsWith('/revalidate') ? JSON.stringify(runtime) : 'null' })
   })
 
+  await page.route(/\/api\/companies\/[^/]+\/opportunities\/[^/]+\/decision-cycles\/[^/]+\/authority-candidates$/, async route => {
+    if (route.request().method() !== 'GET') return route.fallback()
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [{
+        userId: fixtureId(900), employeeId: fixtureId(901),
+        displayName: 'Decision actor', positionTitle: 'Director',
+      }] }),
+    })
+  })
+
+  await page.route(/\/api\/companies\/[^/]+\/opportunities\/[^/]+\/decision-cycles\/[^/]+\/authority$/, async route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    const pathname = new URL(route.request().url()).pathname
+    const input = assignOpportunityDecisionAuthorityInputSchema.parse(routeBody(route))
+    const cycle = state.detail.currentDecisionCycle
+    state.requests.push({ method: route.request().method(), path: pathname, body: input })
+    if (await fulfillPendingFailure(route, state)) return
+    cycle.decisionAuthorityUserId = input.authorityUserId
+    cycle.authorityResolutionEventId = fixtureId(700 + state.requests.length)
+    cycle.authorityResolutionReference = cycle.authorityResolutionEventId
+    cycle.decisionAuthority = {
+      status: 'resolved', userId: input.authorityUserId, employeeId: fixtureId(901),
+      displayName: 'Decision actor', positionTitle: 'Director', currentActorIsAuthority: true, locked: false,
+    }
+    cycle.version += 1
+    refreshStage01Gates(state.detail)
+    await route.fulfill({ contentType: 'application/json', body: 'null' })
+  })
+
   await page.route(/\/api\/companies\/[^/]+\/opportunities\/[^/]+\/stage-01\/(?:evaluations\/[^/]+\/revisions|recommendations|clarification-returns|final-decision|reactivate)$/, async route => {
     const request = route.request()
     if (request.method() !== 'POST') return route.fallback()
@@ -574,6 +651,11 @@ export async function installStatefulStage01OperationalRoutes(
       current.cycleNo = previous.cycleNo + 1; current.reactivationReason = input.reason
       current.finalOutcome = null; current.finalDecisionBy = null; current.finalDecisionAt = null; current.finalRationale = null
       current.finalRecommendationId = null; current.overrideRationale = null; current.version = 0
+      current.decisionAuthorityUserId = null; current.authorityResolutionEventId = null; current.authorityResolutionReference = null
+      current.decisionAuthority = {
+        status: 'unresolved', userId: null, employeeId: null, displayName: null,
+        positionTitle: null, currentActorIsAuthority: false, locked: false,
+      }
       current.evaluations = []; current.recommendations = []; current.clarificationReturns = []
       state.detail.decisionCycles = [...state.detail.decisionCycles.slice(0, -1), previous, current]
       state.detail.currentDecisionCycle = current

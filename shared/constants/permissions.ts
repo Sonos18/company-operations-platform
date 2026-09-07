@@ -44,6 +44,8 @@ export const permissionCodes = [
   'opportunity.duplicate.resolve',
   'opportunity.invalidate',
   'opportunity.restore',
+  'opportunity.decision_authority.assign',
+  'opportunity.decision.record',
   'journey.read',
   'journey.assignment.manage',
   'journey.node.start',

@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { createClient } from '@supabase/supabase-js'
 import { assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
 
@@ -26,14 +27,25 @@ const B4_ROLE_IDS = {
   reader: 'b4000000-0000-4000-8000-000000000301',
   operator: 'b4000000-0000-4000-8000-000000000302',
   companyAdmin: 'b4000000-0000-4000-8000-000000000303',
+  employee: 'b4000000-0000-4000-8000-000000000304',
 }
 const B4_DEPARTMENT_ID = 'b4000000-0000-4000-8000-000000000401'
 const B4_PROFILE_HISTORY_START = Date.UTC(2026, 8, 2, 0, 0, 0)
 const legacyProfileName = key => `B4 ${key} performance profile [${SOURCE_ANCHOR}]`
 const P2_FIXTURE_REVISION = 2
+const REQUIRED_STAGE01_TAXONOMIES = [
+  'customer_type', 'contact_relationship', 'scope', 'lead_source', 'referrer_type', 'engagement_status',
+  'invalid_reason', 'budget_status', 'timeline_status', 'priority', 'intake_channel', 'blocker_category',
+]
 
-export function retainedProfileIdentity(key) {
+export function retainedProfileIdentity(key, snapshotVersion) {
   const opportunityName = legacyProfileName(key)
+  if (Number.isInteger(snapshotVersion) && snapshotVersion > 0) {
+    return {
+      opportunityName: `${opportunityName} [snapshot-v${snapshotVersion}]`,
+      opportunityDescription: `Replacement B4 ${key} profile anchored to ${SOURCE_ANCHOR}; acceptance snapshot version ${snapshotVersion}`,
+    }
+  }
   if (key !== 'P2') {
     return {
       opportunityName,
@@ -46,10 +58,11 @@ export function retainedProfileIdentity(key) {
   }
 }
 
-export function selectRetainedProfileAction({ key, existing }) {
-  const identity = retainedProfileIdentity(key)
+export function selectRetainedProfileAction({ key, snapshotVersion, existing }) {
+  const identity = retainedProfileIdentity(key, snapshotVersion)
   if (!existing) return { kind: 'create', identity }
   if (existing.primary_customer_name !== identity.opportunityName) {
+    if (Number.isInteger(snapshotVersion) && snapshotVersion > 0) return { kind: 'create', identity }
     throw new Error(`B4 acceptance ${key} retained profile selector conflict`)
   }
   return { kind: 'reuse', identity, opportunity: existing }
@@ -176,6 +189,19 @@ const OPERATOR_PERMISSIONS = [
   'journey.node.start', 'journey.node.complete', 'journey.node.revalidate', 'journey.blocker.raise', 'journey.blocker.resolve',
   'stage01.evaluation.update', 'stage01.recommendation.submit', 'stage01.clarification.return',
 ]
+const B4_STAGE01_CONFIG_PERMISSIONS = [
+  'stage01.config.read', 'stage01.config.update', 'stage01.config.publish',
+]
+const B4_BASE_EMPLOYEE_PERMISSIONS = [
+  'employee.read_directory', 'employee.read_self_private', 'project.read', 'task.read_assigned', 'task.update_assigned',
+]
+const B4_BASE_EMPLOYEE_ROLE = {
+  id: B4_ROLE_IDS.employee,
+  code: 'employee',
+  name: 'Nhân viên',
+  description: 'Company directory and assigned-work access',
+  isPrivileged: false,
+}
 
 async function ensureRole(client, role, permissions) {
   await must(client.from('roles').upsert({
@@ -186,6 +212,72 @@ async function ensureRole(client, role, permissions) {
   if (permissions.length) await must(client.from('role_permissions').upsert(permissions.map(permission_code => ({ role_id: role.id, permission_code })), { onConflict: 'role_id,permission_code' }), `role permission bootstrap ${role.code}`)
 }
 
+export function b4CompanyAdminPermissionBundle(canonicalPermissions) {
+  return [...new Set(canonicalPermissions)]
+    .filter(permission => !B4_STAGE01_CONFIG_PERMISSIONS.includes(permission))
+    .sort()
+}
+
+export async function reconcileB4CompanyAdminConfigPermissions(client) {
+  for (const permissionCode of B4_STAGE01_CONFIG_PERMISSIONS) {
+    await must(client.from('role_permissions').delete()
+      .eq('role_id', B4_ROLE_IDS.companyAdmin).eq('permission_code', permissionCode), `B4 company_admin ${permissionCode} removal`)
+  }
+}
+
+function hasExactBaseEmployeeRole(role) {
+  return role?.code === B4_BASE_EMPLOYEE_ROLE.code
+    && role.name === B4_BASE_EMPLOYEE_ROLE.name
+    && role.description === B4_BASE_EMPLOYEE_ROLE.description
+    && role.is_privileged === B4_BASE_EMPLOYEE_ROLE.isPrivileged
+    && role.is_system === true
+    && role.is_active === true
+}
+
+function hasExactPermissions(existing, expected) {
+  if (existing.length !== expected.length) return false
+  const actual = [...new Set(existing.map(permission => permission.permission_code))].sort()
+  return actual.length === expected.length && actual.every((permission, index) => permission === expected[index])
+}
+
+export async function ensureB4EmployeeDirectoryRole(client, actors) {
+  const existingRole = await must(client.from('roles')
+    .select('id, code, name, description, is_privileged, is_system, is_active')
+    .eq('tenant_id', B4_ACCEPTANCE_TENANT_ID).eq('company_id', B4_ACCEPTANCE_COMPANY_ID)
+    .eq('code', B4_BASE_EMPLOYEE_ROLE.code).maybeSingle(), 'acceptance base employee role read')
+  const roleId = existingRole?.id ?? B4_BASE_EMPLOYEE_ROLE.id
+  if (!hasExactBaseEmployeeRole(existingRole)) {
+    await must(client.from('roles').upsert({
+      id: roleId, tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID,
+      code: B4_BASE_EMPLOYEE_ROLE.code, name: B4_BASE_EMPLOYEE_ROLE.name,
+      description: B4_BASE_EMPLOYEE_ROLE.description, is_privileged: B4_BASE_EMPLOYEE_ROLE.isPrivileged,
+      is_system: true, is_active: true,
+    }, { onConflict: 'id' }), 'acceptance base employee role reconcile')
+  }
+
+  const existingPermissions = await must(client.from('role_permissions').select('permission_code')
+    .eq('role_id', roleId), 'acceptance base employee permissions read')
+  if (!hasExactPermissions(existingPermissions, B4_BASE_EMPLOYEE_PERMISSIONS)) {
+    await must(client.from('role_permissions').delete().eq('role_id', roleId), 'acceptance base employee permissions clear')
+    await must(client.from('role_permissions').upsert(B4_BASE_EMPLOYEE_PERMISSIONS.map(permission_code => ({
+      role_id: roleId, permission_code,
+    })), { onConflict: 'role_id,permission_code' }), 'acceptance base employee permissions reconcile')
+  }
+
+  for (const actor of Object.values(actors)) {
+    const existingAssignment = await must(client.from('company_role_assignments').select('id')
+      .eq('tenant_id', B4_ACCEPTANCE_TENANT_ID).eq('company_id', B4_ACCEPTANCE_COMPANY_ID)
+      .eq('user_id', actor.userId).eq('role_id', roleId).is('revoked_at', null).maybeSingle(), 'acceptance base employee assignment read')
+    if (!existingAssignment) {
+      await must(client.from('company_role_assignments').insert({
+        tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID,
+        user_id: actor.userId, role_id: roleId, granted_by: actor.userId,
+        grant_reason: 'B4 acceptance base employee identity',
+      }), 'acceptance base employee assignment')
+    }
+  }
+}
+
 async function ensureRoles(client) {
   await ensureRole(client, { id: B4_ROLE_IDS.reader, code: 'b4_stage01_reader', name: 'B4 Stage 01 Reader', description: 'Read-only B4 acceptance actor', isPrivileged: false }, READER_PERMISSIONS)
   await ensureRole(client, { id: B4_ROLE_IDS.operator, code: 'b4_stage01_operator', name: 'B4 Stage 01 Operator', description: 'Operational B4 acceptance actor without decision authority', isPrivileged: false }, OPERATOR_PERMISSIONS)
@@ -193,7 +285,8 @@ async function ensureRoles(client) {
   if (!canonicalRole) throw new Error('B4 acceptance canonical company_admin role is missing')
   const permissions = await must(client.from('role_permissions').select('permission_code').eq('role_id', canonicalRole.id), 'canonical company admin permissions')
   if (permissions.length === 0) throw new Error('B4 acceptance canonical company_admin permissions are missing')
-  await ensureRole(client, { id: B4_ROLE_IDS.companyAdmin, code: 'company_admin', name: 'B4 Company Administrator', description: 'Mirrors canonical company_admin permissions for acceptance decision authority', isPrivileged: true }, permissions.map(permission => permission.permission_code))
+  await ensureRole(client, { id: B4_ROLE_IDS.companyAdmin, code: 'company_admin', name: 'B4 Company Administrator', description: 'Mirrors canonical non-configuration permissions for acceptance decision authority', isPrivileged: true }, b4CompanyAdminPermissionBundle(permissions.map(permission => permission.permission_code)))
+  await reconcileB4CompanyAdminConfigPermissions(client)
 }
 
 async function ensureAssignments(client, actors) {
@@ -209,22 +302,92 @@ async function ensureAssignments(client, actors) {
   }
 }
 
-async function ensureAcceptanceSnapshot(client) {
-  const canonical = await must(client.from('workflow_definition_snapshots').select('definition_hash, definition, schema_version')
+async function ensureB4DecisionAuthorityConfiguration(client, actorId) {
+  const capability = {
+    tenant_id: B4_ACCEPTANCE_TENANT_ID,
+    company_id: B4_ACCEPTANCE_COMPANY_ID,
+    capability_key: 'opportunity.decision_authority',
+    enabled: true,
+    version: 1,
+    configured_by: actorId,
+  }
+  await must(client.from('company_opportunity_decision_capabilities').upsert(capability, {
+    onConflict: 'tenant_id,company_id,capability_key',
+  }), 'Decision Authority capability bootstrap')
+
+  const existing = await must(client.from('opportunity_decision_policy_snapshots')
+    .select('id, policy_version').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID).eq('company_id', B4_ACCEPTANCE_COMPANY_ID)
+    .eq('policy_key', 'opportunity.decision_authority').eq('status', 'published')
+    .order('policy_version', { ascending: false }).limit(1).maybeSingle(), 'Decision Authority policy read')
+  if (existing) return
+
+  const latest = await must(client.from('opportunity_decision_policy_snapshots')
+    .select('policy_version').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID).eq('company_id', B4_ACCEPTANCE_COMPANY_ID)
+    .eq('policy_key', 'opportunity.decision_authority')
+    .order('policy_version', { ascending: false }).limit(1).maybeSingle(), 'Decision Authority policy version read')
+
+  const canonical = await must(client.from('opportunity_decision_policy_snapshots')
+    .select('id, policy, policy_hash').eq('tenant_id', CANONICAL_VQH_TENANT_ID).eq('company_id', CANONICAL_VQH_COMPANY_ID)
+    .eq('policy_key', 'opportunity.decision_authority').eq('status', 'published')
+    .order('policy_version', { ascending: false }).limit(1).maybeSingle(), 'canonical Decision Authority policy read')
+  if (!canonical) throw new Error('B4 acceptance canonical Decision Authority policy is missing')
+  await must(client.from('opportunity_decision_policy_snapshots').insert({
+    tenant_id: B4_ACCEPTANCE_TENANT_ID,
+    company_id: B4_ACCEPTANCE_COMPANY_ID,
+    policy_key: 'opportunity.decision_authority',
+    policy_version: (latest?.policy_version ?? 0) + 1,
+    policy: canonical.policy,
+    policy_hash: canonical.policy_hash,
+    status: 'published',
+    published_at: new Date().toISOString(),
+    approved_at: new Date().toISOString(),
+    source_policy_snapshot_id: canonical.id,
+    created_by: actorId,
+  }), 'Decision Authority policy clone')
+}
+
+function invalidCanonicalTaxonomy(canonical, taxonomyKey) {
+  throw new Error(`B4 acceptance canonical Stage 01 snapshot ${canonical.id} template version ${canonical.template_version} has invalid ${taxonomyKey} taxonomy`)
+}
+
+export function assertCanonicalStage01Taxonomies(canonical) {
+  const taxonomies = canonical?.definition?.taxonomies
+  if (!taxonomies || typeof taxonomies !== 'object' || Array.isArray(taxonomies)) invalidCanonicalTaxonomy(canonical, 'business')
+  for (const taxonomyKey of REQUIRED_STAGE01_TAXONOMIES) {
+    const entries = taxonomies[taxonomyKey]
+    if (!Array.isArray(entries) || entries.length === 0) invalidCanonicalTaxonomy(canonical, taxonomyKey)
+    const codes = new Set()
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object' || typeof entry.code !== 'string' || !entry.code.trim() || typeof entry.label !== 'string' || !entry.label.trim() || codes.has(entry.code)) {
+        invalidCanonicalTaxonomy(canonical, taxonomyKey)
+      }
+      codes.add(entry.code)
+      if (taxonomyKey === 'lead_source' && entry.behavior !== undefined && (
+        !entry.behavior || typeof entry.behavior !== 'object' || typeof entry.behavior.requiresReferrer !== 'boolean'
+      )) invalidCanonicalTaxonomy(canonical, taxonomyKey)
+    }
+  }
+  return taxonomies
+}
+
+export async function ensureAcceptanceSnapshot(client) {
+  const canonical = await must(client.from('workflow_definition_snapshots').select('id, template_version, definition_hash, definition, schema_version')
     .eq('tenant_id', CANONICAL_VQH_TENANT_ID).eq('company_id', CANONICAL_VQH_COMPANY_ID).eq('workflow_key', 'vqh.stage01')
     .order('template_version', { ascending: false }).limit(1).maybeSingle(), 'canonical Stage 01 snapshot read')
   if (!canonical) throw new Error('B4 acceptance canonical Stage 01 snapshot is missing')
-  const existing = await must(client.from('workflow_definition_snapshots').select('id').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
-    .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('workflow_key', 'vqh.stage01').eq('definition_hash', canonical.definition_hash).maybeSingle(), 'acceptance snapshot read')
-  if (existing) return existing.id
-  const latest = await must(client.from('workflow_definition_snapshots').select('template_version').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
+  assertCanonicalStage01Taxonomies(canonical)
+  const latest = await must(client.from('workflow_definition_snapshots').select('id, template_version, schema_version, definition_hash, definition').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
     .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('workflow_key', 'vqh.stage01').order('template_version', { ascending: false }).limit(1).maybeSingle(), 'acceptance snapshot version read')
+  if (latest
+    && latest.schema_version === canonical.schema_version
+    && latest.definition_hash === canonical.definition_hash
+    && isDeepStrictEqual(latest.definition, canonical.definition)) return { id: latest.id, version: latest.template_version }
   const snapshot = await must(client.from('workflow_definition_snapshots').insert({
     tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, workflow_key: 'vqh.stage01',
     template_version: (latest?.template_version ?? 0) + 1, schema_version: canonical.schema_version,
     definition: canonical.definition, definition_hash: canonical.definition_hash,
-  }).select('id').single(), 'acceptance snapshot append')
-  return snapshot.id
+  }).select('id, template_version').single(), 'acceptance snapshot append')
+  return { id: snapshot.id, version: snapshot.template_version }
 }
 
 const PROFILE_REQUIREMENTS = {
@@ -233,9 +396,9 @@ const PROFILE_REQUIREMENTS = {
   P3: { cycles: 20, contacts: 20, revisions: true, repeatedRecommendations: true },
 }
 
-export function assertRetainedProfileShape({ key, snapshotId, profile }) {
+export function assertRetainedProfileShape({ key, snapshotId, snapshotVersion, profile }) {
   const requirement = PROFILE_REQUIREMENTS[key]
-  const identity = retainedProfileIdentity(key)
+  const identity = retainedProfileIdentity(key, snapshotVersion)
   const invalid = () => { throw new Error(`B4 acceptance ${key} retained profile is invalid`) }
   if (!requirement || !profile?.opportunity || !profile.workflow) invalid()
   if (
@@ -265,10 +428,10 @@ export function assertRetainedProfileShape({ key, snapshotId, profile }) {
   return profile.opportunity.id
 }
 
-async function readRetainedProfile(client, { key, snapshotId, opportunity }) {
+async function readRetainedProfile(client, { key, snapshotId, snapshotVersion, opportunity }) {
   const workflow = await must(client.from('workflow_instances').select('id, subject_id, definition_snapshot_id').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
     .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('subject_type', 'opportunity').eq('subject_id', opportunity.id).maybeSingle(), `${key} profile workflow read`)
-  if (!workflow) return assertRetainedProfileShape({ key, snapshotId, profile: {} })
+  if (!workflow) return assertRetainedProfileShape({ key, snapshotId, snapshotVersion, profile: {} })
   const nodes = await must(client.from('workflow_node_instances').select('id, node_key').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
     .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('workflow_instance_id', workflow.id), `${key} profile node read`)
   const nodeIds = nodes.map(node => node.id)
@@ -285,7 +448,7 @@ async function readRetainedProfile(client, { key, snapshotId, opportunity }) {
     profileRows('stage01_clarification_returns', 'decision_cycle_id', `${key} profile clarification read`),
     must(client.from('opportunity_contacts').select('contact_id').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID).eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('opportunity_id', opportunity.id).is('ended_at', null), `${key} profile contact read`),
   ])
-  return assertRetainedProfileShape({ key, snapshotId, profile: { opportunity, workflow, nodes, executions, cycles, evaluations, recommendations, clarifications, contacts } })
+  return assertRetainedProfileShape({ key, snapshotId, snapshotVersion, profile: { opportunity, workflow, nodes, executions, cycles, evaluations, recommendations, clarifications, contacts } })
 }
 
 export function buildB4EvaluationExecution({ cycleNo, cycles, nodeInstanceId, actorId }) {
@@ -303,12 +466,12 @@ export function buildB4EvaluationExecution({ cycleNo, cycles, nodeInstanceId, ac
   }
 }
 
-export async function ensureProfile(client, { key, cycles, contacts, snapshotId, actorId }) {
-  const identity = retainedProfileIdentity(key)
+export async function ensureProfile(client, { key, cycles, contacts, snapshotId, snapshotVersion, actorId }) {
+  const identity = retainedProfileIdentity(key, snapshotVersion)
   const existing = await must(client.from('opportunities').select('id, primary_customer_name, need_description').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
     .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('primary_customer_name', identity.opportunityName).maybeSingle(), `${key} profile read`)
-  const selection = selectRetainedProfileAction({ key, existing })
-  if (selection.kind === 'reuse') return readRetainedProfile(client, { key, snapshotId, opportunity: selection.opportunity })
+  const selection = selectRetainedProfileAction({ key, snapshotVersion, existing })
+  if (selection.kind === 'reuse') return readRetainedProfile(client, { key, snapshotId, snapshotVersion, opportunity: selection.opportunity })
   const opportunity = await must(client.from('opportunities').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, primary_customer_name: selection.identity.opportunityName, need_description: selection.identity.opportunityDescription, created_by: actorId }).select('id').single(), `${key} profile bootstrap`)
   const workflow = await must(client.from('workflow_instances').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, subject_type: 'opportunity', subject_id: opportunity.id, definition_snapshot_id: snapshotId, created_by: actorId }).select('id').single(), `${key} workflow bootstrap`)
   const intake = await must(client.from('workflow_node_instances').insert({ tenant_id: B4_ACCEPTANCE_TENANT_ID, company_id: B4_ACCEPTANCE_COMPANY_ID, workflow_instance_id: workflow.id, node_key: '01.1', node_type: 'stage' }).select('id').single(), `${key} intake node bootstrap`)
@@ -335,15 +498,15 @@ export async function ensureProfile(client, { key, cycles, contacts, snapshotId,
   }
   const persistedOpportunity = await must(client.from('opportunities').select('id, primary_customer_name, need_description').eq('tenant_id', B4_ACCEPTANCE_TENANT_ID)
     .eq('company_id', B4_ACCEPTANCE_COMPANY_ID).eq('id', opportunity.id).maybeSingle(), `${key} profile validation read`)
-  if (!persistedOpportunity) return assertRetainedProfileShape({ key, snapshotId, profile: {} })
-  return readRetainedProfile(client, { key, snapshotId, opportunity: persistedOpportunity })
+  if (!persistedOpportunity) return assertRetainedProfileShape({ key, snapshotId, snapshotVersion, profile: {} })
+  return readRetainedProfile(client, { key, snapshotId, snapshotVersion, opportunity: persistedOpportunity })
 }
 
-async function ensureRetainedProfiles(client, snapshotId, actorId) {
+async function ensureRetainedProfiles(client, snapshotId, snapshotVersion, actorId) {
   return {
-    p1OpportunityId: await ensureProfile(client, { key: 'P1', cycles: 1, contacts: 2, snapshotId, actorId }),
-    p2OpportunityId: await ensureProfile(client, { key: 'P2', cycles: 5, contacts: 10, snapshotId, actorId }),
-    p3OpportunityId: await ensureProfile(client, { key: 'P3', cycles: 20, contacts: 20, snapshotId, actorId }),
+    p1OpportunityId: await ensureProfile(client, { key: 'P1', cycles: 1, contacts: 2, snapshotId, snapshotVersion, actorId }),
+    p2OpportunityId: await ensureProfile(client, { key: 'P2', cycles: 5, contacts: 10, snapshotId, snapshotVersion, actorId }),
+    p3OpportunityId: await ensureProfile(client, { key: 'P3', cycles: 20, contacts: 20, snapshotId, snapshotVersion, actorId }),
   }
 }
 
@@ -475,11 +638,13 @@ export async function bootstrapB4Acceptance({ cwd = process.cwd() } = {}) {
     actors.decision = await findOrCreateActor(client, 'decision')
     await ensureActorAccess(client, actors)
     await ensureRoles(client)
+    await ensureB4EmployeeDirectoryRole(client, actors)
     await ensureAssignments(client, actors)
-    const acceptanceSnapshotId = await ensureAcceptanceSnapshot(client)
-    const profiles = await ensureRetainedProfiles(client, acceptanceSnapshotId, actors.operator.userId)
+    await ensureB4DecisionAuthorityConfiguration(client, actors.decision.userId)
+    const acceptanceSnapshot = await ensureAcceptanceSnapshot(client)
+    const profiles = await ensureRetainedProfiles(client, acceptanceSnapshot.id, acceptanceSnapshot.version, actors.operator.userId)
     await recordB4RunMarker(client, { runMarker, actorId: actors.decision.userId })
-    return { runMarker, tenantId: B4_ACCEPTANCE_TENANT_ID, companyId: B4_ACCEPTANCE_COMPANY_ID, companyCode: B4_ACCEPTANCE_COMPANY_CODE, acceptanceSnapshotId, actors, profiles }
+    return { runMarker, tenantId: B4_ACCEPTANCE_TENANT_ID, companyId: B4_ACCEPTANCE_COMPANY_ID, companyCode: B4_ACCEPTANCE_COMPANY_CODE, acceptanceSnapshotId: acceptanceSnapshot.id, actors, profiles }
   } catch (error) {
     if (Object.keys(actors).length > 0) await deactivateActorCredentials(client, actors)
     throw error

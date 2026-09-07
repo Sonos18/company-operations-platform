@@ -26,6 +26,11 @@ const strictApiErrorBodySchema = apiErrorBodySchema.extend({
   error: apiErrorBodySchema.shape.error.strict(),
 }).strict()
 
+type ResponseBody =
+  | { kind: 'empty' }
+  | { kind: 'json'; value: unknown }
+  | { kind: 'malformed' }
+
 function hasControlCharacter(value: string): boolean {
   return [...value].some((character) => {
     const code = character.charCodeAt(0)
@@ -50,6 +55,25 @@ function malformedResponse(): ClientError {
     'Máy chủ trả về phản hồi không hợp lệ.',
     false,
   )
+}
+
+async function readResponseBody(response: Response): Promise<ResponseBody> {
+  let raw: string
+  try {
+    raw = await response.text()
+  }
+  catch {
+    return { kind: 'malformed' }
+  }
+
+  if (!raw.trim()) return { kind: 'empty' }
+
+  try {
+    return { kind: 'json', value: JSON.parse(raw) }
+  }
+  catch {
+    return { kind: 'malformed' }
+  }
 }
 
 function decodeApiPath(pathname: string): string | null {
@@ -197,16 +221,11 @@ export function createAuthenticatedHttpClient(options: AuthenticatedHttpClientOp
         throw clientError('network', 'NETWORK_ERROR', 'Không thể kết nối đến máy chủ. Vui lòng thử lại.', true)
       }
 
-      let responseBody: unknown
-      try {
-        responseBody = await response.json()
-      }
-      catch {
-        throw malformedResponse()
-      }
+      const responseBody = await readResponseBody(response)
 
       if (!response.ok) {
-        const parsedError = strictApiErrorBodySchema.safeParse(responseBody)
+        if (responseBody.kind !== 'json') throw malformedResponse()
+        const parsedError = strictApiErrorBodySchema.safeParse(responseBody.value)
         if (!parsedError.success) throw malformedResponse()
         const failure = apiFailure(response.status, parsedError.data.error.code, parsedError.data.error.requestId)
         const shouldRevalidate = input.url.split(/[?#]/u, 1)[0] !== '/api/auth/session'
@@ -223,7 +242,8 @@ export function createAuthenticatedHttpClient(options: AuthenticatedHttpClientOp
         throw failure
       }
 
-      const parsedSuccess = input.schema.safeParse(responseBody)
+      if (responseBody.kind === 'malformed') throw malformedResponse()
+      const parsedSuccess = input.schema.safeParse(responseBody.kind === 'empty' ? null : responseBody.value)
       if (!parsedSuccess.success) throw malformedResponse()
       return parsedSuccess.data
     },
