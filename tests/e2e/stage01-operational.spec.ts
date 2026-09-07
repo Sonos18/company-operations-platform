@@ -826,8 +826,8 @@ test('decision actions remain hidden without their exact permission or the requi
 
 test('completed decision is read-only and reactivation sends canonical versions then retains ordered previous cycles', async ({ page, authState }) => {
   const detail = createStage01OperationalDetail()
-  detail.currentDecisionCycle.finalOutcome = 'proceed'
-  detail.currentDecisionCycle.finalRationale = 'Đã phê duyệt.'
+  detail.currentDecisionCycle.finalOutcome = 'not_proceeding'
+  detail.currentDecisionCycle.finalRationale = 'Chưa đủ điều kiện triển khai.'
   detail.currentDecisionCycle.finalDecisionBy = '81000000-0000-4000-8000-000000000071'
   detail.currentDecisionCycle.finalDecisionAt = '2026-09-01T03:00:00.000Z'
   detail.currentDecisionCycle.finalRecommendationId = '81000000-0000-4000-8000-000000000077'
@@ -869,7 +869,7 @@ test('completed decision is read-only and reactivation sends canonical versions 
     },
   })
   await goToWorkspace(page)
-  await expect(page.getByText('Quyết định đã ghi nhận: Tiếp tục', { exact: true })).toBeVisible()
+  await expect(page.getByText('Quyết định đã ghi nhận: Không tiếp tục', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Ghi nhận quyết định' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Kích hoạt lại Stage 01' }).click()
   await page.getByRole('textbox', { name: 'Lý do kích hoạt lại' }).fill('  Cần đánh giá lại điều kiện triển khai  ')
@@ -883,6 +883,23 @@ test('completed decision is read-only and reactivation sends canonical versions 
   await expect(page.getByText('Chu kỳ #1 · Đã hoàn tất', { exact: true })).toBeVisible()
   await expect(page.getByText('Chu kỳ #2 · Đang xử lý', { exact: true })).toBeVisible()
   await expect(page.getByText('Kích hoạt lại: Cần đánh giá lại điều kiện triển khai', { exact: true })).toBeVisible()
+})
+
+test('hides reactivation for a completed proceed decision', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.currentDecisionCycle.finalOutcome = 'proceed'
+  detail.currentDecisionCycle.finalRationale = 'Đã phê duyệt.'
+  detail.currentDecisionCycle.finalDecisionBy = '81000000-0000-4000-8000-000000000071'
+  detail.currentDecisionCycle.finalDecisionAt = '2026-09-01T03:00:00.000Z'
+  detail.currentDecisionCycle.finalRecommendationId = '81000000-0000-4000-8000-000000000077'
+  detail.evaluation.runtime.phase = 'completed'
+  detail.evaluation.runtime.state = 'completed'
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'stage01.reactivate'] })]
+  await installStage01OperationalRoutes(page, detail)
+  await goToWorkspace(page)
+
+  await expect(page.getByText('Quyết định đã ghi nhận: Tiếp tục', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Kích hoạt lại Stage 01' })).toHaveCount(0)
 })
 
 test('loads the authenticated employee directory through the stateful fixture before selecting an accountable owner', async ({ page, authState }) => {
@@ -961,18 +978,11 @@ test('stateful acceptance fixture drives canonical Stage 01 commands and preserv
   await expect(page.getByText('Quyết định đã ghi nhận: Tiếp tục', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Hoàn tất node' })).toBeEnabled()
   await page.getByRole('button', { name: 'Hoàn tất node' }).click()
-  await page.getByRole('button', { name: 'Kích hoạt lại Stage 01' }).click()
-  await page.getByRole('textbox', { name: 'Lý do kích hoạt lại' }).fill('Cần đánh giá lại')
-  await page.getByRole('button', { name: 'Xác nhận kích hoạt lại' }).click()
-
-  await expect(page.getByText('Chu kỳ #1 · Đã hoàn tất', { exact: true })).toBeVisible()
-  await expect(page.getByText('Chu kỳ #2 · Đang xử lý', { exact: true })).toBeVisible()
   expect(state.requests.map(request => request.path)).toEqual(expect.arrayContaining([
     expect.stringContaining('/workflow-nodes/'),
     expect.stringContaining('/evaluations/'),
     expect.stringContaining('/recommendations'),
     expect.stringContaining('/final-decision'),
-    expect.stringContaining('/reactivate'),
   ]))
 })
 
@@ -1463,7 +1473,8 @@ test('keeps recommendation and clarification history immutable when the complete
   await page.getByRole('button', { name: 'Chỉ định', exact: true }).click()
   await page.getByRole('button', { name: 'Xác nhận chỉ định', exact: true }).click()
   await expect(page.getByText('Đã chỉ định người có thẩm quyền quyết định.', { exact: true })).toBeVisible()
-  await page.getByRole('textbox', { name: 'Lý do quyết định' }).fill('Sau khi làm rõ, tiếp tục triển khai')
+  await page.getByRole('combobox', { name: 'Kết quả quyết định' }).selectOption('not_proceeding')
+  await page.getByRole('textbox', { name: 'Lý do quyết định' }).fill('Sau khi làm rõ, chưa tiếp tục triển khai')
   await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click()
   await page.getByRole('button', { name: 'Kích hoạt lại Stage 01' }).click()
   await page.getByRole('textbox', { name: 'Lý do kích hoạt lại' }).fill('Có thay đổi điều kiện thương mại')

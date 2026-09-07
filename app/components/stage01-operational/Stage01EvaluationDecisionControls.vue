@@ -53,7 +53,7 @@ const canAssignDecisionAuthority = computed(() => access.hasPermission('opportun
   && props.detail.actorCapabilities.includes('assignDecisionAuthority')
   && props.detail.currentDecisionCycle.decisionAuthority.policyBinding.status === 'bound' && !completed.value)
 const decisionVisible = computed(() => access.hasPermission('opportunity.decision.record') && !completed.value)
-const canReactivate = computed(() => access.hasPermission('stage01.reactivate') && completed.value)
+const canReactivate = computed(() => access.hasPermission('stage01.reactivate') && props.detail.currentDecisionCycle.finalOutcome === 'not_proceeding')
 
 function draftFor(criterionKey: string): EvaluationDraft {
   const existing = evaluationDrafts[criterionKey]

@@ -1343,18 +1343,120 @@ test('B4-S01/S04/S06/S08 completes the real acceptance-company journey and prese
   const decisionCycleHistory = page.getByRole('region', { name: 'Chu kỳ quyết định', exact: true })
   await expect(decisionCycleHistory.getByText(decisionRationale, { exact: false })).toBeVisible()
 
-  // B4-S08: the operator is still the real decision-capable browser actor; a new cycle is appended,
-  // while the prior decision remains visible after canonical reload.
-  await page.getByRole('button', { name: 'Kích hoạt lại Stage 01' }).click()
-  await page.getByLabel('Lý do kích hoạt lại').fill(reactivationReason)
-  const reactivationPath = `${canonicalStage01Path}/reactivate`
+  // B4-S08 creates its own run-marked opportunity and drives a real not_proceeding cycle before reactivation.
+  await page.goto('/opportunities')
+  const s08CreateOptions = await authenticatedApi(page, `/api/companies/${state.companyId}/opportunities/create-options`)
+  expect(s08CreateOptions.status).toBe(200)
+  await page.getByRole('button', { name: 'Tạo cơ hội mới' }).click()
+  const s08OpportunityName = runText(state, 'S08 cơ hội vận hành')
+  await page.getByLabel('Tên khách hàng chính').fill(s08OpportunityName)
+  await page.getByLabel('Nhu cầu').fill(runText(state, 'S08 nhu cầu ban đầu'))
+  await chooseFirstRealOption(page, 'Loại khách hàng')
+  await chooseFirstRealOption(page, 'Nguồn khách hàng')
+  await chooseFirstRealOption(page, 'Mức độ tương tác')
+  const s08InitialResponse = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return response.request().method() === 'GET'
+      && url.pathname.startsWith(`/api/companies/${state.companyId}/opportunities/`)
+      && url.pathname.endsWith('/stage-01')
+  })
+  await page.getByRole('button', { name: 'Tạo cơ hội' }).click()
+  await expect(page).toHaveURL(/\/opportunities\/[0-9a-f-]+\/stage-01$/iu)
+  const s08OpportunityId = page.url().match(/\/opportunities\/([^/]+)\/stage-01$/u)?.[1]
+  if (!s08OpportunityId) throw new Error('B4 S08 opportunity URL did not contain an identifier')
+  const s08Path = `/api/companies/${state.companyId}/opportunities/${s08OpportunityId}/stage-01`
+  const s08Initial = stage01OperationalDetailSchema.parse(await (await s08InitialResponse).json())
+  expect(s08Initial.currentDecisionCycle.finalOutcome).toBeNull()
+
+  await addRequiredIntakeData(page, state)
+  await assignRuntimeOwner(page, state, s08OpportunityId, '01.1 Tiếp nhận')
+  const s08Intake = runtimeNode(page, '01.1 Tiếp nhận')
+  const s08AfterIntakeStart = page.waitForResponse(response => (
+    response.request().method() === 'GET' && new URL(response.url()).pathname === s08Path
+  ))
+  await s08Intake.getByRole('button', { name: 'Khởi động node', exact: true }).click()
+  expect((await s08AfterIntakeStart).ok()).toBe(true)
+  const s08AfterIntakeCompletion = page.waitForResponse(response => (
+    response.request().method() === 'GET' && new URL(response.url()).pathname === s08Path
+  ))
+  await s08Intake.getByRole('button', { name: 'Hoàn tất node', exact: true }).click()
+  expect((await s08AfterIntakeCompletion).ok()).toBe(true)
+
+  await assignRuntimeOwner(page, state, s08OpportunityId, '01.2 Đánh giá', false)
+  const s08Evaluation = runtimeNode(page, '01.2 Đánh giá')
+  const s08AfterEvaluationStart = page.waitForResponse(response => (
+    response.request().method() === 'GET' && new URL(response.url()).pathname === s08Path
+  ))
+  await s08Evaluation.getByRole('button', { name: 'Khởi động node', exact: true }).click()
+  const s08Started = stage01OperationalDetailSchema.parse(await (await s08AfterEvaluationStart).json())
+  const s08Criteria = s08Started.configuration.criteria.filter(criterion => criterion.criticality !== 'optional')
+  await evaluateRequiredCriteria(page, state, s08OpportunityId, s08Criteria.map(criterion => ({ key: criterion.key, label: criterion.label })))
+
+  await page.getByRole('combobox', { name: 'Loại đề xuất', exact: true }).selectOption('recommend_not_proceeding')
+  await page.getByLabel('Lý do đề xuất', { exact: true }).fill(runText(state, 'S08 đề xuất không tiếp tục'))
+  await page.getByLabel('Bằng chứng đề xuất', { exact: true }).fill(runText(state, 'S08 bằng chứng đề xuất'))
+  const s08RecommendationPath = `${s08Path}/recommendations`
+  const s08RecommendationResponse = page.waitForResponse(response => (
+    response.request().method() === 'POST' && new URL(response.url()).pathname === s08RecommendationPath
+  ))
+  const s08RecommendationCanonicalReload = page.waitForResponse(response => (
+    response.request().method() === 'GET' && new URL(response.url()).pathname === s08Path
+  ))
+  await page.getByRole('button', { name: 'Gửi đề xuất', exact: true }).click()
+  expect((await s08RecommendationResponse).ok()).toBe(true)
+  const s08AfterRecommendation = stage01OperationalDetailSchema.parse(await (await s08RecommendationCanonicalReload).json())
+
+  const s08AuthorityPath = `${s08Path.replace(/\/stage-01$/u, '')}/decision-cycles/${s08AfterRecommendation.currentDecisionCycle.id}/authority`
+  const s08AuthorityResponse = page.waitForResponse(response => (
+    response.request().method() === 'POST' && new URL(response.url()).pathname === s08AuthorityPath
+  ))
+  const s08AuthorityCanonicalReload = page.waitForResponse(response => (
+    response.request().method() === 'GET' && new URL(response.url()).pathname === s08Path
+  ))
+  await page.getByRole('button', { name: 'Chỉ định', exact: true }).click()
+  await page.getByRole('button', { name: 'Xác nhận chỉ định', exact: true }).click()
+  expect((await s08AuthorityResponse).ok()).toBe(true)
+  expect((await s08AuthorityCanonicalReload).ok()).toBe(true)
+
+  await page.getByRole('combobox', { name: 'Kết quả quyết định', exact: true }).selectOption('not_proceeding')
+  const s08DecisionRationale = runText(state, 'S08 quyết định không tiếp tục')
+  await page.getByRole('textbox', { name: 'Lý do quyết định', exact: true }).fill(s08DecisionRationale)
+  const s08DecisionPath = `${s08Path}/final-decision`
+  const s08DecisionResponse = page.waitForResponse(response => (
+    response.request().method() === 'POST' && new URL(response.url()).pathname === s08DecisionPath
+  ))
+  const s08DecisionCanonicalReload = page.waitForResponse(response => (
+    response.request().method() === 'GET' && new URL(response.url()).pathname === s08Path
+  ))
+  await page.getByRole('button', { name: 'Ghi nhận quyết định', exact: true }).click()
+  expect((await s08DecisionResponse).ok()).toBe(true)
+  const s08AfterDecision = stage01OperationalDetailSchema.parse(await (await s08DecisionCanonicalReload).json())
+  expect(s08AfterDecision.currentDecisionCycle.finalOutcome).toBe('not_proceeding')
+
+  const s08CompletePath = `/api/companies/${state.companyId}/workflow-nodes/${s08AfterDecision.evaluation.runtime.nodeExecutionId}/complete`
+  const s08CompleteResponse = page.waitForResponse(response => (
+    response.request().method() === 'POST' && new URL(response.url()).pathname === s08CompletePath
+  ))
+  const s08CompleteCanonicalReload = page.waitForResponse(response => (
+    response.request().method() === 'GET' && new URL(response.url()).pathname === s08Path
+  ))
+  await runtimeNode(page, '01.2 Đánh giá').getByRole('button', { name: 'Hoàn tất node', exact: true }).click()
+  expect((await s08CompleteResponse).ok()).toBe(true)
+  expect((await s08CompleteCanonicalReload).ok()).toBe(true)
+
+  await expect(page.getByText('Quyết định đã ghi nhận: Không tiếp tục', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Kích hoạt lại Stage 01', exact: true })).toBeVisible()
+  const s08CycleHistory = page.getByRole('region', { name: 'Chu kỳ quyết định', exact: true })
+  const reactivationPath = `${s08Path}/reactivate`
   const reactivationResponse = page.waitForResponse(response => (
     response.request().method() === 'POST' && new URL(response.url()).pathname === reactivationPath
   ))
   const reactivationCanonicalReload = page.waitForResponse(response => (
-    response.request().method() === 'GET' && new URL(response.url()).pathname === canonicalStage01Path
+    response.request().method() === 'GET' && new URL(response.url()).pathname === s08Path
   ))
-  await page.getByRole('button', { name: 'Xác nhận kích hoạt lại' }).click()
+  await page.getByRole('button', { name: 'Kích hoạt lại Stage 01', exact: true }).click()
+  await page.getByLabel('Lý do kích hoạt lại', { exact: true }).fill(reactivationReason)
+  await page.getByRole('button', { name: 'Xác nhận kích hoạt lại', exact: true }).click()
   const reactivation = await reactivationResponse
   expect(reactivation.status()).toBeGreaterThanOrEqual(200)
   expect(reactivation.status()).toBeLessThan(300)
@@ -1363,12 +1465,12 @@ test('B4-S01/S04/S06/S08 completes the real acceptance-company journey and prese
   await expect(page.getByText('Chu kỳ #1 · Đã hoàn tất', { exact: true })).toBeVisible()
   await expect(page.getByText('Chu kỳ #2 · Đang xử lý', { exact: true })).toBeVisible()
   await expect(page.getByText(`Kích hoạt lại: ${reactivationReason}`, { exact: true })).toBeVisible()
-  await expect(decisionCycleHistory.getByText(decisionRationale, { exact: false })).toBeVisible()
+  await expect(s08CycleHistory.getByText(s08DecisionRationale, { exact: false })).toBeVisible()
 
-  const canonical = await authenticatedApi(page, `/api/companies/${state.companyId}/opportunities/${opportunityId}/stage-01`)
+  const canonical = await authenticatedApi(page, s08Path)
   expect(canonical.status).toBe(200)
   expect(canonical.body).toMatchObject({
-    opportunity: { id: opportunityId, primaryCustomerName: opportunityName },
+    opportunity: { id: s08OpportunityId },
     currentDecisionCycle: {
       cycleNo: 2,
       finalOutcome: null,
@@ -1379,7 +1481,7 @@ test('B4-S01/S04/S06/S08 completes the real acceptance-company journey and prese
       decisionAuthority: { status: 'unresolved', userId: null },
     },
     decisionCycles: expect.arrayContaining([
-      expect.objectContaining({ cycleNo: 1, finalOutcome: 'proceed', finalRationale: decisionRationale }),
+      expect.objectContaining({ cycleNo: 1, finalOutcome: 'not_proceeding', finalRationale: s08DecisionRationale }),
       expect.objectContaining({
         cycleNo: 2,
         finalOutcome: null,
