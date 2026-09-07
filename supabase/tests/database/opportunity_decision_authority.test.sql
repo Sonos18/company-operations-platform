@@ -563,31 +563,30 @@ select pg_temp.authority_assert_true(
 reset role;
 do $$
 declare
-  tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010';
-  company_id constant uuid := 'b4000000-0000-4000-8000-000000000020';
+  v_tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010';
+  v_company_id constant uuid := 'b4000000-0000-4000-8000-000000000020';
   actor_id constant uuid := '25000000-0000-4000-8000-000000000006';
   role_id constant uuid := '25000000-0000-4000-8000-000000000106';
   department_id constant uuid := '25000000-0000-4000-8000-000000000202';
-  v_tenant_id constant uuid := tenant_id;
-  v_company_id constant uuid := company_id;
+  proceed_recommendation_id constant uuid := '25000000-0000-4000-8000-000000000504';
   v_snapshot_id uuid;
   policy_id uuid;
   canonical_policy record;
   fixture record;
 begin
   insert into auth.users (id, email) values (actor_id, 'authority-b4-transition@taskovia.invalid');
-  insert into public.tenants (id, code, name) values (tenant_id, 'authority-b4-transition', 'Authority B4 transition') on conflict (id) do nothing;
-  insert into public.companies (id, tenant_id, code, name) values (company_id, tenant_id, 'AUTHORITY_B4', 'Authority B4 transition') on conflict (id) do nothing;
-  insert into public.tenant_memberships (user_id, tenant_id, roles) values (actor_id, tenant_id, array['member']);
-  insert into public.company_memberships (user_id, tenant_id, company_id, roles, is_active) values (actor_id, tenant_id, company_id, array['member'], true);
-  insert into public.departments (id, tenant_id, company_id, code, name) values (department_id, tenant_id, company_id, 'AUTH-B4', 'Authority B4');
-  insert into public.roles (id, tenant_id, company_id, code, name, description, is_system) values (role_id, tenant_id, company_id, 'authority_b4_transition', 'Authority B4 transition', 'Authority B4 transition actor', false);
+  insert into public.tenants (id, code, name) values (v_tenant_id, 'authority-b4-transition', 'Authority B4 transition') on conflict (id) do nothing;
+  insert into public.companies (id, tenant_id, code, name) values (v_company_id, v_tenant_id, 'AUTHORITY_B4', 'Authority B4 transition') on conflict (id) do nothing;
+  insert into public.tenant_memberships (user_id, tenant_id, roles) values (actor_id, v_tenant_id, array['member']);
+  insert into public.company_memberships (user_id, tenant_id, company_id, roles, is_active) values (actor_id, v_tenant_id, v_company_id, array['member'], true);
+  insert into public.departments (id, tenant_id, company_id, code, name) values (department_id, v_tenant_id, v_company_id, 'AUTH-B4', 'Authority B4');
+  insert into public.roles (id, tenant_id, company_id, code, name, description, is_system) values (role_id, v_tenant_id, v_company_id, 'authority_b4_transition', 'Authority B4 transition', 'Authority B4 transition actor', false);
   insert into public.role_permissions (role_id, permission_code) values (role_id, 'opportunity.read'), (role_id, 'opportunity.decision_authority.assign'), (role_id, 'opportunity.decision.record');
-  insert into public.company_role_assignments (tenant_id, company_id, user_id, role_id, granted_by, grant_reason) values (tenant_id, company_id, actor_id, role_id, actor_id, 'Authority B4 transition actor');
+  insert into public.company_role_assignments (tenant_id, company_id, user_id, role_id, granted_by, grant_reason) values (v_tenant_id, v_company_id, actor_id, role_id, actor_id, 'Authority B4 transition actor');
   insert into public.tenant_memberships (user_id, tenant_id, roles) values (actor_id, '25000000-0000-4000-8000-000000000010'::uuid, array['member']);
   insert into public.company_memberships (user_id, tenant_id, company_id, roles, is_active) values (actor_id, '25000000-0000-4000-8000-000000000010'::uuid, '25000000-0000-4000-8000-000000000020'::uuid, array['member'], true);
   insert into public.company_role_assignments (tenant_id, company_id, user_id, role_id, granted_by, grant_reason) values ('25000000-0000-4000-8000-000000000010'::uuid, '25000000-0000-4000-8000-000000000020'::uuid, actor_id, '25000000-0000-4000-8000-000000000100'::uuid, '25000000-0000-4000-8000-000000000001'::uuid, 'Authority B4 transition scope-denial fixture');
-  insert into public.employees (id, tenant_id, company_id, user_id, employee_code, full_name, work_email, department_id, employment_status, created_by) values ('25000000-0000-4000-8000-000000000306', tenant_id, company_id, actor_id, 'AUTH-B4', 'Authority B4 actor', 'authority-b4-transition@taskovia.invalid', department_id, 'active', actor_id);
+  insert into public.employees (id, tenant_id, company_id, user_id, employee_code, full_name, work_email, department_id, employment_status, created_by) values ('25000000-0000-4000-8000-000000000306', v_tenant_id, v_company_id, actor_id, 'AUTH-B4', 'Authority B4 actor', 'authority-b4-transition@taskovia.invalid', department_id, 'active', actor_id);
   select wds.id into v_snapshot_id
   from public.workflow_definition_snapshots wds
   where wds.tenant_id = v_tenant_id
@@ -612,7 +611,7 @@ begin
     tenant_id, company_id, policy_key, policy_version, policy, policy_hash, status,
     published_at, approved_at, source_policy_snapshot_id, created_by
   ) values (
-    tenant_id, company_id, 'opportunity.decision_authority', 1,
+    v_tenant_id, v_company_id, 'opportunity.decision_authority', 1,
     canonical_policy.policy, canonical_policy.policy_hash, 'published',
     clock_timestamp(), clock_timestamp(), canonical_policy.id, actor_id
   ) on conflict (tenant_id, company_id, policy_key, policy_version) do nothing
@@ -620,7 +619,7 @@ begin
   if policy_id is null then
     select policy.id into policy_id
     from public.opportunity_decision_policy_snapshots policy
-    where policy.tenant_id = tenant_id and policy.company_id = company_id
+    where policy.tenant_id = v_tenant_id and policy.company_id = v_company_id
       and policy.policy_key = 'opportunity.decision_authority' and policy.status = 'published'
     order by policy.policy_version desc
     limit 1;
@@ -633,32 +632,52 @@ begin
     ('25000000-0000-4000-8000-000000000404'::uuid, '25000000-0000-4000-8000-000000000414'::uuid, '25000000-0000-4000-8000-000000000424'::uuid, '25000000-0000-4000-8000-000000000434'::uuid, '25000000-0000-4000-8000-000000000454'::uuid, 'proceed'),
     ('25000000-0000-4000-8000-000000000405'::uuid, '25000000-0000-4000-8000-000000000415'::uuid, '25000000-0000-4000-8000-000000000425'::uuid, '25000000-0000-4000-8000-000000000435'::uuid, '25000000-0000-4000-8000-000000000455'::uuid, 'authority')
   ) as seeded(opportunity_id, workflow_id, node_id, execution_id, cycle_id, legacy_state) loop
-    insert into public.opportunities (id, tenant_id, company_id, primary_customer_name, customer_type_code, need_description, location_status, primary_lead_source_code, engagement_status_code, budget_status_code, timeline_status_code, priority_code, created_by) values (fixture.opportunity_id, tenant_id, company_id, 'Authority B4 ' || fixture.cycle_id::text, 'customer', 'Authority B4 legacy transition', 'unknown', 'direct', 'grounded', 'unknown', 'unknown', 'normal', actor_id);
-    insert into public.workflow_instances (id, tenant_id, company_id, subject_type, subject_id, definition_snapshot_id, created_by) values (fixture.workflow_id, tenant_id, company_id, 'opportunity', fixture.opportunity_id, v_snapshot_id, actor_id);
-    insert into public.workflow_node_instances (id, tenant_id, company_id, workflow_instance_id, node_key, node_type) values (fixture.node_id, tenant_id, company_id, fixture.workflow_id, '01.2', 'sub_stage');
-    insert into public.workflow_node_executions (id, tenant_id, company_id, node_instance_id, execution_no, phase, started_by, started_at) values (fixture.execution_id, tenant_id, company_id, fixture.node_id, 1, 'active', actor_id, timestamptz '2026-09-01 11:00:00+00');
-    perform set_config('session_replication_role', 'replica', true);
-    insert into public.stage01_decision_cycles (id, tenant_id, company_id, opportunity_id, node_execution_id, cycle_no, decision_authority_user_id, authority_resolution_reference, final_outcome, decision_policy_snapshot_id, version, created_by)
-    values (fixture.cycle_id, tenant_id, company_id, fixture.opportunity_id, fixture.execution_id, 1,
-      case when fixture.legacy_state = 'authority' then actor_id else null end,
-      case when fixture.legacy_state = 'authority' then 'legacy-authority' else null end,
+    insert into public.opportunities (id, tenant_id, company_id, primary_customer_name, customer_type_code, need_description, location_status, primary_lead_source_code, engagement_status_code, budget_status_code, timeline_status_code, priority_code, created_by) values (fixture.opportunity_id, v_tenant_id, v_company_id, 'Authority B4 ' || fixture.cycle_id::text, 'customer', 'Authority B4 legacy transition', 'unknown', 'direct', 'grounded', 'unknown', 'unknown', 'normal', actor_id);
+    insert into public.workflow_instances (id, tenant_id, company_id, subject_type, subject_id, definition_snapshot_id, created_by) values (fixture.workflow_id, v_tenant_id, v_company_id, 'opportunity', fixture.opportunity_id, v_snapshot_id, actor_id);
+    insert into public.workflow_node_instances (id, tenant_id, company_id, workflow_instance_id, node_key, node_type) values (fixture.node_id, v_tenant_id, v_company_id, fixture.workflow_id, '01.2', 'sub_stage');
+    insert into public.workflow_node_executions (id, tenant_id, company_id, node_instance_id, execution_no, phase, started_by, started_at) values (fixture.execution_id, v_tenant_id, v_company_id, fixture.node_id, 1, 'active', actor_id, timestamptz '2026-09-01 11:00:00+00');
+    execute 'set local session_replication_role = replica';
+    if fixture.legacy_state = 'proceed' then
+      insert into public.stage01_recommendations (
+        id, tenant_id, company_id, decision_cycle_id, version, recommendation,
+        rationale, evidence, submitted_by, submitted_at
+      ) values (
+        proceed_recommendation_id, v_tenant_id, v_company_id, fixture.cycle_id, 1,
+        'recommend_proceed', 'B4 legacy proceed recommendation', '[]'::jsonb,
+        actor_id, timestamptz '2026-09-01 11:01:00+00'
+      );
+    end if;
+    insert into public.stage01_decision_cycles (
+      id, tenant_id, company_id, opportunity_id, node_execution_id, cycle_no,
+      decision_authority_user_id, authority_resolution_reference, final_outcome,
+      final_decision_by, final_decision_at, final_rationale, final_recommendation_id,
+      override_rationale, decision_policy_snapshot_id, version, created_by
+    )
+    values (fixture.cycle_id, v_tenant_id, v_company_id, fixture.opportunity_id, fixture.execution_id, 1,
+      case when fixture.legacy_state in ('authority', 'proceed') then actor_id else null end,
+      case when fixture.legacy_state in ('authority', 'proceed') then 'legacy-authority' else null end,
       case when fixture.legacy_state = 'proceed' then 'proceed' else null end,
+      case when fixture.legacy_state = 'proceed' then actor_id else null end,
+      case when fixture.legacy_state = 'proceed' then timestamptz '2026-09-01 11:05:00+00' else null end,
+      case when fixture.legacy_state = 'proceed' then 'B4 legacy final decision' else null end,
+      case when fixture.legacy_state = 'proceed' then proceed_recommendation_id else null end,
+      null,
       case when fixture.cycle_id = '25000000-0000-4000-8000-000000000453'::uuid then policy_id else null end,
       case when fixture.cycle_id = '25000000-0000-4000-8000-000000000453'::uuid then 1 else 0 end,
       actor_id);
-    perform set_config('session_replication_role', 'origin', true);
+    execute 'set local session_replication_role = origin';
   end loop;
   insert into public.opportunity_decision_policy_binding_events (
     tenant_id, company_id, opportunity_id, decision_cycle_id, previous_policy_snapshot_id,
     policy_snapshot_id, request_id, request_fingerprint, binding_cycle_version, action,
     transition_code, reason, performed_by_user_id
   ) values (
-    tenant_id, company_id, '25000000-0000-4000-8000-000000000403', '25000000-0000-4000-8000-000000000453', null,
+    v_tenant_id, v_company_id, '25000000-0000-4000-8000-000000000403', '25000000-0000-4000-8000-000000000453', null,
     policy_id, '25000000-0000-4000-8000-000000000631', 'historical-b4-policy-binding', 1, 'legacy_transition',
     'b4_acceptance_policy_transition', 'Bind VQH Decision Policy v1 for this unresolved acceptance cycle.', actor_id
   );
   insert into public.stage01_recommendations (id, tenant_id, company_id, decision_cycle_id, version, recommendation, rationale, evidence, submitted_by)
-  values ('25000000-0000-4000-8000-000000000503', tenant_id, company_id, '25000000-0000-4000-8000-000000000453', 1, 'recommend_proceed', 'B4 transition recommendation must remain immutable', '[]'::jsonb, actor_id);
+  values ('25000000-0000-4000-8000-000000000503', v_tenant_id, v_company_id, '25000000-0000-4000-8000-000000000453', 1, 'recommend_proceed', 'B4 transition recommendation must remain immutable', '[]'::jsonb, actor_id);
 end $$;
 
 set local role authenticated;

@@ -18,7 +18,7 @@ begin
   where request_id in (
     '7c000000-0000-4000-8000-00000000a008',
     '7c000000-0000-4000-8000-00000000b008'
-  ) and action = 'stage01.final_decision_recorded';
+  ) and action = 'opportunity.decision.final_recorded';
   if race_audits <> 1 then
     raise exception 'final-decision winner audit count is %', race_audits;
   end if;

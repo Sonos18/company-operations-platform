@@ -34,6 +34,31 @@ values (
   array['member']
 );
 
+insert into public.departments (id, tenant_id, company_id, code, name)
+values (
+  '7c000000-0000-4000-8000-000000000110',
+  '7c000000-0000-4000-8000-000000000010',
+  '7c000000-0000-4000-8000-000000000020',
+  'stage01_concurrency_department',
+  'Stage 01 concurrency department'
+);
+
+insert into public.employees (
+  id, tenant_id, company_id, user_id, employee_code, full_name, work_email,
+  department_id, employment_status, created_by
+) values (
+  '7c000000-0000-4000-8000-000000000111',
+  '7c000000-0000-4000-8000-000000000010',
+  '7c000000-0000-4000-8000-000000000020',
+  '7c000000-0000-4000-8000-000000000001',
+  'S01-CONCURRENCY-ACTOR',
+  'Stage 01 concurrency actor',
+  'stage01-concurrency@test.invalid',
+  '7c000000-0000-4000-8000-000000000110',
+  'active',
+  '7c000000-0000-4000-8000-000000000001'
+);
+
 insert into public.roles (
   id, tenant_id, company_id, code, name, description, is_system
 ) values (

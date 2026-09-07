@@ -535,7 +535,7 @@ describe('Cloud DEV fixed-mode runner', () => {
 
   it('AUTHORITY_TEST_DUPLICATES_B4_WORKFLOW_SNAPSHOT_BASELINE requires the B4 transition fixture to reuse its approved snapshot', () => {
     const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
-    const b4FixtureStart = authoritySql.indexOf("tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
+    const b4FixtureStart = authoritySql.indexOf("v_tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
     const b4FixtureEnd = authoritySql.indexOf('set local role authenticated;', b4FixtureStart)
     const b4Fixture = authoritySql.slice(b4FixtureStart, b4FixtureEnd)
 
@@ -550,7 +550,7 @@ describe('Cloud DEV fixed-mode runner', () => {
 
   it('B4_SNAPSHOT_LOOKUP_HAS_PLPGSQL_NAME_COLLISION requires explicit baseline lookup variables and columns', () => {
     const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
-    const b4FixtureStart = authoritySql.indexOf("tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
+    const b4FixtureStart = authoritySql.indexOf("v_tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
     const lookupStart = authoritySql.indexOf('select wds.id into v_snapshot_id', b4FixtureStart)
     const lookupEnd = authoritySql.indexOf("if v_snapshot_id is null then", lookupStart)
     const lookup = authoritySql.slice(lookupStart, lookupEnd)
@@ -562,6 +562,77 @@ describe('Cloud DEV fixed-mode runner', () => {
     expect(lookup).toContain('wds.company_id = v_company_id')
     expect(lookup).toContain('wds.workflow_key = \'vqh.stage01\'')
     expect(lookup).toContain('wds.template_version = 1')
+  })
+
+  it('B4_POLICY_UPSERT_AVOIDS_PLPGSQL_NAME_COLLISION while preserving its unique conflict target', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const b4FixtureStart = authoritySql.indexOf("v_tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
+    const b4FixtureEnd = authoritySql.indexOf('set local role authenticated;', b4FixtureStart)
+    const b4Fixture = authoritySql.slice(b4FixtureStart, b4FixtureEnd)
+    const upsertStart = b4Fixture.indexOf('insert into public.opportunity_decision_policy_snapshots (')
+    const fallbackStart = b4Fixture.indexOf('select policy.id into policy_id', upsertStart)
+    const upsert = b4Fixture.slice(upsertStart, fallbackStart)
+    const fallbackEnd = b4Fixture.indexOf('end if;', fallbackStart)
+    const fallback = b4Fixture.slice(fallbackStart, fallbackEnd)
+
+    expect(upsert).toMatch(/values \(\s+v_tenant_id, v_company_id,/u)
+    expect(upsert).toContain('on conflict (tenant_id, company_id, policy_key, policy_version) do nothing')
+    expect(fallback).toContain('where policy.tenant_id = v_tenant_id and policy.company_id = v_company_id')
+    expect(fallback).not.toContain('policy.tenant_id = tenant_id')
+    expect(fallback).not.toContain('policy.company_id = company_id')
+  })
+
+  it('B4_HISTORICAL_FIXTURE_USES_TRANSACTION_LOCAL_REPLICA_MODE', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const cleanupSql = readFileSync(resolve(root, 'supabase/tests/database/stage01_concurrency/common_cleanup.sql'), 'utf8')
+    const b4FixtureStart = authoritySql.indexOf("v_tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
+    const b4FixtureEnd = authoritySql.indexOf('set local role authenticated;', b4FixtureStart)
+    const b4Fixture = authoritySql.slice(b4FixtureStart, b4FixtureEnd)
+
+    expect(cleanupSql).toContain('set local session_replication_role = replica;')
+    expect(b4Fixture).toContain("execute 'set local session_replication_role = replica';")
+    expect(b4Fixture).toContain("execute 'set local session_replication_role = origin';")
+    expect(b4Fixture).not.toContain("set_config('session_replication_role'")
+  })
+
+  it('B4_LEGACY_PROCEED_CYCLE_HAS_COMPLETE_FINAL_BUNDLE', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const b4FixtureStart = authoritySql.indexOf("v_tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
+    const b4FixtureEnd = authoritySql.indexOf('set local role authenticated;', b4FixtureStart)
+    const b4Fixture = authoritySql.slice(b4FixtureStart, b4FixtureEnd)
+    const cycleInsertStart = b4Fixture.indexOf('insert into public.stage01_decision_cycles')
+    const cycleInsertEnd = b4Fixture.indexOf("execute 'set local session_replication_role = origin';", cycleInsertStart)
+    const cycleInsert = b4Fixture.slice(cycleInsertStart, cycleInsertEnd)
+
+    expect(cycleInsert).toContain('final_decision_by')
+    expect(cycleInsert).toContain('final_decision_at')
+    expect(cycleInsert).toContain('final_rationale')
+    expect(cycleInsert).toContain('final_recommendation_id')
+    expect(cycleInsert).toContain("fixture.legacy_state in ('authority', 'proceed') then actor_id")
+    expect(cycleInsert).toContain("fixture.legacy_state in ('authority', 'proceed') then 'legacy-authority'")
+    expect(cycleInsert).toContain("fixture.legacy_state = 'proceed' then actor_id")
+    expect(cycleInsert).toContain("timestamptz '2026-09-01 11:05:00+00'")
+    expect(cycleInsert).toContain("'B4 legacy final decision'")
+    expect(cycleInsert).toContain('proceed_recommendation_id')
+  })
+
+  it('B4_LEGACY_PROCEED_CYCLE_HAS_SAME_CYCLE_RECOMMENDATION', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const b4FixtureStart = authoritySql.indexOf("v_tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
+    const b4FixtureEnd = authoritySql.indexOf('set local role authenticated;', b4FixtureStart)
+    const b4Fixture = authoritySql.slice(b4FixtureStart, b4FixtureEnd)
+    const loopStart = b4Fixture.indexOf('for fixture in select * from (values')
+    const recommendationStart = b4Fixture.indexOf('insert into public.stage01_recommendations', loopStart)
+    const cycleInsertStart = b4Fixture.indexOf('insert into public.stage01_decision_cycles', loopStart)
+    const recommendation = b4Fixture.slice(recommendationStart, cycleInsertStart)
+
+    expect(b4Fixture).toContain("proceed_recommendation_id constant uuid := '25000000-0000-4000-8000-000000000504'")
+    expect(recommendationStart).toBeGreaterThan(loopStart)
+    expect(recommendationStart).toBeLessThan(cycleInsertStart)
+    expect(recommendation).toContain('decision_cycle_id')
+    expect(recommendation).toContain('fixture.cycle_id')
+    expect(recommendation).toContain("'recommend_proceed'")
+    expect(recommendation).toContain("'B4 legacy proceed recommendation'")
   })
 
   it('evaluates PUBLIC function privileges through ACL pseudo-grantee semantics', () => {

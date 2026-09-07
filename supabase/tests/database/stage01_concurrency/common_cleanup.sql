@@ -51,6 +51,10 @@ delete from public.opportunity_decision_policy_snapshots
 where tenant_id = '7c000000-0000-4000-8000-000000000010';
 delete from public.company_opportunity_decision_capabilities
 where tenant_id = '7c000000-0000-4000-8000-000000000010';
+delete from public.employees
+where tenant_id = '7c000000-0000-4000-8000-000000000010';
+delete from public.departments
+where tenant_id = '7c000000-0000-4000-8000-000000000010';
 delete from public.company_role_assignments
 where tenant_id = '7c000000-0000-4000-8000-000000000010';
 delete from public.role_permissions
@@ -144,6 +148,12 @@ begin
     where tenant_id = '7c000000-0000-4000-8000-000000000010'
   ) or exists (
     select 1 from public.company_opportunity_decision_capabilities
+    where tenant_id = '7c000000-0000-4000-8000-000000000010'
+  ) or exists (
+    select 1 from public.employees
+    where tenant_id = '7c000000-0000-4000-8000-000000000010'
+  ) or exists (
+    select 1 from public.departments
     where tenant_id = '7c000000-0000-4000-8000-000000000010'
   ) or exists (
     select 1 from public.company_role_assignments

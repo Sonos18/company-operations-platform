@@ -295,4 +295,36 @@ describe('Stage 01 Cloud DEV concurrency harness', () => {
     expect(commonCleanup).toContain('delete from public.opportunity_decision_policy_snapshots')
     expect(commonCleanup).toContain('delete from public.company_opportunity_decision_capabilities')
   })
+
+  it('provisions and cleans the active employee prerequisite for authority fixtures', () => {
+    const root = process.cwd()
+    const commonSetup = readFileSync(join(root, 'supabase/tests/database/stage01_concurrency/common_setup.sql'), 'utf8')
+    const commonCleanup = readFileSync(join(root, 'supabase/tests/database/stage01_concurrency/common_cleanup.sql'), 'utf8')
+
+    expect(commonSetup).toMatch(/insert into public\.departments[\s\S]*7c000000-0000-4000-8000-000000000110[\s\S]*stage01_concurrency_department/iu)
+    expect(commonSetup).toMatch(/insert into public\.employees[\s\S]*7c000000-0000-4000-8000-000000000111[\s\S]*7c000000-0000-4000-8000-000000000001[\s\S]*active/iu)
+    expect(commonCleanup).toMatch(/delete from public\.employees[\s\S]*where tenant_id = '7c000000-0000-4000-8000-000000000010'/iu)
+    expect(commonCleanup).toMatch(/delete from public\.departments[\s\S]*where tenant_id = '7c000000-0000-4000-8000-000000000010'/iu)
+  })
+
+  it('matches the final-decision audit action emitted by the current authority runtime', () => {
+    const root = process.cwd()
+    const migration = readFileSync(
+      join(root, 'supabase/migrations/20260904094243_opportunity_decision_authority_company_capability.sql'),
+      'utf8',
+    )
+    const assertion = readFileSync(
+      join(root, 'supabase/tests/database/stage01_concurrency/final-decision/assert.sql'),
+      'utf8',
+    )
+    const finalDecisionSource = migration.match(
+      /create or replace function private\.record_opportunity_decision_final_decision[\s\S]*?\n\$\$;/iu,
+    )?.[0]
+    const auditAction = finalDecisionSource?.match(
+      /write_stage01_audit\(\s*[^,]+,\s*[^,]+,\s*[^,]+,\s*'([^']+)'/iu,
+    )?.[1]
+
+    expect(auditAction).toBe('opportunity.decision.final_recorded')
+    expect(assertion).toContain(`action = '${auditAction}'`)
+  })
 })
