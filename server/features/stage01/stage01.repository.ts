@@ -47,7 +47,9 @@ interface QueryResult { data: unknown, error: unknown }
 interface Query extends PromiseLike<QueryResult> {
   select(columns: string): Query
   eq(column: string, value: string | boolean): Query
+  in(column: string, values: string[]): Query
   order(column: string, options?: { ascending?: boolean }): Query
+  range(from: number, to: number): Query
   limit(count: number): Query
   maybeSingle(): Promise<QueryResult>
 }
@@ -173,6 +175,15 @@ function mapContact(row: z.infer<typeof contactRowSchema>, methods: z.infer<type
     createdAt: row.created_at, updatedAt: row.updated_at,
   })
 }
+function groupByCycle<T extends { decision_cycle_id: string }>(rows: T[]): Map<string, T[]> {
+  const grouped = new Map<string, T[]>()
+  for (const row of rows) {
+    const values = grouped.get(row.decision_cycle_id)
+    if (values) values.push(row)
+    else grouped.set(row.decision_cycle_id, [row])
+  }
+  return grouped
+}
 function businessConfiguration(definition: z.infer<typeof definitionSchema>): { taxonomies: Stage01BusinessTaxonomies, criteria: Stage01Criteria } {
   const taxonomies = stage01BusinessTaxonomiesSchema.parse(Object.fromEntries(Object.entries(definition.taxonomies).map(([key, values]) => [key, values.map((value) => {
     const entry = value as { code: string, label: unknown, behavior?: { requiresReferrer?: boolean } }
@@ -196,23 +207,50 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
     if (error) return mapStage01RpcError(error, message)
     return parse(schema, data, message)
   }
-  async function cycleResources<T>(table: string, columns: string, companyId: string, cycleId: string, schema: z.ZodType<T>, message: string): Promise<T[]> {
-    const { data, error } = await client.from(table).select(columns).eq('company_id', companyId).eq('decision_cycle_id', cycleId)
-    if (error) return failStage01Database(message)
-    return parse(z.array(schema), data, message)
+  async function batchedRows<T>(
+    table: string,
+    columns: string,
+    companyId: string,
+    filterColumn: string,
+    filterValues: string[],
+    orderColumn: string,
+    schema: z.ZodType<T>,
+    message: string,
+  ): Promise<T[]> {
+    const pageSize = 1000
+    const rows: T[] = []
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await client.from(table).select(columns).eq('company_id', companyId)
+        .in(filterColumn, filterValues).order(orderColumn).order('id').range(offset, offset + pageSize - 1)
+      if (error) return failStage01Database(message)
+      const page = parse(z.array(schema), data, message)
+      rows.push(...page)
+      if (page.length < pageSize) return rows
+    }
   }
-  async function relatedContact(companyId: string, contactId: string) {
-    const [contactResult, methodResult] = await Promise.all([
-      client.from('contacts').select(contactColumns).eq('company_id', companyId).eq('id', contactId).maybeSingle(),
-      client.from('contact_methods').select(contactMethodColumns).eq('company_id', companyId).eq('contact_id', contactId).order('created_at'),
+  async function relatedContacts(companyId: string, contactIds: string[]) {
+    if (contactIds.length === 0) return []
+    const [contactRows, methodRows] = await Promise.all([
+      batchedRows('contacts', contactColumns, companyId, 'id', contactIds, 'id', contactRowSchema, 'Không thể đọc Contact liên quan.'),
+      batchedRows('contact_methods', contactMethodColumns, companyId, 'contact_id', contactIds, 'created_at', contactMethodRowSchema, 'Không thể đọc Contact Method liên quan.'),
     ])
-    if (contactResult.error || contactResult.data === null || methodResult.error) return failStage01Database('Không thể đọc Contact liên quan.')
-    return mapContact(
-      parse(contactRowSchema, contactResult.data, 'Không thể đọc Contact liên quan.'),
-      parse(z.array(contactMethodRowSchema), methodResult.data, 'Không thể đọc Contact Method liên quan.'),
-    )
+    const contactsById = new Map<string, z.infer<typeof contactRowSchema>>()
+    for (const row of contactRows) {
+      if (contactsById.has(row.id)) return failStage01Database('Không thể đọc Contact liên quan.')
+      contactsById.set(row.id, row)
+    }
+    const methodsByContact = new Map<string, z.infer<typeof contactMethodRowSchema>[]>()
+    for (const row of methodRows) {
+      const methods = methodsByContact.get(row.contact_id)
+      if (methods) methods.push(row)
+      else methodsByContact.set(row.contact_id, [row])
+    }
+    return contactIds.map(contactId => {
+      const contact = contactsById.get(contactId)
+      if (!contact) return failStage01Database('Không thể đọc Contact liên quan.')
+      return mapContact(contact, methodsByContact.get(contactId) ?? [])
+    })
   }
-
   return {
     async get(companyId, opportunityId) {
       const [opportunity, workflowRuntime] = await Promise.all([
@@ -227,22 +265,29 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
         .eq('company_id', companyId).eq('opportunity_id', opportunityId).order('cycle_no')
       if (cycleResult.error) return failStage01Database('Không thể đọc Decision Cycle.')
       const cycleRows = parse(z.array(cycleRowSchema).min(1), cycleResult.data, 'Không thể đọc Decision Cycle.')
-      const [definitionResult, accessResult, relatedContacts] = await Promise.all([
+      const [definitionResult, accessResult, relatedContactsResult] = await Promise.all([
         client.from('workflow_definition_snapshots').select('definition').eq('company_id', companyId).eq('id', workflowRuntime.definitionSnapshotId).maybeSingle(),
         client.rpc('get_my_company_access', { target_company_id: companyId }),
-        Promise.all([...new Set(opportunity.contacts.map(contact => contact.contactId))].sort().map(contactId => relatedContact(companyId, contactId))),
+        relatedContacts(companyId, [...new Set(opportunity.contacts.map(contact => contact.contactId))].sort()),
       ])
       if (definitionResult.error || definitionResult.data === null || accessResult.error) {
         return failStage01Database('Không thể đọc cấu hình Stage 01.')
       }
       const definition = parse(definitionRowSchema, definitionResult.data, 'Không thể đọc cấu hình Stage 01.').definition
       const access = parse(z.array(accessRowSchema).length(1), accessResult.data, 'Không thể đọc quyền Stage 01.')[0]!
-      const decisionCycles = await Promise.all(cycleRows.map(async (cycleRow) => {
-        const [evaluationRows, recommendationRows, clarificationRows] = await Promise.all([
-          cycleResources('stage01_criterion_evaluations', evaluationColumns, companyId, cycleRow.id, evaluationRowSchema, 'Không thể đọc criterion evaluations.'),
-          cycleResources('stage01_recommendations', recommendationColumns, companyId, cycleRow.id, recommendationRowSchema, 'Không thể đọc recommendations.'),
-          cycleResources('stage01_clarification_returns', clarificationColumns, companyId, cycleRow.id, clarificationRowSchema, 'Không thể đọc clarification returns.'),
-        ])
+      const cycleIds = cycleRows.map(cycleRow => cycleRow.id)
+      const [evaluationRows, recommendationRows, clarificationRows] = await Promise.all([
+        batchedRows('stage01_criterion_evaluations', evaluationColumns, companyId, 'decision_cycle_id', cycleIds, 'evaluated_at', evaluationRowSchema, 'Không thể đọc criterion evaluations.'),
+        batchedRows('stage01_recommendations', recommendationColumns, companyId, 'decision_cycle_id', cycleIds, 'submitted_at', recommendationRowSchema, 'Không thể đọc recommendations.'),
+        batchedRows('stage01_clarification_returns', clarificationColumns, companyId, 'decision_cycle_id', cycleIds, 'returned_at', clarificationRowSchema, 'Không thể đọc clarification returns.'),
+      ])
+      const evaluationsByCycle = groupByCycle(evaluationRows)
+      const recommendationsByCycle = groupByCycle(recommendationRows)
+      const clarificationReturnsByCycle = groupByCycle(clarificationRows)
+      const decisionCycles = cycleRows.map((cycleRow) => {
+        const evaluationRows = evaluationsByCycle.get(cycleRow.id) ?? []
+        const recommendationRows = recommendationsByCycle.get(cycleRow.id) ?? []
+        const clarificationRows = clarificationReturnsByCycle.get(cycleRow.id) ?? []
         return stage01DecisionCycleSchema.parse({
           id: cycleRow.id, opportunityId: cycleRow.opportunity_id, nodeExecutionId: cycleRow.node_execution_id,
           cycleNo: cycleRow.cycle_no, decisionAuthorityUserId: cycleRow.decision_authority_user_id,
@@ -257,7 +302,7 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
           clarificationReturns: clarificationRows.map(mapClarification).sort((left, right) => left.returnedAt.localeCompare(right.returnedAt)),
           createdAt: cycleRow.created_at,
         })
-      }))
+      })
       const latestCycle = decisionCycles[decisionCycles.length - 1]!
       const rawDecisionAuthority = await rpc('get_opportunity_decision_authority_projection', {
         target_company_id: companyId, target_opportunity_id: opportunityId, target_cycle_id: latestCycle.id,
@@ -272,7 +317,7 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
       const primaryContact = opportunity.contacts.find(contact => contact.isPrimary && contact.endedAt === null)
       const usableContactMethodCount = primaryContact === undefined
         ? 0
-        : relatedContacts.find(contact => contact.id === primaryContact.contactId)?.methods.filter(method => method.isUsable).length ?? 0
+        : relatedContactsResult.find(contact => contact.id === primaryContact.contactId)?.methods.filter(method => method.isUsable).length ?? 0
       const leadSourceValues = definition.taxonomies.lead_source ?? []
       const leadSourceRequiresReferrer = leadSourceValues.find(value => value.code === opportunity.primaryLeadSourceCode)
         ?.behavior?.requiresReferrer === true
@@ -320,7 +365,7 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
       const actorCapabilities = [...new Set([...workflowCapabilities, ...decisionPolicyCapabilities])].sort()
       return stage01OperationalDetailSchema.parse({
         opportunity, intake: { runtime: intake, gates: intakeGates }, evaluation: { runtime: evaluation, gates: evaluationGates },
-        currentDecisionCycle: decisionCycle, actorCapabilities, configuration: businessConfiguration(definition), relatedContacts, decisionCycles,
+        currentDecisionCycle: decisionCycle, actorCapabilities, configuration: businessConfiguration(definition), relatedContacts: relatedContactsResult, decisionCycles,
       })
     },
     async evaluateCriterion(companyId, opportunityId, criterionKey, input, requestId) {

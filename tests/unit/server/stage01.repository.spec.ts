@@ -26,7 +26,9 @@ function query(
   const value = {
     select: () => value,
     eq: (column: string, filter: unknown) => { result = onEq?.(column, filter) ?? result; return value },
+    in: () => value,
     order: (column: string) => { result = onOrder?.(column) ?? result; return value },
+    range: () => value,
     limit: () => value,
     maybeSingle: async () => result,
     then: <TResult1 = { data: unknown, error: unknown }, TResult2 = never>(resolve?: ((value: { data: unknown, error: unknown }) => TResult1 | PromiseLike<TResult1>) | null, reject?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null) => Promise.resolve(result).then(resolve, reject),
@@ -90,7 +92,7 @@ describe('Stage 01 Decision repository', () => {
               : { data: null, error: null }
         },
       )
-      if (table === 'contacts') return query({ data: { id: contactId, display_name: 'Primary contact', notes: null, version: 7, created_at: timestamp, updated_at: timestamp }, error: null })
+      if (table === 'contacts') return query({ data: [{ id: contactId, display_name: 'Primary contact', notes: null, version: 7, created_at: timestamp, updated_at: timestamp }], error: null })
       if (table === 'contact_methods') return query({ data: [{ id: id(80), contact_id: contactId, method_type: 'phone', value: '0900000000', is_usable: true, reliability_state: 'confirmed', created_at: timestamp, updated_at: timestamp }], error: null })
       return query({ data: [], error: null })
     })
