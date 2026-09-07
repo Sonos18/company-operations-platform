@@ -519,6 +519,20 @@ describe('Cloud DEV fixed-mode runner', () => {
     )
   })
 
+  it('AUTHORITY_POLICY_GATE_TEST_USES_FORBIDDEN_DIRECT_DML prevents the missing-policy trigger assertion from remaining authenticated', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const assertionName = 'an enabled company without its own published policy remains fail closed'
+    const assertionEnd = authoritySql.indexOf(assertionName)
+    const assertionStart = authoritySql.lastIndexOf('select pg_temp.authority_assert_throws(', assertionEnd)
+    const priorAuthenticationStart = authoritySql.lastIndexOf('set local role authenticated;', assertionStart)
+    const assertionContext = authoritySql.slice(priorAuthenticationStart, assertionStart)
+    const assertionSql = authoritySql.slice(assertionStart, authoritySql.indexOf('select pg_temp.authority_assert_lives(', assertionStart))
+
+    expect(assertionContext).toContain('reset role;')
+    expect(assertionSql).toContain('insert into public.stage01_decision_cycles')
+    expect(assertionSql).toContain("'P0001', 'OPPORTUNITY_DECISION_POLICY_UNAVAILABLE'")
+  })
+
   it('evaluates PUBLIC function privileges through ACL pseudo-grantee semantics', () => {
     const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
     const helper = authoritySql.slice(

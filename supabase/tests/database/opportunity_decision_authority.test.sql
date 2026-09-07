@@ -432,6 +432,7 @@ select pg_temp.authority_assert_throws(
   'P0001', 'OPPORTUNITY_DECISION_AUTHORITY_NOT_ENABLED',
   'a disabled company rejects the authority-assignment command'
 );
+reset role;
 select pg_temp.authority_assert_throws(
   $$ insert into public.stage01_decision_cycles (id, tenant_id, company_id, opportunity_id, node_execution_id, cycle_no, created_by) values ('25000000-0000-4000-8000-000000000487', '25000000-0000-4000-8000-000000000010', '25000000-0000-4000-8000-000000000023', '25000000-0000-4000-8000-000000000427', '25000000-0000-4000-8000-000000000477', 1, '25000000-0000-4000-8000-000000000001') $$,
   'P0001', 'OPPORTUNITY_DECISION_POLICY_UNAVAILABLE',
