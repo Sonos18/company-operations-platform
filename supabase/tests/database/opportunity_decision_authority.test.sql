@@ -568,7 +568,9 @@ declare
   actor_id constant uuid := '25000000-0000-4000-8000-000000000006';
   role_id constant uuid := '25000000-0000-4000-8000-000000000106';
   department_id constant uuid := '25000000-0000-4000-8000-000000000202';
-  snapshot_id uuid;
+  v_tenant_id constant uuid := tenant_id;
+  v_company_id constant uuid := company_id;
+  v_snapshot_id uuid;
   policy_id uuid;
   canonical_policy record;
   fixture record;
@@ -586,13 +588,13 @@ begin
   insert into public.company_memberships (user_id, tenant_id, company_id, roles, is_active) values (actor_id, '25000000-0000-4000-8000-000000000010'::uuid, '25000000-0000-4000-8000-000000000020'::uuid, array['member'], true);
   insert into public.company_role_assignments (tenant_id, company_id, user_id, role_id, granted_by, grant_reason) values ('25000000-0000-4000-8000-000000000010'::uuid, '25000000-0000-4000-8000-000000000020'::uuid, actor_id, '25000000-0000-4000-8000-000000000100'::uuid, '25000000-0000-4000-8000-000000000001'::uuid, 'Authority B4 transition scope-denial fixture');
   insert into public.employees (id, tenant_id, company_id, user_id, employee_code, full_name, work_email, department_id, employment_status, created_by) values ('25000000-0000-4000-8000-000000000306', tenant_id, company_id, actor_id, 'AUTH-B4', 'Authority B4 actor', 'authority-b4-transition@taskovia.invalid', department_id, 'active', actor_id);
-  select snapshot.id into snapshot_id
-  from public.workflow_definition_snapshots snapshot
-  where snapshot.tenant_id = tenant_id
-    and snapshot.company_id = company_id
-    and snapshot.workflow_key = 'vqh.stage01'
-    and snapshot.template_version = 1;
-  if snapshot_id is null then
+  select wds.id into v_snapshot_id
+  from public.workflow_definition_snapshots wds
+  where wds.tenant_id = v_tenant_id
+    and wds.company_id = v_company_id
+    and wds.workflow_key = 'vqh.stage01'
+    and wds.template_version = 1;
+  if v_snapshot_id is null then
     raise exception 'B4_WORKFLOW_SNAPSHOT_BASELINE_MISSING';
   end if;
   select policy.id, policy.policy, policy.policy_hash into canonical_policy
@@ -632,7 +634,7 @@ begin
     ('25000000-0000-4000-8000-000000000405'::uuid, '25000000-0000-4000-8000-000000000415'::uuid, '25000000-0000-4000-8000-000000000425'::uuid, '25000000-0000-4000-8000-000000000435'::uuid, '25000000-0000-4000-8000-000000000455'::uuid, 'authority')
   ) as seeded(opportunity_id, workflow_id, node_id, execution_id, cycle_id, legacy_state) loop
     insert into public.opportunities (id, tenant_id, company_id, primary_customer_name, customer_type_code, need_description, location_status, primary_lead_source_code, engagement_status_code, budget_status_code, timeline_status_code, priority_code, created_by) values (fixture.opportunity_id, tenant_id, company_id, 'Authority B4 ' || fixture.cycle_id::text, 'customer', 'Authority B4 legacy transition', 'unknown', 'direct', 'grounded', 'unknown', 'unknown', 'normal', actor_id);
-    insert into public.workflow_instances (id, tenant_id, company_id, subject_type, subject_id, definition_snapshot_id, created_by) values (fixture.workflow_id, tenant_id, company_id, 'opportunity', fixture.opportunity_id, snapshot_id, actor_id);
+    insert into public.workflow_instances (id, tenant_id, company_id, subject_type, subject_id, definition_snapshot_id, created_by) values (fixture.workflow_id, tenant_id, company_id, 'opportunity', fixture.opportunity_id, v_snapshot_id, actor_id);
     insert into public.workflow_node_instances (id, tenant_id, company_id, workflow_instance_id, node_key, node_type) values (fixture.node_id, tenant_id, company_id, fixture.workflow_id, '01.2', 'sub_stage');
     insert into public.workflow_node_executions (id, tenant_id, company_id, node_instance_id, execution_no, phase, started_by, started_at) values (fixture.execution_id, tenant_id, company_id, fixture.node_id, 1, 'active', actor_id, timestamptz '2026-09-01 11:00:00+00');
     perform set_config('session_replication_role', 'replica', true);

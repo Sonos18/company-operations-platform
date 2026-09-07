@@ -540,12 +540,28 @@ describe('Cloud DEV fixed-mode runner', () => {
     const b4Fixture = authoritySql.slice(b4FixtureStart, b4FixtureEnd)
 
     expect(b4Fixture).not.toContain('insert into public.workflow_definition_snapshots')
-    expect(b4Fixture).toContain('where snapshot.tenant_id = tenant_id')
-    expect(b4Fixture).toContain('and snapshot.company_id = company_id')
-    expect(b4Fixture).toContain("and snapshot.workflow_key = 'vqh.stage01'")
-    expect(b4Fixture).toContain('and snapshot.template_version = 1')
+    expect(b4Fixture).toContain('where wds.tenant_id = v_tenant_id')
+    expect(b4Fixture).toContain('and wds.company_id = v_company_id')
+    expect(b4Fixture).toContain("and wds.workflow_key = 'vqh.stage01'")
+    expect(b4Fixture).toContain('and wds.template_version = 1')
     expect(b4Fixture).toContain('B4_WORKFLOW_SNAPSHOT_BASELINE_MISSING')
     expect(b4Fixture).not.toContain('authority-b4-transition-definition')
+  })
+
+  it('B4_SNAPSHOT_LOOKUP_HAS_PLPGSQL_NAME_COLLISION requires explicit baseline lookup variables and columns', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const b4FixtureStart = authoritySql.indexOf("tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
+    const lookupStart = authoritySql.indexOf('select wds.id into v_snapshot_id', b4FixtureStart)
+    const lookupEnd = authoritySql.indexOf("if v_snapshot_id is null then", lookupStart)
+    const lookup = authoritySql.slice(lookupStart, lookupEnd)
+
+    expect(lookup).not.toContain('snapshot.tenant_id = tenant_id')
+    expect(lookup).not.toContain('snapshot.company_id = company_id')
+    expect(lookup).toContain('from public.workflow_definition_snapshots wds')
+    expect(lookup).toContain('wds.tenant_id = v_tenant_id')
+    expect(lookup).toContain('wds.company_id = v_company_id')
+    expect(lookup).toContain('wds.workflow_key = \'vqh.stage01\'')
+    expect(lookup).toContain('wds.template_version = 1')
   })
 
   it('evaluates PUBLIC function privileges through ACL pseudo-grantee semantics', () => {
