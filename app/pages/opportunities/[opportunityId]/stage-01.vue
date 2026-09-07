@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { z } from 'zod'
+import type { Stage01CanonicalRecoveryEntry } from '../../../composables/useStage01Operational'
 import { ClientError } from '../../../errors/client-error'
 import {
   activeAssignments,
@@ -14,16 +15,23 @@ definePageMeta({
 
 const route = useRoute()
 const repositories = useRepositories()
+const companyAccess = useNuxtApp().$companyAccessStore
 const parsedOpportunityId = z.string().uuid().safeParse(route.params.opportunityId)
 const opportunityId = parsedOpportunityId.success ? parsedOpportunityId.data : null
+const canonicalRecoveryState = useState<Record<string, Stage01CanonicalRecoveryEntry>>('stage01-canonical-recovery', () => ({}))
 const operational = opportunityId
-  ? useStage01Operational(repositories.stage01, opportunityId)
+  ? useStage01Operational(repositories.stage01, opportunityId, {
+      companyId: companyAccess.activeCompanyId ?? repositories.context.companyId,
+      recoveryState: canonicalRecoveryState,
+    })
   : null
 
 if (operational) await operational.load().catch(() => undefined)
 
 const detail = computed(() => operational?.detail.value ?? null)
 const pending = computed(() => operational?.pending.value ?? false)
+const canonicalSyncRequired = computed(() => operational?.canonicalSyncRequired.value ?? false)
+const controlsLocked = computed(() => pending.value || canonicalSyncRequired.value)
 const error = computed(() => operational?.error.value ?? null)
 const isNotFound = computed(() => error.value instanceof ClientError && error.value.code === 'OPPORTUNITY_NOT_FOUND')
 const hasBlockingWarning = computed(() => {
@@ -95,10 +103,10 @@ async function returnToOpportunities(): Promise<void> {
       role="alert"
       color="error"
       icon="i-lucide-circle-alert"
-      title="Không thể tải Stage 01"
-      :description="errorMessage(error, 'Vui lòng thử lại sau.')"
+      :title="canonicalSyncRequired ? 'Cần tải lại dữ liệu chính tắc' : 'Không thể tải Stage 01'"
+      :description="errorMessage(error, canonicalSyncRequired ? 'Thao tác có thể đã được thực hiện. Hãy tải lại trước khi tiếp tục.' : 'Vui lòng thử lại sau.')"
     >
-      <template #actions><UButton color="error" variant="outline" :loading="pending" @click="retry">Thử lại</UButton></template>
+      <template #actions><UButton color="error" variant="outline" :loading="pending" @click="retry">{{ canonicalSyncRequired ? 'Tải lại dữ liệu chính tắc' : 'Thử lại' }}</UButton></template>
     </UAlert>
 
     <template v-else-if="detail">
@@ -124,7 +132,17 @@ async function returnToOpportunities(): Promise<void> {
         description="Stage 01 có điều kiện cần tái xác thực hoặc blocker đang mở. Trạng thái phía máy chủ là nguồn quyết định."
       />
       <UAlert
-        v-if="error"
+        v-if="canonicalSyncRequired"
+        role="alert"
+        color="warning"
+        icon="i-lucide-refresh-cw"
+        title="Cần tải lại dữ liệu chính tắc trước khi tiếp tục"
+        :description="errorMessage(error, 'Thao tác có thể đã được thực hiện. Hãy tải lại để xác nhận trạng thái mới nhất.')"
+      >
+        <template #actions><UButton color="warning" variant="outline" :loading="pending" @click="retry">Tải lại dữ liệu chính tắc</UButton></template>
+      </UAlert>
+      <UAlert
+        v-else-if="error"
         role="alert"
         color="error"
         icon="i-lucide-circle-alert"
@@ -157,27 +175,35 @@ async function returnToOpportunities(): Promise<void> {
         </div>
       </section>
 
-      <Stage01OperationalStage01IntakeControls
-        :detail="detail"
-        :run-and-reload="operational!.runAndReload"
-        :reload="retry"
-      />
+      <fieldset
+        class="stage01-workspace__locked-controls"
+        :disabled="controlsLocked"
+        :aria-busy="controlsLocked"
+        :aria-disabled="controlsLocked"
+      >
+        <legend class="sr-only">Điều khiển vận hành Stage 01</legend>
+        <Stage01OperationalStage01IntakeControls
+          :detail="detail"
+          :run-and-reload="operational!.runAndReload"
+          :reload="retry"
+        />
 
-      <Stage01OperationalStage01WorkflowRuntimeControls
-        :detail="detail"
-        :run-and-reload="operational!.runAndReload"
-      />
+        <Stage01OperationalStage01WorkflowRuntimeControls
+          :detail="detail"
+          :run-and-reload="operational!.runAndReload"
+        />
 
-      <Stage01OperationalStage01EvaluationDecisionControls
-        :detail="detail"
-        :run-and-reload="operational!.runAndReload"
-      />
+        <Stage01OperationalStage01EvaluationDecisionControls
+          :detail="detail"
+          :run-and-reload="operational!.runAndReload"
+        />
+      </fieldset>
 
     </template>
   </section>
 </template>
 
 <style scoped>
-.stage01-workspace { display: grid; max-width: 1260px; margin: 0 auto; gap: 18px; }.stage01-workspace__loading { display: grid; gap: 12px; }.stage01-workspace__header { display: grid; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }.stage01-workspace__header h1 { margin: 4px 0 7px; font-size: clamp(2.1rem, 5vw, 3.8rem); line-height: .98; }.stage01-workspace__header > div > p:not(.eyebrow) { color: var(--ink-muted); line-height: 1.5; }.stage01-workspace__facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; }.stage01-workspace__facts div,.stage01-workspace__node { border: 1px solid var(--line); background: var(--paper-raised); }.stage01-workspace__facts div { padding: 12px; }.stage01-workspace dt { color: var(--ink-muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; }.stage01-workspace dd { margin: 5px 0 0; color: var(--forest-deep); font-weight: 650; font-size: .84rem; }.stage01-workspace__section { display: grid; gap: 12px; }.stage01-workspace__section h2 { margin-top: 4px; font-size: 1.3rem; }.stage01-workspace__nodes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }.stage01-workspace__node { padding: 15px; }.stage01-workspace__node header { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; }.stage01-workspace__node h3 { font-size: 1rem; }.stage01-workspace__node header span { padding: 4px 8px; border-radius: 999px; background: var(--mint); color: var(--forest-deep); font-family: var(--font-journey-mono); font-size: .68rem; }.stage01-workspace__node dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.stage01-workspace { display: grid; max-width: 1260px; margin: 0 auto; gap: 18px; }.stage01-workspace__loading { display: grid; gap: 12px; }.stage01-workspace__header { display: grid; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }.stage01-workspace__header h1 { margin: 4px 0 7px; font-size: clamp(2.1rem, 5vw, 3.8rem); line-height: .98; }.stage01-workspace__header > div > p:not(.eyebrow) { color: var(--ink-muted); line-height: 1.5; }.stage01-workspace__facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; }.stage01-workspace__facts div,.stage01-workspace__node { border: 1px solid var(--line); background: var(--paper-raised); }.stage01-workspace__facts div { padding: 12px; }.stage01-workspace dt { color: var(--ink-muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; }.stage01-workspace dd { margin: 5px 0 0; color: var(--forest-deep); font-weight: 650; font-size: .84rem; }.stage01-workspace__section { display: grid; gap: 12px; }.stage01-workspace__section h2 { margin-top: 4px; font-size: 1.3rem; }.stage01-workspace__nodes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }.stage01-workspace__node { padding: 15px; }.stage01-workspace__node header { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; }.stage01-workspace__node h3 { font-size: 1rem; }.stage01-workspace__node header span { padding: 4px 8px; border-radius: 999px; background: var(--mint); color: var(--forest-deep); font-family: var(--font-journey-mono); font-size: .68rem; }.stage01-workspace__node dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }.stage01-workspace__locked-controls { display: grid; gap: 18px; min-width: 0; padding: 0; border: 0; }
 @media (max-width: 767px) { .stage01-workspace { gap: 15px; }.stage01-workspace__facts,.stage01-workspace__nodes { grid-template-columns: 1fr; }.stage01-workspace__node dl { grid-template-columns: 1fr; } }
 </style>

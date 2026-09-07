@@ -1503,6 +1503,103 @@ test('shows stateful 403, 409, and 500 command failures without false success or
   expect(state.requests.filter(request => request.path.endsWith('/recommendations'))).toHaveLength(3)
 })
 
+test('locks mutations after command success when canonical reload fails, then recovers through an explicit GET', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.actorCapabilities = ['start']
+  detail.intake.runtime.phase = 'not_started'
+  detail.intake.runtime.state = 'ready'
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.node.start'] })]
+  await installStage01OperationalRoutes(page, detail, {
+    onWorkflowCommand: request => {
+      commands.push(request)
+      detail.intake.runtime.phase = 'active'
+      detail.intake.runtime.state = 'active'
+    },
+  })
+  await goToWorkspace(page)
+
+  const canonicalPath = `/api/companies/${authState.sessionCompanies[0]!.companyId}/opportunities/${stage01OpportunityId}/stage-01`
+  let failNextCanonicalRead = false
+  await page.route(canonicalPath, async route => {
+    if (route.request().method() === 'GET' && failNextCanonicalRead) {
+      failNextCanonicalRead = false
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'Lỗi kiểm thử.', requestId: 'canonical-reload-failure', details: {} } }),
+      })
+      return
+    }
+    await route.fallback()
+  })
+
+  failNextCanonicalRead = true
+  const start = page.getByRole('button', { name: 'Khởi động node' })
+  await start.click()
+  await expect(page.getByRole('alert').filter({ hasText: 'Thao tác có thể đã được thực hiện' })).toBeVisible()
+  await expect(start).toBeDisabled()
+  expect(commands).toHaveLength(1)
+
+  await start.evaluate(button => (button as HTMLButtonElement).click())
+  expect(commands).toHaveLength(1)
+
+  await page.getByRole('button', { name: 'Tải lại dữ liệu chính tắc' }).click()
+  await expect(page.getByRole('button', { name: 'Tải lại dữ liệu chính tắc' })).toHaveCount(0)
+  await expect(start).toHaveCount(0)
+})
+
+test('keeps a failed canonical recovery requirement across navigation away and back', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.actorCapabilities = ['start']
+  detail.intake.runtime.phase = 'not_started'
+  detail.intake.runtime.state = 'ready'
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.node.start'] })]
+  await installStage01OperationalRoutes(page, detail, {
+    onWorkflowCommand: request => {
+      commands.push(request)
+      detail.intake.runtime.phase = 'active'
+      detail.intake.runtime.state = 'active'
+    },
+  })
+  await goToWorkspace(page)
+
+  const canonicalPath = `/api/companies/${authState.sessionCompanies[0]!.companyId}/opportunities/${stage01OpportunityId}/stage-01`
+  let failNextCanonicalRead = false
+  await page.route(canonicalPath, async route => {
+    if (route.request().method() === 'GET' && failNextCanonicalRead) {
+      failNextCanonicalRead = false
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'Lỗi kiểm thử.', requestId: 'canonical-reload-navigation-failure', details: {} } }),
+      })
+      return
+    }
+    await route.fallback()
+  })
+
+  const recovery = page.getByRole('button', { name: 'Tải lại dữ liệu chính tắc' })
+  failNextCanonicalRead = true
+  await page.getByRole('button', { name: 'Khởi động node' }).click()
+  await expect(recovery).toBeVisible()
+  expect(commands).toHaveLength(1)
+
+  await page.getByRole('link', { name: 'Cơ hội', exact: true }).click()
+  await expect(page).toHaveURL(/\/opportunities$/u)
+
+  failNextCanonicalRead = true
+  await page.goBack()
+  await expect(recovery).toBeVisible()
+  await expect(page.getByText('Không thể tải Stage 01', { exact: true })).toHaveCount(0)
+
+  failNextCanonicalRead = false
+  await recovery.click()
+  await expect(recovery).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Công ty Việt Quốc Huy' })).toBeVisible()
+})
+
 test('keeps Stage 01 controls labelled, keyboard-operable, and within a 390px viewport', async ({ page, authState }) => {
   const state = createStage01OperationalRouteState()
   state.detail.actorCapabilities = ['start']
