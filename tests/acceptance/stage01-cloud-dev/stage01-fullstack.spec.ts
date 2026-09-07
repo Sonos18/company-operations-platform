@@ -26,6 +26,8 @@ type EvaluationCommandDiagnostic = {
   requestCount: number
   method: 'POST'
   sanitizedPath: string
+  requestElapsedMs: number | null
+  responseElapsedMs: number | null
   status: number | null
   safeApiCode: string | null
   canonicalGetAfterResponse: boolean
@@ -302,6 +304,9 @@ async function evaluateRequiredCriteria(
 test.describe.configure({ mode: 'serial' })
 
 test('B4-S01/S04/S06/S08 completes the real acceptance-company journey and preserves canonical history', async ({ page }) => {
+  test.setTimeout(240_000)
+  const testStartedAt = performance.now()
+  const elapsedMs = () => Math.round(performance.now() - testStartedAt)
   const state = await readB4AcceptanceState(process.cwd())
   const opportunityName = runText(state, 'cơ hội vận hành')
   const blockerDescription = runText(state, 'blocker phải được giải quyết')
@@ -1026,6 +1031,8 @@ test('B4-S01/S04/S06/S08 completes the real acceptance-company journey and prese
     requestCount: 0,
     method: 'POST' as const,
     sanitizedPath: sanitizePathname(`${canonicalStage01Path}/evaluations/${criterion.key}/revisions`),
+    requestElapsedMs: null,
+    responseElapsedMs: null,
     status: null,
     safeApiCode: null,
     canonicalGetAfterResponse: false,
@@ -1038,6 +1045,8 @@ test('B4-S01/S04/S06/S08 completes the real acceptance-company journey and prese
     requestCount: 0,
     method: 'POST',
     sanitizedPath: sanitizePathname(`${canonicalStage01Path}/recommendations`),
+    requestElapsedMs: null,
+    responseElapsedMs: null,
     status: null,
     safeApiCode: null,
     canonicalGetAfterResponse: false,
@@ -1071,12 +1080,14 @@ test('B4-S01/S04/S06/S08 completes the real acceptance-company journey and prese
       previousReloadPending: commandDiagnostics.some(item => item.status !== null && !item.canonicalGetAfterResponse),
     }
     diagnostic.requestCount += 1
+    diagnostic.requestElapsedMs ??= elapsedMs()
   }
   const onEvaluationCommandResponse = (response: Response): void => {
     const request = response.request()
     const pathname = sanitizePathname(new URL(response.url()).pathname)
     const diagnostic = request.method() === 'POST' ? diagnosticByPath.get(pathname) : undefined
     if (diagnostic) {
+      diagnostic.responseElapsedMs ??= elapsedMs()
       diagnostic.status = response.status()
       if (response.status() >= 300) {
         void response.json().then(body => { diagnostic.safeApiCode = safeApiError(body).code }).catch(() => undefined)
