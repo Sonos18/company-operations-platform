@@ -715,6 +715,8 @@ select pg_temp.authority_assert_equal(
   (select id from public.stage01_recommendations where id = '25000000-0000-4000-8000-000000000503'::uuid),
   '25000000-0000-4000-8000-000000000503'::uuid, 'B4 policy transition preserves the current recommendation history'
 );
+select pg_temp.authority_assert_table_privileges('public', 'opportunity_decision_policy_binding_events', 'authenticated', array[]::text[], 'authenticated has no direct policy binding audit access');
+reset role;
 select pg_temp.authority_assert_equal(
   (select policy_snapshot_id from public.opportunity_decision_policy_binding_events where request_id = '25000000-0000-4000-8000-000000000631'::uuid),
   (select decision_policy_snapshot_id from public.stage01_decision_cycles where id = '25000000-0000-4000-8000-000000000453'::uuid), 'historical policy binding retains its original policy snapshot'
@@ -735,7 +737,6 @@ select pg_temp.authority_assert_true(
   ),
   'legacy cycles without historical bindings do not gain active transition events'
 );
-reset role;
 select pg_temp.authority_assert_throws(
   $$ insert into public.opportunity_decision_policy_binding_events (tenant_id, company_id, opportunity_id, decision_cycle_id, policy_snapshot_id, request_id, request_fingerprint, binding_cycle_version, action, performed_by_user_id) values ('b4000000-0000-4000-8000-000000000010', 'b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000404', '25000000-0000-4000-8000-000000000453', (select decision_policy_snapshot_id from public.stage01_decision_cycles where id = '25000000-0000-4000-8000-000000000453'), '25000000-0000-4000-8000-000000000634', 'wrong-scope', 1, 'legacy_transition', '25000000-0000-4000-8000-000000000006') $$,
   'P0001', 'OPPORTUNITY_DECISION_POLICY_BINDING_SCOPE_INVALID', 'policy binding audit rejects a mismatched opportunity and decision-cycle scope'

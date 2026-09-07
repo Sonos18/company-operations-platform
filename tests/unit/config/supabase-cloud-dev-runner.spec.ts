@@ -491,7 +491,7 @@ describe('Cloud DEV fixed-mode runner', () => {
     const stage01Runner = runner.slice(runner.indexOf("if (isStage01Test) {"), runner.indexOf("const result = runCli(REMOTE_MODE_ARGS[mode]"))
 
     expect(authoritySql).not.toMatch(/\bselect\s+(?:\*\s+from\s+)?(?:plan|finish|ok|is|isnt|is_deeply|cmp_ok|throws_ok|lives_ok|results_eq|set_eq)\s*\(/iu)
-    expect(authoritySql.match(/\bselect\s+pg_temp\.authority_assert_[a-z_]+\s*\(/giu)).toHaveLength(103)
+    expect(authoritySql.match(/\bselect\s+pg_temp\.authority_assert_[a-z_]+\s*\(/giu)).toHaveLength(104)
     expect(authoritySql).toMatch(/\bpg_temp\.authority_assert_throws\b[\s\S]*?\braise\s+exception\b/iu)
     expect(authoritySql).not.toContain('pg_catalog.pg_constraint constraint')
     expect(authoritySql).toContain('pg_catalog.pg_constraint pc')
@@ -531,6 +531,25 @@ describe('Cloud DEV fixed-mode runner', () => {
     expect(assertionContext).toContain('reset role;')
     expect(assertionSql).toContain('insert into public.stage01_decision_cycles')
     expect(assertionSql).toContain("'P0001', 'OPPORTUNITY_DECISION_POLICY_UNAVAILABLE'")
+  })
+
+  it('AUTHORITY_B4_INTERNAL_AUDIT_READS_RESET_ROLE_AFTER_PUBLIC_PROJECTIONS', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const projectionStart = authoritySql.indexOf("public.get_opportunity_decision_authority_projection('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000403'")
+    const auditReadStart = authoritySql.indexOf('(select policy_snapshot_id from public.opportunity_decision_policy_binding_events', projectionStart)
+    const denialAssertionStart = authoritySql.indexOf("select pg_temp.authority_assert_table_privileges('public', 'opportunity_decision_policy_binding_events'", projectionStart)
+    const resetBeforeAudit = authoritySql.lastIndexOf('reset role;', auditReadStart)
+    const projectionSection = authoritySql.slice(projectionStart, auditReadStart)
+
+    expect(projectionStart).toBeGreaterThan(-1)
+    expect(auditReadStart).toBeGreaterThan(projectionStart)
+    expect(denialAssertionStart).toBeGreaterThan(projectionStart)
+    expect(denialAssertionStart).toBeLessThan(resetBeforeAudit)
+    expect(resetBeforeAudit).toBeGreaterThan(projectionStart)
+    expect(projectionSection).toContain("public.get_opportunity_decision_authority_projection('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000403'")
+    expect(projectionSection).toContain("public.get_opportunity_decision_authority_projection('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000404'")
+    expect(projectionSection).toContain("public.get_opportunity_decision_authority_projection('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000405'")
+    expect(projectionSection).toContain("authority_assert_table_privileges('public', 'opportunity_decision_policy_binding_events', 'authenticated', array[]::text[]")
   })
 
   it('AUTHORITY_TEST_DUPLICATES_B4_WORKFLOW_SNAPSHOT_BASELINE requires the B4 transition fixture to reuse its approved snapshot', () => {
