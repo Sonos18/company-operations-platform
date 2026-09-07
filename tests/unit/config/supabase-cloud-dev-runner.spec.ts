@@ -502,6 +502,31 @@ describe('Cloud DEV fixed-mode runner', () => {
     expect(stage01Runner).not.toMatch(/\b(?:tap|plan|finish)\b/iu)
   })
 
+  it('evaluates PUBLIC function privileges through ACL pseudo-grantee semantics', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const helper = authoritySql.slice(
+      authoritySql.indexOf('create or replace function pg_temp.authority_assert_function_privileges'),
+      authoritySql.indexOf('create or replace function pg_temp.authority_assert_lives'),
+    )
+
+    expect(helper).toContain("upper(p_role) = 'PUBLIC'")
+    expect(helper).toContain("aclexplode(coalesce(procedure.proacl, acldefault('f', procedure.proowner)))")
+    expect(helper).toContain('acl.grantee = 0')
+    expect(helper).toContain("acl.privilege_type = 'EXECUTE'")
+  })
+
+  it('evaluates PUBLIC table privileges through ACL pseudo-grantee semantics', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const helper = authoritySql.slice(
+      authoritySql.indexOf('create or replace function pg_temp.authority_assert_table_privileges'),
+      authoritySql.indexOf('create or replace function pg_temp.authority_assert_function_privileges'),
+    )
+
+    expect(helper).toContain("upper(p_role) = 'PUBLIC'")
+    expect(helper).toContain("aclexplode(coalesce(relation.relacl, acldefault('r', relation.relowner)))")
+    expect(helper).toContain('acl.grantee = 0')
+  })
+
   it('executes the complete fixed Stage 01 inventory exactly once, including B1 configuration verification files', () => {
     const root = makeWorktree()
     const testDirectory = join(root, 'supabase/tests/database')

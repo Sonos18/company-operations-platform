@@ -94,11 +94,22 @@ $authority_assert$;
 
 create or replace function pg_temp.authority_assert_table_privileges(p_schema text, p_table text, p_role text, p_expected text[], p_description text)
 returns void language plpgsql as $authority_assert$
-declare v_actual text[];
+declare
+  v_actual text[];
+  v_relation regclass := to_regclass(format('%I.%I', p_schema, p_table));
 begin
-  select coalesce(array_agg(privilege order by privilege), array[]::text[]) into v_actual
-  from unnest(array['DELETE', 'INSERT', 'REFERENCES', 'SELECT', 'TRIGGER', 'TRUNCATE', 'UPDATE']::text[]) as privilege
-  where has_table_privilege(p_role, format('%I.%I', p_schema, p_table), privilege);
+  if v_relation is null then raise exception 'AUTHORITY_ASSERTION_FAILED: % table does not exist', p_description; end if;
+  if upper(p_role) = 'PUBLIC' then
+    select coalesce(array_agg(distinct acl.privilege_type order by acl.privilege_type), array[]::text[]) into v_actual
+    from pg_catalog.pg_class relation
+    cross join lateral aclexplode(coalesce(relation.relacl, acldefault('r', relation.relowner))) acl
+    where relation.oid = v_relation and acl.grantee = 0
+      and acl.privilege_type = any(array['DELETE', 'INSERT', 'REFERENCES', 'SELECT', 'TRIGGER', 'TRUNCATE', 'UPDATE']::text[]);
+  else
+    select coalesce(array_agg(privilege order by privilege), array[]::text[]) into v_actual
+    from unnest(array['DELETE', 'INSERT', 'REFERENCES', 'SELECT', 'TRIGGER', 'TRUNCATE', 'UPDATE']::text[]) as privilege
+    where has_table_privilege(p_role, v_relation, privilege);
+  end if;
   if v_actual is distinct from p_expected then raise exception 'AUTHORITY_ASSERTION_FAILED: %', p_description; end if;
 end
 $authority_assert$;
@@ -108,8 +119,17 @@ returns void language plpgsql as $authority_assert$
 declare
   v_actual text[];
   v_function text := format('%I.%I(%s)', p_schema, p_name, array_to_string(p_arguments, ','));
+  v_procedure regprocedure := to_regprocedure(format('%I.%I(%s)', p_schema, p_name, array_to_string(p_arguments, ',')));
 begin
-  v_actual := case when has_function_privilege(p_role, v_function, 'EXECUTE') then array['EXECUTE']::text[] else array[]::text[] end;
+  if v_procedure is null then raise exception 'AUTHORITY_ASSERTION_FAILED: % function does not exist', p_description; end if;
+  if upper(p_role) = 'PUBLIC' then
+    select coalesce(array_agg(distinct acl.privilege_type order by acl.privilege_type), array[]::text[]) into v_actual
+    from pg_catalog.pg_proc procedure
+    cross join lateral aclexplode(coalesce(procedure.proacl, acldefault('f', procedure.proowner))) acl
+    where procedure.oid = v_procedure and acl.grantee = 0 and acl.privilege_type = 'EXECUTE';
+  else
+    v_actual := case when has_function_privilege(p_role, v_function, 'EXECUTE') then array['EXECUTE']::text[] else array[]::text[] end;
+  end if;
   if v_actual is distinct from p_expected then raise exception 'AUTHORITY_ASSERTION_FAILED: %', p_description; end if;
 end
 $authority_assert$;
