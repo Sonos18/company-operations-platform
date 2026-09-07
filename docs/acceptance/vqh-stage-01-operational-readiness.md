@@ -1,6 +1,6 @@
 # VQH Stage 01 operational acceptance
 
-WP4 technical gates have passing runtime and local evidence. Final native security coverage reconciliation remains pending; neither `STAGE01_ACCEPTANCE_COMPLETE` nor `READY_FOR_VQH_PILOT` is declared by this revision.
+WP4 runtime, local and native security gates have passing evidence. The evidence-only report commit receives a final native verification before the orchestrator declares `STAGE01_ACCEPTANCE_COMPLETE` and `READY_FOR_VQH_PILOT`; its sealed result is recorded separately in `test-results/wp4/final-security-attestation.json` to avoid a self-referential commit identifier.
 
 ## Verified scope
 
@@ -66,13 +66,15 @@ Initial P3 p95 was 2,527.9 ms. The one permitted unchanged-code recheck followed
 | TEST_OR_FIXTURE_DEFECT | Authority fixture scope, managed SQL syntax, final history fields, audit-role inspection and truncated constraint name | Focused corrections retained SQLSTATE, rejection, history and privilege assertions; SQL gate passes |
 | TEST_OR_FIXTURE_DEFECT | Combined test budget, duplicate rationale locator, reactivation reload timing and incorrect S08 proceed fixture | Corrected observed test causes; S01 preserved; S08 uses a separate real eligible journey |
 | ENVIRONMENT_DEFECT | Native Python helper used nonexistent Python27 | Authorized user-level Python correction and Codex restart; native startup and preflight now succeed |
-| ENVIRONMENT_DEFECT | Native finalization retained stale pending-review coverage | First sealed report preserved; final native reconciliation pending |
+| ENVIRONMENT_DEFECT | Native finalization retained stale pending-review coverage | First sealed report preserved; subsequent final-HEAD scan reconciles all 34 source files and seals complete coverage with zero deferred items |
 
 ## Security evidence and limits
 
 Native scan `f01ed42d-4edc-4d11-a012-63c263819f86` finalized successfully for source anchor through verified code SHA. All 34 native changed-source inventory files were reviewed, with zero candidates/findings (critical/high/medium/low: 0/0/0/0). Readback nevertheless marked coverage partial because the tool retained three earlier pending-review checkpoint records after the final complete draft. This scan alone is not treated as the final acceptance gate.
 
-The native report and SARIF are preserved in the scan's registered directory. Native-reported usage is a thread rollup: 22,273,998 tokens total, including 21,759,616 cached input tokens; it is not an incremental cost measurement for this scan alone.
+Final-HEAD scan `01942a06-bbe9-4f1e-9638-feb90115304b` covers `8e1abc746a81f5b9f3f2fc6431648b5a10e09d58` through `f19f2c09be3546ce57c661dfe6cde12bb3e287dd`. Source blobs and the 34-file native inventory were verified identical to the reviewed code; the added report was independently reviewed against its evidence. Native finalization and sealed readback both succeeded: **complete coverage, zero deferred items, 35 reviewed surfaces including the report, zero findings (0 critical / 0 high / 0 medium / 0 low)**. This is the reconciled security gate; the earlier partial report remains unchanged for auditability.
+
+The native reports and SARIF are preserved in their registered scan directories. Native-reported usage is a thread rollup, not incremental cost: first scan 22,273,998 tokens total including 21,759,616 cached input; reconciled scan 3,114,066 total including 3,061,760 cached input.
 
 Advisor commands passed their configured error threshold. Three authenticated SECURITY DEFINER warnings correspond to intentional guarded projection, candidates and create-options RPCs; their actor/permission/scope checks and public/anon revocations were reviewed. Leaked-password protection remains a documented Cloud DEV Free-plan limitation; no Auth configuration was changed. The performance advisor's two permissive snapshot policies preserve separate journey/config permission paths. These dispositions do not certify Production configuration.
 
@@ -80,4 +82,4 @@ TAC status could not be verified because the access connector was not connected;
 
 ## Release boundary
 
-Final native coverage reconciliation must pass before either acceptance milestone is declared. WP5 real VQH pilot work requires separate authorization. No push or merge is included in this acceptance work.
+All code and runtime acceptance evidence is passing, including native coverage reconciliation. The final report-only change does not invalidate source, browser, database or performance results. Its native verification must preserve the same complete/zero-critical-high result before the orchestrator declares the milestones. WP5 real VQH pilot work requires separate authorization. No push or merge is included in this acceptance work.
