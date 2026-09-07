@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createAuthenticatedHttpClient } from '../../../app/repositories/http/authenticated-http-client'
+import { createHttpStage01Repository } from '../../../app/repositories/http/http-stage01-repository'
 import { createStage01Routes } from '../../../server/features/stage01/stage01.routes'
 import { createSupabaseStage01Repository } from '../../../server/features/stage01/stage01.repository'
 import { mapStage01RpcError } from '../../../server/features/stage01/stage01-errors'
@@ -45,6 +47,24 @@ describe('Opportunity Decision Authority server boundary', () => {
     expect(rpc).toHaveBeenCalledWith('list_opportunity_decision_authority_candidates', {
       target_company_id: companyId, target_opportunity_id: opportunityId, target_cycle_id: cycleId,
     })
+  })
+
+  it('keeps authority candidate routes compatible with the HTTP repository envelope', async () => {
+    const candidates = [{ userId: actorId, employeeId: '94000000-0000-4000-8000-000000000002', displayName: 'Eligible actor', positionTitle: null }]
+    const service = createStage01Service({
+      listDecisionAuthorityCandidates: vi.fn().mockResolvedValue(candidates),
+    } as never)
+    const route = createStage01Routes({ resolveContext: vi.fn().mockResolvedValue(context), service })
+    const client = createAuthenticatedHttpClient({
+      getAccessToken: () => 'test-token',
+      fetch: async () => new Response(JSON.stringify(await route.listDecisionAuthorityCandidates({})), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    })
+    const repository = createHttpStage01Repository({ companyId, client })
+
+    await expect(repository.listDecisionAuthorityCandidates(opportunityId, cycleId)).resolves.toEqual(candidates)
   })
 
   it('maps scoped idempotency conflicts without exposing a database error', () => {

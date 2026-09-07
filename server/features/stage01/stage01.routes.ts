@@ -77,7 +77,7 @@ export function createStage01Routes(dependencies: Stage01RouteDependencies) {
     },
     async listDecisionAuthorityCandidates(event: unknown) {
       const context = await scoped(event)
-      return dependencies.service.listDecisionAuthorityCandidates(context, routeId(event, 'opportunityId'), routeId(event, 'decisionCycleId'))
+      return { items: await dependencies.service.listDecisionAuthorityCandidates(context, routeId(event, 'opportunityId'), routeId(event, 'decisionCycleId')) }
     },
     async assignDecisionAuthority(event: unknown) {
       const context = await scoped(event)
