@@ -1,7 +1,5 @@
 # TASKOVIA Product Rename Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Make TASKOVIA the single active product identity while keeping company/tenant data, permissions, migrations, layout, and theme unchanged.
 
 **Architecture:** Add one shared immutable product-brand constant consumed by Nuxt metadata and the app shell. Keep company context as a separate repository-derived value, and migrate only the browser prototype storage namespace from the legacy technical name to `taskovia` with validation and a safe fallback.

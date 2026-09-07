@@ -2,8 +2,8 @@
 
 ## Status
 
-- Product/design status: **APPROVED by Sơn in chat on 2026-09-01**
-- Approved approach: **A — Acceptance-first Hardening**
+- Product/design status: **ACTIVE DESIGN — 2026-09-01**
+- Selected approach: **A — Acceptance-first Hardening**
 - Phase: **B4 — Stage 01 Operational Acceptance & Hardening**
 - Source anchor: `main@8e1abc746a81f5b9f3f2fc6431648b5a10e09d58`
 - B3 merge: PR #11 / `8e1abc746a81f5b9f3f2fc6431648b5a10e09d58`
@@ -548,7 +548,6 @@ Stage 01 is considered DONE when all are true:
 13. Canonical VQH business company contains no active B4 operational fixture data.
 14. Retained acceptance-company history is marked/documented and does not affect VQH canonical checks.
 15. Readiness report says `READY_FOR_VQH_PILOT` without contradiction.
-16. Independent GPT immutable-diff review returns `MERGE` or an explicitly accepted equivalent non-blocking verdict.
 
 ---
 
@@ -607,21 +606,12 @@ B4 does not include:
 
 ---
 
-# 16. Delivery model
+# 16. Operational safety
 
-Follow the established repository workflow:
-
-- one B4 implementation task/branch;
-- no worktree;
-- evidence-first / TDD corrections;
-- Cloud DEV mutation limited to guarded acceptance fixture maintenance;
-- production mutation forbidden;
-- focused commits;
-- fresh final verification;
-- push after completion;
-- no automatic merge;
-- independent GPT review on immutable SHA range;
-- Sơn makes the final merge decision.
+- Use evidence-first / TDD corrections.
+- Limit Cloud DEV mutation to guarded acceptance fixture maintenance explicitly authorized by the current task.
+- Require explicit current authorization for production mutation or deployment.
+- Keep changes focused and run fresh final verification.
 
 ---
 
@@ -629,4 +619,4 @@ Follow the established repository workflow:
 
 B4 uses **Acceptance-first Hardening** because Stage 01 already has broad backend and UI implementation. The highest-value next step is to prove the merged product through real Cloud DEV integration, security, concurrency, history, usability, and performance evidence, then correct only demonstrated defects.
 
-Stage 01 becomes DONE only after B4 produces a reviewed `READY_FOR_VQH_PILOT` result.
+Stage 01 becomes DONE only after B4 produces a technically verified `READY_FOR_VQH_PILOT` result.

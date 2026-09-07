@@ -1,7 +1,5 @@
 # Supabase Local and Cloud Environments Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Make local Nuxt development always use Supabase local through `.env.local`, while local CLI commands safely deploy tested migrations to the linked Supabase Cloud project and Vercel Production receives Cloud configuration from its environment variables.
 
 **Architecture:** Nuxt exposes one public runtime-config interface with empty defaults and lets matching `NUXT_PUBLIC_*` variables supply values. The dev script explicitly loads `.env.local`; the production build loads no local dotenv file and therefore consumes Vercel Production variables. Supabase CLI scripts make local and linked-Cloud targets explicit and never expose a remote reset or seed command.

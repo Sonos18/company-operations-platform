@@ -1,7 +1,5 @@
 # Supabase Cloud DEV Workflow Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Make local Nuxt development use a dedicated Supabase Cloud DEV project without running Docker on the developer machine, deploy the existing tenancy schema plus curated VQH bootstrap data, and verify the linked project safely.
 
 **Architecture:** Nuxt continues to read one ignored `.env.local`, but its values now belong to Cloud DEV. Supabase CLI commands are renamed to an explicit `db:dev:*` interface and operate only on the linked DEV project; local Docker commands remain isolated as CI/fallback tools. Version-controlled migrations create schema and VQH tenant/company data, transaction-wrapped pgTAP creates its own test fixtures, and a separate admin SQL snippet assigns a real DEV Auth user without embedding environment-specific identity data in migrations. Taskovia owns the one canonical Supabase Cloud DEV database. VQH is its first tenant/company; there is no separate VQH database.

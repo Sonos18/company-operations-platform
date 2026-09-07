@@ -1,7 +1,5 @@
 # VQH Stage 01 Operational Acceptance & Hardening Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Prove the merged VQH Stage 01 product is ready for a controlled pilot by running real Cloud DEV acceptance, fixing only evidence-backed reliability/performance defects, and producing a deterministic `READY_FOR_VQH_PILOT` report.
 
 **Architecture:** B4 adds a test-only Cloud DEV acceptance tenant/company and a separate Playwright project that uses real `/login`, Nitro APIs, user JWTs, RLS and RPCs without Stage 01 business-route interception. It reuses existing DB/concurrency/security runners, hardens the merged B3 command/reload contract, measures `Stage01OperationalDetail`, and batches current N+1 reads only after the baseline request-count test proves the approved performance envelope is exceeded.

@@ -4,12 +4,12 @@
 > **Sub-stages:** 01.1 Tiếp nhận yêu cầu; 01.2 Đánh giá cơ hội & quyết định tiếp tục  
 > **Status:** APPROVED
 > **Authority scope:** VQH Stage 01 only  
-> **Implementation authorization:** NONE  
-> **Original technical spec approved:** 2026-08-29
-> **Cloud DEV execution amendment approved:** 2026-08-30
+> **Document scope:** Technical specification only
+> **Original technical spec date:** 2026-08-29
+> **Cloud DEV execution amendment date:** 2026-08-30
 > **Analysis base:** `Sonos18/company-operations-platform@f314ed7a4ff1d86e45cc29075ab0213ec6421ca1`
 > **Correction source:** `origin/docs/vqh-stage-01-technical-spec@34c9a896c0fae78c9069f54406ee943864bf0852`
-> **Correction approved:** 2026-08-29
+> **Correction date:** 2026-08-29
 >
 > **Business authorities**
 >
@@ -19,7 +19,6 @@
 > **Technical authorities**
 >
 > - `AGENTS.md`
-> - `docs/ai-workflow/README.md`
 > - `docs/superpowers/specs/2026-08-14-backend-architecture-design.md`
 > - `docs/superpowers/specs/2026-08-18-employee-management-rbac-design.md`
 
@@ -56,9 +55,7 @@ THIS TECHNICAL SPEC
                     ↓
 Corrected Execution Plan
                     ↓
-Implementation Packet
-                    ↓
-Codex implementation
+Task-specific implementation
 ```
 
 ---
@@ -3005,7 +3002,7 @@ Phase A stops before step 7. Synthetic test definitions are rolled-back or clean
 
 Exact timestamped migration filenames belong to Implementation Plan.
 
-This spec records the approved no-Docker verification architecture but does not independently authorize a Cloud DEV mutation. The Implementation Packet must separately scope Cloud DEV mutation to guarded Stage 01 migration pushes and test-fixture verification against the canonical Taskovia DEV project. Production mutation remains separately forbidden.
+This spec records the no-Docker verification architecture. Cloud DEV mutation requires explicit current task authorization and is limited to guarded Stage 01 migration pushes and test-fixture verification against the canonical Taskovia DEV project. Production mutation remains separately forbidden without explicit current authorization.
 
 ---
 
@@ -3106,7 +3103,7 @@ operational role mappings
 parent Stage runtime
 ```
 
-Codex MUST return `BLOCKED` rather than invent these when an implementation task reaches them without an approved decision.
+Implementation MUST stop and request a decision rather than invent these when a task reaches them without a defined product decision.
 
 ---
 
@@ -3192,34 +3189,7 @@ The corrected Technical Spec is approved with the following conditions:
 [x] Cloud DEV no-Docker execution amendment reviewed and approved
 ```
 
-When the corrected written Technical Spec is approved, that approval means:
-
-```text
-Technical Design approved
-```
-
-It does NOT mean:
-
-```text
-Implementation authorized
-Cloud DEV mutation authorized
-Production mutation authorized
-Deployment authorized
-```
-
-After Technical Spec approval, the required next artifact is:
-
-```text
-Technical Spec — APPROVED
-        ↓
-Implementation / Execution Plan
-        ↓
-Approved Implementation Packet
-        ↓
-Codex technical preflight
-        ↓
-Implementation
-```
+This Technical Spec defines product and technical contracts. It does not itself request implementation, Cloud DEV mutation, Production mutation, or deployment. Those operations require explicit current task instructions and must respect the environment safety boundaries in `AGENTS.md`.
 
 ---
 

@@ -2,8 +2,8 @@
 
 ## Status
 
-- Product/design status: **APPROVED by Sơn in chat on 2026-08-31**
-- Approved approach: **A — Opportunity-centric Stage 01 Workspace**
+- Product/design status: **ACTIVE DESIGN — 2026-08-31**
+- Selected approach: **A — Opportunity-centric Stage 01 Workspace**
 - Design branch: `docs/vqh-stage-01-operational-ui-design`
 - Analysis base: `main@431760676e446ae6dff3372acc7f20e31f093082`
 - Implementation phase: **B3 — Stage 01 Operational UI**
@@ -886,8 +886,7 @@ B3 is complete when:
 9. historical decision records are visible and immutable;
 10. responsive/accessibility-critical paths are covered;
 11. no Decision Runtime, completion-baseline, Stage 02, generic workflow-builder, or DB architecture refactor leaks into B3;
-12. fresh unit/server/E2E/application verification passes;
-13. implementation is pushed and remote SHA verified for independent GPT review.
+12. fresh unit/server/E2E/application verification passes.
 
 ---
 

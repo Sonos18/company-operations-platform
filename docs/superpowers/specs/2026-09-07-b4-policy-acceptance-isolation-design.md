@@ -1,17 +1,15 @@
 # B4 Policy Acceptance Isolation Design
 
 ```yaml
-status: APPROVED
-approved_by: Son
-approved_on: 2026-09-07
+status: ACTIVE_DESIGN
+documented_on: 2026-09-07
 approach: Acceptance Isolation
-approval_reference: "ChatGPT conversation — 2026-09-07 — user selected Approach A"
-approved_scope_version: B4-AMENDMENT-60R-A-DESIGN-V1
+scope_version: B4-AMENDMENT-60R-A-DESIGN-V1
 ```
 
 ## 1. Status
 
-This is the approved design for B4 Amendment 60R-A. It authorizes a later implementation packet to isolate B4 acceptance policy preparation from Taskovia production runtime. It does not itself authorize source, database, Cloud DEV, production, or deployment changes.
+This design defines how B4 acceptance policy preparation is isolated from Taskovia production runtime. It does not itself request source, database, Cloud DEV, Production, or deployment changes; those operations require explicit current task instructions.
 
 ## 2. Context
 

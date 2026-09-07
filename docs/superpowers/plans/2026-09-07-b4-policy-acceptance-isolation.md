@@ -1,7 +1,5 @@
 # B4 Policy Acceptance Isolation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Remove B4 acceptance policy behavior from active Taskovia runtime while preserving generic Decision Authority and keeping B4 preparation in acceptance infrastructure.
 
 **Architecture:** Remove the B4-only application/API transition path and replace the active database definitions through one forward migration. Retain historical data and immutable A25/A31/A40 source, while the acceptance fixture creates the B4 policy state before acceptance cycles are created.
@@ -290,7 +288,7 @@ Run: `git diff --check`
 
 Expected: no output. Do not run Cloud DEV, Stage B, Stage C, Stage D, or repair the pgTAP `plan(103)` environment failure.
 
-### Task 6: Local Corrective Commit and Handoff
+### Task 6: Local Corrective Checkpoint
 
 **Files:**
 - Review: all Amendment 60R-A files from Tasks 1–5
@@ -298,7 +296,7 @@ Expected: no output. Do not run Cloud DEV, Stage B, Stage C, Stage D, or repair 
 
 **Interfaces:**
 - Consumes: passing focused local evidence and reviewed diff.
-- Produces: one local corrective checkpoint for later GPT review and separately authorized Cloud validation.
+- Produces: one local corrective checkpoint for task-specific review and separately authorized Cloud validation.
 
 **Reason:** The correction needs a narrowly reviewable local checkpoint before any separately authorized Cloud validation.
 
@@ -329,9 +327,9 @@ Expected: staged diff is whitespace-clean and contains exactly one new forward m
 
 Run: `git commit -m "fix(stage01): isolate B4 policy acceptance from runtime"`
 
-Expected: one local commit; no push, merge, or Cloud operation.
+Expected: one local commit and no Cloud operation.
 
-- [ ] **Step 4: Verify handoff state.**
+- [ ] **Step 4: Verify final local state.**
 
 Run: `git status --short && git rev-parse HEAD && git show --stat --oneline HEAD`
 

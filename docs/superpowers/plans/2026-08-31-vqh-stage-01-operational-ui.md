@@ -1,7 +1,5 @@
 # VQH Stage 01 Operational UI Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Build the B3 Opportunity-centric Stage 01 operational UI so VQH staff can create/manage Opportunities, operate `01.1` Intake and `01.2` Evaluation, execute existing workflow/Stage01 commands, and review immutable history from server-authoritative state.
 
 **Architecture:** Add a narrow `Stage01OperationalDetail` read model over the existing Stage01 aggregate. All commands remain in the existing Opportunity/Workflow/Stage01 repositories; every successful command reloads canonical operational detail. Existing Opportunities always render taxonomies/criteria from their bound workflow snapshot; only new Opportunity creation may read the latest published B2 config.
@@ -409,11 +407,11 @@ The diff must contain no Supabase migration/RLS/generated-type/package/dependenc
   7. Permissions remain explicit per action.
   8. No direct client access to `workflow_taxonomy_values`.
 
-- [ ] Push and verify:
+- [ ] Record final repository state:
 
 ```bash
-git push origin feat/vqh-stage-01-operational-ui
-git ls-remote origin refs/heads/feat/vqh-stage-01-operational-ui
+git status --short --branch
+git rev-parse HEAD
 ```
 
-Completion requires `remote_head_sha == head_sha`.
+Report only repository and verification evidence that was actually observed.

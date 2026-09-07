@@ -1,7 +1,5 @@
 # Employee Management and Normalized RBAC Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Deliver a company-scoped employee directory, private HR profiles, account invitation/offboarding, and normalized RBAC for VQH, including the approved departments and six development employees.
 
 **Architecture:** Keep Supabase Auth as identity, memberships as tenancy boundaries, `employees` as employment records, and normalized role assignments as the only company authorization source. PostgreSQL RLS and security-definer helpers enforce company isolation; Nuxt server routes perform request validation and action authorization; the current prototype frontend consumes an employee repository so the UI remains usable before a separate login experience is introduced.

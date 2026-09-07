@@ -10,7 +10,7 @@
 >
 > **Design maturity:** BUSINESS DESIGN — NOT TECHNICAL SPEC — NOT IMPLEMENTATION PLAN
 >
-> **Implementation authorization:** None. Approval of this document does not authorize implementation.
+> **Scope:** Business design only. Technical implementation changes require explicit current task instructions.
 >
 > **Approved:** 2026-08-29
 
@@ -816,18 +816,6 @@ All decisions below are scoped to VQH Stage 01. Decisions `VQH-S01-001` through 
 | Open/deferred issues | Section 23 |
 | Stage decision registry | Section 25 |
 
-## 27. Handoff boundary
+## 27. Scope boundary
 
-The next work, if separately approved, follows this order:
-
-```text
-Stage 01 Detailed Business Design — APPROVED
-        ↓
-Technical Spec
-        ↓
-Implementation Plan
-        ↓
-Implementation tasks
-```
-
-This documentation task stops at the approved business-design baseline. It does not begin or authorize any Technical Spec, Implementation Plan, schema, backend, API, frontend, permission, migration, or test work.
+This document defines the Stage 01 business-design baseline. Any Technical Spec, Implementation Plan, schema, backend, API, frontend, permission, migration, or test change must follow the current task instructions while preserving this business contract.
