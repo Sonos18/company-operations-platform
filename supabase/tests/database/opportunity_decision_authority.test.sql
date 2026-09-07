@@ -45,6 +45,15 @@ begin
 end
 $authority_assert$;
 
+create or replace function pg_temp.authority_assert_absent_function(p_schema text, p_name text, p_arguments text[], p_description text)
+returns void language plpgsql as $authority_assert$
+begin
+  if to_regprocedure(format('%I.%I(%s)', p_schema, p_name, array_to_string(p_arguments, ','))) is not null then
+    raise exception 'AUTHORITY_ASSERTION_FAILED: %', p_description;
+  end if;
+end
+$authority_assert$;
+
 create or replace function pg_temp.authority_assert_constraint(p_schema text, p_table text, p_constraint text, p_description text)
 returns void language plpgsql as $authority_assert$
 begin
@@ -158,8 +167,8 @@ select pg_temp.authority_assert_foreign_key('public', 'stage01_decision_cycles',
 select pg_temp.authority_assert_function('public', 'assign_opportunity_decision_authority', array['uuid', 'uuid', 'uuid', 'jsonb'], 'initial authority command is public RPC');
 select pg_temp.authority_assert_function('public', 'list_opportunity_decision_authority_candidates', array['uuid', 'uuid', 'uuid'], 'candidate read is public RPC');
 select pg_temp.authority_assert_function('public', 'get_opportunity_decision_authority_projection', array['uuid', 'uuid', 'uuid'], 'canonical authority projection is public RPC');
-select pg_temp.authority_assert_function('public', 'transition_b4_legacy_opportunity_decision_policy', array['uuid', 'uuid', 'uuid', 'jsonb'], 'B4 legacy policy transition is an explicit public RPC');
-select pg_temp.authority_assert_function('public', 'transition_opportunity_decision_policy', array['uuid', 'uuid', 'uuid', 'jsonb'], 'canonical policy transition is a public RPC');
+select pg_temp.authority_assert_absent_function('public', 'transition_b4_legacy_opportunity_decision_policy', array['uuid', 'uuid', 'uuid', 'jsonb'], 'legacy B4 policy transition is absent from the active public runtime');
+select pg_temp.authority_assert_absent_function('public', 'transition_opportunity_decision_policy', array['uuid', 'uuid', 'uuid', 'jsonb'], 'generic policy transition is absent from the active public runtime');
 select pg_temp.authority_assert_function('private', 'opportunity_decision_authority_eligible', array['uuid', 'uuid', 'uuid'], 'eligibility is server authoritative');
 select pg_temp.authority_assert_constraint('public', 'opportunity_decision_authority_events', 'opportunity_decision_authority_events_idempotency_key', 'idempotency is company scoped');
 select pg_temp.authority_assert_constraint('public', 'opportunity_decision_authority_events', 'opportunity_decision_authority_events_assigned_target', 'initial authority events require an assigned user');
@@ -182,14 +191,24 @@ select pg_temp.authority_assert_function_privileges('public', 'get_opportunity_d
 select pg_temp.authority_assert_function_privileges('public', 'get_opportunity_decision_authority_projection', array['uuid','uuid','uuid'], 'anon', array[]::text[], 'anonymous callers cannot execute authority projection');
 select pg_temp.authority_assert_function_privileges('public', 'get_opportunity_decision_authority_projection', array['uuid','uuid','uuid'], 'PUBLIC', array[]::text[], 'PUBLIC does not inherit authority projection execution');
 select pg_temp.authority_assert_function_privileges('public', 'record_stage01_final_decision', array['uuid','uuid','jsonb','uuid'], 'authenticated', array['EXECUTE'], 'final-decision compatibility RPC remains callable');
-select pg_temp.authority_assert_function_privileges('public', 'transition_opportunity_decision_policy', array['uuid','uuid','uuid','jsonb'], 'authenticated', array['EXECUTE'], 'authenticated can invoke the canonical policy-transition RPC');
+select pg_temp.authority_assert_true(
+  not exists (
+    select 1
+    from pg_catalog.pg_proc procedure
+    join pg_catalog.pg_namespace namespace on namespace.oid = procedure.pronamespace
+    where namespace.nspname = 'public'
+      and procedure.proname in ('transition_b4_legacy_opportunity_decision_policy', 'transition_opportunity_decision_policy')
+      and has_function_privilege('authenticated', procedure.oid, 'EXECUTE')
+  ),
+  'authenticated has no execute grant for a retired policy-transition RPC'
+);
 select pg_temp.authority_assert_function_privileges('private', 'assert_opportunity_decision_authority_policy', array['jsonb'], 'authenticated', array[]::text[], 'authenticated cannot execute the private policy assertion helper');
 select pg_temp.authority_assert_function_privileges('private', 'active_opportunity_decision_policy_snapshot', array['uuid','uuid'], 'authenticated', array[]::text[], 'authenticated cannot execute the private active-policy helper');
 select pg_temp.authority_assert_function_privileges('private', 'bind_new_stage01_decision_cycle_policy', array[]::text[], 'authenticated', array[]::text[], 'authenticated cannot execute the private new-cycle binding trigger helper');
 select pg_temp.authority_assert_function_privileges('private', 'company_opportunity_decision_authority_enabled', array['uuid','uuid'], 'authenticated', array[]::text[], 'authenticated cannot execute the private company capability lookup');
 select pg_temp.authority_assert_function_privileges('private', 'audit_new_stage01_decision_cycle_policy', array[]::text[], 'authenticated', array[]::text[], 'authenticated cannot execute the private new-cycle audit trigger helper');
-select pg_temp.authority_assert_function_privileges('private', 'b4_opportunity_decision_policy_snapshot', array['uuid','uuid','uuid'], 'authenticated', array[]::text[], 'authenticated cannot execute the private B4 policy helper');
-select pg_temp.authority_assert_function_privileges('private', 'transition_b4_legacy_opportunity_decision_policy', array['uuid','uuid','uuid','jsonb'], 'authenticated', array[]::text[], 'authenticated cannot execute the private policy-transition implementation');
+select pg_temp.authority_assert_absent_function('private', 'b4_opportunity_decision_policy_snapshot', array['uuid','uuid','uuid'], 'retired B4 snapshot helper is absent from the active private runtime');
+select pg_temp.authority_assert_absent_function('private', 'transition_b4_legacy_opportunity_decision_policy', array['uuid','uuid','uuid','jsonb'], 'retired B4 transition helper is absent from the active private runtime');
 select pg_temp.authority_assert_lives($$ select private.stage01_current_recommendation_id('00000000-0000-0000-0000-000000000000'::uuid) $$, 'recommendation freshness predicate remains independent of authority cycle version');
 select pg_temp.authority_assert_lives($$ select private.opportunity_decision_authority_eligible('00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid) $$, 'eligibility check is safe for an ineligible user');
 select pg_temp.authority_assert_function('private', 'record_opportunity_decision_final_decision', array['uuid', 'uuid', 'jsonb', 'uuid'], 'final decision is authority-gated in private command');
@@ -517,9 +536,9 @@ select pg_temp.authority_assert_true(
   'S08 new cycle has unresolved authority fields and a bound decision policy snapshot'
 );
 
--- Explicit B4-only transition fixture. The replication-role insert simulates a
+-- Explicit B4 historical fixture. The replication-role insert simulates a
 -- pre-Addendum immutable legacy row without backfilling it through the new
--- cycle trigger; all transition behaviour below uses the public RPC.
+-- cycle trigger; policy preparation is fixture-only and no active RPC creates it.
 reset role;
 do $$
 declare
@@ -529,6 +548,8 @@ declare
   role_id constant uuid := '25000000-0000-4000-8000-000000000106';
   department_id constant uuid := '25000000-0000-4000-8000-000000000202';
   snapshot_id constant uuid := '25000000-0000-4000-8000-000000000220';
+  policy_id uuid;
+  canonical_policy record;
   fixture record;
 begin
   insert into auth.users (id, email) values (actor_id, 'authority-b4-transition@taskovia.invalid');
@@ -545,6 +566,37 @@ begin
   insert into public.company_role_assignments (tenant_id, company_id, user_id, role_id, granted_by, grant_reason) values ('25000000-0000-4000-8000-000000000010'::uuid, '25000000-0000-4000-8000-000000000020'::uuid, actor_id, '25000000-0000-4000-8000-000000000100'::uuid, '25000000-0000-4000-8000-000000000001'::uuid, 'Authority B4 transition scope-denial fixture');
   insert into public.employees (id, tenant_id, company_id, user_id, employee_code, full_name, work_email, department_id, employment_status, created_by) values ('25000000-0000-4000-8000-000000000306', tenant_id, company_id, actor_id, 'AUTH-B4', 'Authority B4 actor', 'authority-b4-transition@taskovia.invalid', department_id, 'active', actor_id);
   insert into public.workflow_definition_snapshots (id, tenant_id, company_id, workflow_key, template_version, schema_version, definition, definition_hash) values (snapshot_id, tenant_id, company_id, 'vqh.stage01', 1, 1, '{"nodes":[{"key":"01.2","type":"sub_stage","parentNodeKey":null}]}'::jsonb, 'authority-b4-transition-definition');
+  select policy.id, policy.policy, policy.policy_hash into canonical_policy
+  from public.opportunity_decision_policy_snapshots policy
+  where policy.tenant_id = '10000000-0000-4000-8000-000000000010'::uuid
+    and policy.company_id = '10000000-0000-4000-8000-000000000020'::uuid
+    and policy.policy_key = 'opportunity.decision_authority'
+    and policy.status = 'published'
+  order by policy.policy_version desc
+  limit 1;
+  if canonical_policy.id is null then
+    raise exception 'AUTHORITY_ASSERTION_FAILED: canonical Decision Authority policy fixture is unavailable';
+  end if;
+  insert into public.opportunity_decision_policy_snapshots (
+    tenant_id, company_id, policy_key, policy_version, policy, policy_hash, status,
+    published_at, approved_at, source_policy_snapshot_id, created_by
+  ) values (
+    tenant_id, company_id, 'opportunity.decision_authority', 1,
+    canonical_policy.policy, canonical_policy.policy_hash, 'published',
+    clock_timestamp(), clock_timestamp(), canonical_policy.id, actor_id
+  ) on conflict (tenant_id, company_id, policy_key, policy_version) do nothing
+  returning id into policy_id;
+  if policy_id is null then
+    select policy.id into policy_id
+    from public.opportunity_decision_policy_snapshots policy
+    where policy.tenant_id = tenant_id and policy.company_id = company_id
+      and policy.policy_key = 'opportunity.decision_authority' and policy.status = 'published'
+    order by policy.policy_version desc
+    limit 1;
+  end if;
+  if policy_id is null then
+    raise exception 'AUTHORITY_ASSERTION_FAILED: B4 historical policy fixture is unavailable';
+  end if;
   for fixture in select * from (values
     ('25000000-0000-4000-8000-000000000403'::uuid, '25000000-0000-4000-8000-000000000413'::uuid, '25000000-0000-4000-8000-000000000423'::uuid, '25000000-0000-4000-8000-000000000433'::uuid, '25000000-0000-4000-8000-000000000453'::uuid, null::text),
     ('25000000-0000-4000-8000-000000000404'::uuid, '25000000-0000-4000-8000-000000000414'::uuid, '25000000-0000-4000-8000-000000000424'::uuid, '25000000-0000-4000-8000-000000000434'::uuid, '25000000-0000-4000-8000-000000000454'::uuid, 'proceed'),
@@ -555,59 +607,83 @@ begin
     insert into public.workflow_node_instances (id, tenant_id, company_id, workflow_instance_id, node_key, node_type) values (fixture.node_id, tenant_id, company_id, fixture.workflow_id, '01.2', 'sub_stage');
     insert into public.workflow_node_executions (id, tenant_id, company_id, node_instance_id, execution_no, phase) values (fixture.execution_id, tenant_id, company_id, fixture.node_id, 1, 'active');
     perform set_config('session_replication_role', 'replica', true);
-    insert into public.stage01_decision_cycles (id, tenant_id, company_id, opportunity_id, node_execution_id, cycle_no, decision_authority_user_id, authority_resolution_reference, final_outcome, created_by)
+    insert into public.stage01_decision_cycles (id, tenant_id, company_id, opportunity_id, node_execution_id, cycle_no, decision_authority_user_id, authority_resolution_reference, final_outcome, decision_policy_snapshot_id, version, created_by)
     values (fixture.cycle_id, tenant_id, company_id, fixture.opportunity_id, fixture.execution_id, 1,
       case when fixture.legacy_state = 'authority' then actor_id else null end,
       case when fixture.legacy_state = 'authority' then 'legacy-authority' else null end,
-      case when fixture.legacy_state = 'proceed' then 'proceed' else null end, actor_id);
+      case when fixture.legacy_state = 'proceed' then 'proceed' else null end,
+      case when fixture.cycle_id = '25000000-0000-4000-8000-000000000453'::uuid then policy_id else null end,
+      case when fixture.cycle_id = '25000000-0000-4000-8000-000000000453'::uuid then 1 else 0 end,
+      actor_id);
     perform set_config('session_replication_role', 'origin', true);
   end loop;
+  insert into public.opportunity_decision_policy_binding_events (
+    tenant_id, company_id, opportunity_id, decision_cycle_id, previous_policy_snapshot_id,
+    policy_snapshot_id, request_id, request_fingerprint, binding_cycle_version, action,
+    transition_code, reason, performed_by_user_id
+  ) values (
+    tenant_id, company_id, '25000000-0000-4000-8000-000000000403', '25000000-0000-4000-8000-000000000453', null,
+    policy_id, '25000000-0000-4000-8000-000000000631', 'historical-b4-policy-binding', 1, 'legacy_transition',
+    'b4_acceptance_policy_transition', 'Bind VQH Decision Policy v1 for this unresolved acceptance cycle.', actor_id
+  );
   insert into public.stage01_recommendations (id, tenant_id, company_id, decision_cycle_id, version, recommendation, rationale, evidence, submitted_by)
   values ('25000000-0000-4000-8000-000000000503', tenant_id, company_id, '25000000-0000-4000-8000-000000000453', 1, 'recommend_proceed', 'B4 transition recommendation must remain immutable', '[]'::jsonb, actor_id);
 end $$;
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"25000000-0000-4000-8000-000000000006","role":"authenticated"}', true);
-select pg_temp.authority_assert_throws(
-  $$ select public.transition_opportunity_decision_policy('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000403', '25000000-0000-4000-8000-000000000453', '{"requestId":"25000000-0000-4000-8000-000000000629","expectedCycleVersion":0,"reason":"Bind policy"}'::jsonb) $$,
-  '22023', 'INVALID_COMMAND_INPUT', 'policy transition requires its approved transition code'
-);
-select pg_temp.authority_assert_throws(
-  $$ select public.transition_opportunity_decision_policy('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000403', '25000000-0000-4000-8000-000000000453', '{"requestId":"25000000-0000-4000-8000-000000000630","expectedCycleVersion":0,"transitionCode":"b4_acceptance_policy_transition","reason":"   "}'::jsonb) $$,
-  '22023', 'INVALID_COMMAND_INPUT', 'policy transition requires a nonblank audited reason'
+select pg_temp.authority_assert_true(
+  not exists (
+    select 1
+    from pg_catalog.pg_proc procedure
+    join pg_catalog.pg_namespace namespace on namespace.oid = procedure.pronamespace
+    where namespace.nspname = 'public'
+      and procedure.proname ~ '^transition_.*opportunity_decision_policy$'
+  ),
+  'active public runtime exposes no policy-transition command'
 );
 select pg_temp.authority_assert_equal(
   public.get_opportunity_decision_authority_projection('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000403', '25000000-0000-4000-8000-000000000453') -> 'policyBinding',
-  '{"status":"legacy_unbound","policySnapshotId":null,"transitionEligible":true}'::jsonb,
-  'projection exposes an eligible B4 legacy-unbound policy binding'
-);
-select pg_temp.authority_assert_throws(
-  $$ select public.transition_opportunity_decision_policy('25000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000402', '25000000-0000-4000-8000-000000000452', '{"requestId":"25000000-0000-4000-8000-000000000635","expectedCycleVersion":0,"transitionCode":"b4_acceptance_policy_transition","reason":"Bind policy"}'::jsonb) $$,
-  'P0001', 'OPPORTUNITY_DECISION_POLICY_TRANSITION_SCOPE_DENIED', 'legacy policy transition is limited to the approved B4 tenant and company'
+  jsonb_build_object('status', 'bound', 'policySnapshotId', (select decision_policy_snapshot_id from public.stage01_decision_cycles where id = '25000000-0000-4000-8000-000000000453'::uuid)),
+  'historical B4 binding remains visible without transition eligibility'
 );
 select pg_temp.authority_assert_equal(
-  (public.transition_opportunity_decision_policy('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000403', '25000000-0000-4000-8000-000000000453', '{"requestId":"25000000-0000-4000-8000-000000000631","expectedCycleVersion":0,"transitionCode":"b4_acceptance_policy_transition","reason":"Bind VQH Decision Policy v1 for this unresolved acceptance cycle."}'::jsonb) ->> 'cycleVersion')::bigint,
-  1::bigint, 'B4 legacy active unresolved cycle binds a policy and increments its version'
+  public.get_opportunity_decision_authority_projection('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000404', '25000000-0000-4000-8000-000000000454') -> 'policyBinding',
+  '{"status":"legacy_unbound","policySnapshotId":null}'::jsonb,
+  'completed legacy projection has no B4-only transition eligibility'
+);
+select pg_temp.authority_assert_equal(
+  public.get_opportunity_decision_authority_projection('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000405', '25000000-0000-4000-8000-000000000455') -> 'policyBinding',
+  '{"status":"legacy_unbound","policySnapshotId":null}'::jsonb,
+  'authority-resolved legacy projection has no B4-only transition eligibility'
+);
+select pg_temp.authority_assert_equal(
+  (select version from public.stage01_decision_cycles where id = '25000000-0000-4000-8000-000000000453'::uuid),
+  1::bigint, 'historical B4 binding retains its recorded cycle version'
 );
 select pg_temp.authority_assert_equal(
   (select id from public.stage01_recommendations where id = '25000000-0000-4000-8000-000000000503'::uuid),
   '25000000-0000-4000-8000-000000000503'::uuid, 'B4 policy transition preserves the current recommendation history'
 );
 select pg_temp.authority_assert_equal(
-  (public.transition_opportunity_decision_policy('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000403', '25000000-0000-4000-8000-000000000453', '{"requestId":"25000000-0000-4000-8000-000000000631","expectedCycleVersion":0,"transitionCode":"b4_acceptance_policy_transition","reason":"Bind VQH Decision Policy v1 for this unresolved acceptance cycle."}'::jsonb) ->> 'policySnapshotId')::uuid,
-  (select decision_policy_snapshot_id from public.stage01_decision_cycles where id = '25000000-0000-4000-8000-000000000453'::uuid), 'same B4 transition request replays the original policy snapshot'
+  (select policy_snapshot_id from public.opportunity_decision_policy_binding_events where request_id = '25000000-0000-4000-8000-000000000631'::uuid),
+  (select decision_policy_snapshot_id from public.stage01_decision_cycles where id = '25000000-0000-4000-8000-000000000453'::uuid), 'historical policy binding retains its original policy snapshot'
 );
-select pg_temp.authority_assert_throws(
-  $$ select public.transition_opportunity_decision_policy('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000403', '25000000-0000-4000-8000-000000000453', '{"requestId":"25000000-0000-4000-8000-000000000631","expectedCycleVersion":1,"transitionCode":"b4_acceptance_policy_transition","reason":"Bind VQH Decision Policy v1 for this unresolved acceptance cycle."}'::jsonb) $$,
-  'P0001', 'IDEMPOTENCY_CONFLICT', 'B4 policy transition rejects a changed same-request fingerprint'
+select pg_temp.authority_assert_equal(
+  (select binding_cycle_version from public.opportunity_decision_policy_binding_events where request_id = '25000000-0000-4000-8000-000000000631'::uuid),
+  (select version from public.stage01_decision_cycles where id = '25000000-0000-4000-8000-000000000453'::uuid), 'historical policy binding retains its recorded cycle version'
 );
-select pg_temp.authority_assert_throws(
-  $$ select public.transition_opportunity_decision_policy('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000404', '25000000-0000-4000-8000-000000000454', '{"requestId":"25000000-0000-4000-8000-000000000632","expectedCycleVersion":0,"transitionCode":"b4_acceptance_policy_transition","reason":"Bind policy"}'::jsonb) $$,
-  'P0001', 'STAGE01_FINAL_DECISION_EXISTS', 'B4 policy transition rejects a completed legacy cycle'
+select pg_temp.authority_assert_equal(
+  (select action from public.opportunity_decision_policy_binding_events where request_id = '25000000-0000-4000-8000-000000000631'::uuid),
+  'legacy_transition', 'historical policy binding retains its original transition action'
 );
-select pg_temp.authority_assert_throws(
-  $$ select public.transition_opportunity_decision_policy('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000405', '25000000-0000-4000-8000-000000000455', '{"requestId":"25000000-0000-4000-8000-000000000633","expectedCycleVersion":0,"transitionCode":"b4_acceptance_policy_transition","reason":"Bind policy"}'::jsonb) $$,
-  'P0001', 'OPPORTUNITY_DECISION_AUTHORITY_ALREADY_RESOLVED', 'B4 policy transition rejects a legacy cycle with an existing authority'
+select pg_temp.authority_assert_true(
+  not exists (
+    select 1
+    from public.opportunity_decision_policy_binding_events event
+    where event.decision_cycle_id in ('25000000-0000-4000-8000-000000000454'::uuid, '25000000-0000-4000-8000-000000000455'::uuid)
+  ),
+  'legacy cycles without historical bindings do not gain active transition events'
 );
 reset role;
 select pg_temp.authority_assert_throws(
@@ -673,12 +749,10 @@ select pg_temp.authority_assert_throws(
   $$ insert into public.opportunity_decision_policy_snapshots (tenant_id, company_id, policy_key, policy_version, policy, policy_hash, status, published_at, approved_at, source_policy_snapshot_id) select 'b4000000-0000-4000-8000-000000000010'::uuid, 'b4000000-0000-4000-8000-000000000020'::uuid, 'opportunity.decision_authority', 4, policy, 'b4-invalid-published-policy', 'published', null, null, id from public.opportunity_decision_policy_snapshots where tenant_id = 'b4000000-0000-4000-8000-000000000010'::uuid and company_id = 'b4000000-0000-4000-8000-000000000020'::uuid and policy_version = 1 $$,
   '23514', 'new row for relation "opportunity_decision_policy_snapshots" violates check constraint "opportunity_decision_policy_snapshots_publication_state_check"', 'published policy snapshots require both publication and approval timestamps'
 );
-set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"25000000-0000-4000-8000-000000000006","role":"authenticated"}', true);
 select pg_temp.authority_assert_equal(
-  (public.transition_opportunity_decision_policy('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000403', '25000000-0000-4000-8000-000000000453', '{"requestId":"25000000-0000-4000-8000-000000000631","expectedCycleVersion":0,"transitionCode":"b4_acceptance_policy_transition","reason":"Bind VQH Decision Policy v1 for this unresolved acceptance cycle."}'::jsonb) ->> 'policySnapshotId')::uuid,
-  (select decision_policy_snapshot_id from public.stage01_decision_cycles where id = '25000000-0000-4000-8000-000000000453'::uuid),
-  'replay returns the original B4 policy binding after a newer policy snapshot is published'
+  (select policy_version from public.opportunity_decision_policy_snapshots where id = (select decision_policy_snapshot_id from public.stage01_decision_cycles where id = '25000000-0000-4000-8000-000000000453'::uuid)),
+  1,
+  'a newer policy snapshot does not rebind the historical B4 policy record'
 );
 reset role;
 select pg_temp.authority_assert_throws(
