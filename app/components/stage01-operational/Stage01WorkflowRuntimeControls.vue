@@ -201,7 +201,7 @@ async function submitResolution(): Promise<void> {
       <p>Gate do máy chủ trả về quyết định khả năng hoàn tất; mọi thao tác thành công đều tải lại aggregate chính tắc.</p>
     </div>
     <UAlert v-if="error" role="alert" color="error" icon="i-lucide-circle-alert" title="Không thể hoàn tất thao tác" :description="message(error)" />
-    <UAlert v-if="success" color="success" icon="i-lucide-circle-check" title="Đã cập nhật" :description="success" />
+    <UAlert v-if="success" role="status" color="success" icon="i-lucide-circle-check" title="Đã cập nhật" :description="success" />
 
     <article v-for="node in nodes" :key="node.runtime.nodeExecutionId" class="workflow-runtime__node">
       <header><div><h3>{{ node.label }}</h3><p>Trạng thái: <strong>{{ node.runtime.state }}</strong> · Lần thực thi #{{ node.runtime.executionNo }}</p></div><span>{{ node.runtime.needsRevalidation ? 'Cần tái xác thực' : 'Đã xác thực' }}</span></header>

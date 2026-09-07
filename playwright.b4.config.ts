@@ -8,6 +8,7 @@ assertCloudDevTarget({ cwd: process.cwd() })
 
 export default defineConfig({
   testDir: './tests/acceptance/stage01-cloud-dev',
+  outputDir: 'test-results/b4-stage01/playwright',
   fullyParallel: false,
   workers: 1,
   timeout: 120_000,

@@ -1,7 +1,6 @@
 import { createCompany } from './fixtures/auth-routes'
 import { expect, test } from './fixtures/authenticated'
-import { createStage01OperationalDetail, createStage01OperationalRouteState, installStage01OperationalRoutes, installStatefulStage01OperationalRoutes, stage01OpportunityId, versionConflictBody } from './fixtures/stage01-operational'
-import { MOCK_STORAGE_KEY } from '../../app/repositories/mock/state-store'
+import { createStage01OperationalDetail, createStage01OperationalRouteState, installStage01OperationalRoutes, installStatefulStage01OperationalRoutes, stage01EmployeeDirectoryResponse, stage01OpportunityId, versionConflictBody } from './fixtures/stage01-operational'
 import { stage01OperationalDetailSchema } from '../../shared/schemas/stage01-operational'
 import { employeeListResponseSchema } from '../../shared/schemas/employees'
 import { workflowNodeRuntimeSchema } from '../../shared/schemas/workflow'
@@ -9,54 +8,6 @@ import { workflowNodeRuntimeSchema } from '../../shared/schemas/workflow'
 async function goToWorkspace(page: import('@playwright/test').Page): Promise<void> {
   await page.goto(`/opportunities/${stage01OpportunityId}/stage-01`)
   await expect(page.getByRole('heading', { name: 'Công ty Việt Quốc Huy' })).toBeVisible()
-}
-
-const mockStorageReadSpyKey = '__stage01MockStorageReadSpy'
-
-async function installMockStorageReadSpy(page: import('@playwright/test').Page): Promise<void> {
-  await page.evaluate(({ storageKey, spyKey }) => {
-    const original = Storage.prototype.getItem
-    ;(window as typeof window & { [key: string]: { count: number } })[spyKey] = { count: 0 }
-    Storage.prototype.getItem = function(key: string): string | null {
-      if (key === storageKey) (window as typeof window & { [key: string]: { count: number } })[spyKey].count += 1
-      return original.call(this, key)
-    }
-  }, { storageKey: MOCK_STORAGE_KEY, spyKey: mockStorageReadSpyKey })
-}
-
-async function mockStorageReadCount(page: import('@playwright/test').Page): Promise<number> {
-  return page.evaluate(spyKey => (window as typeof window & { [key: string]: { count: number } })[spyKey]?.count ?? 0, mockStorageReadSpyKey)
-}
-
-async function failMockStorageWrite(page: import('@playwright/test').Page): Promise<void> {
-  await page.evaluate(storageKey => {
-    localStorage.removeItem(storageKey)
-    const original = Storage.prototype.setItem
-    Storage.prototype.setItem = function(key: string, value: string): void {
-      if (key === storageKey) throw new Error('Synthetic mock employee directory failure')
-      original.call(this, key, value)
-    }
-  }, MOCK_STORAGE_KEY)
-}
-
-async function addAccountlessMockEmployee(page: import('@playwright/test').Page): Promise<void> {
-  await page.evaluate(storageKey => {
-    const serialized = localStorage.getItem(storageKey)
-    if (!serialized) throw new Error('Mock state is unavailable')
-    const state = JSON.parse(serialized) as { employees: Array<Record<string, unknown>> }
-    const template = state.employees[0]
-    if (!template) throw new Error('Mock employee is unavailable')
-    state.employees.push({
-      ...template,
-      id: '10000000-0000-4000-8000-000000000407',
-      employeeCode: 'VQH-NO-ACCOUNT',
-      fullName: 'Không có tài khoản',
-      workEmail: 'no-account@vqh.local',
-      account: undefined,
-      roles: undefined,
-    })
-    localStorage.setItem(storageKey, JSON.stringify(state))
-  }, MOCK_STORAGE_KEY)
 }
 
 test('keeps intake business controls read-only for a route-authorized reader', async ({ page, authState }) => {
@@ -410,9 +361,17 @@ test('assignment only exposes a directory-backed picker and retains assignment h
   authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.assignment.manage', 'employee.read_directory'] })]
   await installStage01OperationalRoutes(page, detail, { onWorkflowCommand: request => { commands.push(request) } })
   await goToWorkspace(page)
+  const employeeDirectoryResponse = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return response.request().method() === 'GET' && url.pathname.endsWith('/employees')
+  })
   await page.getByLabel('Phân công của 01.1 Tiếp nhận').getByRole('button', { name: 'Phân công', exact: true }).click()
+  const directoryResponse = await employeeDirectoryResponse
+  expect(directoryResponse.status()).toBe(200)
+  const directory = employeeListResponseSchema.parse(await directoryResponse.json())
   const assigneePicker = page.getByRole('combobox', { name: 'Người được phân công' })
-  const assigneeUserId = await assigneePicker.locator('option').nth(1).getAttribute('value')
+  await expect(assigneePicker.locator('option').nth(1)).toHaveText(directory.items[0]!.fullName)
+  const assigneeUserId = directory.items[0]!.account!.userId
   expect(assigneeUserId).toBeTruthy()
   await assigneePicker.selectOption(assigneeUserId!)
   await page.getByRole('button', { name: 'Lưu phân công' }).click()
@@ -435,42 +394,68 @@ test('assignment picker loads account-backed users for employee.read_all', async
   authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.assignment.manage', 'employee.read_all'] })]
   await installStage01OperationalRoutes(page)
   await goToWorkspace(page)
-  await installMockStorageReadSpy(page)
+  const employeeDirectoryResponse = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return response.request().method() === 'GET' && url.pathname.endsWith('/employees')
+  })
   await page.getByLabel('Phân công của 01.1 Tiếp nhận').getByRole('button', { name: 'Phân công', exact: true }).click()
+  const response = await employeeDirectoryResponse
+  expect(response.status()).toBe(200)
+  expect(response.request().headers().authorization).toMatch(/^Bearer\s+\S+/u)
+  const directory = employeeListResponseSchema.parse(await response.json())
   const assigneePicker = page.getByRole('combobox', { name: 'Người được phân công' })
-  await expect(assigneePicker.locator('option').nth(1)).toHaveText('Như')
-  await assigneePicker.selectOption({ label: 'Như' })
-  await expect.poll(() => mockStorageReadCount(page)).toBe(1)
+  await expect(assigneePicker.locator('option').nth(1)).toHaveText(directory.items[0]!.fullName)
+  await assigneePicker.selectOption(directory.items[0]!.account!.userId!)
 })
 
 test('does not open an assignment picker or load employees without a directory permission', async ({ page, authState }) => {
   authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.assignment.manage'] })]
   await installStage01OperationalRoutes(page)
+  const employeeRequests: import('@playwright/test').Request[] = []
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.endsWith('/employees')) employeeRequests.push(request)
+  })
   await goToWorkspace(page)
-  await installMockStorageReadSpy(page)
   await expect(page.getByRole('button', { name: 'Phân công', exact: true })).toHaveCount(0)
   await expect(page.getByLabel('Phân công của 01.1 Tiếp nhận').getByText('Bạn không có quyền đọc danh bạ nên chỉ có thể xem lịch sử phân công; không thể chọn một mã người dùng tự do.', { exact: true })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Người được phân công' })).toHaveCount(0)
   await expect(page.getByRole('textbox', { name: /người dùng/i })).toHaveCount(0)
-  expect(await mockStorageReadCount(page)).toBe(0)
+  expect(employeeRequests).toHaveLength(0)
 })
 
 test('assignment and responsible pickers exclude accountless employees', async ({ page, authState }) => {
+  const accountlessEmployee = {
+    ...stage01EmployeeDirectoryResponse.items[0],
+    id: '82000000-0000-4000-8000-000000000907',
+    employeeCode: 'VQH-NO-ACCOUNT',
+    fullName: 'Không có tài khoản',
+    workEmail: 'no-account@taskovia.test',
+    account: undefined,
+    roles: undefined,
+  }
+  const employeeDirectory = employeeListResponseSchema.parse({
+    ...stage01EmployeeDirectoryResponse,
+    items: [...stage01EmployeeDirectoryResponse.items, accountlessEmployee],
+    total: 2,
+  })
   authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.assignment.manage', 'journey.blocker.raise', 'employee.read_directory'] })]
-  await installStage01OperationalRoutes(page)
+  await installStage01OperationalRoutes(page, createStage01OperationalDetail(), { employeeDirectoryResponse: employeeDirectory })
   await goToWorkspace(page)
-  await page.goto('/projects')
-  await expect(page.getByRole('heading', { name: 'Dự án' })).toBeVisible()
-  await goToWorkspace(page)
-  await addAccountlessMockEmployee(page)
+  const employeeDirectoryResponse = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return response.request().method() === 'GET' && url.pathname.endsWith('/employees')
+  })
   await page.getByLabel('Phân công của 01.1 Tiếp nhận').getByRole('button', { name: 'Phân công', exact: true }).click()
+  const response = await employeeDirectoryResponse
+  expect(response.status()).toBe(200)
+  expect(employeeListResponseSchema.parse(await response.json()).items).toHaveLength(2)
   const assigneePicker = page.getByRole('combobox', { name: 'Người được phân công' })
   await expect(assigneePicker.getByRole('option', { name: 'Không có tài khoản' })).toHaveCount(0)
-  await expect(assigneePicker.locator('option').nth(1)).toHaveText('Như')
+  await expect(assigneePicker.locator('option').nth(1)).toHaveText(stage01EmployeeDirectoryResponse.items[0]!.fullName)
   await page.getByRole('button', { name: 'Nêu blocker' }).first().click()
   const responsiblePicker = page.getByRole('combobox', { name: 'Người phụ trách' })
   await expect(responsiblePicker.getByRole('option', { name: 'Không có tài khoản' })).toHaveCount(0)
-  await expect(responsiblePicker.locator('option').nth(1)).toHaveText('Như')
+  await expect(responsiblePicker.locator('option').nth(1)).toHaveText(stage01EmployeeDirectoryResponse.items[0]!.fullName)
 })
 
 test('renders the exact bound blocker category without a local fallback', async ({ page, authState }) => {
@@ -580,24 +565,32 @@ for (const permission of ['employee.read_directory', 'employee.read_all'] as con
     authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.blocker.raise', permission] })]
     await installStage01OperationalRoutes(page)
     await goToWorkspace(page)
-    await installMockStorageReadSpy(page)
+    const employeeDirectoryResponse = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return response.request().method() === 'GET' && url.pathname.endsWith('/employees')
+    })
     await page.getByRole('button', { name: 'Nêu blocker' }).first().click()
+    const response = await employeeDirectoryResponse
+    expect(response.status()).toBe(200)
+    const directory = employeeListResponseSchema.parse(await response.json())
     const responsiblePicker = page.getByRole('combobox', { name: 'Người phụ trách' })
-    await expect(responsiblePicker.locator('option').nth(1)).toHaveText('Như')
-    await responsiblePicker.selectOption({ label: 'Như' })
-    await expect.poll(() => mockStorageReadCount(page)).toBe(1)
+    await expect(responsiblePicker.locator('option').nth(1)).toHaveText(directory.items[0]!.fullName)
+    await responsiblePicker.selectOption(directory.items[0]!.account!.userId!)
   })
 }
 
 test('does not request or offer a responsible-user input without directory permission', async ({ page, authState }) => {
   authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.blocker.raise'] })]
   await installStage01OperationalRoutes(page)
+  const employeeRequests: import('@playwright/test').Request[] = []
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.endsWith('/employees')) employeeRequests.push(request)
+  })
   await goToWorkspace(page)
-  await installMockStorageReadSpy(page)
   await page.getByRole('button', { name: 'Nêu blocker' }).first().click()
   await expect(page.getByRole('combobox', { name: 'Người phụ trách' })).toHaveCount(0)
   await expect(page.locator('input[type="text"][name*="responsible" i]')).toHaveCount(0)
-  expect(await mockStorageReadCount(page)).toBe(0)
+  expect(employeeRequests).toHaveLength(0)
 })
 
 test('keeps an optional responsible user submitable after the directory request fails', async ({ page, authState }) => {
@@ -606,8 +599,19 @@ test('keeps an optional responsible user submitable after the directory request 
   authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.blocker.raise', 'employee.read_directory'] })]
   await installStage01OperationalRoutes(page, detail, { onWorkflowCommand: request => { commands.push(request) } })
   await goToWorkspace(page)
-  await failMockStorageWrite(page)
+  const employeeDirectoryResponse = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return response.request().method() === 'GET' && url.pathname.endsWith('/employees')
+  })
+  await page.route(/\/api\/companies\/[^/]+\/employees(?:\?.*)?$/, async route => {
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'Lỗi kiểm thử.', requestId: 'employee-directory-failure', details: {} } }),
+    })
+  })
   await page.getByRole('button', { name: 'Nêu blocker' }).first().click()
+  expect((await employeeDirectoryResponse).status()).toBe(500)
   await expect(page.getByText('Không thể tải danh bạ người phụ trách.', { exact: true })).toBeVisible()
   await page.getByRole('combobox', { name: 'Danh mục blocker' }).selectOption('follow_up')
   await page.getByRole('textbox', { name: 'Mô tả blocker' }).fill('Cần xác nhận thông tin')
@@ -1537,7 +1541,8 @@ test('locks mutations after command success when canonical reload fails, then re
   failNextCanonicalRead = true
   const start = page.getByRole('button', { name: 'Khởi động node' })
   await start.click()
-  await expect(page.getByRole('alert').filter({ hasText: 'Thao tác có thể đã được thực hiện' })).toBeVisible()
+  const recoveryAlert = page.getByRole('alert').filter({ hasText: 'Cần tải lại dữ liệu chính tắc' })
+  await expect(recoveryAlert).toBeVisible()
   await expect(start).toBeDisabled()
   expect(commands).toHaveLength(1)
 
@@ -1598,6 +1603,108 @@ test('keeps a failed canonical recovery requirement across navigation away and b
   await recovery.click()
   await expect(recovery).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Công ty Việt Quốc Huy' })).toBeVisible()
+})
+
+test('does not leak an in-flight Stage 01 command across a header company switch', async ({ page, authState }) => {
+  const companyA = createCompany({
+    companyCode: 'VQH-A',
+    companyName: 'Công ty A',
+    permissions: ['project.read', 'journey.read', 'opportunity.read', 'journey.node.start'],
+  })
+  const companyB = createCompany({
+    companyId: '10000000-0000-4000-8000-000000000003',
+    companyCode: 'VQH-B',
+    companyName: 'Công ty B',
+    permissions: ['project.read', 'journey.read', 'opportunity.read'],
+  })
+  authState.sessionCompanies = [companyA, companyB]
+
+  const detailA = createStage01OperationalDetail()
+  detailA.actorCapabilities = ['start']
+  detailA.intake.runtime.phase = 'not_started'
+  detailA.intake.runtime.state = 'ready'
+  const detailB = createStage01OperationalDetail()
+  detailB.opportunity.primaryCustomerName = 'Công ty B dữ liệu'
+
+  await installStage01OperationalRoutes(page, detailA)
+  await page.goto('/projects')
+  await expect(page.getByRole('combobox', { name: 'Chuyển công ty' })).toHaveValue(companyA.companyId)
+
+  let releaseACommand = () => undefined
+  let releaseACanonicalRead = () => undefined
+  let holdNextCanonicalRead = false
+  let aCommandCount = 0
+  let aCanonicalReads = 0
+  let resolveCommandSeen = () => undefined
+  let resolveCanonicalReadSeen = () => undefined
+  const commandSeen = new Promise<void>(resolve => { resolveCommandSeen = resolve })
+  const canonicalReadSeen = new Promise<void>(resolve => { resolveCanonicalReadSeen = resolve })
+  const commandGate = new Promise<void>(resolve => { releaseACommand = resolve })
+  const canonicalGate = new Promise<void>(resolve => { releaseACanonicalRead = resolve })
+  const companyAStagePath = `/api/companies/${companyA.companyId}/opportunities/${stage01OpportunityId}/stage-01`
+  const companyBStagePath = `/api/companies/${companyB.companyId}/opportunities/${stage01OpportunityId}/stage-01`
+  const companyAStartPath = `/api/companies/${companyA.companyId}/workflow-nodes/${detailA.intake.runtime.nodeExecutionId}/start`
+
+  await page.route(companyAStagePath, async route => {
+    if (route.request().method() !== 'GET') return route.fallback()
+    aCanonicalReads += 1
+    if (holdNextCanonicalRead) {
+      holdNextCanonicalRead = false
+      resolveCanonicalReadSeen()
+      await canonicalGate
+    }
+    try {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(detailA) })
+    } catch {
+      // A company switch may abort the old page's held request.
+    }
+  })
+  await page.route(companyBStagePath, async route => {
+    if (route.request().method() !== 'GET') return route.fallback()
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(detailB) })
+  })
+  await page.route(companyAStartPath, async route => {
+    aCommandCount += 1
+    resolveCommandSeen()
+    await commandGate
+    detailA.intake.runtime.phase = 'active'
+    detailA.intake.runtime.state = 'active'
+    detailA.intake.runtime.version += 1
+    holdNextCanonicalRead = true
+    try {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(detailA.intake.runtime) })
+    } catch {
+      // A company switch may abort the old page's held request.
+    }
+  })
+
+  await page.goto(`/opportunities/${stage01OpportunityId}/stage-01`)
+  await expect(page.getByRole('heading', { name: 'Công ty Việt Quốc Huy' })).toBeVisible()
+  await page.getByRole('button', { name: 'Khởi động node', exact: true }).click()
+  await commandSeen
+  releaseACommand()
+  await canonicalReadSeen
+
+  await page.getByRole('combobox', { name: 'Chuyển công ty' }).selectOption(companyB.companyId)
+  await expect(page).toHaveURL(/\/projects$/u)
+  releaseACanonicalRead()
+  await page.goto(`/opportunities/${stage01OpportunityId}/stage-01`)
+  await expect(page.getByRole('heading', { name: 'Công ty B dữ liệu' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Công ty Việt Quốc Huy' })).toHaveCount(0)
+  await expect(page.getByText('Đã khởi động node.', { exact: true })).toHaveCount(0)
+
+  const readsBeforeReturningA = aCanonicalReads
+  await page.getByRole('combobox', { name: 'Chuyển công ty' }).selectOption(companyA.companyId)
+  await expect(page).toHaveURL(/\/projects$/u)
+  await page.goto(`/opportunities/${stage01OpportunityId}/stage-01`)
+  await expect(page.getByRole('heading', { name: 'Công ty Việt Quốc Huy' })).toBeVisible()
+  const returningAWorkflow = page.getByRole('region', { name: 'Điều hành node, phân công và blocker', exact: true })
+  const returningAIntake = returningAWorkflow.locator('article').filter({ has: page.getByRole('heading', { name: '01.1 Tiếp nhận', exact: true }) })
+  await expect(returningAIntake).toContainText('Trạng thái: active')
+  await expect(returningAIntake.getByRole('button', { name: 'Khởi động node', exact: true })).toHaveCount(0)
+  await expect(page.getByText('Đã khởi động node.', { exact: true })).toHaveCount(0)
+  expect(aCanonicalReads).toBeGreaterThan(readsBeforeReturningA)
+  expect(aCommandCount).toBe(1)
 })
 
 test('keeps Stage 01 controls labelled, keyboard-operable, and within a 390px viewport', async ({ page, authState }) => {

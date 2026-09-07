@@ -1,5 +1,6 @@
 import { expect, test as base } from '@playwright/test'
 import { createAuthTestState, installAuthRoutes, type AuthTestState } from './auth-routes'
+import { installEmployeeRoutes } from './employee-routes'
 
 type AuthenticatedFixtures = {
   authState: AuthTestState
@@ -11,6 +12,7 @@ export const test = base.extend<AuthenticatedFixtures>({
   },
   page: async ({ page, authState }, use) => {
     await installAuthRoutes(page, authState)
+    await installEmployeeRoutes(page)
     await use(page)
   },
 })

@@ -335,7 +335,7 @@ function openReactivation(): void {
       <div><p class="eyebrow">Thẩm quyền quyết định</p><h3>Người có thẩm quyền quyết định</h3></div>
       <p v-if="detail.currentDecisionCycle.decisionAuthority.status === 'not_required'" class="evaluation-decision__final">Không yêu cầu Decision Authority cho công ty này.</p>
       <p v-if="detail.currentDecisionCycle.decisionAuthority.status === 'unresolved'" class="evaluation-decision__final">Chưa chỉ định</p>
-      <UAlert v-if="detail.currentDecisionCycle.decisionAuthority.status === 'unresolved'" color="warning" title="Chưa chỉ định người có thẩm quyền quyết định." />
+      <UAlert v-if="detail.currentDecisionCycle.decisionAuthority.status === 'unresolved'" role="status" color="warning" title="Chưa chỉ định người có thẩm quyền quyết định." />
       <p v-if="detail.currentDecisionCycle.decisionAuthority.status === 'resolved'" class="evaluation-decision__final">
         Đã chỉ định: {{ detail.currentDecisionCycle.decisionAuthority.displayName }}<span v-if="detail.currentDecisionCycle.decisionAuthority.positionTitle"> · {{ detail.currentDecisionCycle.decisionAuthority.positionTitle }}</span>
       </p>

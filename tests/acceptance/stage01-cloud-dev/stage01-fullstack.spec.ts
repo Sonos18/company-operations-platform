@@ -1370,6 +1370,173 @@ test('B4-S01/S04/S06/S08 completes the real acceptance-company journey and prese
   })
 })
 
+test('B4-S07 rejects a stale Opportunity form and saves the retained edit only after canonical reload', async ({ browser }) => {
+  const state = await readB4AcceptanceState(process.cwd())
+  const actor = state.actors.operator
+  const opportunityName = runText(state, 'S07 concurrency opportunity')
+  const contextA = await browser.newContext()
+  const contextB = await browser.newContext()
+  const pageA = await contextA.newPage()
+  const pageB = await contextB.newPage()
+  let bRequestListener: ((request: Request) => void) | null = null
+
+  try {
+    await login(pageA, actor)
+    await pageA.goto('/opportunities')
+    const createOptions = await authenticatedApi(pageA, `/api/companies/${state.companyId}/opportunities/create-options`)
+    expect(createOptions.status).toBe(200)
+    expect((createOptions.body as { publishedSnapshotId?: unknown }).publishedSnapshotId).toBe(state.acceptanceSnapshotId)
+    await pageA.getByRole('button', { name: 'Tạo cơ hội mới' }).click()
+    await pageA.getByLabel('Tên khách hàng chính').fill(opportunityName)
+    const initialNeed = runText(state, 'S07 nhu cầu ban đầu')
+    await pageA.getByLabel('Nhu cầu').fill(initialNeed)
+    await chooseFirstRealOption(pageA, 'Loại khách hàng')
+    await chooseFirstRealOption(pageA, 'Nguồn khách hàng')
+    await chooseFirstRealOption(pageA, 'Mức độ tương tác')
+
+    const createPath = `/api/companies/${state.companyId}/opportunities`
+    const createResponsePromise = pageA.waitForResponse(response => (
+      response.request().method() === 'POST' && new URL(response.url()).pathname === createPath
+    ))
+    const initialStage01ResponsePromise = pageA.waitForResponse(response => {
+      const pathname = new URL(response.url()).pathname
+      return response.request().method() === 'GET'
+        && pathname.startsWith(`${createPath}/`)
+        && pathname.endsWith('/stage-01')
+    })
+    await pageA.getByRole('button', { name: 'Tạo cơ hội' }).click()
+    const createResponse = await createResponsePromise
+    const initialStage01Response = await initialStage01ResponsePromise
+    expect(createResponse.status()).toBeGreaterThanOrEqual(200)
+    expect(createResponse.status()).toBeLessThan(300)
+    expect(JSON.parse(createResponse.request().postData() ?? '{}')).toMatchObject({
+      primaryCustomerName: opportunityName,
+      needDescription: initialNeed,
+    })
+    await expect(pageA).toHaveURL(/\/opportunities\/[0-9a-f-]+\/stage-01$/i)
+    const opportunityId = pageA.url().match(/\/opportunities\/([^/]+)\/stage-01$/u)?.[1]
+    if (!opportunityId) throw new Error('B4 S07 opportunity URL did not contain an identifier')
+    const canonicalPath = `/api/companies/${state.companyId}/opportunities/${opportunityId}/stage-01`
+    const opportunityPath = `/api/companies/${state.companyId}/opportunities/${opportunityId}`
+    expect(new URL(initialStage01Response.url()).pathname).toBe(canonicalPath)
+    const initialDetail = stage01OperationalDetailSchema.parse(await initialStage01Response.json())
+    const versionN = initialDetail.opportunity.version
+    expect(initialDetail.opportunity.primaryCustomerName).toBe(opportunityName)
+
+    await login(pageB, actor)
+    const bInitialStage01ResponsePromise = pageB.waitForResponse(response => (
+      response.request().method() === 'GET' && new URL(response.url()).pathname === canonicalPath
+    ))
+    await pageB.goto(`/opportunities/${opportunityId}/stage-01`)
+    const bInitialDetail = stage01OperationalDetailSchema.parse(await (await bInitialStage01ResponsePromise).json())
+    expect(bInitialDetail.opportunity.version).toBe(versionN)
+
+    await pageA.getByRole('button', { name: 'Chỉnh sửa cơ hội', exact: true }).click()
+    await pageB.getByRole('button', { name: 'Chỉnh sửa cơ hội', exact: true }).click()
+    const aName = `${opportunityName} A`
+    const bDraftName = `${opportunityName} B retained draft`
+    const aNameInput = pageA.getByRole('textbox', { name: 'Tên khách hàng chính', exact: true })
+    const bNameInput = pageB.getByRole('textbox', { name: 'Tên khách hàng chính', exact: true })
+    await expect(aNameInput).toHaveValue(opportunityName)
+    await expect(bNameInput).toHaveValue(opportunityName)
+    await aNameInput.fill(aName)
+    await bNameInput.fill(bDraftName)
+
+    const aPatchResponsePromise = pageA.waitForResponse(response => (
+      response.request().method() === 'PATCH' && new URL(response.url()).pathname === opportunityPath
+    ))
+    const aCanonicalResponsePromise = pageA.waitForResponse(response => (
+      response.request().method() === 'GET' && new URL(response.url()).pathname === canonicalPath
+    ))
+    await pageA.getByRole('button', { name: 'Lưu cơ hội', exact: true }).click()
+    const aPatchResponse = await aPatchResponsePromise
+    const aCanonicalResponse = await aCanonicalResponsePromise
+    expect(aPatchResponse.status()).toBeGreaterThanOrEqual(200)
+    expect(aPatchResponse.status()).toBeLessThan(300)
+    expect(JSON.parse(aPatchResponse.request().postData() ?? '{}')).toMatchObject({
+      primaryCustomerName: aName,
+      expectedOpportunityVersion: versionN,
+    })
+    expect(aCanonicalResponse.status()).toBe(200)
+    const aCanonicalDetail = stage01OperationalDetailSchema.parse(await aCanonicalResponse.json())
+    expect(aCanonicalDetail.opportunity.version).toBe(versionN + 1)
+    expect(aCanonicalDetail.opportunity.primaryCustomerName).toBe(aName)
+    await expect(pageA.getByText('Đã lưu thông tin cơ hội chính tắc.', { exact: true })).toBeVisible()
+    await expect(aNameInput).toHaveCount(0)
+
+    const bPatchRequests: Record<string, unknown>[] = []
+    bRequestListener = request => {
+      if (request.method() !== 'PATCH' || new URL(request.url()).pathname !== opportunityPath) return
+      bPatchRequests.push(JSON.parse(request.postData() ?? '{}') as Record<string, unknown>)
+    }
+    pageB.on('request', bRequestListener)
+    const bConflictResponsePromise = pageB.waitForResponse(response => (
+      response.request().method() === 'PATCH' && new URL(response.url()).pathname === opportunityPath
+    ))
+    await pageB.getByRole('button', { name: 'Lưu cơ hội', exact: true }).click()
+    const bConflictResponse = await bConflictResponsePromise
+    expect(bConflictResponse.status()).toBe(409)
+    expect(apiErrorBodySchema.parse(await bConflictResponse.json()).error.code).toBe('VERSION_CONFLICT')
+    expect(bPatchRequests).toHaveLength(1)
+    expect(bPatchRequests[0]).toMatchObject({
+      primaryCustomerName: bDraftName,
+      expectedOpportunityVersion: versionN,
+    })
+    await expect(bNameInput).toHaveValue(bDraftName)
+    await expect(pageB.getByRole('button', { name: 'Giữ bản nháp để xem', exact: true })).toBeVisible()
+    await pageB.getByRole('button', { name: 'Giữ bản nháp để xem', exact: true }).click()
+    await expect(pageB.getByText('Bản nháp chỉ dùng để xem. Hãy bỏ bản nháp và tải lại trước khi lưu tiếp.', { exact: true })).toBeVisible()
+    await expect(pageB.getByRole('button', { name: 'Lưu cơ hội', exact: true })).toBeDisabled()
+    await expect.poll(() => bPatchRequests.length).toBe(1)
+
+    const aReadback = await authenticatedApi(pageA, canonicalPath)
+    expect(aReadback.status).toBe(200)
+    const aReadbackDetail = stage01OperationalDetailSchema.parse(aReadback.body)
+    expect(aReadbackDetail.opportunity.version).toBe(versionN + 1)
+    expect(aReadbackDetail.opportunity.primaryCustomerName).toBe(aName)
+
+    const bDiscardReloadPromise = pageB.waitForResponse(response => (
+      response.request().method() === 'GET' && new URL(response.url()).pathname === canonicalPath
+    ))
+    await pageB.getByRole('button', { name: 'Bỏ bản nháp và tải lại', exact: true }).click()
+    const bReloadResponse = await bDiscardReloadPromise
+    expect(bReloadResponse.status()).toBe(200)
+    const bReloadDetail = stage01OperationalDetailSchema.parse(await bReloadResponse.json())
+    expect(bReloadDetail.opportunity.version).toBe(versionN + 1)
+    expect(bReloadDetail.opportunity.primaryCustomerName).toBe(aName)
+    await expect(bNameInput).toHaveValue(aName)
+
+    const bFreshName = `${opportunityName} B saved after reload`
+    await bNameInput.fill(bFreshName)
+    const bFreshPatchResponsePromise = pageB.waitForResponse(response => (
+      response.request().method() === 'PATCH' && new URL(response.url()).pathname === opportunityPath
+    ))
+    const bFreshCanonicalResponsePromise = pageB.waitForResponse(response => (
+      response.request().method() === 'GET' && new URL(response.url()).pathname === canonicalPath
+    ))
+    await pageB.getByRole('button', { name: 'Lưu cơ hội', exact: true }).click()
+    const bFreshPatchResponse = await bFreshPatchResponsePromise
+    const bFreshCanonicalResponse = await bFreshCanonicalResponsePromise
+    expect(bFreshPatchResponse.status()).toBeGreaterThanOrEqual(200)
+    expect(bFreshPatchResponse.status()).toBeLessThan(300)
+    expect(JSON.parse(bFreshPatchResponse.request().postData() ?? '{}')).toMatchObject({
+      primaryCustomerName: bFreshName,
+      expectedOpportunityVersion: versionN + 1,
+    })
+    expect(bPatchRequests).toHaveLength(2)
+    expect(bFreshCanonicalResponse.status()).toBe(200)
+    const bFreshCanonicalDetail = stage01OperationalDetailSchema.parse(await bFreshCanonicalResponse.json())
+    expect(bFreshCanonicalDetail.opportunity.version).toBe(versionN + 2)
+    expect(bFreshCanonicalDetail.opportunity.primaryCustomerName).toBe(bFreshName)
+    expect([versionN, aCanonicalDetail.opportunity.version, aReadbackDetail.opportunity.version, bReloadDetail.opportunity.version, bFreshCanonicalDetail.opportunity.version])
+      .toEqual([versionN, versionN + 1, versionN + 1, versionN + 1, versionN + 2])
+  } finally {
+    if (bRequestListener) pageB.off('request', bRequestListener)
+    await contextB.close().catch(() => undefined)
+    await contextA.close().catch(() => undefined)
+  }
+})
+
 test('B4-S09 keeps reader/operator mutations denied and rejects forged-company and invalid bearer API calls', async ({ browser }) => {
   const state = await readB4AcceptanceState(process.cwd())
   const opportunityId = state.profiles.p1OpportunityId

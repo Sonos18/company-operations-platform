@@ -512,6 +512,8 @@ describe('B4 Cloud DEV acceptance boundary', () => {
     expect(teardown).toContain('dependencies.finalize')
     expect(config).toContain('4327')
     expect(config).toContain("testDir: './tests/acceptance/stage01-cloud-dev'")
+    expect(config).toContain("outputDir: 'test-results/b4-stage01/playwright'")
+    expect(config).not.toContain("outputDir: 'test-results/b4-stage01'")
     expect(config).toContain('timeout: 120_000')
     expect(config).toContain('pnpm dev --host 127.0.0.1 --port 4327')
     expect(packageJson.scripts['test:b4:cloud-dev']).toBe('playwright test --config=playwright.b4.config.ts')
