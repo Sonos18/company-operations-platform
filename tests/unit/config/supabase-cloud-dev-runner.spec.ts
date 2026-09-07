@@ -533,6 +533,21 @@ describe('Cloud DEV fixed-mode runner', () => {
     expect(assertionSql).toContain("'P0001', 'OPPORTUNITY_DECISION_POLICY_UNAVAILABLE'")
   })
 
+  it('AUTHORITY_TEST_DUPLICATES_B4_WORKFLOW_SNAPSHOT_BASELINE requires the B4 transition fixture to reuse its approved snapshot', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const b4FixtureStart = authoritySql.indexOf("tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
+    const b4FixtureEnd = authoritySql.indexOf('set local role authenticated;', b4FixtureStart)
+    const b4Fixture = authoritySql.slice(b4FixtureStart, b4FixtureEnd)
+
+    expect(b4Fixture).not.toContain('insert into public.workflow_definition_snapshots')
+    expect(b4Fixture).toContain('where snapshot.tenant_id = tenant_id')
+    expect(b4Fixture).toContain('and snapshot.company_id = company_id')
+    expect(b4Fixture).toContain("and snapshot.workflow_key = 'vqh.stage01'")
+    expect(b4Fixture).toContain('and snapshot.template_version = 1')
+    expect(b4Fixture).toContain('B4_WORKFLOW_SNAPSHOT_BASELINE_MISSING')
+    expect(b4Fixture).not.toContain('authority-b4-transition-definition')
+  })
+
   it('evaluates PUBLIC function privileges through ACL pseudo-grantee semantics', () => {
     const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
     const helper = authoritySql.slice(

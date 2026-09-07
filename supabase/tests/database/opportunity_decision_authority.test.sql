@@ -568,7 +568,7 @@ declare
   actor_id constant uuid := '25000000-0000-4000-8000-000000000006';
   role_id constant uuid := '25000000-0000-4000-8000-000000000106';
   department_id constant uuid := '25000000-0000-4000-8000-000000000202';
-  snapshot_id constant uuid := '25000000-0000-4000-8000-000000000220';
+  snapshot_id uuid;
   policy_id uuid;
   canonical_policy record;
   fixture record;
@@ -586,7 +586,15 @@ begin
   insert into public.company_memberships (user_id, tenant_id, company_id, roles, is_active) values (actor_id, '25000000-0000-4000-8000-000000000010'::uuid, '25000000-0000-4000-8000-000000000020'::uuid, array['member'], true);
   insert into public.company_role_assignments (tenant_id, company_id, user_id, role_id, granted_by, grant_reason) values ('25000000-0000-4000-8000-000000000010'::uuid, '25000000-0000-4000-8000-000000000020'::uuid, actor_id, '25000000-0000-4000-8000-000000000100'::uuid, '25000000-0000-4000-8000-000000000001'::uuid, 'Authority B4 transition scope-denial fixture');
   insert into public.employees (id, tenant_id, company_id, user_id, employee_code, full_name, work_email, department_id, employment_status, created_by) values ('25000000-0000-4000-8000-000000000306', tenant_id, company_id, actor_id, 'AUTH-B4', 'Authority B4 actor', 'authority-b4-transition@taskovia.invalid', department_id, 'active', actor_id);
-  insert into public.workflow_definition_snapshots (id, tenant_id, company_id, workflow_key, template_version, schema_version, definition, definition_hash) values (snapshot_id, tenant_id, company_id, 'vqh.stage01', 1, 1, '{"nodes":[{"key":"01.2","type":"sub_stage","parentNodeKey":null}]}'::jsonb, 'authority-b4-transition-definition');
+  select snapshot.id into snapshot_id
+  from public.workflow_definition_snapshots snapshot
+  where snapshot.tenant_id = tenant_id
+    and snapshot.company_id = company_id
+    and snapshot.workflow_key = 'vqh.stage01'
+    and snapshot.template_version = 1;
+  if snapshot_id is null then
+    raise exception 'B4_WORKFLOW_SNAPSHOT_BASELINE_MISSING';
+  end if;
   select policy.id, policy.policy, policy.policy_hash into canonical_policy
   from public.opportunity_decision_policy_snapshots policy
   where policy.tenant_id = '10000000-0000-4000-8000-000000000010'::uuid
