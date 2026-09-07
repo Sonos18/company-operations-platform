@@ -261,26 +261,38 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
       const evaluation = workflowRuntime.nodes.find(node => node.nodeKey === '01.2')
       if (!intake || !evaluation) return failStage01Database('Stage 01 runtime không đầy đủ.')
 
-      const cycleResult = await client.from('stage01_decision_cycles').select(cycleColumns)
-        .eq('company_id', companyId).eq('opportunity_id', opportunityId).order('cycle_no')
-      if (cycleResult.error) return failStage01Database('Không thể đọc Decision Cycle.')
-      const cycleRows = parse(z.array(cycleRowSchema).min(1), cycleResult.data, 'Không thể đọc Decision Cycle.')
-      const [definitionResult, accessResult, relatedContactsResult] = await Promise.all([
-        client.from('workflow_definition_snapshots').select('definition').eq('company_id', companyId).eq('id', workflowRuntime.definitionSnapshotId).maybeSingle(),
-        client.rpc('get_my_company_access', { target_company_id: companyId }),
-        relatedContacts(companyId, [...new Set(opportunity.contacts.map(contact => contact.contactId))].sort()),
+      const [cycleRead, configurationRead] = await Promise.allSettled([
+        client.from('stage01_decision_cycles').select(cycleColumns)
+          .eq('company_id', companyId).eq('opportunity_id', opportunityId).order('cycle_no'),
+        Promise.all([
+          client.from('workflow_definition_snapshots').select('definition').eq('company_id', companyId).eq('id', workflowRuntime.definitionSnapshotId).maybeSingle(),
+          client.rpc('get_my_company_access', { target_company_id: companyId }),
+          relatedContacts(companyId, [...new Set(opportunity.contacts.map(contact => contact.contactId))].sort()),
+        ]),
       ])
+      if (cycleRead.status === 'rejected') throw cycleRead.reason
+      if (cycleRead.value.error) return failStage01Database('Không thể đọc Decision Cycle.')
+      const cycleRows = parse(z.array(cycleRowSchema).min(1), cycleRead.value.data, 'Không thể đọc Decision Cycle.')
+      if (configurationRead.status === 'rejected') throw configurationRead.reason
+      const [definitionResult, accessResult, relatedContactsResult] = configurationRead.value
       if (definitionResult.error || definitionResult.data === null || accessResult.error) {
         return failStage01Database('Không thể đọc cấu hình Stage 01.')
       }
       const definition = parse(definitionRowSchema, definitionResult.data, 'Không thể đọc cấu hình Stage 01.').definition
       const access = parse(z.array(accessRowSchema).length(1), accessResult.data, 'Không thể đọc quyền Stage 01.')[0]!
       const cycleIds = cycleRows.map(cycleRow => cycleRow.id)
-      const [evaluationRows, recommendationRows, clarificationRows] = await Promise.all([
-        batchedRows('stage01_criterion_evaluations', evaluationColumns, companyId, 'decision_cycle_id', cycleIds, 'evaluated_at', evaluationRowSchema, 'Không thể đọc criterion evaluations.'),
-        batchedRows('stage01_recommendations', recommendationColumns, companyId, 'decision_cycle_id', cycleIds, 'submitted_at', recommendationRowSchema, 'Không thể đọc recommendations.'),
-        batchedRows('stage01_clarification_returns', clarificationColumns, companyId, 'decision_cycle_id', cycleIds, 'returned_at', clarificationRowSchema, 'Không thể đọc clarification returns.'),
+      const [historyRead, authorityRead] = await Promise.allSettled([
+        Promise.all([
+          batchedRows('stage01_criterion_evaluations', evaluationColumns, companyId, 'decision_cycle_id', cycleIds, 'evaluated_at', evaluationRowSchema, 'Không thể đọc criterion evaluations.'),
+          batchedRows('stage01_recommendations', recommendationColumns, companyId, 'decision_cycle_id', cycleIds, 'submitted_at', recommendationRowSchema, 'Không thể đọc recommendations.'),
+          batchedRows('stage01_clarification_returns', clarificationColumns, companyId, 'decision_cycle_id', cycleIds, 'returned_at', clarificationRowSchema, 'Không thể đọc clarification returns.'),
+        ]),
+        rpc('get_opportunity_decision_authority_projection', {
+          target_company_id: companyId, target_opportunity_id: opportunityId, target_cycle_id: cycleRows[cycleRows.length - 1]!.id,
+        }, z.unknown(), 'Không thể đọc Decision Authority.'),
       ])
+      if (historyRead.status === 'rejected') throw historyRead.reason
+      const [evaluationRows, recommendationRows, clarificationRows] = historyRead.value
       const evaluationsByCycle = groupByCycle(evaluationRows)
       const recommendationsByCycle = groupByCycle(recommendationRows)
       const clarificationReturnsByCycle = groupByCycle(clarificationRows)
@@ -304,9 +316,8 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
         })
       })
       const latestCycle = decisionCycles[decisionCycles.length - 1]!
-      const rawDecisionAuthority = await rpc('get_opportunity_decision_authority_projection', {
-        target_company_id: companyId, target_opportunity_id: opportunityId, target_cycle_id: latestCycle.id,
-      }, z.unknown(), 'Không thể đọc Decision Authority.')
+      if (authorityRead.status === 'rejected') throw authorityRead.reason
+      const rawDecisionAuthority = authorityRead.value
       const decisionAuthority = parse(
         authorityProjectionResultSchema,
         normalizeAuthorityProjection(rawDecisionAuthority),

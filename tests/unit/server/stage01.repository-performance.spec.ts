@@ -22,6 +22,12 @@ type Call =
   | { kind: 'query', table: string, companyId?: string, inColumn?: string, inValues?: string[] }
   | { kind: 'rpc', name: string }
 
+interface ReadProbe {
+  defer: boolean
+  failures: Record<string, unknown>
+  events: string[]
+}
+
 const id = (suffix: number) => `b4000000-0000-4000-8000-${String(suffix).padStart(12, '0')}`
 
 interface FixtureOptions {
@@ -38,6 +44,11 @@ interface Fixture {
   calls: Call[]
   rows: Record<string, Row[]>
   cappedRows: boolean
+  probe?: ReadProbe
+}
+
+function createReadProbe(options: Partial<Pick<ReadProbe, 'defer' | 'failures'>> = {}): ReadProbe {
+  return { defer: options.defer ?? false, failures: options.failures ?? {}, events: [] }
 }
 
 function selectedRow(row: Row, columns: string): Row {
@@ -53,8 +64,12 @@ function createQuery(fixture: Fixture, table: string, columns = '*') {
   let limit: number | undefined
   let terminalResult: QueryResult | undefined
 
-  const execute = (): QueryResult => {
+  const execute = async (): Promise<QueryResult> => {
     if (terminalResult) return terminalResult
+    const probe = fixture.probe
+    const key = `query:${table}`
+    probe?.events.push(`start:${key}`)
+    if (probe?.defer) await Promise.resolve()
     const companyFilter = filters.find(filter => filter.kind === 'eq' && filter.column === 'company_id')
     const inFilter = filters.find(filter => filter.kind === 'in')
     fixture.calls.push({
@@ -81,7 +96,11 @@ function createQuery(fixture: Fixture, table: string, columns = '*') {
     const cappedEnd = fixture.cappedRows ? Math.min(rangeEnd, rangeStart + 999) : rangeEnd
     values = values.slice(rangeStart, cappedEnd + 1)
     if (limit !== undefined) values = values.slice(0, limit)
-    terminalResult = { data: values.map(row => selectedRow(row, columns)), error: null }
+    const failure = probe?.failures[key]
+    terminalResult = failure === undefined
+      ? { data: values.map(row => selectedRow(row, columns)), error: null }
+      : { data: null, error: failure }
+    probe?.events.push(`finish:${key}`)
     return terminalResult
   }
 
@@ -97,7 +116,7 @@ function createQuery(fixture: Fixture, table: string, columns = '*') {
     range(from: number, to: number) { rangeStart = from; rangeEnd = to; return query },
     limit(count: number) { limit = count; return query },
     maybeSingle: async () => {
-      const result = execute()
+      const result = await execute()
       return {
         data: Array.isArray(result.data) ? result.data[0] ?? null : result.data,
         error: result.error,
@@ -107,7 +126,7 @@ function createQuery(fixture: Fixture, table: string, columns = '*') {
       resolve?: ((value: QueryResult) => TResult1 | PromiseLike<TResult1>) | null,
       reject?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
     ) {
-      return Promise.resolve(execute()).then(resolve, reject)
+      return execute().then(resolve, reject)
     },
   }
   return query
@@ -269,11 +288,22 @@ function createRepository(fixture: Fixture) {
   const client = {
     from: (table: string) => createQuery(fixture, table),
     rpc: async (name: string) => {
+      const probe = fixture.probe
+      const key = `rpc:${name}`
+      probe?.events.push(`start:${key}`)
+      if (probe?.defer) await Promise.resolve()
       fixture.calls.push({ kind: 'rpc', name })
+      const failure = probe?.failures[key]
+      if (failure !== undefined) {
+        probe?.events.push(`finish:${key}`)
+        return { data: null, error: failure }
+      }
       if (name === 'get_my_company_access') {
+        probe?.events.push(`finish:${key}`)
         return { data: [{ roles: [], permissions: ['opportunity.decision.record'] }], error: null }
       }
       if (name === 'get_opportunity_decision_authority_projection') {
+        probe?.events.push(`finish:${key}`)
         return {
           data: {
             status: 'not_required', userId: null, employeeId: null, displayName: null, positionTitle: null,
@@ -414,7 +444,42 @@ describe('Stage 01 repository operational aggregate performance', () => {
     }
     mkdirSync(resolve('test-results/b4-stage01'), { recursive: true })
     writeFileSync(resolve('test-results/b4-stage01/request-count.json'), JSON.stringify({ profiles, requestLimit: 25 }, null, 2))
-    expect(profiles.P3.requestCount).toBeLessThanOrEqual(25)
+    expect(profiles.P3.requestCount).toBe(20)
+  })
+
+  it('starts independent cycle/config reads before cycle completion and keeps cycle errors first', async () => {
+    const cycleFailureFixture = createFixture('P1')
+    cycleFailureFixture.probe = createReadProbe({
+      defer: true,
+      failures: {
+        'query:stage01_decision_cycles': { message: 'cycle unavailable' },
+        'query:workflow_definition_snapshots': { message: 'definition unavailable' },
+        'rpc:get_my_company_access': { message: 'access unavailable' },
+      },
+    })
+    await expect(createRepository(cycleFailureFixture).get(cycleFailureFixture.companyId, cycleFailureFixture.opportunityId))
+      .rejects.toMatchObject({ message: 'Không thể đọc Decision Cycle.' })
+    const cycleFinish = cycleFailureFixture.probe.events.indexOf('finish:query:stage01_decision_cycles')
+    const definitionStart = cycleFailureFixture.probe.events.indexOf('start:query:workflow_definition_snapshots')
+    expect(definitionStart).toBeGreaterThanOrEqual(0)
+    expect(definitionStart).toBeLessThan(cycleFinish)
+  })
+
+  it('starts authority with history reads and keeps history errors first', async () => {
+    const historyFailureFixture = createFixture('P1')
+    historyFailureFixture.probe = createReadProbe({
+      defer: true,
+      failures: {
+        'query:stage01_criterion_evaluations': { message: 'history unavailable' },
+        'rpc:get_opportunity_decision_authority_projection': { message: 'projection unavailable' },
+      },
+    })
+    await expect(createRepository(historyFailureFixture).get(historyFailureFixture.companyId, historyFailureFixture.opportunityId))
+      .rejects.toMatchObject({ message: 'Không thể đọc criterion evaluations.' })
+    const historyFinish = historyFailureFixture.probe.events.indexOf('finish:query:stage01_criterion_evaluations')
+    const authorityStart = historyFailureFixture.probe.events.indexOf('start:rpc:get_opportunity_decision_authority_projection')
+    expect(authorityStart).toBeGreaterThanOrEqual(0)
+    expect(authorityStart).toBeLessThan(historyFinish)
   })
 
   it('skips batched contact reads when the opportunity has no contacts', async () => {
