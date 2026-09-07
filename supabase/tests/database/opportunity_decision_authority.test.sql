@@ -747,7 +747,7 @@ select pg_temp.authority_assert_throws(
 );
 select pg_temp.authority_assert_throws(
   $$ insert into public.opportunity_decision_policy_binding_events (tenant_id, company_id, opportunity_id, decision_cycle_id, previous_policy_snapshot_id, policy_snapshot_id, request_id, request_fingerprint, binding_cycle_version, action, transition_code, reason, performed_by_user_id) values ('b4000000-0000-4000-8000-000000000010', 'b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000403', '25000000-0000-4000-8000-000000000453', null, (select decision_policy_snapshot_id from public.stage01_decision_cycles where id = '25000000-0000-4000-8000-000000000453'), '25000000-0000-4000-8000-000000000637', 'null-transition-code', 1, 'legacy_transition', null, null, '25000000-0000-4000-8000-000000000006') $$,
-  '23514', 'new row for relation "opportunity_decision_policy_binding_events" violates check constraint "opportunity_decision_policy_binding_events_transition_metadata_check"', 'legacy policy binding audit rejects NULL transition metadata'
+  '23514', 'new row for relation "opportunity_decision_policy_binding_events" violates check constraint "opportunity_decision_policy_binding_events_transition_metadata_"', 'legacy policy binding audit rejects NULL transition metadata'
 );
 select pg_temp.authority_assert_throws(
   $$ update public.stage01_decision_cycles set decision_policy_snapshot_id = null where id = '25000000-0000-4000-8000-000000000453'::uuid $$,
