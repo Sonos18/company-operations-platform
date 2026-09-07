@@ -7,7 +7,7 @@ import {
   submitRecommendationInputSchema,
 } from '../../../shared/schemas/stage01'
 import { stage01OperationalDetailSchema } from '../../../shared/schemas/stage01-operational'
-import { assignOpportunityDecisionAuthorityInputSchema, opportunityDecisionAuthorityCandidateSchema, transitionOpportunityDecisionPolicyInputSchema } from '../../../shared/schemas/opportunity-decision-authority'
+import { assignOpportunityDecisionAuthorityInputSchema, opportunityDecisionAuthorityCandidateSchema } from '../../../shared/schemas/opportunity-decision-authority'
 import type { Stage01Repository } from '../contracts'
 import type { AuthenticatedHttpClient } from './authenticated-http-client'
 
@@ -48,9 +48,6 @@ export function createHttpStage01Repository(options: HttpStage01RepositoryOption
     }).then(result => result.items),
     assignDecisionAuthority: (opportunityId, decisionCycleId, input) => postVoid(
       `${cycle(opportunityId, decisionCycleId)}/authority`, assignOpportunityDecisionAuthorityInputSchema.parse(input),
-    ),
-    transitionDecisionPolicy: (opportunityId, decisionCycleId, input) => postVoid(
-      `${cycle(opportunityId, decisionCycleId)}/policy-binding`, transitionOpportunityDecisionPolicyInputSchema.parse(input),
     ),
     reactivate: (opportunityId, input) => postVoid(
       `${stage(opportunityId)}/reactivate`, reactivateStage01InputSchema.parse(input),

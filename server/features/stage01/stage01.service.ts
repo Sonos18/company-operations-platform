@@ -6,7 +6,7 @@ import type {
   ReturnForClarificationInput,
   SubmitRecommendationInput,
 } from '../../../shared/schemas/stage01'
-import type { AssignOpportunityDecisionAuthorityInput, TransitionOpportunityDecisionPolicyInput } from '../../../shared/schemas/opportunity-decision-authority'
+import type { AssignOpportunityDecisionAuthorityInput } from '../../../shared/schemas/opportunity-decision-authority'
 import { AppApiError } from '../../utils/api-error'
 import type { Stage01DataRepository } from './stage01.repository'
 
@@ -58,10 +58,6 @@ export function createStage01Service(repository: Stage01DataRepository) {
     async assignDecisionAuthority(context: Stage01ServiceContext, opportunityId: string, decisionCycleId: string, input: AssignOpportunityDecisionAuthorityInput) {
       requirePermission(context, 'opportunity.decision_authority.assign')
       return repository.assignDecisionAuthority(context.companyId, opportunityId, decisionCycleId, input)
-    },
-    async transitionDecisionPolicy(context: Stage01ServiceContext, opportunityId: string, decisionCycleId: string, input: TransitionOpportunityDecisionPolicyInput) {
-      requirePermission(context, 'opportunity.decision_authority.assign')
-      return repository.transitionDecisionPolicy(context.companyId, opportunityId, decisionCycleId, input)
     },
     async reactivate(context: Stage01ServiceContext, opportunityId: string, input: ReactivateStage01Input) {
       requirePermission(context, 'stage01.reactivate')

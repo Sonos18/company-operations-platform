@@ -25,7 +25,6 @@ import {
   opportunityDecisionAuthorityProjectionSchema,
   type AssignOpportunityDecisionAuthorityInput,
   type OpportunityDecisionAuthorityCandidate,
-  type TransitionOpportunityDecisionPolicyInput,
 } from '../../../shared/schemas/opportunity-decision-authority'
 import type { UserSupabaseClient } from '../../utils/supabase-client'
 import { createSupabaseOpportunityRepository } from '../opportunities/opportunity.repository'
@@ -41,7 +40,6 @@ export interface Stage01DataRepository {
   recordFinalDecision(companyId: string, opportunityId: string, input: RecordFinalDecisionInput, requestId: string): Promise<void>
   listDecisionAuthorityCandidates(companyId: string, opportunityId: string, decisionCycleId: string): Promise<OpportunityDecisionAuthorityCandidate[]>
   assignDecisionAuthority(companyId: string, opportunityId: string, decisionCycleId: string, input: AssignOpportunityDecisionAuthorityInput): Promise<void>
-  transitionDecisionPolicy(companyId: string, opportunityId: string, decisionCycleId: string, input: TransitionOpportunityDecisionPolicyInput): Promise<void>
   reactivate(companyId: string, opportunityId: string, input: ReactivateStage01Input, requestId: string): Promise<void>
 }
 
@@ -139,6 +137,14 @@ function parse<T>(schema: z.ZodType<T>, value: unknown, message: string): T {
   const result = schema.safeParse(value)
   if (!result.success) return failStage01Database(message)
   return result.data
+}
+function normalizeAuthorityProjection(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
+  const projection = value as Record<string, unknown>
+  const policyBinding = projection.policyBinding
+  if (typeof policyBinding !== 'object' || policyBinding === null || Array.isArray(policyBinding)) return value
+  const { transitionEligible: _transitionEligible, ...normalizedPolicyBinding } = policyBinding as Record<string, unknown>
+  return { ...projection, policyBinding: normalizedPolicyBinding }
 }
 function mapEvaluation(row: z.infer<typeof evaluationRowSchema>): Stage01CriterionEvaluation {
   return stage01CriterionEvaluationSchema.parse({ id: row.id, decisionCycleId: row.decision_cycle_id,
@@ -253,9 +259,14 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
         })
       }))
       const latestCycle = decisionCycles[decisionCycles.length - 1]!
-      const decisionAuthority = await rpc('get_opportunity_decision_authority_projection', {
+      const rawDecisionAuthority = await rpc('get_opportunity_decision_authority_projection', {
         target_company_id: companyId, target_opportunity_id: opportunityId, target_cycle_id: latestCycle.id,
-      }, authorityProjectionResultSchema, 'Không thể đọc Decision Authority.')
+      }, z.unknown(), 'Không thể đọc Decision Authority.')
+      const decisionAuthority = parse(
+        authorityProjectionResultSchema,
+        normalizeAuthorityProjection(rawDecisionAuthority),
+        'Không thể đọc Decision Authority.',
+      )
       const decisionCycle = stage01DecisionCycleSchema.parse({ ...latestCycle, decisionAuthority })
 
       const primaryContact = opportunity.contacts.find(contact => contact.isPrimary && contact.endedAt === null)
@@ -341,12 +352,6 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
         target_input: assignOpportunityDecisionAuthorityInputSchema.parse(input),
       }, z.object({ opportunityId: uuid, decisionCycleId: uuid, authorityResolutionEventId: uuid, authorityUserId: uuid, cycleVersion: version }).strict(),
       'Không thể chỉ định người có thẩm quyền quyết định.')
-    },
-    async transitionDecisionPolicy(companyId, opportunityId, decisionCycleId, input) {
-      await rpc('transition_opportunity_decision_policy', {
-        target_company_id: companyId, target_opportunity_id: opportunityId, target_cycle_id: decisionCycleId, target_input: input,
-      }, z.object({ opportunityId: uuid, decisionCycleId: uuid, policySnapshotId: uuid, cycleVersion: version }).strict(),
-      'Không thể áp dụng Decision Policy cho chu kỳ này.')
     },
     async reactivate(companyId, opportunityId, input, requestId) {
       await rpc('reactivate_stage01', { target_company_id: companyId, target_opportunity_id: opportunityId,

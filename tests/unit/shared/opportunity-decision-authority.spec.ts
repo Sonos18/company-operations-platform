@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   assignOpportunityDecisionAuthorityInputSchema,
-  transitionOpportunityDecisionPolicyInputSchema,
   opportunityDecisionAuthorityProjectionSchema,
 } from '../../../shared/schemas/opportunity-decision-authority'
 
@@ -41,7 +40,7 @@ describe('Opportunity Decision Authority schemas', () => {
       positionTitle: null,
       currentActorIsAuthority: false,
       locked: false,
-      policyBinding: { status: 'bound', policySnapshotId: null, transitionEligible: false },
+      policyBinding: { status: 'bound', policySnapshotId: null },
     })
   })
 
@@ -54,9 +53,9 @@ describe('Opportunity Decision Authority schemas', () => {
       positionTitle: null,
       currentActorIsAuthority: false,
       locked: false,
-      policyBinding: { status: 'legacy_unbound', policySnapshotId: null, transitionEligible: true },
+      policyBinding: { status: 'legacy_unbound', policySnapshotId: null },
     })).toMatchObject({
-      policyBinding: { status: 'legacy_unbound', policySnapshotId: null, transitionEligible: true },
+      policyBinding: { status: 'legacy_unbound', policySnapshotId: null },
     })
   })
 
@@ -69,24 +68,10 @@ describe('Opportunity Decision Authority schemas', () => {
       positionTitle: null,
       currentActorIsAuthority: false,
       locked: false,
-      policyBinding: { status: 'not_required', policySnapshotId: null, transitionEligible: false },
+      policyBinding: { status: 'not_required', policySnapshotId: null },
     })).toMatchObject({
       status: 'not_required',
-      policyBinding: { status: 'not_required', policySnapshotId: null, transitionEligible: false },
-    })
-  })
-
-  it('accepts an explicit versioned B4 decision-policy transition command', () => {
-    expect(transitionOpportunityDecisionPolicyInputSchema.parse({
-      requestId: id('000000000003'),
-      expectedCycleVersion: 7,
-      transitionCode: 'b4_acceptance_policy_transition',
-      reason: 'Bind VQH Decision Policy v1 for this unresolved acceptance cycle.',
-    })).toEqual({
-      requestId: id('000000000003'),
-      expectedCycleVersion: 7,
-      transitionCode: 'b4_acceptance_policy_transition',
-      reason: 'Bind VQH Decision Policy v1 for this unresolved acceptance cycle.',
+      policyBinding: { status: 'not_required', policySnapshotId: null },
     })
   })
 })

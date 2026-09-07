@@ -13,11 +13,6 @@ const cycleId = '94000000-0000-4000-8000-000000000040'
 const actorId = '94000000-0000-4000-8000-000000000001'
 const context = { actorId, tenantId: '94000000-0000-4000-8000-000000000010', companyId, permissions: ['opportunity.decision_authority.assign'] as const, requestId: '94000000-0000-4000-8000-000000000099' }
 const assignment = { requestId: '94000000-0000-4000-8000-000000000050', action: 'assign' as const, authorityUserId: actorId, expectedCycleVersion: 4, reason: null }
-const policyTransition = {
-  requestId: '94000000-0000-4000-8000-000000000051', expectedCycleVersion: 4,
-  transitionCode: 'b4_acceptance_policy_transition' as const,
-  reason: 'Bind VQH Decision Policy v1 for this unresolved acceptance cycle.',
-}
 
 describe('Opportunity Decision Authority server boundary', () => {
   beforeEach(() => {
@@ -41,22 +36,6 @@ describe('Opportunity Decision Authority server boundary', () => {
     expect(assignDecisionAuthority).toHaveBeenCalledWith(context, opportunityId, cycleId, assignment)
   })
 
-  it('forwards an explicit, scoped policy-binding transition to the service', async () => {
-    readBody.mockResolvedValue(policyTransition)
-    const transitionDecisionPolicy = vi.fn()
-    await createStage01Routes({ resolveContext: vi.fn().mockResolvedValue(context), service: { transitionDecisionPolicy } as never })
-      .transitionDecisionPolicy({})
-    expect(transitionDecisionPolicy).toHaveBeenCalledWith(context, opportunityId, cycleId, policyTransition)
-  })
-
-  it('rejects policy transition before the authority-management permission reaches the repository', async () => {
-    const transitionDecisionPolicy = vi.fn()
-    const service = createStage01Service({ transitionDecisionPolicy } as never)
-    await expect(service.transitionDecisionPolicy({ ...context, permissions: [] }, opportunityId, cycleId, policyTransition))
-      .rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
-    expect(transitionDecisionPolicy).not.toHaveBeenCalled()
-  })
-
   it('uses company/opportunity/cycle scoped RPC arguments for authority candidates', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: { items: [{ userId: actorId, employeeId: '94000000-0000-4000-8000-000000000002', displayName: 'Eligible actor', positionTitle: null }] }, error: null })
     const repository = createSupabaseStage01Repository({ rpc } as never)
@@ -71,11 +50,6 @@ describe('Opportunity Decision Authority server boundary', () => {
   it('maps scoped idempotency conflicts without exposing a database error', () => {
     expect(() => mapStage01RpcError({ code: 'P0001', message: 'IDEMPOTENCY_CONFLICT' }, 'fallback'))
       .toThrow(expect.objectContaining({ statusCode: 409, code: 'IDEMPOTENCY_CONFLICT' }))
-  })
-
-  it('maps a policy-transition eligibility rejection without exposing database detail', () => {
-    expect(() => mapStage01RpcError({ code: 'P0001', message: 'OPPORTUNITY_DECISION_POLICY_TRANSITION_INELIGIBLE' }, 'fallback'))
-      .toThrow(expect.objectContaining({ statusCode: 409, code: 'OPPORTUNITY_DECISION_POLICY_TRANSITION_INELIGIBLE' }))
   })
 
   it('maps disabled-company authority commands to a domain error', () => {

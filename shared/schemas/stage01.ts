@@ -89,7 +89,7 @@ export const stage01DecisionCycleSchema = z.object({
   decisionAuthority: opportunityDecisionAuthorityProjectionSchema.default({
     status: 'unresolved', userId: null, employeeId: null, displayName: null,
     positionTitle: null, currentActorIsAuthority: false, locked: false,
-    policyBinding: { status: 'bound', policySnapshotId: null, transitionEligible: false },
+    policyBinding: { status: 'bound', policySnapshotId: null },
   }),
   reactivationReason: meaningfulTextSchema.nullable(),
   finalOutcome: stage01FinalOutcomeSchema.nullable(),

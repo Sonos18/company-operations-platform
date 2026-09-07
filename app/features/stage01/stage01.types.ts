@@ -15,5 +15,4 @@ export type { Stage01OperationalDetail } from '../../../shared/schemas/stage01-o
 export type {
   AssignOpportunityDecisionAuthorityInput,
   OpportunityDecisionAuthorityCandidate,
-  TransitionOpportunityDecisionPolicyInput,
 } from '../../../shared/schemas/opportunity-decision-authority'

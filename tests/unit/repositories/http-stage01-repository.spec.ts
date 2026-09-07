@@ -107,19 +107,4 @@ describe('HTTP Stage 01 repository', () => {
     expect(request.mock.calls[0]![0].body).not.toHaveProperty('decisionAuthorityUserId')
   })
 
-  it('uses the explicit decision-cycle policy-binding endpoint with a versioned transition body', async () => {
-    const request = vi.fn(async ({ schema }: { schema: { parse(value: unknown): unknown } }) => schema.parse(null))
-    const repository = createHttpStage01Repository({ companyId, client: { request } as never })
-    const cycleId = '83000000-0000-4000-8000-000000000035'
-    const input = {
-      requestId: '83000000-0000-4000-8000-000000000036', expectedCycleVersion: 2,
-      transitionCode: 'b4_acceptance_policy_transition' as const,
-      reason: 'Bind VQH Decision Policy v1 for this unresolved acceptance cycle.',
-    }
-    await repository.transitionDecisionPolicy(opportunityId, cycleId, input)
-    expect(request).toHaveBeenCalledWith(expect.objectContaining({
-      url: `/api/companies/${companyId}/opportunities/${opportunityId}/decision-cycles/${cycleId}/policy-binding`,
-      method: 'POST', body: input,
-    }))
-  })
 })

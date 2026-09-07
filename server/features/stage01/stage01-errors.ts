@@ -33,8 +33,6 @@ const mappings: Record<string, { status: number, code: ApiErrorCode, message: st
   OPPORTUNITY_DECISION_AUTHORITY_TARGET_INELIGIBLE: { status: 409, code: 'OPPORTUNITY_DECISION_AUTHORITY_TARGET_INELIGIBLE', message: 'Người được chọn không đủ điều kiện Decision Authority.' },
   OPPORTUNITY_DECISION_AUTHORITY_NOT_ENABLED: { status: 409, code: 'OPPORTUNITY_DECISION_AUTHORITY_NOT_ENABLED', message: 'Decision Authority chưa được bật cho công ty này.' },
   OPPORTUNITY_DECISION_AUTHORITY_POLICY_UNAVAILABLE: { status: 409, code: 'OPPORTUNITY_DECISION_AUTHORITY_POLICY_UNAVAILABLE', message: 'Chính sách Decision Authority chưa sẵn sàng.' },
-  OPPORTUNITY_DECISION_POLICY_TRANSITION_INELIGIBLE: { status: 409, code: 'OPPORTUNITY_DECISION_POLICY_TRANSITION_INELIGIBLE', message: 'Chu kỳ này không đủ điều kiện áp dụng Decision Policy.' },
-  OPPORTUNITY_DECISION_POLICY_TRANSITION_SCOPE_DENIED: { status: 403, code: 'OPPORTUNITY_DECISION_POLICY_TRANSITION_SCOPE_DENIED', message: 'Transition Decision Policy chỉ được phép trong phạm vi B4 acceptance.' },
   IDEMPOTENCY_CONFLICT: { status: 409, code: 'IDEMPOTENCY_CONFLICT', message: 'Request ID đã được dùng với dữ liệu khác.' },
   STAGE01_FINAL_DECISION_EXISTS: { status: 409, code: 'STAGE01_FINAL_DECISION_EXISTS', message: 'Final Decision đã tồn tại.' },
   STAGE01_OVERRIDE_RATIONALE_REQUIRED: { status: 409, code: 'STAGE01_OVERRIDE_RATIONALE_REQUIRED', message: 'Cần lý do override Recommendation.' },

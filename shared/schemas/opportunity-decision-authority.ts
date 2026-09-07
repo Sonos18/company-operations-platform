@@ -12,14 +12,6 @@ export const assignOpportunityDecisionAuthorityInputSchema = z.object({
 }).strict()
 export type AssignOpportunityDecisionAuthorityInput = z.infer<typeof assignOpportunityDecisionAuthorityInputSchema>
 
-export const transitionOpportunityDecisionPolicyInputSchema = z.object({
-  requestId: uuid,
-  expectedCycleVersion: z.number().int().nonnegative(),
-  transitionCode: z.literal('b4_acceptance_policy_transition'),
-  reason: meaningfulText,
-}).strict()
-export type TransitionOpportunityDecisionPolicyInput = z.infer<typeof transitionOpportunityDecisionPolicyInputSchema>
-
 export const opportunityDecisionAuthorityCandidateSchema = z.object({
   userId: uuid,
   employeeId: uuid,
@@ -39,7 +31,6 @@ export const opportunityDecisionAuthorityProjectionSchema = z.object({
   policyBinding: z.object({
     status: z.enum(['bound', 'legacy_unbound', 'not_required']),
     policySnapshotId: uuid.nullable(),
-    transitionEligible: z.boolean(),
-  }).strict().default({ status: 'bound', policySnapshotId: null, transitionEligible: false }),
+  }).strict().default({ status: 'bound', policySnapshotId: null }),
 }).strict()
 export type OpportunityDecisionAuthorityProjection = z.infer<typeof opportunityDecisionAuthorityProjectionSchema>

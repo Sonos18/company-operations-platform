@@ -517,6 +517,26 @@ describe('B4 Cloud DEV acceptance boundary', () => {
     expect(packageJson.scripts['test:b4:cloud-dev']).toBe('playwright test --config=playwright.b4.config.ts')
   })
 
+  it('prepares B4 decision-authority state before retained profiles without runtime policy-transition RPCs', () => {
+    const fixture = read('scripts/stage01-b4-acceptance-fixture.mjs')
+    const configurationStart = fixture.indexOf('async function ensureB4DecisionAuthorityConfiguration')
+    const configurationEnd = fixture.indexOf('\nfunction invalidCanonicalTaxonomy', configurationStart)
+    const configuration = fixture.slice(configurationStart, configurationEnd)
+    const configurationInvocation = fixture.indexOf('await ensureB4DecisionAuthorityConfiguration(client, actors.decision.userId)')
+    const retainedProfilesInvocation = fixture.indexOf('await ensureRetainedProfiles(client, acceptanceSnapshot.id, acceptanceSnapshot.version, actors.operator.userId)')
+
+    expect(configurationStart).toBeGreaterThan(-1)
+    expect(configurationEnd).toBeGreaterThan(configurationStart)
+    expect(configurationInvocation).toBeGreaterThan(-1)
+    expect(retainedProfilesInvocation).toBeGreaterThan(configurationInvocation)
+    expect(configuration).toContain('tenant_id: B4_ACCEPTANCE_TENANT_ID')
+    expect(configuration).toContain('company_id: B4_ACCEPTANCE_COMPANY_ID')
+    expect(configuration).toContain("client.from('company_opportunity_decision_capabilities')")
+    expect(configuration).toContain("client.from('opportunity_decision_policy_snapshots')")
+    expect(fixture).not.toContain('transition_opportunity_decision_policy')
+    expect(fixture).not.toContain('b4_acceptance_policy_transition')
+  })
+
   it('forbids business-route replacement in full-stack acceptance specs', () => {
     const fullStackSpecs = [
       'tests/acceptance/stage01-cloud-dev/stage01-fullstack.spec.ts',

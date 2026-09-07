@@ -64,6 +64,11 @@ describe('Stage 01 Decision repository', () => {
     const criteria = dimensions.map((dimensionKey, index) => ({ key: dimensionKey, dimensionKey, label: `Label ${index}`, description: `Description ${index}`, criticality: 'required', applicabilityMode: 'always', allowsNotApplicable: false, displayOrder: index + 1 }))
     const snapshotLookups: unknown[] = []
     const orderCalls: string[] = []
+    const authorityProjection: Record<string, unknown> = {
+      status: 'not_required', userId: null, employeeId: null, displayName: null, positionTitle: null,
+      currentActorIsAuthority: false, locked: false,
+      policyBinding: { status: 'not_required', policySnapshotId: null, transitionEligible: false },
+    }
     const from = vi.fn((table: string) => {
       if (table === 'stage01_decision_cycles') return query(
         { data: [cycle(cycleTwo, 2), cycle(cycleOne, 1)], error: null },
@@ -92,8 +97,7 @@ describe('Stage 01 Decision repository', () => {
     const repository = createSupabaseStage01Repository({
       from,
       rpc: async (name: string) => name === 'get_opportunity_decision_authority_projection'
-        ? { data: { status: 'not_required', userId: null, employeeId: null, displayName: null, positionTitle: null, currentActorIsAuthority: false, locked: false,
-          policyBinding: { status: 'not_required', policySnapshotId: null, transitionEligible: false } }, error: null }
+        ? { data: authorityProjection, error: null }
         : { data: [{ roles: [], permissions: ['opportunity.decision_authority.assign', 'opportunity.decision.record'] }], error: null },
     } as never)
 
@@ -113,6 +117,12 @@ describe('Stage 01 Decision repository', () => {
     expect(detail?.decisionCycles.map(cycle => cycle.cycleNo)).toEqual([1, 2])
     expect(detail?.currentDecisionCycle.id).toBe(cycleTwo)
     expect(detail?.actorCapabilities).toEqual(['decision'])
+    expect(detail?.currentDecisionCycle.decisionAuthority.policyBinding).toEqual({
+      status: 'not_required', policySnapshotId: null,
+    })
+
+    ;(authorityProjection.policyBinding as Record<string, unknown>).unexpectedField = true
+    await expect(repository.get(companyId, opportunityId)).rejects.toMatchObject({ statusCode: 500 })
   })
 
   it('uses the fixed Final Decision RPC and maps a version conflict', async () => {

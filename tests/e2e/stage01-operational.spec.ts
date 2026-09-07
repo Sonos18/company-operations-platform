@@ -1032,46 +1032,23 @@ test('self-assigns Decision Authority through the normal UI, reloads canonically
   await expect(decision).toBeEnabled()
 })
 
-test('B4 legacy cycle explicitly binds Decision Policy before exposing normal authority assignment', async ({ page, authState }) => {
+test('B4 fixture-prepared bound policy exposes normal authority assignment without a transition', async ({ page, authState }) => {
   const detail = createStage01OperationalDetail()
-  detail.actorCapabilities = []
+  detail.actorCapabilities = ['assignDecisionAuthority']
   detail.currentDecisionCycle.decisionAuthority = {
-    status: 'legacy_unknown', userId: null, employeeId: null, displayName: null, positionTitle: null,
+    status: 'unresolved', userId: null, employeeId: null, displayName: null, positionTitle: null,
     currentActorIsAuthority: false, locked: false,
-    policyBinding: { status: 'legacy_unbound', policySnapshotId: null, transitionEligible: true },
+    policyBinding: { status: 'bound', policySnapshotId: '82000000-0000-4000-8000-000000000610' },
   }
   detail.decisionCycles = [detail.currentDecisionCycle]
   const company = createCompany({ permissions: [
     'project.read', 'journey.read', 'opportunity.read', 'opportunity.decision_authority.assign', 'opportunity.decision.record',
   ] })
-  const policyPath = `/api/companies/${company.companyId}/opportunities/${stage01OpportunityId}/decision-cycles/${detail.currentDecisionCycle.id}/policy-binding`
-  const policyPosts: Array<Record<string, unknown>> = []
-  let canonicalReads = 0
   authState.sessionCompanies = [company]
-  await installStage01OperationalRoutes(page, detail, { onCanonicalRead: () => { canonicalReads += 1 } })
-  await page.route(policyPath, async route => {
-    policyPosts.push(JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>)
-    detail.currentDecisionCycle.decisionAuthority = {
-      status: 'unresolved', userId: null, employeeId: null, displayName: null, positionTitle: null,
-      currentActorIsAuthority: false, locked: false,
-      policyBinding: { status: 'bound', policySnapshotId: '82000000-0000-4000-8000-000000000610', transitionEligible: false },
-    }
-    detail.currentDecisionCycle.version += 1
-    // Canonical GET derives these Opportunity Decision capabilities from the
-    // newly bound policy, not from the legacy workflow snapshot.
-    detail.actorCapabilities = ['assignDecisionAuthority', 'decision']
-    detail.decisionCycles = [detail.currentDecisionCycle]
-    await route.fulfill({ contentType: 'application/json', body: 'null' })
-  })
+  await installStage01OperationalRoutes(page, detail)
   await goToWorkspace(page)
   const evaluation = page.getByRole('region', { name: 'Đánh giá, đề xuất và quyết định', exact: true })
-  await expect(evaluation.getByText('Decision Policy cần được áp dụng trước khi chỉ định thẩm quyền.', { exact: true })).toBeVisible()
-  await expect(evaluation.getByRole('button', { name: 'Chỉ định', exact: true })).toHaveCount(0)
-  await evaluation.getByRole('button', { name: 'Áp dụng Decision Policy v1', exact: true }).click()
-  await expect.poll(() => policyPosts).toHaveLength(1)
-  expect(policyPosts[0]).toMatchObject({ expectedCycleVersion: 0, transitionCode: 'b4_acceptance_policy_transition' })
-  await expect.poll(() => canonicalReads).toBe(2)
-  await expect(evaluation.getByText('Chưa chỉ định người có thẩm quyền quyết định.', { exact: true })).toBeVisible()
+  await expect(evaluation.getByRole('button', { name: 'Áp dụng Decision Policy v1', exact: true })).toHaveCount(0)
   await expect(evaluation.getByRole('button', { name: 'Chỉ định', exact: true })).toBeVisible()
 })
 

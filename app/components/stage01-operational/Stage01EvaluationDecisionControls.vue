@@ -31,7 +31,6 @@ const authorityCandidates = ref<OpportunityDecisionAuthorityCandidate[]>([])
 const authorityUserId = ref('')
 const authorityReason = ref('')
 const authorityRequestId = ref<string | null>(null)
-const policyTransitionRequestId = ref<string | null>(null)
 
 const criteria = computed(() => [...props.detail.configuration.criteria].sort((left, right) => left.displayOrder - right.displayOrder))
 const cycles = computed(() => orderedDecisionCycles(props.detail.decisionCycles))
@@ -53,8 +52,6 @@ const canRecordDecision = computed(() => (
 const canAssignDecisionAuthority = computed(() => access.hasPermission('opportunity.decision_authority.assign')
   && props.detail.actorCapabilities.includes('assignDecisionAuthority')
   && props.detail.currentDecisionCycle.decisionAuthority.policyBinding.status === 'bound' && !completed.value)
-const canTransitionDecisionPolicy = computed(() => access.hasPermission('opportunity.decision_authority.assign')
-  && props.detail.currentDecisionCycle.decisionAuthority.policyBinding.transitionEligible && !completed.value)
 const decisionVisible = computed(() => access.hasPermission('opportunity.decision.record') && !completed.value)
 const canReactivate = computed(() => access.hasPermission('stage01.reactivate') && completed.value)
 
@@ -232,20 +229,6 @@ async function submitAuthorityAssignment(): Promise<void> {
   }
 }
 
-async function transitionDecisionPolicy(): Promise<void> {
-  const completed = await command('Đã áp dụng Decision Policy v1. Hãy chỉ định người có thẩm quyền quyết định.', () => repositories.stage01.transitionDecisionPolicy(
-    props.detail.opportunity.id,
-    props.detail.currentDecisionCycle.id,
-    {
-      requestId: policyTransitionRequestId.value ??= crypto.randomUUID(),
-      expectedCycleVersion: props.detail.currentDecisionCycle.version,
-      transitionCode: 'b4_acceptance_policy_transition',
-      reason: 'Bind VQH Decision Policy v1 for this unresolved acceptance cycle.',
-    },
-  ))
-  if (completed) policyTransitionRequestId.value = null
-}
-
 async function submitReactivation(): Promise<void> {
   const reason = reactivationReason.value.trim()
   if (!reason) {
@@ -350,8 +333,6 @@ function openReactivation(): void {
 
     <section class="evaluation-decision__section" aria-labelledby="decision-heading">
       <div><p class="eyebrow">Thẩm quyền quyết định</p><h3>Người có thẩm quyền quyết định</h3></div>
-      <UAlert v-if="detail.currentDecisionCycle.decisionAuthority.policyBinding.status === 'legacy_unbound'" color="warning" title="Decision Policy cần được áp dụng trước khi chỉ định thẩm quyền." />
-      <UButton v-if="canTransitionDecisionPolicy" variant="outline" @click="transitionDecisionPolicy">Áp dụng Decision Policy v1</UButton>
       <p v-if="detail.currentDecisionCycle.decisionAuthority.status === 'not_required'" class="evaluation-decision__final">Không yêu cầu Decision Authority cho công ty này.</p>
       <p v-if="detail.currentDecisionCycle.decisionAuthority.status === 'unresolved'" class="evaluation-decision__final">Chưa chỉ định</p>
       <UAlert v-if="detail.currentDecisionCycle.decisionAuthority.status === 'unresolved'" color="warning" title="Chưa chỉ định người có thẩm quyền quyết định." />
