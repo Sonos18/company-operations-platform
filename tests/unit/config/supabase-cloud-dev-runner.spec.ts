@@ -485,6 +485,18 @@ describe('Cloud DEV fixed-mode runner', () => {
       .toBe('node scripts/run-supabase-dev.mjs stage01-pgtap-diagnostic')
   })
 
+  it('requires the Stage 01 authority SQL contract to fail closed without pgTAP or TAP parsing', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const runner = readFileSync(resolve(root, 'scripts/run-supabase-dev.mjs'), 'utf8')
+    const stage01Runner = runner.slice(runner.indexOf("if (isStage01Test) {"), runner.indexOf("const result = runCli(REMOTE_MODE_ARGS[mode]"))
+
+    expect(authoritySql).not.toMatch(/\bselect\s+(?:\*\s+from\s+)?(?:plan|finish|ok|is|isnt|is_deeply|cmp_ok|throws_ok|lives_ok|results_eq|set_eq)\s*\(/iu)
+    expect(authoritySql.match(/\bselect\s+pg_temp\.authority_assert_[a-z_]+\s*\(/giu)).toHaveLength(103)
+    expect(authoritySql).toMatch(/\bpg_temp\.authority_assert_throws\b[\s\S]*?\braise\s+exception\b/iu)
+    expect(stage01Runner).toContain("runCli(['db', 'query', '--linked', '--file', file]")
+    expect(stage01Runner).not.toMatch(/\b(?:tap|plan|finish)\b/iu)
+  })
+
   it('executes the complete fixed Stage 01 inventory exactly once, including B1 configuration verification files', () => {
     const root = makeWorktree()
     const testDirectory = join(root, 'supabase/tests/database')
