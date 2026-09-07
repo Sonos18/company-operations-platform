@@ -1340,18 +1340,30 @@ test('B4-S01/S04/S06/S08 completes the real acceptance-company journey and prese
   await expect(runtimeNode(page, '01.2 Đánh giá')).toContainText('Trạng thái: completed')
   await expect(page.getByText('Quyết định đã ghi nhận: Tiếp tục', { exact: false })).toBeVisible()
   await expect(page.getByText(`Chu kỳ #1 · Đã hoàn tất`, { exact: true })).toBeVisible()
-  await expect(page.getByText(decisionRationale, { exact: false })).toBeVisible()
+  const decisionCycleHistory = page.getByRole('region', { name: 'Chu kỳ quyết định', exact: true })
+  await expect(decisionCycleHistory.getByText(decisionRationale, { exact: false })).toBeVisible()
 
   // B4-S08: the operator is still the real decision-capable browser actor; a new cycle is appended,
   // while the prior decision remains visible after canonical reload.
   await page.getByRole('button', { name: 'Kích hoạt lại Stage 01' }).click()
   await page.getByLabel('Lý do kích hoạt lại').fill(reactivationReason)
+  const reactivationPath = `${canonicalStage01Path}/reactivate`
+  const reactivationResponse = page.waitForResponse(response => (
+    response.request().method() === 'POST' && new URL(response.url()).pathname === reactivationPath
+  ))
+  const reactivationCanonicalReload = page.waitForResponse(response => (
+    response.request().method() === 'GET' && new URL(response.url()).pathname === canonicalStage01Path
+  ))
   await page.getByRole('button', { name: 'Xác nhận kích hoạt lại' }).click()
+  const reactivation = await reactivationResponse
+  expect(reactivation.status()).toBeGreaterThanOrEqual(200)
+  expect(reactivation.status()).toBeLessThan(300)
+  expect((await reactivationCanonicalReload).ok()).toBe(true)
   await page.reload()
   await expect(page.getByText('Chu kỳ #1 · Đã hoàn tất', { exact: true })).toBeVisible()
   await expect(page.getByText('Chu kỳ #2 · Đang xử lý', { exact: true })).toBeVisible()
   await expect(page.getByText(`Kích hoạt lại: ${reactivationReason}`, { exact: true })).toBeVisible()
-  await expect(page.getByText(decisionRationale, { exact: false })).toBeVisible()
+  await expect(decisionCycleHistory.getByText(decisionRationale, { exact: false })).toBeVisible()
 
   const canonical = await authenticatedApi(page, `/api/companies/${state.companyId}/opportunities/${opportunityId}/stage-01`)
   expect(canonical.status).toBe(200)
