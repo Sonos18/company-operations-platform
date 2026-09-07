@@ -414,6 +414,77 @@ describe('Cloud DEV fixed-mode runner', () => {
     expect(sql).toContain('company_role_assignments')
   })
 
+  it('runs a fixed, target-guarded read-only pgTAP diagnostic through the dedicated PAT runner', () => {
+    const root = makeWorktree()
+    let childArgs: string[] | undefined
+    let childEnvironment: NodeJS.ProcessEnv | undefined
+
+    expect(() => runSupabaseDevMode('stage01-pgtap-diagnostic', {
+      cwd: root,
+      env: {
+        LOCALAPPDATA: 'C:\\Users\\developer\\AppData\\Local',
+        SUPABASE_ACCESS_TOKEN: 'ambient-token',
+        SUPABASE_DB_PASSWORD: 'ambient-password',
+      },
+      spawn(_command, args, options) {
+        childArgs = args
+        childEnvironment = options.env
+        return { status: 0 }
+      },
+    })).not.toThrow()
+
+    expect(childArgs?.slice(1, 4)).toEqual(['db', 'query', '--linked'])
+    const sql = childArgs?.[4] ?? ''
+    expect(sql).toContain("where e.extname = 'pgtap'")
+    expect(sql).toContain("current_setting('search_path') as search_path")
+    expect(sql).toContain("to_regprocedure('plan(integer)')::text as unqualified_plan")
+    expect(sql).toContain("format('%I.plan(integer)'")
+    expect(sql).not.toMatch(/\b(?:insert|update|delete|merge|truncate|create|alter|drop|grant|revoke|call|do|set|reset|copy)\b/iu)
+    expect(childEnvironment?.SUPABASE_ACCESS_TOKEN).toBe('dedicated-dev-pat')
+    expect(childEnvironment).not.toHaveProperty('SUPABASE_DB_PASSWORD')
+  })
+
+  it('rejects supplied SQL, file paths, and extra arguments for the fixed pgTAP diagnostic', () => {
+    const root = makeWorktree()
+    let spawnCalls = 0
+    const spawn = () => {
+      spawnCalls += 1
+      return { status: 0 }
+    }
+
+    expect(() => runSupabaseDevMode('stage01-pgtap-diagnostic', {
+      cwd: root,
+      extraArgs: ['select current_user'],
+      spawn,
+    })).toThrow('Unsupported Cloud DEV operation')
+    expect(() => runSupabaseDevMode('stage01-pgtap-diagnostic --file operator.sql', {
+      cwd: root,
+      spawn,
+    })).toThrow('Unsupported Cloud DEV operation')
+    expect(spawnCalls).toBe(0)
+  })
+
+  it('requires the canonical Cloud DEV target guard before running the fixed pgTAP diagnostic', () => {
+    const root = makeWorktree({ linked: false })
+    let spawnCalls = 0
+
+    expect(() => runSupabaseDevMode('stage01-pgtap-diagnostic', {
+      cwd: root,
+      spawn() {
+        spawnCalls += 1
+        return { status: 0 }
+      },
+    })).toThrow('Supabase CLI link state is missing')
+    expect(spawnCalls).toBe(0)
+  })
+
+  it('exposes the fixed pgTAP diagnostic through its dedicated package command', () => {
+    const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
+
+    expect(packageJson.scripts['db:dev:stage01:pgtap-diagnostic'])
+      .toBe('node scripts/run-supabase-dev.mjs stage01-pgtap-diagnostic')
+  })
+
   it('executes the complete fixed Stage 01 inventory exactly once, including B1 configuration verification files', () => {
     const root = makeWorktree()
     const testDirectory = join(root, 'supabase/tests/database')

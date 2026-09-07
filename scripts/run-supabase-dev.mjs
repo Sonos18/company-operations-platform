@@ -212,6 +212,22 @@ ${STAGE01_PERMISSION_METADATA_SQL}
 end $$;
 select 'PASS' as result;
 rollback;`
+const STAGE01_PGTAP_DIAGNOSTIC_SQL = String.raw`with pgtap_extension as (
+  select n.nspname as extension_schema
+  from pg_extension e
+  join pg_namespace n on n.oid = e.extnamespace
+  where e.extname = 'pgtap'
+)
+select
+  exists(select 1 from pgtap_extension) as pgtap_installed,
+  (select extension_schema from pgtap_extension) as pgtap_schema,
+  current_setting('search_path') as search_path,
+  to_regprocedure('plan(integer)')::text as unqualified_plan,
+  case
+    when exists(select 1 from pgtap_extension)
+    then to_regprocedure(format('%I.plan(integer)', (select extension_schema from pgtap_extension)))::text
+    else null
+  end as qualified_plan;`
 
 const REMOTE_MODE_ARGS = {
   link: ['link', '--project-ref', CANONICAL_DEV_PROJECT_REF],
@@ -223,6 +239,7 @@ const REMOTE_MODE_ARGS = {
   'advisors-performance': ['db', 'advisors', '--linked', '--type', 'performance', '--level', 'warn', '--fail-on', 'error'],
   'rls-smoke': ['db', 'query', '--linked', VQH_RLS_SMOKE_SQL],
   'canonical-check': ['db', 'query', '--linked', VQH_CANONICAL_CHECK_SQL],
+  'stage01-pgtap-diagnostic': ['db', 'query', '--linked', STAGE01_PGTAP_DIAGNOSTIC_SQL],
   types: ['gen', 'types', 'typescript', '--linked'],
   'auth-check': ['projects', 'list', '--output-format', 'json'],
 }
