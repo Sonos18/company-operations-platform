@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { z } from 'zod'
 import type { Stage01CanonicalRecoveryEntry } from '../../../composables/useStage01Operational'
+import type { ContactRecoveryEntry } from '../../../features/stage01-operational/contact-recovery'
 import { ClientError } from '../../../errors/client-error'
 import {
   activeAssignments,
@@ -16,12 +17,14 @@ definePageMeta({
 const route = useRoute()
 const repositories = useRepositories()
 const companyAccess = useNuxtApp().$companyAccessStore
+const authStore = useNuxtApp().$authStore
 const parsedOpportunityId = z.string().uuid().safeParse(route.params.opportunityId)
 const opportunityId = parsedOpportunityId.success ? parsedOpportunityId.data : null
 const canonicalRecoveryState = useState<Record<string, Stage01CanonicalRecoveryEntry>>('stage01-canonical-recovery', () => ({}))
 const operational = opportunityId
   ? useStage01Operational(repositories.stage01, opportunityId, {
       companyId: companyAccess.activeCompanyId ?? repositories.context.companyId,
+      actorId: authStore.user?.id ?? 'unknown-user',
       recoveryState: canonicalRecoveryState,
     })
   : null
@@ -31,6 +34,8 @@ if (operational) await operational.load().catch(() => undefined)
 const detail = computed(() => operational?.detail.value ?? null)
 const pending = computed(() => operational?.pending.value ?? false)
 const canonicalSyncRequired = computed(() => operational?.canonicalSyncRequired.value ?? false)
+const contactRecovery = computed<ContactRecoveryEntry | null>(() => operational?.contactRecovery.value ?? null)
+const contactRecoveryStorageAvailable = computed(() => operational?.contactRecoveryStorageAvailable.value ?? true)
 const controlsLocked = computed(() => pending.value || canonicalSyncRequired.value)
 const error = computed(() => operational?.error.value ?? null)
 const isNotFound = computed(() => error.value instanceof ClientError && error.value.code === 'OPPORTUNITY_NOT_FOUND')
@@ -61,8 +66,23 @@ function ownerFor(runtime: NonNullable<typeof detail.value>['intake']['runtime']
   return owner?.assigneeUserId ?? 'Chưa phân công'
 }
 
-async function retry(): Promise<void> {
-  if (operational) await operational.load().catch(() => undefined)
+async function retry(): Promise<boolean> {
+  if (!operational) return false
+  try {
+    await operational.load()
+    return true
+  }
+  catch {
+    return false
+  }
+}
+
+async function retryFromUi(): Promise<void> {
+  await retry()
+}
+
+function setContactRecovery(value: ContactRecoveryEntry | null): boolean {
+  return operational?.setContactRecovery(value) ?? false
 }
 
 async function returnToOpportunities(): Promise<void> {
@@ -106,7 +126,7 @@ async function returnToOpportunities(): Promise<void> {
       :title="canonicalSyncRequired ? 'Cần tải lại dữ liệu chính tắc' : 'Không thể tải Stage 01'"
       :description="errorMessage(error, canonicalSyncRequired ? 'Thao tác có thể đã được thực hiện. Hãy tải lại trước khi tiếp tục.' : 'Vui lòng thử lại sau.')"
     >
-      <template #actions><UButton color="error" variant="outline" :loading="pending" @click="retry">{{ canonicalSyncRequired ? 'Tải lại dữ liệu chính tắc' : 'Thử lại' }}</UButton></template>
+      <template #actions><UButton color="error" variant="outline" :loading="pending" @click="retryFromUi">{{ canonicalSyncRequired ? 'Tải lại dữ liệu chính tắc' : 'Thử lại' }}</UButton></template>
     </UAlert>
 
     <template v-else-if="detail">
@@ -139,7 +159,7 @@ async function returnToOpportunities(): Promise<void> {
         title="Cần tải lại dữ liệu chính tắc trước khi tiếp tục"
         :description="errorMessage(error, 'Thao tác có thể đã được thực hiện. Hãy tải lại để xác nhận trạng thái mới nhất.')"
       >
-        <template #actions><UButton color="warning" variant="outline" :loading="pending" @click="retry">Tải lại dữ liệu chính tắc</UButton></template>
+        <template #actions><UButton color="warning" variant="outline" :loading="pending" @click="retryFromUi">Tải lại dữ liệu chính tắc</UButton></template>
       </UAlert>
       <UAlert
         v-else-if="error"
@@ -149,7 +169,7 @@ async function returnToOpportunities(): Promise<void> {
         title="Lần tải gần nhất không thành công"
         :description="errorMessage(error, 'Dữ liệu đang hiển thị là aggregate đã tải trước đó.')"
       >
-        <template #actions><UButton color="error" variant="outline" :loading="pending" @click="retry">Tải lại</UButton></template>
+        <template #actions><UButton color="error" variant="outline" :loading="pending" @click="retryFromUi">Tải lại</UButton></template>
       </UAlert>
 
       <section class="stage01-workspace__section" aria-labelledby="stage01-progression-heading">
@@ -186,6 +206,9 @@ async function returnToOpportunities(): Promise<void> {
           :detail="detail"
           :run-and-reload="operational!.runAndReload"
           :reload="retry"
+          :contact-recovery="contactRecovery"
+          :set-contact-recovery="setContactRecovery"
+          :contact-recovery-storage-available="contactRecoveryStorageAvailable"
         />
 
         <Stage01OperationalStage01WorkflowRuntimeControls

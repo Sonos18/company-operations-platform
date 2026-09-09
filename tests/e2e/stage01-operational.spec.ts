@@ -12,12 +12,15 @@ async function goToWorkspace(page: import('@playwright/test').Page): Promise<voi
 
 test('keeps intake business controls read-only for a route-authorized reader', async ({ page, authState }) => {
   authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read'] })]
-  await installStage01OperationalRoutes(page)
+  const detail = createStage01OperationalDetail()
+  detail.relatedContacts[0]!.methods = []
+  await installStage01OperationalRoutes(page, detail)
   await goToWorkspace(page)
   await expect(page.getByRole('heading', { name: 'Liên hệ' })).toBeVisible()
   await expect(page.getByText('Chị Lan', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Chỉnh sửa cơ hội' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Thêm liên hệ' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Thêm phương thức' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Thêm phạm vi' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Thêm người giới thiệu' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Ghi nhận tiếp nhận' })).toHaveCount(0)
@@ -1345,6 +1348,348 @@ test('B4 serializes Evaluation completion after the real final-decision canonica
   expect(state.detail.currentDecisionCycle.finalOutcome).toBe('proceed')
   expect(state.detail.evaluation.gates.checks.find(check => check.code === 'FINAL_DECISION_RECORDED')?.status).toBe('satisfied')
   expect(state.detail.evaluation.runtime.state).toBe('completed')
+})
+
+test('adds a method to an existing methodless Contact without creating another Contact', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  state.detail.relatedContacts[0]!.methods = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.contact.manage'] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await goToWorkspace(page)
+
+  const contactCard = page.locator('.intake-controls__card').filter({ has: page.getByRole('heading', { name: 'Liên hệ', exact: true }) })
+  await expect(contactCard.getByRole('button', { name: 'Thêm phương thức', exact: true })).toBeVisible()
+  await contactCard.getByRole('button', { name: 'Thêm phương thức', exact: true }).click()
+  const methodForm = contactCard.locator('form').filter({ has: page.getByRole('heading', { name: 'Thêm phương thức', exact: true }) })
+  await methodForm.getByRole('combobox', { name: 'Loại', exact: true }).selectOption('email')
+  await methodForm.getByRole('textbox', { name: 'Giá trị', exact: true }).fill('lan@example.com')
+  await methodForm.getByRole('button', { name: 'Lưu phương thức', exact: true }).click()
+
+  await expect(contactCard.getByText('email: lan@example.com · sử dụng được', { exact: true })).toBeVisible()
+  expect(state.detail.relatedContacts).toHaveLength(1)
+  expect(state.detail.relatedContacts[0]!.id).toBe(state.detail.opportunity.contacts[0]!.contactId)
+  expect(state.detail.relatedContacts[0]!.methods).toHaveLength(1)
+  expect(state.detail.intake.gates.checks.find(check => check.code === 'CONTACT_METHOD_USABLE')?.status).toBe('satisfied')
+})
+
+test('adds a method with the Contact version and exposes canonical recovery on version conflict', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  state.detail.relatedContacts[0]!.methods = []
+  let methodRequest: Record<string, unknown> | null = null
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.contact.manage'] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await page.route(/\/api\/companies\/[^/]+\/contacts\/[^/]+\/methods$/u, async route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    methodRequest = route.request().postDataJSON() as Record<string, unknown>
+    await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify(versionConflictBody()) })
+  })
+  await goToWorkspace(page)
+
+  const contactCard = page.locator('.intake-controls__card').filter({ has: page.getByRole('heading', { name: 'Liên hệ', exact: true }) })
+  await contactCard.getByRole('button', { name: 'Thêm phương thức', exact: true }).click()
+  const methodForm = contactCard.locator('form').filter({ has: page.getByRole('heading', { name: 'Thêm phương thức', exact: true }) })
+  await methodForm.getByRole('textbox', { name: 'Giá trị', exact: true }).fill('lan-conflict@example.com')
+  await methodForm.getByRole('button', { name: 'Lưu phương thức', exact: true }).click()
+
+  await expect(page.getByRole('button', { name: 'Tải lại chính tắc', exact: true })).toBeVisible()
+  expect(methodRequest).toMatchObject({ expectedContactVersion: 4, value: 'lan-conflict@example.com' })
+})
+
+test('retains a created Contact ID when method creation rejects and retries only the unfinished method', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  let methodAttempts = 0
+  const requests: Array<{ method: string, path: string, body: unknown }> = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.contact.manage'] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  page.on('request', request => {
+    if (request.method() === 'POST') requests.push({ method: request.method(), path: new URL(request.url()).pathname, body: request.postDataJSON() })
+  })
+  await page.route(/\/api\/companies\/[^/]+\/contacts\/[^/]+\/methods$/u, async route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    methodAttempts += 1
+    if (methodAttempts === 1) {
+      await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'PERMISSION_DENIED', message: 'Không có quyền thực hiện thao tác.', requestId: 'contact-method-rejected', details: {} } }) })
+      return
+    }
+    await route.fallback()
+  })
+  await goToWorkspace(page)
+
+  const contactCard = page.locator('.intake-controls__card').filter({ has: page.getByRole('heading', { name: 'Liên hệ', exact: true }) })
+  await contactCard.getByRole('button', { name: 'Thêm liên hệ', exact: true }).click()
+  await contactCard.getByRole('textbox', { name: 'Tên liên hệ', exact: true }).fill('Chị Mai')
+  await contactCard.getByRole('combobox', { name: 'Quan hệ', exact: true }).selectOption('primary_contact')
+  await contactCard.getByRole('textbox', { name: 'Giá trị phương thức (không bắt buộc)', exact: true }).fill('mai@example.com')
+  await contactCard.getByRole('button', { name: 'Tạo và liên kết liên hệ', exact: true }).click()
+  await expect(page.getByRole('group', { name: 'Điều khiển vận hành Stage 01' }).getByRole('alert')).toContainText('Đã tạo liên hệ')
+
+  const created = state.detail.relatedContacts.find(contact => contact.displayName === 'Chị Mai')
+  expect(created).toBeDefined()
+  await contactCard.getByRole('button', { name: 'Tiếp tục khôi phục liên hệ', exact: true }).click()
+  await expect(page.getByText('Đã tạo và liên kết liên hệ.', { exact: true })).toBeVisible()
+
+  const createRequests = requests.filter(request => request.path.endsWith('/contacts') && !request.path.includes('/opportunities/'))
+  const methodRequests = requests.filter(request => request.path.endsWith('/methods'))
+  const linkRequests = requests.filter(request => request.path.includes('/opportunities/') && request.path.endsWith('/contacts'))
+  expect(createRequests).toHaveLength(1)
+  expect(methodAttempts).toBe(2)
+  expect(methodRequests).toHaveLength(2)
+  expect(linkRequests).toHaveLength(1)
+  expect(methodRequests[0]!.path).toBe(methodRequests[1]!.path)
+  expect(state.detail.relatedContacts.filter(contact => contact.displayName === 'Chị Mai')).toHaveLength(1)
+})
+
+test('recovers a link VERSION_CONFLICT with the same Contact ID and fresh Opportunity version', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  let linkAttempts = 0
+  let failNextCanonicalRead = false
+  const requests: Array<{ method: string, path: string, body: Record<string, unknown> }> = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.contact.manage'] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  page.on('request', request => {
+    if (request.method() === 'POST') requests.push({ method: request.method(), path: new URL(request.url()).pathname, body: request.postDataJSON() as Record<string, unknown> })
+  })
+  await page.route(new RegExp(`/api/companies/[^/]+/opportunities/${stage01OpportunityId}/contacts$`), async route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    linkAttempts += 1
+    if (linkAttempts === 1) {
+      state.detail.opportunity.version += 1
+      await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify(versionConflictBody()) })
+      return
+    }
+    await route.fallback()
+  })
+  await page.route(new RegExp(`/api/companies/[^/]+/opportunities/${stage01OpportunityId}/stage-01$`), async route => {
+    if (route.request().method() === 'GET' && failNextCanonicalRead) {
+      failNextCanonicalRead = false
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'Lỗi kiểm thử.', requestId: 'contact-conflict-reload-failure', details: {} } }) })
+      return
+    }
+    await route.fallback()
+  })
+  await goToWorkspace(page)
+
+  const contactCard = page.locator('.intake-controls__card').filter({ has: page.getByRole('heading', { name: 'Liên hệ', exact: true }) })
+  await contactCard.getByRole('button', { name: 'Thêm liên hệ', exact: true }).click()
+  await contactCard.getByRole('textbox', { name: 'Tên liên hệ', exact: true }).fill('Anh Nam')
+  await contactCard.getByRole('combobox', { name: 'Quan hệ', exact: true }).selectOption('primary_contact')
+  await contactCard.getByRole('textbox', { name: 'Giá trị phương thức (không bắt buộc)', exact: true }).fill('nam@example.com')
+  await contactCard.getByRole('button', { name: 'Tạo và liên kết liên hệ', exact: true }).click()
+
+  await expect(page.getByRole('button', { name: 'Tải lại và tiếp tục liên hệ', exact: true })).toBeVisible()
+  failNextCanonicalRead = true
+  await page.getByRole('button', { name: 'Tải lại và tiếp tục liên hệ', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Tải lại và tiếp tục liên hệ', exact: true })).toBeVisible()
+  expect(linkAttempts).toBe(1)
+  await page.getByRole('button', { name: 'Tải lại và tiếp tục liên hệ', exact: true }).click()
+  await expect(page.getByText('Đã tạo và liên kết liên hệ.', { exact: true })).toBeVisible()
+  const created = state.detail.relatedContacts.find(contact => contact.displayName === 'Anh Nam')
+  expect(created).toBeDefined()
+  const linkRequests = requests.filter(request => request.path.includes('/opportunities/') && request.path.endsWith('/contacts'))
+  expect(linkAttempts).toBe(2)
+  expect(linkRequests).toHaveLength(2)
+  expect(linkRequests[0]!.body.contactId).toBe(linkRequests[1]!.body.contactId)
+  expect(linkRequests[1]!.body.expectedOpportunityVersion).toBeGreaterThan(linkRequests[0]!.body.expectedOpportunityVersion as number)
+  expect(state.detail.opportunity.contacts.filter(contact => contact.contactId === created!.id)).toHaveLength(1)
+})
+
+test('reconciles an unknown link outcome from canonical data without replaying the link', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  let linkAttempts = 0
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.contact.manage'] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await page.route(new RegExp(`/api/companies/[^/]+/opportunities/${stage01OpportunityId}/contacts$`), async route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    linkAttempts += 1
+    if (linkAttempts === 1) {
+      const body = route.request().postDataJSON() as { contactId: string, relationshipCode: string, isPrimary?: boolean }
+      const source = state.detail.opportunity.contacts[0]!
+      state.detail.opportunity.contacts.push({
+        ...source,
+        id: '81000000-0000-4000-8000-000000000099',
+        contactId: body.contactId,
+        relationshipCode: body.relationshipCode,
+        isPrimary: body.isPrimary ?? false,
+      })
+      state.detail.opportunity.version += 1
+      await route.abort('failed')
+      return
+    }
+    await route.fallback()
+  })
+  await goToWorkspace(page)
+
+  const contactCard = page.locator('.intake-controls__card').filter({ has: page.getByRole('heading', { name: 'Liên hệ', exact: true }) })
+  await contactCard.getByRole('button', { name: 'Thêm liên hệ', exact: true }).click()
+  await contactCard.getByRole('textbox', { name: 'Tên liên hệ', exact: true }).fill('Chị Hạnh')
+  await contactCard.getByRole('combobox', { name: 'Quan hệ', exact: true }).selectOption('primary_contact')
+  await contactCard.getByRole('textbox', { name: 'Giá trị phương thức (không bắt buộc)', exact: true }).fill('hanh@example.com')
+  await contactCard.getByRole('button', { name: 'Tạo và liên kết liên hệ', exact: true }).click()
+
+  await expect(page.getByText('Đã tạo và liên kết liên hệ.', { exact: true })).toBeVisible()
+  expect(linkAttempts).toBe(1)
+  expect(state.detail.opportunity.contacts.filter(contact => contact.contactId === state.detail.relatedContacts.find(item => item.displayName === 'Chị Hạnh')?.id)).toHaveLength(1)
+})
+
+test('does not replay a successful method when linking rejects and the retry resumes at link', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  let linkAttempts = 0
+  const requests: Array<{ path: string, body: Record<string, unknown> }> = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.contact.manage'] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  page.on('request', request => {
+    if (request.method() === 'POST') requests.push({ path: new URL(request.url()).pathname, body: request.postDataJSON() as Record<string, unknown> })
+  })
+  await page.route(new RegExp(`/api/companies/[^/]+/opportunities/${stage01OpportunityId}/contacts$`), async route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    linkAttempts += 1
+    if (linkAttempts === 1) {
+      await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'PERMISSION_DENIED', message: 'Không có quyền thực hiện thao tác.', requestId: 'contact-link-rejected', details: {} } }) })
+      return
+    }
+    await route.fallback()
+  })
+  await goToWorkspace(page)
+
+  const contactCard = page.locator('.intake-controls__card').filter({ has: page.getByRole('heading', { name: 'Liên hệ', exact: true }) })
+  await contactCard.getByRole('button', { name: 'Thêm liên hệ', exact: true }).click()
+  await contactCard.getByRole('textbox', { name: 'Tên liên hệ', exact: true }).fill('Anh Sơn')
+  await contactCard.getByRole('combobox', { name: 'Quan hệ', exact: true }).selectOption('primary_contact')
+  await contactCard.getByRole('textbox', { name: 'Giá trị phương thức (không bắt buộc)', exact: true }).fill('son@example.com')
+  await contactCard.getByRole('button', { name: 'Tạo và liên kết liên hệ', exact: true }).click()
+  await expect(contactCard.getByRole('status')).toContainText('chưa liên kết được với cơ hội')
+  await contactCard.getByRole('button', { name: 'Tiếp tục khôi phục liên hệ', exact: true }).click()
+  await expect(page.getByText('Đã tạo và liên kết liên hệ.', { exact: true })).toBeVisible()
+
+  expect(requests.filter(request => request.path.endsWith('/contacts') && !request.path.includes('/opportunities/'))).toHaveLength(1)
+  expect(requests.filter(request => request.path.endsWith('/methods'))).toHaveLength(1)
+  expect(requests.filter(request => request.path.includes('/opportunities/') && request.path.endsWith('/contacts'))).toHaveLength(2)
+  expect(linkAttempts).toBe(2)
+})
+
+test('blocks an unknown Contact-create outcome across reload instead of creating a duplicate', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  let createAttempts = 0
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.contact.manage'] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await page.route(/\/api\/companies\/[^/]+\/contacts$/u, async route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    createAttempts += 1
+    await route.abort('failed')
+  })
+  await goToWorkspace(page)
+
+  const contactCard = page.locator('.intake-controls__card').filter({ has: page.getByRole('heading', { name: 'Liên hệ', exact: true }) })
+  await contactCard.getByRole('button', { name: 'Thêm liên hệ', exact: true }).click()
+  await contactCard.getByRole('textbox', { name: 'Tên liên hệ', exact: true }).fill('Chưa rõ kết quả')
+  await contactCard.getByRole('combobox', { name: 'Quan hệ', exact: true }).selectOption('primary_contact')
+  await contactCard.getByRole('button', { name: 'Tạo và liên kết liên hệ', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Không thể xác định kết quả tạo liên hệ' })).toBeVisible()
+
+  await page.reload()
+  await expect(page.getByRole('status').filter({ hasText: 'Không thể xác định kết quả tạo liên hệ' })).toBeVisible()
+  await expect(contactCard.getByRole('button', { name: 'Thêm liên hệ', exact: true })).toHaveCount(0)
+  expect(createAttempts).toBe(1)
+})
+
+test('persists a blocked recovery marker before a Contact-create request resolves', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  let releaseCreate!: () => void
+  let createAttempts = 0
+  const createPending = new Promise<void>(resolve => { releaseCreate = resolve })
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.contact.manage'] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await page.route(/\/api\/companies\/[^/]+\/contacts$/u, async route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    createAttempts += 1
+    await createPending
+    await route.abort('failed')
+  })
+  await goToWorkspace(page)
+
+  const contactCard = page.locator('.intake-controls__card').filter({ has: page.getByRole('heading', { name: 'Liên hệ', exact: true }) })
+  await contactCard.getByRole('button', { name: 'Thêm liên hệ', exact: true }).click()
+  await contactCard.getByRole('textbox', { name: 'Tên liên hệ', exact: true }).fill('Đang chờ tạo')
+  await contactCard.getByRole('combobox', { name: 'Quan hệ', exact: true }).selectOption('primary_contact')
+  const createRequest = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/contacts') && !new URL(request.url()).pathname.includes('/opportunities/'))
+  await contactCard.getByRole('button', { name: 'Tạo và liên kết liên hệ', exact: true }).click()
+  await createRequest
+  const reloading = page.reload()
+  releaseCreate()
+  await reloading
+  await expect(page.getByRole('status').filter({ hasText: 'Không thể xác định kết quả tạo liên hệ' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Thêm liên hệ', exact: true })).toHaveCount(0)
+  expect(createAttempts).toBe(1)
+})
+
+test('persists a blocked recovery marker before a Contact-method request resolves', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  let releaseMethod!: () => void
+  let methodAttempts = 0
+  const methodPending = new Promise<void>(resolve => { releaseMethod = resolve })
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.contact.manage'] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await page.route(/\/api\/companies\/[^/]+\/contacts\/[^/]+\/methods$/u, async route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    methodAttempts += 1
+    await methodPending
+    await route.abort('failed')
+  })
+  await goToWorkspace(page)
+
+  const contactCard = page.locator('.intake-controls__card').filter({ has: page.getByRole('heading', { name: 'Liên hệ', exact: true }) })
+  await contactCard.getByRole('button', { name: 'Thêm liên hệ', exact: true }).click()
+  await contactCard.getByRole('textbox', { name: 'Tên liên hệ', exact: true }).fill('Đang chờ phương thức')
+  await contactCard.getByRole('combobox', { name: 'Quan hệ', exact: true }).selectOption('primary_contact')
+  await contactCard.getByRole('textbox', { name: 'Giá trị phương thức (không bắt buộc)', exact: true }).fill('pending@example.com')
+  const methodRequest = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/methods'))
+  await contactCard.getByRole('button', { name: 'Tạo và liên kết liên hệ', exact: true }).click()
+  await methodRequest
+  const reloading = page.reload()
+  releaseMethod()
+  await reloading
+  await expect(page.getByRole('status').filter({ hasText: 'Không thể xác định kết quả thêm phương thức' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Thêm liên hệ', exact: true })).toHaveCount(0)
+  expect(methodAttempts).toBe(1)
+})
+
+test('fails closed on a malformed persisted Contact recovery marker', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  const recoveryKey = 'taskovia.stage01-contact-recovery.v1:11111111-1111-4111-8111-111111111111:10000000-0000-4000-8000-000000000002:81000000-0000-4000-8000-000000000001'
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.contact.manage'] })]
+  await page.addInitScript(key => { window.sessionStorage.setItem(key, '{malformed') }, recoveryKey)
+  await installStatefulStage01OperationalRoutes(page, state)
+  await goToWorkspace(page)
+
+  await expect(page.getByRole('status').filter({ hasText: 'Không thể lưu hoặc đọc trạng thái khôi phục' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Thêm liên hệ', exact: true })).toHaveCount(0)
+})
+
+test('keeps Contact controls locked when final canonical reload fails after a successful link', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  let failNextCanonicalRead = false
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.contact.manage'] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await page.route(new RegExp(`/api/companies/[^/]+/opportunities/${stage01OpportunityId}/stage-01$`), async route => {
+    if (route.request().method() === 'GET' && failNextCanonicalRead) {
+      failNextCanonicalRead = false
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'Lỗi kiểm thử.', requestId: 'contact-final-reload-failure', details: {} } }) })
+      return
+    }
+    await route.fallback()
+  })
+  await goToWorkspace(page)
+
+  const contactCard = page.locator('.intake-controls__card').filter({ has: page.getByRole('heading', { name: 'Liên hệ', exact: true }) })
+  await contactCard.getByRole('button', { name: 'Thêm liên hệ', exact: true }).click()
+  await contactCard.getByRole('textbox', { name: 'Tên liên hệ', exact: true }).fill('Anh Khôi')
+  await contactCard.getByRole('combobox', { name: 'Quan hệ', exact: true }).selectOption('primary_contact')
+  failNextCanonicalRead = true
+  await contactCard.getByRole('button', { name: 'Tạo và liên kết liên hệ', exact: true }).click()
+
+  await expect(page.getByRole('button', { name: 'Tải lại dữ liệu chính tắc' }).first()).toBeVisible()
+  await expect(contactCard.getByRole('button', { name: 'Thêm liên hệ', exact: true })).toHaveCount(0)
+  await expect(contactCard.getByRole('button', { name: 'Cập nhật phương thức', exact: true })).toBeDisabled()
 })
 
 test('creates an opportunity and completes the Stage 01 happy path through the public workspace', async ({ page, authState }) => {

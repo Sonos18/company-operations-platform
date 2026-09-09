@@ -4,6 +4,7 @@ import { useStage01Operational } from '../../../app/composables/useStage01Operat
 import type { Stage01CanonicalRecoveryEntry } from '../../../app/composables/useStage01Operational'
 import type { Stage01Repository } from '../../../app/repositories/contracts'
 import type { Stage01OperationalDetail } from '../../../app/features/stage01/stage01.types'
+import type { ContactRecoveryEntry } from '../../../app/features/stage01-operational/contact-recovery'
 
 const opportunityId = '83000000-0000-4000-8000-000000000030'
 
@@ -225,5 +226,27 @@ describe('Stage 01 operational command orchestration', () => {
     expect(newOperational.detail.value).toStrictEqual(oldDetail)
     await newOperational.load()
     expect(newOperational.detail.value).toStrictEqual(newDetail)
+  })
+
+  it('keeps Contact recovery scoped by actor, company, and Opportunity across remounts', () => {
+    const recoveryState = ref<Record<string, Stage01CanonicalRecoveryEntry>>({})
+    const recovery: ContactRecoveryEntry = {
+      phase: 'link_pending',
+      contactId: '83000000-0000-4000-8000-000000000031',
+      contactVersion: 1,
+      methodCompleted: true,
+      draft: { displayName: 'Chị Lan', relationshipCode: 'primary_contact', methodType: 'phone', methodValue: '0900000000', isPrimary: true },
+      reason: '',
+    }
+    const first = useStage01Operational(repositoryWith(vi.fn()), opportunityId, { actorId: 'user-a', companyId: 'company-a', recoveryState })
+    first.setContactRecovery(recovery)
+
+    const sameResource = useStage01Operational(repositoryWith(vi.fn()), opportunityId, { actorId: 'user-a', companyId: 'company-a', recoveryState })
+    const differentCompany = useStage01Operational(repositoryWith(vi.fn()), opportunityId, { actorId: 'user-a', companyId: 'company-b', recoveryState })
+    const differentActor = useStage01Operational(repositoryWith(vi.fn()), opportunityId, { actorId: 'user-b', companyId: 'company-a', recoveryState })
+
+    expect(sameResource.contactRecovery.value).toStrictEqual(recovery)
+    expect(differentCompany.contactRecovery.value).toBeNull()
+    expect(differentActor.contactRecovery.value).toBeNull()
   })
 })

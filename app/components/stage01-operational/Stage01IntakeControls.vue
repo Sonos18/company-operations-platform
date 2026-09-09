@@ -1,12 +1,21 @@
 <script setup lang="ts">
 import { ClientError } from '../../errors/client-error'
 import { taxonomyLabel } from '../../features/stage01-operational/stage01-operational'
+import {
+  blockedContactRecovery,
+  contactWriteOutcomeIsUnknown,
+  type ContactRecoveryDraft,
+  type ContactRecoveryEntry,
+} from '../../features/stage01-operational/contact-recovery'
 import type { Stage01OperationalDetail } from '../../features/stage01/stage01.types'
 
 const props = defineProps<{
   detail: Stage01OperationalDetail
   runAndReload: <T>(action: () => Promise<T>) => Promise<T>
   reload: () => Promise<unknown>
+  contactRecovery: ContactRecoveryEntry | null
+  setContactRecovery: (value: ContactRecoveryEntry | null) => boolean
+  contactRecoveryStorageAvailable: boolean
 }>()
 
 const repositories = useRepositories()
@@ -17,6 +26,7 @@ const editingOpportunity = ref(false)
 const invalidating = ref(false)
 const restoring = ref(false)
 const addingContact = ref(false)
+const addingMethodContactId = ref<string | null>(null)
 const editingContactId = ref<string | null>(null)
 const editingMethodId = ref<string | null>(null)
 const addingScope = ref(false)
@@ -28,6 +38,7 @@ const canonicalOptions = ref<Awaited<ReturnType<typeof repositories.opportunitie
 const opportunityEditorVersion = ref<number | null>(null)
 const opportunityConflict = ref(false)
 const opportunityDraftInspectionOnly = ref(false)
+const contactRecoveryConflict = ref(false)
 
 function opportunityDraft(source: Stage01OperationalDetail['opportunity']) {
   return {
@@ -126,22 +137,193 @@ async function restore(): Promise<void> {
   if (didSave) restoring.value = false
 }
 
-async function addContact(): Promise<void> {
-  if (!contact.displayName.trim() || !contact.relationshipCode) return
-  clearNotice()
+function contactDraft(recovery: ContactRecoveryEntry | null = null): ContactRecoveryDraft {
+  return {
+    displayName: recovery?.draft.displayName ?? contact.displayName.trim(),
+    relationshipCode: contact.relationshipCode,
+    methodType: (recovery?.methodCompleted ? recovery.draft.methodType : contact.methodType) as ContactRecoveryDraft['methodType'],
+    methodValue: recovery?.methodCompleted ? recovery.draft.methodValue : contact.methodValue.trim(),
+    isPrimary: contact.isPrimary,
+  }
+}
+
+function saveContactRecovery(value: ContactRecoveryEntry): boolean {
+  const stored = props.setContactRecovery(value)
+  if (!stored) error.value = new Error('Không thể lưu trạng thái khôi phục trong phiên làm việc. Không thể tiếp tục tự động để tránh tạo trùng liên hệ.')
+  return stored
+}
+
+function unknownContactWrite(value: ContactRecoveryEntry, reason: string): Error {
+  const blocked = {
+    ...blockedContactRecovery(value.draft, reason, value.contactId, value.contactVersion),
+    methodCompleted: value.methodCompleted,
+  }
+  saveContactRecovery(blocked)
+  return new Error(reason)
+}
+
+function partialContactWrite(value: ContactRecoveryEntry, step: 'method' | 'link'): Error {
+  const reason = step === 'method'
+    ? 'Đã tạo liên hệ nhưng chưa thêm được phương thức. Hãy kiểm tra giá trị rồi tiếp tục khôi phục liên hệ.'
+    : 'Đã tạo liên hệ nhưng chưa liên kết được với cơ hội. Hãy tiếp tục khôi phục liên hệ.'
+  saveContactRecovery({ ...value, phase: step === 'method' ? 'method_pending' : 'link_pending', reason })
+  return new Error(reason)
+}
+
+async function runContactSteps(recovery: ContactRecoveryEntry, opportunityId: string, opportunityVersion: number): Promise<void> {
+  let current = recovery
+  if (current.phase === 'method_pending') {
+    if (!current.contactId || current.contactVersion === null) throw new Error('Không thể xác định Contact để tiếp tục khôi phục.')
+    if (!current.draft.methodValue) {
+      const reason = 'Cần nhập lại phương thức liên hệ trước khi tiếp tục khôi phục.'
+      saveContactRecovery({ ...current, reason })
+      throw new Error(reason)
+    }
+    const inFlight = blockedContactRecovery(current.draft, 'Đang thêm phương thức liên hệ. Không thể tiếp tục tự động nếu kết quả không rõ ràng.', current.contactId, current.contactVersion)
+    if (!saveContactRecovery(inFlight)) throw new Error('Không thể tiếp tục khôi phục liên hệ.')
+    try {
+      await repositories.opportunities.addContactMethod(current.contactId, {
+        methodType: current.draft.methodType,
+        value: current.draft.methodValue,
+        isUsable: true,
+        expectedContactVersion: current.contactVersion,
+      })
+    }
+    catch (caught) {
+      if (contactWriteOutcomeIsUnknown(caught) || (caught instanceof ClientError && caught.code === 'VERSION_CONFLICT')) {
+        throw unknownContactWrite(inFlight, caught instanceof ClientError && caught.code === 'VERSION_CONFLICT'
+          ? 'Đã tạo liên hệ nhưng không thể xác nhận phiên bản mới để thêm phương thức. Không thể tiếp tục tự động với các chức năng hiện có.'
+          : 'Không thể xác định kết quả thêm phương thức. Không thể tiếp tục tự động để tránh tạo trùng liên hệ.')
+      }
+      throw partialContactWrite(current, 'method')
+    }
+    current = { ...current, phase: 'link_pending', methodCompleted: true, reason: '' }
+    if (!saveContactRecovery(current)) throw new Error('Không thể tiếp tục khôi phục liên hệ.')
+  }
+
+  if (current.phase !== 'link_pending' || !current.contactId) {
+    if (current.phase === 'blocked_unknown') throw new Error(current.reason)
+    return
+  }
+  const inFlight = {
+    ...blockedContactRecovery(current.draft, 'Đang liên kết liên hệ. Không thể tiếp tục tự động nếu kết quả không rõ ràng.', current.contactId, current.contactVersion),
+    methodCompleted: current.methodCompleted,
+  }
+  if (!saveContactRecovery(inFlight)) throw new Error('Không thể tiếp tục khôi phục liên hệ.')
   try {
-    await props.runAndReload(async () => {
-      const created = await repositories.opportunities.createContact({ displayName: contact.displayName.trim() })
-      if (contact.methodValue.trim()) await repositories.opportunities.addContactMethod(created.id, { methodType: contact.methodType as 'phone' | 'email' | 'other', value: contact.methodValue.trim(), isUsable: true, expectedContactVersion: created.version })
+    await repositories.opportunities.linkContact(opportunityId, {
+      contactId: current.contactId,
+      relationshipCode: current.draft.relationshipCode,
+      isPrimary: current.draft.isPrimary,
+      expectedOpportunityVersion: opportunityVersion,
+    })
+  }
+  catch (caught) {
+    if (caught instanceof ClientError && caught.code === 'VERSION_CONFLICT') {
+      saveContactRecovery({ ...current, phase: 'link_pending', reason: '' })
+      throw caught
+    }
+    if (contactWriteOutcomeIsUnknown(caught)) {
+      throw unknownContactWrite(inFlight, 'Không thể xác định kết quả liên kết liên hệ. Không thể tiếp tục tự động để tránh tạo trùng liên hệ.')
+    }
+    throw partialContactWrite(current, 'link')
+  }
+  saveContactRecovery({ ...current, phase: 'link_complete_pending_reload', reason: '' })
+}
+
+async function runContactAction(opportunityId: string, opportunityVersion: number, draft: ContactRecoveryDraft, existingRecovery: ContactRecoveryEntry | null): Promise<void> {
+  await props.runAndReload(async () => {
+    let recovery = existingRecovery
+    if (!recovery) {
+      const inFlight = blockedContactRecovery(draft, 'Đang tạo liên hệ. Không thể tiếp tục tự động nếu kết quả không rõ ràng.')
+      if (!saveContactRecovery(inFlight)) throw new Error('Không thể tiếp tục khôi phục liên hệ.')
+      let created
       try {
-        await repositories.opportunities.linkContact(props.detail.opportunity.id, { contactId: created.id, relationshipCode: contact.relationshipCode, isPrimary: contact.isPrimary, expectedOpportunityVersion: props.detail.opportunity.version })
+        created = await repositories.opportunities.createContact({ displayName: draft.displayName })
       }
       catch (caught) {
-        throw new Error(`Không thể liên kết liên hệ: ${message(caught)}`, { cause: caught })
+        if (contactWriteOutcomeIsUnknown(caught)) {
+          throw unknownContactWrite(inFlight, 'Không thể xác định kết quả tạo liên hệ. Không thể tiếp tục tự động để tránh tạo trùng liên hệ.')
+        }
+        props.setContactRecovery(null)
+        throw caught
       }
-    })
+      recovery = {
+        phase: draft.methodValue ? 'method_pending' : 'link_pending',
+        contactId: created.id,
+        contactVersion: created.version,
+        methodCompleted: !draft.methodValue,
+        draft,
+        reason: '',
+      }
+      if (!saveContactRecovery(recovery)) throw new Error('Không thể tiếp tục khôi phục liên hệ.')
+    }
+    await runContactSteps(recovery, opportunityId, opportunityVersion)
+  })
+}
+
+async function addContact(): Promise<void> {
+  if (!canContact.value || !contact.displayName.trim() || !contact.relationshipCode || !props.contactRecoveryStorageAvailable) return
+  clearNotice()
+  contactRecoveryConflict.value = false
+  const opportunityId = props.detail.opportunity.id
+  const opportunityVersion = props.detail.opportunity.version
+  const existingRecovery = props.contactRecovery
+  const draft = contactDraft(existingRecovery)
+  if (existingRecovery) {
+    contact.displayName = draft.displayName
+    contact.methodType = draft.methodType
+    contact.methodValue = draft.methodValue
+  }
+  if (existingRecovery?.phase === 'blocked_unknown' || existingRecovery?.phase === 'link_complete_pending_reload') {
+    error.value = new Error(existingRecovery.reason || 'Cần tải lại dữ liệu chính tắc để xác nhận trạng thái liên hệ trước khi tiếp tục.')
+    return
+  }
+  const recovery = existingRecovery ? { ...existingRecovery, draft, reason: '' } : null
+  if (recovery && !saveContactRecovery(recovery)) return
+
+  try {
+    await runContactAction(opportunityId, opportunityVersion, draft, recovery)
+    await nextTick()
+    if (props.contactRecovery) {
+      error.value = new Error(props.contactRecovery.reason || 'Dữ liệu chính tắc chưa xác nhận trạng thái liên hệ. Không thể tiếp tục tự động.')
+      return
+    }
     success.value = 'Đã tạo và liên kết liên hệ.'
     addingContact.value = false
+  }
+  catch (caught) {
+    if (props.contactRecovery?.phase === 'blocked_unknown' && props.contactRecovery.contactId && props.contactRecovery.methodCompleted) {
+      const reloaded = await props.reload()
+      await nextTick()
+      if (reloaded === true && !props.contactRecovery) {
+        success.value = 'Đã tạo và liên kết liên hệ.'
+        addingContact.value = false
+        return
+      }
+      if (reloaded !== true) return
+    }
+    error.value = caught
+    if (caught instanceof ClientError && caught.code === 'VERSION_CONFLICT' && props.contactRecovery?.phase === 'link_pending') contactRecoveryConflict.value = true
+  }
+}
+
+async function resumeContactAfterConflict(): Promise<void> {
+  contactRecoveryConflict.value = false
+  clearNotice()
+  try {
+    const reloaded = await props.reload()
+    if (reloaded !== true) {
+      contactRecoveryConflict.value = true
+      error.value = new Error('Không thể tải dữ liệu chính tắc. Hãy tải lại trước khi tiếp tục khôi phục liên hệ.')
+      return
+    }
+    await nextTick()
+    if (props.contactRecovery) await addContact()
+    else {
+      success.value = 'Đã tạo và liên kết liên hệ.'
+      addingContact.value = false
+    }
   }
   catch (caught) { error.value = caught }
 }
@@ -169,6 +351,27 @@ function openMethodEditor(contactId: string, method: Stage01OperationalDetail['r
   methodEdit.value = method.value
   methodEdit.isUsable = method.isUsable
   methodEdit.version = version
+}
+function openMethodAdder(contactId: string, version: number): void {
+  addingMethodContactId.value = contactId
+  methodEdit.contactId = contactId
+  methodEdit.methodType = 'phone'
+  methodEdit.value = ''
+  methodEdit.isUsable = true
+  methodEdit.version = version
+}
+async function addMethod(): Promise<void> {
+  if (!canContact.value || !addingMethodContactId.value || !methodEdit.value.trim()) return
+  const didSave = await command('Đã thêm phương thức liên hệ.', () => repositories.opportunities.addContactMethod(
+    addingMethodContactId.value!,
+    {
+      methodType: methodEdit.methodType,
+      value: methodEdit.value.trim(),
+      isUsable: methodEdit.isUsable,
+      expectedContactVersion: methodEdit.version,
+    },
+  ))
+  if (didSave) addingMethodContactId.value = null
 }
 async function updateMethod(): Promise<void> {
   if (!editingMethodId.value || !methodEdit.value.trim()) return
@@ -250,13 +453,26 @@ function toggleRecordForm(): void { addingRecord.value = !addingRecord.value }
 function toggleDuplicateForm(): void { raisingDuplicate.value = !raisingDuplicate.value }
 function openResolution(id: string): void { resolvingConcernId.value = id }
 function onResolutionChange(): void { if (resolution.resolution === 'same_need') void loadCanonicalOptions() }
+
+watch(() => props.contactRecovery, (recovery) => {
+  if (!recovery) return
+  contact.displayName = recovery.draft.displayName
+  contact.relationshipCode = recovery.draft.relationshipCode
+  contact.methodType = recovery.draft.methodType
+  contact.methodValue = recovery.draft.methodValue
+  contact.isPrimary = recovery.draft.isPrimary
+  addingContact.value = recovery.phase !== 'blocked_unknown'
+}, { immediate: true })
 </script>
 
 <template>
   <section class="intake-controls" aria-label="Nghiệp vụ tiếp nhận">
     <UAlert v-if="error" role="alert" color="error" variant="subtle" icon="i-lucide-circle-alert" title="Không thể hoàn tất thao tác" :description="message(error)">
-      <template v-if="error instanceof ClientError && error.code === 'VERSION_CONFLICT'" #actions>
-        <template v-if="opportunityConflict">
+      <template v-if="contactRecoveryConflict || (error instanceof ClientError && error.code === 'VERSION_CONFLICT')" #actions>
+        <template v-if="contactRecoveryConflict">
+          <UButton color="error" variant="outline" @click="resumeContactAfterConflict">Tải lại và tiếp tục liên hệ</UButton>
+        </template>
+        <template v-else-if="opportunityConflict">
           <UButton color="error" variant="outline" @click="retainOpportunityDraft">Giữ bản nháp để xem</UButton>
           <UButton color="error" @click="discardOpportunityDraftAndReload">Bỏ bản nháp và tải lại</UButton>
         </template>
@@ -275,7 +491,7 @@ function onResolutionChange(): void { if (resolution.resolution === 'same_need')
       <form v-if="restoring" class="intake-controls__form" @submit.prevent="restore"><label>Lý do khôi phục<textarea v-model="restoreReason" required /></label><UButton type="submit">Xác nhận khôi phục</UButton></form>
     </article>
 
-    <article class="intake-controls__card"><header><div><p class="eyebrow">Tiếp nhận</p><h2>Liên hệ</h2></div><UButton v-if="canContact" size="sm" @click="toggleContactForm">Thêm liên hệ</UButton></header><ul class="intake-controls__history"><li v-for="relationship in detail.opportunity.contacts" :key="relationship.id"><div><strong>{{ detail.relatedContacts.find(contact => contact.id === relationship.contactId)?.displayName ?? relationship.contactId }}</strong><p>{{ taxonomyLabel(detail.configuration.taxonomies.contact_relationship, relationship.relationshipCode) }} · {{ relationship.endedAt ? 'Đã kết thúc' : 'Đang hiệu lực' }}</p><template v-for="method in detail.relatedContacts.find(contact => contact.id === relationship.contactId)?.methods" :key="method.id"><small>{{ method.methodType }}: {{ method.value }}{{ method.isUsable ? ' · sử dụng được' : '' }}</small><UButton v-if="canContact" size="xs" variant="link" @click="openMethodEditor(relationship.contactId, method, detail.relatedContacts.find(contact => contact.id === relationship.contactId)?.version ?? 0)">Cập nhật phương thức</UButton></template></div><div v-if="canContact && !relationship.endedAt" class="intake-controls__actions"><UButton size="xs" variant="outline" @click="openContactEditor(relationship.contactId)">Cập nhật liên hệ</UButton><UButton v-if="!relationship.isPrimary" size="xs" variant="outline" @click="setPrimaryContact(relationship.contactId, relationship.relationshipCode)">Đặt liên hệ chính</UButton><UButton size="xs" color="neutral" variant="outline" @click="endContact(relationship.id)">Kết thúc liên hệ</UButton></div></li></ul><form v-if="editingContactId" class="intake-controls__form" @submit.prevent="updateContact"><h3>Cập nhật liên hệ</h3><label>Tên liên hệ<input v-model="contactEdit.displayName" required></label><label>Ghi chú<input v-model="contactEdit.notes"></label><UButton type="submit">Lưu liên hệ</UButton></form><form v-if="editingMethodId" class="intake-controls__form" @submit.prevent="updateMethod"><h3>Cập nhật phương thức</h3><label>Loại<select v-model="methodEdit.methodType"><option value="phone">Điện thoại</option><option value="email">Email</option><option value="other">Khác</option></select></label><label>Giá trị<input v-model="methodEdit.value" required></label><label><input v-model="methodEdit.isUsable" type="checkbox"> Có thể sử dụng</label><UButton type="submit">Lưu phương thức</UButton></form><form v-if="addingContact" class="intake-controls__form" @submit.prevent="addContact"><label>Tên liên hệ<input v-model="contact.displayName" required></label><label>Quan hệ<select v-model="contact.relationshipCode" required><option disabled value="">Chọn quan hệ</option><option v-for="entry in detail.configuration.taxonomies.contact_relationship" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Phương thức liên hệ<select v-model="contact.methodType"><option value="phone">Điện thoại</option><option value="email">Email</option><option value="other">Khác</option></select></label><label>Giá trị phương thức (không bắt buộc)<input v-model="contact.methodValue"></label><label><input v-model="contact.isPrimary" type="checkbox"> Liên hệ chính</label><UButton type="submit">Tạo và liên kết liên hệ</UButton></form></article>
+    <article class="intake-controls__card"><header><div><p class="eyebrow">Tiếp nhận</p><h2>Liên hệ</h2></div><UButton v-if="canContact && !contactRecovery && contactRecoveryStorageAvailable" size="sm" @click="toggleContactForm">Thêm liên hệ</UButton></header><UAlert v-if="contactRecovery" role="status" color="warning" variant="subtle" icon="i-lucide-life-buoy" :title="contactRecovery.phase === 'blocked_unknown' ? 'Cần khôi phục liên hệ thủ công' : 'Cần tiếp tục khôi phục liên hệ'" :description="contactRecovery.reason || (contactRecovery.phase === 'method_pending' ? 'Liên hệ đã được tạo nhưng phương thức chưa hoàn tất.' : 'Liên hệ đã được tạo nhưng chưa liên kết với cơ hội.')" /><UAlert v-else-if="!contactRecoveryStorageAvailable" role="alert" color="error" variant="subtle" icon="i-lucide-shield-alert" title="Không thể lưu trạng thái khôi phục" description="Không thể tiếp tục thao tác liên hệ trong phiên này để tránh tạo trùng dữ liệu." /><ul class="intake-controls__history"><li v-for="relationship in detail.opportunity.contacts" :key="relationship.id"><div><strong>{{ detail.relatedContacts.find(contact => contact.id === relationship.contactId)?.displayName ?? relationship.contactId }}</strong><p>{{ taxonomyLabel(detail.configuration.taxonomies.contact_relationship, relationship.relationshipCode) }} · {{ relationship.endedAt ? 'Đã kết thúc' : 'Đang hiệu lực' }}</p><template v-for="method in detail.relatedContacts.find(contact => contact.id === relationship.contactId)?.methods" :key="method.id"><small>{{ method.methodType }}: {{ method.value }}{{ method.isUsable ? ' · sử dụng được' : '' }}</small><UButton v-if="canContact" size="xs" variant="link" @click="openMethodEditor(relationship.contactId, method, detail.relatedContacts.find(contact => contact.id === relationship.contactId)?.version ?? 0)">Cập nhật phương thức</UButton></template><UButton v-if="canContact && !relationship.endedAt && !(detail.relatedContacts.find(contact => contact.id === relationship.contactId)?.methods.length)" size="xs" variant="link" @click="openMethodAdder(relationship.contactId, detail.relatedContacts.find(contact => contact.id === relationship.contactId)?.version ?? 0)">Thêm phương thức</UButton></div><div v-if="canContact && !relationship.endedAt" class="intake-controls__actions"><UButton size="xs" variant="outline" @click="openContactEditor(relationship.contactId)">Cập nhật liên hệ</UButton><UButton v-if="!relationship.isPrimary" size="xs" variant="outline" @click="setPrimaryContact(relationship.contactId, relationship.relationshipCode)">Đặt liên hệ chính</UButton><UButton size="xs" color="neutral" variant="outline" @click="endContact(relationship.id)">Kết thúc liên hệ</UButton></div></li></ul><form v-if="canContact && editingContactId" class="intake-controls__form" @submit.prevent="updateContact"><h3>Cập nhật liên hệ</h3><label>Tên liên hệ<input v-model="contactEdit.displayName" required></label><label>Ghi chú<input v-model="contactEdit.notes"></label><UButton type="submit">Lưu liên hệ</UButton></form><form v-if="canContact && editingMethodId" class="intake-controls__form" @submit.prevent="updateMethod"><h3>Cập nhật phương thức</h3><label>Loại<select v-model="methodEdit.methodType"><option value="phone">Điện thoại</option><option value="email">Email</option><option value="other">Khác</option></select></label><label>Giá trị<input v-model="methodEdit.value" required></label><label><input v-model="methodEdit.isUsable" type="checkbox"> Có thể sử dụng</label><UButton type="submit">Lưu phương thức</UButton></form><form v-if="canContact && addingMethodContactId" class="intake-controls__form" @submit.prevent="addMethod"><h3>Thêm phương thức</h3><label>Loại<select v-model="methodEdit.methodType"><option value="phone">Điện thoại</option><option value="email">Email</option><option value="other">Khác</option></select></label><label>Giá trị<input v-model="methodEdit.value" required></label><label><input v-model="methodEdit.isUsable" type="checkbox"> Có thể sử dụng</label><UButton type="submit">Lưu phương thức</UButton></form><form v-if="canContact && addingContact" class="intake-controls__form" @submit.prevent="addContact"><label>Tên liên hệ<input v-model="contact.displayName" :readonly="Boolean(contactRecovery)" required></label><label>Quan hệ<select v-model="contact.relationshipCode" required><option disabled value="">Chọn quan hệ</option><option v-for="entry in detail.configuration.taxonomies.contact_relationship" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Phương thức liên hệ<select v-model="contact.methodType" :disabled="Boolean(contactRecovery?.methodCompleted)"><option value="phone">Điện thoại</option><option value="email">Email</option><option value="other">Khác</option></select></label><label>Giá trị phương thức (không bắt buộc)<input v-model="contact.methodValue" :readonly="Boolean(contactRecovery?.methodCompleted)"></label><label><input v-model="contact.isPrimary" type="checkbox"> Liên hệ chính</label><UButton type="submit">{{ contactRecovery ? 'Tiếp tục khôi phục liên hệ' : 'Tạo và liên kết liên hệ' }}</UButton></form></article>
 
     <article class="intake-controls__card"><header><div><p class="eyebrow">Tiếp nhận</p><h2>Phạm vi</h2></div><UButton v-if="canScope" size="sm" @click="toggleScopeForm">Thêm phạm vi</UButton></header><ul class="intake-controls__history"><li v-for="item in detail.opportunity.scopes" :key="item.id"><div><strong>{{ taxonomyLabel(detail.configuration.taxonomies.scope, item.scopeCode) }}</strong><p>{{ item.note ?? 'Không có ghi chú' }} · {{ item.retiredAt ? 'Đã ngừng áp dụng' : 'Đang áp dụng' }}</p></div><UButton v-if="canScope && !item.retiredAt" size="xs" variant="outline" @click="retireScope(item.id)">Ngừng áp dụng</UButton></li></ul><form v-if="addingScope" class="intake-controls__form" @submit.prevent="addNewScope"><label>Phạm vi<select v-model="scope.scopeCode" required><option disabled value="">Chọn phạm vi</option><option v-for="entry in detail.configuration.taxonomies.scope" :key="entry.code" :value="entry.code">{{ entry.label }}</option></select></label><label>Ghi chú<input v-model="scope.note"></label><UButton type="submit">Lưu phạm vi</UButton></form></article>
 
