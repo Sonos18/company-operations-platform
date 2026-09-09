@@ -101,4 +101,22 @@ describe('HTTP Opportunity repository', () => {
       body: input,
     }))
   })
+
+  it('keeps sparse update keys omitted, preserves zero, and sends explicit clear nulls', async () => {
+    const bodies: unknown[] = []
+    const request = vi.fn(async ({ body }: { body: unknown }) => {
+      bodies.push(body)
+      return {}
+    })
+    const repository = createHttpOpportunityRepository({ companyId, client: { request } as never })
+
+    await repository.update(opportunityId, { expectedOpportunityVersion: 7, budgetMin: 0 })
+    await repository.update(opportunityId, { expectedOpportunityVersion: 8, budgetMin: null, locationText: null })
+
+    expect(bodies).toEqual([
+      { expectedOpportunityVersion: 7, budgetMin: 0 },
+      { expectedOpportunityVersion: 8, budgetMin: null, locationText: null },
+    ])
+    expect(() => repository.update(opportunityId, { expectedOpportunityVersion: 9, needDescription: null } as never)).toThrow()
+  })
 })

@@ -82,8 +82,16 @@ function message(value: unknown, fallback = 'Không thể hoàn tất thao tác.
 }
 
 function clearNotice(): void { error.value = null; success.value = null }
-function optionalText(value: string): string | undefined { return value.trim() || undefined }
-function optionalNumber(value: string): number | undefined { return value.trim() && Number.isFinite(Number(value)) ? Number(value) : undefined }
+function clearableText(value: string | number | null | undefined): string | null {
+  const normalized = value === null || value === undefined ? '' : String(value).trim()
+  return normalized || null
+}
+function clearableNumber(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(parsed)) throw new Error('Giá trị số không hợp lệ.')
+  return parsed
+}
 function rehydrateOpportunityDraft(): void {
   Object.assign(opportunity, opportunityDraft(props.detail.opportunity))
   opportunityEditorVersion.value = props.detail.opportunity.version
@@ -104,13 +112,26 @@ async function command(label: string, action: () => Promise<unknown>): Promise<b
 
 async function saveOpportunity(): Promise<void> {
   if (opportunityDraftInspectionOnly.value) return
+  clearNotice()
+  const nonClearableFields = [
+    ['primaryCustomerName', 'Tên khách hàng chính'],
+    ['needDescription', 'Nhu cầu'],
+    ['customerTypeCode', 'Loại khách hàng'],
+    ['primaryLeadSourceCode', 'Nguồn khách hàng'],
+    ['engagementStatusCode', 'Mức độ tương tác'],
+  ] as const
+  for (const [field, label] of nonClearableFields) {
+    if (props.detail.opportunity[field] !== null && !opportunity[field].trim()) {
+      error.value = new Error(`Không thể xóa ${label}; trường này không cho phép để trống.`)
+      return
+    }
+  }
   const didSave = await command('Đã lưu thông tin cơ hội chính tắc.', () => repositories.opportunities.update(props.detail.opportunity.id, {
     primaryCustomerName: opportunity.primaryCustomerName.trim() || undefined, needDescription: opportunity.needDescription.trim() || undefined,
     customerTypeCode: opportunity.customerTypeCode || undefined, primaryLeadSourceCode: opportunity.primaryLeadSourceCode || undefined,
-    engagementStatusCode: opportunity.engagementStatusCode || undefined, budgetStatusCode: opportunity.budgetStatusCode || undefined,
-    timelineStatusCode: opportunity.timelineStatusCode || undefined, priorityCode: opportunity.priorityCode || undefined,
-    locationStatus: opportunity.locationStatus, locationText: optionalText(opportunity.locationText), budgetMin: optionalNumber(opportunity.budgetMin), budgetMax: optionalNumber(opportunity.budgetMax),
-    currencyCode: optionalText(opportunity.currencyCode)?.toUpperCase(), budgetNote: optionalText(opportunity.budgetNote), timelineStartDate: optionalText(opportunity.timelineStartDate), timelineEndDate: optionalText(opportunity.timelineEndDate), timelineNote: optionalText(opportunity.timelineNote),
+    engagementStatusCode: opportunity.engagementStatusCode || undefined,
+    locationStatus: opportunity.locationStatus, locationText: clearableText(opportunity.locationText), budgetStatusCode: clearableText(opportunity.budgetStatusCode), budgetMin: clearableNumber(opportunity.budgetMin), budgetMax: clearableNumber(opportunity.budgetMax),
+    currencyCode: clearableText(opportunity.currencyCode)?.toUpperCase() ?? null, budgetNote: clearableText(opportunity.budgetNote), timelineStatusCode: clearableText(opportunity.timelineStatusCode), timelineStartDate: clearableText(opportunity.timelineStartDate), timelineEndDate: clearableText(opportunity.timelineEndDate), timelineNote: clearableText(opportunity.timelineNote), priorityCode: clearableText(opportunity.priorityCode),
     expectedOpportunityVersion: opportunityEditorVersion.value ?? props.detail.opportunity.version,
   }))
   if (didSave) {
@@ -437,12 +458,13 @@ function retainOpportunityDraft(): void {
   clearNotice()
 }
 async function discardOpportunityDraftAndReload(): Promise<void> {
-  clearNotice()
-  await props.reload()
+  const reloaded = await props.reload()
+  if (reloaded !== true) return
   await nextTick()
   rehydrateOpportunityDraft()
   opportunityConflict.value = false
   opportunityDraftInspectionOnly.value = false
+  clearNotice()
 }
 function toggleInvalidation(): void { invalidating.value = !invalidating.value }
 function toggleRestore(): void { restoring.value = !restoring.value }

@@ -124,6 +124,162 @@ test('keeps a retained conflicted Opportunity draft inspection-only until it is 
   await expect.poll(() => updateRequests).toHaveLength(1)
 })
 
+test('sends explicit nulls when clearable Opportunity fields are emptied', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.update'] })]
+  const detail = createStage01OperationalDetail()
+  detail.opportunity.locationText = 'Quận 1'
+  detail.opportunity.budgetMin = 100
+  detail.opportunity.budgetMax = 200
+  detail.opportunity.currencyCode = 'VND'
+  detail.opportunity.budgetNote = 'Ngân sách cũ'
+  detail.opportunity.timelineStatusCode = 'planned'
+  detail.opportunity.timelineStartDate = '2026-09-10'
+  detail.opportunity.timelineEndDate = '2026-09-30'
+  detail.opportunity.timelineNote = 'Tiến độ cũ'
+  detail.opportunity.priorityCode = 'high'
+  let updateBody: Record<string, unknown> | null = null
+  await installStage01OperationalRoutes(page, detail)
+  await page.route(new RegExp(`/api/companies/[^/]+/opportunities/${stage01OpportunityId}$`), async route => {
+    if (route.request().method() !== 'PATCH') return route.fallback()
+    updateBody = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>
+    const input = updateBody
+    if ('locationText' in input) detail.opportunity.locationText = input.locationText as string | null
+    if ('budgetMin' in input) detail.opportunity.budgetMin = input.budgetMin as number | null
+    if ('budgetMax' in input) detail.opportunity.budgetMax = input.budgetMax as number | null
+    if ('currencyCode' in input) detail.opportunity.currencyCode = input.currencyCode as string | null
+    if ('budgetNote' in input) detail.opportunity.budgetNote = input.budgetNote as string | null
+    if ('timelineStatusCode' in input) detail.opportunity.timelineStatusCode = input.timelineStatusCode as string | null
+    if ('timelineStartDate' in input) detail.opportunity.timelineStartDate = input.timelineStartDate as string | null
+    if ('timelineEndDate' in input) detail.opportunity.timelineEndDate = input.timelineEndDate as string | null
+    if ('timelineNote' in input) detail.opportunity.timelineNote = input.timelineNote as string | null
+    if ('priorityCode' in input) detail.opportunity.priorityCode = input.priorityCode as string | null
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(detail.opportunity) })
+  })
+  await goToWorkspace(page)
+  await page.getByRole('button', { name: 'Chỉnh sửa cơ hội' }).click()
+  await page.getByRole('textbox', { name: 'Vị trí' }).fill('')
+  await page.getByRole('spinbutton', { name: 'Ngân sách từ' }).fill('')
+  await page.getByRole('spinbutton', { name: 'Ngân sách đến' }).fill('')
+  await page.getByRole('textbox', { name: 'Tiền tệ' }).fill('')
+  await page.getByRole('textbox', { name: 'Ghi chú ngân sách' }).fill('')
+  await page.getByRole('combobox', { name: 'Trạng thái tiến độ' }).selectOption('')
+  await page.getByLabel('Ngày bắt đầu').fill('')
+  await page.getByLabel('Ngày kết thúc').fill('')
+  await page.getByRole('textbox', { name: 'Ghi chú tiến độ' }).fill('')
+  await page.getByRole('combobox', { name: 'Ưu tiên' }).selectOption('')
+  await page.getByRole('button', { name: 'Lưu cơ hội' }).click()
+
+  await expect.poll(() => updateBody).not.toBeNull()
+  expect(updateBody).toMatchObject({
+    locationText: null,
+    budgetMin: null,
+    budgetMax: null,
+    currencyCode: null,
+    budgetNote: null,
+    timelineStatusCode: null,
+    timelineStartDate: null,
+    timelineEndDate: null,
+    timelineNote: null,
+    priorityCode: null,
+  })
+  await page.getByRole('button', { name: 'Chỉnh sửa cơ hội' }).click()
+  await expect(page.getByRole('textbox', { name: 'Vị trí' })).toHaveValue('')
+  await expect(page.getByRole('spinbutton', { name: 'Ngân sách từ' })).toHaveValue('')
+  await expect(page.getByLabel('Ngày bắt đầu')).toHaveValue('')
+  await page.getByRole('button', { name: 'Chỉnh sửa cơ hội' }).click()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Công ty Việt Quốc Huy' })).toBeVisible()
+  await page.getByRole('button', { name: 'Chỉnh sửa cơ hội' }).click()
+  await expect(page.getByRole('textbox', { name: 'Vị trí' })).toHaveValue('')
+  await expect(page.getByRole('spinbutton', { name: 'Ngân sách từ' })).toHaveValue('')
+  await expect(page.getByLabel('Ngày bắt đầu')).toHaveValue('')
+})
+
+test('keeps a conflicted draft and version when its canonical reload fails', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.update'] })]
+  const detail = createStage01OperationalDetail()
+  const updateRequests: Record<string, unknown>[] = []
+  let failNextCanonicalRead = false
+  await installStage01OperationalRoutes(page, detail)
+  await page.route(new RegExp(`/api/companies/[^/]+/opportunities/${stage01OpportunityId}$`), async route => {
+    if (route.request().method() === 'PATCH') {
+      updateRequests.push(JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>)
+      detail.opportunity.primaryCustomerName = 'Tên chính tắc mới'
+      detail.opportunity.version = 4
+      await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify(versionConflictBody()) })
+      return
+    }
+    await route.fallback()
+  })
+  await page.route(new RegExp(`/api/companies/[^/]+/opportunities/${stage01OpportunityId}/stage-01$`), async route => {
+    if (route.request().method() === 'GET' && failNextCanonicalRead) {
+      failNextCanonicalRead = false
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'Lỗi kiểm thử.', requestId: 'draft-reload-failure', details: {} } }) })
+      return
+    }
+    await route.fallback()
+  })
+  await goToWorkspace(page)
+  await page.getByRole('button', { name: 'Chỉnh sửa cơ hội' }).click()
+  const name = page.getByRole('textbox', { name: 'Tên khách hàng chính' })
+  await name.fill('Tên bản nháp cần giữ')
+  await page.getByRole('button', { name: 'Lưu cơ hội' }).click()
+  await expect(page.getByRole('button', { name: 'Bỏ bản nháp và tải lại' })).toBeVisible()
+
+  failNextCanonicalRead = true
+  await page.getByRole('button', { name: 'Bỏ bản nháp và tải lại' }).click()
+  await expect(name).toHaveValue('Tên bản nháp cần giữ')
+  await expect(page.getByRole('button', { name: 'Bỏ bản nháp và tải lại' })).toBeVisible()
+  await expect.poll(() => updateRequests).toHaveLength(1)
+
+  await page.getByRole('button', { name: 'Bỏ bản nháp và tải lại' }).click()
+  await expect(name).toHaveValue('Tên chính tắc mới')
+  await expect(page.getByRole('button', { name: 'Bỏ bản nháp và tải lại' })).toHaveCount(0)
+})
+
+test('rejects clearing an existing non-clearable Opportunity field before PATCH', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.update'] })]
+  const detail = createStage01OperationalDetail()
+  detail.opportunity.needDescription = 'Nhu cầu phải được giữ'
+  let patchCount = 0
+  await installStage01OperationalRoutes(page, detail)
+  await page.route(new RegExp(`/api/companies/[^/]+/opportunities/${stage01OpportunityId}$`), async route => {
+    if (route.request().method() !== 'PATCH') return route.fallback()
+    patchCount += 1
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(detail.opportunity) })
+  })
+  await goToWorkspace(page)
+  await page.getByRole('button', { name: 'Chỉnh sửa cơ hội' }).click()
+  await page.getByRole('textbox', { name: 'Nhu cầu' }).fill('')
+  await page.getByRole('button', { name: 'Lưu cơ hội' }).click()
+
+  await expect(page.getByRole('alert').filter({ hasText: 'không cho phép để trống' })).toBeVisible()
+  expect(patchCount).toBe(0)
+  await expect(page.getByRole('textbox', { name: 'Nhu cầu' })).toHaveValue('')
+})
+
+test('keeps numeric zero distinct from clearing an optional Opportunity amount', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.update'] })]
+  const detail = createStage01OperationalDetail()
+  detail.opportunity.budgetMin = 100
+  let updateBody: Record<string, unknown> | null = null
+  await installStage01OperationalRoutes(page, detail)
+  await page.route(new RegExp(`/api/companies/[^/]+/opportunities/${stage01OpportunityId}$`), async route => {
+    if (route.request().method() !== 'PATCH') return route.fallback()
+    updateBody = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>
+    detail.opportunity.budgetMin = updateBody.budgetMin as number
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(detail.opportunity) })
+  })
+  await goToWorkspace(page)
+  await page.getByRole('button', { name: 'Chỉnh sửa cơ hội' }).click()
+  await page.getByRole('spinbutton', { name: 'Ngân sách từ' }).fill('0')
+  await page.getByRole('button', { name: 'Lưu cơ hội' }).click()
+  await expect.poll(() => updateBody).not.toBeNull()
+  expect(updateBody).toMatchObject({ budgetMin: 0 })
+  await page.getByRole('button', { name: 'Chỉnh sửa cơ hội' }).click()
+  await expect(page.getByRole('spinbutton', { name: 'Ngân sách từ' })).toHaveValue('0')
+})
+
 test('workflow starts a ready node then reloads the canonical aggregate', async ({ page, authState }) => {
   const detail = createStage01OperationalDetail()
   detail.actorCapabilities = ['start']

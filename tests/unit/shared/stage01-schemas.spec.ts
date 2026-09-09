@@ -7,6 +7,7 @@ import {
   reliabilityStateSchema,
   restoreOpportunityInputSchema,
   setPrimaryContactInputSchema,
+  updateOpportunityInputSchema,
 } from '../../../shared/schemas/opportunities'
 import {
   criterionEvaluationRevisionInputSchema,
@@ -92,6 +93,35 @@ describe('Stage 01 shared schemas', () => {
       relationshipCode: 'technical_contact',
       expectedOpportunityVersion: 4,
     }).success).toBe(false)
+  })
+
+  it('accepts explicit null only for approved clearable Opportunity update fields', () => {
+    const clear = updateOpportunityInputSchema.parse({
+      expectedOpportunityVersion: 4,
+      locationText: null,
+      budgetStatusCode: null,
+      budgetMin: null,
+      budgetMax: null,
+      currencyCode: null,
+      budgetNote: null,
+      timelineStatusCode: null,
+      timelineStartDate: null,
+      timelineEndDate: null,
+      timelineNote: null,
+      priorityCode: null,
+    })
+    expect(clear.locationText).toBeNull()
+    expect(clear.budgetMin).toBeNull()
+    expect(updateOpportunityInputSchema.parse({ expectedOpportunityVersion: 4 })).toEqual({ expectedOpportunityVersion: 4 })
+    expect(updateOpportunityInputSchema.safeParse({ expectedOpportunityVersion: 4, primaryCustomerName: null }).success).toBe(false)
+    expect(updateOpportunityInputSchema.safeParse({ expectedOpportunityVersion: 4, needDescription: null }).success).toBe(false)
+    expect(updateOpportunityInputSchema.safeParse({ expectedOpportunityVersion: 4, customerTypeCode: null }).success).toBe(false)
+    expect(updateOpportunityInputSchema.safeParse({ expectedOpportunityVersion: 4, primaryLeadSourceCode: null }).success).toBe(false)
+    expect(updateOpportunityInputSchema.safeParse({ expectedOpportunityVersion: 4, engagementStatusCode: null }).success).toBe(false)
+    expect(updateOpportunityInputSchema.parse({ expectedOpportunityVersion: 4, budgetMin: 0 }).budgetMin).toBe(0)
+    expect(updateOpportunityInputSchema.safeParse({ expectedOpportunityVersion: 4, budgetMin: -1 }).success).toBe(false)
+    expect(createOpportunityInputSchema.safeParse({ primaryCustomerName: null }).success).toBe(false)
+    expect(createOpportunityInputSchema.safeParse({ primaryCustomerName: 'Customer', needDescription: null }).success).toBe(false)
   })
 
   it('represents N/A independently from applicable evaluation results', () => {
