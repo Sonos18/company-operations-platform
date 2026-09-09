@@ -231,7 +231,9 @@ export function createDenseStage01OperationalDetail(): Stage01OperationalDetail 
       applicability: 'applicable' as const,
       result: 'fit' as const,
       rationale: `Lý do chu kỳ ${cycleNo}, bản sửa ${revision}`,
-      evidence: [`Bằng chứng chu kỳ ${cycleNo}, bản sửa ${revision}`],
+      evidence: [cycleNo === 1 && revision === 1
+        ? { identifier: `dense-reference-${'x'.repeat(280)}` }
+        : `Bằng chứng chu kỳ ${cycleNo}, bản sửa ${revision}`],
       evaluatedBy: fixtureId(900),
       evaluatedAt: timestamp,
     })))
@@ -255,7 +257,8 @@ export function createDenseStage01OperationalDetail(): Stage01OperationalDetail 
       finalDecisionBy: cycleNo === 20 ? null : fixtureId(900),
       finalDecisionAt: cycleNo === 20 ? null : timestamp,
       finalRationale: cycleNo === 20 ? null : `Quyết định chu kỳ ${cycleNo}`,
-      finalRecommendationId: cycleNo === 20 ? null : recommendations[1]!.id,
+      finalRecommendationId: cycleNo === 20 ? null : cycleNo === 2 ? recommendations[0]!.id : recommendations[1]!.id,
+      overrideRationale: cycleNo === 2 ? 'Ngoại lệ đã được ghi nhận trong quyết định chu kỳ 2' : null,
       version: evaluations.length + recommendations.length + 1,
       evaluations,
       recommendations,

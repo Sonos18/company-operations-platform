@@ -1165,11 +1165,18 @@ test('completed decision is read-only and reactivation sends canonical versions 
   detail.currentDecisionCycle.finalDecisionBy = '81000000-0000-4000-8000-000000000071'
   detail.currentDecisionCycle.finalDecisionAt = '2026-09-01T03:00:00.000Z'
   detail.currentDecisionCycle.finalRecommendationId = '81000000-0000-4000-8000-000000000077'
+  detail.currentDecisionCycle.recommendations.push({
+    id: '81000000-0000-4000-8000-000000000077', decisionCycleId: detail.currentDecisionCycle.id, version: 1,
+    recommendation: 'recommend_not_proceeding', rationale: 'Đề xuất đã được thẩm định', evidence: [],
+    submittedBy: '81000000-0000-4000-8000-000000000071', submittedAt: '2026-09-01T02:00:00.000Z',
+  })
   detail.currentDecisionCycle.version = 5
   detail.evaluation.runtime.phase = 'completed'
   detail.evaluation.runtime.state = 'completed'
   detail.evaluation.runtime.version = 7
   const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  const mutationRequests: import('@playwright/test').Request[] = []
+  page.on('request', request => { if (request.method() !== 'GET') mutationRequests.push(request) })
   let canonicalReads = 0
   authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'stage01.reactivate'] })]
   await installStage01OperationalRoutes(page, detail, {
@@ -1214,9 +1221,20 @@ test('completed decision is read-only and reactivation sends canonical versions 
     body: { expectedOpportunityVersion: 3, expectedExecutionVersion: 7, expectedCycleVersion: 5, reason: 'Cần đánh giá lại điều kiện triển khai' },
   })
   await expect.poll(() => canonicalReads).toBe(2)
-  await expect(page.getByText('Chu kỳ #1 · Đã hoàn tất', { exact: true })).toBeVisible()
-  await expect(page.getByText('Chu kỳ #2 · Đang xử lý', { exact: true })).toBeVisible()
-  await expect(page.getByText('Kích hoạt lại: Cần đánh giá lại điều kiện triển khai', { exact: true })).toBeVisible()
+  await expect(page.getByText('Chu kỳ #1 · Đã ghi nhận quyết định', { exact: true })).toBeVisible()
+  const currentCycle = page.locator('details').filter({ has: page.getByText('Chu kỳ #2 · Chưa ghi nhận quyết định', { exact: true }) })
+  await expect(currentCycle.locator('summary')).toContainText('Kích hoạt lại: Cần đánh giá lại điều kiện triển khai')
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read'] })]
+  await page.reload()
+  const history = page.getByRole('region', { name: 'Chu kỳ quyết định', exact: true })
+  const previousCycle = history.locator('details').filter({ has: page.getByText('Chu kỳ #1 · Đã ghi nhận quyết định', { exact: true }) })
+  const mutationsBeforeInspection = mutationRequests.length
+  await previousCycle.locator('summary').click()
+  await expect(previousCycle).toContainText('Quyết định cuối cùng: Không tiếp tục')
+  await expect(previousCycle).toContainText('Lý do: Chưa đủ điều kiện triển khai.')
+  await expect(previousCycle).toContainText('Đề xuất được quyết định tham chiếu: 81000000-0000-4000-8000-000000000077 · phiên bản #1 · Đề xuất không tiếp tục · Đề xuất đã được thẩm định')
+  await expect(previousCycle.locator('button, form, input, select, textarea')).toHaveCount(0)
+  expect(mutationRequests.length).toBe(mutationsBeforeInspection)
 })
 
 test('hides reactivation for a completed proceed decision', async ({ page, authState }) => {
@@ -2133,10 +2151,33 @@ test('creates an opportunity and completes the Stage 01 happy path through the p
 
 test('keeps recommendation and clarification history immutable when the completed cycle is reactivated', async ({ page, authState }) => {
   const state = createStage01OperationalRouteState()
-  state.detail.actorCapabilities = ['assignDecisionAuthority', 'decision']
+  const fixtureActorId = '82000000-0000-4000-8000-000000000900'
+  const fixtureTimestamp = '2026-09-01T00:00:00.000Z'
+  state.detail.actorCapabilities = ['assignDecisionAuthority', 'decision', 'complete']
+  state.detail.intake.runtime.phase = 'completed'
+  state.detail.intake.runtime.state = 'completed'
+  state.detail.intake.runtime.completedBy = fixtureActorId
+  state.detail.intake.runtime.completedAt = fixtureTimestamp
+  state.detail.evaluation.runtime.phase = 'active'
+  state.detail.evaluation.runtime.state = 'active'
+  state.detail.evaluation.runtime.startedBy = fixtureActorId
+  state.detail.evaluation.runtime.startedAt = fixtureTimestamp
+  state.detail.evaluation.runtime.version = 1
+  state.detail.currentDecisionCycle.evaluations = state.detail.configuration.criteria.map((criterion, index) => ({
+    id: `82000000-0000-4000-8000-${String(100 + index).padStart(12, '0')}`,
+    decisionCycleId: state.detail.currentDecisionCycle.id,
+    criterionKey: criterion.key,
+    revision: 1,
+    applicability: 'applicable' as const,
+    result: 'fit' as const,
+    rationale: `Đủ điều kiện ${criterion.label}`,
+    evidence: [`Bằng chứng ${criterion.label}`],
+    evaluatedBy: fixtureActorId,
+    evaluatedAt: fixtureTimestamp,
+  }))
   authState.sessionCompanies = [createCompany({ permissions: [
     'project.read', 'journey.read', 'opportunity.read', 'stage01.recommendation.submit',
-    'stage01.clarification.return', 'opportunity.decision_authority.assign', 'opportunity.decision.record', 'stage01.reactivate',
+    'stage01.clarification.return', 'opportunity.decision_authority.assign', 'opportunity.decision.record', 'stage01.reactivate', 'journey.node.complete',
   ] })]
   await installStatefulStage01OperationalRoutes(page, state)
   await goToWorkspace(page)
@@ -2146,22 +2187,47 @@ test('keeps recommendation and clarification history immutable when the complete
   await page.getByRole('textbox', { name: 'Lý do yêu cầu làm rõ' }).fill('Bổ sung phân tích ngân sách')
   await page.getByRole('button', { name: 'Yêu cầu làm rõ' }).click()
   await expect(page.getByText('Bổ sung phân tích ngân sách', { exact: true })).toBeVisible()
+  await page.getByRole('combobox', { name: 'Loại đề xuất' }).selectOption('recommend_not_proceeding')
+  await page.getByRole('textbox', { name: 'Lý do đề xuất' }).fill('Đề xuất sau khi bổ sung dữ liệu')
+  await page.getByRole('button', { name: 'Gửi đề xuất' }).click()
+  await expect.poll(() => state.detail.currentDecisionCycle.recommendations).toHaveLength(2)
   await page.getByRole('button', { name: 'Chỉ định', exact: true }).click()
   await page.getByRole('button', { name: 'Xác nhận chỉ định', exact: true }).click()
   await expect(page.getByText('Đã chỉ định người có thẩm quyền quyết định.', { exact: true })).toBeVisible()
   await page.getByRole('combobox', { name: 'Kết quả quyết định' }).selectOption('not_proceeding')
   await page.getByRole('textbox', { name: 'Lý do quyết định' }).fill('Sau khi làm rõ, chưa tiếp tục triển khai')
   await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click()
+  await expect.poll(() => state.detail.currentDecisionCycle.finalRecommendationId).toBe(state.detail.currentDecisionCycle.recommendations.at(-1)?.id)
+  const evaluationNode = page.getByRole('article').filter({ has: page.getByRole('heading', { name: '01.2 Đánh giá', exact: true }) })
+  await evaluationNode.getByRole('button', { name: 'Hoàn tất node', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Điều hành node, phân công và blocker', exact: true }).getByRole('status').filter({ hasText: 'Đã hoàn tất node.' })).toBeVisible()
   await page.getByRole('button', { name: 'Kích hoạt lại Stage 01' }).click()
   await page.getByRole('textbox', { name: 'Lý do kích hoạt lại' }).fill('Có thay đổi điều kiện thương mại')
   await page.getByRole('button', { name: 'Xác nhận kích hoạt lại' }).click()
 
-  await expect(page.getByText('Chu kỳ #1 · Đã hoàn tất', { exact: true })).toBeVisible()
-  await expect(page.getByText('Chu kỳ #2 · Đang xử lý', { exact: true })).toBeVisible()
-  await expect(page.getByText('Kích hoạt lại: Có thay đổi điều kiện thương mại', { exact: true })).toBeVisible()
+  await expect(page.getByText('Chu kỳ #1 · Đã ghi nhận quyết định', { exact: true })).toBeVisible()
+  await expect(page.getByText('Chu kỳ #2 · Chưa ghi nhận quyết định', { exact: true })).toBeVisible()
+  const history = page.getByRole('region', { name: 'Chu kỳ quyết định', exact: true })
+  const currentCycle = history.locator('details').filter({ has: page.getByText('Chu kỳ #2 · Chưa ghi nhận quyết định', { exact: true }) })
+  await expect(currentCycle.locator('summary')).toContainText('Kích hoạt lại: Có thay đổi điều kiện thương mại')
+  const previousCycle = history.locator('details').filter({ has: page.getByText('Chu kỳ #1 · Đã ghi nhận quyết định', { exact: true }) })
+  const mutationsBeforeInspection = state.requests.length
+  await previousCycle.locator('summary').click()
+  await expect(previousCycle).toContainText('Đề xuất cần được thẩm định')
+  await expect(previousCycle).toContainText('Đề xuất sau khi bổ sung dữ liệu')
+  await expect(previousCycle).toContainText('Bổ sung phân tích ngân sách')
+  await expect(previousCycle).toContainText(`Đề xuất được quyết định tham chiếu: ${state.detail.decisionCycles[0]!.finalRecommendationId}`)
+  await expect(previousCycle).toContainText('Quyết định cuối cùng: Không tiếp tục')
+  await expect(previousCycle.locator('form, input, select, textarea')).toHaveCount(0)
+  expect(state.requests.length).toBe(mutationsBeforeInspection)
   const prior = state.detail.decisionCycles[0]!
-  expect(prior.recommendations).toEqual([expect.objectContaining({ rationale: 'Đề xuất cần được thẩm định' })])
+  expect(prior.recommendations).toEqual([
+    expect.objectContaining({ version: 1, rationale: 'Đề xuất cần được thẩm định' }),
+    expect.objectContaining({ version: 2, rationale: 'Đề xuất sau khi bổ sung dữ liệu' }),
+  ])
   expect(prior.clarificationReturns).toEqual([expect.objectContaining({ reason: 'Bổ sung phân tích ngân sách' })])
+  expect(prior.finalRecommendationId).toBe(prior.recommendations[1]!.id)
+  expect(prior.finalRecommendationId).not.toBe(prior.recommendations[0]!.id)
   expect(state.detail.currentDecisionCycle.recommendations).toEqual([])
   expect(state.detail.currentDecisionCycle.clarificationReturns).toEqual([])
 })

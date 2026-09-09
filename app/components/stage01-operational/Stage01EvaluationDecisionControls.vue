@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ClientError } from '../../errors/client-error'
 import { latestCriterionRevision, orderedDecisionCycles } from '../../features/stage01-operational/stage01-operational'
-import type { OpportunityDecisionAuthorityCandidate, Stage01OperationalDetail } from '../../features/stage01/stage01.types'
+import type { OpportunityDecisionAuthorityCandidate, Stage01DecisionCycle, Stage01OperationalDetail } from '../../features/stage01/stage01.types'
 
 type EvaluationDraft = {
   applicability: 'applicable' | 'not_applicable'
@@ -271,6 +271,29 @@ function openReactivation(): void {
   reactivationOpen.value = true
 }
 
+function criterionLabel(key: string): string {
+  return props.detail.configuration.criteria.find(criterion => criterion.key === key)?.label ?? key
+}
+
+function evidenceLabel(values: unknown[]): string {
+  if (!values.length) return 'Không có bằng chứng'
+  return values.map(value => {
+    if (typeof value === 'string') return value
+    try { return JSON.stringify(value) ?? String(value) }
+    catch { return 'Không thể hiển thị bằng chứng' }
+  }).join(' · ')
+}
+
+function provenance(actor: string | null): string | null {
+  return actor ? `Người thực hiện: ${actor}` : null
+}
+
+function finalRecommendation(cycle: Stage01DecisionCycle) {
+  return cycle.finalRecommendationId === null
+    ? null
+    : cycle.recommendations.find(recommendation => recommendation.id === cycle.finalRecommendationId) ?? null
+}
+
 watch(() => decision.outcome, () => {
   if (decisionMatchesRecommendation()) {
     overrideRationaleRequired.value = false
@@ -397,11 +420,65 @@ watch(() => `${props.detail.currentDecisionCycle.id}:${currentRecommendation.val
     <section class="evaluation-decision__section" aria-labelledby="cycle-history-heading">
       <div><p class="eyebrow">Lịch sử bất biến</p><h3 id="cycle-history-heading">Chu kỳ quyết định</h3></div>
       <ol class="evaluation-decision__history">
-        <li v-for="cycle in cycles" :key="cycle.id">
-          <strong>Chu kỳ #{{ cycle.cycleNo }} · {{ cycle.finalOutcome ? 'Đã hoàn tất' : 'Đang xử lý' }}</strong>
-          <span v-if="cycle.reactivationReason">Kích hoạt lại: {{ cycle.reactivationReason }}</span>
-          <span v-else-if="cycle.finalOutcome">{{ outcomeLabel(cycle.finalOutcome) }} · {{ cycle.finalRationale }}</span>
-          <span v-else>Chưa có quyết định cuối cùng.</span>
+        <li v-for="cycle in cycles" :key="cycle.id" class="evaluation-decision__cycle-item">
+          <details class="evaluation-decision__cycle">
+            <summary>
+              <strong>Chu kỳ #{{ cycle.cycleNo }} · {{ cycle.finalOutcome ? 'Đã ghi nhận quyết định' : 'Chưa ghi nhận quyết định' }}</strong>
+              <span v-if="cycle.reactivationReason">Kích hoạt lại: {{ cycle.reactivationReason }}</span>
+              <span v-if="cycle.finalOutcome">Quyết định: {{ outcomeLabel(cycle.finalOutcome) }}</span>
+              <span v-else>Chưa có quyết định cuối cùng.</span>
+            </summary>
+            <div class="evaluation-decision__cycle-details">
+              <time v-if="cycle.createdAt" :datetime="cycle.createdAt">Thời gian tạo chu kỳ: {{ cycle.createdAt }}</time>
+              <p v-if="cycle.reactivationReason" class="evaluation-decision__final">Kích hoạt lại: {{ cycle.reactivationReason }}</p>
+              <template v-if="cycle.evaluations.length">
+                <h4>Chi tiết đánh giá</h4>
+                <ol class="evaluation-decision__cycle-list">
+                  <li v-for="item in [...cycle.evaluations].sort((left, right) => left.criterionKey.localeCompare(right.criterionKey) || right.revision - left.revision)" :key="item.id">
+                    <strong>{{ criterionLabel(item.criterionKey) }} · Bản sửa #{{ item.revision }}</strong>
+                    <span>{{ item.applicability === 'not_applicable' ? 'Không áp dụng' : resultLabel(item.result) }} · {{ item.rationale ?? 'Không có lý do' }}</span>
+                    <small v-if="provenance(item.evaluatedBy)">{{ provenance(item.evaluatedBy) }}</small>
+                    <time v-if="item.evaluatedAt" :datetime="item.evaluatedAt">{{ item.evaluatedAt }}</time>
+                    <small>Bằng chứng: {{ evidenceLabel(item.evidence) }}</small>
+                  </li>
+                </ol>
+              </template>
+              <template v-if="cycle.recommendations.length">
+                <h4>Lịch sử đề xuất</h4>
+                <ol class="evaluation-decision__cycle-list">
+                  <li v-for="item in [...cycle.recommendations].sort((left, right) => left.version - right.version)" :key="item.id">
+                    <strong>Phiên bản #{{ item.version }} · {{ recommendationLabel(item.recommendation) }}</strong>
+                    <span>{{ item.rationale }}</span>
+                    <small v-if="provenance(item.submittedBy)">{{ provenance(item.submittedBy) }}</small>
+                    <time v-if="item.submittedAt" :datetime="item.submittedAt">{{ item.submittedAt }}</time>
+                    <small>Bằng chứng: {{ evidenceLabel(item.evidence) }}</small>
+                  </li>
+                </ol>
+              </template>
+              <template v-if="cycle.clarificationReturns.length">
+                <h4>Lịch sử yêu cầu làm rõ</h4>
+                <ol class="evaluation-decision__cycle-list">
+                  <li v-for="item in cycle.clarificationReturns" :key="item.id">
+                    <strong>Yêu cầu làm rõ</strong>
+                    <span>{{ item.reason }} · Đề xuất tham chiếu: {{ item.recommendationId }}</span>
+                    <small v-if="provenance(item.returnedBy)">{{ provenance(item.returnedBy) }}</small>
+                    <time v-if="item.returnedAt" :datetime="item.returnedAt">{{ item.returnedAt }}</time>
+                  </li>
+                </ol>
+              </template>
+              <template v-if="cycle.finalOutcome">
+                <h4>Quyết định cuối cùng</h4>
+                <p class="evaluation-decision__final">Quyết định cuối cùng: {{ outcomeLabel(cycle.finalOutcome) }}</p>
+                <p class="evaluation-decision__final">Lý do: {{ cycle.finalRationale ?? 'Không có lý do' }}</p>
+                <p v-if="cycle.overrideRationale" class="evaluation-decision__final">Lý do ghi đè: {{ cycle.overrideRationale }}</p>
+                <p v-if="provenance(cycle.finalDecisionBy)" class="evaluation-decision__final">{{ provenance(cycle.finalDecisionBy) }}</p>
+                <time v-if="cycle.finalDecisionAt" :datetime="cycle.finalDecisionAt">{{ cycle.finalDecisionAt }}</time>
+                <p v-if="finalRecommendation(cycle)" class="evaluation-decision__final">Đề xuất được quyết định tham chiếu: {{ finalRecommendation(cycle)!.id }} · phiên bản #{{ finalRecommendation(cycle)!.version }} · {{ recommendationLabel(finalRecommendation(cycle)!.recommendation) }} · {{ finalRecommendation(cycle)!.rationale }}</p>
+                <p v-else-if="cycle.finalRecommendationId" class="evaluation-decision__final">Đề xuất được quyết định tham chiếu: {{ cycle.finalRecommendationId }}</p>
+                <p v-if="cycle.id !== detail.currentDecisionCycle.id" class="evaluation-decision__final">Không có dữ liệu xác nhận hoàn tất workflow của chu kỳ này.</p>
+              </template>
+            </div>
+          </details>
         </li>
       </ol>
     </section>
@@ -409,6 +486,8 @@ watch(() => `${props.detail.currentDecisionCycle.id}:${currentRecommendation.val
 </template>
 
 <style scoped>
-.evaluation-decision { display: grid; gap: 14px; }.evaluation-decision > div > p:not(.eyebrow),.evaluation-decision__criterion header > div > p:not(.eyebrow) { margin-top: 5px; color: var(--ink-muted); line-height: 1.45; }.evaluation-decision h2 { margin-top: 4px; font-size: 1.3rem; }.evaluation-decision h3 { margin: 4px 0 0; color: var(--forest-deep); font-size: 1rem; }.evaluation-decision__criterion,.evaluation-decision__section { display: grid; gap: 10px; padding: 15px; border: 1px solid var(--line); background: var(--paper-raised); }.evaluation-decision__criterion > header { display: flex; justify-content: space-between; align-items: start; gap: 12px; }.evaluation-decision__criterion > header > span { color: var(--ink-muted); font-size: .75rem; white-space: nowrap; }.evaluation-decision__history { display: grid; padding: 0; margin: 0; list-style: none; border: 1px solid var(--line); }.evaluation-decision__history li { display: grid; gap: 3px; padding: 9px 10px; border-bottom: 1px solid var(--line); }.evaluation-decision__history li:last-child { border-bottom: 0; }.evaluation-decision__history strong { color: var(--forest-deep); font-size: .8rem; }.evaluation-decision__history span,.evaluation-decision__final { color: var(--ink-muted); font-size: .79rem; line-height: 1.45; }.evaluation-decision__form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding-top: 10px; }.evaluation-decision__form label { display: grid; gap: 5px; color: var(--forest-deep); font-size: .77rem; font-weight: 700; }.evaluation-decision__form textarea,.evaluation-decision__form select { width: 100%; min-height: 40px; padding: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: inherit; }.evaluation-decision__form textarea { min-height: 70px; resize: vertical; }.evaluation-decision__form > button { grid-column: 1 / -1; }
+.evaluation-decision { display: grid; gap: 14px; }.evaluation-decision > div > p:not(.eyebrow),.evaluation-decision__criterion header > div > p:not(.eyebrow) { margin-top: 5px; color: var(--ink-muted); line-height: 1.45; }.evaluation-decision h2 { margin-top: 4px; font-size: 1.3rem; }.evaluation-decision h3 { margin: 4px 0 0; color: var(--forest-deep); font-size: 1rem; }.evaluation-decision h4 { margin: 8px 0 0; color: var(--forest-deep); font-size: .85rem; }.evaluation-decision__criterion,.evaluation-decision__section { display: grid; gap: 10px; padding: 15px; border: 1px solid var(--line); background: var(--paper-raised); }.evaluation-decision__criterion > header { display: flex; justify-content: space-between; align-items: start; gap: 12px; }.evaluation-decision__criterion > header > span { color: var(--ink-muted); font-size: .75rem; white-space: nowrap; }.evaluation-decision__history { display: grid; padding: 0; margin: 0; list-style: none; border: 1px solid var(--line); }.evaluation-decision__history li { display: grid; gap: 3px; padding: 9px 10px; border-bottom: 1px solid var(--line); }.evaluation-decision__history li:last-child { border-bottom: 0; }.evaluation-decision__history strong { color: var(--forest-deep); font-size: .8rem; }.evaluation-decision__history span,.evaluation-decision__final { color: var(--ink-muted); font-size: .79rem; line-height: 1.45; }.evaluation-decision__cycle-item { padding: 0 !important; }.evaluation-decision__cycle { display: block; }.evaluation-decision__cycle summary { display: list-item; list-style-position: inside; padding: 9px 10px; cursor: pointer; }.evaluation-decision__cycle-details { display: grid; gap: 5px; padding: 0 10px 10px; }.evaluation-decision__cycle-list { display: grid; gap: 5px; padding: 0; margin: 0; list-style: none; }.evaluation-decision__cycle-list li { display: grid; gap: 3px; padding: 7px 8px; border: 1px solid var(--line); }.evaluation-decision__cycle-list small,.evaluation-decision__cycle-list time,.evaluation-decision__cycle-details > time { color: var(--ink-muted); font-size: .72rem; line-height: 1.4; }.evaluation-decision__form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding-top: 10px; }.evaluation-decision__form label { display: grid; gap: 5px; color: var(--forest-deep); font-size: .77rem; font-weight: 700; }.evaluation-decision__form textarea,.evaluation-decision__form select { width: 100%; min-height: 40px; padding: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: inherit; }.evaluation-decision__form textarea { min-height: 70px; resize: vertical; }.evaluation-decision__form > button { grid-column: 1 / -1; }
+.evaluation-decision__cycle summary,.evaluation-decision__cycle-details,.evaluation-decision__cycle-list span,.evaluation-decision__cycle-list small,.evaluation-decision__cycle-list time { overflow-wrap: anywhere; word-break: break-word; }
+.evaluation-decision__cycle-list li { min-width: 0; }
 @media (max-width: 620px) { .evaluation-decision__criterion > header { flex-direction: column; }.evaluation-decision__form { grid-template-columns: 1fr; }.evaluation-decision__form > button { grid-column: auto; } }
 </style>
