@@ -44,6 +44,7 @@ const completed = computed(() => props.detail.currentDecisionCycle.finalOutcome 
 const canEvaluate = computed(() => access.hasPermission('stage01.evaluation.update') && !completed.value)
 const canRecommend = computed(() => access.hasPermission('stage01.recommendation.submit') && !completed.value)
 const canClarify = computed(() => access.hasPermission('stage01.clarification.return') && !completed.value && currentRecommendation.value !== null)
+const decisionGate = computed(() => props.detail.evaluation.gates.checks.find(check => check.code !== 'FINAL_DECISION_RECORDED' && check.status !== 'satisfied') ?? null)
 const canRecordDecision = computed(() => (
   access.hasPermission('opportunity.decision.record')
   && props.detail.actorCapabilities.includes('decision')
@@ -52,12 +53,35 @@ const canRecordDecision = computed(() => (
       && props.detail.currentDecisionCycle.decisionAuthority.currentActorIsAuthority))
   && !completed.value
   && currentRecommendation.value !== null
+  && decisionGate.value === null
 ))
 const canAssignDecisionAuthority = computed(() => access.hasPermission('opportunity.decision_authority.assign')
   && props.detail.actorCapabilities.includes('assignDecisionAuthority')
   && props.detail.currentDecisionCycle.decisionAuthority.policyBinding.status === 'bound' && !completed.value)
 const decisionVisible = computed(() => access.hasPermission('opportunity.decision.record') && !completed.value)
-const canReactivate = computed(() => access.hasPermission('stage01.reactivate') && props.detail.currentDecisionCycle.finalOutcome === 'not_proceeding')
+const authorityInvalid = computed(() => ['invalid', 'legacy_unknown'].includes(props.detail.currentDecisionCycle.decisionAuthority.status))
+const reactivationUnavailableReason = computed(() => {
+  if (!access.hasPermission('stage01.reactivate') || props.detail.currentDecisionCycle.finalOutcome !== 'not_proceeding') return null
+  if (props.detail.opportunity.validityState !== 'valid') return 'Cơ hội không còn hiệu lực nên Stage 01 không được phép kích hoạt lại.'
+  if (props.detail.intake.runtime.needsRevalidation) return `Cần tái xác thực node 01.1 Tiếp nhận trước khi kích hoạt lại Stage 01. ${workflowActionMessage('Tái xác thực node', access.hasPermission('journey.node.revalidate'))}`
+  if (props.detail.intake.runtime.phase !== 'completed') return `Cần hoàn tất node 01.1 Tiếp nhận trước khi kích hoạt lại Stage 01. ${workflowActionMessage('Hoàn tất node', access.hasPermission('journey.node.complete') && props.detail.actorCapabilities.includes('complete'))}`
+  if (props.detail.evaluation.runtime.phase !== 'completed') return `Cần hoàn tất node 01.2 Đánh giá trước khi kích hoạt lại Stage 01. ${workflowActionMessage('Hoàn tất node', access.hasPermission('journey.node.complete') && props.detail.actorCapabilities.includes('complete'))}`
+  return null
+})
+const canReactivate = computed(() => access.hasPermission('stage01.reactivate')
+  && props.detail.currentDecisionCycle.finalOutcome === 'not_proceeding'
+  && reactivationUnavailableReason.value === null)
+const decisionUnavailableReason = computed(() => {
+  if (!decisionVisible.value || canRecordDecision.value) return null
+  if (!props.detail.actorCapabilities.includes('decision')) return 'Tài khoản hiện tại chưa được máy chủ cấp khả năng ghi nhận quyết định.'
+  const authority = props.detail.currentDecisionCycle.decisionAuthority
+  if (authorityInvalid.value) return 'Thẩm quyền quyết định hiện không hợp lệ; hệ thống sẽ chặn ghi nhận quyết định. Chưa có quy trình thay thế được phê duyệt, hãy yêu cầu quyết định nghiệp vụ và giữ nguyên lịch sử phân công.'
+  if (authority.status === 'unresolved') return 'Cần chỉ định người có thẩm quyền quyết định trước khi ghi nhận quyết định.'
+  if (authority.status === 'resolved' && !authority.currentActorIsAuthority) return 'Người dùng hiện tại không phải người có thẩm quyền đã được chỉ định.'
+  if (currentRecommendation.value === null) return 'Cần có đề xuất hiện hành trước khi ghi nhận quyết định. Thao tác tiếp theo: gửi đề xuất mới sau lần làm rõ hoặc cập nhật đánh giá.'
+  if (decisionGate.value) return decisionGateMessage(decisionGate.value)
+  return 'Chưa đủ điều kiện ghi nhận quyết định theo trạng thái chính tắc của máy chủ.'
+})
 
 function draftFor(criterionKey: string): EvaluationDraft {
   const existing = evaluationDrafts[criterionKey]
@@ -92,6 +116,23 @@ function resultLabel(value: string | null): string {
   return {
     fit: 'Phù hợp', concern: 'Cần lưu ý', not_fit: 'Không phù hợp', insufficient_information: 'Thiếu thông tin',
   }[value ?? ''] ?? 'Không áp dụng'
+}
+
+function decisionGateMessage(check: { code: string, message: string }): string {
+  const messages: Record<string, string> = {
+    INTAKE_DEPENDENCY_VALID: 'Cần tái xác thực node 01.1 Tiếp nhận trước khi ghi nhận quyết định.',
+    REQUIRED_CRITERIA_EVALUATED: 'Cần hoàn tất đánh giá các tiêu chí bắt buộc trước khi ghi nhận quyết định.',
+    RECOMMENDATION_CURRENT: 'Cần có đề xuất hiện hành trước khi ghi nhận quyết định.',
+    NO_OPEN_BLOCKING_BLOCKER: 'Cần giải quyết blocker đang chặn tiến độ trước khi ghi nhận quyết định.',
+    NO_REVALIDATION_REQUIRED: 'Cần tái xác thực node 01.2 Đánh giá trước khi ghi nhận quyết định.',
+  }
+  return `${messages[check.code] ?? check.message} Thao tác tiếp theo: xử lý điều kiện này rồi tải lại dữ liệu chính tắc.`
+}
+
+function workflowActionMessage(action: string, allowed: boolean): string {
+  return allowed
+    ? `Thao tác tiếp theo: chọn "${action}".`
+    : `Thao tác tiếp theo: cần người có quyền thực hiện "${action}" rồi tải lại dữ liệu chính tắc.`
 }
 
 function recommendationLabel(value: 'recommend_proceed' | 'recommend_not_proceeding'): string {
@@ -393,8 +434,9 @@ watch(() => `${props.detail.currentDecisionCycle.id}:${currentRecommendation.val
       <p v-if="detail.currentDecisionCycle.decisionAuthority.status === 'resolved'" class="evaluation-decision__final">
         Đã chỉ định: {{ detail.currentDecisionCycle.decisionAuthority.displayName }}<span v-if="detail.currentDecisionCycle.decisionAuthority.positionTitle"> · {{ detail.currentDecisionCycle.decisionAuthority.positionTitle }}</span>
       </p>
+      <UAlert v-if="authorityInvalid" role="status" color="warning" title="Thẩm quyền quyết định hiện không hợp lệ" description="Hệ thống sẽ chặn ghi nhận quyết định vì không thể xác minh người được chỉ định. Chưa có quy trình thay thế được phê duyệt; lịch sử phân công được giữ nguyên." />
       <UButton v-if="canAssignDecisionAuthority && !authorityOpen && detail.currentDecisionCycle.decisionAuthority.status === 'unresolved'" variant="outline" @click="openAuthorityAssignment">Chỉ định</UButton>
-      <form v-if="authorityOpen" class="evaluation-decision__form" @submit.prevent="submitAuthorityAssignment">
+      <form v-if="authorityOpen && canAssignDecisionAuthority && detail.currentDecisionCycle.decisionAuthority.status === 'unresolved'" class="evaluation-decision__form" @submit.prevent="submitAuthorityAssignment">
         <label>Người có thẩm quyền quyết định<select v-model="authorityUserId"><option v-for="candidate in authorityCandidates" :key="candidate.userId" :value="candidate.userId">{{ candidate.displayName }}{{ candidate.positionTitle ? ` · ${candidate.positionTitle}` : '' }}</option></select></label>
         <label>Lý do (tùy chọn)<textarea v-model="authorityReason" /></label>
         <UButton type="submit">Xác nhận chỉ định</UButton>
@@ -404,14 +446,16 @@ watch(() => `${props.detail.currentDecisionCycle.id}:${currentRecommendation.val
     <section class="evaluation-decision__section" aria-labelledby="decision-heading">
       <div><p class="eyebrow">Quyết định cuối cùng</p><h3 id="decision-heading">Quyết định và kích hoạt lại</h3></div>
       <p v-if="completed" class="evaluation-decision__final"><strong>Quyết định đã ghi nhận: {{ outcomeLabel(detail.currentDecisionCycle.finalOutcome!) }}</strong><span> · {{ detail.currentDecisionCycle.finalRationale }}</span></p>
+      <UAlert v-if="decisionVisible && !canRecordDecision && decisionUnavailableReason" role="status" color="warning" title="Chưa đủ điều kiện ghi nhận quyết định" :description="decisionUnavailableReason" />
       <form v-if="decisionVisible" class="evaluation-decision__form" @submit.prevent="submitDecision">
         <label>Kết quả quyết định<select v-model="decision.outcome"><option value="proceed">Tiếp tục</option><option value="not_proceeding">Không tiếp tục</option></select></label>
         <label>Lý do quyết định<textarea v-model="decision.rationale" /></label>
         <label v-if="overrideRationaleRequired && !decisionMatchesRecommendation()">Lý do ghi đè quyết định<textarea v-model="decision.overrideRationale" required /></label>
         <UButton type="submit" :disabled="!canRecordDecision">Ghi nhận quyết định</UButton>
       </form>
+      <UAlert v-if="reactivationUnavailableReason" role="status" color="warning" title="Chưa đủ điều kiện kích hoạt lại Stage 01" :description="reactivationUnavailableReason" />
       <UButton v-if="canReactivate && !reactivationOpen" variant="outline" @click="openReactivation">Kích hoạt lại Stage 01</UButton>
-      <form v-if="reactivationOpen" class="evaluation-decision__form" @submit.prevent="submitReactivation">
+      <form v-if="reactivationOpen && canReactivate" class="evaluation-decision__form" @submit.prevent="submitReactivation">
         <label>Lý do kích hoạt lại<textarea v-model="reactivationReason" required /></label>
         <UButton type="submit">Xác nhận kích hoạt lại</UButton>
       </form>

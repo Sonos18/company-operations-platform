@@ -1,11 +1,16 @@
 # VQH Stage 01 operational acceptance
 
-WP4 runtime, local and native security gates have passing evidence. The evidence-only report commit receives a final native verification before the orchestrator declares `STAGE01_ACCEPTANCE_COMPLETE` and `READY_FOR_VQH_PILOT`; its sealed result is recorded separately in `test-results/wp4/final-security-attestation.json` to avoid a self-referential commit identifier.
+This report preserves dated WP4 runtime, local, Cloud DEV and native security evidence for the source revisions listed below. `STAGE01_ACCEPTANCE_COMPLETE` and `READY_FOR_VQH_PILOT` are separate milestones: acceptance requires current affected-surface verification, while pilot readiness also requires explicit pilot authorization and real-actor/configuration/environment smoke evidence. Historical evidence does not automatically establish either milestone for a newer tree.
 
-## Verified scope
+- `STAGE01_ACCEPTANCE_COMPLETE`: the assessed Stage 01 source and required acceptance checks are complete for a stated source SHA and environment.
+- `READY_FOR_VQH_PILOT`: the accepted source also has separately authorized pilot preparation and operational evidence for the intended actors, configuration and environment.
 
-- Source anchor: `8e1abc746a81f5b9f3f2fc6431648b5a10e09d58`.
-- Verified code SHA: `019641ee9e1ea38098328e8e32e08e35bcdab181`.
+Correction note (2026-09-09): F01–F05 senior-review changes and the companion E guidance have no new Cloud DEV acceptance run. Their current-tree acceptance remains pending the separately authorized affected-surface checks described at the release boundary.
+
+## Historical verified scope
+
+- Historical source anchor: `8e1abc746a81f5b9f3f2fc6431648b5a10e09d58`.
+- Historical verified code SHA: `019641ee9e1ea38098328e8e32e08e35bcdab181`.
 - Cloud DEV: `gtgljlnhwvhqdnwrfdfj`; migration parity **32/32**.
 - Acceptance tenant/company: `b4000000-0000-4000-8000-000000000010` / `b4000000-0000-4000-8000-000000000020`, code `VQH_STAGE01_ACCEPTANCE`.
 - Final combined browser run: `b4-stage01-beb431ed-508f-4d6c-afa6-e34e45252d63`.
@@ -13,9 +18,9 @@ WP4 runtime, local and native security gates have passing evidence. The evidence
 
 All evidence paths below are local files under `test-results/`. Credentials are excluded. Production and real VQH pilot mutations were not performed; push and merge remain unauthorized.
 
-## Scenario evidence
+## Historical scenario evidence
 
-| Scenario | Result | Current evidence |
+| Scenario | Result | Historical evidence (assessed SHA) |
 | --- | --- | --- |
 | S01 proceed lifecycle | PASS | `wp4/browser-s08-contract-corrected.log`: real browser creation, intake, evaluation, authority assignment, final decision, completion and canonical reload |
 | S02 not proceeding | PASS | `wp4/database-constraint-name-corrected.log`; separate real not-proceeding browser journey before S08 |
@@ -30,7 +35,7 @@ All evidence paths below are local files under `test-results/`. Credentials are 
 
 The combined browser test passed in 3.4 minutes. S07/S09 passed separately. Browser teardown checked the current run marker against canonical VQH, deactivated dedicated B4 credentials, and removed temporary secret state. Retained acceptance-company opportunities, cycles, snapshots and audit history are intentionally preserved.
 
-## Database and local gates
+## Historical database and local gates
 
 - Stage01 SQL suite: PASS, `wp4/database-constraint-name-corrected.log`.
 - Ten concurrency scenarios: PASS, `wp4/concurrency-retry-2.log`; same-request authority replay asserts one event/audit/version.
@@ -41,7 +46,7 @@ The combined browser test passed in 3.4 minutes. S07/S09 passed separately. Brow
 - Dense history at 390×844 and 1440×900, overflow, labels, keyboard interaction and critical accessibility checks: PASS in the full suite.
 - Working tree clean and `git diff --check` passing before this evidence-only report.
 
-Passing database/race/RLS suites were not unnecessarily repeated after function-local identifier-only fixes. Subsequent repository read scheduling and UI/test corrections were verified through affected tests, current full local checks and real Cloud browser/performance runs.
+Passing database/race/RLS suites were not unnecessarily repeated after function-local identifier-only fixes. Subsequent repository read scheduling and UI/test corrections were verified through the affected tests, local checks and real Cloud browser/performance runs recorded for their assessed revisions.
 
 ## Performance
 
@@ -68,6 +73,10 @@ Initial P3 p95 was 2,527.9 ms. The one permitted unchanged-code recheck followed
 | ENVIRONMENT_DEFECT | Native Python helper used nonexistent Python27 | Authorized user-level Python correction and Codex restart; native startup and preflight now succeed |
 | ENVIRONMENT_DEFECT | Native finalization retained stale pending-review coverage | First sealed report preserved; subsequent final-HEAD scan reconciles all 34 source files and seals complete coverage with zero deferred items |
 
+## Open business decision
+
+- `NEEDS_BUSINESS_DECISION`: define who and when may replace an assigned Decision Authority who becomes ineligible before the final decision. Any approved replacement must append a new authority event and preserve the prior assignment history; this report defines no reassignment, revocation, SQL override or admin bypass.
+
 ## Security evidence and limits
 
 Native scan `f01ed42d-4edc-4d11-a012-63c263819f86` finalized successfully for source anchor through verified code SHA. All 34 native changed-source inventory files were reviewed, with zero candidates/findings (critical/high/medium/low: 0/0/0/0). Readback nevertheless marked coverage partial because the tool retained three earlier pending-review checkpoint records after the final complete draft. This scan alone is not treated as the final acceptance gate.
@@ -80,6 +89,8 @@ Advisor commands passed their configured error threshold. Three authenticated SE
 
 TAC status could not be verified because the access connector was not connected; protected output display may be unavailable. This was advisory and did not gate source review. No runtime exploit probes or database mutations were performed during the native scan.
 
+Security review establishes findings coverage for the assessed source; it does not prove real actor permissions, deployed configuration, environment parity or pilot smoke behavior.
+
 ## Release boundary
 
-All code and runtime acceptance evidence is passing, including native coverage reconciliation. The final report-only change does not invalidate source, browser, database or performance results. Its native verification must preserve the same complete/zero-critical-high result before the orchestrator declares the milestones. WP5 real VQH pilot work requires separate authorization. No push or merge is included in this acceptance work.
+The historical WP4 results remain evidence for the source SHAs and Cloud DEV state recorded above. The current tree requires separately authorized affected Cloud DEV verification before a current `STAGE01_ACCEPTANCE_COMPLETE` assessment; no current `READY_FOR_VQH_PILOT` claim is made. Pilot work, including real actor/configuration/environment smoke checks, requires separate authorization. No push or merge is included in this acceptance work.

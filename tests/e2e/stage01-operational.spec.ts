@@ -10,6 +10,38 @@ async function goToWorkspace(page: import('@playwright/test').Page): Promise<voi
   await expect(page.getByRole('heading', { name: 'Công ty Việt Quốc Huy' })).toBeVisible()
 }
 
+function prepareDecisionGateFixture(detail: ReturnType<typeof createStage01OperationalDetail>): void {
+  detail.intake.runtime.phase = 'completed'
+  detail.intake.runtime.state = 'completed'
+  detail.intake.runtime.needsRevalidation = false
+  detail.evaluation.runtime.phase = 'active'
+  detail.evaluation.runtime.state = 'active'
+  detail.evaluation.runtime.needsRevalidation = false
+  detail.currentDecisionCycle.evaluations = detail.configuration.criteria.map((criterion, index) => ({
+    id: `81000000-0000-4000-8000-${String(100 + index).padStart(12, '0')}`,
+    decisionCycleId: detail.currentDecisionCycle.id,
+    criterionKey: criterion.key,
+    revision: 1,
+    applicability: 'applicable' as const,
+    result: 'fit' as const,
+    rationale: `Đủ điều kiện ${criterion.label}`,
+    evidence: [],
+    evaluatedBy: '81000000-0000-4000-8000-000000000071',
+    evaluatedAt: '2026-09-01T00:00:00.000Z',
+  }))
+  detail.evaluation.gates = {
+    satisfied: false,
+    checks: [
+      { code: 'INTAKE_DEPENDENCY_VALID', status: 'satisfied', message: 'The current Intake completion dependency is valid.' },
+      { code: 'REQUIRED_CRITERIA_EVALUATED', status: 'satisfied', message: 'All required applicable criteria are gate-satisfied.' },
+      { code: 'RECOMMENDATION_CURRENT', status: 'satisfied', message: 'A current Recommendation is present.' },
+      { code: 'FINAL_DECISION_RECORDED', status: 'missing', message: 'Final Decision is required.' },
+      { code: 'NO_OPEN_BLOCKING_BLOCKER', status: 'satisfied', message: 'There is no open blocking Blocker.' },
+      { code: 'NO_REVALIDATION_REQUIRED', status: 'satisfied', message: 'The Evaluation execution does not require revalidation.' },
+    ],
+  }
+}
+
 test('keeps intake business controls read-only for a route-authorized reader', async ({ page, authState }) => {
   authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read'] })]
   const detail = createStage01OperationalDetail()
@@ -927,6 +959,7 @@ test('recommendation and clarification use the current cycle and retain immutabl
 
 test('final decision requires its permission and bound decision capability, preserves a rejected draft, then accepts explicit override rationale', async ({ page, authState }) => {
   const detail = createStage01OperationalDetail()
+  prepareDecisionGateFixture(detail)
   detail.actorCapabilities = ['decision']
   // This isolates the override/draft UI behavior.  Authority establishment itself is
   // exercised through the public candidate/assignment path in the B4 journey below.
@@ -967,6 +1000,7 @@ test('final decision requires its permission and bound decision capability, pres
 
 test('clears a stale override requirement and omits obsolete rationale when returning to the recommendation', async ({ page, authState }) => {
   const detail = createStage01OperationalDetail()
+  prepareDecisionGateFixture(detail)
   detail.actorCapabilities = ['decision']
   detail.currentDecisionCycle.decisionAuthorityUserId = '81000000-0000-4000-8000-000000000071'
   detail.currentDecisionCycle.authorityResolutionEventId = '81000000-0000-4000-8000-000000000079'
@@ -1006,6 +1040,7 @@ test('clears a stale override requirement and omits obsolete rationale when retu
 
 test('resets cycle-owned decision draft state after a canonical recommendation change while mounted', async ({ page, authState }) => {
   const state = createStage01OperationalRouteState()
+  prepareDecisionGateFixture(state.detail)
   state.detail.actorCapabilities = ['decision']
   state.detail.currentDecisionCycle.decisionAuthorityUserId = '81000000-0000-4000-8000-000000000071'
   state.detail.currentDecisionCycle.authorityResolutionEventId = '81000000-0000-4000-8000-000000000079'
@@ -1071,6 +1106,7 @@ test('does not treat a non-current recommendation array entry as decision author
 
 test('clears decision draft state after a canonical cycle change without issuing a mutation', async ({ page, authState }) => {
   const state = createStage01OperationalRouteState()
+  prepareDecisionGateFixture(state.detail)
   state.detail.actorCapabilities = ['decision']
   state.detail.currentDecisionCycle.decisionAuthorityUserId = '81000000-0000-4000-8000-000000000071'
   state.detail.currentDecisionCycle.authorityResolutionEventId = '81000000-0000-4000-8000-000000000079'
@@ -1160,6 +1196,9 @@ test('decision actions remain hidden without their exact permission or the requi
 
 test('completed decision is read-only and reactivation sends canonical versions then retains ordered previous cycles', async ({ page, authState }) => {
   const detail = createStage01OperationalDetail()
+  detail.intake.runtime.phase = 'completed'
+  detail.intake.runtime.state = 'completed'
+  detail.intake.runtime.needsRevalidation = false
   detail.currentDecisionCycle.finalOutcome = 'not_proceeding'
   detail.currentDecisionCycle.finalRationale = 'Chưa đủ điều kiện triển khai.'
   detail.currentDecisionCycle.finalDecisionBy = '81000000-0000-4000-8000-000000000071'
@@ -1235,6 +1274,91 @@ test('completed decision is read-only and reactivation sends canonical versions 
   await expect(previousCycle).toContainText('Đề xuất được quyết định tham chiếu: 81000000-0000-4000-8000-000000000077 · phiên bản #1 · Đề xuất không tiếp tục · Đề xuất đã được thẩm định')
   await expect(previousCycle.locator('button, form, input, select, textarea')).toHaveCount(0)
   expect(mutationRequests.length).toBe(mutationsBeforeInspection)
+})
+
+test('keeps reactivation unavailable until the canonical evaluation node is completed', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.currentDecisionCycle.finalOutcome = 'not_proceeding'
+  detail.currentDecisionCycle.finalRationale = 'Chưa đủ điều kiện triển khai.'
+  detail.intake.runtime.phase = 'completed'
+  detail.intake.runtime.state = 'completed'
+  detail.evaluation.runtime.phase = 'active'
+  detail.evaluation.runtime.state = 'active'
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'stage01.reactivate'] })]
+  await installStage01OperationalRoutes(page, detail)
+  await goToWorkspace(page)
+
+  await expect(page.getByRole('button', { name: 'Kích hoạt lại Stage 01', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('status').filter({ hasText: 'Cần hoàn tất node 01.2 Đánh giá trước khi kích hoạt lại Stage 01.' })).toBeVisible()
+
+  detail.evaluation.runtime.phase = 'completed'
+  detail.evaluation.runtime.state = 'completed'
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Kích hoạt lại Stage 01', exact: true })).toBeVisible()
+})
+
+test('explains invalid decision authority and keeps assignment and final decision writes unavailable', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  state.detail.actorCapabilities = ['assignDecisionAuthority', 'decision']
+  state.detail.currentDecisionCycle.decisionAuthority = {
+    status: 'invalid', userId: '81000000-0000-4000-8000-000000000071', employeeId: null,
+    displayName: 'Người đã được chỉ định', positionTitle: 'Giám đốc', currentActorIsAuthority: false, locked: false,
+    policyBinding: { status: 'bound', policySnapshotId: null },
+  }
+  state.detail.currentDecisionCycle.recommendations.push({
+    id: '81000000-0000-4000-8000-000000000077', decisionCycleId: state.detail.currentDecisionCycle.id, version: 1,
+    recommendation: 'recommend_proceed', rationale: 'Nên tiếp tục', evidence: [],
+    submittedBy: '81000000-0000-4000-8000-000000000071', submittedAt: '2026-09-01T01:00:00.000Z',
+  })
+  authState.sessionCompanies = [createCompany({ permissions: [
+    'project.read', 'journey.read', 'opportunity.read', 'opportunity.decision_authority.assign', 'opportunity.decision.record',
+  ] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await goToWorkspace(page)
+
+  await expect(page.getByRole('status').filter({ hasText: 'Hệ thống sẽ chặn ghi nhận quyết định vì không thể xác minh người được chỉ định.' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Chỉ định', exact: true })).toHaveCount(0)
+  const finalDecision = page.getByRole('button', { name: 'Ghi nhận quyết định', exact: true })
+  await expect(finalDecision).toBeDisabled()
+  expect(state.requests).toHaveLength(0)
+})
+
+test('explains an unsatisfied canonical gate without treating final decision as its own prerequisite', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  state.detail.actorCapabilities = ['decision']
+  state.detail.intake.runtime.phase = 'completed'
+  state.detail.intake.runtime.state = 'completed'
+  state.detail.evaluation.runtime.phase = 'active'
+  state.detail.evaluation.runtime.state = 'active'
+  state.detail.currentDecisionCycle.evaluations = state.detail.configuration.criteria.map((criterion, index) => ({
+    id: `81000000-0000-4000-8000-${String(100 + index).padStart(12, '0')}`,
+    decisionCycleId: state.detail.currentDecisionCycle.id, criterionKey: criterion.key, revision: 1,
+    applicability: 'applicable' as const, result: 'fit' as const, rationale: `Đủ điều kiện ${criterion.label}`,
+    evidence: [], evaluatedBy: '81000000-0000-4000-8000-000000000071', evaluatedAt: '2026-09-01T00:00:00.000Z',
+  }))
+  state.detail.intake.runtime.needsRevalidation = true
+  state.detail.currentDecisionCycle.decisionAuthority = {
+    status: 'not_required', userId: null, employeeId: null, displayName: null, positionTitle: null,
+    currentActorIsAuthority: false, locked: false, policyBinding: { status: 'not_required', policySnapshotId: null },
+  }
+  state.detail.currentDecisionCycle.recommendations.push({
+    id: '81000000-0000-4000-8000-000000000077', decisionCycleId: state.detail.currentDecisionCycle.id, version: 1,
+    recommendation: 'recommend_proceed', rationale: 'Nên tiếp tục', evidence: [],
+    submittedBy: '81000000-0000-4000-8000-000000000071', submittedAt: '2026-09-01T01:00:00.000Z',
+  })
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.decision.record'] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await goToWorkspace(page)
+
+  const finalDecision = page.getByRole('button', { name: 'Ghi nhận quyết định', exact: true })
+  await expect(finalDecision).toBeDisabled()
+  await expect(page.getByRole('status').filter({ hasText: 'Cần tái xác thực node 01.1 Tiếp nhận trước khi ghi nhận quyết định.' })).toBeVisible()
+  expect(state.requests).toHaveLength(0)
+
+  state.detail.intake.runtime.needsRevalidation = false
+  await page.reload()
+  await expect(finalDecision).toBeEnabled()
+  await expect(page.getByRole('status').filter({ hasText: 'Cần tái xác thực node 01.1 Tiếp nhận trước khi ghi nhận quyết định.' })).toHaveCount(0)
 })
 
 test('hides reactivation for a completed proceed decision', async ({ page, authState }) => {
@@ -1340,6 +1464,7 @@ test('stateful acceptance fixture drives canonical Stage 01 commands and preserv
 
 test('self-assigns Decision Authority through the normal UI, reloads canonically, then enables Final Decision', async ({ page, authState }) => {
   const detail = createStage01OperationalDetail()
+  prepareDecisionGateFixture(detail)
   detail.actorCapabilities = ['assignDecisionAuthority', 'decision']
   detail.currentDecisionCycle.recommendations.push({
     id: '82000000-0000-4000-8000-000000000651', decisionCycleId: detail.currentDecisionCycle.id,
