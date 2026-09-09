@@ -965,6 +965,181 @@ test('final decision requires its permission and bound decision capability, pres
   })
 })
 
+test('clears a stale override requirement and omits obsolete rationale when returning to the recommendation', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.actorCapabilities = ['decision']
+  detail.currentDecisionCycle.decisionAuthorityUserId = '81000000-0000-4000-8000-000000000071'
+  detail.currentDecisionCycle.authorityResolutionEventId = '81000000-0000-4000-8000-000000000079'
+  detail.currentDecisionCycle.authorityResolutionReference = '81000000-0000-4000-8000-000000000079'
+  detail.currentDecisionCycle.decisionAuthority = {
+    status: 'resolved', userId: detail.currentDecisionCycle.decisionAuthorityUserId,
+    employeeId: '81000000-0000-4000-8000-000000000080', displayName: 'Decision actor', positionTitle: null,
+    currentActorIsAuthority: true, locked: false,
+  }
+  detail.currentDecisionCycle.recommendations.push({
+    id: '81000000-0000-4000-8000-000000000075', decisionCycleId: detail.currentDecisionCycle.id, version: 1,
+    recommendation: 'recommend_proceed', rationale: 'Nên tiếp tục', evidence: [],
+    submittedBy: '81000000-0000-4000-8000-000000000071', submittedAt: '2026-09-01T01:00:00.000Z',
+  })
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.decision.record'] })]
+  await installStage01OperationalRoutes(page, detail, {
+    requireOverrideRationaleOnce: true,
+    onStage01Command: request => { commands.push(request) },
+  })
+  await goToWorkspace(page)
+
+  await page.getByRole('combobox', { name: 'Kết quả quyết định' }).selectOption('not_proceeding')
+  await page.getByRole('textbox', { name: 'Lý do quyết định' }).fill('Không tiếp tục')
+  await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click()
+  await expect(page.getByRole('textbox', { name: 'Lý do ghi đè quyết định' })).toBeVisible()
+  await page.getByRole('textbox', { name: 'Lý do ghi đè quyết định' }).fill('Nội dung cũ không được gửi')
+
+  await page.getByRole('combobox', { name: 'Kết quả quyết định' }).selectOption('proceed')
+  await page.getByRole('textbox', { name: 'Lý do quyết định' }).fill('Tiếp tục theo đề xuất')
+  await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click()
+  await expect.poll(() => commands, { timeout: 2_000 }).toHaveLength(2)
+  expect(commands[1]).toMatchObject({ body: { outcome: 'proceed', rationale: 'Tiếp tục theo đề xuất' } })
+  expect(commands[1]!.body).not.toHaveProperty('overrideRationale')
+  await expect(page.getByRole('textbox', { name: 'Lý do ghi đè quyết định' })).toHaveCount(0)
+})
+
+test('resets cycle-owned decision draft state after a canonical recommendation change while mounted', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  state.detail.actorCapabilities = ['decision']
+  state.detail.currentDecisionCycle.decisionAuthorityUserId = '81000000-0000-4000-8000-000000000071'
+  state.detail.currentDecisionCycle.authorityResolutionEventId = '81000000-0000-4000-8000-000000000079'
+  state.detail.currentDecisionCycle.authorityResolutionReference = '81000000-0000-4000-8000-000000000079'
+  state.detail.currentDecisionCycle.decisionAuthority = {
+    status: 'resolved', userId: state.detail.currentDecisionCycle.decisionAuthorityUserId,
+    employeeId: '81000000-0000-4000-8000-000000000080', displayName: 'Decision actor', positionTitle: null,
+    currentActorIsAuthority: true, locked: false,
+  }
+  state.detail.currentDecisionCycle.recommendations.push({
+    id: '81000000-0000-4000-8000-000000000075', decisionCycleId: state.detail.currentDecisionCycle.id, version: 1,
+    recommendation: 'recommend_proceed', rationale: 'Nên tiếp tục', evidence: [],
+    submittedBy: '81000000-0000-4000-8000-000000000071', submittedAt: '2026-09-01T01:00:00.000Z',
+  })
+  const commands: { pathname: string, body: Record<string, unknown> }[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'stage01.recommendation.submit', 'opportunity.decision.record'] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await page.route(/\/api\/companies\/[^/]+\/opportunities\/[^/]+\/stage-01\/final-decision$/u, async route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    commands.push({ pathname: new URL(route.request().url()).pathname, body: route.request().postDataJSON() as Record<string, unknown> })
+    await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'STAGE01_OVERRIDE_RATIONALE_REQUIRED', message: 'Cần ghi rõ lý do ghi đè quyết định.', requestId: 'stage01-override-rationale-required', details: {} } }) })
+  })
+  await goToWorkspace(page)
+
+  await page.getByRole('combobox', { name: 'Kết quả quyết định' }).selectOption('not_proceeding')
+  await page.getByRole('textbox', { name: 'Lý do quyết định' }).fill('Cần ghi đè')
+  await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click()
+  await expect(page.getByRole('textbox', { name: 'Lý do ghi đè quyết định' })).toBeVisible()
+  await page.getByRole('textbox', { name: 'Lý do ghi đè quyết định' }).fill('Bản nháp cũ')
+
+  await page.getByRole('textbox', { name: 'Lý do đề xuất' }).fill('Đề xuất mới')
+  await page.getByRole('button', { name: 'Gửi đề xuất' }).click()
+  await expect(page.getByRole('textbox', { name: 'Lý do ghi đè quyết định' })).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: 'Lý do quyết định' })).toHaveValue('')
+  await expect(page.getByRole('combobox', { name: 'Kết quả quyết định' })).toHaveValue('proceed')
+  expect(commands).toHaveLength(1)
+})
+
+test('does not treat a non-current recommendation array entry as decision authority', async ({ page, authState }) => {
+  const detail = createStage01OperationalDetail()
+  detail.actorCapabilities = ['decision']
+  detail.currentDecisionCycle.decisionAuthorityUserId = '81000000-0000-4000-8000-000000000071'
+  detail.currentDecisionCycle.authorityResolutionEventId = '81000000-0000-4000-8000-000000000079'
+  detail.currentDecisionCycle.authorityResolutionReference = '81000000-0000-4000-8000-000000000079'
+  detail.currentDecisionCycle.decisionAuthority = {
+    status: 'resolved', userId: detail.currentDecisionCycle.decisionAuthorityUserId,
+    employeeId: '81000000-0000-4000-8000-000000000080', displayName: 'Decision actor', positionTitle: null,
+    currentActorIsAuthority: true, locked: false,
+  }
+  detail.currentDecisionCycle.recommendations.push({
+    id: '81000000-0000-4000-8000-000000000075', decisionCycleId: detail.currentDecisionCycle.id, version: 1,
+    recommendation: 'recommend_proceed', rationale: 'Đề xuất cũ', evidence: [],
+    submittedBy: '81000000-0000-4000-8000-000000000071', submittedAt: '2026-09-01T01:00:00.000Z',
+  })
+  detail.evaluation.gates = { satisfied: false, checks: [{ code: 'RECOMMENDATION_CURRENT', status: 'missing', message: 'Chưa có đề xuất hiện hành' }] }
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.decision.record'] })]
+  await installStage01OperationalRoutes(page, detail)
+  await goToWorkspace(page)
+
+  await expect(page.getByText('Phiên bản đề xuất #1', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Ghi nhận quyết định', exact: true })).toBeDisabled()
+})
+
+test('clears decision draft state after a canonical cycle change without issuing a mutation', async ({ page, authState }) => {
+  const state = createStage01OperationalRouteState()
+  state.detail.actorCapabilities = ['decision']
+  state.detail.currentDecisionCycle.decisionAuthorityUserId = '81000000-0000-4000-8000-000000000071'
+  state.detail.currentDecisionCycle.authorityResolutionEventId = '81000000-0000-4000-8000-000000000079'
+  state.detail.currentDecisionCycle.authorityResolutionReference = '81000000-0000-4000-8000-000000000079'
+  state.detail.currentDecisionCycle.decisionAuthority = {
+    status: 'resolved', userId: state.detail.currentDecisionCycle.decisionAuthorityUserId,
+    employeeId: '81000000-0000-4000-8000-000000000080', displayName: 'Decision actor', positionTitle: null,
+    currentActorIsAuthority: true, locked: false,
+  }
+  state.detail.currentDecisionCycle.recommendations.push({
+    id: '81000000-0000-4000-8000-000000000075', decisionCycleId: state.detail.currentDecisionCycle.id, version: 1,
+    recommendation: 'recommend_proceed', rationale: 'Nên tiếp tục', evidence: [],
+    submittedBy: '81000000-0000-4000-8000-000000000071', submittedAt: '2026-09-01T01:00:00.000Z',
+  })
+  const decisionPosts: Record<string, unknown>[] = []
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read', 'journey.read', 'opportunity.read', 'opportunity.decision.record'] })]
+  await installStatefulStage01OperationalRoutes(page, state)
+  await page.route(/\/api\/companies\/[^/]+\/opportunities\/[^/]+\/stage-01\/final-decision$/u, async route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    decisionPosts.push(route.request().postDataJSON() as Record<string, unknown>)
+    await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'STAGE01_OVERRIDE_RATIONALE_REQUIRED', message: 'Cần ghi rõ lý do ghi đè quyết định.', requestId: 'cycle-change-override-required', details: {} } }) })
+  })
+  await goToWorkspace(page)
+
+  await page.getByRole('combobox', { name: 'Kết quả quyết định' }).selectOption('not_proceeding')
+  await page.getByRole('textbox', { name: 'Lý do quyết định' }).fill('Bản nháp chu kỳ cũ')
+  await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click()
+  await expect(page.getByRole('textbox', { name: 'Lý do ghi đè quyết định' })).toBeVisible()
+  await page.getByRole('textbox', { name: 'Lý do ghi đè quyết định' }).fill('Ghi đè chu kỳ cũ')
+
+  const previousCycle = state.detail.currentDecisionCycle
+  const nextCycle = structuredClone(previousCycle)
+  nextCycle.id = '81000000-0000-4000-8000-000000000088'
+  nextCycle.nodeExecutionId = '81000000-0000-4000-8000-000000000089'
+  nextCycle.cycleNo = 2
+  nextCycle.reactivationReason = 'Cần xem xét lại điều kiện'
+  nextCycle.decisionAuthorityUserId = null
+  nextCycle.authorityResolutionEventId = null
+  nextCycle.authorityResolutionReference = null
+  nextCycle.decisionAuthority = {
+    status: 'unresolved', userId: null, employeeId: null, displayName: null,
+    positionTitle: null, currentActorIsAuthority: false, locked: false,
+    policyBinding: previousCycle.decisionAuthority.policyBinding,
+  }
+  nextCycle.finalOutcome = null
+  nextCycle.finalDecisionBy = null
+  nextCycle.finalDecisionAt = null
+  nextCycle.finalRationale = null
+  nextCycle.finalRecommendationId = null
+  nextCycle.overrideRationale = null
+  nextCycle.version = 0
+  nextCycle.evaluations = []
+  nextCycle.recommendations = []
+  nextCycle.clarificationReturns = []
+  state.detail.decisionCycles = [previousCycle, nextCycle]
+  state.detail.currentDecisionCycle = nextCycle
+  state.detail.evaluation.runtime.nodeExecutionId = nextCycle.nodeExecutionId
+  state.detail.evaluation.runtime.executionNo = 2
+  state.detail.evaluation.runtime.version = 0
+  state.detail.evaluation.runtime.phase = 'active'
+  state.detail.evaluation.runtime.state = 'active'
+
+  await page.getByRole('button', { name: 'Tải lại', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: 'Lý do ghi đè quyết định' })).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: 'Lý do quyết định' })).toHaveValue('')
+  await expect(page.getByRole('combobox', { name: 'Kết quả quyết định' })).toHaveValue('proceed')
+  expect(decisionPosts).toHaveLength(1)
+})
+
 test('decision actions remain hidden without their exact permission or the required bound decision capability', async ({ page, authState }) => {
   const detail = createStage01OperationalDetail()
   detail.currentDecisionCycle.recommendations.push({

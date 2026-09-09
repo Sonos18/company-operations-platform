@@ -34,8 +34,12 @@ const authorityRequestId = ref<string | null>(null)
 
 const criteria = computed(() => [...props.detail.configuration.criteria].sort((left, right) => left.displayOrder - right.displayOrder))
 const cycles = computed(() => orderedDecisionCycles(props.detail.decisionCycles))
-const currentRecommendation = computed(() => [...props.detail.currentDecisionCycle.recommendations]
-  .sort((left, right) => right.version - left.version)[0] ?? null)
+const currentRecommendation = computed(() => {
+  const recommendationGate = props.detail.evaluation.gates.checks.find(check => check.code === 'RECOMMENDATION_CURRENT')
+  if (recommendationGate && recommendationGate.status !== 'satisfied') return null
+  return [...props.detail.currentDecisionCycle.recommendations]
+    .sort((left, right) => right.version - left.version)[0] ?? null
+})
 const completed = computed(() => props.detail.currentDecisionCycle.finalOutcome !== null)
 const canEvaluate = computed(() => access.hasPermission('stage01.evaluation.update') && !completed.value)
 const canRecommend = computed(() => access.hasPermission('stage01.recommendation.submit') && !completed.value)
@@ -96,6 +100,20 @@ function recommendationLabel(value: 'recommend_proceed' | 'recommend_not_proceed
 
 function outcomeLabel(value: 'proceed' | 'not_proceeding'): string {
   return value === 'proceed' ? 'Tiếp tục' : 'Không tiếp tục'
+}
+
+function decisionMatchesRecommendation(outcome = decision.outcome): boolean {
+  const current = currentRecommendation.value
+  if (!current) return true
+  return (current.recommendation === 'recommend_proceed' && outcome === 'proceed')
+    || (current.recommendation === 'recommend_not_proceeding' && outcome === 'not_proceeding')
+}
+
+function resetDecisionDraft(): void {
+  decision.outcome = 'proceed'
+  decision.rationale = ''
+  decision.overrideRationale = ''
+  overrideRationaleRequired.value = false
 }
 
 function clearNotice(): void {
@@ -169,22 +187,24 @@ async function submitClarification(): Promise<void> {
 
 async function submitDecision(): Promise<void> {
   const rationale = decision.rationale.trim()
-  const overrideRationale = decision.overrideRationale.trim()
+  const requiresOverride = overrideRationaleRequired.value && !decisionMatchesRecommendation()
+  const overrideRationale = requiresOverride ? decision.overrideRationale.trim() : ''
   if (!rationale) {
     error.value = 'Cần nhập lý do quyết định.'
     return
   }
-  if (overrideRationaleRequired.value && !overrideRationale) {
+  if (requiresOverride && !overrideRationale) {
     error.value = 'Cần nhập lý do ghi đè quyết định.'
     return
   }
+  if (!requiresOverride) decision.overrideRationale = ''
   clearNotice()
   try {
     await props.runAndReload(() => repositories.stage01.recordFinalDecision(props.detail.opportunity.id, {
       expectedCycleVersion: props.detail.currentDecisionCycle.version,
       outcome: decision.outcome,
       rationale,
-      ...(overrideRationale ? { overrideRationale } : {}),
+      ...(requiresOverride && overrideRationale ? { overrideRationale } : {}),
     }))
     success.value = 'Đã ghi nhận quyết định cuối cùng.'
   }
@@ -250,6 +270,17 @@ async function submitReactivation(): Promise<void> {
 function openReactivation(): void {
   reactivationOpen.value = true
 }
+
+watch(() => decision.outcome, () => {
+  if (decisionMatchesRecommendation()) {
+    overrideRationaleRequired.value = false
+    decision.overrideRationale = ''
+  }
+})
+
+watch(() => `${props.detail.currentDecisionCycle.id}:${currentRecommendation.value?.id ?? ''}:${currentRecommendation.value?.version ?? ''}`, () => {
+  resetDecisionDraft()
+})
 </script>
 
 <template>
@@ -353,7 +384,7 @@ function openReactivation(): void {
       <form v-if="decisionVisible" class="evaluation-decision__form" @submit.prevent="submitDecision">
         <label>Kết quả quyết định<select v-model="decision.outcome"><option value="proceed">Tiếp tục</option><option value="not_proceeding">Không tiếp tục</option></select></label>
         <label>Lý do quyết định<textarea v-model="decision.rationale" /></label>
-        <label v-if="overrideRationaleRequired">Lý do ghi đè quyết định<textarea v-model="decision.overrideRationale" required /></label>
+        <label v-if="overrideRationaleRequired && !decisionMatchesRecommendation()">Lý do ghi đè quyết định<textarea v-model="decision.overrideRationale" required /></label>
         <UButton type="submit" :disabled="!canRecordDecision">Ghi nhận quyết định</UButton>
       </form>
       <UButton v-if="canReactivate && !reactivationOpen" variant="outline" @click="openReactivation">Kích hoạt lại Stage 01</UButton>
