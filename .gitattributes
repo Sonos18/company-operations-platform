@@ -1,0 +1,4 @@
+/supabase/tests/database/stage01_b4_acceptance.test.sql text eol=lf
+/supabase/migrations/20260904050924_opportunity_decision_authority_slice1.sql text eol=lf
+/supabase/migrations/20260904094243_opportunity_decision_authority_company_capability.sql text eol=lf
+/supabase/migrations/20260905124508_restore_opportunity_decision_final_history_invariants.sql text eol=lf

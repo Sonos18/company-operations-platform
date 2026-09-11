@@ -2,9 +2,10 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { canonicalizeSourceText } from '../../helpers/canonical-source-text'
 
 const root = resolve(import.meta.dirname, '../../..')
-const read = (path: string) => readFileSync(resolve(root, path), 'utf8')
+const read = (path: string) => canonicalizeSourceText(readFileSync(resolve(root, path), 'utf8'))
 const forwardMigrationPath = 'supabase/migrations/20260907100000_isolate_b4_policy_acceptance_runtime.sql'
 
 const protectedMigrationHashes = {

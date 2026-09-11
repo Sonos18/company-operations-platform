@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { CANONICAL_DEV_PROJECT_REF } from '../../../scripts/assert-cloud-dev-target.mjs'
 import { runSupabaseDevMode } from '../../../scripts/run-supabase-dev.mjs'
 import { STAGE01_CONCURRENCY_SCENARIOS, runStage01CloudDevConcurrency } from '../../../scripts/run-stage01-cloud-dev-concurrency.mjs'
+import { canonicalizeSourceText } from '../../helpers/canonical-source-text'
 
 const worktrees: string[] = []
 const root = resolve(import.meta.dirname, '../../..')
@@ -207,7 +208,7 @@ describe('Cloud DEV fixed-mode runner', () => {
   })
 
   it('closes the Final Decision override branch before continuing its Amendment 25 migration function', () => {
-    const migration = readFileSync(resolve(root, 'supabase/migrations/20260904050924_opportunity_decision_authority_slice1.sql'), 'utf8')
+    const migration = canonicalizeSourceText(readFileSync(resolve(root, 'supabase/migrations/20260904050924_opportunity_decision_authority_slice1.sql'), 'utf8'))
     const definitions = extractFinalDecisionDefinitions(migration)
 
     expect(definitions).toHaveLength(2)

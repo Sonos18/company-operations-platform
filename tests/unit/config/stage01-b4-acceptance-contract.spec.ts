@@ -8,9 +8,10 @@ import { createGlobalTeardown } from '../../acceptance/stage01-cloud-dev/global-
 import { assertB4ActorBoundary, assertRetainedProfileShape, b4CompanyAdminPermissionBundle, deactivateProvenB4Actors, ensureB4EmployeeDirectoryRole, ensureProfile, reconcileB4CompanyAdminConfigPermissions, retainedProfileIdentity, selectFixedB4ActorCandidates, selectRetainedProfileAction } from '../../../scripts/stage01-b4-acceptance-fixture.mjs'
 import * as fixture from '../../../scripts/stage01-b4-acceptance-fixture.mjs'
 import { B4_RESULTS_DIRECTORY, B4_SECRET_STATE_PATH } from '../../acceptance/stage01-cloud-dev/acceptance-state'
+import { canonicalizeSourceText } from '../../helpers/canonical-source-text'
 
 const root = resolve(import.meta.dirname, '../../..')
-const read = (path: string) => readFileSync(resolve(root, path), 'utf8')
+const read = (path: string) => canonicalizeSourceText(readFileSync(resolve(root, path), 'utf8'))
 const state = {
   runMarker: 'b4-stage01-run', tenantId: 'b4000000-0000-4000-8000-000000000010',
   companyId: 'b4000000-0000-4000-8000-000000000020', companyCode: 'VQH_STAGE01_ACCEPTANCE' as const,
