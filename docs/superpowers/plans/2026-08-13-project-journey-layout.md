@@ -1,7 +1,5 @@
 # Project Journey Layout Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Remove the horizontal project-stage rail and render the existing three-card journey summary immediately after the stage banner carousel.
 
 **Architecture:** Keep the current `ProjectJourneyCarousel.vue` ownership of project, carousel, and summary state. Make a template-only layout change plus the now-unused import removal; preserve presenter data flow and carousel behavior. Protect the requested DOM order and remaining navigation with Playwright regression coverage.

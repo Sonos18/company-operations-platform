@@ -8,6 +8,7 @@ import {
   returnForClarificationInputSchema,
   submitRecommendationInputSchema,
 } from '../../../shared/schemas/stage01'
+import { assignOpportunityDecisionAuthorityInputSchema } from '../../../shared/schemas/opportunity-decision-authority'
 import { AppApiError } from '../../utils/api-error'
 import { requireAuthenticatedRequest } from '../../utils/auth-context'
 import { createSupabaseAuthorizationReader } from '../authorization/authorization.service'
@@ -74,6 +75,16 @@ export function createStage01Routes(dependencies: Stage01RouteDependencies) {
         body(recordFinalDecisionInputSchema, await readBody(event as never)))
       return null
     },
+    async listDecisionAuthorityCandidates(event: unknown) {
+      const context = await scoped(event)
+      return { items: await dependencies.service.listDecisionAuthorityCandidates(context, routeId(event, 'opportunityId'), routeId(event, 'decisionCycleId')) }
+    },
+    async assignDecisionAuthority(event: unknown) {
+      const context = await scoped(event)
+      await dependencies.service.assignDecisionAuthority(context, routeId(event, 'opportunityId'), routeId(event, 'decisionCycleId'),
+        body(assignOpportunityDecisionAuthorityInputSchema, await readBody(event as never)))
+      return null
+    },
     async reactivate(event: unknown) {
       const context = await scoped(event)
       await dependencies.service.reactivate(context, routeId(event, 'opportunityId'),
@@ -104,6 +115,8 @@ export function createSupabaseStage01Routes(event: H3Event) {
       submitRecommendation: (...args) => resolved().submitRecommendation(...args),
       returnForClarification: (...args) => resolved().returnForClarification(...args),
       recordFinalDecision: (...args) => resolved().recordFinalDecision(...args),
+      listDecisionAuthorityCandidates: (...args) => resolved().listDecisionAuthorityCandidates(...args),
+      assignDecisionAuthority: (...args) => resolved().assignDecisionAuthority(...args),
       reactivate: (...args) => resolved().reactivate(...args),
     },
   })

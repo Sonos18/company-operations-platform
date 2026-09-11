@@ -22,6 +22,8 @@ import {
   type OpportunitySummary,
 } from '../../../shared/schemas/opportunities'
 import { opportunityCreateOptionsSchema } from '../../../shared/schemas/opportunity-create-options'
+import { employeeListResponseSchema, type EmployeeListResponse } from '../../../shared/schemas/employees'
+import { assignOpportunityDecisionAuthorityInputSchema } from '../../../shared/schemas/opportunity-decision-authority'
 import type { Stage01BusinessConfigView } from '../../../shared/schemas/stage01-config'
 import {
   criterionEvaluationRevisionInputSchema,
@@ -44,6 +46,39 @@ import { evaluateStage01EvaluationGates, evaluateStage01IntakeGates } from '../.
 
 export const stage01OpportunityId = '81000000-0000-4000-8000-000000000001'
 const timestamp = '2026-09-01T00:00:00.000Z'
+export const stage01EmployeeDirectoryResponse = employeeListResponseSchema.parse({
+  items: [{
+    id: '82000000-0000-4000-8000-000000000901',
+    employeeCode: 'VQH-FIXTURE-OWNER',
+    fullName: 'Người phụ trách fixture',
+    workEmail: 'fixture-owner@taskovia.test',
+    account: {
+      userId: '11111111-1111-4111-8111-111111111111',
+      email: 'fixture-owner@taskovia.test',
+    },
+    department: {
+      id: '82000000-0000-4000-8000-000000000902',
+      code: 'OPS',
+      name: 'Vận hành',
+    },
+    position: null,
+    hireDate: null,
+    probationEndDate: null,
+    employmentStatus: 'active',
+    profileComplete: true,
+    roles: [{
+      id: '82000000-0000-4000-8000-000000000903',
+      code: 'employee',
+      name: 'Nhân viên',
+      description: 'Company directory and assigned-work access',
+      isPrivileged: false,
+      isSystem: true,
+    }],
+  }],
+  page: 1,
+  pageSize: 100,
+  total: 1,
+})
 
 export interface WorkflowCommandRequest {
   method: string
@@ -61,6 +96,7 @@ export interface Stage01OperationalRouteOptions {
   onCanonicalRead?: () => void
   onWorkflowCommand?: (request: WorkflowCommandRequest) => void | Promise<void>
   onStage01Command?: (request: Stage01CommandRequest) => void | Promise<void>
+  employeeDirectoryResponse?: EmployeeListResponse
   requireOverrideRationaleOnce?: boolean
 }
 
@@ -165,6 +201,89 @@ export function createStage01OperationalDetail(): Stage01OperationalDetail {
   return detail
 }
 
+export function createDenseStage01OperationalDetail(): Stage01OperationalDetail {
+  const detail = createStage01OperationalDetail()
+  const contacts = Array.from({ length: 20 }, (_, index) => {
+    const contactId = fixtureId(4000 + index)
+    return {
+      id: contactId,
+      displayName: `Liên hệ dày ${index + 1}`,
+      notes: `Ghi chú liên hệ dày ${index + 1}`,
+      version: 1,
+      methods: [{
+        id: fixtureId(4100 + index), contactId, methodType: 'email' as const,
+        value: `dense-${index + 1}@taskovia.test`, isUsable: true, reliabilityState: 'confirmed' as const,
+        createdAt: timestamp, updatedAt: timestamp,
+      }],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+  })
+  const cycles = Array.from({ length: 20 }, (_, index) => {
+    const cycleNo = index + 1
+    const cycleId = fixtureId(2000 + cycleNo)
+    const nodeExecutionId = fixtureId(2100 + cycleNo)
+    const evaluations = detail.configuration.criteria.flatMap((criterion, criterionIndex) => [1, 2].map(revision => ({
+      id: fixtureId(2200 + (index * 20) + (criterionIndex * 2) + revision),
+      decisionCycleId: cycleId,
+      criterionKey: criterion.key,
+      revision,
+      applicability: 'applicable' as const,
+      result: 'fit' as const,
+      rationale: `Lý do chu kỳ ${cycleNo}, bản sửa ${revision}`,
+      evidence: [cycleNo === 1 && revision === 1
+        ? { identifier: `dense-reference-${'x'.repeat(280)}` }
+        : `Bằng chứng chu kỳ ${cycleNo}, bản sửa ${revision}`],
+      evaluatedBy: fixtureId(900),
+      evaluatedAt: timestamp,
+    })))
+    const recommendations = [1, 2].map(version => ({
+      id: fixtureId(3200 + (index * 10) + version),
+      decisionCycleId: cycleId,
+      version,
+      recommendation: 'recommend_proceed' as const,
+      rationale: `Đề xuất chu kỳ ${cycleNo}, phiên bản ${version}`,
+      evidence: [`Bằng chứng đề xuất chu kỳ ${cycleNo}`],
+      submittedBy: fixtureId(900),
+      submittedAt: timestamp,
+    }))
+    return {
+      ...structuredClone(detail.currentDecisionCycle),
+      id: cycleId,
+      nodeExecutionId,
+      cycleNo,
+      reactivationReason: cycleNo === 1 ? null : `Kích hoạt lại chu kỳ ${cycleNo}`,
+      finalOutcome: cycleNo === 20 ? null : 'proceed' as const,
+      finalDecisionBy: cycleNo === 20 ? null : fixtureId(900),
+      finalDecisionAt: cycleNo === 20 ? null : timestamp,
+      finalRationale: cycleNo === 20 ? null : `Quyết định chu kỳ ${cycleNo}`,
+      finalRecommendationId: cycleNo === 20 ? null : cycleNo === 2 ? recommendations[0]!.id : recommendations[1]!.id,
+      overrideRationale: cycleNo === 2 ? 'Ngoại lệ đã được ghi nhận trong quyết định chu kỳ 2' : null,
+      version: evaluations.length + recommendations.length + 1,
+      evaluations,
+      recommendations,
+      clarificationReturns: [{
+        id: fixtureId(3500 + index), decisionCycleId: cycleId, recommendationId: recommendations[0]!.id,
+        reason: `Cần làm rõ chu kỳ ${cycleNo}`, returnedBy: fixtureId(900), returnedAt: timestamp,
+      }],
+    }
+  })
+
+  detail.relatedContacts = contacts
+  detail.opportunity.contacts = contacts.map((contact, index) => ({
+    id: fixtureId(5000 + index), opportunityId: detail.opportunity.id, contactId: contact.id,
+    relationshipCode: 'primary_contact', isPrimary: index === 0, reliabilityState: 'confirmed',
+    createdAt: timestamp, endedAt: null, endReason: null,
+  }))
+  detail.decisionCycles = cycles
+  detail.currentDecisionCycle = cycles.at(-1)!
+  detail.evaluation.runtime.nodeExecutionId = detail.currentDecisionCycle.nodeExecutionId
+  detail.evaluation.runtime.executionNo = detail.currentDecisionCycle.cycleNo
+  detail.evaluation.runtime.phase = 'active'
+  detail.evaluation.runtime.state = 'active'
+  return stage01OperationalDetailSchema.parse(detail)
+}
+
 export function createStage01OperationalRouteState(): Stage01OperationalRouteState {
   const detail = createStage01OperationalDetail()
   refreshStage01Gates(detail)
@@ -236,6 +355,18 @@ export async function installStatefulStage01OperationalRoutes(
   page: Page,
   state = createStage01OperationalRouteState(),
 ): Promise<void> {
+  await page.route(/\/api\/companies\/[^/]+\/employees(?:\?.*)?$/, async route => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (request.method() !== 'GET'
+      || url.searchParams.get('page') !== '1'
+      || url.searchParams.get('pageSize') !== '100') return route.fallback()
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify(stage01EmployeeDirectoryResponse),
+    })
+  })
+
   await page.route(/\/api\/companies\/[^/]+\/opportunities(?:\/.*)?$/, async route => {
     const request = route.request()
     const pathname = new URL(request.url()).pathname
@@ -527,6 +658,36 @@ export async function installStatefulStage01OperationalRoutes(
     await route.fulfill({ contentType: 'application/json', body: pathname.endsWith('/start') || pathname.endsWith('/complete') || pathname.endsWith('/reopen') || pathname.endsWith('/revalidate') ? JSON.stringify(runtime) : 'null' })
   })
 
+  await page.route(/\/api\/companies\/[^/]+\/opportunities\/[^/]+\/decision-cycles\/[^/]+\/authority-candidates$/, async route => {
+    if (route.request().method() !== 'GET') return route.fallback()
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [{
+        userId: fixtureId(900), employeeId: fixtureId(901),
+        displayName: 'Decision actor', positionTitle: 'Director',
+      }] }),
+    })
+  })
+
+  await page.route(/\/api\/companies\/[^/]+\/opportunities\/[^/]+\/decision-cycles\/[^/]+\/authority$/, async route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    const pathname = new URL(route.request().url()).pathname
+    const input = assignOpportunityDecisionAuthorityInputSchema.parse(routeBody(route))
+    const cycle = state.detail.currentDecisionCycle
+    state.requests.push({ method: route.request().method(), path: pathname, body: input })
+    if (await fulfillPendingFailure(route, state)) return
+    cycle.decisionAuthorityUserId = input.authorityUserId
+    cycle.authorityResolutionEventId = fixtureId(700 + state.requests.length)
+    cycle.authorityResolutionReference = cycle.authorityResolutionEventId
+    cycle.decisionAuthority = {
+      status: 'resolved', userId: input.authorityUserId, employeeId: fixtureId(901),
+      displayName: 'Decision actor', positionTitle: 'Director', currentActorIsAuthority: true, locked: false,
+    }
+    cycle.version += 1
+    refreshStage01Gates(state.detail)
+    await route.fulfill({ contentType: 'application/json', body: 'null' })
+  })
+
   await page.route(/\/api\/companies\/[^/]+\/opportunities\/[^/]+\/stage-01\/(?:evaluations\/[^/]+\/revisions|recommendations|clarification-returns|final-decision|reactivate)$/, async route => {
     const request = route.request()
     if (request.method() !== 'POST') return route.fallback()
@@ -574,6 +735,11 @@ export async function installStatefulStage01OperationalRoutes(
       current.cycleNo = previous.cycleNo + 1; current.reactivationReason = input.reason
       current.finalOutcome = null; current.finalDecisionBy = null; current.finalDecisionAt = null; current.finalRationale = null
       current.finalRecommendationId = null; current.overrideRationale = null; current.version = 0
+      current.decisionAuthorityUserId = null; current.authorityResolutionEventId = null; current.authorityResolutionReference = null
+      current.decisionAuthority = {
+        status: 'unresolved', userId: null, employeeId: null, displayName: null,
+        positionTitle: null, currentActorIsAuthority: false, locked: false,
+      }
       current.evaluations = []; current.recommendations = []; current.clarificationReturns = []
       state.detail.decisionCycles = [...state.detail.decisionCycles.slice(0, -1), previous, current]
       state.detail.currentDecisionCycle = current
@@ -598,6 +764,17 @@ export async function installStage01OperationalRoutes(
   detail = createStage01OperationalDetail(),
   options: Stage01OperationalRouteOptions = {},
 ): Promise<void> {
+  await page.route(/\/api\/companies\/[^/]+\/employees(?:\?.*)?$/, async route => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (request.method() !== 'GET'
+      || url.searchParams.get('page') !== '1'
+      || url.searchParams.get('pageSize') !== '100') return route.fallback()
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify(options.employeeDirectoryResponse ?? stage01EmployeeDirectoryResponse),
+    })
+  })
   await page.route(/\/api\/companies\/[^/]+\/(?:workflow-nodes|workflow-assignments|workflow-blockers)\//, async route => {
     const request = route.request()
     if (request.method() !== 'POST') return route.fallback()

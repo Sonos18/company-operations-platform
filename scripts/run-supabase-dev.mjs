@@ -17,6 +17,8 @@ const STAGE01_TEST_FILES = [
   'supabase/tests/database/stage01_config_security.test.sql',
   'supabase/tests/database/stage01_config_commands.test.sql',
   'supabase/tests/database/stage01_opportunity_create_options_security.test.sql',
+  'supabase/tests/database/stage01_b4_acceptance.test.sql',
+  'supabase/tests/database/opportunity_decision_authority.test.sql',
 ]
 const VQH_RLS_SMOKE_SQL = String.raw`begin;
 do $$
@@ -63,6 +65,8 @@ const STAGE01_PERMISSION_METADATA_SQL = String.raw`      ('opportunity.read', 'o
       ('opportunity.duplicate.resolve', 'opportunity', 'Resolve duplicate concerns', 'Resolve an Opportunity duplicate concern without destructive merge'),
       ('opportunity.invalidate', 'opportunity', 'Invalidate opportunities', 'Invalidate an Opportunity using an approved structured reason'),
       ('opportunity.restore', 'opportunity', 'Restore opportunities', 'Restore an eligible invalid Opportunity'),
+      ('opportunity.decision_authority.assign', 'opportunity_decision', 'Assign decision authority', 'Assign the explicit authority for an Opportunity Decision cycle'),
+      ('opportunity.decision.record', 'opportunity_decision', 'Record Opportunity decisions', 'Record the immutable final decision for an Opportunity Decision cycle'),
       ('journey.read', 'journey', 'Read Journey runtime', 'Read company Workflow Core runtime and history'),
       ('journey.assignment.manage', 'journey', 'Manage Journey assignments', 'Assign, reassign, or end Workflow node assignments'),
       ('journey.node.start', 'journey', 'Start Journey nodes', 'Start an eligible Workflow node execution'),
@@ -208,6 +212,22 @@ ${STAGE01_PERMISSION_METADATA_SQL}
 end $$;
 select 'PASS' as result;
 rollback;`
+const STAGE01_PGTAP_DIAGNOSTIC_SQL = String.raw`with pgtap_extension as (
+  select n.nspname as extension_schema
+  from pg_extension e
+  join pg_namespace n on n.oid = e.extnamespace
+  where e.extname = 'pgtap'
+)
+select
+  exists(select 1 from pgtap_extension) as pgtap_installed,
+  (select extension_schema from pgtap_extension) as pgtap_schema,
+  current_setting('search_path') as search_path,
+  to_regprocedure('plan(integer)')::text as unqualified_plan,
+  case
+    when exists(select 1 from pgtap_extension)
+    then to_regprocedure(format('%I.plan(integer)', (select extension_schema from pgtap_extension)))::text
+    else null
+  end as qualified_plan;`
 
 const REMOTE_MODE_ARGS = {
   link: ['link', '--project-ref', CANONICAL_DEV_PROJECT_REF],
@@ -219,6 +239,7 @@ const REMOTE_MODE_ARGS = {
   'advisors-performance': ['db', 'advisors', '--linked', '--type', 'performance', '--level', 'warn', '--fail-on', 'error'],
   'rls-smoke': ['db', 'query', '--linked', VQH_RLS_SMOKE_SQL],
   'canonical-check': ['db', 'query', '--linked', VQH_CANONICAL_CHECK_SQL],
+  'stage01-pgtap-diagnostic': ['db', 'query', '--linked', STAGE01_PGTAP_DIAGNOSTIC_SQL],
   types: ['gen', 'types', 'typescript', '--linked'],
   'auth-check': ['projects', 'list', '--output-format', 'json'],
 }

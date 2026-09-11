@@ -1,7 +1,5 @@
 # VQH Stage 01 Business Configuration Admin UI Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Build the B2 administrative UI at `/settings/stage-01` so authorized VQH administrators can inspect published Stage 01 configuration, create/resume/edit/save/discard/publish a business configuration draft, and inspect system-owned configuration without changing the existing B1/B1.5 backend contracts.
 
 **Architecture:** Keep all persistence behind the existing `Stage01ConfigRepository`. Add a dedicated settings page with focused leaf components and a small editor/orchestration composable. Published configuration remains read-only; only draft `taxonomies` and `criteria` are locally editable. Shell integration exposes a permission-aware admin link without turning configuration into a primary workspace item. Unsaved-change protection is shared with the shell so company switching and route navigation cannot silently discard local edits.
@@ -869,7 +867,7 @@ git commit -m "test(stage01): cover config admin ui flows"
 - No planned production-code changes; fix only task-introduced failures discovered by verification.
 
 **Interfaces:**
-- Produces completion evidence for the B2 Implementation Packet.
+- Produces completion evidence for the current B2 task.
 
 - [ ] **Step 1: Run all focused B2/unit tests**
 
@@ -919,7 +917,7 @@ server/api/companies/*/stage-01/config/
 shared/types/database.types.ts
 ```
 
-unless a task-introduced compile failure proves a mechanical, contract-preserving change is required. Any such backend/schema need upgrades the task beyond the approved B2 scope and must STOP for GPT review rather than being implemented by assumption.
+unless a task-introduced compile failure proves a mechanical, contract-preserving change is required. Any such backend/schema need upgrades the task beyond the defined B2 scope and must stop for an explicit design decision rather than being implemented by assumption.
 
 - [ ] **Step 6: Audit B2 architecture invariants**
 
@@ -941,7 +939,7 @@ Confirm:
 ```bash
 git status --short
 git diff --check
-git diff --stat <execution_base_sha>...HEAD
+git diff --stat <task-base-sha>...HEAD
 ```
 
 Expected: only approved B2/docs/task files; no whitespace errors.
@@ -956,15 +954,16 @@ git commit -m "fix(stage01): harden config admin ui"
 
 Do not create a no-op verification commit.
 
-- [ ] **Step 9: Push and verify remote head**
+- [ ] **Step 9: Record final repository state**
 
-Push the dedicated implementation branch, then verify:
+Record:
 
-```text
-remote_head_sha == head_sha
+```bash
+git status --short --branch
+git rev-parse HEAD
 ```
 
-using `git ls-remote` or repository-equivalent remote inspection.
+Report only repository and verification evidence that was actually observed.
 
 ---
 

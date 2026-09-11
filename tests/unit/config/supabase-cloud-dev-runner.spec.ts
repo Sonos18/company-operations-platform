@@ -1,11 +1,13 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CANONICAL_DEV_PROJECT_REF } from '../../../scripts/assert-cloud-dev-target.mjs'
 import { runSupabaseDevMode } from '../../../scripts/run-supabase-dev.mjs'
+import { STAGE01_CONCURRENCY_SCENARIOS, runStage01CloudDevConcurrency } from '../../../scripts/run-stage01-cloud-dev-concurrency.mjs'
 
 const worktrees: string[] = []
+const root = resolve(import.meta.dirname, '../../..')
 const oldVqhProjectRef = ['ykrurrum', 'qlsxnqfqunjc'].join('')
 const stage01SqlInventory = [
   'stage01_schema.test.sql',
@@ -19,6 +21,8 @@ const stage01SqlInventory = [
   'stage01_config_security.test.sql',
   'stage01_config_commands.test.sql',
   'stage01_opportunity_create_options_security.test.sql',
+  'stage01_b4_acceptance.test.sql',
+  'opportunity_decision_authority.test.sql',
 ]
 
 const stage01ConfigPermissionMetadata = [
@@ -26,6 +30,134 @@ const stage01ConfigPermissionMetadata = [
   "('stage01.config.update', 'stage01', 'Update Stage 01 configuration', 'Create, update, and discard Stage 01 configuration drafts')",
   "('stage01.config.publish', 'stage01', 'Publish Stage 01 configuration', 'Publish immutable Stage 01 configuration snapshots')",
 ]
+
+type FinalDecisionDefinition = {
+  body: string
+  dollarQuoteTag: string
+  end: number
+  nextStatementStartsOutsideBody: boolean
+  start: number
+  statementTerminated: boolean
+}
+
+function skipSqlQuotedText(source: string, offset: number, quote: "'" | '"'): number {
+  let cursor = offset + 1
+  while (cursor < source.length) {
+    if (source[cursor] === quote) {
+      if (source[cursor + 1] === quote) cursor += 2
+      else return cursor + 1
+    }
+    else cursor += 1
+  }
+  throw new Error(`Unterminated ${quote} quoted SQL text`)
+}
+
+function dollarQuoteTagAt(source: string, offset: number): string | undefined {
+  return source.slice(offset).match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/u)?.[0]
+}
+
+function skipDollarQuotedText(source: string, offset: number, tag: string): number {
+  const closingOffset = source.indexOf(tag, offset + tag.length)
+  if (closingOffset === -1) throw new Error(`Unterminated ${tag} quoted SQL text`)
+  return closingOffset + tag.length
+}
+
+function findDollarQuoteClose(source: string, bodyStart: number, tag: string): number {
+  for (let cursor = bodyStart; cursor < source.length;) {
+    if (source.startsWith(tag, cursor)) return cursor
+    if (source[cursor] === "'" || source[cursor] === '"') {
+      cursor = skipSqlQuotedText(source, cursor, source[cursor] as "'" | '"')
+    }
+    else if (dollarQuoteTagAt(source, cursor)) {
+      const nestedTag = dollarQuoteTagAt(source, cursor)!
+      cursor = skipDollarQuotedText(source, cursor, nestedTag)
+    }
+    else if (source.startsWith('--', cursor)) {
+      const lineEnd = source.indexOf('\n', cursor + 2)
+      cursor = lineEnd === -1 ? source.length : lineEnd + 1
+    }
+    else if (source.startsWith('/*', cursor)) {
+      const commentEnd = source.indexOf('*/', cursor + 2)
+      if (commentEnd === -1) throw new Error('Unterminated SQL block comment')
+      cursor = commentEnd + 2
+    }
+    else cursor += 1
+  }
+  throw new Error(`Unterminated ${tag} function body`)
+}
+
+function extractFinalDecisionDefinitions(source: string): FinalDecisionDefinition[] {
+  const marker = /create or replace function private\.record_opportunity_decision_final_decision\(/giu
+  return [...source.matchAll(marker)].map(match => {
+    const start = match.index!
+    const headerEnd = source.indexOf('\n', start)
+    const header = source.slice(start, headerEnd === -1 ? source.length : headerEnd + 300)
+    const dollarQuoteTag = header.match(/\bas\s+(\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)/iu)?.[1]
+    if (!dollarQuoteTag) throw new Error('Final Decision function is missing an opening dollar quote')
+    const bodyStart = source.indexOf(dollarQuoteTag, start) + dollarQuoteTag.length
+    const end = findDollarQuoteClose(source, bodyStart, dollarQuoteTag)
+    const statementEnd = end + dollarQuoteTag.length
+    const nextStatement = source.slice(statementEnd + 1).trimStart()
+    return {
+      body: source.slice(bodyStart, end), dollarQuoteTag, end, start,
+      statementTerminated: source[statementEnd] === ';',
+      nextStatementStartsOutsideBody: /^(?:create|alter|revoke|grant|--)/iu.test(nextStatement),
+    }
+  })
+}
+
+function auditPlpgsqlStructure(body: string): { controlStack: string[], parentheses: number } {
+  const tokens: string[] = []
+  for (let cursor = 0; cursor < body.length;) {
+    if (body[cursor] === "'" || body[cursor] === '"') cursor = skipSqlQuotedText(body, cursor, body[cursor] as "'" | '"')
+    else if (dollarQuoteTagAt(body, cursor)) {
+      const tag = dollarQuoteTagAt(body, cursor)!
+      cursor = skipDollarQuotedText(body, cursor, tag)
+    }
+    else if (body.startsWith('--', cursor)) {
+      const lineEnd = body.indexOf('\n', cursor + 2)
+      cursor = lineEnd === -1 ? body.length : lineEnd + 1
+    }
+    else if (body.startsWith('/*', cursor)) {
+      const commentEnd = body.indexOf('*/', cursor + 2)
+      if (commentEnd === -1) throw new Error('Unterminated SQL block comment')
+      cursor = commentEnd + 2
+    }
+    else if (/[A-Za-z_]/u.test(body[cursor]!)) {
+      const word = body.slice(cursor).match(/^[A-Za-z_][A-Za-z0-9_]*/u)![0].toLowerCase()
+      tokens.push(word)
+      cursor += word.length
+    }
+    else if (body[cursor] === '(' || body[cursor] === ')') {
+      tokens.push(body[cursor]!)
+      cursor += 1
+    }
+    else cursor += 1
+  }
+
+  const controlStack: string[] = []
+  let parentheses = 0
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]
+    if (token === '(') parentheses += 1
+    else if (token === ')') parentheses -= 1
+    else if (token === 'begin') controlStack.push('BEGIN')
+    else if (token === 'if') controlStack.push('IF')
+    else if (token === 'case') controlStack.push('CASE')
+    else if (token === 'loop') controlStack.push('LOOP')
+    else if (token === 'end') {
+      const expected = tokens[index + 1] === 'if' ? 'IF' : tokens[index + 1] === 'loop' ? 'LOOP' : undefined
+      if (expected) index += 1
+      const actual = controlStack.pop()
+      if (actual !== (expected ?? actual)) throw new Error(`Expected END ${actual ?? 'without opener'}, found END ${expected ?? ''}`.trim())
+    }
+  }
+  return { controlStack, parentheses }
+}
+
+function hasUnparenthesizedCaseEqualityInIf(body: string): boolean {
+  return /\bif\b[^;]*?=\s*case\b[\s\S]*?\bend\s+then\b/iu.test(body)
+}
 
 function makeWorktree({ linked = true }: { linked?: boolean } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'taskovia-cloud-dev-runner-'))
@@ -45,6 +177,61 @@ afterEach(() => {
 })
 
 describe('Cloud DEV fixed-mode runner', () => {
+  it('ships a fixed two-session same-request authority replay scenario', async () => {
+    expect(STAGE01_CONCURRENCY_SCENARIOS).toContainEqual(expect.objectContaining({
+      name: 'authority-assignment-replay',
+      outcome: 'same_request_replay',
+    }))
+    const calls: string[] = []
+    await runStage01CloudDevConcurrency({
+      scenarios: STAGE01_CONCURRENCY_SCENARIOS.filter(scenario => scenario.name === 'authority-assignment-replay'),
+      runOperation: async (scenario, phase) => {
+        calls.push(`${scenario}/${phase}`)
+        return { ok: true }
+      },
+    })
+    expect(calls).toEqual([
+      'authority-assignment-replay/cleanup', 'authority-assignment-replay/setup',
+      'authority-assignment-replay/actor_a', 'authority-assignment-replay/actor_b',
+      'authority-assignment-replay/assert', 'authority-assignment-replay/cleanup',
+    ])
+    for (const phase of ['setup', 'actor_a', 'actor_b', 'assert', 'cleanup']) {
+      expect(existsSync(resolve(root, 'supabase/tests/database/stage01_concurrency/authority-assignment-replay', `${phase}.sql`))).toBe(true)
+    }
+  })
+
+  it('ships every allowlisted Stage 01 SQL verification file', () => {
+    for (const filename of stage01SqlInventory) {
+      expect(existsSync(resolve(root, 'supabase/tests/database', filename))).toBe(true)
+    }
+  })
+
+  it('closes the Final Decision override branch before continuing its Amendment 25 migration function', () => {
+    const migration = readFileSync(resolve(root, 'supabase/migrations/20260904050924_opportunity_decision_authority_slice1.sql'), 'utf8')
+    const definitions = extractFinalDecisionDefinitions(migration)
+
+    expect(definitions).toHaveLength(2)
+    for (const definition of definitions) {
+      expect(definition.dollarQuoteTag).toBe('$$')
+      expect(definition.statementTerminated).toBe(true)
+      expect(definition.nextStatementStartsOutsideBody).toBe(true)
+      expect(auditPlpgsqlStructure(definition.body)).toEqual({ controlStack: [], parentheses: 0 })
+      expect(hasUnparenthesizedCaseEqualityInIf(definition.body)).toBe(false)
+      expect(definition.body).toMatch(/\bif\b[^;]*?=\s*\(\s*case\b[\s\S]*?\bend\s*\)\s*then\b/iu)
+      expect(definition.body).toContain("elsif nullif(btrim(target_input ->> 'overrideRationale'),'') is null then raise exception using errcode = 'P0001', message = 'STAGE01_OVERRIDE_RATIONALE_REQUIRED'; end if;\n  update public.stage01_decision_cycles")
+    }
+  })
+
+  it('rejects an unparenthesized CASE equality in an IF while accepting the PostgreSQL-safe form', () => {
+    expect(hasUnparenthesizedCaseEqualityInIf("if lhs = case value when 'a' then 'b' else 'c' end then null; end if;")).toBe(true)
+    expect(hasUnparenthesizedCaseEqualityInIf("if lhs = (case value when 'a' then 'b' else 'c' end) then null; end if;")).toBe(false)
+  })
+
+  it('ignores nested dollar-quoted text while auditing PL/pgSQL control structure', () => {
+    expect(auditPlpgsqlStructure('begin perform $quoted$ if begin end $quoted$; end;'))
+      .toEqual({ controlStack: [], parentheses: 0 })
+  })
+
   it('maps only the dedicated DEV PAT to the guarded child environment', () => {
     const root = makeWorktree()
     let childEnvironment: NodeJS.ProcessEnv | undefined
@@ -225,6 +412,271 @@ describe('Cloud DEV fixed-mode runner', () => {
     )
     expect(explicitRolePermissions).not.toContain('stage01.config.')
     expect(sql).toContain('company_role_assignments')
+  })
+
+  it('runs a fixed, target-guarded read-only pgTAP diagnostic through the dedicated PAT runner', () => {
+    const root = makeWorktree()
+    let childArgs: string[] | undefined
+    let childEnvironment: NodeJS.ProcessEnv | undefined
+
+    expect(() => runSupabaseDevMode('stage01-pgtap-diagnostic', {
+      cwd: root,
+      env: {
+        LOCALAPPDATA: 'C:\\Users\\developer\\AppData\\Local',
+        SUPABASE_ACCESS_TOKEN: 'ambient-token',
+        SUPABASE_DB_PASSWORD: 'ambient-password',
+      },
+      spawn(_command, args, options) {
+        childArgs = args
+        childEnvironment = options.env
+        return { status: 0 }
+      },
+    })).not.toThrow()
+
+    expect(childArgs?.slice(1, 4)).toEqual(['db', 'query', '--linked'])
+    const sql = childArgs?.[4] ?? ''
+    expect(sql).toContain("where e.extname = 'pgtap'")
+    expect(sql).toContain("current_setting('search_path') as search_path")
+    expect(sql).toContain("to_regprocedure('plan(integer)')::text as unqualified_plan")
+    expect(sql).toContain("format('%I.plan(integer)'")
+    expect(sql).not.toMatch(/\b(?:insert|update|delete|merge|truncate|create|alter|drop|grant|revoke|call|do|set|reset|copy)\b/iu)
+    expect(childEnvironment?.SUPABASE_ACCESS_TOKEN).toBe('dedicated-dev-pat')
+    expect(childEnvironment).not.toHaveProperty('SUPABASE_DB_PASSWORD')
+  })
+
+  it('rejects supplied SQL, file paths, and extra arguments for the fixed pgTAP diagnostic', () => {
+    const root = makeWorktree()
+    let spawnCalls = 0
+    const spawn = () => {
+      spawnCalls += 1
+      return { status: 0 }
+    }
+
+    expect(() => runSupabaseDevMode('stage01-pgtap-diagnostic', {
+      cwd: root,
+      extraArgs: ['select current_user'],
+      spawn,
+    })).toThrow('Unsupported Cloud DEV operation')
+    expect(() => runSupabaseDevMode('stage01-pgtap-diagnostic --file operator.sql', {
+      cwd: root,
+      spawn,
+    })).toThrow('Unsupported Cloud DEV operation')
+    expect(spawnCalls).toBe(0)
+  })
+
+  it('requires the canonical Cloud DEV target guard before running the fixed pgTAP diagnostic', () => {
+    const root = makeWorktree({ linked: false })
+    let spawnCalls = 0
+
+    expect(() => runSupabaseDevMode('stage01-pgtap-diagnostic', {
+      cwd: root,
+      spawn() {
+        spawnCalls += 1
+        return { status: 0 }
+      },
+    })).toThrow('Supabase CLI link state is missing')
+    expect(spawnCalls).toBe(0)
+  })
+
+  it('exposes the fixed pgTAP diagnostic through its dedicated package command', () => {
+    const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
+
+    expect(packageJson.scripts['db:dev:stage01:pgtap-diagnostic'])
+      .toBe('node scripts/run-supabase-dev.mjs stage01-pgtap-diagnostic')
+  })
+
+  it('requires the Stage 01 authority SQL contract to fail closed without pgTAP or TAP parsing', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const runner = readFileSync(resolve(root, 'scripts/run-supabase-dev.mjs'), 'utf8')
+    const stage01Runner = runner.slice(runner.indexOf("if (isStage01Test) {"), runner.indexOf("const result = runCli(REMOTE_MODE_ARGS[mode]"))
+
+    expect(authoritySql).not.toMatch(/\bselect\s+(?:\*\s+from\s+)?(?:plan|finish|ok|is|isnt|is_deeply|cmp_ok|throws_ok|lives_ok|results_eq|set_eq)\s*\(/iu)
+    expect(authoritySql.match(/\bselect\s+pg_temp\.authority_assert_[a-z_]+\s*\(/giu)).toHaveLength(104)
+    expect(authoritySql).toMatch(/\bpg_temp\.authority_assert_throws\b[\s\S]*?\braise\s+exception\b/iu)
+    expect(authoritySql).not.toContain('pg_catalog.pg_constraint constraint')
+    expect(authoritySql).toContain('pg_catalog.pg_constraint pc')
+    expect(authoritySql).not.toContain("authority_assert_function('public', 'transition_b4_legacy_opportunity_decision_policy'")
+    expect(authoritySql).not.toContain("authority_assert_function('public', 'transition_opportunity_decision_policy'")
+    expect(authoritySql).toContain("authority_assert_absent_function('public', 'transition_opportunity_decision_policy'")
+    expect(stage01Runner).toContain("runCli(['db', 'query', '--linked', '--file', file]")
+    expect(stage01Runner).not.toMatch(/\b(?:tap|plan|finish)\b/iu)
+  })
+
+  it('requires every active or completed authority workflow execution fixture to include its valid started phase', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const executionInserts = Array.from(authoritySql.matchAll(
+      /insert into public\.workflow_node_executions \(([^)]+)\) values([\s\S]*?);/giu,
+    ))
+
+    expect(executionInserts).toHaveLength(3)
+    for (const [, columns, values] of executionInserts) {
+      expect(columns).toContain('started_by')
+      expect(columns).toContain('started_at')
+      expect(values).toMatch(/'(?:active|completed)'/u)
+    }
+    expect(executionInserts[0]?.[2]).toMatch(
+      /'completed', actor_id, timestamptz '[^']+', actor_id, timestamptz '[^']+', 1/u,
+    )
+  })
+
+  it('AUTHORITY_POLICY_GATE_TEST_USES_FORBIDDEN_DIRECT_DML prevents the missing-policy trigger assertion from remaining authenticated', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const assertionName = 'an enabled company without its own published policy remains fail closed'
+    const assertionEnd = authoritySql.indexOf(assertionName)
+    const assertionStart = authoritySql.lastIndexOf('select pg_temp.authority_assert_throws(', assertionEnd)
+    const priorAuthenticationStart = authoritySql.lastIndexOf('set local role authenticated;', assertionStart)
+    const assertionContext = authoritySql.slice(priorAuthenticationStart, assertionStart)
+    const assertionSql = authoritySql.slice(assertionStart, authoritySql.indexOf('select pg_temp.authority_assert_lives(', assertionStart))
+
+    expect(assertionContext).toContain('reset role;')
+    expect(assertionSql).toContain('insert into public.stage01_decision_cycles')
+    expect(assertionSql).toContain("'P0001', 'OPPORTUNITY_DECISION_POLICY_UNAVAILABLE'")
+  })
+
+  it('AUTHORITY_B4_INTERNAL_AUDIT_READS_RESET_ROLE_AFTER_PUBLIC_PROJECTIONS', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const projectionStart = authoritySql.indexOf("public.get_opportunity_decision_authority_projection('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000403'")
+    const auditReadStart = authoritySql.indexOf('(select policy_snapshot_id from public.opportunity_decision_policy_binding_events', projectionStart)
+    const denialAssertionStart = authoritySql.indexOf("select pg_temp.authority_assert_table_privileges('public', 'opportunity_decision_policy_binding_events'", projectionStart)
+    const resetBeforeAudit = authoritySql.lastIndexOf('reset role;', auditReadStart)
+    const projectionSection = authoritySql.slice(projectionStart, auditReadStart)
+
+    expect(projectionStart).toBeGreaterThan(-1)
+    expect(auditReadStart).toBeGreaterThan(projectionStart)
+    expect(denialAssertionStart).toBeGreaterThan(projectionStart)
+    expect(denialAssertionStart).toBeLessThan(resetBeforeAudit)
+    expect(resetBeforeAudit).toBeGreaterThan(projectionStart)
+    expect(projectionSection).toContain("public.get_opportunity_decision_authority_projection('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000403'")
+    expect(projectionSection).toContain("public.get_opportunity_decision_authority_projection('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000404'")
+    expect(projectionSection).toContain("public.get_opportunity_decision_authority_projection('b4000000-0000-4000-8000-000000000020', '25000000-0000-4000-8000-000000000405'")
+    expect(projectionSection).toContain("authority_assert_table_privileges('public', 'opportunity_decision_policy_binding_events', 'authenticated', array[]::text[]")
+  })
+
+  it('AUTHORITY_TEST_DUPLICATES_B4_WORKFLOW_SNAPSHOT_BASELINE requires the B4 transition fixture to reuse its approved snapshot', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const b4FixtureStart = authoritySql.indexOf("v_tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
+    const b4FixtureEnd = authoritySql.indexOf('set local role authenticated;', b4FixtureStart)
+    const b4Fixture = authoritySql.slice(b4FixtureStart, b4FixtureEnd)
+
+    expect(b4Fixture).not.toContain('insert into public.workflow_definition_snapshots')
+    expect(b4Fixture).toContain('where wds.tenant_id = v_tenant_id')
+    expect(b4Fixture).toContain('and wds.company_id = v_company_id')
+    expect(b4Fixture).toContain("and wds.workflow_key = 'vqh.stage01'")
+    expect(b4Fixture).toContain('and wds.template_version = 1')
+    expect(b4Fixture).toContain('B4_WORKFLOW_SNAPSHOT_BASELINE_MISSING')
+    expect(b4Fixture).not.toContain('authority-b4-transition-definition')
+  })
+
+  it('B4_SNAPSHOT_LOOKUP_HAS_PLPGSQL_NAME_COLLISION requires explicit baseline lookup variables and columns', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const b4FixtureStart = authoritySql.indexOf("v_tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
+    const lookupStart = authoritySql.indexOf('select wds.id into v_snapshot_id', b4FixtureStart)
+    const lookupEnd = authoritySql.indexOf("if v_snapshot_id is null then", lookupStart)
+    const lookup = authoritySql.slice(lookupStart, lookupEnd)
+
+    expect(lookup).not.toContain('snapshot.tenant_id = tenant_id')
+    expect(lookup).not.toContain('snapshot.company_id = company_id')
+    expect(lookup).toContain('from public.workflow_definition_snapshots wds')
+    expect(lookup).toContain('wds.tenant_id = v_tenant_id')
+    expect(lookup).toContain('wds.company_id = v_company_id')
+    expect(lookup).toContain('wds.workflow_key = \'vqh.stage01\'')
+    expect(lookup).toContain('wds.template_version = 1')
+  })
+
+  it('B4_POLICY_UPSERT_AVOIDS_PLPGSQL_NAME_COLLISION while preserving its unique conflict target', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const b4FixtureStart = authoritySql.indexOf("v_tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
+    const b4FixtureEnd = authoritySql.indexOf('set local role authenticated;', b4FixtureStart)
+    const b4Fixture = authoritySql.slice(b4FixtureStart, b4FixtureEnd)
+    const upsertStart = b4Fixture.indexOf('insert into public.opportunity_decision_policy_snapshots (')
+    const fallbackStart = b4Fixture.indexOf('select policy.id into policy_id', upsertStart)
+    const upsert = b4Fixture.slice(upsertStart, fallbackStart)
+    const fallbackEnd = b4Fixture.indexOf('end if;', fallbackStart)
+    const fallback = b4Fixture.slice(fallbackStart, fallbackEnd)
+
+    expect(upsert).toMatch(/values \(\s+v_tenant_id, v_company_id,/u)
+    expect(upsert).toContain('on conflict (tenant_id, company_id, policy_key, policy_version) do nothing')
+    expect(fallback).toContain('where policy.tenant_id = v_tenant_id and policy.company_id = v_company_id')
+    expect(fallback).not.toContain('policy.tenant_id = tenant_id')
+    expect(fallback).not.toContain('policy.company_id = company_id')
+  })
+
+  it('B4_HISTORICAL_FIXTURE_USES_TRANSACTION_LOCAL_REPLICA_MODE', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const cleanupSql = readFileSync(resolve(root, 'supabase/tests/database/stage01_concurrency/common_cleanup.sql'), 'utf8')
+    const b4FixtureStart = authoritySql.indexOf("v_tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
+    const b4FixtureEnd = authoritySql.indexOf('set local role authenticated;', b4FixtureStart)
+    const b4Fixture = authoritySql.slice(b4FixtureStart, b4FixtureEnd)
+
+    expect(cleanupSql).toContain('set local session_replication_role = replica;')
+    expect(b4Fixture).toContain("execute 'set local session_replication_role = replica';")
+    expect(b4Fixture).toContain("execute 'set local session_replication_role = origin';")
+    expect(b4Fixture).not.toContain("set_config('session_replication_role'")
+  })
+
+  it('B4_LEGACY_PROCEED_CYCLE_HAS_COMPLETE_FINAL_BUNDLE', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const b4FixtureStart = authoritySql.indexOf("v_tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
+    const b4FixtureEnd = authoritySql.indexOf('set local role authenticated;', b4FixtureStart)
+    const b4Fixture = authoritySql.slice(b4FixtureStart, b4FixtureEnd)
+    const cycleInsertStart = b4Fixture.indexOf('insert into public.stage01_decision_cycles')
+    const cycleInsertEnd = b4Fixture.indexOf("execute 'set local session_replication_role = origin';", cycleInsertStart)
+    const cycleInsert = b4Fixture.slice(cycleInsertStart, cycleInsertEnd)
+
+    expect(cycleInsert).toContain('final_decision_by')
+    expect(cycleInsert).toContain('final_decision_at')
+    expect(cycleInsert).toContain('final_rationale')
+    expect(cycleInsert).toContain('final_recommendation_id')
+    expect(cycleInsert).toContain("fixture.legacy_state in ('authority', 'proceed') then actor_id")
+    expect(cycleInsert).toContain("fixture.legacy_state in ('authority', 'proceed') then 'legacy-authority'")
+    expect(cycleInsert).toContain("fixture.legacy_state = 'proceed' then actor_id")
+    expect(cycleInsert).toContain("timestamptz '2026-09-01 11:05:00+00'")
+    expect(cycleInsert).toContain("'B4 legacy final decision'")
+    expect(cycleInsert).toContain('proceed_recommendation_id')
+  })
+
+  it('B4_LEGACY_PROCEED_CYCLE_HAS_SAME_CYCLE_RECOMMENDATION', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const b4FixtureStart = authoritySql.indexOf("v_tenant_id constant uuid := 'b4000000-0000-4000-8000-000000000010'")
+    const b4FixtureEnd = authoritySql.indexOf('set local role authenticated;', b4FixtureStart)
+    const b4Fixture = authoritySql.slice(b4FixtureStart, b4FixtureEnd)
+    const loopStart = b4Fixture.indexOf('for fixture in select * from (values')
+    const recommendationStart = b4Fixture.indexOf('insert into public.stage01_recommendations', loopStart)
+    const cycleInsertStart = b4Fixture.indexOf('insert into public.stage01_decision_cycles', loopStart)
+    const recommendation = b4Fixture.slice(recommendationStart, cycleInsertStart)
+
+    expect(b4Fixture).toContain("proceed_recommendation_id constant uuid := '25000000-0000-4000-8000-000000000504'")
+    expect(recommendationStart).toBeGreaterThan(loopStart)
+    expect(recommendationStart).toBeLessThan(cycleInsertStart)
+    expect(recommendation).toContain('decision_cycle_id')
+    expect(recommendation).toContain('fixture.cycle_id')
+    expect(recommendation).toContain("'recommend_proceed'")
+    expect(recommendation).toContain("'B4 legacy proceed recommendation'")
+  })
+
+  it('evaluates PUBLIC function privileges through ACL pseudo-grantee semantics', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const helper = authoritySql.slice(
+      authoritySql.indexOf('create or replace function pg_temp.authority_assert_function_privileges'),
+      authoritySql.indexOf('create or replace function pg_temp.authority_assert_lives'),
+    )
+
+    expect(helper).toContain("upper(p_role) = 'PUBLIC'")
+    expect(helper).toContain("aclexplode(coalesce(procedure.proacl, acldefault('f', procedure.proowner)))")
+    expect(helper).toContain('acl.grantee = 0')
+    expect(helper).toContain("acl.privilege_type = 'EXECUTE'")
+  })
+
+  it('evaluates PUBLIC table privileges through ACL pseudo-grantee semantics', () => {
+    const authoritySql = readFileSync(resolve(root, 'supabase/tests/database/opportunity_decision_authority.test.sql'), 'utf8')
+    const helper = authoritySql.slice(
+      authoritySql.indexOf('create or replace function pg_temp.authority_assert_table_privileges'),
+      authoritySql.indexOf('create or replace function pg_temp.authority_assert_function_privileges'),
+    )
+
+    expect(helper).toContain("upper(p_role) = 'PUBLIC'")
+    expect(helper).toContain("aclexplode(coalesce(relation.relacl, acldefault('r', relation.relowner)))")
+    expect(helper).toContain('acl.grantee = 0')
   })
 
   it('executes the complete fixed Stage 01 inventory exactly once, including B1 configuration verification files', () => {

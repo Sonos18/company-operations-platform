@@ -184,7 +184,24 @@ export const createOpportunityInputSchema = z.object({
 }).strict()
 export type CreateOpportunityInput = z.infer<typeof createOpportunityInputSchema>
 
-export const updateOpportunityInputSchema = createOpportunityInputSchema.partial().extend({
+export const updateOpportunityInputSchema = z.object({
+  primaryCustomerName: meaningfulTextSchema.optional(),
+  customerTypeCode: meaningfulTextSchema.optional(),
+  needDescription: meaningfulTextSchema.optional(),
+  locationStatus: opportunityLocationStatusSchema.optional(),
+  locationText: nullableTextSchema.optional(),
+  primaryLeadSourceCode: meaningfulTextSchema.optional(),
+  engagementStatusCode: meaningfulTextSchema.optional(),
+  budgetStatusCode: nullableTextSchema.optional(),
+  budgetMin: z.number().nonnegative().nullable().optional(),
+  budgetMax: z.number().nonnegative().nullable().optional(),
+  currencyCode: z.string().trim().length(3).nullable().optional(),
+  budgetNote: nullableTextSchema.optional(),
+  timelineStatusCode: nullableTextSchema.optional(),
+  timelineStartDate: z.string().date().nullable().optional(),
+  timelineEndDate: z.string().date().nullable().optional(),
+  timelineNote: nullableTextSchema.optional(),
+  priorityCode: nullableTextSchema.optional(),
   expectedOpportunityVersion: versionSchema,
 }).strict()
 export type UpdateOpportunityInput = z.infer<typeof updateOpportunityInputSchema>

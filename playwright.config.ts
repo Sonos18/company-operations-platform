@@ -30,6 +30,7 @@ export function createPlaywrightConfig(
   const baseURL = `http://127.0.0.1:${port}`
   return defineConfig({
     testDir: './tests/e2e',
+    outputDir: 'test-results/e2e',
     fullyParallel: false,
     workers: 1,
     timeout: 60_000,

@@ -10,6 +10,8 @@ describe('Playwright project server configuration', () => {
     const config = createPlaywrightConfig(4317)
 
     expect(config.use?.baseURL).toBe('http://127.0.0.1:4317')
+    expect(config.outputDir).toBe('test-results/e2e')
+    expect(config.outputDir).not.toBe('test-results')
     expect(config.webServer).toMatchObject({
       command: 'pnpm dev --host 127.0.0.1 --port 4317',
       url: 'http://127.0.0.1:4317',

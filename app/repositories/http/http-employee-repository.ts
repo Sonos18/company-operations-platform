@@ -7,7 +7,7 @@ import {
 import type { EmployeeRepository } from '../contracts'
 
 export interface HttpEmployeeRepositoryOptions {
-  companyId: string
+  companyId: string | (() => string)
   getAccessToken: () => string | null | Promise<string | null>
   fetch: (input: string, init?: RequestInit) => Promise<Pick<Response, 'ok' | 'status' | 'json'>>
 }
@@ -25,7 +25,12 @@ function safeFailure(code: ApiErrorCode = 'INTERNAL_ERROR'): never {
 }
 
 export function createHttpEmployeeRepository(options: HttpEmployeeRepositoryOptions): EmployeeRepository {
-  const baseUrl = `/api/companies/${encodeURIComponent(options.companyId)}/employees`
+  function baseUrl(): string {
+    const companyId = typeof options.companyId === 'function'
+      ? options.companyId()
+      : options.companyId
+    return `/api/companies/${encodeURIComponent(companyId)}/employees`
+  }
 
   async function request(url: string, init: RequestInit = {}): Promise<unknown> {
     let token: string
@@ -64,7 +69,7 @@ export function createHttpEmployeeRepository(options: HttpEmployeeRepositoryOpti
     async list() {
       const items = []
       for (let page = 1; ; page += 1) {
-        const result = employeeListResponseSchema.safeParse(await request(`${baseUrl}?page=${page}&pageSize=100`))
+        const result = employeeListResponseSchema.safeParse(await request(`${baseUrl()}?page=${page}&pageSize=100`))
         if (!result.success || result.data.page !== page || result.data.pageSize !== 100) return safeFailure()
         items.push(...result.data.items)
         if (items.length >= result.data.total) return items
@@ -74,7 +79,7 @@ export function createHttpEmployeeRepository(options: HttpEmployeeRepositoryOpti
     async getById(employeeId) {
       let body: unknown
       try {
-        body = await request(`${baseUrl}/${encodeURIComponent(employeeId)}`)
+        body = await request(`${baseUrl()}/${encodeURIComponent(employeeId)}`)
       } catch (error) {
         if (error instanceof EmployeeRepositoryError && error.code === 'EMPLOYEE_NOT_FOUND') return null
         throw error
@@ -90,7 +95,7 @@ export function createHttpEmployeeRepository(options: HttpEmployeeRepositoryOpti
       } catch {
         return safeFailure()
       }
-      const result = employeeDetailSchema.safeParse(await request(`${baseUrl}/${encodeURIComponent(employeeId)}`, {
+      const result = employeeDetailSchema.safeParse(await request(`${baseUrl()}/${encodeURIComponent(employeeId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(parsedInput),

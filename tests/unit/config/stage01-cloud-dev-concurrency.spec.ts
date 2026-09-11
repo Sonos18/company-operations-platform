@@ -55,6 +55,12 @@ const expectedScenarios = [
     rpc: 'public.reactivate_stage01',
     versionKeys: ['expectedOpportunityVersion', 'expectedExecutionVersion', 'expectedCycleVersion'],
   },
+  {
+    name: 'authority-assignment-replay',
+    rpc: 'public.assign_opportunity_decision_authority',
+    versionKeys: ['expectedCycleVersion'],
+    outcome: 'same_request_replay',
+  },
 ] as const
 
 const roots: string[] = []
@@ -83,7 +89,7 @@ afterEach(() => {
 })
 
 describe('Stage 01 Cloud DEV concurrency harness', () => {
-  it('exposes exactly the approved nine-scenario public-RPC inventory', () => {
+  it('exposes exactly the approved ten-scenario public-RPC inventory', () => {
     expect(STAGE01_CONCURRENCY_SCENARIOS).toEqual(expectedScenarios)
   })
 
@@ -270,5 +276,55 @@ describe('Stage 01 Cloud DEV concurrency harness', () => {
         'utf8',
       )).toThrow()
     }
+  })
+
+  it('keeps the authority replay fixture isolated without mutating immutable workflow history', () => {
+    const root = process.cwd()
+    const setup = readFileSync(join(root, 'supabase/tests/database/stage01_concurrency/authority-assignment-replay/setup.sql'), 'utf8')
+    const cleanup = readFileSync(join(root, 'supabase/tests/database/stage01_concurrency/authority-assignment-replay/cleanup.sql'), 'utf8')
+    const commonSetup = readFileSync(join(root, 'supabase/tests/database/stage01_concurrency/common_setup.sql'), 'utf8')
+    const commonCleanup = readFileSync(join(root, 'supabase/tests/database/stage01_concurrency/common_cleanup.sql'), 'utf8')
+
+    expect(setup).not.toMatch(/update\s+public\.workflow_definition_snapshots/iu)
+    expect(setup).not.toMatch(/\bbegin\s*;/iu)
+    expect(setup).toMatch(/\bcommit\s*;/iu)
+    expect(cleanup).toMatch(/\bbegin\s*;/iu)
+    expect(cleanup).not.toMatch(/\bcommit\s*;/iu)
+    expect(commonSetup).toContain('"assignDecisionAuthority":"opportunity.decision_authority.assign"')
+    expect(commonCleanup).toContain('delete from public.opportunity_decision_policy_binding_events')
+    expect(commonCleanup).toContain('delete from public.opportunity_decision_policy_snapshots')
+    expect(commonCleanup).toContain('delete from public.company_opportunity_decision_capabilities')
+  })
+
+  it('provisions and cleans the active employee prerequisite for authority fixtures', () => {
+    const root = process.cwd()
+    const commonSetup = readFileSync(join(root, 'supabase/tests/database/stage01_concurrency/common_setup.sql'), 'utf8')
+    const commonCleanup = readFileSync(join(root, 'supabase/tests/database/stage01_concurrency/common_cleanup.sql'), 'utf8')
+
+    expect(commonSetup).toMatch(/insert into public\.departments[\s\S]*7c000000-0000-4000-8000-000000000110[\s\S]*stage01_concurrency_department/iu)
+    expect(commonSetup).toMatch(/insert into public\.employees[\s\S]*7c000000-0000-4000-8000-000000000111[\s\S]*7c000000-0000-4000-8000-000000000001[\s\S]*active/iu)
+    expect(commonCleanup).toMatch(/delete from public\.employees[\s\S]*where tenant_id = '7c000000-0000-4000-8000-000000000010'/iu)
+    expect(commonCleanup).toMatch(/delete from public\.departments[\s\S]*where tenant_id = '7c000000-0000-4000-8000-000000000010'/iu)
+  })
+
+  it('matches the final-decision audit action emitted by the current authority runtime', () => {
+    const root = process.cwd()
+    const migration = readFileSync(
+      join(root, 'supabase/migrations/20260904094243_opportunity_decision_authority_company_capability.sql'),
+      'utf8',
+    )
+    const assertion = readFileSync(
+      join(root, 'supabase/tests/database/stage01_concurrency/final-decision/assert.sql'),
+      'utf8',
+    )
+    const finalDecisionSource = migration.match(
+      /create or replace function private\.record_opportunity_decision_final_decision[\s\S]*?\n\$\$;/iu,
+    )?.[0]
+    const auditAction = finalDecisionSource?.match(
+      /write_stage01_audit\(\s*[^,]+,\s*[^,]+,\s*[^,]+,\s*'([^']+)'/iu,
+    )?.[1]
+
+    expect(auditAction).toBe('opportunity.decision.final_recorded')
+    expect(assertion).toContain(`action = '${auditAction}'`)
   })
 })

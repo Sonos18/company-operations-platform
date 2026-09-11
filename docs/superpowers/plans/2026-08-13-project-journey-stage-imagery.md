@@ -1,7 +1,5 @@
 # Project Journey Stage Imagery Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Replace the reused mock SVG stage visuals with twelve coherent, photo-realistic local images covering every stage in both existing mock projects.
 
 **Architecture:** Keep the existing `ProjectStage.imageUrl` and `ProjectMedia.url` data flow unchanged. Generate and optimize a project-consistent WebP asset set, verify the files with focused Vitest contracts, then update only the mock fixture URLs and protect the result with browser-level loading and uniqueness assertions.

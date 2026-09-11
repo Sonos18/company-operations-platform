@@ -1,7 +1,5 @@
 # Collapsible App Navigation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Add independently collapsible desktop header and left-sidebar rails that release space to the main content while preserving mobile navigation and accessibility.
 
 **Architecture:** The shared Nuxt layout owns `headerCollapsed` and `sidebarCollapsed` state, exposes the effective shell dimensions through CSS custom properties, and passes state into presentational navigation components. `AppHeader` and `AppSidebar` emit toggle events; the header, sidebar, and main content all consume the same dimension variables so their geometry cannot drift.

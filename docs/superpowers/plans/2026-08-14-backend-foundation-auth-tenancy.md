@@ -1,7 +1,5 @@
 # Backend Foundation, Auth, and Tenant Isolation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Build the production backend foundation for VQH with local Supabase tooling, authenticated Nitro requests, trusted company context, and database-enforced tenant isolation.
 
 **Architecture:** Keep the Nuxt SPA and mock repositories active while adding a Nitro modular-monolith backend beside them. Each protected request carries a Supabase JWT, uses a user-scoped Supabase client, and derives tenant context from company membership; PostgreSQL RLS remains the final isolation boundary.

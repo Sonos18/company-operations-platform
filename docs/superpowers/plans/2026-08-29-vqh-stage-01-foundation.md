@@ -1,13 +1,10 @@
 # VQH Stage 01 Phase A Foundation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task in the current session. Inline execution is the user-selected mode; do not dispatch subagents. Steps use checkbox (`- [ ]`) syntax for tracking.
->
-> **Status:** APPROVED
-> **Implementation authorization:** NONE
+> **Status:** ACTIVE IMPLEMENTATION PLAN
 > **Plan date:** 2026-08-29
-> **Cloud DEV execution amendment:** APPROVED 2026-08-30
-> **Analysis base:** `Sonos18/company-operations-platform@f314ed7a4ff1d86e45cc29075ab0213ec6421ca1`
-> **Approved corrected spec commit:** `cf198b3bbf57df794bbe22464ccabd3704174153`
+> **Cloud DEV execution amendment date:** 2026-08-30
+> **Source snapshot:** `Sonos18/company-operations-platform@f314ed7a4ff1d86e45cc29075ab0213ec6421ca1`
+> **Corrected spec commit:** `cf198b3bbf57df794bbe22464ccabd3704174153`
 
 **Goal:** Build and verify the VQH Stage 01 Phase A runtime foundation while failing closed until the four open Business Decision Gates are resolved and an approved company definition is published.
 
@@ -50,7 +47,7 @@
 - No new production dependency.
 - No Stage 01 Vue page, workspace, or existing Journey UI migration.
 - Docker and local Supabase are outside the Stage 01 workflow. Do not run `db:local:*`, `verify:backend:local`, `supabase start`, `supabase db reset`, or the Docker-backed Supabase CLI pgTAP runner.
-- Cloud DEV migration pushes and controlled test-fixture mutations require the exact authorization and guardrails in the Implementation Packet. Production mutation, deployment, merge, and force-push remain unauthorized.
+- Cloud DEV migration pushes and controlled test-fixture mutations require explicit current task authorization and the listed guardrails. Production mutation and deployment require separate explicit current authorization.
 - Every Cloud DEV operation must pass `db:dev:target`; migration delivery must run `db:dev:status`, `db:dev:dry-run`, then `db:dev:push` through the fixed runner.
 - Never run remote reset, seed, migration repair, dashboard/Table Editor schema changes, arbitrary linked SQL, or operator-supplied test-file paths.
 - Once a migration has reached Cloud DEV, never edit it. Diagnose failures and add a new forward corrective migration generated with `supabase migration new`.
@@ -1975,22 +1972,24 @@ git commit -m "test: verify stage 01 phase a flows"
 
 ---
 
-### Task 15: Audit Phase A boundaries and prepare delivery evidence
+### Task 15: Audit Phase A boundaries and prepare completion evidence
 
 **Files:**
 
 - Modify only focused tests or documentation when an audit exposes a task-introduced gap.
-- Do not add configuration seeds, UI files, deployment files, or Cloud DEV changes beyond the packet-authorized Stage 01 migrations and verification fixtures.
+- Do not add configuration seeds, UI files, deployment files, or Cloud DEV changes beyond the Stage 01 migrations and verification fixtures explicitly authorized by the current task.
 
 **Interfaces:**
 
-- Produces the repository-standard Completion Report evidence: `execution_base_sha`, `head_sha`, `remote_head_sha`, acceptance criteria, validation, side effects, risks, and review focus.
+- Produces acceptance-criteria, validation, side-effect, risk, and review evidence for the current task.
+
+Set `TASK_BASE_SHA` to the known implementation start commit before running the scoped diff commands below.
 
 - [ ] **Step 1: Prove forbidden Phase B behavior is absent**
 
 ```bash
-git diff "$EXECUTION_BASE_SHA"..HEAD -- supabase/migrations server/features app/features | rg -n "^\+.*(insert into public\.projects|create.*project|project_manager|stage.?02|parent.*stage.?01)"
-git diff "$EXECUTION_BASE_SHA"..HEAD -- server/features/opportunities server/features/workflow server/features/stage01 server/api/companies | rg -n "^\+.*(service[_-]?role|createSupabaseAdminClient)"
+git diff "$TASK_BASE_SHA"..HEAD -- supabase/migrations server/features app/features | rg -n "^\+.*(insert into public\.projects|create.*project|project_manager|stage.?02|parent.*stage.?01)"
+git diff "$TASK_BASE_SHA"..HEAD -- server/features/opportunities server/features/workflow server/features/stage01 server/api/companies | rg -n "^\+.*(service[_-]?role|createSupabaseAdminClient)"
 ```
 
 Expected: no automatic Project, Project Manager, Stage 02, parent Stage 01, or normal-path service-role implementation. Review any textual test description match manually before classifying it.
@@ -1998,11 +1997,11 @@ Expected: no automatic Project, Project Manager, Stage 02, parent Stage 01, or n
 - [ ] **Step 2: Prove no BDG-controlled production configuration was added**
 
 ```bash
-git diff --name-only "$EXECUTION_BASE_SHA"..HEAD -- supabase/seed.sql app/config
-git diff "$EXECUTION_BASE_SHA"..HEAD -- supabase/seed.sql app/config | rg -n "^\+.*(customer_type|lead_source|decision_authority|risk_special_conditions)"
+git diff --name-only "$TASK_BASE_SHA"..HEAD -- supabase/seed.sql app/config
+git diff "$TASK_BASE_SHA"..HEAD -- supabase/seed.sql app/config | rg -n "^\+.*(customer_type|lead_source|decision_authority|risk_special_conditions)"
 ```
 
-Expected: no task-introduced concrete VQH Stage 01 taxonomy, criterion, authority, or role mapping. The executor must set `EXECUTION_BASE_SHA` to the immutable SHA recorded by successful preflight, never to a guessed value.
+Expected: no task-introduced concrete VQH Stage 01 taxonomy, criterion, authority, or role mapping. `TASK_BASE_SHA` must identify the actual implementation start commit, never a guessed value.
 
 - [ ] **Step 3: Re-run fresh full verification**
 
@@ -2019,23 +2018,14 @@ git status --short
 
 Expected: all commands PASS; tracked changes are exactly the approved implementation files.
 
-- [ ] **Step 4: Record immutable delivery SHAs**
+- [ ] **Step 4: Record final repository state**
 
 ```bash
 git rev-parse HEAD
-git log --oneline "$EXECUTION_BASE_SHA"..HEAD
+git log --oneline "$TASK_BASE_SHA"..HEAD
 ```
 
-Record `execution_base_sha` from preflight and `head_sha` from the fresh command output. Do not claim a CI result unless an actual run is observed.
-
-- [ ] **Step 5: Push only when the approved Implementation Packet requires delivery**
-
-```bash
-git push -u origin feat/vqh-stage-01-foundation
-git ls-remote --heads origin feat/vqh-stage-01-foundation
-```
-
-Require `remote_head_sha == head_sha`. Do not create a PR, merge, or force-push.
+Report the observed commit and verification state. Do not claim a CI result unless an actual run is observed.
 
 ---
 
@@ -2054,7 +2044,7 @@ Require `remote_head_sha == head_sha`. Do not create a PR, merge, or force-push.
 | Final Decision immutability and same-cycle references | 6, 10 | `DB-S01-HIST-002..005` |
 | Explicit HTTP and repository contracts | 11–13 | `API-S01-001..002` |
 | Acceptance flows 1–33 and generated types | 14 | `stage01_flows.test.sql` + verification |
-| Phase A boundary and remote delivery evidence | 15 | boundary scan + Completion Report |
+| Phase A boundary and completion evidence | 15 | boundary scan + validation report |
 
 The business-decision traceability in Technical Spec Section 52 uses these same task numbers and evidence IDs.
 
@@ -2068,12 +2058,11 @@ The business-decision traceability in Technical Spec Section 52 uses these same 
 [x] All controlled RPCs and HTTP routes have an owning task
 [x] Security, history, concurrency, and acceptance evidence are named
 [x] Phase A and all four BDG boundaries are preserved
-[x] No worktree or subagent execution is planned
 [x] Canonical Cloud DEV is the only Stage 01 database target; Docker/local Supabase are excluded
-[x] Corrected written Execution Plan reviewed and approved
+[x] Corrected written Execution Plan is internally consistent
 ```
 
-Written-plan approval authorizes preparation of a new Implementation Packet only. It does not authorize implementation or Cloud DEV mutation by itself; the packet must scope those operations explicitly. Production mutation, deployment, merge, and force-push remain unauthorized.
+Cloud DEV mutation, Production mutation, and deployment require explicit current task instructions; this plan alone does not request those operations.
 
 ---
 
@@ -2081,32 +2070,22 @@ Written-plan approval authorizes preparation of a new Implementation Packet only
 
 Phase A MUST stop after Task 15. It is a verified runtime foundation, not an operational production Stage 01 release.
 
-Before a separately approved Phase B:
+Before Phase B is implemented:
 
 - `BDG-TAX-01` must approve actual VQH taxonomy values.
 - `BDG-EVAL-01` must approve individual criteria, criticality, applicability, N/A allowance, and risk taxonomy.
 - `BDG-AUTH-01` must approve owner/authority resolution, clarification/completion policy, and operational role mappings.
 - `BDG-HIER-01` is required before any canonical parent Stage 01 runtime is introduced.
 
-Phase B requires a separate approved Technical Spec/Execution Plan or controlled amendment for configuration publication, concrete authority resolution, operational role mappings, UI interaction design, and production enablement. The Phase A Cloud DEV schema/test rollout does not authorize any of those operational behaviors.
+Phase B requires explicit current task scope plus the necessary Technical Spec/Execution Plan or controlled amendment for configuration publication, concrete authority resolution, operational role mappings, UI interaction design, and production enablement. The Phase A Cloud DEV schema/test rollout does not define any of those operational behaviors.
 
 ---
 
-## Execution authorization boundary
+## Operational safety boundary
 
-Approval of this corrected plan authorizes creation of a new Implementation Packet; it does not authorize implementation by itself.
-
-The packet must:
-
-- reference this approved Technical Spec and Execution Plan;
-- identify a fetched remote base ref containing both corrected documents;
-- record concrete `analysis_base_sha`, `remote_base_sha`, and `execution_base_sha` values at packet/preflight time;
-- authorize branch `feat/vqh-stage-01-foundation` without creating a worktree;
-- set `local_db_destructive: false`; Docker and local Supabase are not prerequisites;
-- set `cloud_dev_mutating: true` only for the eight reviewed forward migrations, rollback-safe fixed SQL suites, deterministic concurrency fixtures with mandatory cleanup, linked type generation, and advisors on the canonical Taskovia Cloud DEV project;
-- set `production_mutating: false`;
-- set delivery to `push: true`, `create_pr: false`, `merge: false`, `force_push: false`;
-- require technical preflight to return `READY` or `READY_WITH_NON_MATERIAL_DRIFT` before implementation;
-- require stop-and-report on `PACKET_STALE` or `BLOCKED`.
-
-The implementation Completion Report must include `execution_base_sha`, `head_sha`, `remote_head_sha`, acceptance-criteria evidence, validation results, side effects, risks, and review focus.
+- Use the applicable Technical Spec and this plan as product and technical references.
+- Use the actual source state selected by the current task and stop on material contract drift or unsafe workspace state.
+- Docker and local Supabase are not prerequisites or fallback targets.
+- Mutate Cloud DEV only when the current task explicitly authorizes the exact reviewed forward migrations, rollback-safe fixed SQL suites, deterministic concurrency fixtures with mandatory cleanup, linked type generation, or advisors on the canonical Taskovia Cloud DEV project.
+- Do not mutate Production or deploy without separate explicit current authorization.
+- Report acceptance-criteria evidence, validation results, side effects, risks, and review focus using the format requested by the current task.

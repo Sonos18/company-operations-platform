@@ -63,6 +63,8 @@ begin
         )
       )
     )
+      and company_role.tenant_id = '10000000-0000-4000-8000-000000000010'::uuid
+      and company_role.company_id = '10000000-0000-4000-8000-000000000020'::uuid
       and company_role.code <> 'company_admin'
   ) then
     raise exception 'DB-S01-SEC non-config Stage 01 permission was inferred for an operational role';
@@ -72,7 +74,10 @@ begin
     select 1
     from public.roles as company_role
     cross join public.permissions as permission
-    where company_role.code = 'company_admin'
+    where company_role.id = '10000000-0000-4000-8000-000000000308'::uuid
+      and company_role.tenant_id = '10000000-0000-4000-8000-000000000010'::uuid
+      and company_role.company_id = '10000000-0000-4000-8000-000000000020'::uuid
+      and company_role.code = 'company_admin'
       and company_role.is_active
       and (
         permission.code like 'opportunity.%'

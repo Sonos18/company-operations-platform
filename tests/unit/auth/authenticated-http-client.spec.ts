@@ -124,6 +124,44 @@ describe('authenticated HTTP client', () => {
   })
 
   it.each([
+    { name: 'empty 204', response: () => new Response(null, { status: 204 }) },
+    { name: 'empty 200', response: () => new Response(null, { status: 200 }) },
+    { name: 'whitespace-only 200', response: () => new Response(' \n', { status: 200 }) },
+    { name: 'JSON null 200', response: () => new Response('null', { status: 200 }) },
+  ])('normalizes $name to null when the caller schema accepts null', async ({ response }) => {
+    const client = createAuthenticatedHttpClient({
+      getAccessToken: () => 'token',
+      fetch: async () => response(),
+    })
+
+    await expect(client.request({ url: '/api/auth/session', schema: z.null() })).resolves.toBeNull()
+  })
+
+  it('continues to parse a normal successful JSON object response', async () => {
+    const client = createAuthenticatedHttpClient({
+      getAccessToken: () => 'token',
+      fetch: async () => new Response('{"value":42}', { status: 200 }),
+    })
+
+    await expect(client.request({ url: '/api/auth/session', schema: valueSchema })).resolves.toEqual({ value: 42 })
+  })
+
+  it.each([
+    { name: 'empty successful body with a required object schema', response: () => new Response(null, { status: 200 }), schema: valueSchema },
+    { name: 'malformed non-empty successful JSON with a null schema', response: () => new Response('{', { status: 200 }), schema: z.null() },
+    { name: 'empty 500 error body', response: () => new Response(null, { status: 500 }), schema: valueSchema },
+    { name: 'empty 403 error body', response: () => new Response(null, { status: 403 }), schema: valueSchema },
+  ])('fails closed for $name', async ({ response, schema }) => {
+    const client = createAuthenticatedHttpClient({
+      getAccessToken: () => 'token',
+      fetch: async () => response(),
+    })
+
+    await expect(client.request({ url: '/api/auth/session', schema }))
+      .rejects.toMatchObject({ code: 'MALFORMED_RESPONSE', kind: 'unexpected', retryable: false })
+  })
+
+  it.each([
     { status: 401, code: 'AUTH_REQUIRED', expected: 'AUTH_REQUIRED', kind: 'authentication', retryable: false },
     { status: 401, code: 'AUTH_INVALID', expected: 'AUTH_INVALID', kind: 'authentication', retryable: true },
     { status: 403, code: 'COMPANY_FORBIDDEN', expected: 'COMPANY_FORBIDDEN', kind: 'authorization', retryable: false },

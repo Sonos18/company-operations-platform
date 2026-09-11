@@ -1,7 +1,5 @@
 # Taskovia Auth Flow v1 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Deliver an invite-only, persistent and permission-aware Taskovia authentication vertical slice backed by Supabase Auth and the existing Taskovia app-session API.
 
 **Architecture:** Nuxt UI and global middleware use two Pinia stores. Stores orchestrate a frontend auth service; the service calls a Supabase Auth repository and a typed Nitro session repository. Nitro delegates app-session composition to a backend service that reuses existing tenancy and authorization services.
@@ -1004,18 +1002,18 @@ git commit -m "docs: add Taskovia auth runbook"
 
 Skip the commit if there are no remaining tracked changes.
 
-- [ ] **Step 7: Refetch and verify base drift**
+- [ ] **Step 7: Refetch and verify source drift**
 
-Review `execution_base_sha..HEAD` and current `origin/main`. Stop with `PACKET_STALE` if material Auth drift appeared.
+Review the task diff and current `origin/main`. Stop and resolve the source mismatch before continuing if material Auth contract drift appeared.
 
-- [ ] **Step 8: Push and verify remote**
+- [ ] **Step 8: Record final repository state**
 
 ```bash
-git push -u origin feat/taskovia-auth-flow-v1
-git ls-remote --heads origin feat/taskovia-auth-flow-v1
+git status --short --branch
+git rev-parse HEAD
 ```
 
-Only report `COMPLETE` when remote HEAD equals local HEAD.
+Report only verification and repository-state evidence that was actually observed.
 
 ---
 

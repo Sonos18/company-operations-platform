@@ -1,7 +1,5 @@
 # Project Journey Creative Momentum Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Rebuild the project journey as a responsive Creative Momentum experience using Nuxt UI, synchronized stage navigation, and accessible directional animation.
 
 **Architecture:** Keep `ProjectDetail` and `createJourneyState` as the domain and interaction sources of truth. Add a pure presenter for summary calculations, a focused stage rail, and one stage-card component, then let Nuxt UI’s Embla-based `UCarousel` own swipe and track movement while `focusedStageId` synchronizes the rail, cards, footer, and live announcement.

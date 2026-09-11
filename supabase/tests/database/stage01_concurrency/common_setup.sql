@@ -34,6 +34,31 @@ values (
   array['member']
 );
 
+insert into public.departments (id, tenant_id, company_id, code, name)
+values (
+  '7c000000-0000-4000-8000-000000000110',
+  '7c000000-0000-4000-8000-000000000010',
+  '7c000000-0000-4000-8000-000000000020',
+  'stage01_concurrency_department',
+  'Stage 01 concurrency department'
+);
+
+insert into public.employees (
+  id, tenant_id, company_id, user_id, employee_code, full_name, work_email,
+  department_id, employment_status, created_by
+) values (
+  '7c000000-0000-4000-8000-000000000111',
+  '7c000000-0000-4000-8000-000000000010',
+  '7c000000-0000-4000-8000-000000000020',
+  '7c000000-0000-4000-8000-000000000001',
+  'S01-CONCURRENCY-ACTOR',
+  'Stage 01 concurrency actor',
+  'stage01-concurrency@test.invalid',
+  '7c000000-0000-4000-8000-000000000110',
+  'active',
+  '7c000000-0000-4000-8000-000000000001'
+);
+
 insert into public.roles (
   id, tenant_id, company_id, code, name, description, is_system
 ) values (
@@ -56,6 +81,8 @@ insert into public.role_permissions (role_id, permission_code) values
   ('7c000000-0000-4000-8000-000000000100', 'journey.assignment.manage'),
   ('7c000000-0000-4000-8000-000000000100', 'journey.node.complete'),
   ('7c000000-0000-4000-8000-000000000100', 'stage01.decision.record'),
+  ('7c000000-0000-4000-8000-000000000100', 'opportunity.decision_authority.assign'),
+  ('7c000000-0000-4000-8000-000000000100', 'opportunity.decision.record'),
   ('7c000000-0000-4000-8000-000000000100', 'stage01.reactivate');
 
 insert into public.company_role_assignments (
@@ -118,7 +145,22 @@ insert into public.workflow_definition_snapshots (
       "evaluationOwner":"journey.assignment.manage",
       "start":"journey.node.start",
       "complete":"journey.node.complete",
+      "assignDecisionAuthority":"opportunity.decision_authority.assign",
       "decision":"stage01.decision.record"
+    },
+    "decisionGovernance":{
+      "authority":{
+        "required":true,
+        "resolutionMode":"explicit_per_cycle",
+        "requiredBeforeFinalDecision":true,
+        "requiredBeforeEvaluation":false,
+        "selfAssignmentAllowed":true,
+        "carryForwardOnNewCycle":false,
+        "showPreviousAuthorityAsSuggestion":true,
+        "assignPermission":"opportunity.decision_authority.assign",
+        "decisionPermission":"opportunity.decision.record",
+        "eligibility":{"requireActiveMembership":true,"requireAccountBacking":true,"requireActiveEmployee":true}
+      }
     },
     "gates":{
       "intake":["approved_minimum","duplicate_resolved","no_blocking_blocker"],
@@ -360,9 +402,28 @@ insert into public.workflow_node_assignments (
     'Fixed Evaluation Owner'
   );
 
+insert into public.opportunity_decision_policy_snapshots (
+  tenant_id, company_id, policy_key, policy_version, policy, policy_hash, status, published_at, approved_at
+) values (
+  '7c000000-0000-4000-8000-000000000010', '7c000000-0000-4000-8000-000000000020', 'opportunity.decision_authority', 1,
+  jsonb_build_object('authority', jsonb_build_object(
+    'required', true, 'resolutionMode', 'explicit_per_cycle', 'requiredBeforeFinalDecision', true,
+    'requiredBeforeEvaluation', false, 'selfAssignmentAllowed', true, 'carryForwardOnNewCycle', false,
+    'showPreviousAuthorityAsSuggestion', true, 'assignPermission', 'opportunity.decision_authority.assign',
+    'decisionPermission', 'opportunity.decision.record',
+    'eligibility', jsonb_build_object('requireActiveMembership', true, 'requireAccountBacking', true, 'requireActiveEmployee', true)
+  )), 'stage01-concurrency-policy-v1', 'published', clock_timestamp(), clock_timestamp()
+);
+insert into public.company_opportunity_decision_capabilities (
+  tenant_id, company_id, capability_key, enabled
+) values (
+  '7c000000-0000-4000-8000-000000000010', '7c000000-0000-4000-8000-000000000020',
+  'opportunity.decision_authority', true
+);
+
 insert into public.stage01_decision_cycles (
   id, tenant_id, company_id, opportunity_id, node_execution_id, cycle_no,
-  decision_authority_user_id, authority_resolution_reference, created_by
+  created_by
 ) values (
   '7c000000-0000-4000-8000-000000000055',
   '7c000000-0000-4000-8000-000000000010',
@@ -370,8 +431,6 @@ insert into public.stage01_decision_cycles (
   '7c000000-0000-4000-8000-000000000030',
   '7c000000-0000-4000-8000-000000000054',
   1,
-  '7c000000-0000-4000-8000-000000000001',
-  'fixed-authority-resolution',
   '7c000000-0000-4000-8000-000000000001'
 );
 

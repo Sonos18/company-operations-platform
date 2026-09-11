@@ -57,6 +57,12 @@ export const STAGE01_CONCURRENCY_SCENARIOS = Object.freeze([
     rpc: 'public.reactivate_stage01',
     versionKeys: ['expectedOpportunityVersion', 'expectedExecutionVersion', 'expectedCycleVersion'],
   },
+  {
+    name: 'authority-assignment-replay',
+    rpc: 'public.assign_opportunity_decision_authority',
+    versionKeys: ['expectedCycleVersion'],
+    outcome: 'same_request_replay',
+  },
 ])
 
 const FIXED_SCENARIO_NAMES = new Set(STAGE01_CONCURRENCY_SCENARIOS.map(scenario => scenario.name))
@@ -176,9 +182,13 @@ async function runScenario(scenario, runOperation) {
     }
     const outcomes = actors.map(actor => actor.value)
     const successCount = outcomes.filter(isSuccess).length
-    const conflictCount = outcomes.filter(isVersionConflict).length
-    if (successCount !== 1 || conflictCount !== 1) {
-      throw new Error(`${scenario.name} requires exactly one success and one VERSION_CONFLICT`)
+    if (scenario.outcome === 'same_request_replay') {
+      if (successCount !== 2) throw new Error(`${scenario.name} requires two successful same-request replays`)
+    } else {
+      const conflictCount = outcomes.filter(isVersionConflict).length
+      if (successCount !== 1 || conflictCount !== 1) {
+        throw new Error(`${scenario.name} requires exactly one success and one VERSION_CONFLICT`)
+      }
     }
     await runOperation(scenario.name, 'assert')
   } catch (error) {

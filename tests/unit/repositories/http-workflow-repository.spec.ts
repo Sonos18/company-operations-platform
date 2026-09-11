@@ -1,10 +1,28 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createAuthenticatedHttpClient } from '../../../app/repositories/http/authenticated-http-client'
 import { createHttpWorkflowRepository } from '../../../app/repositories/http/http-workflow-repository'
 
 const companyId = '82000000-0000-4000-8000-000000000020'
 const executionId = '82000000-0000-4000-8000-000000000030'
 
 describe('HTTP Workflow repository', () => {
+  it('resolves an assign command through the real authenticated client when Nitro returns empty 204', async () => {
+    const transport = vi.fn(async () => new Response(null, { status: 204 }))
+    const client = createAuthenticatedHttpClient({ getAccessToken: () => 'test-token', fetch: transport })
+    const repository = createHttpWorkflowRepository({ companyId, client })
+    const input = {
+      assignmentKind: 'accountable_owner' as const,
+      assigneeUserId: '82000000-0000-4000-8000-000000000041',
+      expectedExecutionVersion: 1,
+    }
+
+    await expect(repository.assign(executionId, input)).resolves.toBeUndefined()
+    expect(transport).toHaveBeenCalledWith(
+      `/api/companies/${companyId}/workflow-nodes/${executionId}/assignments`,
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
   it('reads the exact WorkflowRuntime from the approved Opportunity-scoped endpoint', async () => {
     const runtime = {
       workflowInstanceId: '82000000-0000-4000-8000-000000000050',

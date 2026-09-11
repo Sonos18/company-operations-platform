@@ -136,17 +136,12 @@ describe('Supabase Cloud DEV runbooks', () => {
     expect(deployment).toContain('pnpm db:dev:advisors:performance')
   })
 
-  it('defines Cloud DEV as the sole development database in active AI policy', () => {
+  it('defines Cloud DEV as the sole development database in active repository policy', () => {
     const agents = read('AGENTS.md')
-    const workflow = read('docs/ai-workflow/README.md')
-    const implementationPacket = read('docs/ai-workflow/templates/implementation-packet.md')
-    const fixPacket = read('docs/ai-workflow/templates/fix-packet.md')
 
     expect(agents).toContain('Supabase Cloud DEV is the only supported development database target.')
     expect(agents).toContain('must BLOCK rather than fall back to a Local DB')
-    for (const document of [agents, workflow, implementationPacket, fixPacket]) {
-      expect(document).not.toContain('local_db_destructive')
-    }
+    expect(agents).not.toContain('local_db_destructive')
   })
 
   it('keeps the renamed backend-guide links resolvable in historical plans', () => {

@@ -1,11 +1,10 @@
-# Taskovia Auth Flow v1 — Approved Design
+# Taskovia Auth Flow v1 — Design Specification
 
-**Status:** `APPROVED_WITH_TECHNICAL_CONFORMANCE`
-**Approved by:** Sơn
+**Status:** `ACTIVE_TECHNICAL_REFERENCE`
 **Repository:** `Sonos18/company-operations-platform`
 **Base ref:** `origin/main`
-**Analysis base SHA:** `aa11e8bb0267bbf63ef6564083e4561a088afdf0`
-**Approved scope version:** `taskovia-auth-flow-v1`
+**Source snapshot:** `aa11e8bb0267bbf63ef6564083e4561a088afdf0`
+**Scope version:** `taskovia-auth-flow-v1`
 
 ## 1. Technical conformance amendments
 
@@ -745,15 +744,13 @@ No credential or token is written to source, prompt, report or Git history.
 25. No employee record, signup, OAuth, magic-link login, MFA, database migration or Production change is introduced.
 26. Unit, typecheck, lint, build and E2E pass.
 27. Live Cloud DEV smoke proves VQH/company_admin/34 permissions.
-28. The implementation branch is pushed and its remote HEAD is verified.
-
 ---
 
-## 21. Codex decision boundary
+## 21. Implementation decision boundary
 
-Codex may decide internal naming, component decomposition, exact Pinia syntax, single-flight implementation, CSS details and test-file decomposition.
+Implementation may choose internal naming, component decomposition, exact Pinia syntax, single-flight implementation, CSS details and test-file decomposition.
 
-Codex must not change:
+Implementation must not change:
 
 - invite-only scope;
 - direct browser-to-Supabase credential boundary;

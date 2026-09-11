@@ -2,7 +2,7 @@
 
 ## Status
 
-- Product/design status: **APPROVED by Sơn in chat on 2026-08-31**
+- Product/design status: **ACTIVE DESIGN — 2026-08-31**
 - Design branch: `docs/vqh-stage-01-business-config-admin-ui-design`
 - Analysis base: `main@154cc8cdfb46e0953ea1958f49aedf378e894dd1`
 - Implementation phase: **B2 — Business Configuration Admin UI**
@@ -729,10 +729,10 @@ tests/unit/...
 
 Backend/server/database changes are **not expected**.
 
-If implementation discovers that B2 requires a new backend contract, schema change, permission semantic, or editable system configuration, Codex must stop and report architectural drift rather than inventing it.
+If implementation discovers that B2 requires a new backend contract, schema change, permission semantic, or editable system configuration, it must stop and request an explicit design decision rather than inventing it.
 
 ---
 
 ## Exit condition
 
-After this design is approved and committed, the next artifact is a detailed B2 implementation plan followed by an approved Implementation Packet for Codex.
+This design remains the product and technical reference for task-specific B2 implementation.

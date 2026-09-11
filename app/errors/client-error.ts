@@ -19,6 +19,7 @@ export type ClientOnlyErrorCode =
   | 'RATE_LIMITED'
   | 'NETWORK_ERROR'
   | 'MALFORMED_RESPONSE'
+  | 'CANONICAL_RELOAD_REQUIRED'
 
 export type ClientErrorCode = ApiErrorCode | ClientOnlyErrorCode
 

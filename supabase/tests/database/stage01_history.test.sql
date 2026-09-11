@@ -149,6 +149,25 @@ insert into public.stage01_intake_completion_baselines (
   '53000000-0000-4000-8000-000000000001'
 );
 
+insert into public.opportunity_decision_policy_snapshots (
+  tenant_id, company_id, policy_key, policy_version, policy, policy_hash, status, published_at, approved_at
+) values (
+  '53000000-0000-4000-8000-000000000010', '53000000-0000-4000-8000-000000000020', 'opportunity.decision_authority', 1,
+  jsonb_build_object('authority', jsonb_build_object(
+    'required', true, 'resolutionMode', 'explicit_per_cycle', 'requiredBeforeFinalDecision', true,
+    'requiredBeforeEvaluation', false, 'selfAssignmentAllowed', true, 'carryForwardOnNewCycle', false,
+    'showPreviousAuthorityAsSuggestion', true, 'assignPermission', 'opportunity.decision_authority.assign',
+    'decisionPermission', 'opportunity.decision.record',
+    'eligibility', jsonb_build_object('requireActiveMembership', true, 'requireAccountBacking', true, 'requireActiveEmployee', true)
+  )), 'stage01-history-policy-v1', 'published', clock_timestamp(), clock_timestamp()
+);
+insert into public.company_opportunity_decision_capabilities (
+  tenant_id, company_id, capability_key, enabled
+) values (
+  '53000000-0000-4000-8000-000000000010', '53000000-0000-4000-8000-000000000020',
+  'opportunity.decision_authority', true
+);
+
 insert into public.stage01_decision_cycles (
   id, tenant_id, company_id, opportunity_id, node_execution_id, cycle_no,
   decision_authority_user_id, authority_resolution_reference, created_by
@@ -465,6 +484,30 @@ begin
       raise;
     end if;
   end;
+end $$;
+
+update public.stage01_decision_cycles
+set final_outcome = 'proceed',
+    final_decision_by = '53000000-0000-4000-8000-000000000001',
+    final_decision_at = now(),
+    final_rationale = 'Valid direct-history override',
+    final_recommendation_id = '53000000-0000-4000-8000-000000000121',
+    override_rationale = 'Different outcome is deliberately approved',
+    version = version + 1
+where id = '53000000-0000-4000-8000-000000000101';
+
+do $$
+begin
+  if not exists (
+    select 1
+    from public.stage01_decision_cycles
+    where id = '53000000-0000-4000-8000-000000000101'
+      and final_outcome = 'proceed'
+      and final_recommendation_id = '53000000-0000-4000-8000-000000000121'
+      and override_rationale = 'Different outcome is deliberately approved'
+  ) then
+    raise exception 'DB-S01-HIST valid differing-outcome override was not persisted';
+  end if;
 end $$;
 
 update public.stage01_decision_cycles

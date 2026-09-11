@@ -12,3 +12,7 @@ export type {
   SubmitRecommendationInput,
 } from '../../../shared/schemas/stage01'
 export type { Stage01OperationalDetail } from '../../../shared/schemas/stage01-operational'
+export type {
+  AssignOpportunityDecisionAuthorityInput,
+  OpportunityDecisionAuthorityCandidate,
+} from '../../../shared/schemas/opportunity-decision-authority'

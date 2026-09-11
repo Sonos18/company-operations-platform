@@ -19,6 +19,13 @@ import type {
   Stage01Recommendation,
   SubmitRecommendationInput,
 } from '../../../shared/schemas/stage01'
+import {
+  assignOpportunityDecisionAuthorityInputSchema,
+  opportunityDecisionAuthorityCandidateSchema,
+  opportunityDecisionAuthorityProjectionSchema,
+  type AssignOpportunityDecisionAuthorityInput,
+  type OpportunityDecisionAuthorityCandidate,
+} from '../../../shared/schemas/opportunity-decision-authority'
 import type { UserSupabaseClient } from '../../utils/supabase-client'
 import { createSupabaseOpportunityRepository } from '../opportunities/opportunity.repository'
 import { createSupabaseWorkflowRepository } from '../workflow/workflow.repository'
@@ -31,6 +38,8 @@ export interface Stage01DataRepository {
   submitRecommendation(companyId: string, opportunityId: string, input: SubmitRecommendationInput, requestId: string): Promise<void>
   returnForClarification(companyId: string, opportunityId: string, input: ReturnForClarificationInput, requestId: string): Promise<void>
   recordFinalDecision(companyId: string, opportunityId: string, input: RecordFinalDecisionInput, requestId: string): Promise<void>
+  listDecisionAuthorityCandidates(companyId: string, opportunityId: string, decisionCycleId: string): Promise<OpportunityDecisionAuthorityCandidate[]>
+  assignDecisionAuthority(companyId: string, opportunityId: string, decisionCycleId: string, input: AssignOpportunityDecisionAuthorityInput): Promise<void>
   reactivate(companyId: string, opportunityId: string, input: ReactivateStage01Input, requestId: string): Promise<void>
 }
 
@@ -38,7 +47,9 @@ interface QueryResult { data: unknown, error: unknown }
 interface Query extends PromiseLike<QueryResult> {
   select(columns: string): Query
   eq(column: string, value: string | boolean): Query
+  in(column: string, values: string[]): Query
   order(column: string, options?: { ascending?: boolean }): Query
+  range(from: number, to: number): Query
   limit(count: number): Query
   maybeSingle(): Promise<QueryResult>
 }
@@ -52,7 +63,7 @@ const version = z.number().int().nonnegative()
 const timestamp = z.string().datetime({ offset: true })
 const cycleRowSchema = z.object({
   id: uuid, opportunity_id: uuid, node_execution_id: uuid, cycle_no: z.number().int().positive(),
-  decision_authority_user_id: uuid.nullable(), authority_resolution_reference: z.string().trim().min(1).nullable(),
+  decision_authority_user_id: uuid.nullable(), authority_resolution_event_id: uuid.nullable().default(null), authority_resolution_reference: z.string().trim().min(1).nullable(),
   reactivation_reason: z.string().trim().min(1).nullable(), final_outcome: z.enum(['proceed', 'not_proceeding']).nullable(),
   final_decision_by: uuid.nullable(), final_decision_at: timestamp.nullable(), final_rationale: z.string().trim().min(1).nullable(),
   final_recommendation_id: uuid.nullable(), override_rationale: z.string().trim().min(1).nullable(), version,
@@ -93,7 +104,7 @@ const definitionSchema = z.object({
 const definitionRowSchema = z.object({ definition: definitionSchema }).strict()
 const accessRowSchema = z.object({ roles: z.array(z.string()), permissions: z.array(z.string().trim().min(1)) }).strict()
 
-const cycleColumns = 'id, opportunity_id, node_execution_id, cycle_no, decision_authority_user_id, authority_resolution_reference, reactivation_reason, final_outcome, final_decision_by, final_decision_at, final_rationale, final_recommendation_id, override_rationale, version, created_at'
+const cycleColumns = 'id, opportunity_id, node_execution_id, cycle_no, decision_authority_user_id, authority_resolution_event_id, authority_resolution_reference, reactivation_reason, final_outcome, final_decision_by, final_decision_at, final_rationale, final_recommendation_id, override_rationale, version, created_at'
 const evaluationColumns = 'id, decision_cycle_id, criterion_key, revision, applicability, result, rationale, evidence, evaluated_by, evaluated_at'
 const recommendationColumns = 'id, decision_cycle_id, version, recommendation, rationale, evidence, submitted_by, submitted_at'
 const clarificationColumns = 'id, decision_cycle_id, recommendation_id, reason, returned_by, returned_at'
@@ -121,11 +132,21 @@ const reactivationResultSchema = z.object({
   nodeExecutionId: uuid, decisionCycleId: uuid, executionNo: z.number().int().positive(),
   cycleNo: z.number().int().positive(), executionVersion: version, cycleVersion: version, opportunityVersion: version,
 }).strict()
+const authorityCandidateResultSchema = z.object({ items: z.array(opportunityDecisionAuthorityCandidateSchema) }).strict()
+const authorityProjectionResultSchema = opportunityDecisionAuthorityProjectionSchema
 
 function parse<T>(schema: z.ZodType<T>, value: unknown, message: string): T {
   const result = schema.safeParse(value)
   if (!result.success) return failStage01Database(message)
   return result.data
+}
+function normalizeAuthorityProjection(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
+  const projection = value as Record<string, unknown>
+  const policyBinding = projection.policyBinding
+  if (typeof policyBinding !== 'object' || policyBinding === null || Array.isArray(policyBinding)) return value
+  const { transitionEligible: _transitionEligible, ...normalizedPolicyBinding } = policyBinding as Record<string, unknown>
+  return { ...projection, policyBinding: normalizedPolicyBinding }
 }
 function mapEvaluation(row: z.infer<typeof evaluationRowSchema>): Stage01CriterionEvaluation {
   return stage01CriterionEvaluationSchema.parse({ id: row.id, decisionCycleId: row.decision_cycle_id,
@@ -154,6 +175,15 @@ function mapContact(row: z.infer<typeof contactRowSchema>, methods: z.infer<type
     createdAt: row.created_at, updatedAt: row.updated_at,
   })
 }
+function groupByCycle<T extends { decision_cycle_id: string }>(rows: T[]): Map<string, T[]> {
+  const grouped = new Map<string, T[]>()
+  for (const row of rows) {
+    const values = grouped.get(row.decision_cycle_id)
+    if (values) values.push(row)
+    else grouped.set(row.decision_cycle_id, [row])
+  }
+  return grouped
+}
 function businessConfiguration(definition: z.infer<typeof definitionSchema>): { taxonomies: Stage01BusinessTaxonomies, criteria: Stage01Criteria } {
   const taxonomies = stage01BusinessTaxonomiesSchema.parse(Object.fromEntries(Object.entries(definition.taxonomies).map(([key, values]) => [key, values.map((value) => {
     const entry = value as { code: string, label: unknown, behavior?: { requiresReferrer?: boolean } }
@@ -177,23 +207,50 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
     if (error) return mapStage01RpcError(error, message)
     return parse(schema, data, message)
   }
-  async function cycleResources<T>(table: string, columns: string, companyId: string, cycleId: string, schema: z.ZodType<T>, message: string): Promise<T[]> {
-    const { data, error } = await client.from(table).select(columns).eq('company_id', companyId).eq('decision_cycle_id', cycleId)
-    if (error) return failStage01Database(message)
-    return parse(z.array(schema), data, message)
+  async function batchedRows<T>(
+    table: string,
+    columns: string,
+    companyId: string,
+    filterColumn: string,
+    filterValues: string[],
+    orderColumn: string,
+    schema: z.ZodType<T>,
+    message: string,
+  ): Promise<T[]> {
+    const pageSize = 1000
+    const rows: T[] = []
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await client.from(table).select(columns).eq('company_id', companyId)
+        .in(filterColumn, filterValues).order(orderColumn).order('id').range(offset, offset + pageSize - 1)
+      if (error) return failStage01Database(message)
+      const page = parse(z.array(schema), data, message)
+      rows.push(...page)
+      if (page.length < pageSize) return rows
+    }
   }
-  async function relatedContact(companyId: string, contactId: string) {
-    const [contactResult, methodResult] = await Promise.all([
-      client.from('contacts').select(contactColumns).eq('company_id', companyId).eq('id', contactId).maybeSingle(),
-      client.from('contact_methods').select(contactMethodColumns).eq('company_id', companyId).eq('contact_id', contactId).order('created_at'),
+  async function relatedContacts(companyId: string, contactIds: string[]) {
+    if (contactIds.length === 0) return []
+    const [contactRows, methodRows] = await Promise.all([
+      batchedRows('contacts', contactColumns, companyId, 'id', contactIds, 'id', contactRowSchema, 'Không thể đọc Contact liên quan.'),
+      batchedRows('contact_methods', contactMethodColumns, companyId, 'contact_id', contactIds, 'created_at', contactMethodRowSchema, 'Không thể đọc Contact Method liên quan.'),
     ])
-    if (contactResult.error || contactResult.data === null || methodResult.error) return failStage01Database('Không thể đọc Contact liên quan.')
-    return mapContact(
-      parse(contactRowSchema, contactResult.data, 'Không thể đọc Contact liên quan.'),
-      parse(z.array(contactMethodRowSchema), methodResult.data, 'Không thể đọc Contact Method liên quan.'),
-    )
+    const contactsById = new Map<string, z.infer<typeof contactRowSchema>>()
+    for (const row of contactRows) {
+      if (contactsById.has(row.id)) return failStage01Database('Không thể đọc Contact liên quan.')
+      contactsById.set(row.id, row)
+    }
+    const methodsByContact = new Map<string, z.infer<typeof contactMethodRowSchema>[]>()
+    for (const row of methodRows) {
+      const methods = methodsByContact.get(row.contact_id)
+      if (methods) methods.push(row)
+      else methodsByContact.set(row.contact_id, [row])
+    }
+    return contactIds.map(contactId => {
+      const contact = contactsById.get(contactId)
+      if (!contact) return failStage01Database('Không thể đọc Contact liên quan.')
+      return mapContact(contact, methodsByContact.get(contactId) ?? [])
+    })
   }
-
   return {
     async get(companyId, opportunityId) {
       const [opportunity, workflowRuntime] = await Promise.all([
@@ -204,29 +261,49 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
       const evaluation = workflowRuntime.nodes.find(node => node.nodeKey === '01.2')
       if (!intake || !evaluation) return failStage01Database('Stage 01 runtime không đầy đủ.')
 
-      const cycleResult = await client.from('stage01_decision_cycles').select(cycleColumns)
-        .eq('company_id', companyId).eq('opportunity_id', opportunityId).order('cycle_no')
-      if (cycleResult.error) return failStage01Database('Không thể đọc Decision Cycle.')
-      const cycleRows = parse(z.array(cycleRowSchema).min(1), cycleResult.data, 'Không thể đọc Decision Cycle.')
-      const [definitionResult, accessResult, relatedContacts] = await Promise.all([
-        client.from('workflow_definition_snapshots').select('definition').eq('company_id', companyId).eq('id', workflowRuntime.definitionSnapshotId).maybeSingle(),
-        client.rpc('get_my_company_access', { target_company_id: companyId }),
-        Promise.all([...new Set(opportunity.contacts.map(contact => contact.contactId))].sort().map(contactId => relatedContact(companyId, contactId))),
+      const [cycleRead, configurationRead] = await Promise.allSettled([
+        client.from('stage01_decision_cycles').select(cycleColumns)
+          .eq('company_id', companyId).eq('opportunity_id', opportunityId).order('cycle_no'),
+        Promise.all([
+          client.from('workflow_definition_snapshots').select('definition').eq('company_id', companyId).eq('id', workflowRuntime.definitionSnapshotId).maybeSingle(),
+          client.rpc('get_my_company_access', { target_company_id: companyId }),
+          relatedContacts(companyId, [...new Set(opportunity.contacts.map(contact => contact.contactId))].sort()),
+        ]),
       ])
+      if (cycleRead.status === 'rejected') throw cycleRead.reason
+      if (cycleRead.value.error) return failStage01Database('Không thể đọc Decision Cycle.')
+      const cycleRows = parse(z.array(cycleRowSchema).min(1), cycleRead.value.data, 'Không thể đọc Decision Cycle.')
+      if (configurationRead.status === 'rejected') throw configurationRead.reason
+      const [definitionResult, accessResult, relatedContactsResult] = configurationRead.value
       if (definitionResult.error || definitionResult.data === null || accessResult.error) {
         return failStage01Database('Không thể đọc cấu hình Stage 01.')
       }
       const definition = parse(definitionRowSchema, definitionResult.data, 'Không thể đọc cấu hình Stage 01.').definition
       const access = parse(z.array(accessRowSchema).length(1), accessResult.data, 'Không thể đọc quyền Stage 01.')[0]!
-      const decisionCycles = await Promise.all(cycleRows.map(async (cycleRow) => {
-        const [evaluationRows, recommendationRows, clarificationRows] = await Promise.all([
-          cycleResources('stage01_criterion_evaluations', evaluationColumns, companyId, cycleRow.id, evaluationRowSchema, 'Không thể đọc criterion evaluations.'),
-          cycleResources('stage01_recommendations', recommendationColumns, companyId, cycleRow.id, recommendationRowSchema, 'Không thể đọc recommendations.'),
-          cycleResources('stage01_clarification_returns', clarificationColumns, companyId, cycleRow.id, clarificationRowSchema, 'Không thể đọc clarification returns.'),
-        ])
+      const cycleIds = cycleRows.map(cycleRow => cycleRow.id)
+      const [historyRead, authorityRead] = await Promise.allSettled([
+        Promise.all([
+          batchedRows('stage01_criterion_evaluations', evaluationColumns, companyId, 'decision_cycle_id', cycleIds, 'evaluated_at', evaluationRowSchema, 'Không thể đọc criterion evaluations.'),
+          batchedRows('stage01_recommendations', recommendationColumns, companyId, 'decision_cycle_id', cycleIds, 'submitted_at', recommendationRowSchema, 'Không thể đọc recommendations.'),
+          batchedRows('stage01_clarification_returns', clarificationColumns, companyId, 'decision_cycle_id', cycleIds, 'returned_at', clarificationRowSchema, 'Không thể đọc clarification returns.'),
+        ]),
+        rpc('get_opportunity_decision_authority_projection', {
+          target_company_id: companyId, target_opportunity_id: opportunityId, target_cycle_id: cycleRows[cycleRows.length - 1]!.id,
+        }, z.unknown(), 'Không thể đọc Decision Authority.'),
+      ])
+      if (historyRead.status === 'rejected') throw historyRead.reason
+      const [evaluationRows, recommendationRows, clarificationRows] = historyRead.value
+      const evaluationsByCycle = groupByCycle(evaluationRows)
+      const recommendationsByCycle = groupByCycle(recommendationRows)
+      const clarificationReturnsByCycle = groupByCycle(clarificationRows)
+      const decisionCycles = cycleRows.map((cycleRow) => {
+        const evaluationRows = evaluationsByCycle.get(cycleRow.id) ?? []
+        const recommendationRows = recommendationsByCycle.get(cycleRow.id) ?? []
+        const clarificationRows = clarificationReturnsByCycle.get(cycleRow.id) ?? []
         return stage01DecisionCycleSchema.parse({
           id: cycleRow.id, opportunityId: cycleRow.opportunity_id, nodeExecutionId: cycleRow.node_execution_id,
           cycleNo: cycleRow.cycle_no, decisionAuthorityUserId: cycleRow.decision_authority_user_id,
+          authorityResolutionEventId: cycleRow.authority_resolution_event_id,
           authorityResolutionReference: cycleRow.authority_resolution_reference, reactivationReason: cycleRow.reactivation_reason,
           finalOutcome: cycleRow.final_outcome, finalDecisionBy: cycleRow.final_decision_by,
           finalDecisionAt: cycleRow.final_decision_at, finalRationale: cycleRow.final_rationale,
@@ -237,13 +314,21 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
           clarificationReturns: clarificationRows.map(mapClarification).sort((left, right) => left.returnedAt.localeCompare(right.returnedAt)),
           createdAt: cycleRow.created_at,
         })
-      }))
-      const decisionCycle = decisionCycles[decisionCycles.length - 1]!
+      })
+      const latestCycle = decisionCycles[decisionCycles.length - 1]!
+      if (authorityRead.status === 'rejected') throw authorityRead.reason
+      const rawDecisionAuthority = authorityRead.value
+      const decisionAuthority = parse(
+        authorityProjectionResultSchema,
+        normalizeAuthorityProjection(rawDecisionAuthority),
+        'Không thể đọc Decision Authority.',
+      )
+      const decisionCycle = stage01DecisionCycleSchema.parse({ ...latestCycle, decisionAuthority })
 
       const primaryContact = opportunity.contacts.find(contact => contact.isPrimary && contact.endedAt === null)
       const usableContactMethodCount = primaryContact === undefined
         ? 0
-        : relatedContacts.find(contact => contact.id === primaryContact.contactId)?.methods.filter(method => method.isUsable).length ?? 0
+        : relatedContactsResult.find(contact => contact.id === primaryContact.contactId)?.methods.filter(method => method.isUsable).length ?? 0
       const leadSourceValues = definition.taxonomies.lead_source ?? []
       const leadSourceRequiresReferrer = leadSourceValues.find(value => value.code === opportunity.primaryLeadSourceCode)
         ?.behavior?.requiresReferrer === true
@@ -271,13 +356,27 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
         needsRevalidation: evaluation.needsRevalidation, finalOutcome: decisionCycle.finalOutcome,
       })
       const allowedPermissions = new Set(access.permissions)
-      const actorCapabilities = Object.entries(definition.capabilities)
+      const workflowCapabilities = Object.entries(definition.capabilities)
         .filter(([, permission]) => allowedPermissions.has(permission))
         .map(([capability]) => capability)
-        .sort()
+      // Workflow capabilities remain owned by the immutable workflow snapshot.
+      // Assignment is an enabled-capability operation. Final Decision remains
+      // available to an actor with its ordinary RBAC permission when this
+      // company has not enabled Decision Authority.
+      const decisionPolicyCapabilities: string[] = []
+      if (decisionAuthority.policyBinding.status === 'bound'
+        && allowedPermissions.has('opportunity.decision_authority.assign')) {
+        decisionPolicyCapabilities.push('assignDecisionAuthority')
+      }
+      if ((decisionAuthority.policyBinding.status === 'bound'
+          || decisionAuthority.policyBinding.status === 'not_required')
+        && allowedPermissions.has('opportunity.decision.record')) {
+        decisionPolicyCapabilities.push('decision')
+      }
+      const actorCapabilities = [...new Set([...workflowCapabilities, ...decisionPolicyCapabilities])].sort()
       return stage01OperationalDetailSchema.parse({
         opportunity, intake: { runtime: intake, gates: intakeGates }, evaluation: { runtime: evaluation, gates: evaluationGates },
-        currentDecisionCycle: decisionCycle, actorCapabilities, configuration: businessConfiguration(definition), relatedContacts, decisionCycles,
+        currentDecisionCycle: decisionCycle, actorCapabilities, configuration: businessConfiguration(definition), relatedContacts: relatedContactsResult, decisionCycles,
       })
     },
     async evaluateCriterion(companyId, opportunityId, criterionKey, input, requestId) {
@@ -296,6 +395,19 @@ export function createSupabaseStage01Repository(db: UserSupabaseClient): Stage01
     async recordFinalDecision(companyId, opportunityId, input, requestId) {
       await rpc('record_stage01_final_decision', { target_company_id: companyId, target_opportunity_id: opportunityId,
         target_input: input, target_request_id: requestId }, finalDecisionResultSchema, 'Không thể ghi nhận Final Decision.')
+    },
+    async listDecisionAuthorityCandidates(companyId, opportunityId, decisionCycleId) {
+      const result = await rpc('list_opportunity_decision_authority_candidates', {
+        target_company_id: companyId, target_opportunity_id: opportunityId, target_cycle_id: decisionCycleId,
+      }, authorityCandidateResultSchema, 'Không thể đọc danh sách người có thẩm quyền.')
+      return result.items
+    },
+    async assignDecisionAuthority(companyId, opportunityId, decisionCycleId, input) {
+      await rpc('assign_opportunity_decision_authority', {
+        target_company_id: companyId, target_opportunity_id: opportunityId, target_cycle_id: decisionCycleId,
+        target_input: assignOpportunityDecisionAuthorityInputSchema.parse(input),
+      }, z.object({ opportunityId: uuid, decisionCycleId: uuid, authorityResolutionEventId: uuid, authorityUserId: uuid, cycleVersion: version }).strict(),
+      'Không thể chỉ định người có thẩm quyền quyết định.')
     },
     async reactivate(companyId, opportunityId, input, requestId) {
       await rpc('reactivate_stage01', { target_company_id: companyId, target_opportunity_id: opportunityId,

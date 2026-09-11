@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ClientError } from '../../errors/client-error'
 import { latestCriterionRevision, orderedDecisionCycles } from '../../features/stage01-operational/stage01-operational'
-import type { Stage01OperationalDetail } from '../../features/stage01/stage01.types'
+import type { OpportunityDecisionAuthorityCandidate, Stage01DecisionCycle, Stage01OperationalDetail } from '../../features/stage01/stage01.types'
 
 type EvaluationDraft = {
   applicability: 'applicable' | 'not_applicable'
@@ -26,22 +26,62 @@ const decision = reactive({ outcome: 'proceed' as 'proceed' | 'not_proceeding', 
 const overrideRationaleRequired = ref(false)
 const reactivationOpen = ref(false)
 const reactivationReason = ref('')
+const authorityOpen = ref(false)
+const authorityCandidates = ref<OpportunityDecisionAuthorityCandidate[]>([])
+const authorityUserId = ref('')
+const authorityReason = ref('')
+const authorityRequestId = ref<string | null>(null)
 
 const criteria = computed(() => [...props.detail.configuration.criteria].sort((left, right) => left.displayOrder - right.displayOrder))
 const cycles = computed(() => orderedDecisionCycles(props.detail.decisionCycles))
-const currentRecommendation = computed(() => [...props.detail.currentDecisionCycle.recommendations]
-  .sort((left, right) => right.version - left.version)[0] ?? null)
+const currentRecommendation = computed(() => {
+  const recommendationGate = props.detail.evaluation.gates.checks.find(check => check.code === 'RECOMMENDATION_CURRENT')
+  if (recommendationGate && recommendationGate.status !== 'satisfied') return null
+  return [...props.detail.currentDecisionCycle.recommendations]
+    .sort((left, right) => right.version - left.version)[0] ?? null
+})
 const completed = computed(() => props.detail.currentDecisionCycle.finalOutcome !== null)
 const canEvaluate = computed(() => access.hasPermission('stage01.evaluation.update') && !completed.value)
 const canRecommend = computed(() => access.hasPermission('stage01.recommendation.submit') && !completed.value)
 const canClarify = computed(() => access.hasPermission('stage01.clarification.return') && !completed.value && currentRecommendation.value !== null)
+const decisionGate = computed(() => props.detail.evaluation.gates.checks.find(check => check.code !== 'FINAL_DECISION_RECORDED' && check.status !== 'satisfied') ?? null)
 const canRecordDecision = computed(() => (
-  access.hasPermission('stage01.decision.record')
+  access.hasPermission('opportunity.decision.record')
   && props.detail.actorCapabilities.includes('decision')
+  && (props.detail.currentDecisionCycle.decisionAuthority.status === 'not_required'
+    || (props.detail.currentDecisionCycle.decisionAuthority.status === 'resolved'
+      && props.detail.currentDecisionCycle.decisionAuthority.currentActorIsAuthority))
   && !completed.value
   && currentRecommendation.value !== null
+  && decisionGate.value === null
 ))
-const canReactivate = computed(() => access.hasPermission('stage01.reactivate') && completed.value)
+const canAssignDecisionAuthority = computed(() => access.hasPermission('opportunity.decision_authority.assign')
+  && props.detail.actorCapabilities.includes('assignDecisionAuthority')
+  && props.detail.currentDecisionCycle.decisionAuthority.policyBinding.status === 'bound' && !completed.value)
+const decisionVisible = computed(() => access.hasPermission('opportunity.decision.record') && !completed.value)
+const authorityInvalid = computed(() => ['invalid', 'legacy_unknown'].includes(props.detail.currentDecisionCycle.decisionAuthority.status))
+const reactivationUnavailableReason = computed(() => {
+  if (!access.hasPermission('stage01.reactivate') || props.detail.currentDecisionCycle.finalOutcome !== 'not_proceeding') return null
+  if (props.detail.opportunity.validityState !== 'valid') return 'Cơ hội không còn hiệu lực nên Stage 01 không được phép kích hoạt lại.'
+  if (props.detail.intake.runtime.needsRevalidation) return `Cần tái xác thực node 01.1 Tiếp nhận trước khi kích hoạt lại Stage 01. ${workflowActionMessage('Tái xác thực node', access.hasPermission('journey.node.revalidate'))}`
+  if (props.detail.intake.runtime.phase !== 'completed') return `Cần hoàn tất node 01.1 Tiếp nhận trước khi kích hoạt lại Stage 01. ${workflowActionMessage('Hoàn tất node', access.hasPermission('journey.node.complete') && props.detail.actorCapabilities.includes('complete'))}`
+  if (props.detail.evaluation.runtime.phase !== 'completed') return `Cần hoàn tất node 01.2 Đánh giá trước khi kích hoạt lại Stage 01. ${workflowActionMessage('Hoàn tất node', access.hasPermission('journey.node.complete') && props.detail.actorCapabilities.includes('complete'))}`
+  return null
+})
+const canReactivate = computed(() => access.hasPermission('stage01.reactivate')
+  && props.detail.currentDecisionCycle.finalOutcome === 'not_proceeding'
+  && reactivationUnavailableReason.value === null)
+const decisionUnavailableReason = computed(() => {
+  if (!decisionVisible.value || canRecordDecision.value) return null
+  if (!props.detail.actorCapabilities.includes('decision')) return 'Tài khoản hiện tại chưa được máy chủ cấp khả năng ghi nhận quyết định.'
+  const authority = props.detail.currentDecisionCycle.decisionAuthority
+  if (authorityInvalid.value) return 'Thẩm quyền quyết định hiện không hợp lệ; hệ thống sẽ chặn ghi nhận quyết định. Chưa có quy trình thay thế được phê duyệt, hãy yêu cầu quyết định nghiệp vụ và giữ nguyên lịch sử phân công.'
+  if (authority.status === 'unresolved') return 'Cần chỉ định người có thẩm quyền quyết định trước khi ghi nhận quyết định.'
+  if (authority.status === 'resolved' && !authority.currentActorIsAuthority) return 'Người dùng hiện tại không phải người có thẩm quyền đã được chỉ định.'
+  if (currentRecommendation.value === null) return 'Cần có đề xuất hiện hành trước khi ghi nhận quyết định. Thao tác tiếp theo: gửi đề xuất mới sau lần làm rõ hoặc cập nhật đánh giá.'
+  if (decisionGate.value) return decisionGateMessage(decisionGate.value)
+  return 'Chưa đủ điều kiện ghi nhận quyết định theo trạng thái chính tắc của máy chủ.'
+})
 
 function draftFor(criterionKey: string): EvaluationDraft {
   const existing = evaluationDrafts[criterionKey]
@@ -78,12 +118,43 @@ function resultLabel(value: string | null): string {
   }[value ?? ''] ?? 'Không áp dụng'
 }
 
+function decisionGateMessage(check: { code: string, message: string }): string {
+  const messages: Record<string, string> = {
+    INTAKE_DEPENDENCY_VALID: 'Cần tái xác thực node 01.1 Tiếp nhận trước khi ghi nhận quyết định.',
+    REQUIRED_CRITERIA_EVALUATED: 'Cần hoàn tất đánh giá các tiêu chí bắt buộc trước khi ghi nhận quyết định.',
+    RECOMMENDATION_CURRENT: 'Cần có đề xuất hiện hành trước khi ghi nhận quyết định.',
+    NO_OPEN_BLOCKING_BLOCKER: 'Cần giải quyết blocker đang chặn tiến độ trước khi ghi nhận quyết định.',
+    NO_REVALIDATION_REQUIRED: 'Cần tái xác thực node 01.2 Đánh giá trước khi ghi nhận quyết định.',
+  }
+  return `${messages[check.code] ?? check.message} Thao tác tiếp theo: xử lý điều kiện này rồi tải lại dữ liệu chính tắc.`
+}
+
+function workflowActionMessage(action: string, allowed: boolean): string {
+  return allowed
+    ? `Thao tác tiếp theo: chọn "${action}".`
+    : `Thao tác tiếp theo: cần người có quyền thực hiện "${action}" rồi tải lại dữ liệu chính tắc.`
+}
+
 function recommendationLabel(value: 'recommend_proceed' | 'recommend_not_proceeding'): string {
   return value === 'recommend_proceed' ? 'Đề xuất tiếp tục' : 'Đề xuất không tiếp tục'
 }
 
 function outcomeLabel(value: 'proceed' | 'not_proceeding'): string {
   return value === 'proceed' ? 'Tiếp tục' : 'Không tiếp tục'
+}
+
+function decisionMatchesRecommendation(outcome = decision.outcome): boolean {
+  const current = currentRecommendation.value
+  if (!current) return true
+  return (current.recommendation === 'recommend_proceed' && outcome === 'proceed')
+    || (current.recommendation === 'recommend_not_proceeding' && outcome === 'not_proceeding')
+}
+
+function resetDecisionDraft(): void {
+  decision.outcome = 'proceed'
+  decision.rationale = ''
+  decision.overrideRationale = ''
+  overrideRationaleRequired.value = false
 }
 
 function clearNotice(): void {
@@ -157,22 +228,24 @@ async function submitClarification(): Promise<void> {
 
 async function submitDecision(): Promise<void> {
   const rationale = decision.rationale.trim()
-  const overrideRationale = decision.overrideRationale.trim()
+  const requiresOverride = overrideRationaleRequired.value && !decisionMatchesRecommendation()
+  const overrideRationale = requiresOverride ? decision.overrideRationale.trim() : ''
   if (!rationale) {
     error.value = 'Cần nhập lý do quyết định.'
     return
   }
-  if (overrideRationaleRequired.value && !overrideRationale) {
+  if (requiresOverride && !overrideRationale) {
     error.value = 'Cần nhập lý do ghi đè quyết định.'
     return
   }
+  if (!requiresOverride) decision.overrideRationale = ''
   clearNotice()
   try {
     await props.runAndReload(() => repositories.stage01.recordFinalDecision(props.detail.opportunity.id, {
       expectedCycleVersion: props.detail.currentDecisionCycle.version,
       outcome: decision.outcome,
       rationale,
-      ...(overrideRationale ? { overrideRationale } : {}),
+      ...(requiresOverride && overrideRationale ? { overrideRationale } : {}),
     }))
     success.value = 'Đã ghi nhận quyết định cuối cùng.'
   }
@@ -181,6 +254,39 @@ async function submitDecision(): Promise<void> {
       overrideRationaleRequired.value = true
     }
     error.value = caught
+  }
+}
+
+async function openAuthorityAssignment(): Promise<void> {
+  clearNotice()
+  try {
+    authorityCandidates.value = await repositories.stage01.listDecisionAuthorityCandidates(
+      props.detail.opportunity.id, props.detail.currentDecisionCycle.id,
+    )
+    authorityUserId.value = authorityCandidates.value.find(candidate => candidate.userId === props.detail.currentDecisionCycle.decisionAuthority.userId)?.userId
+      ?? authorityCandidates.value[0]?.userId ?? ''
+    authorityRequestId.value = crypto.randomUUID()
+    authorityOpen.value = true
+  }
+  catch (caught) { error.value = caught }
+}
+
+async function submitAuthorityAssignment(): Promise<void> {
+  if (!authorityUserId.value) {
+    error.value = 'Chọn người có thẩm quyền quyết định.'
+    return
+  }
+  const reason = authorityReason.value.trim()
+  const completed = await command('Đã chỉ định người có thẩm quyền quyết định.', () => repositories.stage01.assignDecisionAuthority(
+    props.detail.opportunity.id, props.detail.currentDecisionCycle.id, {
+      requestId: authorityRequestId.value ??= crypto.randomUUID(), action: 'assign', authorityUserId: authorityUserId.value,
+      expectedCycleVersion: props.detail.currentDecisionCycle.version, reason: reason || null,
+    },
+  ))
+  if (completed) {
+    authorityOpen.value = false
+    authorityReason.value = ''
+    authorityRequestId.value = null
   }
 }
 
@@ -205,6 +311,40 @@ async function submitReactivation(): Promise<void> {
 function openReactivation(): void {
   reactivationOpen.value = true
 }
+
+function criterionLabel(key: string): string {
+  return props.detail.configuration.criteria.find(criterion => criterion.key === key)?.label ?? key
+}
+
+function evidenceLabel(values: unknown[]): string {
+  if (!values.length) return 'Không có bằng chứng'
+  return values.map(value => {
+    if (typeof value === 'string') return value
+    try { return JSON.stringify(value) ?? String(value) }
+    catch { return 'Không thể hiển thị bằng chứng' }
+  }).join(' · ')
+}
+
+function provenance(actor: string | null): string | null {
+  return actor ? `Người thực hiện: ${actor}` : null
+}
+
+function finalRecommendation(cycle: Stage01DecisionCycle) {
+  return cycle.finalRecommendationId === null
+    ? null
+    : cycle.recommendations.find(recommendation => recommendation.id === cycle.finalRecommendationId) ?? null
+}
+
+watch(() => decision.outcome, () => {
+  if (decisionMatchesRecommendation()) {
+    overrideRationaleRequired.value = false
+    decision.overrideRationale = ''
+  }
+})
+
+watch(() => `${props.detail.currentDecisionCycle.id}:${currentRecommendation.value?.id ?? ''}:${currentRecommendation.value?.version ?? ''}`, () => {
+  resetDecisionDraft()
+})
 </script>
 
 <template>
@@ -287,16 +427,35 @@ function openReactivation(): void {
     </section>
 
     <section class="evaluation-decision__section" aria-labelledby="decision-heading">
+      <div><p class="eyebrow">Thẩm quyền quyết định</p><h3>Người có thẩm quyền quyết định</h3></div>
+      <p v-if="detail.currentDecisionCycle.decisionAuthority.status === 'not_required'" class="evaluation-decision__final">Không yêu cầu Decision Authority cho công ty này.</p>
+      <p v-if="detail.currentDecisionCycle.decisionAuthority.status === 'unresolved'" class="evaluation-decision__final">Chưa chỉ định</p>
+      <UAlert v-if="detail.currentDecisionCycle.decisionAuthority.status === 'unresolved'" role="status" color="warning" title="Chưa chỉ định người có thẩm quyền quyết định." />
+      <p v-if="detail.currentDecisionCycle.decisionAuthority.status === 'resolved'" class="evaluation-decision__final">
+        Đã chỉ định: {{ detail.currentDecisionCycle.decisionAuthority.displayName }}<span v-if="detail.currentDecisionCycle.decisionAuthority.positionTitle"> · {{ detail.currentDecisionCycle.decisionAuthority.positionTitle }}</span>
+      </p>
+      <UAlert v-if="authorityInvalid" role="status" color="warning" title="Thẩm quyền quyết định hiện không hợp lệ" description="Hệ thống sẽ chặn ghi nhận quyết định vì không thể xác minh người được chỉ định. Chưa có quy trình thay thế được phê duyệt; lịch sử phân công được giữ nguyên." />
+      <UButton v-if="canAssignDecisionAuthority && !authorityOpen && detail.currentDecisionCycle.decisionAuthority.status === 'unresolved'" variant="outline" @click="openAuthorityAssignment">Chỉ định</UButton>
+      <form v-if="authorityOpen && canAssignDecisionAuthority && detail.currentDecisionCycle.decisionAuthority.status === 'unresolved'" class="evaluation-decision__form" @submit.prevent="submitAuthorityAssignment">
+        <label>Người có thẩm quyền quyết định<select v-model="authorityUserId"><option v-for="candidate in authorityCandidates" :key="candidate.userId" :value="candidate.userId">{{ candidate.displayName }}{{ candidate.positionTitle ? ` · ${candidate.positionTitle}` : '' }}</option></select></label>
+        <label>Lý do (tùy chọn)<textarea v-model="authorityReason" /></label>
+        <UButton type="submit">Xác nhận chỉ định</UButton>
+      </form>
+    </section>
+
+    <section class="evaluation-decision__section" aria-labelledby="decision-heading">
       <div><p class="eyebrow">Quyết định cuối cùng</p><h3 id="decision-heading">Quyết định và kích hoạt lại</h3></div>
       <p v-if="completed" class="evaluation-decision__final"><strong>Quyết định đã ghi nhận: {{ outcomeLabel(detail.currentDecisionCycle.finalOutcome!) }}</strong><span> · {{ detail.currentDecisionCycle.finalRationale }}</span></p>
-      <form v-if="canRecordDecision" class="evaluation-decision__form" @submit.prevent="submitDecision">
+      <UAlert v-if="decisionVisible && !canRecordDecision && decisionUnavailableReason" role="status" color="warning" title="Chưa đủ điều kiện ghi nhận quyết định" :description="decisionUnavailableReason" />
+      <form v-if="decisionVisible" class="evaluation-decision__form" @submit.prevent="submitDecision">
         <label>Kết quả quyết định<select v-model="decision.outcome"><option value="proceed">Tiếp tục</option><option value="not_proceeding">Không tiếp tục</option></select></label>
         <label>Lý do quyết định<textarea v-model="decision.rationale" /></label>
-        <label v-if="overrideRationaleRequired">Lý do ghi đè quyết định<textarea v-model="decision.overrideRationale" required /></label>
-        <UButton type="submit">Ghi nhận quyết định</UButton>
+        <label v-if="overrideRationaleRequired && !decisionMatchesRecommendation()">Lý do ghi đè quyết định<textarea v-model="decision.overrideRationale" required /></label>
+        <UButton type="submit" :disabled="!canRecordDecision">Ghi nhận quyết định</UButton>
       </form>
+      <UAlert v-if="reactivationUnavailableReason" role="status" color="warning" title="Chưa đủ điều kiện kích hoạt lại Stage 01" :description="reactivationUnavailableReason" />
       <UButton v-if="canReactivate && !reactivationOpen" variant="outline" @click="openReactivation">Kích hoạt lại Stage 01</UButton>
-      <form v-if="reactivationOpen" class="evaluation-decision__form" @submit.prevent="submitReactivation">
+      <form v-if="reactivationOpen && canReactivate" class="evaluation-decision__form" @submit.prevent="submitReactivation">
         <label>Lý do kích hoạt lại<textarea v-model="reactivationReason" required /></label>
         <UButton type="submit">Xác nhận kích hoạt lại</UButton>
       </form>
@@ -305,11 +464,65 @@ function openReactivation(): void {
     <section class="evaluation-decision__section" aria-labelledby="cycle-history-heading">
       <div><p class="eyebrow">Lịch sử bất biến</p><h3 id="cycle-history-heading">Chu kỳ quyết định</h3></div>
       <ol class="evaluation-decision__history">
-        <li v-for="cycle in cycles" :key="cycle.id">
-          <strong>Chu kỳ #{{ cycle.cycleNo }} · {{ cycle.finalOutcome ? 'Đã hoàn tất' : 'Đang xử lý' }}</strong>
-          <span v-if="cycle.reactivationReason">Kích hoạt lại: {{ cycle.reactivationReason }}</span>
-          <span v-else-if="cycle.finalOutcome">{{ outcomeLabel(cycle.finalOutcome) }} · {{ cycle.finalRationale }}</span>
-          <span v-else>Chưa có quyết định cuối cùng.</span>
+        <li v-for="cycle in cycles" :key="cycle.id" class="evaluation-decision__cycle-item">
+          <details class="evaluation-decision__cycle">
+            <summary>
+              <strong>Chu kỳ #{{ cycle.cycleNo }} · {{ cycle.finalOutcome ? 'Đã ghi nhận quyết định' : 'Chưa ghi nhận quyết định' }}</strong>
+              <span v-if="cycle.reactivationReason">Kích hoạt lại: {{ cycle.reactivationReason }}</span>
+              <span v-if="cycle.finalOutcome">Quyết định: {{ outcomeLabel(cycle.finalOutcome) }}</span>
+              <span v-else>Chưa có quyết định cuối cùng.</span>
+            </summary>
+            <div class="evaluation-decision__cycle-details">
+              <time v-if="cycle.createdAt" :datetime="cycle.createdAt">Thời gian tạo chu kỳ: {{ cycle.createdAt }}</time>
+              <p v-if="cycle.reactivationReason" class="evaluation-decision__final">Kích hoạt lại: {{ cycle.reactivationReason }}</p>
+              <template v-if="cycle.evaluations.length">
+                <h4>Chi tiết đánh giá</h4>
+                <ol class="evaluation-decision__cycle-list">
+                  <li v-for="item in [...cycle.evaluations].sort((left, right) => left.criterionKey.localeCompare(right.criterionKey) || right.revision - left.revision)" :key="item.id">
+                    <strong>{{ criterionLabel(item.criterionKey) }} · Bản sửa #{{ item.revision }}</strong>
+                    <span>{{ item.applicability === 'not_applicable' ? 'Không áp dụng' : resultLabel(item.result) }} · {{ item.rationale ?? 'Không có lý do' }}</span>
+                    <small v-if="provenance(item.evaluatedBy)">{{ provenance(item.evaluatedBy) }}</small>
+                    <time v-if="item.evaluatedAt" :datetime="item.evaluatedAt">{{ item.evaluatedAt }}</time>
+                    <small>Bằng chứng: {{ evidenceLabel(item.evidence) }}</small>
+                  </li>
+                </ol>
+              </template>
+              <template v-if="cycle.recommendations.length">
+                <h4>Lịch sử đề xuất</h4>
+                <ol class="evaluation-decision__cycle-list">
+                  <li v-for="item in [...cycle.recommendations].sort((left, right) => left.version - right.version)" :key="item.id">
+                    <strong>Phiên bản #{{ item.version }} · {{ recommendationLabel(item.recommendation) }}</strong>
+                    <span>{{ item.rationale }}</span>
+                    <small v-if="provenance(item.submittedBy)">{{ provenance(item.submittedBy) }}</small>
+                    <time v-if="item.submittedAt" :datetime="item.submittedAt">{{ item.submittedAt }}</time>
+                    <small>Bằng chứng: {{ evidenceLabel(item.evidence) }}</small>
+                  </li>
+                </ol>
+              </template>
+              <template v-if="cycle.clarificationReturns.length">
+                <h4>Lịch sử yêu cầu làm rõ</h4>
+                <ol class="evaluation-decision__cycle-list">
+                  <li v-for="item in cycle.clarificationReturns" :key="item.id">
+                    <strong>Yêu cầu làm rõ</strong>
+                    <span>{{ item.reason }} · Đề xuất tham chiếu: {{ item.recommendationId }}</span>
+                    <small v-if="provenance(item.returnedBy)">{{ provenance(item.returnedBy) }}</small>
+                    <time v-if="item.returnedAt" :datetime="item.returnedAt">{{ item.returnedAt }}</time>
+                  </li>
+                </ol>
+              </template>
+              <template v-if="cycle.finalOutcome">
+                <h4>Quyết định cuối cùng</h4>
+                <p class="evaluation-decision__final">Quyết định cuối cùng: {{ outcomeLabel(cycle.finalOutcome) }}</p>
+                <p class="evaluation-decision__final">Lý do: {{ cycle.finalRationale ?? 'Không có lý do' }}</p>
+                <p v-if="cycle.overrideRationale" class="evaluation-decision__final">Lý do ghi đè: {{ cycle.overrideRationale }}</p>
+                <p v-if="provenance(cycle.finalDecisionBy)" class="evaluation-decision__final">{{ provenance(cycle.finalDecisionBy) }}</p>
+                <time v-if="cycle.finalDecisionAt" :datetime="cycle.finalDecisionAt">{{ cycle.finalDecisionAt }}</time>
+                <p v-if="finalRecommendation(cycle)" class="evaluation-decision__final">Đề xuất được quyết định tham chiếu: {{ finalRecommendation(cycle)!.id }} · phiên bản #{{ finalRecommendation(cycle)!.version }} · {{ recommendationLabel(finalRecommendation(cycle)!.recommendation) }} · {{ finalRecommendation(cycle)!.rationale }}</p>
+                <p v-else-if="cycle.finalRecommendationId" class="evaluation-decision__final">Đề xuất được quyết định tham chiếu: {{ cycle.finalRecommendationId }}</p>
+                <p v-if="cycle.id !== detail.currentDecisionCycle.id" class="evaluation-decision__final">Không có dữ liệu xác nhận hoàn tất workflow của chu kỳ này.</p>
+              </template>
+            </div>
+          </details>
         </li>
       </ol>
     </section>
@@ -317,6 +530,8 @@ function openReactivation(): void {
 </template>
 
 <style scoped>
-.evaluation-decision { display: grid; gap: 14px; }.evaluation-decision > div > p:not(.eyebrow),.evaluation-decision__criterion header > div > p:not(.eyebrow) { margin-top: 5px; color: var(--ink-muted); line-height: 1.45; }.evaluation-decision h2 { margin-top: 4px; font-size: 1.3rem; }.evaluation-decision h3 { margin: 4px 0 0; color: var(--forest-deep); font-size: 1rem; }.evaluation-decision__criterion,.evaluation-decision__section { display: grid; gap: 10px; padding: 15px; border: 1px solid var(--line); background: var(--paper-raised); }.evaluation-decision__criterion > header { display: flex; justify-content: space-between; align-items: start; gap: 12px; }.evaluation-decision__criterion > header > span { color: var(--ink-muted); font-size: .75rem; white-space: nowrap; }.evaluation-decision__history { display: grid; padding: 0; margin: 0; list-style: none; border: 1px solid var(--line); }.evaluation-decision__history li { display: grid; gap: 3px; padding: 9px 10px; border-bottom: 1px solid var(--line); }.evaluation-decision__history li:last-child { border-bottom: 0; }.evaluation-decision__history strong { color: var(--forest-deep); font-size: .8rem; }.evaluation-decision__history span,.evaluation-decision__final { color: var(--ink-muted); font-size: .79rem; line-height: 1.45; }.evaluation-decision__form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding-top: 10px; }.evaluation-decision__form label { display: grid; gap: 5px; color: var(--forest-deep); font-size: .77rem; font-weight: 700; }.evaluation-decision__form textarea,.evaluation-decision__form select { width: 100%; min-height: 40px; padding: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: inherit; }.evaluation-decision__form textarea { min-height: 70px; resize: vertical; }.evaluation-decision__form > button { grid-column: 1 / -1; }
+.evaluation-decision { display: grid; gap: 14px; }.evaluation-decision > div > p:not(.eyebrow),.evaluation-decision__criterion header > div > p:not(.eyebrow) { margin-top: 5px; color: var(--ink-muted); line-height: 1.45; }.evaluation-decision h2 { margin-top: 4px; font-size: 1.3rem; }.evaluation-decision h3 { margin: 4px 0 0; color: var(--forest-deep); font-size: 1rem; }.evaluation-decision h4 { margin: 8px 0 0; color: var(--forest-deep); font-size: .85rem; }.evaluation-decision__criterion,.evaluation-decision__section { display: grid; gap: 10px; padding: 15px; border: 1px solid var(--line); background: var(--paper-raised); }.evaluation-decision__criterion > header { display: flex; justify-content: space-between; align-items: start; gap: 12px; }.evaluation-decision__criterion > header > span { color: var(--ink-muted); font-size: .75rem; white-space: nowrap; }.evaluation-decision__history { display: grid; padding: 0; margin: 0; list-style: none; border: 1px solid var(--line); }.evaluation-decision__history li { display: grid; gap: 3px; padding: 9px 10px; border-bottom: 1px solid var(--line); }.evaluation-decision__history li:last-child { border-bottom: 0; }.evaluation-decision__history strong { color: var(--forest-deep); font-size: .8rem; }.evaluation-decision__history span,.evaluation-decision__final { color: var(--ink-muted); font-size: .79rem; line-height: 1.45; }.evaluation-decision__cycle-item { padding: 0 !important; }.evaluation-decision__cycle { display: block; }.evaluation-decision__cycle summary { display: list-item; list-style-position: inside; padding: 9px 10px; cursor: pointer; }.evaluation-decision__cycle-details { display: grid; gap: 5px; padding: 0 10px 10px; }.evaluation-decision__cycle-list { display: grid; gap: 5px; padding: 0; margin: 0; list-style: none; }.evaluation-decision__cycle-list li { display: grid; gap: 3px; padding: 7px 8px; border: 1px solid var(--line); }.evaluation-decision__cycle-list small,.evaluation-decision__cycle-list time,.evaluation-decision__cycle-details > time { color: var(--ink-muted); font-size: .72rem; line-height: 1.4; }.evaluation-decision__form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding-top: 10px; }.evaluation-decision__form label { display: grid; gap: 5px; color: var(--forest-deep); font-size: .77rem; font-weight: 700; }.evaluation-decision__form textarea,.evaluation-decision__form select { width: 100%; min-height: 40px; padding: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: inherit; }.evaluation-decision__form textarea { min-height: 70px; resize: vertical; }.evaluation-decision__form > button { grid-column: 1 / -1; }
+.evaluation-decision__cycle summary,.evaluation-decision__cycle-details,.evaluation-decision__cycle-list span,.evaluation-decision__cycle-list small,.evaluation-decision__cycle-list time { overflow-wrap: anywhere; word-break: break-word; }
+.evaluation-decision__cycle-list li { min-width: 0; }
 @media (max-width: 620px) { .evaluation-decision__criterion > header { flex-direction: column; }.evaluation-decision__form { grid-template-columns: 1fr; }.evaluation-decision__form > button { grid-column: auto; } }
 </style>
