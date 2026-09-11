@@ -62,6 +62,18 @@ export const permissionCodes = [
   'stage01.config.read',
   'stage01.config.update',
   'stage01.config.publish',
+  'project.register.manage',
+  'party.manage',
+  'engagement.manage',
+  'cost.read',
+  'cost.source.read',
+  'cost.prepare',
+  'cost.publish_import',
+  'cost.record_cash',
+  'cost.correct',
+  'cost.file.read',
+  'cost.coverage.assert',
+  'cost.config.manage',
 ] as const
 
 export type PermissionCode = (typeof permissionCodes)[number]
