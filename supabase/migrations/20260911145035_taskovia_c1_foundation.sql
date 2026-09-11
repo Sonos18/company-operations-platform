@@ -104,3 +104,108 @@ insert into public.permissions(code, module, name, description) values
   ('cost.coverage.assert','cost','Assert cost coverage','Assert C1 coverage'),
   ('cost.config.manage','cost','Manage cost configuration','Manage C1 company configuration')
 on conflict (code) do nothing;
+
+create function private.c1_master_context(target_company_id uuid, target_permission text)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare v_context jsonb;
+begin
+  v_context := private.stage01_actor_context(target_company_id, target_permission);
+  if not exists (select 1 from public.company_cost_settings settings where settings.company_id = target_company_id and settings.tenant_id = (v_context ->> 'tenantId')::uuid and settings.enabled) then
+    raise exception using errcode = 'P0001', message = 'MODULE_DISABLED';
+  end if;
+  return v_context;
+end;
+$$;
+
+create function private.c1_create_project(target_company_id uuid, target_input jsonb, target_request_id uuid)
+returns jsonb language plpgsql volatile security definer set search_path = '' as $$
+declare v_context jsonb; v_id uuid := gen_random_uuid();
+begin
+  v_context := private.c1_master_context(target_company_id, 'project.register.manage');
+  insert into public.projects(id, tenant_id, company_id, code, name, origin, client_display_name, location_text, operational_state, created_by)
+  values (v_id, (v_context->>'tenantId')::uuid, target_company_id, btrim(target_input->>'code'), btrim(target_input->>'name'), coalesce(target_input->>'origin','manual'), nullif(btrim(target_input->>'clientDisplayName'),''), nullif(btrim(target_input->>'locationText'),''), coalesce(target_input->>'operationalState','unknown'), (v_context->>'actorId')::uuid);
+  return jsonb_build_object('id',v_id,'version',0);
+end;
+$$;
+
+create function private.c1_create_party(target_company_id uuid, target_input jsonb, target_request_id uuid)
+returns jsonb language plpgsql volatile security definer set search_path = '' as $$
+declare v_context jsonb; v_id uuid := gen_random_uuid();
+begin
+  v_context := private.c1_master_context(target_company_id, 'party.manage');
+  insert into public.business_parties(id, tenant_id, company_id, code, display_name, party_kind, tax_identifier, contact_display_name, contact_phone, created_by)
+  values (v_id,(v_context->>'tenantId')::uuid,target_company_id,btrim(target_input->>'code'),btrim(target_input->>'displayName'),target_input->>'partyKind',nullif(btrim(target_input->>'taxIdentifier'),''),nullif(btrim(target_input->>'contactDisplayName'),''),nullif(btrim(target_input->>'contactPhone'),''),(v_context->>'actorId')::uuid);
+  return jsonb_build_object('id',v_id,'version',0);
+end;
+$$;
+
+create function private.c1_create_engagement(target_company_id uuid, target_project_id uuid, target_input jsonb, target_request_id uuid)
+returns jsonb language plpgsql volatile security definer set search_path = '' as $$
+declare v_context jsonb; v_id uuid := gen_random_uuid();
+begin
+  v_context := private.c1_master_context(target_company_id, 'engagement.manage');
+  if not exists (select 1 from public.projects where id=target_project_id and tenant_id=(v_context->>'tenantId')::uuid and company_id=target_company_id) or not exists (select 1 from public.business_parties where id=(target_input->>'partyId')::uuid and tenant_id=(v_context->>'tenantId')::uuid and company_id=target_company_id) then raise exception using errcode='P0001',message='RESOURCE_NOT_FOUND'; end if;
+  insert into public.project_engagements(id,tenant_id,company_id,project_id,party_id,code,name,currency_code,execution_state,initial_data_mode,contract_reference,created_by)
+  values(v_id,(v_context->>'tenantId')::uuid,target_company_id,target_project_id,(target_input->>'partyId')::uuid,btrim(target_input->>'code'),btrim(target_input->>'name'),target_input->>'currencyCode',coalesce(target_input->>'executionState','unknown'),coalesce(target_input->>'initialDataMode','source_documents'),nullif(btrim(target_input->>'contractReference'),''),(v_context->>'actorId')::uuid);
+  return jsonb_build_object('id',v_id,'version',0);
+end;
+$$;
+
+create function private.c1_create_component(target_company_id uuid, target_engagement_id uuid, target_input jsonb, target_request_id uuid)
+returns jsonb language plpgsql volatile security definer set search_path = '' as $$
+declare v_context jsonb; v_id uuid := gen_random_uuid();
+begin
+  v_context := private.c1_master_context(target_company_id, 'engagement.manage');
+  if not exists (select 1 from public.project_engagements where id=target_engagement_id and tenant_id=(v_context->>'tenantId')::uuid and company_id=target_company_id) then raise exception using errcode='P0001',message='RESOURCE_NOT_FOUND'; end if;
+  insert into public.engagement_components(id,tenant_id,company_id,engagement_id,code,name,pricing_method,unit_code,created_by)
+  values(v_id,(v_context->>'tenantId')::uuid,target_company_id,target_engagement_id,btrim(target_input->>'code'),btrim(target_input->>'name'),target_input->>'pricingMethod',nullif(btrim(target_input->>'unitCode'),''),(v_context->>'actorId')::uuid);
+  return jsonb_build_object('id',v_id,'version',0);
+end;
+$$;
+
+create function private.c1_update_project(target_company_id uuid, target_id uuid, target_input jsonb, target_request_id uuid) returns jsonb language plpgsql volatile security definer set search_path = '' as $$
+declare v_context jsonb; v_version bigint;
+begin
+  v_context := private.c1_master_context(target_company_id,'project.register.manage');
+  select version into v_version from public.projects where id=target_id and tenant_id=(v_context->>'tenantId')::uuid and company_id=target_company_id for update;
+  if v_version is null then raise exception using errcode='P0001',message='RESOURCE_NOT_FOUND'; end if;
+  if v_version <> (target_input->>'expectedVersion')::bigint then raise exception using errcode='P0001',message='VERSION_CONFLICT'; end if;
+  update public.projects set code=coalesce(nullif(btrim(target_input->>'code'),''),code),name=coalesce(nullif(btrim(target_input->>'name'),''),name),client_display_name=coalesce(target_input->>'clientDisplayName',client_display_name),location_text=coalesce(target_input->>'locationText',location_text),operational_state=coalesce(target_input->>'operationalState',operational_state),version=version+1,updated_at=now() where id=target_id returning version into v_version;
+  return jsonb_build_object('id',target_id,'version',v_version);
+end; $$;
+
+create function private.c1_update_party(target_company_id uuid, target_id uuid, target_input jsonb, target_request_id uuid) returns jsonb language plpgsql volatile security definer set search_path = '' as $$
+declare v_context jsonb; v_version bigint;
+begin
+  v_context:=private.c1_master_context(target_company_id,'party.manage'); select version into v_version from public.business_parties where id=target_id and tenant_id=(v_context->>'tenantId')::uuid and company_id=target_company_id for update;
+  if v_version is null then raise exception using errcode='P0001',message='RESOURCE_NOT_FOUND'; end if; if v_version<>(target_input->>'expectedVersion')::bigint then raise exception using errcode='P0001',message='VERSION_CONFLICT'; end if;
+  update public.business_parties set code=coalesce(nullif(btrim(target_input->>'code'),''),code),display_name=coalesce(nullif(btrim(target_input->>'displayName'),''),display_name),contact_display_name=coalesce(target_input->>'contactDisplayName',contact_display_name),contact_phone=coalesce(target_input->>'contactPhone',contact_phone),version=version+1,updated_at=now() where id=target_id returning version into v_version; return jsonb_build_object('id',target_id,'version',v_version);
+end; $$;
+
+create function private.c1_update_engagement(target_company_id uuid, target_id uuid, target_input jsonb, target_request_id uuid) returns jsonb language plpgsql volatile security definer set search_path = '' as $$
+declare v_context jsonb; v_version bigint;
+begin
+  v_context:=private.c1_master_context(target_company_id,'engagement.manage'); select version into v_version from public.project_engagements where id=target_id and tenant_id=(v_context->>'tenantId')::uuid and company_id=target_company_id for update;
+  if v_version is null then raise exception using errcode='P0001',message='RESOURCE_NOT_FOUND'; end if; if v_version<>(target_input->>'expectedVersion')::bigint then raise exception using errcode='P0001',message='VERSION_CONFLICT'; end if;
+  update public.project_engagements set code=coalesce(nullif(btrim(target_input->>'code'),''),code),name=coalesce(nullif(btrim(target_input->>'name'),''),name),execution_state=coalesce(target_input->>'executionState',execution_state),contract_reference=coalesce(target_input->>'contractReference',contract_reference),version=version+1,updated_at=now() where id=target_id returning version into v_version; return jsonb_build_object('id',target_id,'version',v_version);
+end; $$;
+
+create function private.c1_update_component(target_company_id uuid, target_id uuid, target_input jsonb, target_request_id uuid) returns jsonb language plpgsql volatile security definer set search_path = '' as $$
+declare v_context jsonb; v_version bigint;
+begin
+  v_context:=private.c1_master_context(target_company_id,'engagement.manage'); select version into v_version from public.engagement_components where id=target_id and tenant_id=(v_context->>'tenantId')::uuid and company_id=target_company_id for update;
+  if v_version is null then raise exception using errcode='P0001',message='RESOURCE_NOT_FOUND'; end if; if v_version<>(target_input->>'expectedVersion')::bigint then raise exception using errcode='P0001',message='VERSION_CONFLICT'; end if;
+  update public.engagement_components set code=coalesce(nullif(btrim(target_input->>'code'),''),code),name=coalesce(nullif(btrim(target_input->>'name'),''),name),pricing_method=coalesce(target_input->>'pricingMethod',pricing_method),unit_code=coalesce(target_input->>'unitCode',unit_code),version=version+1,updated_at=now() where id=target_id returning version into v_version; return jsonb_build_object('id',target_id,'version',v_version);
+end; $$;
+
+create function public.c1_create_project(target_company_id uuid, target_input jsonb, target_request_id uuid) returns jsonb language sql security definer set search_path = '' as $$ select private.c1_create_project(target_company_id,target_input,target_request_id); $$;
+create function public.c1_create_business_party(target_company_id uuid, target_input jsonb, target_request_id uuid) returns jsonb language sql security definer set search_path = '' as $$ select private.c1_create_party(target_company_id,target_input,target_request_id); $$;
+create function public.c1_create_engagement(target_company_id uuid, target_project_id uuid, target_input jsonb, target_request_id uuid) returns jsonb language sql security definer set search_path = '' as $$ select private.c1_create_engagement(target_company_id,target_project_id,target_input,target_request_id); $$;
+create function public.c1_create_engagement_component(target_company_id uuid, target_engagement_id uuid, target_input jsonb, target_request_id uuid) returns jsonb language sql security definer set search_path = '' as $$ select private.c1_create_component(target_company_id,target_engagement_id,target_input,target_request_id); $$;
+create function public.c1_update_project(target_company_id uuid,target_id uuid,target_input jsonb,target_request_id uuid) returns jsonb language sql security definer set search_path = '' as $$ select private.c1_update_project(target_company_id,target_id,target_input,target_request_id); $$;
+create function public.c1_update_business_party(target_company_id uuid,target_id uuid,target_input jsonb,target_request_id uuid) returns jsonb language sql security definer set search_path = '' as $$ select private.c1_update_party(target_company_id,target_id,target_input,target_request_id); $$;
+create function public.c1_update_engagement(target_company_id uuid,target_id uuid,target_input jsonb,target_request_id uuid) returns jsonb language sql security definer set search_path = '' as $$ select private.c1_update_engagement(target_company_id,target_id,target_input,target_request_id); $$;
+create function public.c1_update_engagement_component(target_company_id uuid,target_id uuid,target_input jsonb,target_request_id uuid) returns jsonb language sql security definer set search_path = '' as $$ select private.c1_update_component(target_company_id,target_id,target_input,target_request_id); $$;
+grant execute on function public.c1_create_project(uuid,jsonb,uuid), public.c1_create_business_party(uuid,jsonb,uuid), public.c1_create_engagement(uuid,uuid,jsonb,uuid), public.c1_create_engagement_component(uuid,uuid,jsonb,uuid) to authenticated;
+grant execute on function public.c1_update_project(uuid,uuid,jsonb,uuid), public.c1_update_business_party(uuid,uuid,jsonb,uuid), public.c1_update_engagement(uuid,uuid,jsonb,uuid), public.c1_update_engagement_component(uuid,uuid,jsonb,uuid) to authenticated;
+revoke all on function private.c1_master_context(uuid,text), private.c1_create_project(uuid,jsonb,uuid), private.c1_create_party(uuid,jsonb,uuid), private.c1_create_engagement(uuid,uuid,jsonb,uuid), private.c1_create_component(uuid,uuid,jsonb,uuid) from public, anon, authenticated;
