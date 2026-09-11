@@ -28,6 +28,7 @@
     "db:dev:canonical-check": "node scripts/run-supabase-dev.mjs canonical-check",
     "db:dev:stage01:pgtap-diagnostic": "node scripts/run-supabase-dev.mjs stage01-pgtap-diagnostic",
     "db:dev:stage01:test": "node scripts/run-supabase-dev.mjs stage01-test",
+    "db:dev:c1:test": "node scripts/run-c1-cloud-dev-tests.mjs",
     "db:dev:stage01:concurrency": "node scripts/run-stage01-cloud-dev-concurrency.mjs",
     "db:dev:stage01:integrity-races": "node scripts/run-stage01-cloud-dev-integrity-races.mjs",
     "db:dev:advisors:security": "node scripts/run-supabase-dev.mjs advisors-security",
