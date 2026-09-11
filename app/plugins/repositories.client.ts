@@ -7,6 +7,10 @@ import { createHttpWorkflowRepository } from '../repositories/http/http-workflow
 import { createHttpStage01Repository } from '../repositories/http/http-stage01-repository'
 import { createHttpStage01ConfigRepository } from '../repositories/http/http-stage01-config-repository'
 import { createHttpEmployeeRepository } from '../repositories/http/http-employee-repository'
+import { createHttpProjectRegisterRepository } from '../repositories/http/http-project-register-repository'
+import { createHttpBusinessPartyRepository } from '../repositories/http/http-business-party-repository'
+import { createHttpEngagementRepository } from '../repositories/http/http-engagement-repository'
+import { createHttpCostSettingsRepository } from '../repositories/http/http-cost-settings-repository'
 import type { SupabaseAuthRepository } from '../repositories/auth/supabase-auth.repository'
 import type { AuthenticatedHttpClient } from '../repositories/http/authenticated-http-client'
 import type { CompanyAccessStore } from '../stores/company/company-access.store'
@@ -36,6 +40,10 @@ export default defineNuxtPlugin({
         getAccessToken: () => authRepository.getAccessToken(),
         fetch: globalThis.fetch.bind(globalThis),
       }),
+      projectRegister: createHttpProjectRegisterRepository({ companyId: () => companyAccess.activeCompanyId ?? context.companyId, client }),
+      businessParties: createHttpBusinessPartyRepository({ companyId: () => companyAccess.activeCompanyId ?? context.companyId, client }),
+      engagements: createHttpEngagementRepository({ companyId: () => companyAccess.activeCompanyId ?? context.companyId, client }),
+      costSettings: createHttpCostSettingsRepository({ companyId: () => companyAccess.activeCompanyId ?? context.companyId, client }),
     }
 
     return { provide: { repositories } }

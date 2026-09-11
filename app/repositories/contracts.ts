@@ -32,6 +32,7 @@ import type {
   PublishStage01ConfigResult, Stage01BusinessConfigView, Stage01ConfigDraft,
   UpdateStage01ConfigDraftInput,
 } from '../../shared/schemas/stage01-config'
+import type { BusinessParty, CompanyCostSettings, CreateBusinessPartyInput, CreateEngagementComponentInput, CreateEngagementInput, CreateProjectRegisterInput, Engagement, EngagementComponent, ProjectRegister, UpdateBusinessPartyInput, UpdateEngagementComponentInput, UpdateEngagementInput, UpdateProjectRegisterInput } from '../../shared/schemas/costs/master-data'
 
 export interface CompanyRepository {
   getCurrent(): Promise<Company>
@@ -126,6 +127,11 @@ export interface Stage01ConfigRepository {
   publishDraft(input: PublishStage01ConfigDraftInput): Promise<PublishStage01ConfigResult>
 }
 
+export interface ProjectRegisterRepository { list(): Promise<ProjectRegister[]>; getById(id: string): Promise<ProjectRegister | null>; create(input: CreateProjectRegisterInput): Promise<ProjectRegister>; update(id: string, input: UpdateProjectRegisterInput): Promise<ProjectRegister> }
+export interface BusinessPartyRepository { list(): Promise<BusinessParty[]>; getById(id: string): Promise<BusinessParty | null>; create(input: CreateBusinessPartyInput): Promise<BusinessParty>; update(id: string, input: UpdateBusinessPartyInput): Promise<BusinessParty> }
+export interface EngagementRepository { list(projectId: string): Promise<Engagement[]>; getById(projectId: string, id: string): Promise<Engagement | null>; create(projectId: string, input: CreateEngagementInput): Promise<Engagement>; update(projectId: string, id: string, input: UpdateEngagementInput): Promise<Engagement>; listComponents(engagementId: string): Promise<EngagementComponent[]>; getComponentById(engagementId: string, id: string): Promise<EngagementComponent | null>; addComponent(engagementId: string, input: CreateEngagementComponentInput): Promise<EngagementComponent>; updateComponent(engagementId: string, id: string, input: UpdateEngagementComponentInput): Promise<EngagementComponent> }
+export interface CostSettingsRepository { get(): Promise<CompanyCostSettings> }
+
 export interface RepositoryRegistry {
   context: Readonly<CompanyContext>
   company: CompanyRepository
@@ -138,7 +144,11 @@ export interface RepositoryRegistry {
   workflow: WorkflowRepository
   stage01: Stage01Repository
   stage01Config: Stage01ConfigRepository
+  projectRegister: ProjectRegisterRepository
+  businessParties: BusinessPartyRepository
+  engagements: EngagementRepository
+  costSettings: CostSettingsRepository
   prototype: PrototypeRepository
 }
 
-export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01' | 'stage01Config'>
+export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01' | 'stage01Config' | 'projectRegister' | 'businessParties' | 'engagements' | 'costSettings'>

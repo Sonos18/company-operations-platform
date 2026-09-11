@@ -90,6 +90,13 @@ alter table public.cost_command_receipts force row level security;
 
 revoke all on public.company_cost_settings, public.projects, public.business_parties, public.project_engagements, public.engagement_components, public.cost_document_events, public.cost_command_receipts from public, anon, authenticated;
 
+grant select on public.projects, public.business_parties, public.project_engagements, public.engagement_components, public.company_cost_settings to authenticated;
+create policy c1_projects_select on public.projects for select to authenticated using (private.has_company_permission(tenant_id, company_id, 'project.register.manage'));
+create policy c1_business_parties_select on public.business_parties for select to authenticated using (private.has_company_permission(tenant_id, company_id, 'party.manage'));
+create policy c1_project_engagements_select on public.project_engagements for select to authenticated using (private.has_company_permission(tenant_id, company_id, 'engagement.manage'));
+create policy c1_engagement_components_select on public.engagement_components for select to authenticated using (private.has_company_permission(tenant_id, company_id, 'engagement.manage'));
+create policy c1_company_cost_settings_select on public.company_cost_settings for select to authenticated using (private.has_company_permission(tenant_id, company_id, 'cost.config.manage'));
+
 insert into public.permissions(code, module, name, description) values
   ('project.register.manage','cost','Manage project register','Create and update C1 project register records'),
   ('party.manage','cost','Manage business parties','Create and update C1 business parties'),

@@ -24,3 +24,36 @@ export const updateEngagementComponentInputSchema = createEngagementComponentInp
 
 export type CreateProjectRegisterInput = z.infer<typeof createProjectRegisterInputSchema>
 export type UpdateProjectRegisterInput = z.infer<typeof updateProjectRegisterInputSchema>
+export type CreateBusinessPartyInput = z.infer<typeof createBusinessPartyInputSchema>
+export type UpdateBusinessPartyInput = z.infer<typeof updateBusinessPartyInputSchema>
+export type CreateEngagementInput = z.infer<typeof createEngagementInputSchema>
+export type UpdateEngagementInput = z.infer<typeof updateEngagementInputSchema>
+export type CreateEngagementComponentInput = z.infer<typeof createEngagementComponentInputSchema>
+export type UpdateEngagementComponentInput = z.infer<typeof updateEngagementComponentInputSchema>
+
+const timestamp = z.string().datetime()
+export const projectRegisterSchema = z.object({
+  id: uuid, code: text, name: text, origin: projectOriginSchema, operationalState: projectOperationalStateSchema,
+  clientDisplayName: z.string().nullable(), locationText: z.string().nullable(), version, createdAt: timestamp, updatedAt: timestamp,
+}).strict()
+export const businessPartySchema = z.object({
+  id: uuid, code: text, displayName: text, partyKind: z.enum(['crew', 'organization']), taxIdentifier: z.string().nullable(),
+  contactDisplayName: z.string().nullable(), contactPhone: z.string().nullable(), isActive: z.boolean(), version, createdAt: timestamp, updatedAt: timestamp,
+}).strict()
+export const engagementSchema = z.object({
+  id: uuid, projectId: uuid, partyId: uuid, code: text, name: text, currencyCode: z.string().length(3), executionState: engagementExecutionStateSchema,
+  initialDataMode: z.enum(['historical_total', 'source_documents']), contractReference: z.string().nullable(), version, createdAt: timestamp, updatedAt: timestamp,
+}).strict()
+export const engagementComponentSchema = z.object({
+  id: uuid, engagementId: uuid, code: text, name: text, pricingMethod: pricingMethodSchema, unitCode: z.string().nullable(), isActive: z.boolean(), version, createdAt: timestamp, updatedAt: timestamp,
+}).strict()
+export const companyCostSettingsSchema = z.object({
+  companyId: uuid, enabled: z.boolean(), defaultCurrencyCode: z.string().length(3), moneyScale: z.number().int().min(0).max(4), timeZone: text,
+  version, createdAt: timestamp, updatedAt: timestamp,
+}).strict()
+
+export type ProjectRegister = z.infer<typeof projectRegisterSchema>
+export type BusinessParty = z.infer<typeof businessPartySchema>
+export type Engagement = z.infer<typeof engagementSchema>
+export type EngagementComponent = z.infer<typeof engagementComponentSchema>
+export type CompanyCostSettings = z.infer<typeof companyCostSettingsSchema>
