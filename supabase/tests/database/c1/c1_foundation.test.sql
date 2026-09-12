@@ -161,6 +161,15 @@ begin
 end $$;
 
 do $$
+declare created jsonb; project_id uuid; version_after bigint;
+begin
+  select public.c1_create_project('c1000000-0000-4000-8000-000000000020',jsonb_build_object('code','C1-LEGACY-PROJECT-A1','name','Synthetic legacy project','origin','legacy_import'),gen_random_uuid()) into created;
+  project_id := (created->>'id')::uuid;
+  select version into version_after from public.projects where id=project_id and tenant_id='c1000000-0000-4000-8000-000000000010' and company_id='c1000000-0000-4000-8000-000000000020' and code='C1-LEGACY-PROJECT-A1' and name='Synthetic legacy project' and origin='legacy_import' and created_by='c1000000-0000-4000-8000-000000000901' and source_opportunity_id is null;
+  if project_id is null or version_after is distinct from 0 or (created->>'version')::bigint is distinct from 0 then raise exception 'C1 legacy project create scope/origin failed'; end if;
+end $$;
+
+do $$
 declare project_id uuid; project_version bigint;
 begin
   select id,version into project_id,project_version from public.projects where tenant_id='c1000000-0000-4000-8000-000000000010' and company_id='c1000000-0000-4000-8000-000000000020' and code='C1-PROJECT-A1';
@@ -169,10 +178,11 @@ end $$;
 
 reset role;
 do $$
-declare project_id uuid;
+declare project_id uuid; legacy_project_id uuid;
 begin
   select id into project_id from public.projects where tenant_id='c1000000-0000-4000-8000-000000000010' and company_id='c1000000-0000-4000-8000-000000000020' and code='C1-PROJECT-A1';
-  if project_id is null or exists (select 1 from public.workflow_instances where tenant_id='c1000000-0000-4000-8000-000000000010' and company_id='c1000000-0000-4000-8000-000000000020' and subject_id=project_id) then raise exception 'C1 project command must not create a workflow runtime'; end if;
+  select id into legacy_project_id from public.projects where tenant_id='c1000000-0000-4000-8000-000000000010' and company_id='c1000000-0000-4000-8000-000000000020' and code='C1-LEGACY-PROJECT-A1' and origin='legacy_import' and source_opportunity_id is null;
+  if project_id is null or legacy_project_id is null or exists (select 1 from public.workflow_instances where tenant_id='c1000000-0000-4000-8000-000000000010' and company_id='c1000000-0000-4000-8000-000000000020' and subject_id in (project_id,legacy_project_id)) then raise exception 'C1 project command must not create a workflow runtime'; end if;
 end $$;
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"c1000000-0000-4000-8000-000000000901","role":"authenticated"}',true);
@@ -344,5 +354,8 @@ reset role;
 do $$ begin
   if exists (select 1 from public.projects where code='C1-DIRECT-WRITE-DENY') or not exists (select 1 from public.projects where tenant_id='c1000000-0000-4000-8000-000000000010' and company_id='c1000000-0000-4000-8000-000000000020' and code='C1-PROJECT-A1' and name='Synthetic independent project updated' and version=1) then raise exception 'C1 direct write denial changed canonical project state'; end if;
 end $$;
+
+select 'C1_A01_LEGACY_IMPORT_COMPLETE' as c1_fixture_completion;
+select 'C1_FOUNDATION_FIXTURE_COMPLETE' as c1_fixture_completion;
 
 rollback;

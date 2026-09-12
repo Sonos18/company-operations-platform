@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
 
 const allowlist = ['c1_foundation.test.sql']
@@ -26,4 +27,14 @@ export function runC1CloudDevTests({ cwd = process.cwd(), files, spawn = spawnSy
   }
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) runC1CloudDevTests()
+export function isC1CloudDevCliInvocation({ argv = process.argv, moduleUrl = import.meta.url } = {}) {
+  return typeof argv[1] === 'string' && resolve(argv[1]) === fileURLToPath(moduleUrl)
+}
+
+export function runC1CloudDevCli({ argv = process.argv, moduleUrl = import.meta.url, run = runC1CloudDevTests } = {}) {
+  if (!isC1CloudDevCliInvocation({ argv, moduleUrl })) return false
+  run()
+  return true
+}
+
+runC1CloudDevCli()
