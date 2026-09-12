@@ -10,6 +10,8 @@ P1 delivered the C1 foundation only: strict master-data schemas and permissions,
 | P1.4A fixture | `d7a5c88a2a2718ebba7d48da5dda02809685739c` |
 | P1 ACL repair | `e1ef357573afb4a45d5746b01d5cb9fdddec28ca` |
 | Generated types reconciliation / tested implementation | `db47ccd5856f788d05db73ab3de8c42eab00f600` |
+| Runner/A01 fixture checkpoint | `606c83406aaa6f7117a66003a01cbadaeee97eca` |
+| Fixture ambiguity correction / Cloud Run #2 candidate | `a953022bf6e12089dd7382332b722d4b4c474780` |
 
 ## Delivered inventory
 
@@ -21,26 +23,29 @@ P1 delivered the C1 foundation only: strict master-data schemas and permissions,
 
 ## Database and Cloud evidence
 
-The applied migration SHA-256 is `538025216FEC8B67A8A94226D67B35F723D005069AEA00B003FB4DCE6089C556`. The P1.4B task transcript (2026-09-12, repair checkpoint `e1ef357...`) records guarded target/auth/status/dry-run, one migration application, 33/33 parity, and `pnpm db:dev:c1:test` exit 0.
+The applied migration SHA-256 is `538025216FEC8B67A8A94226D67B35F723D005069AEA00B003FB4DCE6089C556`. The P1.4B task transcript (2026-09-12, repair checkpoint `e1ef357...`) records guarded target/auth/status/dry-run, one migration application, 33/33 parity, and `pnpm db:dev:c1:test` exit 0. That historical CLI exit-0 is not accepted as Cloud SQL evidence: on Windows the original direct-entry comparison did not enter the C1 runner.
 
-The actual Cloud fixture establishes synthetic-only evidence for:
+Post-repair Run #1 at `606c834...` did enter the runner and launch the Supabase child, but failed with SQLSTATE `42702` in a pre-existing fixture canonical-state query: PL/pgSQL variables `project_id`/`party_id` collided with unqualified `project_engagements` columns. No completion marker or A01 case was reached. Run #2 at `a953022...` followed a guarded 33/33 status preflight, passed `pnpm db:dev:c1:test`, and emitted `C1_FOUNDATION_FIXTURE_COMPLETE`. The fixture orders `C1_A01_LEGACY_IMPORT_COMPLETE` immediately before that final marker and ends with `ROLLBACK`; the CLI displays only the final result row. Both completion statements and rollback therefore executed in the same successful transaction.
+
+Cloud Run #2 establishes synthetic-only evidence for:
 
 - active membership, exact permission, C1 module gate, stale-version atomicity, and scope/reference denials;
 - public-RPC ACLs, anon public-RPC denial, and authenticated private-command denial;
 - project, party, engagement, component, multiple-engagement, and direct-write boundaries;
 - project/party/engagement/component/cost-setting direct-read RLS mapping; and
-- rollback with zero run-owned C1 master-data residue.
+- rollback with zero run-owned C1 master-data residue; and
+- the A01 `legacy_import` project with the expected synthetic scope, actor, code/name, null Opportunity link, and no Workflow runtime.
 
 The public command wrappers remain SECURITY DEFINER with fixed search paths; client roles execute only public RPCs. Internal C1 helpers revoke EXECUTE from `PUBLIC`, `anon`, and `authenticated`. `cost.read` is not a management-catalog read permission.
 
 ## Deterministic application evidence
 
-At `db47ccd...`, `pnpm verify:app` passed 102 test files / 749 tests, `nuxt typecheck`, ESLint, and the production build under Node `v24.19.0` and pnpm `10.29.3`.
+At `db47ccd...`, `pnpm verify:app` passed 102 test files / 749 tests, `nuxt typecheck`, ESLint, and the production build under Node `v24.19.0` and pnpm `10.29.3`. At `606c834...`, `pnpm verify:app` passed 102 test files / 751 tests; after the fixture-only correction, the focused C1 deterministic suite passed 3 files / 15 tests.
 
 Focused P1 tests cover shared contracts, server/service/route behavior, HTTP repositories, command/RLS/runner contracts, and generated-type compatibility. These tests use controlled doubles where they exercise server or HTTP boundaries. They are not represented as browser-to-Cloud proof.
 
 ## Evidence limits and next phases
 
-P1 did not run a live browser flow. P5 owns C1 UI/navigation and browser evidence; P6 owns final acceptance. P2–P4 own source/files, financial documents, allocations, coverage, and reporting. Acceptance-map rows therefore remain partial until their listed phase/P6 evidence exists. In particular, A01 requires a `legacy_import` Project Register Cloud fixture execution. The shared project contract accepts that origin, but P1.4B exercised only the independent `manual` path. This is the remaining P1 acceptance blocker; closing it requires a separately authorized fixture-only Cloud run.
+P1 did not run a live browser flow. P5 owns C1 UI/navigation and browser evidence; P6 owns final acceptance. P2–P4 own source/files, financial documents, allocations, coverage, and reporting. Acceptance-map rows therefore remain partial until their listed phase/P6 evidence exists. A01's P1 database layer is now verified by Cloud Run #2, so no P1-specific acceptance evidence remains missing.
 
-No Production operation, real VQH business-data mutation, real C1 permission assignment, or real-company C1 enablement occurred. P1.4C adds no Cloud write; remote delivery remains pending until its documentation commit is pushed and verified.
+No Production operation, real VQH business-data mutation, real C1 permission assignment, or real-company C1 enablement occurred. P2 remains Not started; remote delivery remains pending until this documentation commit is pushed and verified.

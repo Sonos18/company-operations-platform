@@ -3,17 +3,19 @@
 **Approved execution base:** `b2731f4ef72c10cbcafe9f176cc1e2b54b9c8cfd`
 **Spec baseline:** Taskovia C1 v1.1
 **Historical P0 status:** allocation only; no C1 application, migration, fixture, or Cloud write had run.
-**Status at P1.4C:** the P1 foundation implementation and its reviewed Cloud-DB fixture are complete, but the P1 acceptance record remains partial because A01 lacks its separate `legacy_import` Cloud execution. P2–P6 remain not started and every acceptance row remains partial until its listed later-phase/P6 evidence exists.
+**Status after P1 closure:** the P1 foundation implementation and its Cloud-DB fixture evidence are complete. P2–P6 remain not started and every acceptance row remains partial until its listed later-phase/P6 evidence exists.
 
 ## Evidence Rule
 
 An acceptance row is **partial** until all listed layers have evidence: shared schema/unit, server/HTTP, database/RLS/storage when applicable, UI/E2E when user-visible, and the P6 synthetic acceptance run. A source-file inspection, mock-only test, report commit, or real workbook presence is never final acceptance evidence.
 
-## P1.4C evidence status
+## P1 closure evidence status
 
-P1 has deterministic shared-schema, server/service, route, HTTP-repository, registry, runner, and migration-contract tests. Those server/HTTP tests use controlled doubles; they are not browser-to-Cloud proof. The 2026-09-12 P1.4B Cloud DEV run applied only the foundation migration, executed the C1 transactional SQL fixture successfully, and verified synthetic rollback residue was zero. That Cloud evidence covers command authorization, RPC-only writes, ACLs, scope/version behavior, and the approved direct-read RLS mapping.
+P1 has deterministic shared-schema, server/service, route, HTTP-repository, registry, runner, and migration-contract tests. Those server/HTTP tests use controlled doubles; they are not browser-to-Cloud proof. The original P1.4B CLI exit-0 result is not Cloud SQL evidence because the Windows direct-entry condition did not invoke the C1 runner.
 
-The following remains intentionally partial: UI/navigation/browser evidence (P5/P6); raw-file/source/financial behaviors (P2–P4); full acceptance-map execution (P6); and the A01 `legacy_import` path has shared-contract evidence but was not separately exercised by the P1.4B Cloud fixture. No partial row is promoted to final acceptance by this P1 record.
+After the runner repair, Run #1 at `606c83406aaa6f7117a66003a01cbadaeee97eca` entered the runner and launched Supabase but stopped at pre-existing fixture SQLSTATE `42702` ambiguity in the engagement canonical-state reads; no completion marker or A01 assertion was reached. Run #2 at `a953022bf6e12089dd7382332b722d4b4c474780` passed guarded Cloud DEV status at 33/33 parity, launched the fixed C1 fixture, and emitted `C1_FOUNDATION_FIXTURE_COMPLETE`. The fixture's preceding `C1_A01_LEGACY_IMPORT_COMPLETE` statement and terminal `ROLLBACK` therefore executed in the same successful transaction; CLI output exposes only the final result row. This establishes synthetic-only command authorization, RPC-only writes, ACLs, scope/version behavior, direct-read RLS mapping, manual and `legacy_import` Project Register cases, no project Workflow runtime, and zero run-owned residue by rollback.
+
+The following remains intentionally partial: UI/navigation/browser evidence (P5/P6); raw-file/source/financial behaviors (P2–P4); and full acceptance-map execution (P6). A01's P1 database layer is verified, but no partial row is promoted to final acceptance by this P1 record.
 
 | ID | Build phase | Verification phase | Required evidence / partial condition |
 | --- | --- | --- | --- |
