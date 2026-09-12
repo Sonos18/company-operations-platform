@@ -50,6 +50,45 @@ begin
 end $$;
 
 do $$
+declare function_id oid;
+begin
+  foreach function_id in array array[
+    'public.c1_create_project(uuid,jsonb,uuid)'::regprocedure,
+    'public.c1_create_business_party(uuid,jsonb,uuid)'::regprocedure,
+    'public.c1_create_engagement(uuid,uuid,jsonb,uuid)'::regprocedure,
+    'public.c1_create_engagement_component(uuid,uuid,jsonb,uuid)'::regprocedure,
+    'public.c1_update_project(uuid,uuid,jsonb,uuid)'::regprocedure,
+    'public.c1_update_business_party(uuid,uuid,jsonb,uuid)'::regprocedure,
+    'public.c1_update_engagement(uuid,uuid,jsonb,uuid)'::regprocedure,
+    'public.c1_update_engagement_component(uuid,uuid,jsonb,uuid)'::regprocedure
+  ] loop
+    if exists (select 1 from pg_catalog.pg_proc p cross join lateral pg_catalog.aclexplode(coalesce(p.proacl,pg_catalog.acldefault('f',p.proowner))) acl where p.oid=function_id and acl.grantee=0 and lower(acl.privilege_type)='execute') or pg_catalog.has_function_privilege('anon',function_id,'execute') or not pg_catalog.has_function_privilege('authenticated',function_id,'execute') then raise exception 'C1 public RPC ACL failed for %',function_id::regprocedure; end if;
+  end loop;
+  foreach function_id in array array[
+    'private.c1_master_context(uuid,text)'::regprocedure,
+    'private.c1_create_project(uuid,jsonb,uuid)'::regprocedure,
+    'private.c1_create_party(uuid,jsonb,uuid)'::regprocedure,
+    'private.c1_create_engagement(uuid,uuid,jsonb,uuid)'::regprocedure,
+    'private.c1_create_component(uuid,uuid,jsonb,uuid)'::regprocedure,
+    'private.c1_update_project(uuid,uuid,jsonb,uuid)'::regprocedure,
+    'private.c1_update_party(uuid,uuid,jsonb,uuid)'::regprocedure,
+    'private.c1_update_engagement(uuid,uuid,jsonb,uuid)'::regprocedure,
+    'private.c1_update_component(uuid,uuid,jsonb,uuid)'::regprocedure
+  ] loop
+    if exists (select 1 from pg_catalog.pg_proc p cross join lateral pg_catalog.aclexplode(coalesce(p.proacl,pg_catalog.acldefault('f',p.proowner))) acl where p.oid=function_id and acl.grantee=0 and lower(acl.privilege_type)='execute') or pg_catalog.has_function_privilege('anon',function_id,'execute') or pg_catalog.has_function_privilege('authenticated',function_id,'execute') then raise exception 'C1 private command ACL failed for %',function_id::regprocedure; end if;
+  end loop;
+end $$;
+
+set local role anon;
+do $$ begin
+  begin perform public.c1_create_project('c1000000-0000-4000-8000-000000000020',jsonb_build_object('code','C1-DENY-ANON-RPC','name','Denied','origin','manual'),'c1000000-0000-4000-8000-000000000941'); raise exception 'C1 anon public RPC unexpectedly succeeded'; exception when insufficient_privilege then null; end;
+end $$;
+reset role;
+do $$ begin
+  if exists (select 1 from public.projects where code='C1-DENY-ANON-RPC') then raise exception 'C1 anon public RPC created project'; end if;
+end $$;
+
+do $$
 begin
   if not exists (select 1 from public.company_memberships where user_id='c1000000-0000-4000-8000-000000000901' and company_id='c1000000-0000-4000-8000-000000000020' and is_active) then raise exception 'C1 party membership setup failed'; end if;
   if not exists (select 1 from public.company_role_assignments a join public.role_permissions p on p.role_id=a.role_id where a.user_id='c1000000-0000-4000-8000-000000000901' and a.company_id='c1000000-0000-4000-8000-000000000020' and p.permission_code='party.manage') then raise exception 'C1 party permission setup failed'; end if;
@@ -119,6 +158,13 @@ begin
     if error_message <> 'VERSION_CONFLICT' then raise; end if;
   end;
   if exists (select 1 from public.projects where id=project_id and (version <> version_after or name <> name_after)) then raise exception 'C1 stale project update changed state'; end if;
+end $$;
+
+do $$
+declare project_id uuid; project_version bigint;
+begin
+  select id,version into project_id,project_version from public.projects where tenant_id='c1000000-0000-4000-8000-000000000010' and company_id='c1000000-0000-4000-8000-000000000020' and code='C1-PROJECT-A1';
+  begin perform private.c1_update_project('c1000000-0000-4000-8000-000000000020',project_id,jsonb_build_object('expectedVersion',project_version),'c1000000-0000-4000-8000-000000000942'); raise exception 'C1 authenticated private command unexpectedly succeeded'; exception when insufficient_privilege then null; end;
 end $$;
 
 reset role;
