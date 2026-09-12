@@ -2,11 +2,18 @@
 
 **Approved execution base:** `b2731f4ef72c10cbcafe9f176cc1e2b54b9c8cfd`
 **Spec baseline:** Taskovia C1 v1.1
-**Status at P0:** allocation only; no C1 application, migration, fixture, or Cloud write has run.
+**Historical P0 status:** allocation only; no C1 application, migration, fixture, or Cloud write had run.
+**Status at P1.4C:** the P1 foundation implementation and its reviewed Cloud-DB fixture are complete, but the P1 acceptance record remains partial because A01 lacks its separate `legacy_import` Cloud execution. P2–P6 remain not started and every acceptance row remains partial until its listed later-phase/P6 evidence exists.
 
 ## Evidence Rule
 
 An acceptance row is **partial** until all listed layers have evidence: shared schema/unit, server/HTTP, database/RLS/storage when applicable, UI/E2E when user-visible, and the P6 synthetic acceptance run. A source-file inspection, mock-only test, report commit, or real workbook presence is never final acceptance evidence.
+
+## P1.4C evidence status
+
+P1 has deterministic shared-schema, server/service, route, HTTP-repository, registry, runner, and migration-contract tests. Those server/HTTP tests use controlled doubles; they are not browser-to-Cloud proof. The 2026-09-12 P1.4B Cloud DEV run applied only the foundation migration, executed the C1 transactional SQL fixture successfully, and verified synthetic rollback residue was zero. That Cloud evidence covers command authorization, RPC-only writes, ACLs, scope/version behavior, and the approved direct-read RLS mapping.
+
+The following remains intentionally partial: UI/navigation/browser evidence (P5/P6); raw-file/source/financial behaviors (P2–P4); full acceptance-map execution (P6); and the A01 `legacy_import` path has shared-contract evidence but was not separately exercised by the P1.4B Cloud fixture. No partial row is promoted to final acceptance by this P1 record.
 
 | ID | Build phase | Verification phase | Required evidence / partial condition |
 | --- | --- | --- | --- |

@@ -9,10 +9,10 @@
 | Preserved Stage 01 checkpoint | `3d021b35b1228ffdd46a8dbb9884a59c00ab6c89` |
 | Preserved integration merge | `8a005a4b86202253db3a9258d9dd2733ef20ff97` |
 | EOL portability repair | `b2731f4ef72c10cbcafe9f176cc1e2b54b9c8cfd` |
-| Cloud DEV migration inspection | 32 source migrations / 32 applied migrations; read-only verification |
+| Cloud DEV migration inspection | 33 source migrations / 33 applied migrations; P1 foundation applied in the authorized P1.4B run |
 | Runtime used for P0.5/P0.6 verification | Node `v24.19.0`, pnpm `10.29.3` |
 | Current C1 branch | `feat/taskovia-c1` |
-| C1 implementation status | Not started |
+| C1 implementation status | P1 foundation implementation complete; P1 acceptance review partial on A01 `legacy_import` Cloud execution; P2–P6 not started |
 
 ## P0 Result
 
@@ -28,7 +28,24 @@
 - `docs/implementation/taskovia-c1/acceptance-map.md`
 - `docs/implementation/taskovia-c1/progress.md`
 
-**Open implementation work:** P1 through P6 exactly as allocated in the plan and acceptance map.
+**Open implementation work:** P1 acceptance gap plus P2 through P6 exactly as allocated in the plan and acceptance map.
+
+## P1 Result
+
+**Status:** Foundation implementation complete; acceptance review partial. The missing P1 evidence is A01's separate `legacy_import` project creation through the Cloud fixture. The P1.4B fixture proves a manual project is Opportunity/Workflow-independent, and the shared contract accepts `legacy_import`, but those are not the same DB execution.
+
+**Implementation checkpoints:**
+
+- P1.3B server/HTTP slice: `f458c14012a99c734ca75afeb088b515bae91866`
+- P1.4A transactional fixture: `d7a5c88a2a2718ebba7d48da5dda02809685739c`
+- P1 ACL repair: `e1ef357573afb4a45d5746b01d5cb9fdddec28ca`
+- P1 generated-types reconciliation: `db47ccd5856f788d05db73ab3de8c42eab00f600`
+
+**Database evidence:** The single P1 migration `20260911145035_taskovia_c1_foundation.sql` was applied to Cloud DEV in P1.4B. Its SHA-256 is `538025216FEC8B67A8A94226D67B35F723D005069AEA00B003FB4DCE6089C556`; observed parity is 33/33. The actual C1 Cloud fixture passed with synthetic-only identities, ACL/RPC/RLS checks, and zero run-owned master-data residue after rollback. No real company was enabled and no real account received a C1 permission.
+
+**Application evidence:** Shared schema, deterministic server/route/HTTP-repository tests, registry wiring, generated types, and `verify:app` passed at `db47ccd5856f788d05db73ab3de8c42eab00f600`. These are not presented as live browser-to-Cloud evidence. The complete generated snapshot and its pre-existing Stage 01 provenance are recorded in `p1-generated-types-reconciliation.md`.
+
+**Remaining work:** A narrow authorized Cloud fixture execution is required to close A01's `legacy_import` DB evidence. P2–P6 remain not started. Acceptance rows retain their listed partial status until source/files, financial documents, allocations/reporting, UI/E2E, and P6 evidence are authorized and executed.
 
 ## Execution Contract
 
@@ -63,7 +80,7 @@ Every C1 file test proves both same-tenant/different-company and cross-tenant de
 | Phase | Status | Scope | Gate |
 | --- | --- | --- | --- |
 | P0 | Complete after scoped commit/push verification | Execution preflight, v1.1 plan, acceptance map, progress contract | Remote `feat/taskovia-c1` equals local planning head |
-| P1 | Not started | Secure schema/contracts, permissions, disabled settings, master-data APIs, C1 runner | Review P1 migration/RLS/HTTP evidence before P2 |
+| P1 | Foundation implementation complete; acceptance evidence partial | Secure schema/contracts, permissions, disabled settings, master-data APIs, C1 runner | A01 `legacy_import` Cloud fixture execution remains before P1 acceptance closure; P2 requires separate authorization |
 | P2 | Not started | Accounting sources, immutable private files, selections, figures, review issues, preview | Review private-file/source boundary before P3 |
 | P3 | Not started | Financial documents, publication, confirmation, provenance/evidence | Review exactly-once activation and history before P4 |
 | P4 | Not started | Allocations, corrections, disputes, coverage, comparison | Review arithmetic/concurrency/coverage evidence before P5 |
@@ -81,7 +98,7 @@ Every C1 file test proves both same-tenant/different-company and cross-tenant de
 ```yaml
 stage01_marked_complete: false
 production_touched: false
-cloud_dev_writes: false
+cloud_dev_writes: true # one authorized synthetic-only P1 foundation migration/fixture run
 real_vqh_data_touched: false
-p1_started: false
+p1_started: true
 ```
