@@ -89,6 +89,65 @@ export type Database = {
           },
         ]
       }
+      business_parties: {
+        Row: {
+          code: string
+          company_id: string
+          contact_display_name: string | null
+          contact_phone: string | null
+          created_at: string
+          created_by: string
+          display_name: string
+          id: string
+          is_active: boolean
+          party_kind: string
+          tax_identifier: string | null
+          tenant_id: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          code: string
+          company_id: string
+          contact_display_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          created_by: string
+          display_name: string
+          id?: string
+          is_active?: boolean
+          party_kind: string
+          tax_identifier?: string | null
+          tenant_id: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          code?: string
+          company_id?: string
+          contact_display_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          created_by?: string
+          display_name?: string
+          id?: string
+          is_active?: boolean
+          party_kind?: string
+          tax_identifier?: string | null
+          tenant_id?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "business_parties_company_id_tenant_id_fkey"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+        ]
+      }
       companies: {
         Row: {
           code: string
@@ -121,6 +180,53 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "tenants"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_cost_settings: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string
+          default_currency_code: string
+          enabled: boolean
+          money_scale: number
+          tenant_id: string
+          time_zone: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by: string
+          default_currency_code?: string
+          enabled?: boolean
+          money_scale?: number
+          tenant_id: string
+          time_zone?: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          default_currency_code?: string
+          enabled?: boolean
+          money_scale?: number
+          tenant_id?: string
+          time_zone?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_cost_settings_company_id_tenant_id_fkey"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
           },
         ]
       }
@@ -163,6 +269,47 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "tenant_memberships"
             referencedColumns: ["user_id", "tenant_id"]
+          },
+        ]
+      }
+      company_opportunity_decision_capabilities: {
+        Row: {
+          capability_key: string
+          company_id: string
+          configured_by: string | null
+          created_at: string
+          enabled: boolean
+          tenant_id: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          capability_key: string
+          company_id: string
+          configured_by?: string | null
+          created_at?: string
+          enabled: boolean
+          tenant_id: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          capability_key?: string
+          company_id?: string
+          configured_by?: string | null
+          created_at?: string
+          enabled?: boolean
+          tenant_id?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_opportunity_decision_capabili_company_id_tenant_id_fkey"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
           },
         ]
       }
@@ -307,6 +454,109 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "contacts_company_fk"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+        ]
+      }
+      cost_command_receipts: {
+        Row: {
+          actor_id: string
+          command_name: string
+          company_id: string
+          created_at: string
+          id: string
+          idempotency_key: string
+          request_hash: string
+          result_resource_id: string | null
+          result_version: number | null
+          tenant_id: string
+        }
+        Insert: {
+          actor_id: string
+          command_name: string
+          company_id: string
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          request_hash: string
+          result_resource_id?: string | null
+          result_version?: number | null
+          tenant_id: string
+        }
+        Update: {
+          actor_id?: string
+          command_name?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          request_hash?: string
+          result_resource_id?: string | null
+          result_version?: number | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_command_receipts_company_id_tenant_id_fkey"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+        ]
+      }
+      cost_document_events: {
+        Row: {
+          actor_id: string
+          after_summary: Json | null
+          before_summary: Json | null
+          company_id: string
+          created_at: string
+          document_id: string | null
+          event_kind: string
+          id: string
+          reason: string | null
+          request_id: string | null
+          resource_id: string
+          resource_type: string
+          tenant_id: string
+        }
+        Insert: {
+          actor_id: string
+          after_summary?: Json | null
+          before_summary?: Json | null
+          company_id: string
+          created_at?: string
+          document_id?: string | null
+          event_kind: string
+          id?: string
+          reason?: string | null
+          request_id?: string | null
+          resource_id: string
+          resource_type: string
+          tenant_id: string
+        }
+        Update: {
+          actor_id?: string
+          after_summary?: Json | null
+          before_summary?: Json | null
+          company_id?: string
+          created_at?: string
+          document_id?: string | null
+          event_kind?: string
+          id?: string
+          reason?: string | null
+          request_id?: string | null
+          resource_id?: string
+          resource_type?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_document_events_company_id_tenant_id_fkey"
             columns: ["company_id", "tenant_id"]
             isOneToOne: false
             referencedRelation: "companies"
@@ -519,6 +769,62 @@ export type Database = {
           },
         ]
       }
+      engagement_components: {
+        Row: {
+          code: string
+          company_id: string
+          created_at: string
+          created_by: string
+          engagement_id: string
+          id: string
+          is_active: boolean
+          name: string
+          pricing_method: string
+          tenant_id: string
+          unit_code: string | null
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          code: string
+          company_id: string
+          created_at?: string
+          created_by: string
+          engagement_id: string
+          id?: string
+          is_active?: boolean
+          name: string
+          pricing_method: string
+          tenant_id: string
+          unit_code?: string | null
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          code?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          engagement_id?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          pricing_method?: string
+          tenant_id?: string
+          unit_code?: string | null
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "engagement_components_engagement_id_tenant_id_company_id_fkey"
+            columns: ["engagement_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "project_engagements"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
       opportunities: {
         Row: {
           budget_max: number | null
@@ -696,6 +1002,209 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "opportunities"
             referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      opportunity_decision_authority_events: {
+        Row: {
+          action: string
+          assignment_cycle_version: number
+          authority_display_name_snapshot: string | null
+          authority_position_snapshot: string | null
+          authority_user_id: string | null
+          company_id: string
+          created_at: string
+          decision_cycle_id: string
+          id: string
+          opportunity_id: string
+          performed_by_user_id: string
+          performer_display_name_snapshot: string
+          performer_position_snapshot: string | null
+          previous_authority_user_id: string | null
+          reason: string | null
+          request_fingerprint: string
+          request_id: string
+          tenant_id: string
+        }
+        Insert: {
+          action: string
+          assignment_cycle_version: number
+          authority_display_name_snapshot?: string | null
+          authority_position_snapshot?: string | null
+          authority_user_id?: string | null
+          company_id: string
+          created_at?: string
+          decision_cycle_id: string
+          id?: string
+          opportunity_id: string
+          performed_by_user_id: string
+          performer_display_name_snapshot: string
+          performer_position_snapshot?: string | null
+          previous_authority_user_id?: string | null
+          reason?: string | null
+          request_fingerprint: string
+          request_id: string
+          tenant_id: string
+        }
+        Update: {
+          action?: string
+          assignment_cycle_version?: number
+          authority_display_name_snapshot?: string | null
+          authority_position_snapshot?: string | null
+          authority_user_id?: string | null
+          company_id?: string
+          created_at?: string
+          decision_cycle_id?: string
+          id?: string
+          opportunity_id?: string
+          performed_by_user_id?: string
+          performer_display_name_snapshot?: string
+          performer_position_snapshot?: string | null
+          previous_authority_user_id?: string | null
+          reason?: string | null
+          request_fingerprint?: string
+          request_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opportunity_decision_authority_events_company_fk"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "opportunity_decision_authority_events_cycle_fk"
+            columns: ["decision_cycle_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "stage01_decision_cycles"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "opportunity_decision_authority_events_opportunity_fk"
+            columns: ["opportunity_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "opportunities"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      opportunity_decision_policy_binding_events: {
+        Row: {
+          action: string
+          binding_cycle_version: number
+          company_id: string
+          created_at: string
+          decision_cycle_id: string
+          id: string
+          opportunity_id: string
+          performed_by_user_id: string | null
+          policy_snapshot_id: string
+          previous_policy_snapshot_id: string | null
+          reason: string | null
+          request_fingerprint: string
+          request_id: string
+          tenant_id: string
+          transition_code: string | null
+        }
+        Insert: {
+          action: string
+          binding_cycle_version: number
+          company_id: string
+          created_at?: string
+          decision_cycle_id: string
+          id?: string
+          opportunity_id: string
+          performed_by_user_id?: string | null
+          policy_snapshot_id: string
+          previous_policy_snapshot_id?: string | null
+          reason?: string | null
+          request_fingerprint: string
+          request_id: string
+          tenant_id: string
+          transition_code?: string | null
+        }
+        Update: {
+          action?: string
+          binding_cycle_version?: number
+          company_id?: string
+          created_at?: string
+          decision_cycle_id?: string
+          id?: string
+          opportunity_id?: string
+          performed_by_user_id?: string | null
+          policy_snapshot_id?: string
+          previous_policy_snapshot_id?: string | null
+          reason?: string | null
+          request_fingerprint?: string
+          request_id?: string
+          tenant_id?: string
+          transition_code?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opportunity_decision_policy_b_policy_snapshot_id_tenant_id_fkey"
+            columns: ["policy_snapshot_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "opportunity_decision_policy_snapshots"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      opportunity_decision_policy_snapshots: {
+        Row: {
+          approved_at: string | null
+          company_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          policy: Json
+          policy_hash: string
+          policy_key: string
+          policy_version: number
+          published_at: string | null
+          source_policy_snapshot_id: string | null
+          status: string
+          tenant_id: string
+        }
+        Insert: {
+          approved_at?: string | null
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          policy: Json
+          policy_hash: string
+          policy_key: string
+          policy_version: number
+          published_at?: string | null
+          source_policy_snapshot_id?: string | null
+          status?: string
+          tenant_id: string
+        }
+        Update: {
+          approved_at?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          policy?: Json
+          policy_hash?: string
+          policy_key?: string
+          policy_version?: number
+          published_at?: string | null
+          source_policy_snapshot_id?: string | null
+          status?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opportunity_decision_policy_snap_source_policy_snapshot_id_fkey"
+            columns: ["source_policy_snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "opportunity_decision_policy_snapshots"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1020,6 +1529,140 @@ export type Database = {
           },
         ]
       }
+      project_engagements: {
+        Row: {
+          code: string
+          company_id: string
+          contract_reference: string | null
+          created_at: string
+          created_by: string
+          currency_code: string
+          execution_state: string
+          id: string
+          initial_data_mode: string
+          name: string
+          party_id: string
+          project_id: string
+          tenant_id: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          code: string
+          company_id: string
+          contract_reference?: string | null
+          created_at?: string
+          created_by: string
+          currency_code: string
+          execution_state?: string
+          id?: string
+          initial_data_mode?: string
+          name: string
+          party_id: string
+          project_id: string
+          tenant_id: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          code?: string
+          company_id?: string
+          contract_reference?: string | null
+          created_at?: string
+          created_by?: string
+          currency_code?: string
+          execution_state?: string
+          id?: string
+          initial_data_mode?: string
+          name?: string
+          party_id?: string
+          project_id?: string
+          tenant_id?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_engagements_party_id_tenant_id_company_id_fkey"
+            columns: ["party_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "business_parties"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "project_engagements_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          client_display_name: string | null
+          code: string
+          company_id: string
+          created_at: string
+          created_by: string
+          financial_scope_inventory_as_of: string | null
+          financial_scope_inventory_status: string
+          id: string
+          location_text: string | null
+          name: string
+          operational_state: string
+          origin: string
+          source_opportunity_id: string | null
+          tenant_id: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          client_display_name?: string | null
+          code: string
+          company_id: string
+          created_at?: string
+          created_by: string
+          financial_scope_inventory_as_of?: string | null
+          financial_scope_inventory_status?: string
+          id?: string
+          location_text?: string | null
+          name: string
+          operational_state?: string
+          origin: string
+          source_opportunity_id?: string | null
+          tenant_id: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          client_display_name?: string | null
+          code?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          financial_scope_inventory_as_of?: string | null
+          financial_scope_inventory_status?: string
+          id?: string
+          location_text?: string | null
+          name?: string
+          operational_state?: string
+          origin?: string
+          source_opportunity_id?: string | null
+          tenant_id?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "projects_company_id_tenant_id_fkey"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+        ]
+      }
       role_permissions: {
         Row: {
           created_at: string
@@ -1206,12 +1849,14 @@ export type Database = {
       }
       stage01_decision_cycles: {
         Row: {
+          authority_resolution_event_id: string | null
           authority_resolution_reference: string | null
           company_id: string
           created_at: string
           created_by: string
           cycle_no: number
           decision_authority_user_id: string | null
+          decision_policy_snapshot_id: string | null
           final_decision_at: string | null
           final_decision_by: string | null
           final_outcome: string | null
@@ -1226,12 +1871,14 @@ export type Database = {
           version: number
         }
         Insert: {
+          authority_resolution_event_id?: string | null
           authority_resolution_reference?: string | null
           company_id: string
           created_at?: string
           created_by: string
           cycle_no: number
           decision_authority_user_id?: string | null
+          decision_policy_snapshot_id?: string | null
           final_decision_at?: string | null
           final_decision_by?: string | null
           final_outcome?: string | null
@@ -1246,12 +1893,14 @@ export type Database = {
           version?: number
         }
         Update: {
+          authority_resolution_event_id?: string | null
           authority_resolution_reference?: string | null
           company_id?: string
           created_at?: string
           created_by?: string
           cycle_no?: number
           decision_authority_user_id?: string | null
+          decision_policy_snapshot_id?: string | null
           final_decision_at?: string | null
           final_decision_by?: string | null
           final_outcome?: string | null
@@ -1266,6 +1915,24 @@ export type Database = {
           version?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "stage01_decision_cycles_authority_event_fk"
+            columns: [
+              "authority_resolution_event_id",
+              "tenant_id",
+              "company_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "opportunity_decision_authority_events"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "stage01_decision_cycles_decision_policy_snapshot_fk"
+            columns: ["decision_policy_snapshot_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "opportunity_decision_policy_snapshots"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
           {
             foreignKeyName: "stage01_decision_cycles_execution_fk"
             columns: ["node_execution_id", "tenant_id", "company_id"]
@@ -1958,10 +2625,89 @@ export type Database = {
         }
         Returns: Json
       }
+      assign_opportunity_decision_authority: {
+        Args: {
+          target_company_id: string
+          target_cycle_id: string
+          target_input: Json
+          target_opportunity_id: string
+        }
+        Returns: Json
+      }
       assign_workflow_node: {
         Args: {
           target_company_id: string
           target_execution_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_create_business_party: {
+        Args: {
+          target_company_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_create_engagement: {
+        Args: {
+          target_company_id: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_create_engagement_component: {
+        Args: {
+          target_company_id: string
+          target_engagement_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_create_project: {
+        Args: {
+          target_company_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_update_business_party: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_update_engagement: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_update_engagement_component: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_update_project: {
+        Args: {
+          target_company_id: string
+          target_id: string
           target_input: Json
           target_request_id: string
         }
@@ -2084,6 +2830,14 @@ export type Database = {
           roles: string[]
         }[]
       }
+      get_opportunity_decision_authority_projection: {
+        Args: {
+          target_company_id: string
+          target_cycle_id: string
+          target_opportunity_id: string
+        }
+        Returns: Json
+      }
       get_stage01_opportunity_create_options: {
         Args: { target_company_id: string }
         Returns: Json
@@ -2135,6 +2889,14 @@ export type Database = {
           target_input: Json
           target_opportunity_id: string
           target_request_id: string
+        }
+        Returns: Json
+      }
+      list_opportunity_decision_authority_candidates: {
+        Args: {
+          target_company_id: string
+          target_cycle_id: string
+          target_opportunity_id: string
         }
         Returns: Json
       }
@@ -2418,12 +3180,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2447,11 +3209,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2472,11 +3234,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2497,11 +3259,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2514,11 +3276,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
