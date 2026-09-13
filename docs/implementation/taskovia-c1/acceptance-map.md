@@ -3,7 +3,7 @@
 **Approved execution base:** `b2731f4ef72c10cbcafe9f176cc1e2b54b9c8cfd`
 **Spec baseline:** Taskovia C1 v1.1
 **Historical P0 status:** allocation only; no C1 application, migration, fixture, or Cloud write had run.
-**Status after P1 closure:** the P1 foundation implementation and its Cloud-DB fixture evidence are complete. P2–P6 remain not started and every acceptance row remains partial until its listed later-phase/P6 evidence exists.
+**Status after P2A:** P1 is complete. P2 has deterministic, pre-Cloud source/file evidence only; its migration, RLS/storage policies, RPCs, and SQL fixtures remain unexecuted. P3–P6 remain not started and every acceptance row remains partial until its listed later-phase/P6 evidence exists.
 
 ## Evidence Rule
 
@@ -16,6 +16,10 @@ P1 has deterministic shared-schema, server/service, route, HTTP-repository, regi
 After the runner repair, Run #1 at `606c83406aaa6f7117a66003a01cbadaeee97eca` entered the runner and launched Supabase but stopped at pre-existing fixture SQLSTATE `42702` ambiguity in the engagement canonical-state reads; no completion marker or A01 assertion was reached. Run #2 at `a953022bf6e12089dd7382332b722d4b4c474780` passed guarded Cloud DEV status at 33/33 parity, launched the fixed C1 fixture, and emitted `C1_FOUNDATION_FIXTURE_COMPLETE`. The fixture's preceding `C1_A01_LEGACY_IMPORT_COMPLETE` statement and terminal `ROLLBACK` therefore executed in the same successful transaction; CLI output exposes only the final result row. This establishes synthetic-only command authorization, RPC-only writes, ACLs, scope/version behavior, direct-read RLS mapping, manual and `legacy_import` Project Register cases, no project Workflow runtime, and zero run-owned residue by rollback.
 
 The following remains intentionally partial: UI/navigation/browser evidence (P5/P6); raw-file/source/financial behaviors (P2–P4); and full acceptance-map execution (P6). A01's P1 database layer is verified, but no partial row is promoted to final acceptance by this P1 record.
+
+## P2A pre-Cloud evidence
+
+P2A provides deterministic source/file contracts for A03, A14 source ownership, A21, A22 capability separation, A23 denial, A24 scope, A26 revoked-access command boundary, A27–A29 file/preview lifecycle, A33 source-visibility boundary, A35 synthetic-only proof, A39–A40 source-first/non-posting flow, A45–A49 locator/raw metadata handling, A52 raw-file denial, A56 figure revision, A58 non-posting source records, A60 normalization guard, and A61 unknown source scope. These rows remain **partial** until separately authorized Cloud migration, RLS/storage, RPC, and transactional SQL-fixture evidence is executed.
 
 | ID | Build phase | Verification phase | Required evidence / partial condition |
 | --- | --- | --- | --- |

@@ -12,7 +12,7 @@
 | Cloud DEV migration inspection | 33 source migrations / 33 applied migrations; P1 foundation applied in the authorized P1.4B run |
 | Runtime used for P0.5/P0.6 verification | Node `v24.19.0`, pnpm `10.29.3` |
 | Current C1 branch | `feat/taskovia-c1` |
-| C1 implementation status | P1 complete; P2–P6 not started |
+| C1 implementation status | P1 complete; P2 partial — pre-Cloud candidate ready; P3–P6 not started |
 
 ## P0 Result
 
@@ -49,6 +49,16 @@
 
 **Remaining work:** P2–P6 remain not started. Acceptance rows retain their listed partial status until source/files, financial documents, allocations/reporting, UI/E2E, and P6 evidence are authorized and executed.
 
+## P2 Result
+
+**Status:** Partial — pre-Cloud candidate ready. P2 adds private source-file lifecycle/preview, source-first intake, source selections, source figures, source review paths, a minimal source-intake UI, and one unapplied migration candidate. It does not publish a financial document, line, KPI, payment, confirmation, placeholder engagement, or P3 behavior.
+
+**Checkpoints:** `86a4ffc` (file lifecycle/preview), `b4523c1` (source intake), `ba0ac0b` (migration candidate/fixtures), `61ac648` (lint repair).
+
+**Pre-Cloud evidence:** `pnpm verify:app` passed 107 test files / 768 tests, typecheck, lint, and production build. The focused P2 suites cover server-only static XLSX behavior, file permission/lifecycle, source intake without project/engagement, locator normalization, non-posting source share/figures, source review, HTTP repository scope, and guarded P2 fixture allowlisting. The P1 migration SHA remains `538025216FEC8B67A8A94226D67B35F723D005069AEA00B003FB4DCE6089C556`.
+
+**Cloud boundary:** `20260912062227_taskovia_c1_sources_files.sql` (SHA-256 `CC6515D283371BE1482D06CE537D222C74E7661887A3CD0F2246ED2DE5D0A4EC`) is unapplied. P2 Cloud migration/SQL fixture executions and database type generation are all zero. P3 remains Not started.
+
 ## Execution Contract
 
 1. Every subsequent prompt authorizes **one phase only**. Stop at its review gate; do not begin the next phase.
@@ -83,7 +93,7 @@ Every C1 file test proves both same-tenant/different-company and cross-tenant de
 | --- | --- | --- | --- |
 | P0 | Complete after scoped commit/push verification | Execution preflight, v1.1 plan, acceptance map, progress contract | Remote `feat/taskovia-c1` equals local planning head |
 | P1 | Complete after fixture correction and Cloud Run #2 | Secure schema/contracts, permissions, disabled settings, master-data APIs, C1 runner | P2 requires separate authorization |
-| P2 | Not started | Accounting sources, immutable private files, selections, figures, review issues, preview | Review private-file/source boundary before P3 |
+| P2 | Partial — pre-Cloud candidate ready | Accounting sources, immutable private files, selections, figures, review issues, preview | Separate Cloud migration/RLS/storage/RPC review required before P3 |
 | P3 | Not started | Financial documents, publication, confirmation, provenance/evidence | Review exactly-once activation and history before P4 |
 | P4 | Not started | Allocations, corrections, disputes, coverage, comparison | Review arithmetic/concurrency/coverage evidence before P5 |
 | P5 | Not started | Reporting, `/costs`, complete operational UI | Review real HTTP UI/company-switch evidence before P6 |
