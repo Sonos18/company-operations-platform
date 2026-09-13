@@ -1,6 +1,6 @@
 # Taskovia Cost Management v1.2
 
-v1.2 supersedes v1.1 for future C1 implementation while preserving v1.1 unchanged for audit. C1 remains company-scoped, source-first, non-posting until P3, and isolated by tenant/company. The v1.2 change is limited to P2 ingestion: explicitly provided accounting workbooks are analyzed and mapped by CodeX under review, then imported by a controlled, idempotent source-layer importer.
+v1.2 is an amendment to the approved v1.1 business, data, and security baseline. Except where a v1.2 document explicitly marks a requirement modified, deferred, or superseded, **all v1.1 C1 requirements remain normative**. v1.1 is preserved for traceability; v1.2 is the canonical entry point for future implementation.
 
 Canonical documents:
 
