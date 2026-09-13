@@ -64,6 +64,12 @@ One bounded post-failure read-only catalog/history inspection confirmed `2026091
 
 P1 remains complete; P2.1 remains frozen; P2.3 Cloud acceptance is blocked; `concurrency_execution = NOT_RUN`; P2 remains partial. P2.4 real-data import and P3 remain unauthorized/not started.
 
+## Push attempt #2 outcome reconciliation
+
+Attempt #2 was launched as `pnpm db:dev:push` from this repository after its dry-run. The terminal response stopped after `Applying migration 20260913082034_taskovia_c1_controlled_import.sql...`; it returned no reusable session/job handle and no native exit code. A later local process-tree inspection found no matching Node/Supabase child, so the process result remains **UNKNOWN**, not fabricated as success or failure.
+
+Guarded Cloud DEV catalog inspection at `gtgljlnhwvhqdnwrfdfj` establishes `APPLIED_VERIFIED`: migration history contains `20260913082034`; all eight reviewed P2 tables, ten reviewed functions/RPCs, seven indexes, six P2 triggers, P2 RLS policies, and both existing-table constraints are present. No correlated active migration process was observed; the activity row was the reconciliation inspection itself. Thus cumulative pushes are 2, successful P2 applications are 1, and fixtures/types remain not run. This establishes schema application only, not P2.3 acceptance.
+
 ## Local migration repair, pending review
 
 The failed candidate `CCE1D0084FF07713C0E5AA129D180656EA2AD9DC9C8A2E31377BD1B5423D0154` was never applied. Its only SQL repair changes `source_review_issues_selection_idx` from nonexistent `created_at` to declared lifecycle timestamp `opened_at`; the repaired candidate SHA-256 is `C82FFC2426239A815EFD50BC01C874A7038A61FE2E5EAE662A828E024E26FB7F`.
