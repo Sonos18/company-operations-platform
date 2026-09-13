@@ -12,7 +12,7 @@
 | Cloud DEV migration inspection | 33 source migrations / 33 applied migrations; P1 foundation applied in the authorized P1.4B run |
 | Runtime used for P0.5/P0.6 verification | Node `v24.19.0`, pnpm `10.29.3` |
 | Current C1 branch | `feat/taskovia-c1` |
-| C1 implementation status | P1 complete; P2.0 accepted; P2.1 frozen; P2.3 Cloud packet is blocked after its single migration push failed without applying; P2 remains partial pending separately authorized corrective review, Cloud proof, and real-data work; P3–P6 not started |
+| C1 implementation status | P1 complete; P2.0 accepted; P2.1 frozen; P2.3 migration is applied but fixture acceptance is blocked by proven ICU-vs-C canonical key ordering; one forward correction is prepared locally and unapplied; P2 remains partial; P3–P6 not started |
 
 ## P0 Result
 

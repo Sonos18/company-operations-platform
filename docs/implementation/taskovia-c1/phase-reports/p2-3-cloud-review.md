@@ -76,6 +76,14 @@ The one submitted runner launcher used `tools.exec_command` with `pnpm db:dev:c1
 
 Private diagnostic artifacts are at `C:\Users\NGUYEN~1\AppData\Local\Temp\taskovia-c1-runner-diagnostic-20260913`. A corrected foreground durable-capture probe stored separate stdout/stderr and observed exit 7; the first probe's PowerShell quoting error (exit 1) is preserved separately. Bounded Cloud observation found zero synthetic fixture companies, adapter registrations, and import runs. Its one activity match was the observation query itself; this is zero residue observed, not proof of historical fixture execution or rollback. A future bounded rerun requires a new explicit authorization and the durable foreground capture method.
 
+## Durable fixture run and digest diagnosis
+
+A later explicitly authorized durable run (`2026-09-13T13:33:41.5991722Z`–`13:33:52.4066592Z`) returned native exit `1`. `C1_FOUNDATION_FIXTURE_COMPLETE` was observed. The commands fixture then failed with SQLSTATE `P0001`, `C1 frozen P2.1 manifest digest is incompatible with the database canonicalizer`; its completion marker was absent and the security fixture did not start. The reported residue scopes were zero, but that limited observation is not complete rollback proof.
+
+Read-only Query 3 used the exact fixture literal (SHA-256 `6E9D5CC2D3DB3674551E5A1A31E2F318B2E8FBF22EC555B51258DE3C0463C9D9`, bytes 7944–10932). The frozen helper/reference produced 2,896 UTF-8 bytes and SHA-256 `8651b0ef29773117d53b09403e9be2762df0709e2b623587938080610d1557f8`; PostgreSQL produced the same structure and byte length but SHA-256 `c483b3bdecbb0e814fd2489ca25bf55a71d10c449c5fff59e91fbf3305ff8d1a`. The first difference is byte 2025: JavaScript/C order emits `sourceVersions` before `sources`, while ICU `en-US` default ordering emits `sources` first. No nested ordering, escaping, representation, or structural difference remained.
+
+Prepared local correction `20260913151754_taskovia_c1_canonical_order_fix.sql` (SHA-256 `37FF2F59F732785724E0433DDECBBE0621BBF8D595913D5FAF5EAD2955C1AFB7`) changes only the recursive object aggregation to `ORDER BY entry.key COLLATE "C"`, preserving signature and properties. It is **UNAPPLIED / NOT EXECUTED**. Regression coverage ties the exact fixture literal to the frozen helper and independent digest, and adds a future SQL vector for mixed-case/nested keys, order independence, arrays, null/empty values, Unicode/whitespace, escaping, zero, and decimal strings. Fresh local verification passed 107 files / 782 tests, typecheck, lint, and build.
+
 ## Local migration repair, pending review
 
 The failed candidate `CCE1D0084FF07713C0E5AA129D180656EA2AD9DC9C8A2E31377BD1B5423D0154` was never applied. Its only SQL repair changes `source_review_issues_selection_idx` from nonexistent `created_at` to declared lifecycle timestamp `opened_at`; the repaired candidate SHA-256 is `C82FFC2426239A815EFD50BC01C874A7038A61FE2E5EAE662A828E024E26FB7F`.
