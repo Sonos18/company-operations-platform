@@ -12,7 +12,7 @@
 | Cloud DEV migration inspection | 33 source migrations / 33 applied migrations; P1 foundation applied in the authorized P1.4B run |
 | Runtime used for P0.5/P0.6 verification | Node `v24.19.0`, pnpm `10.29.3` |
 | Current C1 branch | `feat/taskovia-c1` |
-| C1 implementation status | P1 complete; P2 v1.1 direction superseded before Cloud application; P2 v1.2 planned/not implemented; P3–P6 not started |
+| C1 implementation status | P1 complete; P2.0 reconciled; P2.1 controlled-import contract implemented/tested and awaiting review; P2 overall partial; P2.2–P2.4 and P3–P6 not started |
 
 ## P0 Result
 
@@ -59,7 +59,7 @@
 
 **Cloud boundary:** `20260912062227_taskovia_c1_sources_files.sql` is unapplied. P2 Cloud migration/SQL fixture executions and database type generation are all zero. Existing WIP remains on the branch pending a separate implementation disposition; this documentation task does not alter it.
 
-**Current direction:** P2 v1.2 is planned/not implemented. P3–P6 remain not started. Real VQH source import requires separate explicit target/file/manifest authorization.
+**Current direction:** P2.0 removed the deferred runtime upload/preview path and the never-applied v1.1 P2 migration/fixtures. P2.1 now provides pure controlled-import manifest/request/result schemas, canonical digest and reviewed-identity checks, replay/conflict contract helpers, and a synthetic example. It is source/static/unit evidence only: no adapter, persistence, migration, Cloud run, or real import exists. P2.2–P2.4 and P3–P6 remain not started.
 
 ## Execution Contract
 
