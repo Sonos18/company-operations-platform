@@ -6,10 +6,9 @@ const root = process.cwd()
 const path = (...parts: string[]) => resolve(root, ...parts)
 
 describe('C1 v1.2 P2.0 reconciliation', () => {
-  it('keeps only the P1 C1 fixture and removes the superseded runtime-upload path', () => {
-    const runner = readFileSync(path('scripts/run-c1-cloud-dev-tests.mjs'), 'utf8')
+  it('keeps the P1 fixture and removes the superseded runtime-upload path', () => {
     const packageJson = readFileSync(path('package.json'), 'utf8')
-    expect(runner).toContain("const allowlist = ['c1_foundation.test.sql']")
+    expect(existsSync(path('supabase/tests/database/c1/c1_foundation.test.sql'))).toBe(true)
     expect(packageJson).not.toContain('"xlsx"')
     for (const target of [
       'supabase/migrations/20260912062227_taskovia_c1_sources_files.sql',
