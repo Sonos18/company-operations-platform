@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { validateC1CloudDevSql } from '../../../scripts/run-c1-cloud-dev-tests.mjs'
+import { canonicalizeManifest } from '../../../server/features/costs/imports/import-manifest'
 
 const root = process.cwd()
 const migrationName = /_taskovia_c1_controlled_import\.sql$/
@@ -61,6 +62,26 @@ describe('C1 controlled-import pre-Cloud SQL contract', () => {
 
   it('rejects an explicit index column missing from its target table', () => {
     expect(() => assertExplicitIndexColumnsExist(`create table public.example (\n  id uuid not null\n);\ncreate index example_missing_idx on public.example(id, missing_column);`, 1)).toThrow('example_missing_idx column missing_column')
+  })
+
+  it('keeps the frozen fixture digest compatible with deterministic C key ordering', () => {
+    const fixture = readFileSync(resolve(root, 'supabase/tests/database/c1/c1_controlled_import_commands.test.sql'), 'utf8')
+    const matches = [...fixture.matchAll(/v_frozen_manifest\s*:=\s*\$manifest\$([\s\S]*?)\$manifest\$::jsonb/gu)]
+    expect(matches).toHaveLength(1)
+    expect(canonicalizeManifest(JSON.parse(matches[0]![1])).digest).toBe('8651b0ef29773117d53b09403e9be2762df0709e2b623587938080610d1557f8')
+
+    const corrections = readdirSync(resolve(root, 'supabase/migrations')).filter(name => /_taskovia_c1_canonical_order_fix\.sql$/u.test(name))
+    expect(corrections).toHaveLength(1)
+    const correction = readFileSync(resolve(root, 'supabase/migrations', corrections[0]!), 'utf8')
+    expect(correction).toContain('order by entry.key collate "C"')
+  })
+
+  it('keeps the canonical compatibility vector independently frozen', () => {
+    const fixture = readFileSync(resolve(root, 'supabase/tests/database/c1/c1_controlled_import_commands.test.sql'), 'utf8')
+    const matches = [...fixture.matchAll(/\$canonical_vector\$([\s\S]*?)\$canonical_vector\$/gu)]
+    expect(matches).toHaveLength(1)
+    expect(canonicalizeManifest).toBeDefined()
+    expect(createHash('sha256').update(matches[0]![1]).digest('hex')).toBe('30aa13579b994c286fe1c15d276686e9e4e77821ff99234c92e37926a06d9f60')
   })
 
   it.each(['c1_controlled_import_commands.test.sql', 'c1_controlled_import_security.test.sql'])('runner statically accepts %s before Cloud access', (name) => {

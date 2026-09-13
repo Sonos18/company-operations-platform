@@ -24,6 +24,7 @@ declare
   v_tenant_b constant uuid := 'c1010000-0000-4000-8000-000000000010';
   v_company_b1 constant uuid := 'c1010000-0000-4000-8000-000000000020';
   v_frozen_manifest jsonb;
+  v_canonical_vector constant text := $canonical_vector${"sourceVersions":{"array":[2,1],"emptyArray":[],"emptyObject":{},"escaped":"quote \" slash \\ newline\n","nil":null,"text":" β Nhật ký ","zero":"0.0000"},"sources":{"nested":{"A":1,"b":2}}}$canonical_vector$;
   v_manifest jsonb;
   v_invalid_manifest jsonb;
   v_manifest_digest text;
@@ -105,6 +106,9 @@ begin
   }$manifest$::jsonb;
   if encode(extensions.digest(convert_to(private.c1_jsonb_canonical_text(v_frozen_manifest), 'UTF8'), 'sha256'), 'hex') <> '8651b0ef29773117d53b09403e9be2762df0709e2b623587938080610d1557f8' then
     raise exception 'C1 frozen P2.1 manifest digest is incompatible with the database canonicalizer';
+  end if;
+  if private.c1_jsonb_canonical_text(v_canonical_vector::jsonb) <> v_canonical_vector then
+    raise exception using message = 'C1 canonical compatibility vector mismatch', detail = format('expected sha256=%s bytes=%s; actual sha256=%s bytes=%s', '30aa13579b994c286fe1c15d276686e9e4e77821ff99234c92e37926a06d9f60', octet_length(convert_to(v_canonical_vector, 'UTF8')), encode(extensions.digest(convert_to(private.c1_jsonb_canonical_text(v_canonical_vector::jsonb), 'UTF8'), 'sha256'), 'hex'), octet_length(convert_to(private.c1_jsonb_canonical_text(v_canonical_vector::jsonb), 'UTF8')));
   end if;
 
   v_manifest := jsonb_set(jsonb_set(v_frozen_manifest, '{sections,1,mapping}', '{"state":"confirmed","projectId":"c1000000-0000-4000-8000-000000000930","partyId":"c1000000-0000-4000-8000-000000000931","engagementId":"c1000000-0000-4000-8000-000000000932","componentId":"c1000000-0000-4000-8000-000000000933"}'::jsonb), '{figures,0,mapping}', '{"state":"confirmed","projectId":"c1000000-0000-4000-8000-000000000930","partyId":"c1000000-0000-4000-8000-000000000931","engagementId":"c1000000-0000-4000-8000-000000000932","componentId":"c1000000-0000-4000-8000-000000000933"}'::jsonb);
