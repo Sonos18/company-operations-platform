@@ -3,7 +3,7 @@
 **Approved execution base:** `b2731f4ef72c10cbcafe9f176cc1e2b54b9c8cfd`
 **Spec baseline:** Taskovia C1 v1.2; v1.1 remains historical.
 **Historical P0 status:** allocation only; no C1 application, migration, fixture, or Cloud write had run.
-**Status after v1.2 transition:** P1 is complete and P2.1 is frozen. P2.3 schema and its C-order correction are applied; a fresh durable Cloud run returned all foundation, commands, and security markers with exit 0, and independent postflight found zero fixture residue. Generated types and application verification passed. Executed synthetic database/RLS/RPC cases now have Cloud evidence, but concurrency remains not run, P2 overall remains partial, and P3–P6 remain not started. See [the execution review](phase-reports/p2-3-cloud-review.md).
+**Status after v1.2 transition:** P1 is complete and P2.1 is frozen. P2.3 schema/fixtures are accepted. The focused VQH-family adapter and prepare/execute/get-result command path now have deterministic local and private offline-workbook evidence, but the new command transport has not run against Cloud DEV. Concurrency remains not run, P2.4 is not authorized, P2 remains partial, and P3–P6 remain not started. See the [P2.3 execution review](phase-reports/p2-3-cloud-review.md) and [adapter/command review](phase-reports/p2-2-adapter-command-review.md).
 
 ## Evidence Rule
 

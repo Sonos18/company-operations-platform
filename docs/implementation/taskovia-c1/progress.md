@@ -12,7 +12,7 @@
 | Cloud DEV migration inspection | 33 source migrations / 33 applied migrations; P1 foundation applied in the authorized P1.4B run |
 | Runtime used for P0.5/P0.6 verification | Node `v24.19.0`, pnpm `10.29.3` |
 | Current C1 branch | `feat/taskovia-c1` |
-| C1 implementation status | P1 complete; P2.0 accepted; P2.1 frozen; P2.3 original and canonical-order migrations applied, synthetic Cloud fixtures passed with zero residue, and generated types/application verification passed; concurrency remains not run and P2 remains partial; P3–P6 not started |
+| C1 implementation status | P1 complete; P2.0 accepted; P2.1 frozen; P2.3 Cloud fixtures accepted; focused workbook-family adapter plus offline/guarded execution/reconciliation commands implemented and real workbooks verified offline; final command-path Cloud evidence, concurrency, and P2.4 authorization remain, so P2 is partial; P3–P6 not started |
 
 ## P0 Result
 
