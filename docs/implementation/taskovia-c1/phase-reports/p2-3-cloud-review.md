@@ -4,7 +4,7 @@
 
 `BLOCKED`
 
-The explicitly authorized Cloud DEV packet stopped before dry-run or mutation. No migration, fixture, type-generation, or post-run inspection command was started.
+The initial packet stopped at its malformed-UUID baseline query; its authorized continuation passed the corrected baseline and dry-run, then the single migration push failed. Successful P2 applications remain zero; fixtures and type generation remain not run.
 
 ## Authorization and repository preflight
 
@@ -63,3 +63,11 @@ The single authorized push began `2026-09-13T12:01:38.1780452Z` and ended `2026-
 One bounded post-failure read-only catalog/history inspection confirmed `20260913082034` is not in migration history and all expected P2 relations/RPCs remain absent. The migration was therefore **not applied** and left no observed schema residue. No retry, fixture execution, generated-type command, `verify:app`, SQL/code repair, corrective migration, cleanup, or further Cloud command was performed.
 
 P1 remains complete; P2.1 remains frozen; P2.3 Cloud acceptance is blocked; `concurrency_execution = NOT_RUN`; P2 remains partial. P2.4 real-data import and P3 remain unauthorized/not started.
+
+## Local migration repair, pending review
+
+The failed candidate `CCE1D0084FF07713C0E5AA129D180656EA2AD9DC9C8A2E31377BD1B5423D0154` was never applied. Its only SQL repair changes `source_review_issues_selection_idx` from nonexistent `created_at` to declared lifecycle timestamp `opened_at`; the repaired candidate SHA-256 is `C82FFC2426239A815EFD50BC01C874A7038A61FE2E5EAE662A828E024E26FB7F`.
+
+The new deterministic contract checks all seven explicit indexes against their target-table declarations, rejects a missing indexed column in-memory, and requires the source-review index to use `opened_at`. RED failed specifically on the former `created_at`; GREEN passed. Direct same-class review covered 14 INSERT lists, one UPDATE target, 20 local foreign-key lists, and both added unique constraints; no additional concrete missing-column reference was found. Fresh local verification passed: focused Vitest 5 files / 34 tests; `pnpm verify:app` 107 files / 780 tests, typecheck, lint, and build. No Cloud operation occurred in this repair.
+
+Any next authorized Cloud residue inspection must include the new P2 relations/RPCs and constraints added to existing tables: `project_engagements_scope_project_unique` and `engagement_components_scope_engagement_unique`.

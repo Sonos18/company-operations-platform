@@ -45,6 +45,7 @@ The DB boundary independently rechecks active company context, enabled C1 settin
 | `20260911145035_taskovia_c1_foundation.sql` | `538025216FEC8B67A8A94226D67B35F723D005069AEA00B003FB4DCE6089C556` | Previously applied; unchanged |
 | `20260913082034_taskovia_c1_controlled_import.sql` | `9E35E5C8B315CDF7646C29E83993265E1C87C40DE5E961074F0296C2E411B906` | Original candidate at `c628d2e`; not applied; retained as history |
 | `20260913082034_taskovia_c1_controlled_import.sql` | `CCE1D0084FF07713C0E5AA129D180656EA2AD9DC9C8A2E31377BD1B5423D0154` | Current repaired candidate at `f6f2d0c`; not applied |
+| `20260913082034_taskovia_c1_controlled_import.sql` | `C82FFC2426239A815EFD50BC01C874A7038A61FE2E5EAE662A828E024E26FB7F` | Local post-failure repair: source-review index uses declared `opened_at`; not applied and pending review/new Cloud authorization |
 
 ## Deterministic local evidence
 
