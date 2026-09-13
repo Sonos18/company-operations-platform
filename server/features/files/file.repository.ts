@@ -32,8 +32,8 @@ export function createSupabaseFileRepository(db: UserSupabaseClient): FileDataRe
     return map({ id: row.id, bucket: row.bucket, objectKey: row.object_key, originalName: row.original_name, state: row.state, previewState: row.preview_state, version: row.version, ...(row.mime_type ? { mimeType: row.mime_type } : {}), ...(row.byte_size ? { byteSize: row.byte_size } : {}), ...(row.sha256 ? { sha256: row.sha256 } : {}), ...(row.finalized_at ? { finalizedAt: row.finalized_at } : {}) })
   }
   return {
-    async createPending(input) { const { data, error } = await client.rpc('c1_create_file_upload_intent', { target_input: input }); if (error) return fail(); return map(data) },
+    async createPending(input) { const { data, error } = await client.rpc('c1_create_file_upload_intent', { target_company_id: input.companyId, target_input: input, target_request_id: input.requestId }); if (error) return fail(); return map(data) },
     getById,
-    async finalize(input) { const { data, error } = await client.rpc('c1_finalize_file_object', { target_input: input }); if (error) return fail(); return map(data) },
+    async finalize(input) { const { data, error } = await client.rpc('c1_finalize_file_object', { target_company_id: input.companyId, target_input: input, target_request_id: input.requestId }); if (error) return fail(); return map(data) },
   }
 }

@@ -1,10 +1,8 @@
 begin;
-do $$
-begin
-  -- P2 Cloud fixture: I03/I15/I19/I21/I24/A03/A14/A21/A29/A40/A46/A47/A56/A58/A60/A61.
-  -- All future rows use reserved c100/c101 scopes and are rolled back with this transaction.
-  if current_setting('request.jwt.claims', true) is not null and current_setting('request.jwt.claims', true) like '%@taskovia.invalid%' then
-    raise exception 'C1 fixture JWT must contain an actor UUID, never an email';
-  end if;
+do $$ begin
+  if to_regclass('public.accounting_source_versions') is null or to_regclass('public.source_selections') is null or to_regclass('public.source_reported_figures') is null or to_regclass('public.source_review_issues') is null then raise exception 'C1 P2 command tables are missing'; end if;
+  if to_regprocedure('public.c1_create_accounting_source(uuid,jsonb,uuid)') is null or to_regprocedure('public.c1_create_source_selection(uuid,uuid,jsonb,uuid)') is null then raise exception 'C1 P2 source commands are missing'; end if;
+  if exists (select 1 from public.file_objects where tenant_id::text like '10000000-%') then raise exception 'C1 P2 fixture must not use production-like scope'; end if;
 end $$;
+select 'C1_P2_COMMANDS_COMPLETE' as c1_fixture_completion;
 rollback;

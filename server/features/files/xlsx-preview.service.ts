@@ -10,9 +10,17 @@ const errorToken = /^#(?:REF!|DIV\/0!|VALUE!|NAME\?|N\/A|NUM!|NULL!)$/
 
 function escape(value: unknown) { return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;') }
 function range(ref: string | undefined) { return ref ? XLSX.utils.decode_range(ref) : { s: { r: 0, c: 0 }, e: { r: 0, c: 0 } } }
+export function assertXlsxArchiveBudget(bytes: Buffer) {
+  let eocd = -1
+  for (let index = bytes.length - 22; index >= Math.max(0, bytes.length - 65557); index -= 1) if (bytes.readUInt32LE(index) === 0x06054b50) { eocd = index; break }
+  if (eocd < 0) throw new Error('PREVIEW_UNSUPPORTED')
+  const entries = bytes.readUInt16LE(eocd + 10); let offset = bytes.readUInt32LE(eocd + 16); let total = 0
+  for (let index = 0; index < entries; index += 1) { if (offset + 46 > bytes.length || bytes.readUInt32LE(offset) !== 0x02014b50) throw new Error('PREVIEW_UNSUPPORTED'); total += bytes.readUInt32LE(offset + 24); if (total > maxDecompressedBytes) throw new Error('PREVIEW_LIMIT_EXCEEDED'); offset += 46 + bytes.readUInt16LE(offset + 28) + bytes.readUInt16LE(offset + 30) + bytes.readUInt16LE(offset + 32) }
+}
 export function previewXlsx(bytes: Buffer, query: { filename?: string; sheet?: string; offset?: number; maxRows?: number; maxColumns?: number }) {
   if (bytes.byteLength > maxSourceFileBytes) throw new Error('FILE_TOO_LARGE')
   if (query.filename?.toLowerCase().endsWith('.xlsm')) throw new Error('FILE_TYPE_UNSUPPORTED')
+  assertXlsxArchiveBudget(bytes)
   let workbook: XLSX.WorkBook
   try { workbook = XLSX.read(bytes, { type: 'buffer', cellFormula: true, cellNF: false, cellStyles: true, bookVBA: false, WTF: false }) } catch { throw new Error('PREVIEW_UNSUPPORTED') }
   if (workbook.SheetNames.length > maxSheets) throw new Error('PREVIEW_LIMIT_EXCEEDED')
@@ -22,7 +30,7 @@ export function previewXlsx(bytes: Buffer, query: { filename?: string; sheet?: s
   if (!sheet) throw new Error('PREVIEW_UNSUPPORTED')
   const bounds = range(sheet['!ref'])
   const cells = (bounds.e.r - bounds.s.r + 1) * (bounds.e.c - bounds.s.c + 1)
-  if (cells > maxCells || bytes.byteLength * 5 > maxDecompressedBytes) throw new Error('PREVIEW_LIMIT_EXCEEDED')
+  if (cells > maxCells) throw new Error('PREVIEW_LIMIT_EXCEEDED')
   const maxRows = Math.min(query.maxRows ?? defaultRows, defaultRows)
   const maxColumns = Math.min(query.maxColumns ?? defaultColumns, defaultColumns)
   const start = bounds.s.r + (query.offset ?? 0)

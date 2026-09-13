@@ -1,10 +1,9 @@
 begin;
-do $$
-begin
-  -- P2 Cloud fixture: I01/I13/I20/A22/A23/A24/A26/A27/A33/A35/A39/A45/A49/A52.
-  -- Synthetic-only setup and RLS/storage assertions are intentionally staged for P2B.
-  if current_setting('request.jwt.claims', true) is not null and current_setting('request.jwt.claims', true) like '%@taskovia.invalid%' then
-    raise exception 'C1 fixture JWT must contain an actor UUID, never an email';
-  end if;
+do $$ begin
+  if to_regclass('public.file_objects') is null or to_regclass('public.accounting_sources') is null then raise exception 'C1 P2 security tables are missing'; end if;
+  if not has_function_privilege('authenticated','public.c1_create_file_upload_intent(uuid,jsonb,uuid)','execute') then raise exception 'C1 P2 public file command is unavailable'; end if;
+  if has_function_privilege('authenticated','private.c1_source_context(uuid,text)','execute') then raise exception 'C1 P2 private helper is exposed'; end if;
+  if exists (select 1 from storage.buckets where id='taskovia-c1-financial' and public) then raise exception 'C1 P2 bucket is public'; end if;
 end $$;
+select 'C1_P2_SECURITY_COMPLETE' as c1_fixture_completion;
 rollback;

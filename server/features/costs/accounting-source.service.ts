@@ -10,9 +10,9 @@ function requireSourceRead(context: Context) { if (!context.permissions.includes
 function requirePublish(context: Context) { requirePrepare(context); if (!context.permissions.includes('cost.publish_import')) fail(403, 'PERMISSION_DENIED', 'Bạn không có quyền chia sẻ nguồn.') }
 function cell(value: string) { const parsed = /^([A-Za-z]+)(\d+)$/.exec(value.trim()); if (!parsed) throw new Error('invalid A1 range'); let column = 0; for (const character of parsed[1]!.toUpperCase()) column = column * 26 + character.charCodeAt(0) - 64; return { column, row: Number(parsed[2]), text: `${parsed[1]!.toUpperCase()}${Number(parsed[2])}` } }
 export function normalizeSourceLocator(locator: { kind: string; sheetName?: string; range?: string; fromPage?: number; toPage?: number; note?: string }) {
-  if (locator.kind === 'whole_file') return { kind: 'whole_file', ...(locator.note ? { note: locator.note } : {}), locatorKey: `whole_file|${locator.note ?? ''}` }
+  if (locator.kind === 'whole_file') return { kind: 'whole_file', ...(locator.note ? { note: locator.note } : {}), locatorKey: 'whole_file' }
   if (locator.kind === 'page_range') return { kind: 'page_range', fromPage: locator.fromPage!, toPage: locator.toPage!, locatorKey: `page_range|${locator.fromPage}-${locator.toPage}` }
-  const [left, right] = locator.range!.split(':'); const a = cell(left!); const b = cell(right ?? left!); const start = a.row < b.row || a.row === b.row && a.column <= b.column ? a : b; const end = start === a ? b : a; const range = `${start.text}:${end.text}`
+  const [left, right] = locator.range!.split(':'); const a = cell(left!); const b = cell(right ?? left!); const range = `${String.fromCharCode(64 + Math.min(a.column, b.column))}${Math.min(a.row, b.row)}:${String.fromCharCode(64 + Math.max(a.column, b.column))}${Math.max(a.row, b.row)}`
   return { kind: 'cell_range', sheetName: locator.sheetName!, range, locatorKey: `cell_range|${locator.sheetName}|${range}` }
 }
 export function createAccountingSourceService(repository: Repository) {

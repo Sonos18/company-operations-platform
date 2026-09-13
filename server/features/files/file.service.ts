@@ -28,7 +28,7 @@ export function createFileService({ repository, storage, preview }: { repository
       const value = createFileUploadIntentInputSchema.parse(input)
       validateType(value.originalName, value.mimeType)
       const id = randomUUID()
-      const objectKey = `c1-acceptance/${context.requestId}/${id}`
+      const objectKey = `c1-files/${id}`
       const created = await repository.createPending({ id, tenantId: context.tenantId, companyId: context.companyId, bucket, objectKey, originalName: value.originalName, uploadedBy: context.actorId })
       return { file: created, uploadUrl: await storage.createUploadUrl(bucket, created.objectKey, { upsert: false }) }
     },

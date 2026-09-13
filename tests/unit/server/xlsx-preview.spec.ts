@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
-import { previewXlsx } from '../../../server/features/files/xlsx-preview.service'
+import { assertXlsxArchiveBudget, previewXlsx } from '../../../server/features/files/xlsx-preview.service'
 
 function workbookBytes() {
   const sheet = XLSX.utils.aoa_to_sheet([['<tag>', 7], ['cached', '#REF!']])
@@ -17,6 +17,15 @@ function workbookBytes() {
 }
 
 describe('static XLSX preview', () => {
+  it('rejects a small compressed ZIP whose central directory declares more than 100 MiB expanded data', () => {
+    const archive = Buffer.alloc(70)
+    archive.writeUInt32LE(0x02014b50, 0)
+    archive.writeUInt32LE(1024, 20)
+    archive.writeUInt32LE(101 * 1024 * 1024, 24)
+    archive.writeUInt32LE(0x06054b50, 46)
+    archive.writeUInt16LE(1, 54); archive.writeUInt16LE(1, 56); archive.writeUInt32LE(46, 58); archive.writeUInt32LE(0, 62)
+    expect(() => assertXlsxArchiveBudget(archive)).toThrow('PREVIEW_LIMIT_EXCEEDED')
+  })
   it('preserves cached/formula/error/hidden metadata without evaluating or rendering HTML', () => {
     const result = previewXlsx(workbookBytes(), { sheet: ' Nhật ký ', offset: 0 })
     expect(result.state).toBe('available')
