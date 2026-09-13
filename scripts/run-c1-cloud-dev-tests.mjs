@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
 
-const allowlist = ['c1_foundation.test.sql']
+const allowlist = ['c1_foundation.test.sql', 'c1_sources_files_security.test.sql', 'c1_sources_files_commands.test.sql']
 
 export function validateC1CloudDevSql(path, sql) {
   const normalized = sql.replace(/\r\n?/g, '\n').trim()
@@ -17,7 +17,7 @@ export function validateC1CloudDevSql(path, sql) {
 
 export function runC1CloudDevTests({ cwd = process.cwd(), files, spawn = spawnSync } = {}) {
   const selected = files ?? allowlist.filter(path => existsSync(resolve(cwd, 'supabase/tests/database/c1', path))).map(path => ({ path, sql: readFileSync(resolve(cwd, 'supabase/tests/database/c1', path), 'utf8') }))
-  if (selected.length !== allowlist.length) throw new Error('Missing C1 SQL verification file')
+  if (!files && selected.length !== allowlist.length) throw new Error('Missing C1 SQL verification file')
   for (const file of selected) validateC1CloudDevSql(file.path, file.sql)
   assertCloudDevTarget({ cwd })
   const cli = resolve(cwd, 'node_modules/supabase/dist/supabase.js')
