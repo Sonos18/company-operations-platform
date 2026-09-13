@@ -1,9 +1,9 @@
 # Taskovia C1 Acceptance Map
 
 **Approved execution base:** `b2731f4ef72c10cbcafe9f176cc1e2b54b9c8cfd`
-**Spec baseline:** Taskovia C1 v1.1
+**Spec baseline:** Taskovia C1 v1.2; v1.1 remains historical.
 **Historical P0 status:** allocation only; no C1 application, migration, fixture, or Cloud write had run.
-**Status after P2A:** P1 is complete. P2 has deterministic, pre-Cloud source/file evidence only; its migration, RLS/storage policies, RPCs, and SQL fixtures remain unexecuted. P3–P6 remain not started and every acceptance row remains partial until its listed later-phase/P6 evidence exists.
+**Status after v1.2 transition:** P1 is complete. The P2 v1.1 runtime-upload candidate is superseded before Cloud application. P2 v1.2 is planned around controlled, reviewed importer evidence; P3–P6 remain not started and every acceptance row remains partial until its listed later-phase/P6 evidence exists.
 
 ## Evidence Rule
 
@@ -17,9 +17,15 @@ After the runner repair, Run #1 at `606c83406aaa6f7117a66003a01cbadaeee97eca` en
 
 The following remains intentionally partial: UI/navigation/browser evidence (P5/P6); raw-file/source/financial behaviors (P2–P4); and full acceptance-map execution (P6). A01's P1 database layer is verified, but no partial row is promoted to final acceptance by this P1 record.
 
-## P2A pre-Cloud evidence
+## P2 v1.2 acceptance transition
 
-P2A provides deterministic source/file contracts for A03, A14 source ownership, A21, A22 capability separation, A23 denial, A24 scope, A26 revoked-access command boundary, A27–A29 file/preview lifecycle, A33 source-visibility boundary, A35 synthetic-only proof, A39–A40 source-first/non-posting flow, A45–A49 locator/raw metadata handling, A52 raw-file denial, A56 figure revision, A58 non-posting source records, A60 normalization guard, and A61 unknown source scope. These rows remain **partial** until separately authorized Cloud migration, RLS/storage, RPC, and transactional SQL-fixture evidence is executed.
+Unchanged: A01–A26 except ingestion wording, A30–A38, A41–A48, A50–A51, A53–A62, and I01–I24 retain their isolation, provenance, non-posting, and phase ownership intent.
+
+Rewritten for controlled import: A27/A28/A29 become importer structure/manifest/pre-mutation rejection and controlled-import validation; A39/A40/A49/A52 become provenance, uncertainty, importer isolation, and optional raw-reference authorization evidence; I13/I20 become importer/provenance-reference integrity rather than mandatory runtime storage UX.
+
+Deferred from v1.2 P2: browser/runtime upload MIME UI, browser XLSX preview, signed file URL UI, generic workbook renderer, and generic runtime parser. These may be separate later product capabilities.
+
+New mandatory controlled-import evidence: reviewed manifest identity; manifest/execution mismatch refusal; repeat import idempotency; same-workbook duplicate prevention; updated version provenance; ambiguous records pending; no fake engagement; source totals non-posting; exact file/sheet/range provenance; and cross-company target rejection. All rows remain **partial** until v1.2 implementation and separately authorized verification occur.
 
 | ID | Build phase | Verification phase | Required evidence / partial condition |
 | --- | --- | --- | --- |

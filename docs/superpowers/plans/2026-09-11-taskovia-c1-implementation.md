@@ -1,5 +1,7 @@
 # Taskovia C1 Cost Management Implementation Plan
 
+> Historical v1.1 plan. Future C1 implementation follows [the v1.2 plan](2026-09-13-taskovia-c1-v1.2-implementation.md); this document remains preserved for audit.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver C1 as a company-scoped, source-first cost-management module with immutable financial history, private evidence files, and truthful partial financial reporting.

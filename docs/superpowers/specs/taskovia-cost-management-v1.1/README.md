@@ -1,5 +1,7 @@
 # Taskovia — Bộ thiết kế Chi phí thầu C1–C3 v1.1
 
+> Superseded for future C1 implementation by [v1.2](../taskovia-cost-management-v1.2/README.md). Preserved unchanged as the historical design record.
+
 **Ngày đưa tài liệu lên repository:** 2026-09-11.
 **Phạm vi:** tài liệu thiết kế và đặc tả đã bàn giao cho Sơn; không có implementation plan, code ứng dụng, migration hoặc dữ liệu kế toán thật.
 
