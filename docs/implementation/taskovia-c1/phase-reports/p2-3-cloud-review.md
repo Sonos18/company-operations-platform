@@ -44,3 +44,22 @@ The packet permits no retry after a failed Cloud command. The failed inspection 
 - `concurrency_execution = NOT_RUN`.
 - P2 remains partial. P2.2/P2.4 real-data work is not authorized; P3 is not started.
 - No real VQH import, real-user permission grant, real-company C1 enablement, Track B adapter registration, Local DB, Production, migration repair/reset/seed, additional migration, PR, merge, or force push occurred.
+
+## Authorized continuation after inspection-only UUID error
+
+The original failed baseline inspection remains part of the ledger: it failed once with SQLSTATE `22P02` because `c1000000-0000-4000-800000000083` was malformed. The continuation locally rejected that literal, resolved the reviewed fixture value `c1000000-0000-4000-8000-000000000083`, and generated the corrected read-only baseline from all 61 fixture UUID inputs. The submitted baseline digest was `2DE1D38D9D91FE19D6BBEC1B79B52C57AF806F88B3A40B46B869DB46474876E5`; every submitted UUID was valid and fixture-backed, and the query contained no DDL, DML, or callable function.
+
+| Operation | Original | Continuation | Cumulative | Result |
+| --- | ---: | ---: | ---: | --- |
+| Baseline inspection | 1 failed | 1 passed | 2 | Corrected pinned read-only baseline returned zero for every fixture scope; all P2 catalog objects/RPCs were absent. |
+| `db:dev:status` | 1 passed | 1 passed | 2 | Each showed 33 matched applied migrations and only `20260913082034` local-only. |
+| `db:dev:dry-run` | 0 | 1 passed | 1 | Proposed exactly `20260913082034_taskovia_c1_controlled_import.sql`; no seed or roles. |
+| `db:dev:push` | 0 | 1 failed | 1 | Native exit `1`; SQLSTATE `42703` at migration statement 16. |
+| C1 runner / fixture subprocesses | 0 | 0 | 0 | Not started. |
+| Type generation | 0 | 0 | 0 | Not started. |
+
+The single authorized push began `2026-09-13T12:01:38.1780452Z` and ended `2026-09-13T12:01:55.1456081Z`. It failed creating `source_review_issues_selection_idx`: the migration indexes `source_review_issues(..., status, created_at, id)`, but `created_at` does not exist (SQLSTATE `42703`). This is a migration SQL-behavior failure, not a fixture, credentials, target, business-data, or RPC-validity failure.
+
+One bounded post-failure read-only catalog/history inspection confirmed `20260913082034` is not in migration history and all expected P2 relations/RPCs remain absent. The migration was therefore **not applied** and left no observed schema residue. No retry, fixture execution, generated-type command, `verify:app`, SQL/code repair, corrective migration, cleanup, or further Cloud command was performed.
+
+P1 remains complete; P2.1 remains frozen; P2.3 Cloud acceptance is blocked; `concurrency_execution = NOT_RUN`; P2 remains partial. P2.4 real-data import and P3 remain unauthorized/not started.
