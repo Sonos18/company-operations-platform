@@ -33,6 +33,7 @@ import type {
   UpdateStage01ConfigDraftInput,
 } from '../../shared/schemas/stage01-config'
 import type { BusinessParty, CompanyCostSettings, CreateBusinessPartyInput, CreateEngagementComponentInput, CreateEngagementInput, CreateProjectRegisterInput, Engagement, EngagementComponent, ProjectRegister, UpdateBusinessPartyInput, UpdateEngagementComponentInput, UpdateEngagementInput, UpdateProjectRegisterInput } from '../../shared/schemas/costs/master-data'
+import type { AccountingSource, AccountingSourceVersion, CreateAccountingSourceInput, CreateAccountingSourceVersionInput, CreateSourceSelectionInput, SourceSelection, UpdateAccountingSourceInput } from '../../shared/schemas/costs/sources'
 
 export interface CompanyRepository {
   getCurrent(): Promise<Company>
@@ -131,6 +132,7 @@ export interface ProjectRegisterRepository { list(): Promise<ProjectRegister[]>;
 export interface BusinessPartyRepository { list(): Promise<BusinessParty[]>; getById(id: string): Promise<BusinessParty | null>; create(input: CreateBusinessPartyInput): Promise<BusinessParty>; update(id: string, input: UpdateBusinessPartyInput): Promise<BusinessParty> }
 export interface EngagementRepository { list(projectId: string): Promise<Engagement[]>; getById(projectId: string, id: string): Promise<Engagement | null>; create(projectId: string, input: CreateEngagementInput): Promise<Engagement>; update(projectId: string, id: string, input: UpdateEngagementInput): Promise<Engagement>; listComponents(engagementId: string): Promise<EngagementComponent[]>; getComponentById(engagementId: string, id: string): Promise<EngagementComponent | null>; addComponent(engagementId: string, input: CreateEngagementComponentInput): Promise<EngagementComponent>; updateComponent(engagementId: string, id: string, input: UpdateEngagementComponentInput): Promise<EngagementComponent> }
 export interface CostSettingsRepository { get(): Promise<CompanyCostSettings> }
+export interface AccountingSourceRepository { list(): Promise<AccountingSource[]>; getById(id: string): Promise<AccountingSource | null>; create(input: CreateAccountingSourceInput): Promise<AccountingSource>; update(id: string, input: UpdateAccountingSourceInput): Promise<AccountingSource>; createVersion(sourceId: string, input: CreateAccountingSourceVersionInput): Promise<AccountingSourceVersion>; shareVersion(versionId: string, idempotencyKey: string): Promise<AccountingSourceVersion>; createSelection(versionId: string, input: CreateSourceSelectionInput): Promise<SourceSelection> }
 
 export interface RepositoryRegistry {
   context: Readonly<CompanyContext>
@@ -148,7 +150,8 @@ export interface RepositoryRegistry {
   businessParties: BusinessPartyRepository
   engagements: EngagementRepository
   costSettings: CostSettingsRepository
+  accountingSources: AccountingSourceRepository
   prototype: PrototypeRepository
 }
 
-export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01' | 'stage01Config' | 'projectRegister' | 'businessParties' | 'engagements' | 'costSettings'>
+export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01' | 'stage01Config' | 'projectRegister' | 'businessParties' | 'engagements' | 'costSettings' | 'accountingSources'>
