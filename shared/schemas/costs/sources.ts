@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { createFileUploadIntentInputSchema } from '../files'
 
 const uuid = z.string().uuid()
 const text = z.string().trim().min(1)
@@ -28,7 +27,7 @@ export const sourceLocatorSchema = z.discriminatedUnion('kind', [
 ])
 export const createAccountingSourceInputSchema = z.object({ code: text.max(64), title: text.max(255), sourceSystem: text.max(64), suggestedProjectId: uuid.optional() }).strict()
 export const updateAccountingSourceInputSchema = createAccountingSourceInputSchema.partial().extend({ expectedVersion: version }).strict()
-export const createAccountingSourceVersionInputSchema = createFileUploadIntentInputSchema.extend({ sourceVersionLabel: text.max(255).optional(), sourcePeriodText: text.max(500).optional(), sourceAsOfText: text.max(500).optional() }).strict()
+export const createAccountingSourceVersionInputSchema = z.object({ originalFilename: text.max(255), inputFileSha256: z.string().regex(/^[a-f0-9]{64}$/i), sourceVersionLabel: text.max(255).optional(), sourcePeriodText: text.max(500).optional(), sourceAsOfText: text.max(500).optional(), rawFileReference: z.string().trim().min(1).max(500).optional() }).strict()
 export const idempotencyInputSchema = z.object({ idempotencyKey: uuid }).strict()
 export const createSourceSelectionInputSchema = z.object({ locator: sourceLocatorSchema, sourceRole: sourceSelectionRoleSchema, handling: sourceSelectionHandlingSchema, rawDescription: z.string().max(2000).optional(), rawDateText: z.string().max(500).optional(), mappedProjectId: uuid.optional(), mappedEngagementId: uuid.optional(), mappedComponentId: uuid.optional(), handlingReason: z.string().trim().min(1).max(1000).optional() }).strict()
 export const updateSourceSelectionInputSchema = createSourceSelectionInputSchema.partial().extend({ expectedVersion: version }).strict()

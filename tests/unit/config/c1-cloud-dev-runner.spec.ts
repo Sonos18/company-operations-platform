@@ -30,10 +30,6 @@ describe('C1 Cloud DEV runner', () => {
     expect(() => validateC1CloudDevSql(path, sql)).not.toThrow()
   })
 
-  it.each(['c1_sources_files_security.test.sql', 'c1_sources_files_commands.test.sql'])('accepts the reviewed P2 fixture %s without spawning', (path) => {
-    const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1', path), 'utf8')
-    expect(() => validateC1CloudDevSql(path, sql)).not.toThrow()
-  })
 
   it.each([
     ["begin;\nselect 1;\ncommit;\nrollback;", 'C1 SQL verification cannot commit'],
