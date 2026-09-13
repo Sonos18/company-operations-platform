@@ -70,6 +70,12 @@ Attempt #2 was launched as `pnpm db:dev:push` from this repository after its dry
 
 Guarded Cloud DEV catalog inspection at `gtgljlnhwvhqdnwrfdfj` establishes `APPLIED_VERIFIED`: migration history contains `20260913082034`; all eight reviewed P2 tables, ten reviewed functions/RPCs, seven indexes, six P2 triggers, P2 RLS policies, and both existing-table constraints are present. No correlated active migration process was observed; the activity row was the reconciliation inspection itself. Thus cumulative pushes are 2, successful P2 applications are 1, and fixtures/types remain not run. This establishes schema application only, not P2.3 acceptance.
 
+## Fixture-launch evidence recovery
+
+The one submitted runner launcher used `tools.exec_command` with `pnpm db:dev:c1:test`, repository cwd, `tty: true`, and a 1000ms yield. It failed at the agent orchestration serializer with `failed to serialize JavaScript value: expected value at line 1 column 1`; no session id, child handle, output, or host-source implementation was recoverable. Local process inspection later found no correlated child. Every fixture start, marker, SQL execution, terminal rollback, and runner exit remains `UNKNOWN`, not zero or pass.
+
+Private diagnostic artifacts are at `C:\Users\NGUYEN~1\AppData\Local\Temp\taskovia-c1-runner-diagnostic-20260913`. A corrected foreground durable-capture probe stored separate stdout/stderr and observed exit 7; the first probe's PowerShell quoting error (exit 1) is preserved separately. Bounded Cloud observation found zero synthetic fixture companies, adapter registrations, and import runs. Its one activity match was the observation query itself; this is zero residue observed, not proof of historical fixture execution or rollback. A future bounded rerun requires a new explicit authorization and the durable foreground capture method.
+
 ## Local migration repair, pending review
 
 The failed candidate `CCE1D0084FF07713C0E5AA129D180656EA2AD9DC9C8A2E31377BD1B5423D0154` was never applied. Its only SQL repair changes `source_review_issues_selection_idx` from nonexistent `created_at` to declared lifecycle timestamp `opened_at`; the repaired candidate SHA-256 is `C82FFC2426239A815EFD50BC01C874A7038A61FE2E5EAE662A828E024E26FB7F`.
