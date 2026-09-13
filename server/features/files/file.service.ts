@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { z } from 'zod'
 import { createFileUploadIntentInputSchema, filePreviewQuerySchema, maxSourceFileBytes, type FileObject } from '../../../shared/schemas/files'
 import type { PermissionCode } from '../../../shared/constants/permissions'
 import { AppApiError } from '../../utils/api-error'
