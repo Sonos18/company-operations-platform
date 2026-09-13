@@ -211,7 +211,7 @@ create index accounting_sources_scope_created_idx on public.accounting_sources(t
 create index accounting_source_versions_source_idx on public.accounting_source_versions(tenant_id, company_id, source_id, version_no);
 create index source_selections_version_idx on public.source_selections(tenant_id, company_id, source_version_id, created_at, id);
 create index source_reported_figures_selection_idx on public.source_reported_figures(tenant_id, company_id, source_selection_id, created_at, id);
-create index source_review_issues_selection_idx on public.source_review_issues(tenant_id, company_id, source_selection_id, status, created_at, id);
+create index source_review_issues_selection_idx on public.source_review_issues(tenant_id, company_id, source_selection_id, status, opened_at, id);
 create index controlled_import_descriptor_map_run_idx on public.controlled_import_descriptor_map(tenant_id, company_id, import_run_id, descriptor_kind, descriptor_ordinal);
 
 alter table public.controlled_import_runs enable row level security;

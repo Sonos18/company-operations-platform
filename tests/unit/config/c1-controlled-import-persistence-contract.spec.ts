@@ -7,6 +7,21 @@ import { validateC1CloudDevSql } from '../../../scripts/run-c1-cloud-dev-tests.m
 const root = process.cwd()
 const migrationName = /_taskovia_c1_controlled_import\.sql$/
 
+function assertExplicitIndexColumnsExist(sql: string, expectedIndexCount = 7) {
+  const tables = new Map<string, Set<string>>()
+  for (const match of sql.matchAll(/create table (?:public|private)\.([a-z_]+) \(\n([\s\S]*?)\n\);/giu)) {
+    tables.set(match[1], new Set([...match[2].matchAll(/^(?: ){2}([a-z_]+) (?:uuid|text|jsonb|boolean|bigint|integer|numeric|date|timestamptz)\b/gimu)].map(column => column[1])))
+  }
+
+  const indexes = [...sql.matchAll(/create index ([a-z_]+) on public\.([a-z_]+)\(([^;]+)\);/giu)]
+  expect(indexes).toHaveLength(expectedIndexCount)
+  for (const [, indexName, tableName, columns] of indexes) {
+    const tableColumns = tables.get(tableName)
+    expect(tableColumns, `${indexName} target table`).toBeDefined()
+    for (const column of columns.split(',').map(column => column.trim())) expect(tableColumns!.has(column), `${indexName} column ${column}`).toBe(true)
+  }
+}
+
 describe('C1 controlled-import pre-Cloud SQL contract', () => {
   it('keeps P1 immutable and prepares exactly one forward P2 migration', () => {
     const p1 = readFileSync(resolve(root, 'supabase/migrations/20260911145035_taskovia_c1_foundation.sql'))
@@ -34,6 +49,18 @@ describe('C1 controlled-import pre-Cloud SQL contract', () => {
     expect(sql).toContain('c1_get_controlled_import_result')
     expect(sql).not.toMatch(/\bdeclare\s+(?:context|actor_id|tenant_id|manifest|import_run_id|result)\b/iu)
     expect(sql).not.toMatch(/\bwhere\s+(?:map\.)?import_run_id\s*=\s*import_run_id\b/iu)
+  })
+
+  it('references only declared table columns from every explicit index', () => {
+    const name = readdirSync(resolve(root, 'supabase/migrations')).find(value => migrationName.test(value))!
+    const migration = readFileSync(resolve(root, 'supabase/migrations', name), 'utf8')
+
+    expect(() => assertExplicitIndexColumnsExist(migration)).not.toThrow()
+    expect(migration).toMatch(/create index source_review_issues_selection_idx on public\.source_review_issues\([\s\S]*\bopened_at\b/iu)
+  })
+
+  it('rejects an explicit index column missing from its target table', () => {
+    expect(() => assertExplicitIndexColumnsExist(`create table public.example (\n  id uuid not null\n);\ncreate index example_missing_idx on public.example(id, missing_column);`, 1)).toThrow('example_missing_idx column missing_column')
   })
 
   it.each(['c1_controlled_import_commands.test.sql', 'c1_controlled_import_security.test.sql'])('runner statically accepts %s before Cloud access', (name) => {
