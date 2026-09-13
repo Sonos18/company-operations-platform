@@ -12,7 +12,7 @@
 | Cloud DEV migration inspection | 33 source migrations / 33 applied migrations; P1 foundation applied in the authorized P1.4B run |
 | Runtime used for P0.5/P0.6 verification | Node `v24.19.0`, pnpm `10.29.3` |
 | Current C1 branch | `feat/taskovia-c1` |
-| C1 implementation status | P1 complete; P2.0 accepted; P2.1 frozen; P2.3 controlled-import persistence is ready for pre-Cloud review; P2 remains partial pending Cloud proof and separately authorized real-data work; P3–P6 not started |
+| C1 implementation status | P1 complete; P2.0 accepted; P2.1 frozen; P2.3 Cloud packet blocked before mutation by a failed bounded baseline inspection; P2 remains partial pending a separately authorized Cloud proof and real-data work; P3–P6 not started |
 
 ## P0 Result
 
@@ -73,6 +73,12 @@
 - SQL evidence: both new fixtures pass the local runner/static contract checks and are allowlisted after the preserved P1 fixture. They are prepared only and **NOT EXECUTED**.
 - Cloud DEV operations, migration applications, SQL executions, generated database types, Local DB, Production, real workbook analysis/import, and real-company enablement in this phase: `0`.
 - Commits: `a6a9439` service/repository boundary; `6bdabb3` migration/fixtures/runner; `6f2ef4c` occurrence/RLS hardening; `2279d92` reconciliation-test preservation.
+
+## P2.3 Cloud execution attempt
+
+**Status:** `BLOCKED` before mutation. The authorized packet began at `08ad6c2ca7fbe9a50755859e44d97489932c09c6`; branch, remote, `origin/main`, P1/P2 hashes, frozen P2.1 exports, focused five-file Vitest (5 files / 32 tests), and `git diff --check` passed. Guarded Cloud DEV target and preflight status passed at 33 matched migrations plus only the approved P2 candidate.
+
+The first permitted pinned read-only collision/residue baseline inspection failed before execution with SQLSTATE `22P02`, caused by a malformed synthetic UUID literal in that inspection query. The packet allowed no retry. Accordingly, dry-run, migration push, fixture runner/subprocesses, type generation, and post-run inspection were not started; no migration or fixture SQL executed. See [P2.3 Cloud execution review](phase-reports/p2-3-cloud-review.md). P2.3 remains unproven, concurrency is `NOT_RUN`, P2 remains partial, and P2.4/P3 are not authorized/started.
 
 ## Execution Contract
 

@@ -3,7 +3,7 @@
 **Approved execution base:** `b2731f4ef72c10cbcafe9f176cc1e2b54b9c8cfd`
 **Spec baseline:** Taskovia C1 v1.2; v1.1 remains historical.
 **Historical P0 status:** allocation only; no C1 application, migration, fixture, or Cloud write had run.
-**Status after v1.2 transition:** P1 is complete. The P2 v1.1 runtime-upload candidate is superseded before Cloud application. P2.1 is frozen and P2.3 has a local deterministic persistence candidate plus prepared synthetic SQL fixtures at the pre-Cloud review gate. No P2.3 migration or fixture has run against a database, so database/RLS/concurrency rows remain partial. P3–P6 remain not started.
+**Status after v1.2 transition:** P1 is complete. The P2 v1.1 runtime-upload candidate is superseded before Cloud application. P2.1 is frozen and P2.3 has a local deterministic persistence candidate plus prepared synthetic SQL fixtures. Its authorized Cloud packet stopped before mutation when the first bounded read-only collision/residue inspection failed with SQLSTATE `22P02`; no retry was authorized, and no P2.3 migration or fixture has run against a database. Database/RLS/concurrency rows remain partial. P3–P6 remain not started. See [the execution review](phase-reports/p2-3-cloud-review.md).
 
 ## Evidence Rule
 
