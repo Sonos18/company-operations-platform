@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { sourceFigureBalanceKindSchema, sourceFigureBasisSchema, sourceFigureConfirmationSchema, sourceFigureMetricSchema, sourceFigurePeriodBasisSchema, sourceFigureRoundingBasisSchema, sourceFigureScopeKindSchema, sourceFigureValueStateSchema, sourceReviewImpactSchema, sourceReviewIssueKindSchema } from './sources'
 
 const uuid = z.string().uuid()
 const sha256 = z.string().regex(/^[a-f0-9]{64}$/i)
@@ -10,10 +11,15 @@ export const importLocatorSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('logical_section'), section: text }).strict(),
   z.object({ kind: z.literal('whole_file'), note: z.string().optional() }).strict(),
 ])
+const mappingSchema = z.object({ state: importMappingStateSchema, projectId: uuid.optional(), partyId: uuid.optional(), engagementId: uuid.optional(), componentId: uuid.optional(), note: z.string().optional() }).strict()
+const manifestFigureSchema = z.object({ id: text, sectionId: text, label: text, rawValue: z.string(), valueState: sourceFigureValueStateSchema, amount: decimalSourceAmountSchema.nullable(), currencyCode: z.string().length(3).nullable(), metricKind: sourceFigureMetricSchema, basis: sourceFigureBasisSchema, balanceKind: sourceFigureBalanceKindSchema.nullable(), roundingBasis: sourceFigureRoundingBasisSchema, roundingNote: z.string().nullable(), periodBasis: sourceFigurePeriodBasisSchema, periodFrom: z.string().date().nullable(), periodTo: z.string().date().nullable(), asOfDate: z.string().date().nullable(), mapping: mappingSchema, scopeKind: sourceFigureScopeKindSchema, scopeDescription: text, confirmation: sourceFigureConfirmationSchema, confirmationReference: z.string().nullable() }).strict().superRefine((value, ctx) => { if (value.valueState === 'known' && value.amount === null) ctx.addIssue({ code: 'custom', path: ['amount'], message: 'known requires amount' }); if (value.valueState !== 'known' && value.amount !== null) ctx.addIssue({ code: 'custom', path: ['amount'], message: 'non-known forbids amount' }) })
+const manifestIssueSchema = z.object({ id: text, sectionId: text, kind: sourceReviewIssueKindSchema, impact: sourceReviewImpactSchema, description: text, reference: z.string().nullable(), affectedMapping: mappingSchema.optional() }).strict()
+const duplicateCandidateSchema = z.object({ id: text, sectionId: text, candidateSectionId: text, reason: text }).strict()
 export const controlledImportManifestSchema = z.object({
   schemaVersion: z.literal('1.2'), workbookFamily: text, adapter: z.object({ id: text, version: text }).strict(), targetCompanyId: uuid,
   inputs: z.array(z.object({ fileIdentity: text, sha256, originalFilename: text, rawFileReference: z.string().optional() }).strict()).min(1),
-  sections: z.array(z.object({ id: text, inputSha256: sha256, locator: importLocatorSchema, mappingState: importMappingStateSchema, observedLabels: z.array(z.string()), rawValues: z.array(z.string()), unresolvedIssues: z.array(z.string()) }).strict()).min(1),
+  sections: z.array(z.object({ id: text, inputSha256: sha256, locator: importLocatorSchema, mapping: mappingSchema, observedLabels: z.array(z.string()), rawValues: z.array(z.string()), unresolvedIssues: z.array(z.string()) }).strict()).min(1),
+  figures: z.array(manifestFigureSchema), reviewIssues: z.array(manifestIssueSchema), duplicateCandidates: z.array(duplicateCandidateSchema),
   expected: z.object({ sources: z.number().int().nonnegative(), versions: z.number().int().nonnegative(), sections: z.number().int().nonnegative(), figures: z.number().int().nonnegative(), reviewIssues: z.number().int().nonnegative() }).strict(),
 }).strict()
 export const controlledImportRequestSchema = z.object({ runId: uuid, idempotencyKey: uuid, approvedManifestDigest: sha256, actualInputDigests: z.array(sha256).min(1), manifest: controlledImportManifestSchema }).strict()

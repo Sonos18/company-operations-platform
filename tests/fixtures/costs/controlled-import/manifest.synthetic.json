@@ -5,8 +5,11 @@
   "targetCompanyId": "c1000000-0000-4000-8000-000000000020",
   "inputs": [{ "fileIdentity": "synthetic-ledger.xlsx", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "originalFilename": "synthetic-ledger.xlsx" }],
   "sections": [
-    { "id": "opening-balance", "inputSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "locator": { "kind": "cell_range", "sheetName": " Nhật ký ", "range": "B2:A1" }, "mappingState": "pending", "observedLabels": ["Opening balance"], "rawValues": ["9007199254740992.0000"], "unresolvedIssues": ["engagement uncertain"] },
-    { "id": "source-total", "inputSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "locator": { "kind": "whole_file", "note": "source total" }, "mappingState": "reference_only", "observedLabels": ["Total"], "rawValues": ["0"], "unresolvedIssues": [] }
+    { "id": "opening-balance", "inputSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "locator": { "kind": "cell_range", "sheetName": " Nhật ký ", "range": "B2:A1" }, "mapping": { "state": "pending" }, "observedLabels": ["Opening balance"], "rawValues": ["9007199254740992.0000"], "unresolvedIssues": ["engagement uncertain"] },
+    { "id": "source-total", "inputSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "locator": { "kind": "whole_file", "note": "source total" }, "mapping": { "state": "reference_only" }, "observedLabels": ["Total"], "rawValues": ["0"], "unresolvedIssues": [] }
   ],
+  "figures": [{ "id": "figure-total", "sectionId": "source-total", "label": "Total", "rawValue": "0", "valueState": "known", "amount": "0", "currencyCode": null, "metricKind": "reported_balance", "basis": "unknown", "balanceKind": "unknown", "roundingBasis": "exact", "roundingNote": null, "periodBasis": "unknown", "periodFrom": null, "periodTo": null, "asOfDate": null, "mapping": { "state": "reference_only" }, "scopeKind": "unknown", "scopeDescription": "Synthetic source total", "confirmation": "unverified", "confirmationReference": null }],
+  "reviewIssues": [{ "id": "issue-scope", "sectionId": "opening-balance", "kind": "scope_uncertain", "impact": "blocks_normalization", "description": "Synthetic scope uncertainty", "reference": null }],
+  "duplicateCandidates": [{ "id": "duplicate-total", "sectionId": "opening-balance", "candidateSectionId": "source-total", "reason": "Synthetic comparison only" }],
   "expected": { "sources": 1, "versions": 1, "sections": 2, "figures": 2, "reviewIssues": 1 }
 }
