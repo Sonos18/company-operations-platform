@@ -39,6 +39,147 @@ export type Database = {
   }
   public: {
     Tables: {
+      accounting_source_versions: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string
+          id: string
+          import_run_id: string
+          input_file_identity: string
+          input_file_sha256: string
+          original_filename: string
+          raw_file_reference: string | null
+          shared_at: string | null
+          shared_by: string | null
+          source_as_of_text: string | null
+          source_id: string
+          source_period_text: string | null
+          source_version_label: string | null
+          status: string
+          tenant_id: string
+          version: number
+          version_no: number
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by: string
+          id?: string
+          import_run_id: string
+          input_file_identity: string
+          input_file_sha256: string
+          original_filename: string
+          raw_file_reference?: string | null
+          shared_at?: string | null
+          shared_by?: string | null
+          source_as_of_text?: string | null
+          source_id: string
+          source_period_text?: string | null
+          source_version_label?: string | null
+          status?: string
+          tenant_id: string
+          version?: number
+          version_no: number
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          import_run_id?: string
+          input_file_identity?: string
+          input_file_sha256?: string
+          original_filename?: string
+          raw_file_reference?: string | null
+          shared_at?: string | null
+          shared_by?: string | null
+          source_as_of_text?: string | null
+          source_id?: string
+          source_period_text?: string | null
+          source_version_label?: string | null
+          status?: string
+          tenant_id?: string
+          version?: number
+          version_no?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "accounting_source_versions_import_run_id_tenant_id_company_fkey"
+            columns: ["import_run_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "controlled_import_runs"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "accounting_source_versions_source_id_tenant_id_company_id_fkey"
+            columns: ["source_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "accounting_sources"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      accounting_sources: {
+        Row: {
+          code: string
+          company_id: string
+          created_at: string
+          created_by: string
+          id: string
+          is_archived: boolean
+          source_system: string
+          suggested_project_id: string | null
+          tenant_id: string
+          title: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          code: string
+          company_id: string
+          created_at?: string
+          created_by: string
+          id?: string
+          is_archived?: boolean
+          source_system: string
+          suggested_project_id?: string | null
+          tenant_id: string
+          title: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          code?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          is_archived?: boolean
+          source_system?: string
+          suggested_project_id?: string | null
+          tenant_id?: string
+          title?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "accounting_sources_company_id_tenant_id_fkey"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "accounting_sources_suggested_project_id_tenant_id_company__fkey"
+            columns: ["suggested_project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
       audit_events: {
         Row: {
           action: string
@@ -454,6 +595,118 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "contacts_company_fk"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+        ]
+      }
+      controlled_import_descriptor_map: {
+        Row: {
+          company_id: string
+          created_at: string
+          descriptor_id: string
+          descriptor_kind: string
+          descriptor_ordinal: number
+          id: string
+          import_run_id: string
+          persisted_resource_id: string
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          descriptor_id: string
+          descriptor_kind: string
+          descriptor_ordinal: number
+          id?: string
+          import_run_id: string
+          persisted_resource_id: string
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          descriptor_id?: string
+          descriptor_kind?: string
+          descriptor_ordinal?: number
+          id?: string
+          import_run_id?: string
+          persisted_resource_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "controlled_import_descriptor__import_run_id_tenant_id_comp_fkey"
+            columns: ["import_run_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "controlled_import_runs"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      controlled_import_runs: {
+        Row: {
+          actor_id: string
+          adapter_id: string
+          adapter_version: string
+          command_name: string
+          company_id: string
+          created_at: string
+          id: string
+          idempotency_key: string
+          input_digests: string[]
+          manifest_digest: string
+          manifest_snapshot: Json
+          payload_digest: string
+          request_id: string
+          result: Json | null
+          run_id: string
+          tenant_id: string
+          workbook_family: string
+        }
+        Insert: {
+          actor_id: string
+          adapter_id: string
+          adapter_version: string
+          command_name?: string
+          company_id: string
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          input_digests: string[]
+          manifest_digest: string
+          manifest_snapshot: Json
+          payload_digest: string
+          request_id: string
+          result?: Json | null
+          run_id: string
+          tenant_id: string
+          workbook_family: string
+        }
+        Update: {
+          actor_id?: string
+          adapter_id?: string
+          adapter_version?: string
+          command_name?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          input_digests?: string[]
+          manifest_digest?: string
+          manifest_snapshot?: Json
+          payload_digest?: string
+          request_id?: string
+          result?: Json | null
+          run_id?: string
+          tenant_id?: string
+          workbook_family?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "controlled_import_runs_company_id_tenant_id_fkey"
             columns: ["company_id", "tenant_id"]
             isOneToOne: false
             referencedRelation: "companies"
@@ -1746,6 +1999,381 @@ export type Database = {
           },
         ]
       }
+      source_reported_figures: {
+        Row: {
+          amount: number | null
+          amount_text: string | null
+          as_of_date: string | null
+          balance_kind: string | null
+          basis: string
+          company_id: string
+          component_id: string | null
+          confirmation: string
+          confirmation_reference: string | null
+          created_at: string
+          created_by: string
+          currency_code: string | null
+          engagement_id: string | null
+          figure_identity: string
+          id: string
+          import_run_id: string
+          label: string
+          mapping_state: string
+          metric_kind: string
+          party_id: string | null
+          period_basis: string
+          period_from: string | null
+          period_to: string | null
+          project_id: string | null
+          raw_value_text: string
+          reviewed_mapping: Json
+          rounding_basis: string
+          rounding_note: string | null
+          scope_description: string
+          scope_kind: string
+          shared_at: string | null
+          shared_by: string | null
+          source_selection_id: string
+          status: string
+          tenant_id: string
+          value_state: string
+          version: number
+        }
+        Insert: {
+          amount?: number | null
+          amount_text?: string | null
+          as_of_date?: string | null
+          balance_kind?: string | null
+          basis: string
+          company_id: string
+          component_id?: string | null
+          confirmation: string
+          confirmation_reference?: string | null
+          created_at?: string
+          created_by: string
+          currency_code?: string | null
+          engagement_id?: string | null
+          figure_identity: string
+          id?: string
+          import_run_id: string
+          label: string
+          mapping_state: string
+          metric_kind: string
+          party_id?: string | null
+          period_basis: string
+          period_from?: string | null
+          period_to?: string | null
+          project_id?: string | null
+          raw_value_text: string
+          reviewed_mapping: Json
+          rounding_basis: string
+          rounding_note?: string | null
+          scope_description: string
+          scope_kind: string
+          shared_at?: string | null
+          shared_by?: string | null
+          source_selection_id: string
+          status?: string
+          tenant_id: string
+          value_state: string
+          version?: number
+        }
+        Update: {
+          amount?: number | null
+          amount_text?: string | null
+          as_of_date?: string | null
+          balance_kind?: string | null
+          basis?: string
+          company_id?: string
+          component_id?: string | null
+          confirmation?: string
+          confirmation_reference?: string | null
+          created_at?: string
+          created_by?: string
+          currency_code?: string | null
+          engagement_id?: string | null
+          figure_identity?: string
+          id?: string
+          import_run_id?: string
+          label?: string
+          mapping_state?: string
+          metric_kind?: string
+          party_id?: string | null
+          period_basis?: string
+          period_from?: string | null
+          period_to?: string | null
+          project_id?: string | null
+          raw_value_text?: string
+          reviewed_mapping?: Json
+          rounding_basis?: string
+          rounding_note?: string | null
+          scope_description?: string
+          scope_kind?: string
+          shared_at?: string | null
+          shared_by?: string | null
+          source_selection_id?: string
+          status?: string
+          tenant_id?: string
+          value_state?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "source_reported_figures_component_id_tenant_id_company_id__fkey"
+            columns: [
+              "component_id",
+              "tenant_id",
+              "company_id",
+              "engagement_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "engagement_components"
+            referencedColumns: [
+              "id",
+              "tenant_id",
+              "company_id",
+              "engagement_id",
+            ]
+          },
+          {
+            foreignKeyName: "source_reported_figures_engagement_id_tenant_id_company_id_fkey"
+            columns: ["engagement_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_engagements"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "source_reported_figures_import_run_id_tenant_id_company_id_fkey"
+            columns: ["import_run_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "controlled_import_runs"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "source_reported_figures_party_id_tenant_id_company_id_fkey"
+            columns: ["party_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "business_parties"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "source_reported_figures_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "source_reported_figures_source_selection_id_tenant_id_comp_fkey"
+            columns: ["source_selection_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "source_selections"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      source_review_issues: {
+        Row: {
+          affected_mapping: Json | null
+          company_id: string
+          description: string
+          id: string
+          impact: string
+          import_run_id: string
+          issue_identity: string
+          issue_kind: string
+          opened_at: string
+          opened_by: string
+          reference: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          source_selection_id: string
+          status: string
+          tenant_id: string
+          version: number
+        }
+        Insert: {
+          affected_mapping?: Json | null
+          company_id: string
+          description: string
+          id?: string
+          impact: string
+          import_run_id: string
+          issue_identity: string
+          issue_kind: string
+          opened_at?: string
+          opened_by: string
+          reference?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          source_selection_id: string
+          status?: string
+          tenant_id: string
+          version?: number
+        }
+        Update: {
+          affected_mapping?: Json | null
+          company_id?: string
+          description?: string
+          id?: string
+          impact?: string
+          import_run_id?: string
+          issue_identity?: string
+          issue_kind?: string
+          opened_at?: string
+          opened_by?: string
+          reference?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          source_selection_id?: string
+          status?: string
+          tenant_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "source_review_issues_import_run_id_tenant_id_company_id_fkey"
+            columns: ["import_run_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "controlled_import_runs"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "source_review_issues_source_selection_id_tenant_id_company_fkey"
+            columns: ["source_selection_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "source_selections"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      source_selections: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string
+          id: string
+          import_run_id: string
+          locator: Json
+          locator_key: string
+          mapped_component_id: string | null
+          mapped_engagement_id: string | null
+          mapped_party_id: string | null
+          mapped_project_id: string | null
+          mapping_state: string
+          observed_labels: string[]
+          raw_values: string[]
+          reviewed_mapping: Json
+          source_version_id: string
+          tenant_id: string
+          unresolved_issues: string[]
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by: string
+          id?: string
+          import_run_id: string
+          locator: Json
+          locator_key: string
+          mapped_component_id?: string | null
+          mapped_engagement_id?: string | null
+          mapped_party_id?: string | null
+          mapped_project_id?: string | null
+          mapping_state: string
+          observed_labels: string[]
+          raw_values: string[]
+          reviewed_mapping: Json
+          source_version_id: string
+          tenant_id: string
+          unresolved_issues: string[]
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          import_run_id?: string
+          locator?: Json
+          locator_key?: string
+          mapped_component_id?: string | null
+          mapped_engagement_id?: string | null
+          mapped_party_id?: string | null
+          mapped_project_id?: string | null
+          mapping_state?: string
+          observed_labels?: string[]
+          raw_values?: string[]
+          reviewed_mapping?: Json
+          source_version_id?: string
+          tenant_id?: string
+          unresolved_issues?: string[]
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "source_selections_import_run_id_tenant_id_company_id_fkey"
+            columns: ["import_run_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "controlled_import_runs"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "source_selections_mapped_component_id_tenant_id_company_id_fkey"
+            columns: [
+              "mapped_component_id",
+              "tenant_id",
+              "company_id",
+              "mapped_engagement_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "engagement_components"
+            referencedColumns: [
+              "id",
+              "tenant_id",
+              "company_id",
+              "engagement_id",
+            ]
+          },
+          {
+            foreignKeyName: "source_selections_mapped_engagement_id_tenant_id_company_i_fkey"
+            columns: [
+              "mapped_engagement_id",
+              "tenant_id",
+              "company_id",
+              "mapped_project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "project_engagements"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "source_selections_mapped_party_id_tenant_id_company_id_fkey"
+            columns: ["mapped_party_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "business_parties"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "source_selections_mapped_project_id_tenant_id_company_id_fkey"
+            columns: ["mapped_project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "source_selections_source_version_id_tenant_id_company_id_fkey"
+            columns: ["source_version_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "accounting_source_versions"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
       stage01_clarification_returns: {
         Row: {
           company_id: string
@@ -2673,6 +3301,19 @@ export type Database = {
         Args: {
           target_company_id: string
           target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_get_controlled_import_result: {
+        Args: { target_company_id: string; target_run_id: string }
+        Returns: Json
+      }
+      c1_persist_controlled_import: {
+        Args: {
+          target_company_id: string
+          target_payload_digest: string
+          target_request: Json
           target_request_id: string
         }
         Returns: Json
