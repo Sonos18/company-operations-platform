@@ -3,7 +3,7 @@
 **Approved execution base:** `b2731f4ef72c10cbcafe9f176cc1e2b54b9c8cfd`
 **Spec baseline:** Taskovia C1 v1.2; v1.1 remains historical.
 **Historical P0 status:** allocation only; no C1 application, migration, fixture, or Cloud write had run.
-**Status after v1.2 transition:** P1 is complete. The P2 v1.1 runtime-upload candidate is superseded before Cloud application. P2 v1.2 is planned around controlled, reviewed importer evidence; P3–P6 remain not started and every acceptance row remains partial until its listed later-phase/P6 evidence exists.
+**Status after v1.2 transition:** P1 is complete. The P2 v1.1 runtime-upload candidate is superseded before Cloud application. P2.1 is frozen and P2.3 has a local deterministic persistence candidate plus prepared synthetic SQL fixtures at the pre-Cloud review gate. No P2.3 migration or fixture has run against a database, so database/RLS/concurrency rows remain partial. P3–P6 remain not started.
 
 ## Evidence Rule
 
@@ -25,7 +25,7 @@ Rewritten for controlled import: A27/A28/A29 become importer structure/manifest/
 
 Deferred from v1.2 P2: browser/runtime upload MIME UI, browser XLSX preview, signed file URL UI, generic workbook renderer, and generic runtime parser. These may be separate later product capabilities.
 
-P2.1 now has deterministic contract evidence for manifest identity, locator canonicalization, pending/reference-only mapping, decimal source truthfulness, reviewed digest comparison, company/adapter rejection, and replay/conflict decision rules. New mandatory controlled-import evidence remains: unsupported workbook-family structure rejects before mutation (A27); manifest/execution digest mismatch rejects before mutation (A28); import validation failure leaves no partial source state (A29); same input/manifest replay has one effect while same identity/different payload conflicts (A39); changed workbook is an explicit source version and ambiguous mapping remains pending (A40/A49); no fake Project/Party/Engagement is created (A39); source totals remain non-posting (A14/A58); provenance retains file identity plus sheet/range/logical section (I13); optional raw reference access is company-scoped and source-authorized (A52/I20); and cross-company import target rejects (A24). All rows remain **partial** until P2.2/P2.3 implementation and separately authorized verification occur.
+P2.1 has deterministic contract evidence for manifest identity, locator canonicalization, pending/reference-only mapping, decimal source truthfulness, reviewed digest comparison, company/adapter rejection, and replay/conflict decisions. P2.3 adds local service/repository tests and prepared rollback-safe SQL scenarios for manifest/digest refusal, atomic persistence, company-scoped replay/conflict, cross-actor deduplication, changed-input versions, pending/reference-only/excluded retention, scoped FK denial, source history, non-posting behavior, RLS/ACLs, audit redaction, and replay reauthorization. These SQL scenarios are **NOT EXECUTED**; their database, RLS, locking, and concurrency effects remain awaiting Cloud proof. Unsupported real workbook-family structure and real adapter behavior also remain outside this phase. Every affected row remains **partial**.
 
 | ID | Build phase | Verification phase | Required evidence / partial condition |
 | --- | --- | --- | --- |

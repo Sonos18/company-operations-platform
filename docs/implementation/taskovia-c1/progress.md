@@ -12,7 +12,7 @@
 | Cloud DEV migration inspection | 33 source migrations / 33 applied migrations; P1 foundation applied in the authorized P1.4B run |
 | Runtime used for P0.5/P0.6 verification | Node `v24.19.0`, pnpm `10.29.3` |
 | Current C1 branch | `feat/taskovia-c1` |
-| C1 implementation status | P1 complete; P2.0 reconciled; P2.1 controlled-import contract implemented/tested and awaiting review; P2 overall partial; P2.2–P2.4 and P3–P6 not started |
+| C1 implementation status | P1 complete; P2.0 accepted; P2.1 frozen; P2.3 controlled-import persistence is ready for pre-Cloud review; P2 remains partial pending Cloud proof and separately authorized real-data work; P3–P6 not started |
 
 ## P0 Result
 
@@ -57,9 +57,22 @@
 
 **Pre-Cloud evidence:** `pnpm verify:app` passed 107 test files / 768 tests, typecheck, lint, and production build. The focused P2 suites cover server-only static XLSX behavior, file permission/lifecycle, source intake without project/engagement, locator normalization, non-posting source share/figures, source review, HTTP repository scope, and guarded P2 fixture allowlisting. The P1 migration SHA remains `538025216FEC8B67A8A94226D67B35F723D005069AEA00B003FB4DCE6089C556`.
 
-**Cloud boundary:** `20260912062227_taskovia_c1_sources_files.sql` is unapplied. P2 Cloud migration/SQL fixture executions and database type generation are all zero. Existing WIP remains on the branch pending a separate implementation disposition; this documentation task does not alter it.
+**Cloud boundary:** The superseded `20260912062227_taskovia_c1_sources_files.sql` remains removed and was never applied. The replacement `20260913082034_taskovia_c1_controlled_import.sql` is a candidate only. P2 Cloud migration/SQL fixture executions and database type generation remain zero.
 
-**Current direction:** P2.0 is accepted: it removed the deferred runtime upload/preview path and the never-applied v1.1 P2 migration/fixtures. P2.1 now provides pure controlled-import input → logical source → explicit source version → provenance section → figure/review/duplicate structures, unique input identity and source-version provenance checks, manifest-local referential/count integrity, canonical manifest and occurrence identity, scoped replay/conflict rules, reviewed-identity checks, and a synthetic changed-input v1→v2 example. It is source/static/unit evidence only: no adapter, persistence, migration, Cloud run, or real import exists. P2.2–P2.4 and P3–P6 remain not started.
+**Current direction:** P2.0 is accepted: it removed the deferred runtime upload/preview path and the never-applied v1.1 P2 migration/fixtures. P2.1 is frozen. P2.3 now adds a reviewed-request service/repository boundary, one forward controlled-import persistence migration candidate, and rollback-safe synthetic command/security fixtures. The migration and fixtures have not been applied or executed; database, RLS, and concurrency claims await a separately authorized Cloud DEV run. No real adapter, workbook import, P3 financial activation, or runtime upload/preview path exists.
+
+## P2.3 pre-Cloud result
+
+**Status:** `TRACK_A_P2_3_PRE_CLOUD_READY` candidate at the pre-Cloud review gate; not P2 complete.
+
+- Phase start: `8eb675fced49eedf2d0967ae6622ca2a161248eb`.
+- Tested code: `2279d920ab9b465e256182ab07b27674462002d2`.
+- Candidate migration: `20260913082034_taskovia_c1_controlled_import.sql`, SHA-256 `9E35E5C8B315CDF7646C29E83993265E1C87C40DE5E961074F0296C2E411B906`.
+- P1 foundation remains SHA-256 `538025216FEC8B67A8A94226D67B35F723D005069AEA00B003FB4DCE6089C556`.
+- Local application verification: `pnpm verify:app` passed 107 test files / 775 tests, typecheck, lint, and production build at the tested code SHA.
+- SQL evidence: both new fixtures pass the local runner/static contract checks and are allowlisted after the preserved P1 fixture. They are prepared only and **NOT EXECUTED**.
+- Cloud DEV operations, migration applications, SQL executions, generated database types, Local DB, Production, real workbook analysis/import, and real-company enablement in this phase: `0`.
+- Commits: `a6a9439` service/repository boundary; `6bdabb3` migration/fixtures/runner; `6f2ef4c` occurrence/RLS hardening; `2279d92` reconciliation-test preservation.
 
 ## Execution Contract
 
@@ -95,7 +108,7 @@ Every C1 file test proves both same-tenant/different-company and cross-tenant de
 | --- | --- | --- | --- |
 | P0 | Complete after scoped commit/push verification | Execution preflight, v1.1 plan, acceptance map, progress contract | Remote `feat/taskovia-c1` equals local planning head |
 | P1 | Complete after fixture correction and Cloud Run #2 | Secure schema/contracts, permissions, disabled settings, master-data APIs, C1 runner | P2 requires separate authorization |
-| P2 | Partial — pre-Cloud candidate ready | Accounting sources, immutable private files, selections, figures, review issues, preview | Separate Cloud migration/RLS/storage/RPC review required before P3 |
+| P2 | Partial — P2.3 pre-Cloud candidate ready | Controlled-import runs, accounting sources/versions, provenance selections, figures, review issues, receipts/events | Separate Cloud migration/RLS/RPC/fixture authorization and proof required; no P3 start |
 | P3 | Not started | Financial documents, publication, confirmation, provenance/evidence | Review exactly-once activation and history before P4 |
 | P4 | Not started | Allocations, corrections, disputes, coverage, comparison | Review arithmetic/concurrency/coverage evidence before P5 |
 | P5 | Not started | Reporting, `/costs`, complete operational UI | Review real HTTP UI/company-switch evidence before P6 |
