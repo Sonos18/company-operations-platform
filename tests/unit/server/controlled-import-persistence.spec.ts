@@ -26,6 +26,10 @@ const row = {
 }
 
 describe('controlled-import persistence boundary', () => {
+  it('keeps the frozen synthetic manifest digest stable across the database handoff', () => {
+    expect(approvedManifestDigest).toBe('8651b0ef29773117d53b09403e9be2762df0709e2b623587938080610d1557f8')
+  })
+
   it('validates and canonicalizes the frozen request before one repository write', async () => {
     const persist = vi.fn().mockResolvedValue({ runId, sourceIds: row.source_ids, versionIds: row.version_ids, sectionIds: row.section_ids, figureIds: row.figure_ids, reviewIssueIds: row.review_issue_ids, replayed: false })
     const service = createControlledImportService({ persist, get: vi.fn() }, manifest.adapter)
@@ -53,6 +57,8 @@ describe('controlled-import persistence boundary', () => {
     await expect(service.persist(context, { ...request, unexpected: true })).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' })
     await expect(service.persist({ ...context, companyId: 'c1000000-0000-4000-8000-000000000021' }, request)).rejects.toMatchObject({ statusCode: 403, code: 'COMPANY_FORBIDDEN' })
     await expect(service.persist({ ...context, permissions: ['cost.source.read'] }, request)).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    await expect(createControlledImportService({ persist, get: vi.fn() }, { id: 'unreviewed', version: '1.0.0' }).persist(context, request)).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' })
+    await expect(service.persist(context, { ...request, actualInputDigests: ['f'.repeat(64)] })).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' })
     expect(persist).not.toHaveBeenCalled()
   })
 

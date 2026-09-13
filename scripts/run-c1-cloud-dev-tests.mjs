@@ -4,7 +4,11 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
 
-const allowlist = ['c1_foundation.test.sql']
+const allowlist = [
+  'c1_foundation.test.sql',
+  'c1_controlled_import_commands.test.sql',
+  'c1_controlled_import_security.test.sql',
+]
 
 export function validateC1CloudDevSql(path, sql) {
   const normalized = sql.replace(/\r\n?/g, '\n').trim()
