@@ -2,9 +2,9 @@
 
 ## Status
 
-`BLOCKED`
+`TRACK_A_P2_3_CLOUD_FIXTURES_PASS`
 
-The initial packet stopped at its malformed-UUID baseline query; its authorized continuation passed the corrected baseline and dry-run, then the single migration push failed. Successful P2 applications remain zero; fixtures and type generation remain not run.
+Current state: the original P2 migration and canonical-order correction are applied with 35/35 parity. A fresh durable runner returned all three required fixture markers and exit 0, zero fixture residue was independently observed, generated types were refreshed, and local application verification passed. Historical failures remain documented below.
 
 ## Authorization and repository preflight
 
@@ -82,7 +82,17 @@ A later explicitly authorized durable run (`2026-09-13T13:33:41.5991722Z`–`13:
 
 Read-only Query 3 used the exact fixture literal (SHA-256 `6E9D5CC2D3DB3674551E5A1A31E2F318B2E8FBF22EC555B51258DE3C0463C9D9`, bytes 7944–10932). The frozen helper/reference produced 2,896 UTF-8 bytes and SHA-256 `8651b0ef29773117d53b09403e9be2762df0709e2b623587938080610d1557f8`; PostgreSQL produced the same structure and byte length but SHA-256 `c483b3bdecbb0e814fd2489ca25bf55a71d10c449c5fff59e91fbf3305ff8d1a`. The first difference is byte 2025: JavaScript/C order emits `sourceVersions` before `sources`, while ICU `en-US` default ordering emits `sources` first. No nested ordering, escaping, representation, or structural difference remained.
 
-Prepared local correction `20260913151754_taskovia_c1_canonical_order_fix.sql` (SHA-256 `37FF2F59F732785724E0433DDECBBE0621BBF8D595913D5FAF5EAD2955C1AFB7`) changes only the recursive object aggregation to `ORDER BY entry.key COLLATE "C"`, preserving signature and properties. It is **UNAPPLIED / NOT EXECUTED**. Regression coverage ties the exact fixture literal to the frozen helper and independent digest, and adds a future SQL vector for mixed-case/nested keys, order independence, arrays, null/empty values, Unicode/whitespace, escaping, zero, and decimal strings. Fresh local verification passed 107 files / 782 tests, typecheck, lint, and build.
+At the local-repair checkpoint, `20260913151754_taskovia_c1_canonical_order_fix.sql` (SHA-256 `37FF2F59F732785724E0433DDECBBE0621BBF8D595913D5FAF5EAD2955C1AFB7`) was prepared but unapplied. It changes only the recursive object aggregation to `ORDER BY entry.key COLLATE "C"`, preserving signature and properties. Regression coverage ties the exact fixture literal to the frozen helper and independent digest, and adds a SQL vector for mixed-case/nested keys, order independence, arrays, null/empty values, Unicode/whitespace, escaping, zero, and decimal strings. Its later application and execution evidence is recorded below.
+
+## Canonical-order correction and successful acceptance run
+
+Correction dry-run and push each ran once through durable capture. The dry-run proposed only `20260913151754_taskovia_c1_canonical_order_fix.sql`; push ran `2026-09-13T15:42:15.9461633Z`–`15:42:30.4794935Z`, exited 0, and applied only that migration. A later local Docker catalog-cache warning did not fail the command. Post-push status was 35/35. The correction is now **APPLIED / IMMUTABLE**.
+
+The deployed canonicalizer retains owner `postgres`, ACL `{postgres=X/postgres}`, immutable/strict/security-definer attributes, and empty search path. It contains `ORDER BY entry.key COLLATE "C"`. Read-only verification returned the exact frozen manifest digest `8651b0ef29773117d53b09403e9be2762df0709e2b623587938080610d1557f8` at 2,896 bytes and compatibility-vector digest `30aa13579b994c286fe1c15d276686e9e4e77821ff99234c92e37926a06d9f60` at 194 bytes.
+
+The new durable runner invocation (`2026-09-13T15:43:47.5274752Z`–`15:44:05.1268383Z`) exited 0 and returned, in order: `C1_FOUNDATION_FIXTURE_COMPLETE`, `C1_CONTROLLED_IMPORT_COMMANDS_COMPLETE`, and `C1_CONTROLLED_IMPORT_SECURITY_COMPLETE`. The unchanged sequential runner and each reviewed `BEGIN`…`ROLLBACK` envelope, together with the final exit, establish successful terminal rollback. Independent postflight returned zero across exact fixture users, tenants/companies, memberships, roles/assignments, settings, master/source/import scopes, receipts/events/audit, import runs, adapter registrations, and active fixture transactions.
+
+`pnpm db:dev:types` exited 0 and added the expected P2 table/relationship/RPC definitions with no removals. Fresh `pnpm verify:app` passed 107 files / 782 tests, typecheck, lint, and build. `concurrency_execution = NOT_RUN`; P2 overall remains partial and real-data/P3 work remains unauthorized.
 
 ## Local migration repair, pending review
 

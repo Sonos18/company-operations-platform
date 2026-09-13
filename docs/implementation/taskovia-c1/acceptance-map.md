@@ -3,7 +3,7 @@
 **Approved execution base:** `b2731f4ef72c10cbcafe9f176cc1e2b54b9c8cfd`
 **Spec baseline:** Taskovia C1 v1.2; v1.1 remains historical.
 **Historical P0 status:** allocation only; no C1 application, migration, fixture, or Cloud write had run.
-**Status after v1.2 transition:** P1 is complete and P2.1 is frozen. P2.3 schema application is verified, but durable fixture acceptance stopped after the foundation marker when the commands fixture exposed default ICU key ordering incompatible with the frozen JavaScript digest. Byte-level diagnosis proved the sole difference (`sources` versus `sourceVersions` at root byte 2025); a minimal forward C-collation correction is prepared but unapplied. Database/RLS/concurrency rows remain partial, concurrency is not run, and P3–P6 remain not started. See [the execution review](phase-reports/p2-3-cloud-review.md).
+**Status after v1.2 transition:** P1 is complete and P2.1 is frozen. P2.3 schema and its C-order correction are applied; a fresh durable Cloud run returned all foundation, commands, and security markers with exit 0, and independent postflight found zero fixture residue. Generated types and application verification passed. Executed synthetic database/RLS/RPC cases now have Cloud evidence, but concurrency remains not run, P2 overall remains partial, and P3–P6 remain not started. See [the execution review](phase-reports/p2-3-cloud-review.md).
 
 ## Evidence Rule
 
