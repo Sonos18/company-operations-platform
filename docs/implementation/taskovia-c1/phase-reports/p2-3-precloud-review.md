@@ -14,6 +14,8 @@ This is a pre-Cloud candidate, not P2 completion. Track A was the only repositor
 | Expected/verified `origin/main` | `b2731f4ef72c10cbcafe9f176cc1e2b54b9c8cfd` |
 | Tested code SHA | `2279d920ab9b465e256182ab07b27674462002d2` |
 | Pre-report local/remote feature HEAD | `2279d920ab9b465e256182ab07b27674462002d2` / `2279d920ab9b465e256182ab07b27674462002d2` |
+| F1–F3 repair start SHA | `c628d2e3744b6fd4026e80ed858045149b8b72b4` |
+| F1–F3 tested code SHA | `f6f2d0ce06b0726b970f65a480c380cdd7e8aa8f` |
 | Branch | `feat/taskovia-c1` |
 | Runtime | Node `v24.19.0`; pnpm `10.29.3`; Supabase CLI `2.114.0` |
 
@@ -41,7 +43,8 @@ The DB boundary independently rechecks active company context, enabled C1 settin
 | Migration | SHA-256 | State |
 | --- | --- | --- |
 | `20260911145035_taskovia_c1_foundation.sql` | `538025216FEC8B67A8A94226D67B35F723D005069AEA00B003FB4DCE6089C556` | Previously applied; unchanged |
-| `20260913082034_taskovia_c1_controlled_import.sql` | `9E35E5C8B315CDF7646C29E83993265E1C87C40DE5E961074F0296C2E411B906` | Candidate only; not applied |
+| `20260913082034_taskovia_c1_controlled_import.sql` | `9E35E5C8B315CDF7646C29E83993265E1C87C40DE5E961074F0296C2E411B906` | Original candidate at `c628d2e`; not applied; retained as history |
+| `20260913082034_taskovia_c1_controlled_import.sql` | `CCE1D0084FF07713C0E5AA129D180656EA2AD9DC9C8A2E31377BD1B5423D0154` | Current repaired candidate at `f6f2d0c`; not applied |
 
 ## Deterministic local evidence
 
@@ -71,6 +74,27 @@ The production build retained the existing Vite chunk-size warning and Node depe
 - `6bdabb3` `feat: add controlled import database candidate`
 - `6f2ef4c` `fix: harden controlled import occurrence scope`
 - `2279d92` `test: preserve P1 fixture through P2 persistence`
+- `f6f2d0c` `fix: repair P2.3 pre-cloud findings`
+
+## F1–F3 pre-Cloud repair
+
+**Disposition:** all three reported findings were reproduced in the `c628d2e` candidate and repaired without changing the frozen P2.1 files or creating a second migration.
+
+- **F1 — SQL operator grouping:** the locator-key CASE now parenthesizes every `#>>` operand before concatenation. The commands fixture prepares explicit keys for canonical cell range, logical section, whole file, and multi-letter `AA1:AAA2` with meaningful Unicode sheet whitespace. A local static regression rejects the former unparenthesized pattern. These SQL assertions are **NOT EXECUTED**.
+- **F2 — direct-RPC JSON validation:** request/manifest/descriptors/mappings/figures now reject missing, JSON-null, or wrong-type required values before text extraction/casts. Expected counts require JSON numbers representing non-negative integers; source arrays require string elements; known figures require decimal strings; non-known figures require JSON null. Prepared direct-RPC negatives cover null approved digest, null/string expected count, numeric known amount, and a non-string raw array element with recomputed nested digests. Positive prepared cases retain known `"0"` and `formula_error` with null amount. All reject/no-effect assertions are **NOT EXECUTED**.
+- **F3 — populated Cloud DEV fixture safety:** privileged master-data checks now compare fixture-company baselines; event/audit checks use fixture company/request scope; immutable-history mutation resolves and targets one fixture-owned version. An unrelated synthetic B1 source/version/run is inserted before the import and asserted unchanged. Deliberately broad authenticated reads in the security fixture remain only for RLS visibility tests.
+
+Exact repair files: the existing controlled-import migration, both existing controlled-import SQL fixtures, and `tests/unit/config/c1-controlled-import-persistence-contract.spec.ts`. No shared schema/helper, generated database type, dependency, P3, upload, or adapter file changed.
+
+Fresh deterministic evidence at `f6f2d0ce06b0726b970f65a480c380cdd7e8aa8f`:
+
+| Command | Result |
+| --- | --- |
+| Required focused five-file Vitest command | Exit 0; 5 files / 32 tests |
+| `pnpm verify:app` | Exit 0; 107 files / 778 tests; typecheck, lint, production build passed |
+| `git diff --check` | Exit 0; line-ending warnings only |
+
+No SQL parser was available locally without a database. The migration/fixture regressions received deterministic text/runner validation only; neither fixture nor any SQL statement was executed against Cloud DEV or a Local DB. Database, RLS, and concurrency behavior remains awaiting separately authorized Cloud proof.
 
 ## Remaining Cloud work
 
