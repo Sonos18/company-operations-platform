@@ -29,7 +29,7 @@ export function createFileService({ repository, storage, preview }: { repository
       validateType(value.originalName, value.mimeType)
       const id = randomUUID()
       const objectKey = `c1-files/${id}`
-      const created = await repository.createPending({ id, tenantId: context.tenantId, companyId: context.companyId, bucket, objectKey, originalName: value.originalName, uploadedBy: context.actorId })
+      const created = await repository.createPending({ id, tenantId: context.tenantId, companyId: context.companyId, requestId: context.requestId, bucket, objectKey, originalName: value.originalName, uploadedBy: context.actorId })
       return { file: created, uploadUrl: await storage.createUploadUrl(bucket, created.objectKey, { upsert: false }) }
     },
     async finalize(context: Context, id: string) {
@@ -40,7 +40,7 @@ export function createFileService({ repository, storage, preview }: { repository
       if (metadata.byteSize > maxSourceFileBytes) fail(413, 'FILE_TOO_LARGE', 'File vượt quá 20 MiB.')
       validateType(existing.originalName, metadata.mimeType)
       if (!/^[a-f0-9]{64}$/i.test(metadata.sha256)) fail(415, 'FILE_TYPE_UNSUPPORTED', 'Không thể xác minh file nguồn.')
-      return repository.finalize({ id: existing.id, tenantId: context.tenantId, companyId: context.companyId, byteSize: metadata.byteSize, mimeType: metadata.mimeType, sha256: metadata.sha256, finalizedBy: context.actorId })
+      return repository.finalize({ id: existing.id, tenantId: context.tenantId, companyId: context.companyId, requestId: context.requestId, byteSize: metadata.byteSize, mimeType: metadata.mimeType, sha256: metadata.sha256, finalizedBy: context.actorId })
     },
     async preview(context: Context, id: string, query: unknown) {
       requireRawRead(context)

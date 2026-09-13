@@ -20,6 +20,8 @@ describe('private C1 file lifecycle', () => {
     await expect(service.finalize(context(), fileId)).resolves.toMatchObject({ state: 'ready', byteSize: 4 })
     expect(storage.createUploadUrl).toHaveBeenCalledWith('taskovia-c1-financial', pending.objectKey, { upsert: false })
     expect(repository.finalize).toHaveBeenCalledWith(expect.objectContaining({ sha256: 'a'.repeat(64), byteSize: 4 }))
+    expect(repository.createPending).toHaveBeenCalledWith(expect.objectContaining({ requestId: context().requestId }))
+    expect(repository.finalize).toHaveBeenCalledWith(expect.objectContaining({ requestId: context().requestId }))
   })
 
   it('rejects fake client metadata, oversized files, and raw access without both source and file permissions', async () => {
