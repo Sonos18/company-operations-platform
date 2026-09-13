@@ -40,4 +40,39 @@ describe('C1 controlled-import pre-Cloud SQL contract', () => {
     const sql = readFileSync(resolve(root, 'supabase/tests/database/c1', name), 'utf8')
     expect(() => validateC1CloudDevSql(name, sql)).not.toThrow()
   })
+
+  it('groups locator JSON extraction before concatenation and prepares every occurrence-key regression', () => {
+    const name = readdirSync(resolve(root, 'supabase/migrations')).find(value => migrationName.test(value))!
+    const migration = readFileSync(resolve(root, 'supabase/migrations', name), 'utf8')
+    const commands = readFileSync(resolve(root, 'supabase/tests/database/c1/c1_controlled_import_commands.test.sql'), 'utf8')
+
+    expect(migration).toContain("'logical_section|' || (v_descriptor #>> '{locator,section}')")
+    expect(migration).toContain("'cell_range|' || (v_descriptor #>> '{locator,sheetName}') || '|' || (v_descriptor #>> '{locator,range}')")
+    expect(migration).not.toMatch(/\|\|\s*v_descriptor\s*#>>/u)
+    for (const key of ['cell_range| Nhật ký |A1:B2', 'cell_range| Bảng đối chiếu |AA1:AAA2', 'logical_section|Reference note', 'whole_file']) expect(commands).toContain(key)
+  })
+
+  it('prepares direct-RPC JSON null, type, string-array, and amount regressions', () => {
+    const name = readdirSync(resolve(root, 'supabase/migrations')).find(value => migrationName.test(value))!
+    const migration = readFileSync(resolve(root, 'supabase/migrations', name), 'utf8')
+    const commands = readFileSync(resolve(root, 'supabase/tests/database/c1/c1_controlled_import_commands.test.sql'), 'utf8')
+
+    expect(migration).toContain("jsonb_typeof(target_request->'approvedManifestDigest') is distinct from 'string'")
+    expect(migration).toContain("jsonb_typeof(v_manifest#>'{expected,figures}') is distinct from 'number'")
+    expect(migration).toContain("jsonb_typeof(item->'amount') is distinct from 'string'")
+    expect(migration).toContain("jsonb_typeof(item->'amount') is distinct from 'null'")
+    expect(migration).toContain('private.c1_jsonb_is_string_array')
+    for (const label of ['invalid-approved-null', 'invalid-expected-null', 'invalid-expected-string', 'invalid-known-number', 'invalid-raw-array-element']) expect(commands).toContain(`'${label}'`)
+    expect(commands).toContain("figure.amount_text = '0'")
+    expect(commands).toContain("figure.value_state = 'formula_error' and figure.amount_text is null")
+  })
+
+  it('scopes privileged fixture assertions and immutable-history mutation to fixture-owned rows', () => {
+    const commands = readFileSync(resolve(root, 'supabase/tests/database/c1/c1_controlled_import_commands.test.sql'), 'utf8')
+
+    expect(commands).not.toMatch(/update\s+public\.accounting_source_versions\s+set/iu)
+    expect(commands).not.toMatch(/count\(\*\)\s+from\s+public\.(?:projects|business_parties|project_engagements|engagement_components)\s*\)/iu)
+    expect(commands).toContain('C1-UNRELATED-SOURCE')
+    expect(commands).toContain('C1 unrelated synthetic row changed')
+  })
 })

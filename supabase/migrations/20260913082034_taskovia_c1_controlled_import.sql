@@ -303,6 +303,22 @@ begin
 end;
 $$;
 
+create function private.c1_jsonb_is_string_array(target_value jsonb)
+returns boolean
+language plpgsql
+immutable
+security definer
+set search_path = ''
+as $$
+begin
+  if jsonb_typeof(target_value) is distinct from 'array' then return false; end if;
+  return not exists (
+    select 1 from jsonb_array_elements(target_value) item
+    where jsonb_typeof(item) is distinct from 'string'
+  );
+end;
+$$;
+
 create function private.c1_assert_controlled_import_mapping(
   target_tenant_id uuid,
   target_company_id uuid,
@@ -317,29 +333,32 @@ as $$
 declare
   v_project_id uuid; v_party_id uuid; v_engagement_id uuid; v_component_id uuid;
 begin
-  if jsonb_typeof(target_mapping) <> 'object'
+  if jsonb_typeof(target_mapping) is distinct from 'object'
     or not (target_mapping ? 'state')
+    or jsonb_typeof(target_mapping->'state') is distinct from 'string'
     or target_mapping->>'state' not in ('confirmed', 'pending', 'reference_only', 'excluded')
     or exists (select 1 from jsonb_object_keys(target_mapping) key where key not in ('state', 'projectId', 'partyId', 'engagementId', 'componentId', 'note'))
   then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
 
-  if coalesce(target_mapping->>'projectId', '') <> '' then
-    if target_mapping->>'projectId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  if target_mapping ? 'note' and jsonb_typeof(target_mapping->'note') is distinct from 'string' then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+
+  if target_mapping ? 'projectId' then
+    if jsonb_typeof(target_mapping->'projectId') is distinct from 'string' or target_mapping->>'projectId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
     v_project_id := (target_mapping->>'projectId')::uuid;
     if not exists (select 1 from public.projects project where project.id = v_project_id and project.tenant_id = target_tenant_id and project.company_id = target_company_id) then raise exception using errcode = 'P0001', message = 'RESOURCE_NOT_FOUND'; end if;
   end if;
-  if coalesce(target_mapping->>'partyId', '') <> '' then
-    if target_mapping->>'partyId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  if target_mapping ? 'partyId' then
+    if jsonb_typeof(target_mapping->'partyId') is distinct from 'string' or target_mapping->>'partyId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
     v_party_id := (target_mapping->>'partyId')::uuid;
     if not exists (select 1 from public.business_parties party where party.id = v_party_id and party.tenant_id = target_tenant_id and party.company_id = target_company_id) then raise exception using errcode = 'P0001', message = 'RESOURCE_NOT_FOUND'; end if;
   end if;
-  if coalesce(target_mapping->>'engagementId', '') <> '' then
-    if target_mapping->>'engagementId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' or v_project_id is null then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  if target_mapping ? 'engagementId' then
+    if jsonb_typeof(target_mapping->'engagementId') is distinct from 'string' or target_mapping->>'engagementId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' or v_project_id is null then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
     v_engagement_id := (target_mapping->>'engagementId')::uuid;
     if not exists (select 1 from public.project_engagements engagement where engagement.id = v_engagement_id and engagement.tenant_id = target_tenant_id and engagement.company_id = target_company_id and engagement.project_id = v_project_id) then raise exception using errcode = 'P0001', message = 'RESOURCE_NOT_FOUND'; end if;
   end if;
-  if coalesce(target_mapping->>'componentId', '') <> '' then
-    if target_mapping->>'componentId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' or v_engagement_id is null then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  if target_mapping ? 'componentId' then
+    if jsonb_typeof(target_mapping->'componentId') is distinct from 'string' or target_mapping->>'componentId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' or v_engagement_id is null then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
     v_component_id := (target_mapping->>'componentId')::uuid;
     if not exists (select 1 from public.engagement_components component where component.id = v_component_id and component.tenant_id = target_tenant_id and component.company_id = target_company_id and component.engagement_id = v_engagement_id) then raise exception using errcode = 'P0001', message = 'RESOURCE_NOT_FOUND'; end if;
   end if;
@@ -444,44 +463,53 @@ begin
   v_tenant_id := (v_context->>'tenantId')::uuid;
   if not private.has_company_permission(v_tenant_id, target_company_id, 'cost.prepare') then raise exception using errcode = 'P0001', message = 'PERMISSION_DENIED'; end if;
 
-  if jsonb_typeof(target_request) <> 'object'
-    or not (target_request ?& array['runId', 'idempotencyKey', 'approvedManifestDigest', 'actualInputDigests', 'manifest'])
+  if jsonb_typeof(target_request) is distinct from 'object' then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  if not (target_request ?& array['runId', 'idempotencyKey', 'approvedManifestDigest', 'actualInputDigests', 'manifest'])
     or exists (select 1 from jsonb_object_keys(target_request) key where key not in ('runId', 'idempotencyKey', 'approvedManifestDigest', 'actualInputDigests', 'manifest'))
+    or jsonb_typeof(target_request->'runId') is distinct from 'string'
+    or jsonb_typeof(target_request->'idempotencyKey') is distinct from 'string'
+    or jsonb_typeof(target_request->'approvedManifestDigest') is distinct from 'string'
     or target_request->>'runId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
     or target_request->>'idempotencyKey' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
     or target_request->>'approvedManifestDigest' !~ '^[a-f0-9]{64}$'
+    or target_payload_digest is null
     or target_payload_digest !~ '^[a-f0-9]{64}$'
-    or jsonb_typeof(target_request->'actualInputDigests') <> 'array'
-    or jsonb_array_length(target_request->'actualInputDigests') = 0
-    or jsonb_typeof(target_request->'manifest') <> 'object'
+    or not private.c1_jsonb_is_string_array(target_request->'actualInputDigests')
+    or jsonb_typeof(target_request->'manifest') is distinct from 'object'
   then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  if jsonb_array_length(target_request->'actualInputDigests') = 0 then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
 
   v_requested_run_id := (target_request->>'runId')::uuid;
   v_requested_idempotency_key := (target_request->>'idempotencyKey')::uuid;
   v_manifest := target_request->'manifest';
   if not (v_manifest ?& array['schemaVersion', 'workbookFamily', 'adapter', 'targetCompanyId', 'inputs', 'sources', 'sourceVersions', 'sections', 'figures', 'reviewIssues', 'duplicateCandidates', 'expected'])
     or exists (select 1 from jsonb_object_keys(v_manifest) key where key not in ('schemaVersion', 'workbookFamily', 'adapter', 'targetCompanyId', 'inputs', 'sources', 'sourceVersions', 'sections', 'figures', 'reviewIssues', 'duplicateCandidates', 'expected'))
+    or jsonb_typeof(v_manifest->'schemaVersion') is distinct from 'string'
     or v_manifest->>'schemaVersion' <> '1.2'
+    or jsonb_typeof(v_manifest->'targetCompanyId') is distinct from 'string'
     or v_manifest->>'targetCompanyId' <> target_company_id::text
+    or jsonb_typeof(v_manifest->'workbookFamily') is distinct from 'string'
     or coalesce(v_manifest->>'workbookFamily', '') = ''
+    or jsonb_typeof(v_manifest->'adapter') is distinct from 'object'
+    or jsonb_typeof(v_manifest->'inputs') is distinct from 'array'
+    or jsonb_typeof(v_manifest->'sources') is distinct from 'array'
+    or jsonb_typeof(v_manifest->'sourceVersions') is distinct from 'array'
+    or jsonb_typeof(v_manifest->'sections') is distinct from 'array'
+    or jsonb_typeof(v_manifest->'figures') is distinct from 'array'
+    or jsonb_typeof(v_manifest->'reviewIssues') is distinct from 'array'
+    or jsonb_typeof(v_manifest->'duplicateCandidates') is distinct from 'array'
+    or jsonb_typeof(v_manifest->'expected') is distinct from 'object'
+  then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  if not ((v_manifest->'adapter') ?& array['id', 'version'])
+    or exists (select 1 from jsonb_object_keys(v_manifest->'adapter') key where key not in ('id', 'version'))
+    or jsonb_typeof(v_manifest#>'{adapter,id}') is distinct from 'string'
+    or jsonb_typeof(v_manifest#>'{adapter,version}') is distinct from 'string'
     or coalesce(v_manifest#>>'{adapter,id}', '') = ''
     or coalesce(v_manifest#>>'{adapter,version}', '') = ''
-    or jsonb_typeof(v_manifest->'inputs') <> 'array'
-    or jsonb_array_length(v_manifest->'inputs') = 0
-    or jsonb_typeof(v_manifest->'sources') <> 'array'
-    or jsonb_array_length(v_manifest->'sources') = 0
-    or jsonb_typeof(v_manifest->'sourceVersions') <> 'array'
-    or jsonb_array_length(v_manifest->'sourceVersions') = 0
-    or jsonb_typeof(v_manifest->'sections') <> 'array'
-    or jsonb_array_length(v_manifest->'sections') = 0
-    or jsonb_typeof(v_manifest->'figures') <> 'array'
-    or jsonb_typeof(v_manifest->'reviewIssues') <> 'array'
-    or jsonb_typeof(v_manifest->'duplicateCandidates') <> 'array'
-    or jsonb_typeof(v_manifest->'expected') <> 'object'
-    or not ((v_manifest->'adapter') ?& array['id', 'version'])
-    or exists (select 1 from jsonb_object_keys(v_manifest->'adapter') key where key not in ('id', 'version'))
     or not ((v_manifest->'expected') ?& array['sources', 'versions', 'sections', 'figures', 'reviewIssues'])
     or exists (select 1 from jsonb_object_keys(v_manifest->'expected') key where key not in ('sources', 'versions', 'sections', 'figures', 'reviewIssues'))
+  then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  if jsonb_array_length(v_manifest->'inputs') = 0 or jsonb_array_length(v_manifest->'sources') = 0 or jsonb_array_length(v_manifest->'sourceVersions') = 0 or jsonb_array_length(v_manifest->'sections') = 0
   then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
   if not exists (
     select 1 from private.controlled_import_adapter_versions adapter
@@ -490,11 +518,23 @@ begin
       and adapter.adapter_version = v_manifest#>>'{adapter,version}'
   ) then raise exception using errcode = 'P0001', message = 'ADAPTER_NOT_PERMITTED'; end if;
 
-  if (v_manifest#>>'{expected,sources}')::integer <> jsonb_array_length(v_manifest->'sources')
-    or (v_manifest#>>'{expected,versions}')::integer <> jsonb_array_length(v_manifest->'sourceVersions')
-    or (v_manifest#>>'{expected,sections}')::integer <> jsonb_array_length(v_manifest->'sections')
-    or (v_manifest#>>'{expected,figures}')::integer <> jsonb_array_length(v_manifest->'figures')
-    or (v_manifest#>>'{expected,reviewIssues}')::integer <> jsonb_array_length(v_manifest->'reviewIssues')
+  if jsonb_typeof(v_manifest#>'{expected,sources}') is distinct from 'number'
+    or jsonb_typeof(v_manifest#>'{expected,versions}') is distinct from 'number'
+    or jsonb_typeof(v_manifest#>'{expected,sections}') is distinct from 'number'
+    or jsonb_typeof(v_manifest#>'{expected,figures}') is distinct from 'number'
+    or jsonb_typeof(v_manifest#>'{expected,reviewIssues}') is distinct from 'number'
+  then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  if (v_manifest#>>'{expected,sources}')::numeric < 0 or mod((v_manifest#>>'{expected,sources}')::numeric, 1) <> 0
+    or (v_manifest#>>'{expected,versions}')::numeric < 0 or mod((v_manifest#>>'{expected,versions}')::numeric, 1) <> 0
+    or (v_manifest#>>'{expected,sections}')::numeric < 0 or mod((v_manifest#>>'{expected,sections}')::numeric, 1) <> 0
+    or (v_manifest#>>'{expected,figures}')::numeric < 0 or mod((v_manifest#>>'{expected,figures}')::numeric, 1) <> 0
+    or (v_manifest#>>'{expected,reviewIssues}')::numeric < 0 or mod((v_manifest#>>'{expected,reviewIssues}')::numeric, 1) <> 0
+  then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  if (v_manifest#>>'{expected,sources}')::numeric is distinct from jsonb_array_length(v_manifest->'sources')::numeric
+    or (v_manifest#>>'{expected,versions}')::numeric is distinct from jsonb_array_length(v_manifest->'sourceVersions')::numeric
+    or (v_manifest#>>'{expected,sections}')::numeric is distinct from jsonb_array_length(v_manifest->'sections')::numeric
+    or (v_manifest#>>'{expected,figures}')::numeric is distinct from jsonb_array_length(v_manifest->'figures')::numeric
+    or (v_manifest#>>'{expected,reviewIssues}')::numeric is distinct from jsonb_array_length(v_manifest->'reviewIssues')::numeric
   then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
 
   if exists (
@@ -508,6 +548,14 @@ begin
     ) ids group by descriptor_id having descriptor_id is null or descriptor_id = '' or count(*) > 1
   ) then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
   if exists (select 1 from jsonb_array_elements(v_manifest->'inputs') item group by item->>'fileIdentity' having item->>'fileIdentity' is null or item->>'fileIdentity' = '' or count(*) > 1)
+  then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  if exists (select 1 from jsonb_array_elements(v_manifest->'inputs') item where jsonb_typeof(item) is distinct from 'object')
+    or exists (select 1 from jsonb_array_elements(v_manifest->'sources') item where jsonb_typeof(item) is distinct from 'object')
+    or exists (select 1 from jsonb_array_elements(v_manifest->'sourceVersions') item where jsonb_typeof(item) is distinct from 'object')
+    or exists (select 1 from jsonb_array_elements(v_manifest->'sections') item where jsonb_typeof(item) is distinct from 'object')
+    or exists (select 1 from jsonb_array_elements(v_manifest->'figures') item where jsonb_typeof(item) is distinct from 'object')
+    or exists (select 1 from jsonb_array_elements(v_manifest->'reviewIssues') item where jsonb_typeof(item) is distinct from 'object')
+    or exists (select 1 from jsonb_array_elements(v_manifest->'duplicateCandidates') item where jsonb_typeof(item) is distinct from 'object')
   then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
   if exists (
     select 1 from jsonb_array_elements(v_manifest->'inputs') item
@@ -539,6 +587,107 @@ begin
       or exists (select 1 from jsonb_object_keys(item) key where key not in ('id', 'sectionId', 'candidateSectionId', 'reason'))
   ) then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
 
+  if exists (
+    select 1 from jsonb_array_elements(v_manifest->'inputs') item
+    where jsonb_typeof(item->'fileIdentity') is distinct from 'string'
+      or jsonb_typeof(item->'sha256') is distinct from 'string'
+      or jsonb_typeof(item->'originalFilename') is distinct from 'string'
+      or (item ? 'rawFileReference' and jsonb_typeof(item->'rawFileReference') is distinct from 'string')
+      or coalesce(item->>'fileIdentity', '') = '' or coalesce(item->>'originalFilename', '') = ''
+      or item->>'sha256' !~* '^[a-f0-9]{64}$'
+  ) or exists (
+    select 1 from jsonb_array_elements(v_manifest->'sources') item
+    where jsonb_typeof(item->'id') is distinct from 'string'
+      or jsonb_typeof(item->'code') is distinct from 'string'
+      or jsonb_typeof(item->'title') is distinct from 'string'
+      or jsonb_typeof(item->'sourceSystem') is distinct from 'string'
+      or (item ? 'suggestedProjectId' and (jsonb_typeof(item->'suggestedProjectId') is distinct from 'string' or item->>'suggestedProjectId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'))
+      or coalesce(item->>'id', '') = '' or coalesce(item->>'code', '') = '' or coalesce(item->>'title', '') = '' or coalesce(item->>'sourceSystem', '') = ''
+  ) or exists (
+    select 1 from jsonb_array_elements(v_manifest->'sourceVersions') item
+    where jsonb_typeof(item->'id') is distinct from 'string'
+      or jsonb_typeof(item->'sourceId') is distinct from 'string'
+      or jsonb_typeof(item->'inputFileIdentity') is distinct from 'string'
+      or jsonb_typeof(item->'inputFileSha256') is distinct from 'string'
+      or jsonb_typeof(item->'originalFilename') is distinct from 'string'
+      or jsonb_typeof(item->'rawFileReference') not in ('string', 'null')
+      or jsonb_typeof(item->'sourceVersionLabel') not in ('string', 'null')
+      or jsonb_typeof(item->'sourcePeriodText') not in ('string', 'null')
+      or jsonb_typeof(item->'sourceAsOfText') not in ('string', 'null')
+      or coalesce(item->>'id', '') = '' or coalesce(item->>'sourceId', '') = '' or coalesce(item->>'inputFileIdentity', '') = '' or coalesce(item->>'originalFilename', '') = ''
+      or item->>'inputFileSha256' !~* '^[a-f0-9]{64}$'
+  ) or exists (
+    select 1 from jsonb_array_elements(v_manifest->'sections') item
+    where jsonb_typeof(item->'id') is distinct from 'string'
+      or jsonb_typeof(item->'sourceVersionId') is distinct from 'string'
+      or jsonb_typeof(item->'inputSha256') is distinct from 'string'
+      or jsonb_typeof(item->'locator') is distinct from 'object'
+      or jsonb_typeof(item->'mapping') is distinct from 'object'
+      or not private.c1_jsonb_is_string_array(item->'observedLabels')
+      or not private.c1_jsonb_is_string_array(item->'rawValues')
+      or not private.c1_jsonb_is_string_array(item->'unresolvedIssues')
+      or coalesce(item->>'id', '') = '' or coalesce(item->>'sourceVersionId', '') = ''
+      or item->>'inputSha256' !~* '^[a-f0-9]{64}$'
+  ) then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+
+  if exists (
+    select 1 from jsonb_array_elements(v_manifest->'figures') item
+    where jsonb_typeof(item->'id') is distinct from 'string'
+      or jsonb_typeof(item->'sectionId') is distinct from 'string'
+      or jsonb_typeof(item->'label') is distinct from 'string'
+      or jsonb_typeof(item->'rawValueText') is distinct from 'string'
+      or jsonb_typeof(item->'valueState') is distinct from 'string'
+      or jsonb_typeof(item->'metricKind') is distinct from 'string'
+      or jsonb_typeof(item->'basis') is distinct from 'string'
+      or jsonb_typeof(item->'roundingBasis') is distinct from 'string'
+      or jsonb_typeof(item->'periodBasis') is distinct from 'string'
+      or jsonb_typeof(item->'mapping') is distinct from 'object'
+      or jsonb_typeof(item->'scopeKind') is distinct from 'string'
+      or jsonb_typeof(item->'scopeDescription') is distinct from 'string'
+      or jsonb_typeof(item->'confirmation') is distinct from 'string'
+      or jsonb_typeof(item->'currencyCode') not in ('string', 'null')
+      or jsonb_typeof(item->'balanceKind') not in ('string', 'null')
+      or jsonb_typeof(item->'roundingNote') not in ('string', 'null')
+      or jsonb_typeof(item->'periodFrom') not in ('string', 'null')
+      or jsonb_typeof(item->'periodTo') not in ('string', 'null')
+      or jsonb_typeof(item->'asOfDate') not in ('string', 'null')
+      or jsonb_typeof(item->'confirmationReference') not in ('string', 'null')
+      or coalesce(item->>'id', '') = '' or coalesce(item->>'sectionId', '') = '' or coalesce(item->>'label', '') = '' or coalesce(item->>'scopeDescription', '') = ''
+      or item->>'valueState' not in ('known', 'blank', 'formula_error', 'missing_cached', 'not_numeric')
+      or item->>'metricKind' not in ('cost_total', 'labor_total', 'commitment_total', 'cash_total', 'reported_balance', 'unclassified')
+      or item->>'basis' not in ('net', 'gross', 'payable_basis', 'cash', 'mixed', 'unknown')
+      or (jsonb_typeof(item->'balanceKind') = 'string' and item->>'balanceKind' not in ('total_outstanding', 'outside_retention', 'unallocated_cash', 'unknown'))
+      or item->>'roundingBasis' not in ('exact', 'source_rounded', 'unknown')
+      or item->>'periodBasis' not in ('activity_range', 'cumulative_as_of', 'unknown')
+      or item->>'scopeKind' not in ('subcontractors_only', 'whole_project', 'mixed', 'unknown')
+      or item->>'confirmation' not in ('unverified', 'confirmed_external', 'disputed')
+      or (jsonb_typeof(item->'currencyCode') = 'string' and char_length(item->>'currencyCode') <> 3)
+      or (jsonb_typeof(item->'periodFrom') = 'string' and item->>'periodFrom' !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+      or (jsonb_typeof(item->'periodTo') = 'string' and item->>'periodTo' !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+      or (jsonb_typeof(item->'asOfDate') = 'string' and item->>'asOfDate' !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+      or (item->>'valueState' = 'known' and (jsonb_typeof(item->'amount') is distinct from 'string' or item->>'amount' !~ '^-?[0-9]{1,16}(\.[0-9]{1,4})?$'))
+      or (item->>'valueState' <> 'known' and jsonb_typeof(item->'amount') is distinct from 'null')
+  ) or exists (
+    select 1 from jsonb_array_elements(v_manifest->'reviewIssues') item
+    where jsonb_typeof(item->'id') is distinct from 'string'
+      or jsonb_typeof(item->'sectionId') is distinct from 'string'
+      or jsonb_typeof(item->'kind') is distinct from 'string'
+      or jsonb_typeof(item->'impact') is distinct from 'string'
+      or jsonb_typeof(item->'description') is distinct from 'string'
+      or jsonb_typeof(item->'reference') not in ('string', 'null')
+      or (item ? 'affectedMapping' and jsonb_typeof(item->'affectedMapping') is distinct from 'object')
+      or coalesce(item->>'id', '') = '' or coalesce(item->>'sectionId', '') = '' or coalesce(item->>'description', '') = ''
+      or item->>'kind' not in ('scope_uncertain', 'party_uncertain', 'semantics_uncertain', 'date_conflict', 'rounding_difference', 'formula_error', 'possible_duplicate', 'coverage_overlap', 'other')
+      or item->>'impact' not in ('blocks_normalization', 'comparison_only')
+  ) or exists (
+    select 1 from jsonb_array_elements(v_manifest->'duplicateCandidates') item
+    where jsonb_typeof(item->'id') is distinct from 'string'
+      or jsonb_typeof(item->'sectionId') is distinct from 'string'
+      or jsonb_typeof(item->'candidateSectionId') is distinct from 'string'
+      or jsonb_typeof(item->'reason') is distinct from 'string'
+      or coalesce(item->>'id', '') = '' or coalesce(item->>'sectionId', '') = '' or coalesce(item->>'candidateSectionId', '') = '' or coalesce(item->>'reason', '') = ''
+  ) then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+
   select array_agg(value order by ordinality), string_agg(value, ',' order by ordinality)
   into v_actual_input_digests, v_input_digest_text
   from jsonb_array_elements_text(target_request->'actualInputDigests') with ordinality digests(value, ordinality);
@@ -550,9 +699,9 @@ begin
   then raise exception using errcode = 'P0001', message = 'INPUT_DIGEST_MISMATCH'; end if;
 
   v_manifest_digest := encode(extensions.digest(convert_to(private.c1_jsonb_canonical_text(v_manifest), 'UTF8'), 'sha256'), 'hex');
-  if v_manifest_digest <> target_request->>'approvedManifestDigest' then raise exception using errcode = 'P0001', message = 'MANIFEST_DIGEST_MISMATCH'; end if;
+  if v_manifest_digest is distinct from target_request->>'approvedManifestDigest' then raise exception using errcode = 'P0001', message = 'MANIFEST_DIGEST_MISMATCH'; end if;
   v_computed_payload_digest := encode(extensions.digest(convert_to(v_requested_run_id::text || '|' || v_manifest_digest || '|' || v_input_digest_text || '|' || v_manifest_digest, 'UTF8'), 'sha256'), 'hex');
-  if v_computed_payload_digest <> target_payload_digest then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  if v_computed_payload_digest is distinct from target_payload_digest then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
 
   for v_descriptor in select value from jsonb_array_elements(v_manifest->'sourceVersions') loop
     if not exists (select 1 from jsonb_array_elements(v_manifest->'sources') source where source->>'id' = v_descriptor->>'sourceId')
@@ -561,15 +710,27 @@ begin
   end loop;
   for v_descriptor in select value from jsonb_array_elements(v_manifest->'sections') loop
     if not exists (select 1 from jsonb_array_elements(v_manifest->'sourceVersions') version where version->>'id' = v_descriptor->>'sourceVersionId' and version->>'inputFileSha256' = v_descriptor->>'inputSha256')
-      or jsonb_typeof(v_descriptor->'locator') <> 'object'
-      or jsonb_typeof(v_descriptor->'mapping') <> 'object'
+      or jsonb_typeof(v_descriptor->'locator') is distinct from 'object'
+      or jsonb_typeof(v_descriptor->'mapping') is distinct from 'object'
     then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
-    if v_descriptor#>>'{locator,kind}' = 'cell_range' and ((v_descriptor#>>'{locator,range}') !~ '^[A-Z]+[1-9][0-9]*:[A-Z]+[1-9][0-9]*$' or (v_descriptor#>>'{locator,range}') <> private.c1_normalize_import_cell_range(v_descriptor#>>'{locator,range}') or coalesce(v_descriptor#>>'{locator,sheetName}', '') = '') then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
-    if v_descriptor#>>'{locator,kind}' = 'logical_section' and coalesce(v_descriptor#>>'{locator,section}', '') = '' then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
-    if v_descriptor#>>'{locator,kind}' not in ('cell_range', 'logical_section', 'whole_file') then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
-    if (v_descriptor#>>'{locator,kind}' = 'cell_range' and (not ((v_descriptor->'locator') ?& array['kind', 'sheetName', 'range']) or exists (select 1 from jsonb_object_keys(v_descriptor->'locator') key where key not in ('kind', 'sheetName', 'range'))))
-      or (v_descriptor#>>'{locator,kind}' = 'logical_section' and (not ((v_descriptor->'locator') ?& array['kind', 'section']) or exists (select 1 from jsonb_object_keys(v_descriptor->'locator') key where key not in ('kind', 'section'))))
-      or (v_descriptor#>>'{locator,kind}' = 'whole_file' and exists (select 1 from jsonb_object_keys(v_descriptor->'locator') key where key not in ('kind', 'note')))
+    if jsonb_typeof(v_descriptor#>'{locator,kind}') is distinct from 'string' or v_descriptor#>>'{locator,kind}' not in ('cell_range', 'logical_section', 'whole_file') then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+    if v_descriptor#>>'{locator,kind}' = 'cell_range' then
+      if not ((v_descriptor->'locator') ?& array['kind', 'sheetName', 'range'])
+        or exists (select 1 from jsonb_object_keys(v_descriptor->'locator') key where key not in ('kind', 'sheetName', 'range'))
+        or jsonb_typeof(v_descriptor#>'{locator,sheetName}') is distinct from 'string'
+        or jsonb_typeof(v_descriptor#>'{locator,range}') is distinct from 'string'
+        or coalesce(v_descriptor#>>'{locator,sheetName}', '') = ''
+        or (v_descriptor#>>'{locator,range}') !~ '^[A-Z]+[1-9][0-9]*:[A-Z]+[1-9][0-9]*$'
+        or (v_descriptor#>>'{locator,range}') <> private.c1_normalize_import_cell_range(v_descriptor#>>'{locator,range}')
+      then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+    elsif v_descriptor#>>'{locator,kind}' = 'logical_section' then
+      if not ((v_descriptor->'locator') ?& array['kind', 'section'])
+        or exists (select 1 from jsonb_object_keys(v_descriptor->'locator') key where key not in ('kind', 'section'))
+        or jsonb_typeof(v_descriptor#>'{locator,section}') is distinct from 'string'
+        or coalesce(v_descriptor#>>'{locator,section}', '') = ''
+      then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+    elsif exists (select 1 from jsonb_object_keys(v_descriptor->'locator') key where key not in ('kind', 'note'))
+      or (v_descriptor->'locator' ? 'note' and jsonb_typeof(v_descriptor#>'{locator,note}') is distinct from 'string')
     then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
     perform private.c1_assert_controlled_import_mapping(v_tenant_id, target_company_id, v_descriptor->'mapping');
   end loop;
@@ -628,7 +789,11 @@ begin
 
   for v_descriptor, v_ordinal_index in select value, ordinality - 1 from jsonb_array_elements(v_manifest->'sections') with ordinality loop
     select map.persisted_resource_id into v_version_database_id from public.controlled_import_descriptor_map map where map.import_run_id = v_import_run_id and map.descriptor_kind = 'source_version' and map.descriptor_id = v_descriptor->>'sourceVersionId';
-    v_locator_key := case v_descriptor#>>'{locator,kind}' when 'whole_file' then 'whole_file' when 'logical_section' then 'logical_section|' || v_descriptor#>>'{locator,section}' else 'cell_range|' || v_descriptor#>>'{locator,sheetName}' || '|' || v_descriptor#>>'{locator,range}' end;
+    v_locator_key := case v_descriptor #>> '{locator,kind}'
+      when 'whole_file' then 'whole_file'
+      when 'logical_section' then 'logical_section|' || (v_descriptor #>> '{locator,section}')
+      else 'cell_range|' || (v_descriptor #>> '{locator,sheetName}') || '|' || (v_descriptor #>> '{locator,range}')
+    end;
     select * into v_selection_row from public.source_selections selection where selection.source_version_id = v_version_database_id and selection.locator_key = v_locator_key;
     if not found then
       insert into public.source_selections(tenant_id, company_id, source_version_id, import_run_id, locator, locator_key, mapping_state, reviewed_mapping, mapped_project_id, mapped_party_id, mapped_engagement_id, mapped_component_id, observed_labels, raw_values, unresolved_issues, created_by)
@@ -713,4 +878,4 @@ revoke all on function public.c1_persist_controlled_import(uuid, jsonb, text, uu
 grant execute on function public.c1_persist_controlled_import(uuid, jsonb, text, uuid), public.c1_get_controlled_import_result(uuid, uuid) to authenticated;
 revoke all on function private.c1_can_read_import_draft(uuid, uuid) from public, anon, authenticated;
 grant execute on function private.c1_can_read_import_draft(uuid, uuid) to authenticated;
-revoke all on function private.c1_jsonb_canonical_text(jsonb), private.c1_assert_controlled_import_mapping(uuid, uuid, jsonb), private.c1_normalize_import_cell_range(text), private.c1_reject_import_history_mutation(), private.c1_persist_controlled_import(uuid, jsonb, text, uuid), private.c1_get_controlled_import_result(uuid, uuid) from public, anon, authenticated;
+revoke all on function private.c1_jsonb_canonical_text(jsonb), private.c1_jsonb_is_string_array(jsonb), private.c1_assert_controlled_import_mapping(uuid, uuid, jsonb), private.c1_normalize_import_cell_range(text), private.c1_reject_import_history_mutation(), private.c1_persist_controlled_import(uuid, jsonb, text, uuid), private.c1_get_controlled_import_result(uuid, uuid) from public, anon, authenticated;
