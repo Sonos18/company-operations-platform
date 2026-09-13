@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.2",
+  "workbookFamily": "synthetic-ledger-v1",
+  "adapter": { "id": "synthetic-ledger", "version": "1.0.0" },
+  "targetCompanyId": "c1000000-0000-4000-8000-000000000020",
+  "inputs": [{ "fileIdentity": "synthetic-ledger.xlsx", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "originalFilename": "synthetic-ledger.xlsx" }],
+  "sections": [
+    { "id": "opening-balance", "inputSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "locator": { "kind": "cell_range", "sheetName": " Nhật ký ", "range": "B2:A1" }, "mappingState": "pending", "observedLabels": ["Opening balance"], "rawValues": ["9007199254740992.0000"], "unresolvedIssues": ["engagement uncertain"] },
+    { "id": "source-total", "inputSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "locator": { "kind": "whole_file", "note": "source total" }, "mappingState": "reference_only", "observedLabels": ["Total"], "rawValues": ["0"], "unresolvedIssues": [] }
+  ],
+  "expected": { "sources": 1, "versions": 1, "sections": 2, "figures": 2, "reviewIssues": 1 }
+}
