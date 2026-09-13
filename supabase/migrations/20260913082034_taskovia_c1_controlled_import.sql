@@ -346,6 +346,39 @@ begin
 end;
 $$;
 
+create function private.c1_normalize_import_cell_range(target_range text)
+returns text
+language plpgsql
+immutable
+strict
+security definer
+set search_path = ''
+as $$
+declare
+  v_match text[];
+  v_left_column numeric := 0;
+  v_right_column numeric := 0;
+  v_left_row numeric;
+  v_right_row numeric;
+  v_current numeric;
+  v_left_label text := '';
+  v_right_label text := '';
+  v_index integer;
+begin
+  v_match := regexp_match(target_range, '^([A-Z]+)([1-9][0-9]*):([A-Z]+)([1-9][0-9]*)$');
+  if v_match is null then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  for v_index in 1..char_length(v_match[1]) loop v_left_column := v_left_column * 26 + ascii(substr(v_match[1], v_index, 1)) - 64; end loop;
+  for v_index in 1..char_length(v_match[3]) loop v_right_column := v_right_column * 26 + ascii(substr(v_match[3], v_index, 1)) - 64; end loop;
+  v_left_row := v_match[2]::numeric;
+  v_right_row := v_match[4]::numeric;
+  v_current := least(v_left_column, v_right_column);
+  while v_current > 0 loop v_left_label := chr(65 + mod(v_current - 1, 26)::integer) || v_left_label; v_current := floor((v_current - 1) / 26); end loop;
+  v_current := greatest(v_left_column, v_right_column);
+  while v_current > 0 loop v_right_label := chr(65 + mod(v_current - 1, 26)::integer) || v_right_label; v_current := floor((v_current - 1) / 26); end loop;
+  return v_left_label || least(v_left_row, v_right_row)::text || ':' || v_right_label || greatest(v_left_row, v_right_row)::text;
+end;
+$$;
+
 create function private.c1_reject_import_history_mutation()
 returns trigger
 language plpgsql
@@ -531,7 +564,8 @@ begin
       or jsonb_typeof(v_descriptor->'locator') <> 'object'
       or jsonb_typeof(v_descriptor->'mapping') <> 'object'
     then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
-    if v_descriptor#>>'{locator,kind}' = 'cell_range' and (v_descriptor#>>'{locator,range}') !~ '^[A-Z]+[1-9][0-9]*:[A-Z]+[1-9][0-9]*$' then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+    if v_descriptor#>>'{locator,kind}' = 'cell_range' and ((v_descriptor#>>'{locator,range}') !~ '^[A-Z]+[1-9][0-9]*:[A-Z]+[1-9][0-9]*$' or (v_descriptor#>>'{locator,range}') <> private.c1_normalize_import_cell_range(v_descriptor#>>'{locator,range}') or coalesce(v_descriptor#>>'{locator,sheetName}', '') = '') then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+    if v_descriptor#>>'{locator,kind}' = 'logical_section' and coalesce(v_descriptor#>>'{locator,section}', '') = '' then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
     if v_descriptor#>>'{locator,kind}' not in ('cell_range', 'logical_section', 'whole_file') then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
     if (v_descriptor#>>'{locator,kind}' = 'cell_range' and (not ((v_descriptor->'locator') ?& array['kind', 'sheetName', 'range']) or exists (select 1 from jsonb_object_keys(v_descriptor->'locator') key where key not in ('kind', 'sheetName', 'range'))))
       or (v_descriptor#>>'{locator,kind}' = 'logical_section' and (not ((v_descriptor->'locator') ?& array['kind', 'section']) or exists (select 1 from jsonb_object_keys(v_descriptor->'locator') key where key not in ('kind', 'section'))))
@@ -679,4 +713,4 @@ revoke all on function public.c1_persist_controlled_import(uuid, jsonb, text, uu
 grant execute on function public.c1_persist_controlled_import(uuid, jsonb, text, uuid), public.c1_get_controlled_import_result(uuid, uuid) to authenticated;
 revoke all on function private.c1_can_read_import_draft(uuid, uuid) from public, anon, authenticated;
 grant execute on function private.c1_can_read_import_draft(uuid, uuid) to authenticated;
-revoke all on function private.c1_jsonb_canonical_text(jsonb), private.c1_assert_controlled_import_mapping(uuid, uuid, jsonb), private.c1_reject_import_history_mutation(), private.c1_persist_controlled_import(uuid, jsonb, text, uuid), private.c1_get_controlled_import_result(uuid, uuid) from public, anon, authenticated;
+revoke all on function private.c1_jsonb_canonical_text(jsonb), private.c1_assert_controlled_import_mapping(uuid, uuid, jsonb), private.c1_normalize_import_cell_range(text), private.c1_reject_import_history_mutation(), private.c1_persist_controlled_import(uuid, jsonb, text, uuid), private.c1_get_controlled_import_result(uuid, uuid) from public, anon, authenticated;

@@ -22,6 +22,8 @@ describe('C1 controlled-import pre-Cloud SQL contract', () => {
     expect(sql).toContain('create table private.controlled_import_adapter_versions')
     expect(sql).toContain("message = 'ADAPTER_NOT_PERMITTED'")
     expect(sql).toContain('c1_controlled_import_events_immutable')
+    expect(sql).toContain('private.c1_normalize_import_cell_range')
+    expect(sql).toContain("<> private.c1_normalize_import_cell_range")
     expect(sql).toContain('grant execute on function private.c1_can_read_import_draft(uuid, uuid) to authenticated')
     expect(sql).not.toMatch(/create table public\..*manifest/iu)
     expect(sql).not.toMatch(/create table public\.(?:cost_documents|cost_document_lines|payments|allocations|file_objects)/iu)
