@@ -5,7 +5,7 @@ import { controlledImportManifestSchema, controlledImportRequestSchema, decimalS
 import { accountingSourceVersionSchema } from '../../../shared/schemas/costs/sources'
 
 const ids = { company: 'c1000000-0000-4000-8000-000000000020', source: 'c1000000-0000-4000-8000-000000000050', run: 'c1000000-0000-4000-8000-000000000060', key: 'c1000000-0000-4000-8000-000000000061' }
-const manifest = { schemaVersion: '1.2', workbookFamily: 'synthetic-ledger-v1', adapter: { id: 'synthetic-ledger', version: '1.0.0' }, targetCompanyId: ids.company, inputs: [{ fileIdentity: 'synthetic-ledger.xlsx', sha256: 'a'.repeat(64), originalFilename: 'synthetic-ledger.xlsx' }], sections: [{ id: 'section-01', inputSha256: 'a'.repeat(64), locator: { kind: 'cell_range', sheetName: ' Nhật ký ', range: 'B2:A1' }, mapping: { state: 'pending' }, observedLabels: ['Balance'], rawValues: ['9007199254740992.0000'], unresolvedIssues: ['scope uncertain'] }], figures: [], reviewIssues: [], duplicateCandidates: [], expected: { sources: 1, versions: 1, sections: 1, figures: 0, reviewIssues: 0 } }
+const manifest = { schemaVersion: '1.2', workbookFamily: 'synthetic-ledger-v1', adapter: { id: 'synthetic-ledger', version: '1.0.0' }, targetCompanyId: ids.company, inputs: [{ fileIdentity: 'synthetic-ledger.xlsx', sha256: 'a'.repeat(64), originalFilename: 'synthetic-ledger.xlsx' }], sources: [{ id: 'source-1', code: 'S1', title: 'Synthetic', sourceSystem: 'synthetic' }], sourceVersions: [{ id: 'source-1-v1', sourceId: 'source-1', inputFileIdentity: 'synthetic-ledger.xlsx', inputFileSha256: 'a'.repeat(64), originalFilename: 'synthetic-ledger.xlsx', rawFileReference: null, sourceVersionLabel: null, sourcePeriodText: null, sourceAsOfText: null }], sections: [{ id: 'section-01', sourceVersionId: 'source-1-v1', inputSha256: 'a'.repeat(64), locator: { kind: 'cell_range', sheetName: ' Nhật ký ', range: 'B2:A1' }, mapping: { state: 'pending' }, observedLabels: ['Balance'], rawValues: ['9007199254740992.0000'], unresolvedIssues: ['scope uncertain'] }], figures: [], reviewIssues: [], duplicateCandidates: [], expected: { sources: 1, versions: 1, sections: 1, figures: 0, reviewIssues: 0 } }
 
 describe('controlled-import schemas', () => {
   it('preserves unscoped pending provenance and exact decimal source truth', () => {
@@ -36,5 +36,23 @@ describe('controlled-import schemas', () => {
   })
   it('uses input provenance instead of a mandatory runtime file object', () => {
     expect(accountingSourceVersionSchema.safeParse({ id: ids.source, sourceId: ids.source, versionNo: 1, inputFileIdentity: 'source', inputFileSha256: 'a'.repeat(64), originalFilename: 'source.xlsx', rawFileReference: null, status: 'draft', sourceVersionLabel: null, sourcePeriodText: null, sourceAsOfText: null, version: 0, createdAt: '2026-09-13T00:00:00.000Z', sharedAt: null }).success).toBe(true)
+  })
+  it('enforces source/version hierarchy and declared counts', () => {
+    const fixture = JSON.parse(readFileSync(resolve(process.cwd(), 'tests/fixtures/costs/controlled-import/manifest.synthetic.json'), 'utf8'))
+    expect(controlledImportManifestSchema.parse(fixture).sourceVersions).toHaveLength(2)
+    for (const invalid of [
+      { ...fixture, sourceVersions: [{ ...fixture.sourceVersions[0], sourceId: 'missing' }] },
+      { ...fixture, sourceVersions: [{ ...fixture.sourceVersions[0], inputFileIdentity: 'missing' }] },
+      { ...fixture, sections: [{ ...fixture.sections[0], sourceVersionId: 'missing' }] },
+      { ...fixture, figures: [{ ...fixture.figures[0], sectionId: 'missing' }] },
+      { ...fixture, reviewIssues: [{ ...fixture.reviewIssues[0], sectionId: 'missing' }] },
+      { ...fixture, duplicateCandidates: [{ ...fixture.duplicateCandidates[0], candidateSectionId: 'missing' }] },
+      { ...fixture, sources: [fixture.sources[0], fixture.sources[0]] },
+      { ...fixture, expected: { ...fixture.expected, figures: 2 } },
+      { ...fixture, expected: { ...fixture.expected, sources: 2 } },
+      { ...fixture, expected: { ...fixture.expected, versions: 3 } },
+      { ...fixture, expected: { ...fixture.expected, sections: 3 } },
+      { ...fixture, expected: { ...fixture.expected, reviewIssues: 2 } },
+    ]) expect(controlledImportManifestSchema.safeParse(invalid).success).toBe(false)
   })
 })

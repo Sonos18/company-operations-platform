@@ -14,6 +14,17 @@ Reviewed execution compares trusted company, permitted adapter/version, actual i
 
 Occurrence identity is separate from the reviewed digest. Equivalent rectangles share an occurrence identity, including multi-letter columns; Unicode and meaningful sheet whitespace are preserved. Whole-file notes do not create another occurrence identity, but changing reviewed descriptive content changes the manifest digest.
 
+## Manifest hierarchy
+
+```text
+input → manifest-local logical source → manifest-local source version → provenance section
+      → source figure / review issue / duplicate candidate
+```
+
+Input identity is not source identity. Source/version/section/figure/review/duplicate IDs are stable manifest-local references, not persisted database IDs. A source version must resolve to its source and input identity/digest; a section must resolve to its source version and matching input digest; figures/issues/duplicates must resolve to existing sections. All descriptor IDs are unique. Declared source/version/section/figure/review counts must equal their actual manifest arrays.
+
+Existing Project/Party/Engagement/Component UUIDs may appear only as intentional reviewed mapping targets. `confirmed` is reviewed source mapping only; it is never financial confirmation, publication, payment, or coverage.
+
 ## Handoff
 
 A future workbook-family adapter produces candidate source/version identity, provenance sections, structured mapping/figures/issues/duplicates, and a candidate manifest only. `confirmed` mapping is source mapping—not financial confirmation, publication, payment, or coverage. P2.2 obtains human review and an approved digest; P2.3 persists/imports under database isolation and verifies replay, provenance, and zero financial effect. No source adapter, database writer, migration, Cloud run, or real-data import exists in this checkpoint.
