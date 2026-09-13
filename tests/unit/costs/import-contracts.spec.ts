@@ -55,4 +55,16 @@ describe('controlled-import schemas', () => {
       { ...fixture, expected: { ...fixture.expected, reviewIssues: 2 } },
     ]) expect(controlledImportManifestSchema.safeParse(invalid).success).toBe(false)
   })
+  it('requires unique input identities and exact input provenance on every version', () => {
+    const fixture = JSON.parse(readFileSync(resolve(process.cwd(), 'tests/fixtures/costs/controlled-import/manifest.synthetic.json'), 'utf8'))
+    expect(controlledImportManifestSchema.safeParse({ ...fixture, inputs: [fixture.inputs[0], { ...fixture.inputs[0] }] }).success).toBe(false)
+    expect(controlledImportManifestSchema.safeParse({ ...fixture, sourceVersions: [{ ...fixture.sourceVersions[0], originalFilename: 'different.xlsx' }, fixture.sourceVersions[1]] }).success).toBe(false)
+  })
+  it('represents changed workbook bytes as a distinct input and explicit second version', () => {
+    const fixture = controlledImportManifestSchema.parse(JSON.parse(readFileSync(resolve(process.cwd(), 'tests/fixtures/costs/controlled-import/manifest.synthetic.json'), 'utf8')))
+    expect(fixture.inputs).toHaveLength(2)
+    expect(fixture.sourceVersions).toHaveLength(2)
+    expect(fixture.sourceVersions[0]?.inputFileSha256).not.toBe(fixture.sourceVersions[1]?.inputFileSha256)
+    expect(fixture.sourceVersions[0]?.sourceId).toBe(fixture.sourceVersions[1]?.sourceId)
+  })
 })

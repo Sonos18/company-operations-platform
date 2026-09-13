@@ -59,7 +59,7 @@
 
 **Cloud boundary:** `20260912062227_taskovia_c1_sources_files.sql` is unapplied. P2 Cloud migration/SQL fixture executions and database type generation are all zero. Existing WIP remains on the branch pending a separate implementation disposition; this documentation task does not alter it.
 
-**Current direction:** P2.0 is accepted: it removed the deferred runtime upload/preview path and the never-applied v1.1 P2 migration/fixtures. P2.1 now provides pure controlled-import input → logical source → source version → provenance section → figure/review/duplicate structures, manifest-local referential/count integrity, canonical manifest and occurrence identity, scoped replay/conflict rules, reviewed-identity checks, and a synthetic example. It is source/static/unit evidence only: no adapter, persistence, migration, Cloud run, or real import exists. P2.2–P2.4 and P3–P6 remain not started.
+**Current direction:** P2.0 is accepted: it removed the deferred runtime upload/preview path and the never-applied v1.1 P2 migration/fixtures. P2.1 now provides pure controlled-import input → logical source → explicit source version → provenance section → figure/review/duplicate structures, unique input identity and source-version provenance checks, manifest-local referential/count integrity, canonical manifest and occurrence identity, scoped replay/conflict rules, reviewed-identity checks, and a synthetic changed-input v1→v2 example. It is source/static/unit evidence only: no adapter, persistence, migration, Cloud run, or real import exists. P2.2–P2.4 and P3–P6 remain not started.
 
 ## Execution Contract
 

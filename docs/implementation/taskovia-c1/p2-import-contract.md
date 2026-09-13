@@ -21,7 +21,9 @@ input → manifest-local logical source → manifest-local source version → pr
       → source figure / review issue / duplicate candidate
 ```
 
-Input identity is not source identity. Source/version/section/figure/review/duplicate IDs are stable manifest-local references, not persisted database IDs. A source version must resolve to its source and input identity/digest; a section must resolve to its source version and matching input digest; figures/issues/duplicates must resolve to existing sections. All descriptor IDs are unique. Declared source/version/section/figure/review counts must equal their actual manifest arrays.
+Input identity is not source identity. Every `inputs[].fileIdentity` is unique. A source version must resolve exactly one input and match its `sha256` and `originalFilename`; filename is provenance/display evidence and is never used to infer input identity. Source/version/section/figure/review/duplicate IDs are stable manifest-local references, not persisted database IDs. A section must resolve to its source version and matching input digest; figures/issues/duplicates must resolve to existing sections. All descriptor IDs are unique. Declared source/version/section/figure/review counts must equal their actual manifest arrays.
+
+Changed workbook bytes require a new explicit input identity/digest and a new explicit source version under the same logical source; a later version never silently overwrites the earlier source version.
 
 Existing Project/Party/Engagement/Component UUIDs may appear only as intentional reviewed mapping targets. `confirmed` is reviewed source mapping only; it is never financial confirmation, publication, payment, or coverage.
 
