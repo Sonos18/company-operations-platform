@@ -37,8 +37,10 @@ describe('C1 import CLI', () => {
     writeFileSync(packetPath, JSON.stringify(packet))
     writeFileSync(preparationPath, JSON.stringify(preparation))
     const fetch = vi.fn().mockRejectedValue(new Error('timeout'))
+    const prepare = vi.fn().mockResolvedValue(preparation)
 
-    await expect(run(['execute', '--packet', packetPath, '--preparation', preparationPath, '--endpoint', 'https://example.invalid', '--access-token-env', 'TOKEN', '--execute', '--output', outputPath], { env: { TOKEN: 'secret' }, fetch })).rejects.toThrow('WRITE_OUTCOME_UNKNOWN')
+    await expect(run(['execute', '--packet', packetPath, '--preparation', preparationPath, '--endpoint', 'https://example.invalid', '--access-token-env', 'TOKEN', '--execute', '--output', outputPath], { env: { TOKEN: 'secret' }, fetch, prepare })).rejects.toThrow('WRITE_OUTCOME_UNKNOWN')
+    expect(prepare).toHaveBeenCalledOnce()
     expect(fetch).toHaveBeenCalledOnce()
     expect(JSON.parse(readFileSync(resolve(outputPath, 'outcome.json'), 'utf8'))).toEqual({ status: 'UNKNOWN', runId: packet.runId, idempotencyKey: packet.idempotencyKey, error: 'WRITE_OUTCOME_UNKNOWN' })
   })
