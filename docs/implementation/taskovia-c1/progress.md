@@ -135,3 +135,8 @@ cloud_dev_writes: true # one P1 foundation migration and two post-repair synthet
 real_vqh_data_touched: false
 p1_started: true
 ```
+# P2.4 source UI (repository slice)
+
+- Added the read-only C1 cost-source API and management UI routes.
+- No Cloud database mutation, import, migration, or P3 publication work was performed by this repository slice.
+- Real VQH runtime verification remains dependent on the separate Track A database handoff.

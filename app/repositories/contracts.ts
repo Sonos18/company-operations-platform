@@ -33,6 +33,7 @@ import type {
   UpdateStage01ConfigDraftInput,
 } from '../../shared/schemas/stage01-config'
 import type { BusinessParty, CompanyCostSettings, CreateBusinessPartyInput, CreateEngagementComponentInput, CreateEngagementInput, CreateProjectRegisterInput, Engagement, EngagementComponent, ProjectRegister, UpdateBusinessPartyInput, UpdateEngagementComponentInput, UpdateEngagementInput, UpdateProjectRegisterInput } from '../../shared/schemas/costs/master-data'
+import type { CostSourceFiguresQuery, CostSourceOverview, CostSourceProjectDetail, CostSourceProvenance, CostSourceFigure } from '../../shared/schemas/costs/source-read-model'
 
 export interface CompanyRepository {
   getCurrent(): Promise<Company>
@@ -131,6 +132,7 @@ export interface ProjectRegisterRepository { list(): Promise<ProjectRegister[]>;
 export interface BusinessPartyRepository { list(): Promise<BusinessParty[]>; getById(id: string): Promise<BusinessParty | null>; create(input: CreateBusinessPartyInput): Promise<BusinessParty>; update(id: string, input: UpdateBusinessPartyInput): Promise<BusinessParty> }
 export interface EngagementRepository { list(projectId: string): Promise<Engagement[]>; getById(projectId: string, id: string): Promise<Engagement | null>; create(projectId: string, input: CreateEngagementInput): Promise<Engagement>; update(projectId: string, id: string, input: UpdateEngagementInput): Promise<Engagement>; listComponents(engagementId: string): Promise<EngagementComponent[]>; getComponentById(engagementId: string, id: string): Promise<EngagementComponent | null>; addComponent(engagementId: string, input: CreateEngagementComponentInput): Promise<EngagementComponent>; updateComponent(engagementId: string, id: string, input: UpdateEngagementComponentInput): Promise<EngagementComponent> }
 export interface CostSettingsRepository { get(): Promise<CompanyCostSettings> }
+export interface CostSourceReadRepository { overview(): Promise<CostSourceOverview>; project(projectId: string): Promise<CostSourceProjectDetail>; figures(projectId: string, query?: Partial<CostSourceFiguresQuery>): Promise<{ items: CostSourceFigure[]; nextCursor: string | null }>; provenance(figureId: string): Promise<CostSourceProvenance> }
 
 export interface RepositoryRegistry {
   context: Readonly<CompanyContext>
@@ -148,7 +150,8 @@ export interface RepositoryRegistry {
   businessParties: BusinessPartyRepository
   engagements: EngagementRepository
   costSettings: CostSettingsRepository
+  costSourceRead: CostSourceReadRepository
   prototype: PrototypeRepository
 }
 
-export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01' | 'stage01Config' | 'projectRegister' | 'businessParties' | 'engagements' | 'costSettings'>
+export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01' | 'stage01Config' | 'projectRegister' | 'businessParties' | 'engagements' | 'costSettings' | 'costSourceRead'>

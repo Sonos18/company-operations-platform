@@ -1,5 +1,5 @@
 import type { z } from 'zod'
-import { ClientError, type ClientErrorCode, type ClientErrorKind } from '../../errors/client-error'
+import { ClientError, type ClientErrorCode, type ClientErrorKind, type ClientErrorReason } from '../../errors/client-error'
 import { apiErrorBodySchema } from '../../../shared/schemas/api-error'
 import type { ApiErrorCode } from '../../../shared/schemas/api-error'
 
@@ -44,8 +44,9 @@ function clientError(
   message: string,
   retryable: boolean,
   requestId?: string,
+  reason?: ClientErrorReason,
 ): ClientError {
-  return new ClientError({ kind, code, message, retryable, requestId })
+  return new ClientError({ kind, code, message, retryable, requestId, reason })
 }
 
 function malformedResponse(): ClientError {
@@ -133,7 +134,7 @@ function isInternalApiUrl(value: string): boolean {
     && url.pathname.startsWith('/api/')
 }
 
-function apiFailure(status: number, code: ApiErrorCode, requestId: string): ClientError {
+function apiFailure(status: number, code: ApiErrorCode, requestId: string, reason?: ClientErrorReason): ClientError {
   if (status === 429) {
     return clientError(
       'rate_limit',
@@ -158,7 +159,7 @@ function apiFailure(status: number, code: ApiErrorCode, requestId: string): Clie
     return clientError('authorization', 'COMPANY_FORBIDDEN', 'Bạn không có quyền truy cập công ty này.', false, requestId)
   }
   if (code === 'PERMISSION_DENIED') {
-    return clientError('authorization', 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', false, requestId)
+    return clientError('authorization', 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', false, requestId, reason)
   }
 
   if (status === 401) {
@@ -227,7 +228,8 @@ export function createAuthenticatedHttpClient(options: AuthenticatedHttpClientOp
         if (responseBody.kind !== 'json') throw malformedResponse()
         const parsedError = strictApiErrorBodySchema.safeParse(responseBody.value)
         if (!parsedError.success) throw malformedResponse()
-        const failure = apiFailure(response.status, parsedError.data.error.code, parsedError.data.error.requestId)
+        const reason = parsedError.data.error.details.reason === 'MODULE_DISABLED' ? 'MODULE_DISABLED' : undefined
+        const failure = apiFailure(response.status, parsedError.data.error.code, parsedError.data.error.requestId, reason)
         const shouldRevalidate = input.url.split(/[?#]/u, 1)[0] !== '/api/auth/session'
           && (failure.code === 'COMPANY_FORBIDDEN' || failure.code === 'PERMISSION_DENIED')
 

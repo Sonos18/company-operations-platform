@@ -9,6 +9,10 @@
 
 An acceptance row is **partial** until all listed layers have evidence: shared schema/unit, server/HTTP, database/RLS/storage when applicable, UI/E2E when user-visible, and the P6 synthetic acceptance run. A source-file inspection, mock-only test, report commit, or real workbook presence is never final acceptance evidence.
 
+## P2.4 source UI repository slice
+
+The read-only source UI/API slice is implemented as company-scoped GET routes with authenticated-user RLS, bounded figure reads, decimal-string display, and redacted provenance. Its browser evidence is synthetic only. It does not establish Cloud DEV data availability, module enablement, permissions, real-workbook persistence, financial confirmation, or P3 publication. Those remain Track A/P2.4 and later-phase acceptance responsibilities.
+
 ## P1 closure evidence status
 
 P1 has deterministic shared-schema, server/service, route, HTTP-repository, registry, runner, and migration-contract tests. Those server/HTTP tests use controlled doubles; they are not browser-to-Cloud proof. The original P1.4B CLI exit-0 result is not Cloud SQL evidence because the Windows direct-entry condition did not invoke the C1 runner.

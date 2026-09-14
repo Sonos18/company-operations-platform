@@ -183,6 +183,20 @@ describe('authenticated HTTP client', () => {
     expect(JSON.stringify(error)).not.toContain('never expose')
   })
 
+  it('retains the allowlisted module-disabled reason without exposing other error details', async () => {
+    const client = createAuthenticatedHttpClient({
+      getAccessToken: () => 'token',
+      fetch: async () => new Response(JSON.stringify({ error: {
+        code: 'PERMISSION_DENIED', message: 'raw detail', requestId: 'source-request-id',
+        details: { reason: 'MODULE_DISABLED', privatePath: 'C:\\private.xlsx' },
+      } }), { status: 403, headers: { 'Content-Type': 'application/json' } }),
+    })
+
+    const error = await client.request({ url: '/api/companies/company/cost-sources', schema: valueSchema }).catch(value => value)
+    expect(error).toMatchObject({ code: 'PERMISSION_DENIED', reason: 'MODULE_DISABLED', requestId: 'source-request-id' })
+    expect(JSON.stringify(error)).not.toContain('private')
+  })
+
   it.each([
     'STAGE01_DEFINITION_CONFIG_UNAVAILABLE',
     'STAGE01_HISTORY_IMMUTABLE',

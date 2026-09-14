@@ -11,6 +11,7 @@ import { createHttpProjectRegisterRepository } from '../repositories/http/http-p
 import { createHttpBusinessPartyRepository } from '../repositories/http/http-business-party-repository'
 import { createHttpEngagementRepository } from '../repositories/http/http-engagement-repository'
 import { createHttpCostSettingsRepository } from '../repositories/http/http-cost-settings-repository'
+import { createHttpCostSourceReadRepository } from '../repositories/http/http-cost-source-read-repository'
 import type { SupabaseAuthRepository } from '../repositories/auth/supabase-auth.repository'
 import type { AuthenticatedHttpClient } from '../repositories/http/authenticated-http-client'
 import type { CompanyAccessStore } from '../stores/company/company-access.store'
@@ -44,6 +45,7 @@ export default defineNuxtPlugin({
       businessParties: createHttpBusinessPartyRepository({ companyId: () => companyAccess.activeCompanyId ?? context.companyId, client }),
       engagements: createHttpEngagementRepository({ companyId: () => companyAccess.activeCompanyId ?? context.companyId, client }),
       costSettings: createHttpCostSettingsRepository({ companyId: () => companyAccess.activeCompanyId ?? context.companyId, client }),
+      costSourceRead: createHttpCostSourceReadRepository({ companyId: () => companyAccess.activeCompanyId ?? context.companyId, client }),
     }
 
     return { provide: { repositories } }

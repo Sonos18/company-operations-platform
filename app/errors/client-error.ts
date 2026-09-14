@@ -22,6 +22,7 @@ export type ClientOnlyErrorCode =
   | 'CANONICAL_RELOAD_REQUIRED'
 
 export type ClientErrorCode = ApiErrorCode | ClientOnlyErrorCode
+export type ClientErrorReason = 'MODULE_DISABLED'
 
 export interface ClientErrorOptions {
   kind: ClientErrorKind
@@ -29,6 +30,7 @@ export interface ClientErrorOptions {
   message: string
   fieldErrors?: Record<string, string>
   requestId?: string
+  reason?: ClientErrorReason
   retryable: boolean
 }
 
@@ -37,6 +39,7 @@ export class ClientError extends Error {
   readonly code: ClientErrorCode
   readonly fieldErrors?: Record<string, string>
   readonly requestId?: string
+  readonly reason?: ClientErrorReason
   readonly retryable: boolean
 
   constructor(options: ClientErrorOptions) {
@@ -46,6 +49,7 @@ export class ClientError extends Error {
     this.code = options.code
     this.fieldErrors = options.fieldErrors
     this.requestId = options.requestId
+    this.reason = options.reason
     this.retryable = options.retryable
   }
 }
