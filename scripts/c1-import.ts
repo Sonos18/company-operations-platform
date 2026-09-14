@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CANONICAL_DEV_PROJECT_REF } from './assert-cloud-dev-target.mjs'
@@ -9,10 +9,10 @@ import { prepareVqhWorkbookImport } from '../server/features/costs/imports/vqh-w
 
 const help = `Taskovia C1 controlled import\n\nprepare --manifest <json> --digest <sha256> --company <uuid> --bind <fileIdentity=path>... --output <dir>\nexecute --packet <json> --preparation <json> --bind <fileIdentity=path>... --endpoint <https-url> --access-token-env <name> --execute --output <dir>\nget-result --packet <json> --endpoint <https-url> --access-token-env <name> --output <dir>`
 function option(args: string[], name: string) { const index = args.indexOf(name); return index < 0 ? undefined : args[index + 1] }
-function required(args: string[], name: string) { const value = option(args, name); if (!value) throw new Error(`MISSING_OPTION:${name}`); return value }
+function required(args: string[], name: string) { const value = option(args, name); if (!value) throw new ControlledImportCommandError({ phase: 'pre_dispatch', code: `MISSING_OPTION:${name}` }); return value }
 function bindings(args: string[]) { return args.flatMap((value, index) => value === '--bind' && args[index + 1]?.includes('=') ? [{ fileIdentity: args[index + 1]!.slice(0, args[index + 1]!.indexOf('=')), path: args[index + 1]!.slice(args[index + 1]!.indexOf('=') + 1) }] : []) }
 function json(path: string) { return JSON.parse(readFileSync(resolve(path), 'utf8')) }
-function exclusiveJson(path: string, value: unknown) { writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' }) }
+function exclusiveJson(path: string, value: unknown) { const temporary = `${path}.${randomUUID()}.tmp`; writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' }); renameSync(temporary, path) }
 const fileEvidence = { open: (path: string, value: unknown) => exclusiveJson(resolve(path, 'attempt.json'), value), finish: (path: string, value: unknown) => exclusiveJson(resolve(path, 'outcome.json'), value) }
 const definiteRejections = new Map<ApiErrorCode, number>([['AUTH_REQUIRED', 401], ['AUTH_INVALID', 401], ['INPUT_INVALID', 400], ['COMPANY_FORBIDDEN', 403], ['PERMISSION_DENIED', 403], ['IDEMPOTENCY_CONFLICT', 409], ['RESOURCE_NOT_FOUND', 404]])
 const strictApiErrorBodySchema = apiErrorBodySchema.extend({ error: apiErrorBodySchema.shape.error.strict() }).strict()
@@ -30,6 +30,13 @@ function reserveAttempt(path: string) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST') throw new ControlledImportCommandError({ phase: 'pre_dispatch', code: 'ATTEMPT_DIRECTORY_EXISTS', cause: error })
     throw new ControlledImportCommandError({ phase: 'pre_dispatch', code: 'EVIDENCE_WRITE_FAILED', cause: error })
   }
+}
+function executionPacket(path: string) {
+  let value: unknown
+  try { value = json(path) } catch (error) { throw new ControlledImportCommandError({ phase: 'pre_dispatch', code: 'EXECUTION_PACKET_INVALID', cause: error }) }
+  const parsed = controlledImportExecutionPacketSchema.safeParse(value)
+  if (!parsed.success) throw new ControlledImportCommandError({ phase: 'pre_dispatch', code: 'EXECUTION_PACKET_INVALID', cause: parsed.error })
+  return parsed.data
 }
 function httpTransport(endpoint: string, token: string, fetcher: typeof fetch) {
   async function request(path: string, init?: RequestInit) {
@@ -57,12 +64,12 @@ export async function run(argv = process.argv.slice(2), dependencies: { env: Rec
     return
   }
   if (mode === 'execute' || mode === 'get-result') {
-    const packet = controlledImportExecutionPacketSchema.parse(json(required(argv, '--packet')))
+    const packet = executionPacket(required(argv, '--packet'))
     const endpoint = required(argv, '--endpoint')
     validateControlledImportDestination(endpoint, packet.destination, CANONICAL_DEV_PROJECT_REF)
     const tokenName = required(argv, '--access-token-env')
     const token = dependencies.env[tokenName]
-    if (!token) throw new Error('ACCESS_TOKEN_MISSING')
+    if (!token) throw new ControlledImportCommandError({ phase: 'pre_dispatch', code: 'ACCESS_TOKEN_MISSING' })
     const outputDirectory = required(argv, '--output')
     reserveAttempt(outputDirectory)
     const attemptId = randomUUID()
