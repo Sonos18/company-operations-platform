@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { closeSync, fstatSync, mkdirSync, openSync, readSync, writeFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import ExcelJS from 'exceljs'
 import JSZip, { type JSZipObject } from 'jszip'
@@ -17,7 +17,105 @@ function digest(bytes: Buffer) { return createHash('sha256').update(bytes).diges
 const maximumWorkbookBytes = 50 * 1024 * 1024
 const maximumArchiveEntries = 512
 const maximumXmlBytes = 32 * 1024 * 1024
+const maximumArchiveExpansionBytes = 64 * 1024 * 1024
+const endOfCentralDirectorySignature = 0x06054b50
+const centralDirectorySignature = 0x02014b50
 interface RawCell { hasFormula: boolean; rawValue: string | null; rawInlineText: string | null; type: string | null; style: string | null }
+interface ArchiveMetadata { entries: number; declaredExpansion: number }
+
+function boundedRead(path: string, fileIdentity: string) {
+  let descriptor: number
+  try { descriptor = openSync(path, 'r') } catch { return fail(`INPUT_FILE_MISSING:${fileIdentity}`) }
+  try {
+    const stats = fstatSync(descriptor)
+    const size = stats.size
+    if (!stats.isFile() || !Number.isSafeInteger(size) || size < 0) return fail(`WORKBOOK_FILE_METADATA_UNSUPPORTED:${fileIdentity}`)
+    if (size > maximumWorkbookBytes) return fail(`WORKBOOK_FILE_LIMIT_EXCEEDED:${fileIdentity}`)
+    const bytes = Buffer.allocUnsafe(size)
+    let offset = 0
+    while (offset < bytes.length) {
+      const read = readSync(descriptor, bytes, offset, bytes.length - offset, null)
+      if (read === 0) break
+      offset += read
+    }
+    const extra = Buffer.allocUnsafe(1)
+    if (offset !== size || readSync(descriptor, extra, 0, 1, null) !== 0) return fail(`WORKBOOK_FILE_METADATA_UNSUPPORTED:${fileIdentity}`)
+    return bytes
+  } finally { closeSync(descriptor) }
+}
+
+function archiveMetadata(bytes: Buffer): ArchiveMetadata {
+  const start = Math.max(0, bytes.length - 65557)
+  let end = -1
+  for (let offset = bytes.length - 22; offset >= start; offset--) {
+    if (bytes.readUInt32LE(offset) === endOfCentralDirectorySignature && offset + 22 + bytes.readUInt16LE(offset + 20) === bytes.length) { end = offset; break }
+  }
+  if (end < 0) return fail('WORKBOOK_ARCHIVE_INVALID')
+  const disk = bytes.readUInt16LE(end + 4); const centralDisk = bytes.readUInt16LE(end + 6)
+  const entriesOnDisk = bytes.readUInt16LE(end + 8); const entries = bytes.readUInt16LE(end + 10)
+  const size = bytes.readUInt32LE(end + 12); const offset = bytes.readUInt32LE(end + 16)
+  if (disk !== 0 || centralDisk !== 0 || entriesOnDisk !== entries || entries === 0xffff || size === 0xffffffff || offset === 0xffffffff) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
+  if (entries > maximumArchiveEntries) return fail('WORKBOOK_ARCHIVE_ENTRY_LIMIT_EXCEEDED')
+  const centralEnd = offset + size
+  if (!Number.isSafeInteger(centralEnd) || offset > end || centralEnd > end) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
+  let cursor = offset; let declaredExpansion = 0
+  for (let index = 0; index < entries; index++) {
+    if (cursor + 46 > centralEnd || bytes.readUInt32LE(cursor) !== centralDirectorySignature) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
+    const flags = bytes.readUInt16LE(cursor + 8); const method = bytes.readUInt16LE(cursor + 10)
+    const compressed = bytes.readUInt32LE(cursor + 20); const uncompressed = bytes.readUInt32LE(cursor + 24)
+    const nameLength = bytes.readUInt16LE(cursor + 28); const extraLength = bytes.readUInt16LE(cursor + 30); const commentLength = bytes.readUInt16LE(cursor + 32); const localOffset = bytes.readUInt32LE(cursor + 42)
+    if ((flags & 0x09) !== 0 || (method !== 0 && method !== 8) || compressed === 0xffffffff || uncompressed === 0xffffffff || localOffset === 0xffffffff || localOffset >= offset) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
+    const next = cursor + 46 + nameLength + extraLength + commentLength
+    if (!Number.isSafeInteger(next) || next > centralEnd) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
+    if (uncompressed > maximumXmlBytes) return fail('WORKBOOK_ARCHIVE_ENTRY_SIZE_LIMIT_EXCEEDED')
+    declaredExpansion += uncompressed
+    if (!Number.isSafeInteger(declaredExpansion) || declaredExpansion > maximumArchiveExpansionBytes) return fail('WORKBOOK_ARCHIVE_EXPANSION_LIMIT_EXCEEDED')
+    cursor = next
+  }
+  if (cursor !== centralEnd) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
+  return { entries, declaredExpansion }
+}
+
+function declaredSize(entry: JSZipObject): number {
+  const size = (entry as JSZipObject & { _data?: { uncompressedSize?: number } })._data?.uncompressedSize
+  if (typeof size !== 'number' || !Number.isSafeInteger(size) || size < 0) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
+  return size
+}
+
+async function actualSize(entry: JSZipObject, aggregate: number) {
+  return await new Promise<number>((resolve, reject) => {
+    const stream = entry.nodeStream() as unknown as { on(event: string, listener: (...args: unknown[]) => void): unknown; destroy(): void }
+    let size = 0; let settled = false
+    const stop = (code: string) => { if (!settled) { settled = true; stream.destroy(); reject(new Error(code)) } }
+    stream.on('data', chunk => {
+      const length = Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(String(chunk))
+      if (size + length > maximumXmlBytes) return stop('WORKBOOK_ARCHIVE_ENTRY_SIZE_LIMIT_EXCEEDED')
+      if (aggregate + size + length > maximumArchiveExpansionBytes) return stop('WORKBOOK_ARCHIVE_EXPANSION_LIMIT_EXCEEDED')
+      size += length
+    })
+    stream.on('error', () => stop('WORKBOOK_ARCHIVE_INVALID'))
+    stream.on('end', () => { if (!settled) { settled = true; resolve(size) } })
+  })
+}
+
+async function preflightArchive(bytes: Buffer) {
+  const metadata = archiveMetadata(bytes)
+  let metadataZip: JSZip
+  try { metadataZip = await JSZip.loadAsync(bytes, { checkCRC32: false, createFolders: false }) } catch { return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED') }
+  const entries = Object.values(metadataZip.files)
+  if (entries.length !== metadata.entries) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
+  let actualExpansion = 0
+  for (const entry of entries) {
+    if (entry.dir) continue
+    const declared = declaredSize(entry)
+    if (declared > maximumXmlBytes || actualExpansion + declared > maximumArchiveExpansionBytes) return fail(declared > maximumXmlBytes ? 'WORKBOOK_ARCHIVE_ENTRY_SIZE_LIMIT_EXCEEDED' : 'WORKBOOK_ARCHIVE_EXPANSION_LIMIT_EXCEEDED')
+    const actual = await actualSize(entry, actualExpansion)
+    if (actual !== declared) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
+    actualExpansion += actual
+  }
+  if (actualExpansion !== metadata.declaredExpansion) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
+  try { return await JSZip.loadAsync(bytes, { checkCRC32: true, createFolders: false }) } catch { return fail('WORKBOOK_ARCHIVE_INVALID') }
+}
 
 function xmlText(value: string) {
   return value
@@ -76,11 +174,7 @@ function rawCells(value: string) {
   }
   return result
 }
-async function rawWorkbook(bytes: Buffer) {
-  if (bytes.length > maximumWorkbookBytes) return fail('WORKBOOK_ARCHIVE_LIMIT_EXCEEDED')
-  let zip: JSZip
-  try { zip = await JSZip.loadAsync(bytes, { checkCRC32: true, createFolders: false }) } catch { return fail('WORKBOOK_ARCHIVE_INVALID') }
-  if (Object.keys(zip.files).length > maximumArchiveEntries) return fail('WORKBOOK_ARCHIVE_LIMIT_EXCEEDED')
+async function rawWorkbook(zip: JSZip) {
   const workbookXml = await xml(zip.file('xl/workbook.xml'), 'WORKBOOK_STRUCTURE_UNSUPPORTED')
   const relationshipsXml = await xml(zip.file('xl/_rels/workbook.xml.rels'), 'WORKBOOK_STRUCTURE_UNSUPPORTED')
   const stylesXml = await xml(zip.file('xl/styles.xml'), 'WORKBOOK_STRUCTURE_UNSUPPORTED')
@@ -141,9 +235,9 @@ function normalizedCellValue(value: unknown, numberFormat = '', formula?: string
   return value
 }
 async function verifyWorkbook(bytes: Buffer, manifest: ControlledImportManifest, inputIdentity: string) {
+  const raw = await rawWorkbook(await preflightArchive(bytes))
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(bytes as never)
-  const raw = await rawWorkbook(bytes)
   const versions = new Map(manifest.sourceVersions.map(version => [version.id, version]))
   let evidenceOccurrences = 0
   const distinctSourceCells = new Set<string>()
@@ -212,8 +306,7 @@ export async function prepareVqhWorkbookImport(input: PrepareInput) {
   for (const manifestInput of reviewed.manifest.inputs) {
     const path = bindings.get(manifestInput.fileIdentity)
     if (!path || basename(path) !== manifestInput.originalFilename) return fail('INPUT_BINDING_MISMATCH')
-    let bytes: Buffer
-    try { bytes = readFileSync(path) } catch { return fail(`INPUT_FILE_MISSING:${manifestInput.fileIdentity}`) }
+    const bytes = boundedRead(path, manifestInput.fileIdentity)
     if (digest(bytes) !== manifestInput.sha256) return fail(`INPUT_DIGEST_MISMATCH:${manifestInput.fileIdentity}`)
     const verified = await verifyWorkbook(bytes, reviewed.manifest, manifestInput.fileIdentity)
     evidenceOccurrences += verified.evidenceOccurrences

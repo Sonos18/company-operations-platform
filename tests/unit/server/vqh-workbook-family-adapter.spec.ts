@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { closeSync, ftruncateSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import ExcelJS from 'exceljs'
 import JSZip from 'jszip'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { canonicalizeManifest } from '../../../server/features/costs/imports/import-manifest'
 import { prepareVqhWorkbookImport, VQH_ADAPTER, VQH_WORKBOOK_FAMILY } from '../../../server/features/costs/imports/vqh-workbook-family-adapter'
 
@@ -40,9 +40,8 @@ async function replaceNumericTokens(path: string, replacements: Record<string, s
   writeFileSync(path, await zip.generateAsync({ type: 'nodebuffer' }))
 }
 
-function manifest(path: string) {
-  const bytes = readFileSync(path)
-  const sha256 = createHash('sha256').update(bytes).digest('hex')
+function manifest(path: string, inputSha256?: string) {
+  const sha256 = inputSha256 ?? createHash('sha256').update(readFileSync(path)).digest('hex')
   const fileIdentity = `input-${sha256.slice(0, 16)}`
   return {
     schemaVersion: '1.2', workbookFamily: VQH_WORKBOOK_FAMILY, adapter: VQH_ADAPTER, targetCompanyId: companyId,
@@ -55,7 +54,129 @@ function manifest(path: string) {
   }
 }
 
+async function writeArchive(path: string, files: Record<string, string | Buffer>) {
+  const zip = new JSZip()
+  for (const [name, value] of Object.entries(files)) zip.file(name, value)
+  writeFileSync(path, await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' }))
+}
+
+function patchCentralDirectory(bytes: Buffer, update: (name: string, offset: number, bytes: Buffer) => void) {
+  const copy = Buffer.from(bytes)
+  for (let offset = 0; offset <= copy.length - 46; offset++) {
+    if (copy.readUInt32LE(offset) !== 0x02014b50) continue
+    const nameLength = copy.readUInt16LE(offset + 28)
+    const extraLength = copy.readUInt16LE(offset + 30)
+    const commentLength = copy.readUInt16LE(offset + 32)
+    const name = copy.subarray(offset + 46, offset + 46 + nameLength).toString('utf8')
+    update(name, offset, copy)
+    offset += 46 + nameLength + extraLength + commentLength - 1
+  }
+  return copy
+}
+
+async function expectArchiveRefusal(path: string, code: string) {
+  const reviewed = manifest(path)
+  reviewed.inputs[0].originalFilename = basename(path)
+  reviewed.sourceVersions[0].originalFilename = basename(path)
+  await expect(prepareVqhWorkbookImport({ manifest: reviewed, approvedManifestDigest: canonicalizeManifest(reviewed).digest, targetCompanyId: companyId, bindings: [{ fileIdentity: reviewed.inputs[0].fileIdentity, path }], outputDirectory: join(dirname(path), 'out') }))
+    .rejects.toThrow(code)
+}
+
 describe('VQH workbook-family adapter', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('preflights ZIP metadata and CRC before ExcelJS materializes a valid workbook', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'c1-adapter-order-'))
+    const path = join(root, 'Sổ tổng hợp.xlsx')
+    await workbook(path)
+    const reviewed = manifest(path)
+    const order: string[] = []
+    const load = JSZip.loadAsync.bind(JSZip)
+    vi.spyOn(JSZip, 'loadAsync').mockImplementation(async (bytes, options) => {
+      order.push(options?.checkCRC32 ? 'crc' : 'metadata')
+      return load(bytes, options)
+    })
+    const descriptor = Object.getOwnPropertyDescriptor(ExcelJS.Workbook.prototype, 'xlsx')!
+    vi.spyOn(ExcelJS.Workbook.prototype, 'xlsx', 'get').mockImplementation(function () {
+      order.push('excel')
+      return descriptor.get!.call(this)
+    })
+
+    await expect(prepareVqhWorkbookImport({ manifest: reviewed, approvedManifestDigest: canonicalizeManifest(reviewed).digest, targetCompanyId: companyId, bindings: [{ fileIdentity: reviewed.inputs[0].fileIdentity, path }], outputDirectory: join(root, 'out') })).resolves.toBeDefined()
+
+    expect(order.slice(0, 3)).toEqual(['metadata', 'crc', 'excel'])
+  })
+
+  it('rejects an oversized file before any ZIP or ExcelJS processing', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'c1-adapter-file-limit-'))
+    const path = join(root, 'Sổ tổng hợp.xlsx')
+    const descriptor = openSync(path, 'w')
+    ftruncateSync(descriptor, 50 * 1024 * 1024 + 1)
+    closeSync(descriptor)
+    const reviewed = manifest(path, 'a'.repeat(64))
+    const zipSpy = vi.spyOn(JSZip, 'loadAsync')
+
+    await expect(prepareVqhWorkbookImport({ manifest: reviewed, approvedManifestDigest: canonicalizeManifest(reviewed).digest, targetCompanyId: companyId, bindings: [{ fileIdentity: reviewed.inputs[0].fileIdentity, path }], outputDirectory: join(root, 'out') })).rejects.toThrow('WORKBOOK_FILE_LIMIT_EXCEEDED')
+    expect(zipSpy).not.toHaveBeenCalled()
+    zipSpy.mockRestore()
+  })
+
+  it('rejects an over-entry archive before CRC or ExcelJS processing', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'c1-adapter-entry-limit-'))
+    const path = join(root, 'Sổ tổng hợp.xlsx')
+    const files: Record<string, string> = {}
+    for (let index = 0; index < 513; index++) files[`unused/${index}.txt`] = 'x'
+    await writeArchive(path, files)
+    const zipSpy = vi.spyOn(JSZip, 'loadAsync')
+
+    await expectArchiveRefusal(path, 'WORKBOOK_ARCHIVE_ENTRY_LIMIT_EXCEEDED')
+    expect(zipSpy).not.toHaveBeenCalled()
+    zipSpy.mockRestore()
+  })
+
+  it('rejects oversized XML metadata and aggregate expansion before materialization', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'c1-adapter-size-limit-'))
+    const xmlPath = join(root, 'Sổ tổng hợp.xlsx')
+    await writeArchive(xmlPath, { 'xl/worksheets/sheet1.xml': '<worksheet/>' })
+    writeFileSync(xmlPath, patchCentralDirectory(readFileSync(xmlPath), (name, offset, bytes) => { if (name === 'xl/worksheets/sheet1.xml') bytes.writeUInt32LE(32 * 1024 * 1024 + 1, offset + 24) }))
+
+    await expectArchiveRefusal(xmlPath, 'WORKBOOK_ARCHIVE_ENTRY_SIZE_LIMIT_EXCEEDED')
+
+    const aggregatePath = join(root, 'Sổ aggregate.xlsx')
+    await writeArchive(aggregatePath, { a: 'x', b: 'x', c: 'x' })
+    writeFileSync(aggregatePath, patchCentralDirectory(readFileSync(aggregatePath), (_name, offset, bytes) => { bytes.writeUInt32LE(24 * 1024 * 1024, offset + 24) }))
+    await expectArchiveRefusal(aggregatePath, 'WORKBOOK_ARCHIVE_EXPANSION_LIMIT_EXCEEDED')
+  })
+
+  it('rejects unreferenced expansion and inconsistent size metadata before CRC', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'c1-adapter-metadata-'))
+    const path = join(root, 'Sổ tổng hợp.xlsx')
+    await workbook(path)
+    const validZip = await JSZip.loadAsync(readFileSync(path))
+    validZip.file('unused.bin', 'x')
+    writeFileSync(path, await validZip.generateAsync({ type: 'nodebuffer', compression: 'STORE' }))
+    writeFileSync(path, patchCentralDirectory(readFileSync(path), (name, offset, bytes) => { if (name === 'unused.bin') bytes.writeUInt32LE(32 * 1024 * 1024 + 1, offset + 24) }))
+    await expectArchiveRefusal(path, 'WORKBOOK_ARCHIVE_ENTRY_SIZE_LIMIT_EXCEEDED')
+
+    const inconsistentPath = join(root, 'Sổ inconsistent.xlsx')
+    await writeArchive(inconsistentPath, { a: 'abcd' })
+    writeFileSync(inconsistentPath, patchCentralDirectory(readFileSync(inconsistentPath), (_name, offset, bytes) => { bytes.writeUInt32LE(3, offset + 24) }))
+    await expectArchiveRefusal(inconsistentPath, 'WORKBOOK_ARCHIVE_INVALID')
+  })
+
+  it('keeps CRC corruption rejection after bounded preflight', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'c1-adapter-crc-'))
+    const path = join(root, 'Sổ tổng hợp.xlsx')
+    await writeArchive(path, { a: 'abcd' })
+    const bytes = readFileSync(path)
+    const nameLength = bytes.readUInt16LE(26)
+    const extraLength = bytes.readUInt16LE(28)
+    bytes[30 + nameLength + extraLength] ^= 0x01
+    writeFileSync(path, bytes)
+
+    await expectArchiveRefusal(path, 'WORKBOOK_ARCHIVE_INVALID')
+  })
+
   it('rejects literal value, raw token, and format claims that differ from the source cell', async () => {
     const root = mkdtempSync(join(tmpdir(), 'c1-adapter-evidence-'))
     const path = join(root, 'Sổ tổng hợp.xlsx')
