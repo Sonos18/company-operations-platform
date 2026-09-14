@@ -7,8 +7,10 @@ import { canonicalizeManifest } from '../../../server/features/costs/imports/imp
 
 const root = process.cwd()
 const migrationName = /_taskovia_c1_controlled_import\.sql$/
+const normalizeEol = (value: string) => value.replace(/\r\n/g, '\n')
 
 function assertExplicitIndexColumnsExist(sql: string, expectedIndexCount = 7) {
+  sql = normalizeEol(sql)
   const tables = new Map<string, Set<string>>()
   for (const match of sql.matchAll(/create table (?:public|private)\.([a-z_]+) \(\n([\s\S]*?)\n\);/giu)) {
     tables.set(match[1], new Set([...match[2].matchAll(/^(?: ){2}([a-z_]+) (?:uuid|text|jsonb|boolean|bigint|integer|numeric|date|timestamptz)\b/gimu)].map(column => column[1])))
@@ -25,7 +27,7 @@ function assertExplicitIndexColumnsExist(sql: string, expectedIndexCount = 7) {
 
 describe('C1 controlled-import pre-Cloud SQL contract', () => {
   it('keeps P1 immutable and prepares exactly one forward P2 migration', () => {
-    const p1 = readFileSync(resolve(root, 'supabase/migrations/20260911145035_taskovia_c1_foundation.sql'))
+    const p1 = normalizeEol(readFileSync(resolve(root, 'supabase/migrations/20260911145035_taskovia_c1_foundation.sql'), 'utf8'))
     expect(createHash('sha256').update(p1).digest('hex').toUpperCase()).toBe('538025216FEC8B67A8A94226D67B35F723D005069AEA00B003FB4DCE6089C556')
     expect(readdirSync(resolve(root, 'supabase/migrations')).filter(name => migrationName.test(name))).toHaveLength(1)
   })
