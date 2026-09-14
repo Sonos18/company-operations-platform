@@ -48,6 +48,28 @@ describe('C1 import CLI', () => {
     expect(JSON.parse(readFileSync(resolve(outputPath, 'outcome.json'), 'utf8'))).toMatchObject({ status: 'UNKNOWN', runId: packet.runId, idempotencyKey: packet.idempotencyKey, error: { code: 'WRITE_OUTCOME_UNKNOWN' } })
   })
 
+  it('retains safe structured 500 evidence while forbidding a retry', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'c1-cli-structured-500-'))
+    const { packetPath, preparation, preparationPath, outputPath } = executionFixture(root)
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'Do not persist this message', requestId: '10000000-0000-4000-8000-000000000500', details: {} } }), { status: 500, headers: { 'content-type': 'application/json' } }))
+
+    await expect(run(['execute', '--packet', packetPath, '--preparation', preparationPath, '--endpoint', approvedOrigin, '--access-token-env', 'TOKEN', '--execute', '--output', outputPath], { env: { TOKEN: 'secret' }, fetch, prepare: vi.fn().mockResolvedValue(preparation) })).rejects.toMatchObject({ phase: 'post_dispatch_unknown', code: 'UNUSABLE_ERROR_RESPONSE', statusCode: 500, requestId: '10000000-0000-4000-8000-000000000500', apiCode: 'INTERNAL_ERROR' })
+    expect(fetch).toHaveBeenCalledOnce()
+    const outcome = JSON.parse(readFileSync(resolve(outputPath, 'outcome.json'), 'utf8'))
+    expect(outcome).toMatchObject({ status: 'UNKNOWN', error: { code: 'UNUSABLE_ERROR_RESPONSE', statusCode: 500, requestId: '10000000-0000-4000-8000-000000000500', apiCode: 'INTERNAL_ERROR' } })
+    expect(JSON.stringify(outcome)).not.toContain('Do not persist this message')
+  })
+
+  it('keeps a malformed 500 unknown without a retry', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'c1-cli-malformed-500-'))
+    const { packetPath, preparation, preparationPath, outputPath } = executionFixture(root)
+    const fetch = vi.fn().mockResolvedValue(new Response('upstream failure', { status: 500, headers: { 'content-type': 'text/plain' } }))
+
+    await expect(run(['execute', '--packet', packetPath, '--preparation', preparationPath, '--endpoint', approvedOrigin, '--access-token-env', 'TOKEN', '--execute', '--output', outputPath], { env: { TOKEN: 'secret' }, fetch, prepare: vi.fn().mockResolvedValue(preparation) })).rejects.toMatchObject({ phase: 'post_dispatch_unknown', code: 'MALFORMED_RESPONSE', statusCode: 500 })
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(JSON.parse(readFileSync(resolve(outputPath, 'outcome.json'), 'utf8'))).toMatchObject({ status: 'UNKNOWN', error: { code: 'MALFORMED_RESPONSE', statusCode: 500 } })
+  })
+
   it.each([
     ['wrong origin', 'https://wrong.taskovia.example', 'gtgljlnhwvhqdnwrfdfj', 'DESTINATION_MISMATCH'],
     ['origin with path/query/fragment', 'https://approved.taskovia.example/path?query=1#fragment', 'gtgljlnhwvhqdnwrfdfj', 'DESTINATION_INVALID'],

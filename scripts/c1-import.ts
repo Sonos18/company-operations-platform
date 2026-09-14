@@ -23,7 +23,7 @@ function commandError(error: unknown) {
 }
 function errorEvidence(error: ControlledImportCommandError) {
   const cause = error.cause
-  return { code: error.code, phase: error.phase, ...(error.statusCode === undefined ? {} : { statusCode: error.statusCode }), ...(error.requestId ? { requestId: error.requestId } : {}), ...(cause instanceof Error ? { causeName: cause.name, ...('code' in cause && typeof cause.code === 'string' && /^[A-Z0-9_]{1,64}$/u.test(cause.code) ? { causeCode: cause.code } : {}) } : {}) }
+  return { code: error.code, phase: error.phase, ...(error.statusCode === undefined ? {} : { statusCode: error.statusCode }), ...(error.requestId ? { requestId: error.requestId } : {}), ...(error.apiCode ? { apiCode: error.apiCode } : {}), ...(cause instanceof Error ? { causeName: cause.name, ...('code' in cause && typeof cause.code === 'string' && /^[A-Z0-9_]{1,64}$/u.test(cause.code) ? { causeCode: cause.code } : {}) } : {}) }
 }
 function reserveAttempt(path: string) {
   try { mkdirSync(path) } catch (error) {
@@ -48,7 +48,7 @@ function httpTransport(endpoint: string, token: string, fetcher: typeof fetch) {
     if (!response.ok) {
       const parsed = strictApiErrorBodySchema.safeParse(value)
       if (parsed.success && definiteRejections.get(parsed.data.error.code) === response.status) throw new ControlledImportCommandError({ phase: 'server_rejection', code: parsed.data.error.code, statusCode: response.status, requestId: safeRequestId(parsed.data.error.requestId) })
-      throw new ControlledImportCommandError({ phase: 'post_dispatch_unknown', code: 'UNUSABLE_ERROR_RESPONSE', statusCode: response.status })
+      throw new ControlledImportCommandError({ phase: 'post_dispatch_unknown', code: 'UNUSABLE_ERROR_RESPONSE', statusCode: response.status, ...(parsed.success ? { requestId: safeRequestId(parsed.data.error.requestId), apiCode: parsed.data.error.code } : {}) })
     }
     return value
   }

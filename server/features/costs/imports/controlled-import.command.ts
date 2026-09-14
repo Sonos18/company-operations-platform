@@ -17,9 +17,10 @@ export class ControlledImportCommandError extends Error {
   readonly code: string
   readonly statusCode?: number
   readonly requestId?: string
-  constructor(options: { phase: ControlledImportCommandErrorPhase; code: string; statusCode?: number; requestId?: string; cause?: unknown }) {
+  readonly apiCode?: string
+  constructor(options: { phase: ControlledImportCommandErrorPhase; code: string; statusCode?: number; requestId?: string; apiCode?: string; cause?: unknown }) {
     super(options.code, { cause: options.cause })
-    this.name = 'ControlledImportCommandError'; this.phase = options.phase; this.code = options.code; this.statusCode = options.statusCode; this.requestId = options.requestId
+    this.name = 'ControlledImportCommandError'; this.phase = options.phase; this.code = options.code; this.statusCode = options.statusCode; this.requestId = options.requestId; this.apiCode = options.apiCode
   }
 }
 

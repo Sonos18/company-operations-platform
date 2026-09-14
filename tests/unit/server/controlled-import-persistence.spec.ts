@@ -95,4 +95,40 @@ describe('controlled-import persistence boundary', () => {
 
     await expect(repository.persist(companyId, request, 'd'.repeat(64), requestId)).rejects.toMatchObject({ statusCode: 409, code: 'IDEMPOTENCY_CONFLICT' })
   })
+
+  it.each([
+    ['57014', 'database_timeout'],
+    ['55P03', 'database_lock'],
+    ['22007', 'database_data'],
+    ['23505', 'database_constraint'],
+    ['P0001', 'unrecognized_business_contract'],
+    ['XX000', 'database_error'],
+  ])('logs only safe %s persistence diagnostics while retaining the public internal error', async (postgresCode, diagnosticCategory) => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const repository = createSupabaseControlledImportRepository({ rpc: vi.fn().mockResolvedValue({ data: null, error: { code: postgresCode, message: 'private database message must not be logged' } }) } as never)
+
+    await expect(repository.persist(companyId, request, 'd'.repeat(64), requestId)).rejects.toMatchObject({ statusCode: 500, code: 'INTERNAL_ERROR' })
+    expect(log).toHaveBeenCalledWith(JSON.stringify({ requestId, companyId, operation: 'c1_persist_controlled_import', postgresCode, diagnosticCategory, httpStatus: 500 }))
+    log.mockRestore()
+  })
+
+  it.each([
+    ['AUTH_REQUIRED', 401, 'AUTH_REQUIRED'],
+    ['COMPANY_FORBIDDEN', 403, 'COMPANY_FORBIDDEN'],
+    ['PERMISSION_DENIED', 403, 'PERMISSION_DENIED'],
+    ['MODULE_DISABLED', 403, 'PERMISSION_DENIED'],
+    ['IDEMPOTENCY_CONFLICT', 409, 'IDEMPOTENCY_CONFLICT'],
+    ['RESOURCE_NOT_FOUND', 404, 'RESOURCE_NOT_FOUND'],
+    ['INPUT_INVALID', 400, 'INPUT_INVALID'],
+    ['MANIFEST_DIGEST_MISMATCH', 400, 'INPUT_INVALID'],
+    ['INPUT_DIGEST_MISMATCH', 400, 'INPUT_INVALID'],
+    ['ADAPTER_NOT_PERMITTED', 400, 'INPUT_INVALID'],
+  ])('retains recognized P0001 mappings for %s', async (message, statusCode, code) => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const repository = createSupabaseControlledImportRepository({ rpc: vi.fn().mockResolvedValue({ data: null, error: { code: 'P0001', message } }) } as never)
+
+    await expect(repository.persist(companyId, request, 'd'.repeat(64), requestId)).rejects.toMatchObject({ statusCode, code })
+    expect(log).not.toHaveBeenCalled()
+    log.mockRestore()
+  })
 })

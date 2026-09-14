@@ -11,7 +11,20 @@ interface Client {
   rpc(name: 'c1_persist_controlled_import' | 'c1_get_controlled_import_result', args: Record<string, unknown>): Promise<{ data: unknown; error: unknown }>
 }
 
-function fail(error: unknown): never {
+type DiagnosticCategory = 'database_timeout' | 'database_lock' | 'database_data' | 'database_constraint' | 'unrecognized_business_contract' | 'database_error'
+
+function diagnostic(error: unknown): { postgresCode?: string; diagnosticCategory: DiagnosticCategory } {
+  const parsed = z.object({ code: z.string().optional() }).passthrough().safeParse(error)
+  const postgresCode = parsed.success && parsed.data.code ? parsed.data.code : undefined
+  if (postgresCode === '57014') return { postgresCode, diagnosticCategory: 'database_timeout' }
+  if (postgresCode === '55P03') return { postgresCode, diagnosticCategory: 'database_lock' }
+  if (postgresCode?.startsWith('22')) return { postgresCode, diagnosticCategory: 'database_data' }
+  if (postgresCode?.startsWith('23')) return { postgresCode, diagnosticCategory: 'database_constraint' }
+  if (postgresCode === 'P0001') return { postgresCode, diagnosticCategory: 'unrecognized_business_contract' }
+  return { ...(postgresCode ? { postgresCode } : {}), diagnosticCategory: 'database_error' }
+}
+
+function fail(error: unknown, context?: { companyId: string; requestId: string }): never {
   const parsed = z.object({ code: z.string().optional(), message: z.string().optional() }).passthrough().safeParse(error)
   const message = parsed.success && parsed.data.code === 'P0001' ? parsed.data.message : undefined
   if (message === 'AUTH_REQUIRED') throw new AppApiError(401, 'AUTH_REQUIRED', 'Bạn cần đăng nhập để tiếp tục.')
@@ -20,6 +33,7 @@ function fail(error: unknown): never {
   if (message === 'IDEMPOTENCY_CONFLICT') throw new AppApiError(409, 'IDEMPOTENCY_CONFLICT', 'Khóa idempotency đã được dùng với dữ liệu khác.')
   if (message === 'RESOURCE_NOT_FOUND') throw new AppApiError(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy kết quả import.')
   if (message && ['INPUT_INVALID', 'MANIFEST_DIGEST_MISMATCH', 'INPUT_DIGEST_MISMATCH', 'ADAPTER_NOT_PERMITTED'].includes(message)) throw new AppApiError(400, 'INPUT_INVALID', 'Dữ liệu import không hợp lệ.')
+  if (context) console.error(JSON.stringify({ requestId: context.requestId, companyId: context.companyId, operation: 'c1_persist_controlled_import', ...diagnostic(error), httpStatus: 500 }))
   throw new AppApiError(500, 'INTERNAL_ERROR', 'Không thể lưu nguồn import.')
 }
 function mapResult(value: unknown): ControlledImportResult {
@@ -37,7 +51,7 @@ export function createSupabaseControlledImportRepository(db: UserSupabaseClient)
   return {
     async persist(companyId, request, payloadDigest, requestId) {
       const { data, error } = await client.rpc('c1_persist_controlled_import', { target_company_id: companyId, target_request: request, target_payload_digest: payloadDigest, target_request_id: requestId })
-      if (error) return fail(error)
+      if (error) return fail(error, { companyId, requestId })
       return mapResult(data)
     },
     async get(companyId, runId) {
