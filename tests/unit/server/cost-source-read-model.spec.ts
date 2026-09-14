@@ -31,7 +31,7 @@ describe('cost source read model', () => {
 
   it('uses the non-existent probe before a company-scoped, bounded figure read without mutation methods', async () => {
     const { client, query } = db({ rows: [{
-      id: figureId, tenant_id: tenantId, company_id: companyId, label: 'Certified amount', raw_value_text: '1,234.5000', value_state: 'known', amount_text: '1234.5000', currency_code: 'VND', basis: 'net', scope_kind: 'whole_project', mapping_state: 'confirmed', confirmation: 'unverified', version: 2, created_at: '2026-09-14T00:00:00.000Z',
+      id: figureId, tenant_id: tenantId, company_id: companyId, label: 'Certified amount', raw_value_text: '1,234.5000', value_state: 'known', amount_text: '1234.5000', currency_code: 'VND', basis: 'net', scope_kind: 'whole_project', mapping_state: 'confirmed', confirmation: 'unverified', version: 2, created_at: '2026-09-14T16:04:25.685407+00:00',
       source_selections: { id: 'c1000000-0000-4000-8000-000000000061', locator: { kind: 'cell_range', sheetName: 'Costs', range: 'D7' }, mapped_project_id: 'c1000000-0000-4000-8000-000000000062', mapped_engagement_id: 'c1000000-0000-4000-8000-000000000063', accounting_source_versions: { id: 'c1000000-0000-4000-8000-000000000064', version_no: 1, original_filename: 'source.xlsx', accounting_sources: { id: 'c1000000-0000-4000-8000-000000000065', code: 'SRC-1', title: 'September source', source_system: 'xlsx' } } },
     }] })
     const service = createCostSourceReadService(createSupabaseCostSourceReadRepository(client as never))

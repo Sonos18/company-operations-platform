@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 const uuid = z.string().uuid()
 const decimal = z.string().regex(/^-?\d{1,16}(?:\.\d{1,4})?$/)
+export const isoTimestampSchema = z.string().datetime({ offset: true })
 const locator = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('cell_range'), sheetName: z.string(), range: z.string() }).strict(),
   z.object({ kind: z.literal('logical_section'), section: z.string() }).strict(),
@@ -20,18 +21,18 @@ const contractor = z.object({ id: uuid, code: z.string(), displayName: z.string(
 
 export const costSourceFigureSchema = z.object({
   id: uuid, label: z.string(), rawValueText: z.string(), valueState, amountText: decimal.nullable(), currencyCode: z.string().length(3).nullable(),
-  basis, scopeKind, scopeDescription: z.string(), confirmation, observedAt: z.string().datetime(),
+  basis, scopeKind, scopeDescription: z.string(), confirmation, observedAt: isoTimestampSchema,
   mapping: z.object({ state: mappingState, projectId: uuid.nullable(), engagementId: uuid.nullable(), contractorId: uuid.nullable() }).strict(),
   source, version, locator,
 }).strict()
 
 export const costSourceFigurePageSchema = z.object({ items: z.array(costSourceFigureSchema), nextCursor: uuid.nullable() }).strict()
 export const costSourceOverviewSchema = z.object({
-  projects: z.array(z.object({ project: hierarchyItem, engagements: z.array(z.object({ engagement: hierarchyItem, contractor: contractor.nullable(), figureCount: z.number().int().nonnegative() }).strict()), sourceCount: z.number().int().nonnegative(), figureCount: z.number().int().nonnegative(), latestObservedAt: z.string().datetime().nullable(), openIssueCount: z.number().int().nonnegative(), mappingState: mappingState }).strict()),
-  unassigned: z.object({ sourceCount: z.number().int().nonnegative(), figureCount: z.number().int().nonnegative(), latestObservedAt: z.string().datetime().nullable() }).strict(),
+  projects: z.array(z.object({ project: hierarchyItem, engagements: z.array(z.object({ engagement: hierarchyItem, contractor: contractor.nullable(), figureCount: z.number().int().nonnegative() }).strict()), sourceCount: z.number().int().nonnegative(), figureCount: z.number().int().nonnegative(), latestObservedAt: isoTimestampSchema.nullable(), openIssueCount: z.number().int().nonnegative(), mappingState: mappingState }).strict()),
+  unassigned: z.object({ sourceCount: z.number().int().nonnegative(), figureCount: z.number().int().nonnegative(), latestObservedAt: isoTimestampSchema.nullable() }).strict(),
   sourceCount: z.number().int().nonnegative(), figureCount: z.number().int().nonnegative(), openIssueCount: z.number().int().nonnegative(),
 }).strict()
-export const costSourceProjectDetailSchema = z.object({ project: hierarchyItem.nullable(), engagements: z.array(z.object({ engagement: hierarchyItem, contractor: contractor.nullable(), figureCount: z.number().int().nonnegative(), latestObservedAt: z.string().datetime().nullable() }).strict()) }).strict()
+export const costSourceProjectDetailSchema = z.object({ project: hierarchyItem.nullable(), engagements: z.array(z.object({ engagement: hierarchyItem, contractor: contractor.nullable(), figureCount: z.number().int().nonnegative(), latestObservedAt: isoTimestampSchema.nullable() }).strict()) }).strict()
 export const costSourceProvenanceSchema = z.object({
   figure: costSourceFigureSchema, originalFilename: z.string(), hierarchy: z.object({ project: hierarchyItem.nullable(), engagement: hierarchyItem.nullable(), contractor: contractor.nullable() }).strict(),
   openIssues: z.array(z.object({ issueKind: z.string(), impact: z.string(), description: z.string() }).strict()), duplicateWarning: z.boolean(),
