@@ -8,6 +8,7 @@ const allowlist = [
   'c1_foundation.test.sql',
   'c1_controlled_import_commands.test.sql',
   'c1_controlled_import_security.test.sql',
+  'c1_audited_source_ownership_correction.test.sql',
 ]
 
 export function validateC1CloudDevSql(path, sql) {

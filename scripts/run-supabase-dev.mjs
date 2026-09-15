@@ -351,12 +351,19 @@ export function runSupabaseDevMode(mode, {
   spawn = spawnSync,
 } = {}) {
   const isStage01Test = mode === 'stage01-test'
-  if (extraArgs.length > 0 || (!Object.hasOwn(REMOTE_MODE_ARGS, mode) && !isStage01Test)) {
+  const isYongMeiPromotion = mode === 'c1-promote-yong-mei-project'
+  const promotionExecute = isYongMeiPromotion && extraArgs.length === 1 && extraArgs[0] === '--execute'
+  if ((!isYongMeiPromotion && extraArgs.length > 0) || (isYongMeiPromotion && extraArgs.length > 0 && !promotionExecute) || (!Object.hasOwn(REMOTE_MODE_ARGS, mode) && !isStage01Test && !isYongMeiPromotion)) {
     throw new Error('Unsupported Cloud DEV operation')
   }
 
   if (mode === 'auth-check' || mode === 'link') assertCloudDevEnvironment({ cwd })
   else assertCloudDevTarget({ cwd })
+
+  if (isYongMeiPromotion) {
+    if (promotionExecute) throw new Error('Yong Mei promotion transaction is not implemented')
+    return { mode, execute: false }
+  }
 
   if (isStage01Test) {
     const files = STAGE01_TEST_FILES
@@ -378,6 +385,7 @@ export function runSupabaseDevMode(mode, {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 3) throw new Error('Unsupported Cloud DEV operation')
-  runSupabaseDevMode(process.argv[2])
+  const [mode, ...extraArgs] = process.argv.slice(2)
+  if (!mode) throw new Error('Unsupported Cloud DEV operation')
+  runSupabaseDevMode(mode, { extraArgs })
 }

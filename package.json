@@ -32,6 +32,7 @@
     "c1:import:prepare": "tsx scripts/c1-import.ts prepare",
     "db:dev:c1:import": "node scripts/assert-cloud-dev-target.mjs && tsx scripts/c1-import.ts execute",
     "db:dev:c1:import:get-result": "node scripts/assert-cloud-dev-target.mjs && tsx scripts/c1-import.ts get-result",
+    "db:dev:c1:promote-yong-mei-project": "node scripts/run-supabase-dev.mjs c1-promote-yong-mei-project",
     "db:dev:stage01:concurrency": "node scripts/run-stage01-cloud-dev-concurrency.mjs",
     "db:dev:stage01:integrity-races": "node scripts/run-stage01-cloud-dev-integrity-races.mjs",
     "db:dev:advisors:security": "node scripts/run-supabase-dev.mjs advisors-security",

@@ -30,6 +30,13 @@ describe('C1 Cloud DEV runner', () => {
     expect(() => validateC1CloudDevSql(path, sql)).not.toThrow()
   })
 
+  it('accepts the rollback-only audited source-ownership correction fixture', () => {
+    const path = 'c1_audited_source_ownership_correction.test.sql'
+    const sql = 'begin;\nselect 1;\nrollback;'
+
+    expect(() => validateC1CloudDevSql(path, sql)).not.toThrow()
+  })
+
 
   it.each([
     ["begin;\nselect 1;\ncommit;\nrollback;", 'C1 SQL verification cannot commit'],

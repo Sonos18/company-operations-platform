@@ -178,6 +178,19 @@ afterEach(() => {
 })
 
 describe('Cloud DEV fixed-mode runner', () => {
+  it('reserves a fixed Yong Mei promotion mode with dry-run default and fail-closed execute', () => {
+    const root = makeWorktree()
+    let spawns = 0
+
+    expect(runSupabaseDevMode('c1-promote-yong-mei-project', { cwd: root, spawn: () => { spawns += 1; return { status: 0 } } }))
+      .toEqual({ mode: 'c1-promote-yong-mei-project', execute: false })
+    expect(() => runSupabaseDevMode('c1-promote-yong-mei-project', { cwd: root, extraArgs: ['--execute'], spawn: () => { spawns += 1; return { status: 0 } } }))
+      .toThrow('Yong Mei promotion transaction is not implemented')
+    expect(() => runSupabaseDevMode('c1-promote-yong-mei-project', { cwd: root, extraArgs: ['--sql', 'drop table projects'], spawn: () => { spawns += 1; return { status: 0 } } }))
+      .toThrow('Unsupported Cloud DEV operation')
+    expect(spawns).toBe(0)
+  })
+
   it('ships a fixed two-session same-request authority replay scenario', async () => {
     expect(STAGE01_CONCURRENCY_SCENARIOS).toContainEqual(expect.objectContaining({
       name: 'authority-assignment-replay',
