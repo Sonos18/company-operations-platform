@@ -3,6 +3,7 @@ import { dirname, join, posix, resolve } from 'node:path'
 import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { CANONICAL_DEV_PROJECT_REF, assertCloudDevEnvironment, assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
+import { runYongMeiPromotion } from './c1-yong-mei-promotion.mjs'
 
 const SUPABASE_DEV_HOME_SEGMENTS = ['SupabaseCLI', 'taskovia-dev']
 const STAGE01_TEST_FILES = [
@@ -347,6 +348,7 @@ export function runSupabaseDevMode(mode, {
   cwd = process.cwd(),
   env = process.env,
   extraArgs = [],
+  fetch = globalThis.fetch,
   platform = process.platform,
   spawn = spawnSync,
 } = {}) {
@@ -361,8 +363,7 @@ export function runSupabaseDevMode(mode, {
   else assertCloudDevTarget({ cwd })
 
   if (isYongMeiPromotion) {
-    if (promotionExecute) throw new Error('Yong Mei promotion transaction is not implemented')
-    return { mode, execute: false }
+    return runYongMeiPromotion({ execute: promotionExecute, cwd, fetchImpl: fetch })
   }
 
   if (isStage01Test) {
@@ -387,5 +388,6 @@ export function runSupabaseDevMode(mode, {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [mode, ...extraArgs] = process.argv.slice(2)
   if (!mode) throw new Error('Unsupported Cloud DEV operation')
-  runSupabaseDevMode(mode, { extraArgs })
+  const result = runSupabaseDevMode(mode, { extraArgs })
+  if (result instanceof Promise) console.log(JSON.stringify(await result))
 }

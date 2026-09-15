@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CANONICAL_DEV_PROJECT_REF } from '../../../scripts/assert-cloud-dev-target.mjs'
+import { YONG_MEI_PROMOTION_CONTRACT, buildYongMeiPromotionExecuteSql } from '../../../scripts/c1-yong-mei-promotion.mjs'
 import { runSupabaseDevMode } from '../../../scripts/run-supabase-dev.mjs'
 import { STAGE01_CONCURRENCY_SCENARIOS, runStage01CloudDevConcurrency } from '../../../scripts/run-stage01-cloud-dev-concurrency.mjs'
 import { canonicalizeSourceText } from '../../helpers/canonical-source-text'
@@ -178,14 +179,93 @@ afterEach(() => {
 })
 
 describe('Cloud DEV fixed-mode runner', () => {
-  it('reserves a fixed Yong Mei promotion mode with dry-run default and fail-closed execute', () => {
+  it('runs the Yong Mei promotion as a fixed read-only dry run', async () => {
+    const root = makeWorktree()
+    const requests: { url: string, init: RequestInit }[] = []
+    const result = await runSupabaseDevMode('c1-promote-yong-mei-project', {
+      cwd: root,
+      fetch: async (url: string, init: RequestInit) => {
+        requests.push({ url, init })
+        return new Response(JSON.stringify([{
+          readiness: {
+            status: 'READY_FOR_EXECUTION',
+            selectionIds: [
+              '31e60281-c3bb-4d20-b0fb-d22905888b3f', '5423aa68-8299-4ac5-b97b-302c74f60eb1', '5522f425-0611-4205-8584-9daa7df31104', '61fa3091-456b-4882-a433-92c783dc0655', '6d8b3e35-5db6-4c93-b14b-2fb3ba8e324a', '952aa862-299d-4049-8990-cdb4717f8d0d', '978e071d-57dd-41f9-aba0-fe69dea56f66', 'a30b17a3-c90d-4510-9b57-3f249fb99959', 'ac3cf402-155f-4234-999c-37a173f9e053', 'dee4c09d-e6c6-47b8-b744-c025a77e86ea', 'f8f6be08-7fe1-451f-9526-374408d26fae',
+            ],
+            selectionCount: 11,
+            oldSelectionCount: 11,
+            figureCount: 22,
+            oldFigureCount: 22,
+            sourceProjectVerified: true,
+            targetProjectVerified: true,
+            actorAuthorized: true,
+            partyVerified: true,
+            engagementVerified: true,
+            componentSafe: true,
+            oldOwnershipVerified: true,
+            correctionApiVerified: true,
+          },
+        }]))
+      },
+    })
+
+    expect(result).toMatchObject({ readiness: 'READY_FOR_EXECUTION', mutations: 0 })
+    expect(requests).toHaveLength(1)
+    expect(JSON.parse(String(requests[0]?.init.body))).toMatchObject({ read_only: true })
+    expect(String(requests[0]?.init.body)).toContain('private.c1_correct_source_selection_ownership')
+    expect(String(requests[0]?.init.body)).not.toMatch(/update\s+public\.source_(?:selections|reported_figures)/iu)
+  })
+
+  it('fails closed on stale counts or identities and keeps the future transaction fixed', async () => {
+    const root = makeWorktree()
+    const stale = {
+      status: 'READY_FOR_EXECUTION', selectionIds: [...YONG_MEI_PROMOTION_CONTRACT.selectionIds],
+      selectionCount: 10, oldSelectionCount: 11, figureCount: 22, oldFigureCount: 22,
+      sourceProjectVerified: true, targetProjectVerified: true, actorAuthorized: true,
+      partyVerified: true, engagementVerified: true, oldOwnershipVerified: false, correctionApiVerified: true,
+      componentSafe: true,
+    }
+
+    await expect(runSupabaseDevMode('c1-promote-yong-mei-project', {
+      cwd: root, fetch: async () => new Response(JSON.stringify([{ readiness: stale }])),
+    })).rejects.toThrow('Yong Mei promotion dry run is not ready')
+
+    await expect(runSupabaseDevMode('c1-promote-yong-mei-project', {
+      cwd: root,
+      fetch: async () => new Response(JSON.stringify([{ readiness: { ...stale, selectionCount: 11, oldOwnershipVerified: true, componentSafe: false } }])),
+    })).rejects.toThrow('Yong Mei promotion dry run is not ready')
+
+    const executeSql = buildYongMeiPromotionExecuteSql()
+    expect(executeSql).toContain(YONG_MEI_PROMOTION_CONTRACT.actorId)
+    expect(executeSql).toContain(`'${YONG_MEI_PROMOTION_CONTRACT.targetProjectId}'`)
+    expect(executeSql).toContain(`'${YONG_MEI_PROMOTION_CONTRACT.reason}'`)
+    expect(executeSql).toMatch(/^\s*begin;/iu)
+    expect(executeSql).toMatch(/commit;\s*$/iu)
+    expect(executeSql).toContain('private.c1_correct_source_reported_figure_ownership')
+    expect(executeSql).toContain('private.c1_correct_source_selection_ownership')
+    expect(executeSql).toContain('YONG_MEI_TARGET_PROJECT_DRIFT')
+    expect(executeSql).toContain('YONG_MEI_AUDIT_VERIFICATION_FAILED')
+    expect(executeSql).toContain('c1.source_ownership_cleanup.engagement_deleted')
+    expect(executeSql).toContain('c1.source_ownership_cleanup.party_deleted')
+    expect(executeSql).toContain('from public.engagement_components')
+    expect(executeSql).toContain('YONG_MEI_ENGAGEMENT_REFERENCE_REMAINS')
+    expect(executeSql).toContain('YONG_MEI_PARTY_REFERENCE_REMAINS')
+    expect(executeSql).not.toMatch(/update\s+public\.source_(?:selections|reported_figures)/iu)
+    const engagementDelete = executeSql.indexOf('delete from public.project_engagements')
+    const partyDelete = executeSql.indexOf('delete from public.business_parties')
+    expect(engagementDelete).toBeGreaterThan(executeSql.lastIndexOf('private.c1_correct_source_selection_ownership'))
+    expect(partyDelete).toBeGreaterThan(engagementDelete)
+    expect(executeSql.indexOf('c1.source_ownership_cleanup.engagement_deleted')).toBeLessThan(engagementDelete)
+    expect(executeSql.indexOf('c1.source_ownership_cleanup.party_deleted')).toBeLessThan(partyDelete)
+    expect(executeSql).not.toMatch(/retry|for\s+attempt/iu)
+  })
+
+  it('requires the exact execute switch and never accepts caller-supplied operation arguments', async () => {
     const root = makeWorktree()
     let spawns = 0
 
-    expect(runSupabaseDevMode('c1-promote-yong-mei-project', { cwd: root, spawn: () => { spawns += 1; return { status: 0 } } }))
-      .toEqual({ mode: 'c1-promote-yong-mei-project', execute: false })
-    expect(() => runSupabaseDevMode('c1-promote-yong-mei-project', { cwd: root, extraArgs: ['--execute'], spawn: () => { spawns += 1; return { status: 0 } } }))
-      .toThrow('Yong Mei promotion transaction is not implemented')
+    await expect(runSupabaseDevMode('c1-promote-yong-mei-project', { cwd: root, extraArgs: ['--execute'], fetch: async () => new Response('[]'), spawn: () => { spawns += 1; return { status: 0 } } }))
+      .resolves.toMatchObject({ mode: 'c1-promote-yong-mei-project', execute: true })
     expect(() => runSupabaseDevMode('c1-promote-yong-mei-project', { cwd: root, extraArgs: ['--sql', 'drop table projects'], spawn: () => { spawns += 1; return { status: 0 } } }))
       .toThrow('Unsupported Cloud DEV operation')
     expect(spawns).toBe(0)
