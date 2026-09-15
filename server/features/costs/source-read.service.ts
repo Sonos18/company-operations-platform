@@ -9,7 +9,7 @@ const uuid = z.string().uuid()
 const empty = { cursor: undefined, limit: 100 }
 function latest(values: readonly string[]) { return values.length ? values.reduce((value, item) => item > value ? item : value) : null }
 function requireCapabilities(context: CostSourceReadContext) {
-  if (!context.permissions.includes('cost.source.read') || !context.permissions.includes('cost.prepare')) {
+  if (!context.permissions.includes('cost.source.read')) {
     throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền xem dữ liệu nguồn chi phí.')
   }
 }

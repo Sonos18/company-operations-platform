@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { resolvePreferredRoute } from '../services/auth/access-policy'
 definePageMeta({ authMode: 'authenticated', requiresCompany: false, layout: 'auth' })
 
 const authStore = useNuxtApp().$authStore
@@ -9,7 +10,7 @@ async function retry(): Promise<void> {
   if (pending.value) return
   pending.value = true
   error.value = ''
-  try { await authStore.refreshAppSession(); await navigateTo('/projects') }
+  try { await authStore.refreshAppSession(); await navigateTo(resolvePreferredRoute(useNuxtApp().$companyAccessStore.permissions)) }
   catch { error.value = 'Không thể cập nhật quyền truy cập. Vui lòng thử lại.' }
   finally { pending.value = false }
 }

@@ -99,7 +99,20 @@ describe('access navigation policy', () => {
       lifecycle: 'authenticated',
       companyIds: ['company-a'],
       activeCompanyId: 'company-a',
+      permissions: ['project.read'],
       redirect: '/no-access',
     })).toEqual({ type: 'redirect', to: '/projects' })
+  })
+
+  it('chooses the first functional route for authenticated users', () => {
+    expect(resolveAccessNavigation({
+      path: '/login', authMode: 'guest', requiresCompany: false, lifecycle: 'authenticated', companyIds: ['company-a'], activeCompanyId: 'company-a', permissions: ['project.read'],
+    })).toEqual({ type: 'redirect', to: '/projects' })
+    expect(resolveAccessNavigation({
+      path: '/login', authMode: 'guest', requiresCompany: false, lifecycle: 'authenticated', companyIds: ['company-a'], activeCompanyId: 'company-a', permissions: ['cost.source.read'],
+    })).toEqual({ type: 'redirect', to: '/costs' })
+    expect(resolveAccessNavigation({
+      path: '/login', authMode: 'guest', requiresCompany: false, lifecycle: 'authenticated', companyIds: ['company-a'], activeCompanyId: 'company-a', permissions: [],
+    })).toEqual({ type: 'redirect', to: '/forbidden' })
   })
 })

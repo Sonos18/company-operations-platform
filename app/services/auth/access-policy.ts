@@ -32,6 +32,12 @@ export type AccessDecision =
 const allow: AccessDecision = { type: 'allow' }
 const blockedAccessStatePaths = new Set(['/select-company', '/no-access', '/forbidden'])
 
+export function resolvePreferredRoute(permissions: readonly PermissionCode[] = []): string {
+  if (permissions.includes('project.read')) return '/projects'
+  if (permissions.includes('cost.source.read')) return '/costs'
+  return '/forbidden'
+}
+
 function redirect(to: string): AccessDecision {
   return { type: 'redirect', to }
 }
@@ -65,7 +71,7 @@ function resolveAuthenticatedDestination(input: AccessNavigationInput): string {
   if (candidate && !blockedAccessStatePaths.has(new URL(candidate, 'https://taskovia.internal').pathname)) {
     return candidate
   }
-  return '/projects'
+  return resolvePreferredRoute(input.permissions)
 }
 
 function resolveAccessStateNavigation(input: AccessNavigationInput): AccessDecision | null {
@@ -74,12 +80,12 @@ function resolveAccessStateNavigation(input: AccessNavigationInput): AccessDecis
 
   if (input.path === '/select-company') {
     if (companyIds.length === 0) return redirect('/no-access')
-    if (companyIds.length === 1 || selectedCompany) return redirect('/projects')
+    if (companyIds.length === 1 || selectedCompany) return redirect(resolvePreferredRoute(input.permissions))
     return allow
   }
   if (input.path === '/no-access') {
     if (companyIds.length === 0) return allow
-    return redirect(companyIds.length > 1 && !selectedCompany ? '/select-company' : '/projects')
+    return redirect(companyIds.length > 1 && !selectedCompany ? '/select-company' : resolvePreferredRoute(input.permissions))
   }
   if (input.path === '/forbidden') return allow
 

@@ -92,7 +92,7 @@ $$;
 do $$
 declare v_function_id oid;
 begin
-  foreach v_function_id in array array['public.c1_persist_controlled_import(uuid,jsonb,text,uuid)'::regprocedure, 'public.c1_get_controlled_import_result(uuid,uuid)'::regprocedure] loop
+  foreach v_function_id in array array['public.c1_persist_controlled_import(uuid,jsonb,text,uuid)'::regprocedure, 'public.c1_get_controlled_import_result(uuid,uuid)'::regprocedure, 'public.c1_probe_cost_source_read(uuid)'::regprocedure, 'public.c1_read_cost_source_hierarchy(uuid)'::regprocedure] loop
     if pg_catalog.has_function_privilege('anon', v_function_id, 'execute') or not pg_catalog.has_function_privilege('authenticated', v_function_id, 'execute') then raise exception 'C1 controlled-import public RPC ACL failed for %', v_function_id::regprocedure; end if;
   end loop;
   foreach v_function_id in array array['private.c1_can_read_import_draft(uuid,uuid)'::regprocedure, 'private.c1_jsonb_canonical_text(jsonb)'::regprocedure, 'private.c1_jsonb_is_string_array(jsonb)'::regprocedure, 'private.c1_assert_controlled_import_mapping(uuid,uuid,jsonb)'::regprocedure, 'private.c1_normalize_import_cell_range(text)'::regprocedure, 'private.c1_persist_controlled_import(uuid,jsonb,text,uuid)'::regprocedure, 'private.c1_get_controlled_import_result(uuid,uuid)'::regprocedure] loop
@@ -129,7 +129,11 @@ reset role;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"c1000000-0000-4000-8000-000000000902","role":"authenticated"}', true);
 do $$ begin
-  if exists (select 1 from public.controlled_import_runs) or exists (select 1 from public.accounting_sources) or exists (select 1 from public.source_selections) or exists (select 1 from public.cost_document_events where resource_type = 'controlled_import_run') then raise exception 'C1 source-only viewer can read draft import data'; end if;
+  if exists (select 1 from public.controlled_import_runs) or exists (select 1 from public.cost_document_events where resource_type = 'controlled_import_run') then raise exception 'C1 source-only viewer can read import internals'; end if;
+  if not exists (select 1 from public.accounting_sources) or not exists (select 1 from public.source_selections) then raise exception 'C1 source-only viewer cannot read source-facing rows'; end if;
+  perform public.c1_probe_cost_source_read('c1000000-0000-4000-8000-000000000020');
+  if not exists (select 1 from public.c1_read_cost_source_hierarchy('c1000000-0000-4000-8000-000000000020')) then raise exception 'C1 source-only viewer cannot read scoped hierarchy'; end if;
+  begin insert into public.accounting_sources(tenant_id, company_id, code, title, source_system, created_by) values ('c1000000-0000-4000-8000-000000000010', 'c1000000-0000-4000-8000-000000000020', 'C1-VIEWER-DIRECT-WRITE', 'Denied', 'synthetic', 'c1000000-0000-4000-8000-000000000902'); raise exception 'C1 source-only viewer direct write succeeded'; exception when insufficient_privilege then null; end;
   begin perform public.c1_get_controlled_import_result('c1000000-0000-4000-8000-000000000020', 'c1000000-0000-4000-8000-000000000060'); raise exception 'C1 source-only viewer read canonical draft result'; exception when sqlstate 'P0001' then if sqlerrm <> 'PERMISSION_DENIED' then raise; end if; end;
 end $$;
 reset role;

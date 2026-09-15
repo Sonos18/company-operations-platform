@@ -64,7 +64,7 @@ describe('access middleware', () => {
     expect(resolve({ path: '/projects', lifecycle: 'authenticated', companyIds: ['company-1'], activeCompanyId: 'company-1' })).toEqual({ type: 'allow' })
     expect(resolve({ path: '/projects', lifecycle: 'authenticated', companyIds: ['company-1', 'company-2'] })).toEqual({ type: 'redirect', to: '/select-company' })
     expect(resolve({ path: '/select-company', lifecycle: 'authenticated' })).toEqual({ type: 'redirect', to: '/no-access' })
-    expect(resolve({ path: '/select-company', lifecycle: 'authenticated', companyIds: ['company-1'], activeCompanyId: 'company-1' })).toEqual({ type: 'redirect', to: '/projects' })
+    expect(resolve({ path: '/select-company', lifecycle: 'authenticated', companyIds: ['company-1'], activeCompanyId: 'company-1', permissions: ['project.read'] })).toEqual({ type: 'redirect', to: '/projects' })
     expect(resolve({ path: '/no-access', lifecycle: 'authenticated' })).toEqual({ type: 'allow' })
     expect(resolve({ path: '/forbidden', lifecycle: 'authenticated', companyIds: ['company-1'] })).toEqual({ type: 'allow' })
     expect(resolve({ path: '/select-company', fullPath: '/select-company?source=header', lifecycle: 'authenticated' })).toEqual({ type: 'redirect', to: '/no-access' })
@@ -93,6 +93,7 @@ describe('access middleware', () => {
       lifecycle: 'authenticated',
       companyIds: ['company-1'],
       activeCompanyId: 'company-1',
+      permissions: ['project.read'],
       meta: { authMode: 'guest', requiresCompany: false },
       redirect: 'https://evil.example/steal',
     })).toEqual({ type: 'redirect', to: '/projects' })

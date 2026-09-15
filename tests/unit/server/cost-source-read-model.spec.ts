@@ -7,18 +7,42 @@ const companyId = 'c1000000-0000-4000-8000-000000000020'
 const tenantId = 'c1000000-0000-4000-8000-000000000010'
 const figureId = 'c1000000-0000-4000-8000-000000000060'
 const context = { companyId, tenantId, permissions: ['cost.source.read', 'cost.prepare'] as const }
+type HierarchyFixture = { id: string; code: string; name?: string; display_name?: string }
+type RowFixture = { source_selections: { id: string; projects?: HierarchyFixture; project_engagements?: HierarchyFixture; business_parties?: HierarchyFixture }; projects?: HierarchyFixture; project_engagements?: HierarchyFixture; business_parties?: HierarchyFixture }
 
-function db({ rpcResult = { data: null, error: { code: 'P0001', message: 'RESOURCE_NOT_FOUND' } }, rows = [] as unknown[] } = {}) {
+function db({ rpcResult = { data: {}, error: null }, rows = [] as RowFixture[] } = {}) {
   const query = {
     select: vi.fn(), eq: vi.fn(), in: vi.fn(), ilike: vi.fn(), or: vi.fn(), gt: vi.fn(), order: vi.fn(), limit: vi.fn(), maybeSingle: vi.fn(),
   }
   for (const method of ['select', 'eq', 'in', 'ilike', 'or', 'gt', 'order', 'limit'] as const) query[method].mockReturnValue(query)
   query.maybeSingle.mockResolvedValue({ data: rows[0] ?? null, error: null })
   query.limit.mockResolvedValue({ data: rows, error: null })
-  return { client: { rpc: vi.fn().mockResolvedValue(rpcResult), from: vi.fn().mockReturnValue(query) }, query }
+  const hierarchy = rows.map(row => {
+    const selection = row.source_selections
+    const project = row.projects ?? selection.projects
+    const engagement = row.project_engagements ?? selection.project_engagements
+    const contractor = row.business_parties ?? selection.business_parties
+    return { source_selection_id: selection.id, project_id: project?.id ?? null, project_code: project?.code ?? null, project_name: project?.name ?? null, engagement_id: engagement?.id ?? null, engagement_code: engagement?.code ?? null, engagement_name: engagement?.name ?? null, contractor_id: contractor?.id ?? null, contractor_code: contractor?.code ?? null, contractor_display_name: contractor?.display_name ?? null }
+  })
+  return { client: { rpc: vi.fn((name: string) => Promise.resolve(name === 'c1_read_cost_source_hierarchy' ? { data: hierarchy, error: null } : rpcResult)), from: vi.fn().mockReturnValue(query) }, query }
 }
 
 describe('cost source read model', () => {
+  it('uses the source-read probe and selection-scoped hierarchy RPC instead of master-table embeds', async () => {
+    const hierarchy = [{ source_selection_id: 'c1000000-0000-4000-8000-000000000061', project_id: 'c1000000-0000-4000-8000-000000000062', project_code: 'P-1', project_name: 'Mapped project', engagement_id: 'c1000000-0000-4000-8000-000000000063', engagement_code: 'E-1', engagement_name: 'Mapped engagement', contractor_id: 'c1000000-0000-4000-8000-000000000064', contractor_code: 'B-1', contractor_display_name: 'Mapped contractor' }]
+    const { client, query } = db({ rows: [{
+      id: figureId, tenant_id: tenantId, company_id: companyId, label: 'Certified amount', raw_value_text: '1,234.5000', value_state: 'known', amount_text: '1234.5000', currency_code: 'VND', basis: 'net', scope_kind: 'whole_project', mapping_state: 'confirmed', confirmation: 'unverified', created_at: '2026-09-14T16:04:25.685407+00:00',
+      source_selections: { id: hierarchy[0]!.source_selection_id, locator: { kind: 'cell_range', sheetName: 'Costs', range: 'D7' }, mapped_project_id: hierarchy[0]!.project_id, mapped_engagement_id: hierarchy[0]!.engagement_id, mapped_party_id: hierarchy[0]!.contractor_id, accounting_source_versions: { id: 'c1000000-0000-4000-8000-000000000065', version_no: 1, original_filename: 'source.xlsx', accounting_sources: { id: 'c1000000-0000-4000-8000-000000000066', code: 'SRC-1', title: 'September source', source_system: 'xlsx' } }, source_review_issues: [] },
+    }] })
+    client.rpc.mockImplementation((name: string) => Promise.resolve(name === 'c1_read_cost_source_hierarchy' ? { data: hierarchy, error: null } : { data: { companyId }, error: null }))
+    const repository = createSupabaseCostSourceReadRepository(client as never)
+
+    await expect(repository.provenance(companyId, tenantId, figureId)).resolves.toMatchObject({ hierarchy: { project: { name: 'Mapped project' }, engagement: { name: 'Mapped engagement' }, contractor: { displayName: 'Mapped contractor' } } })
+    expect(client.rpc).toHaveBeenCalledWith('c1_read_cost_source_hierarchy', { target_company_id: companyId })
+    const columns = query.select.mock.calls[0]![0] as string
+    expect(columns).not.toMatch(/(?:projects|project_engagements|business_parties)!/u)
+  })
+
   it.each([
     ['MODULE_DISABLED', 'MODULE_DISABLED'],
     ['PERMISSION_DENIED', 'PERMISSION_DENIED'],
@@ -29,7 +53,7 @@ describe('cost source read model', () => {
     await expect(service.overview(context)).rejects.toMatchObject<AppApiError>({ statusCode: 403, code: 'PERMISSION_DENIED', details: { reason } })
   })
 
-  it('uses the non-existent probe before a company-scoped, bounded figure read without mutation methods', async () => {
+  it('uses the read-only probe before a company-scoped, bounded figure read without mutation methods', async () => {
     const { client, query } = db({ rows: [{
       id: figureId, tenant_id: tenantId, company_id: companyId, label: 'Certified amount', raw_value_text: '1,234.5000', value_state: 'known', amount_text: '1234.5000', currency_code: 'VND', basis: 'net', scope_kind: 'whole_project', mapping_state: 'confirmed', confirmation: 'unverified', version: 2, created_at: '2026-09-14T16:04:25.685407+00:00',
       source_selections: { id: 'c1000000-0000-4000-8000-000000000061', locator: { kind: 'cell_range', sheetName: 'Costs', range: 'D7' }, mapped_project_id: 'c1000000-0000-4000-8000-000000000062', mapped_engagement_id: 'c1000000-0000-4000-8000-000000000063', accounting_source_versions: { id: 'c1000000-0000-4000-8000-000000000064', version_no: 1, original_filename: 'source.xlsx', accounting_sources: { id: 'c1000000-0000-4000-8000-000000000065', code: 'SRC-1', title: 'September source', source_system: 'xlsx' } } },
@@ -38,16 +62,14 @@ describe('cost source read model', () => {
 
     const result = await service.figures(context, { limit: 100, cursor: 'c1000000-0000-4000-8000-000000000050' })
 
-    expect(client.rpc).toHaveBeenCalledWith('c1_get_controlled_import_result', { target_company_id: companyId, target_run_id: '00000000-0000-4000-8000-000000000001' })
+    expect(client.rpc).toHaveBeenCalledWith('c1_probe_cost_source_read', { target_company_id: companyId })
     expect(query.eq).toHaveBeenCalledWith('tenant_id', tenantId)
     expect(query.eq).toHaveBeenCalledWith('company_id', companyId)
     expect(query.gt).toHaveBeenCalledWith('id', 'c1000000-0000-4000-8000-000000000050')
     expect(query.limit).toHaveBeenCalledWith(100)
     const columns = query.select.mock.calls[0]![0] as string
-    expect(columns).toContain('project_engagements!source_selections_mapped_engagement_id_tenant_id_company_i_fkey(id, code, name)')
-    expect(columns).toContain('project_engagements!source_reported_figures_engagement_id_tenant_id_company_id_fkey(id, code, name)')
-    expect(columns).not.toContain('project_engagements!mapped_engagement_id(id, code, name)')
-    expect(columns).not.toContain('project_engagements!engagement_id(id, code, name)')
+    expect(columns).toContain('source_review_issues(issue_kind, impact, description, status)')
+    expect(columns).not.toMatch(/(?:projects|project_engagements|business_parties)!/u)
     expect(result.items[0]).toMatchObject({ amountText: '1234.5000', rawValueText: '1,234.5000', source: { title: 'September source' } })
     expect(typeof result.items[0]!.amountText).toBe('string')
     expect(JSON.stringify(result)).not.toContain('amount":1234')

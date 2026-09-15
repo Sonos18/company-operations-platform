@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { resolvePreferredRoute } from '../services/auth/access-policy'
 definePageMeta({ authMode: 'authenticated', requiresCompany: false, layout: 'auth' })
 
 const nuxtApp = useNuxtApp()
@@ -16,7 +17,7 @@ async function selectCompany(companyId: string): Promise<void> {
       error.value = 'Không thể chọn công ty này. Vui lòng thử lại.'
       return
     }
-    await navigateTo('/projects')
+    await navigateTo(resolvePreferredRoute(companyAccessStore.permissions))
   }
   finally { submitting.value = false }
 }

@@ -7,14 +7,29 @@ const context = {
 }
 
 describe('cost source read service', () => {
-  it('requires the same read and prepare capabilities as the persisted RLS policy', async () => {
-    const overview = vi.fn()
-    const service = createCostSourceReadService({ probe: vi.fn(), overview } as never)
+  it('allows every source-read operation with cost.source.read alone', async () => {
+    const probe = vi.fn()
+    const figures = vi.fn().mockResolvedValue([])
+    const provenance = vi.fn().mockResolvedValue(null)
+    const service = createCostSourceReadService({ probe, figures, provenance } as never)
 
-    await expect(service.overview({ ...context, permissions: ['cost.source.read'] })).rejects.toMatchObject({
-      statusCode: 403, code: 'PERMISSION_DENIED',
-    })
-    expect(overview).not.toHaveBeenCalled()
+    await expect(service.overview({ ...context, permissions: ['cost.source.read'] })).resolves.toMatchObject({ figureCount: 0 })
+    await expect(service.project({ ...context, permissions: ['cost.source.read'] }, 'c1000000-0000-4000-8000-000000000004')).resolves.toMatchObject({ project: null })
+    await expect(service.figures({ ...context, permissions: ['cost.source.read'] }, { limit: 1 })).resolves.toEqual({ items: [], nextCursor: null })
+    await expect(service.provenance({ ...context, permissions: ['cost.source.read'] }, 'c1000000-0000-4000-8000-000000000004')).rejects.toMatchObject({ statusCode: 404 })
+    expect(probe).toHaveBeenCalledTimes(4)
+    expect(figures).toHaveBeenCalledTimes(3)
+    expect(provenance).toHaveBeenCalledTimes(1)
+  })
+
+  it('denies source-read operations without cost.source.read while retaining preparer support', async () => {
+    const probe = vi.fn()
+    const figures = vi.fn().mockResolvedValue([])
+    const service = createCostSourceReadService({ probe, figures } as never)
+
+    await expect(service.overview({ ...context, permissions: ['cost.prepare'] })).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    await expect(service.overview(context)).resolves.toMatchObject({ figureCount: 0 })
+    expect(probe).toHaveBeenCalledTimes(1)
   })
 
   it('rejects oversized figure pages before the data repository is called', async () => {

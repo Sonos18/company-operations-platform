@@ -2,9 +2,11 @@
 import { signInInputSchema } from '../../../shared/schemas/auth'
 import { sanitizeInternalRedirect } from '../../../shared/utils/app-url'
 import { ClientError } from '../../errors/client-error'
+import { resolvePreferredRoute } from '../../services/auth/access-policy'
 import PasswordField from './PasswordField.vue'
 
 const authStore = useNuxtApp().$authStore
+const companyAccessStore = useNuxtApp().$companyAccessStore
 const route = useRoute()
 const email = ref('')
 const password = ref('')
@@ -41,7 +43,7 @@ async function submit(): Promise<void> {
 
   try {
     await authStore.signIn({ email: email.value, password: password.value })
-    await navigateTo(sanitizeInternalRedirect(route.query.redirect) ?? '/projects')
+    await navigateTo(sanitizeInternalRedirect(route.query.redirect) ?? resolvePreferredRoute(companyAccessStore.permissions))
   }
   catch (error) {
     formError.value = error instanceof ClientError ? error.message : 'Không thể đăng nhập. Vui lòng thử lại.'
