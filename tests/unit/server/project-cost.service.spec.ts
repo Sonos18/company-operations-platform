@@ -1,9 +1,107 @@
 import { describe, expect, it, vi } from 'vitest'
+import { AppApiError } from '../../../server/utils/api-error'
+import { ProjectCostRepository } from '../../../server/features/costs/project-cost.repository'
 import { ProjectCostService } from '../../../server/features/costs/project-cost.service'
 
 const context = (permissions: string[]) => ({ actorId: 'c1010000-0000-4000-8000-000000000902', tenantId: 'c1010000-0000-4000-8000-000000000010', companyId: 'c1010000-0000-4000-8000-000000000020', permissions, requestId: 'c1010000-0000-4000-8000-000000000999' })
+const createInput = { projectId: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount: '1.00', currencyCode: 'VND', workStatus: 'unknown' as const, nonOverlapConfirmationReference: 'confirmed' }
+const itemRow = (overrides: Record<string, unknown> = {}) => ({ id: 'c1010000-0000-4000-8000-000000000001', tenant_id: 'c1010000-0000-4000-8000-000000000010', company_id: 'c1010000-0000-4000-8000-000000000020', project_id: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount_text: '1.0000', currency_code: 'VND', work_status: 'unknown', business_reference: null, party_id: null, engagement_id: null, component_id: null, relevant_date: null, version: 0, created_by: 'c1010000-0000-4000-8000-000000000902', created_at: '2026-09-16T00:00:00.000Z', updated_at: '2026-09-16T00:00:00.000Z', ...overrides })
+const listClient = (data: unknown) => {
+  const result = Promise.resolve({ data, error: null })
+  const query = { select: vi.fn(), eq: vi.fn(), order: vi.fn(), then: result.then.bind(result) }
+  query.select.mockReturnValue(query)
+  query.eq.mockReturnValue(query)
+  query.order.mockReturnValue(query)
+  const select = query.select
+  const from = vi.fn().mockReturnValue({ select })
+  return { from, select, query }
+}
 
 describe('Project Cost service', () => {
+  it('maps a snake_case database row to the public project cost item without losing decimal text', async () => {
+    const client = {
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [{ id: 'c1010000-0000-4000-8000-000000000001', tenant_id: 'c1010000-0000-4000-8000-000000000010', company_id: 'c1010000-0000-4000-8000-000000000020', project_id: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount_text: '9007199254740993.0000', currency_code: 'VND', work_status: 'accepted', business_reference: null, party_id: null, engagement_id: null, component_id: null, relevant_date: null, version: 2, created_by: 'c1010000-0000-4000-8000-000000000902', created_at: '2026-09-16T00:00:00.000Z', updated_at: '2026-09-16T00:00:00.000Z' }], error: null }) }),
+              }),
+            }),
+          }),
+        }),
+      }),
+    }
+    const repository = new ProjectCostRepository(client as never)
+
+    await expect(repository.projectSummary(context(['cost.read']).tenantId, context(['cost.read']).companyId, 'c1010000-0000-4000-8000-000000000101')).resolves.toMatchObject({ items: [expect.objectContaining({ projectId: 'c1010000-0000-4000-8000-000000000101', amount: '9007199254740993.0000', currencyCode: 'VND', workStatus: 'accepted', version: 2 })] })
+    expect(client.from.mock.results[0].value.select).toHaveBeenCalledWith(expect.not.stringContaining('*'))
+  })
+
+  it('returns the RPC acknowledgement instead of the Supabase response envelope', async () => {
+    const client = { rpc: vi.fn().mockResolvedValue({ data: { id: 'c1010000-0000-4000-8000-000000000001', version: 0, replayed: false }, error: null }) }
+    const repository = new ProjectCostRepository(client as never)
+
+    await expect(repository.create(context(['cost.manage']), { projectId: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount: '1.00', currencyCode: 'VND', workStatus: 'unknown', nonOverlapConfirmationReference: 'confirmed' }, 'c1010000-0000-4000-8000-000000000998')).resolves.toEqual({ id: 'c1010000-0000-4000-8000-000000000001', version: 0, replayed: false })
+  })
+
+  it('maps VERSION_CONFLICT from RPC to a 409 AppApiError', async () => {
+    const client = { rpc: vi.fn().mockResolvedValue({ data: null, error: { code: 'VERSION_CONFLICT', message: 'stale version' } }) }
+    const repository = new ProjectCostRepository(client as never)
+
+    await expect(repository.create(context(['cost.manage']), { projectId: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount: '1.00', currencyCode: 'VND', workStatus: 'unknown', nonOverlapConfirmationReference: 'confirmed' }, 'c1010000-0000-4000-8000-000000000998')).rejects.toBeInstanceOf(AppApiError)
+    await expect(repository.create(context(['cost.manage']), { projectId: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount: '1.00', currencyCode: 'VND', workStatus: 'unknown', nonOverlapConfirmationReference: 'confirmed' }, 'c1010000-0000-4000-8000-000000000998')).rejects.toMatchObject({ statusCode: 409, code: 'VERSION_CONFLICT' })
+  })
+
+  it('filters project cost reads by tenant, company, and project', async () => {
+    const client = listClient([itemRow()])
+    const repository = new ProjectCostRepository(client as never)
+
+    await repository.projectSummary(context([]).tenantId, context([]).companyId, createInput.projectId)
+
+    expect(client.from).toHaveBeenCalledWith('project_cost_items')
+    expect(client.select).toHaveBeenCalledWith(expect.not.stringContaining('*'))
+    expect(client.query.eq).toHaveBeenCalledWith('tenant_id', context([]).tenantId)
+    expect(client.query.eq).toHaveBeenCalledWith('company_id', context([]).companyId)
+    expect(client.query.eq).toHaveBeenCalledWith('project_id', createInput.projectId)
+  })
+
+  it('aggregates accepted and in-progress values, excludes unknown from total, and counts zero values', async () => {
+    const client = listClient([
+      itemRow({ id: 'c1010000-0000-4000-8000-000000000011', amount_text: '0.0000', work_status: 'accepted' }),
+      itemRow({ id: 'c1010000-0000-4000-8000-000000000012', amount_text: '2.5000', work_status: 'in_progress' }),
+      itemRow({ id: 'c1010000-0000-4000-8000-000000000013', amount_text: '7.0000', work_status: 'unknown' }),
+    ])
+    const repository = new ProjectCostRepository(client as never)
+
+    await expect(repository.listSummaries(context([]).tenantId, context([]).companyId)).resolves.toEqual([{ projectId: createInput.projectId, summary: { acceptedValue: '0.0000', acceptedCount: 1, inProgressValue: '2.5000', inProgressCount: 1, unknownStatusValue: '7.0000', unknownCount: 1, totalTrackedWorkValue: '2.5000' } }])
+  })
+
+  it('rejects mixed-currency project cost summaries as INTERNAL_ERROR', async () => {
+    const repository = new ProjectCostRepository(listClient([itemRow(), itemRow({ id: 'c1010000-0000-4000-8000-000000000012', currency_code: 'USD' })]) as never)
+
+    await expect(repository.listSummaries(context([]).tenantId, context([]).companyId)).rejects.toMatchObject({ statusCode: 500, code: 'INTERNAL_ERROR' })
+  })
+
+  it.each([
+    ['MODULE_DISABLED', 403, 'PERMISSION_DENIED'], ['PERMISSION_DENIED', 403, 'PERMISSION_DENIED'], ['RESOURCE_NOT_FOUND', 404, 'RESOURCE_NOT_FOUND'], ['IDEMPOTENCY_CONFLICT', 409, 'IDEMPOTENCY_CONFLICT'], ['INPUT_INVALID', 400, 'INPUT_INVALID'], ['unexpected database error', 500, 'INTERNAL_ERROR'],
+  ])('maps RPC %s to the public API error', async (code, statusCode, expectedCode) => {
+    const repository = new ProjectCostRepository({ rpc: vi.fn().mockResolvedValue({ data: null, error: { code: 'P0001', message: code } }) } as never)
+
+    await expect(repository.create(context(['cost.manage']), createInput, 'c1010000-0000-4000-8000-000000000998')).rejects.toMatchObject({ statusCode, code: expectedCode })
+  })
+
+  it('returns update and correction acknowledgements without a post-write table read', async () => {
+    const client = { from: vi.fn(), rpc: vi.fn().mockResolvedValue({ data: { id: 'c1010000-0000-4000-8000-000000000001', version: 3 }, error: null }) }
+    const repository = new ProjectCostRepository(client as never)
+
+    await expect(repository.update(context(['cost.manage']), 'c1010000-0000-4000-8000-000000000001', { kind: 'update', input: { description: 'Renamed', expectedVersion: 2 } })).resolves.toEqual({ id: 'c1010000-0000-4000-8000-000000000001', version: 3 })
+    await expect(repository.update(context(['cost.correct']), 'c1010000-0000-4000-8000-000000000001', { kind: 'correction', input: { amount: '2.00', reason: 'Correction', expectedVersion: 2 } })).resolves.toEqual({ id: 'c1010000-0000-4000-8000-000000000001', version: 3 })
+    expect(client.rpc).toHaveBeenNthCalledWith(1, 'c1_update_project_cost_item', expect.any(Object))
+    expect(client.rpc).toHaveBeenNthCalledWith(2, 'c1_correct_project_cost_item', expect.any(Object))
+    expect(client.from).not.toHaveBeenCalled()
+  })
+
   it('requires cost.read before summary access', async () => {
     const repository = { listSummaries: vi.fn() }
     const service = new ProjectCostService(repository as never)
@@ -11,10 +109,37 @@ describe('Project Cost service', () => {
     expect(repository.listSummaries).not.toHaveBeenCalled()
   })
 
+  it('allows cost.read summary access without a write permission', async () => {
+    const repository = { projectSummary: vi.fn().mockResolvedValue({ projectId: createInput.projectId, summary: {}, items: [] }) }
+    const service = new ProjectCostService(repository as never)
+
+    await expect(service.projectSummary(context(['cost.read']), createInput.projectId)).resolves.toMatchObject({ projectId: createInput.projectId })
+    expect(repository.projectSummary).toHaveBeenCalledWith(context([]).tenantId, context([]).companyId, createInput.projectId)
+  })
+
   it('allows cost.manage create without cost.read and preserves idempotency input', async () => {
     const repository = { create: vi.fn().mockResolvedValue({ id: 'c1010000-0000-4000-8000-000000000001', version: 0, replayed: false }) }
     const service = new ProjectCostService(repository as never)
     await expect(service.create(context(['cost.manage']), { projectId: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount: '9007199254740993.0000', currencyCode: 'VND', workStatus: 'unknown', nonOverlapConfirmationReference: 'confirmed' }, 'c1010000-0000-4000-8000-000000000998')).resolves.toMatchObject({ replayed: false })
     expect(repository.create).toHaveBeenCalledOnce()
+  })
+
+  it('requires cost.manage for ordinary updates and cost.correct for corrections', async () => {
+    const repository = { update: vi.fn().mockResolvedValue({ id: 'c1010000-0000-4000-8000-000000000001', version: 1 }) }
+    const service = new ProjectCostService(repository as never)
+
+    await expect(service.update(context(['cost.manage']), 'c1010000-0000-4000-8000-000000000001', { description: 'Renamed', expectedVersion: 0 })).resolves.toEqual(expect.any(Object))
+    await expect(service.correct(context(['cost.correct']), 'c1010000-0000-4000-8000-000000000001', { amount: '2.00', reason: 'Correction', expectedVersion: 0 })).resolves.toEqual(expect.any(Object))
+    await expect(service.correct(context(['cost.manage']), 'c1010000-0000-4000-8000-000000000001', { amount: '2.00', reason: 'Correction', expectedVersion: 0 })).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    await expect(service.update(context(['cost.correct']), 'c1010000-0000-4000-8000-000000000001', { description: 'Renamed', expectedVersion: 0 })).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    expect(repository.update).toHaveBeenCalledTimes(2)
+  })
+
+  it('maps invalid Zod input to INPUT_INVALID before calling the repository', async () => {
+    const repository = { create: vi.fn() }
+    const service = new ProjectCostService(repository as never)
+
+    await expect(service.create(context(['cost.manage']), { ...createInput, amount: 'not-a-decimal' }, 'c1010000-0000-4000-8000-000000000998')).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' })
+    expect(repository.create).not.toHaveBeenCalled()
   })
 })

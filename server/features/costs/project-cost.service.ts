@@ -1,13 +1,19 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { PermissionCode } from '../../../shared/constants/permissions'
 import { correctProjectCostItemInputSchema, createProjectCostItemInputSchema, updateProjectCostItemInputSchema } from '../../../shared/schemas/costs/project-costs'
+import { AppApiError } from '../../utils/api-error'
+import type { ProjectCostDataRepository, ProjectCostRequestContext } from './project-cost.repository'
 
-const fail = (statusCode: number, code: string, details?: unknown) => { throw Object.assign(new Error(code), { statusCode, code, details }) }
+export interface ProjectCostServiceContext extends ProjectCostRequestContext { actorId: string; tenantId: string; permissions: readonly PermissionCode[] }
+
+function requirePermission(context: ProjectCostServiceContext, permission: PermissionCode) { if (!context.permissions.includes(permission)) throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.') }
+function input<T>(schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } }, value: unknown): T { const parsed = schema.safeParse(value); if (!parsed.success) throw new AppApiError(400, 'INPUT_INVALID', 'Dữ liệu không hợp lệ.'); return parsed.data }
+
 export class ProjectCostService {
-  constructor(private readonly repository: any) {}
-  private require(context: any, permission: string) { if (!context.permissions.includes(permission)) fail(403, 'PERMISSION_DENIED') }
-  async listSummaries(context: any) { this.require(context, 'cost.read'); return this.repository.listSummaries(context.tenantId, context.companyId) }
-  async projectSummary(context: any, projectId: string) { this.require(context, 'cost.read'); return this.repository.projectSummary(context.tenantId, context.companyId, projectId) }
-  async create(context: any, input: unknown, idempotencyKey: string) { this.require(context, 'cost.manage'); return this.repository.create(context, createProjectCostItemInputSchema.parse(input), idempotencyKey) }
-  async update(context: any, id: string, input: unknown) { this.require(context, 'cost.manage'); return this.repository.update(context, id, { kind: 'update', input: updateProjectCostItemInputSchema.parse(input) }) }
-  async correct(context: any, id: string, input: unknown) { this.require(context, 'cost.correct'); return this.repository.update(context, id, { kind: 'correction', input: correctProjectCostItemInputSchema.parse(input) }) }
+  constructor(private readonly repository: ProjectCostDataRepository) {}
+
+  async listSummaries(context: ProjectCostServiceContext) { requirePermission(context, 'cost.read'); return this.repository.listSummaries(context.tenantId, context.companyId) }
+  async projectSummary(context: ProjectCostServiceContext, projectId: string) { requirePermission(context, 'cost.read'); return this.repository.projectSummary(context.tenantId, context.companyId, projectId) }
+  async create(context: ProjectCostServiceContext, value: unknown, idempotencyKey: string) { requirePermission(context, 'cost.manage'); return this.repository.create(context, input(createProjectCostItemInputSchema, value), idempotencyKey) }
+  async update(context: ProjectCostServiceContext, id: string, value: unknown) { requirePermission(context, 'cost.manage'); return this.repository.update(context, id, { kind: 'update', input: input(updateProjectCostItemInputSchema, value) }) }
+  async correct(context: ProjectCostServiceContext, id: string, value: unknown) { requirePermission(context, 'cost.correct'); return this.repository.update(context, id, { kind: 'correction', input: input(correctProjectCostItemInputSchema, value) }) }
 }
