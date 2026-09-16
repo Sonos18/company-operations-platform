@@ -17,12 +17,20 @@ create temporary table c1_import_master_baseline (
 ) on commit drop;
 
 do $$
+begin
+  if not exists (select 1 from public.tenants where id = 'c1000000-0000-4000-8000-000000000010'::uuid and code = 'c1-acceptance' and name = 'Taskovia C1 Acceptance' and deployment_mode = 'shared') then raise exception 'C1 import prerequisite tenant missing'; end if;
+  if not exists (select 1 from public.companies where id = 'c1000000-0000-4000-8000-000000000020'::uuid and tenant_id = 'c1000000-0000-4000-8000-000000000010'::uuid and code = 'C1-ACCEPTANCE-A1' and name = 'Taskovia C1 Acceptance Primary') then raise exception 'C1 import prerequisite company A1 missing'; end if;
+  if not exists (select 1 from public.companies where id = 'c1000000-0000-4000-8000-000000000021'::uuid and tenant_id = 'c1000000-0000-4000-8000-000000000010'::uuid and code = 'C1-ACCEPTANCE-A2' and name = 'Taskovia C1 Acceptance Denial Target') then raise exception 'C1 import prerequisite company A2 missing'; end if;
+  if exists ((select permission_code from public.role_permissions where role_id = 'c1000000-0000-4000-8000-000000000911'::uuid except select unnest(array['cost.source.read', 'cost.prepare']::text[])) union all (select unnest(array['cost.source.read', 'cost.prepare']::text[]) except select permission_code from public.role_permissions where role_id = 'c1000000-0000-4000-8000-000000000911'::uuid) union all (select permission_code from public.role_permissions where role_id = 'c1000000-0000-4000-8000-000000000912'::uuid except select unnest(array['cost.source.read']::text[])) union all (select unnest(array['cost.source.read']::text[]) except select permission_code from public.role_permissions where role_id = 'c1000000-0000-4000-8000-000000000912'::uuid)) then raise exception 'C1 import prerequisite role permissions invalid'; end if;
+end $$;
+
+do $$
 declare
   v_tenant_a constant uuid := 'c1000000-0000-4000-8000-000000000010';
   v_company_a1 constant uuid := 'c1000000-0000-4000-8000-000000000020';
   v_company_a2 constant uuid := 'c1000000-0000-4000-8000-000000000021';
-  v_tenant_b constant uuid := 'c1010000-0000-4000-8000-000000000010';
-  v_company_b1 constant uuid := 'c1010000-0000-4000-8000-000000000020';
+  v_tenant_b constant uuid := 'c1200000-0000-4000-8000-000000000010';
+  v_company_b1 constant uuid := 'c1200000-0000-4000-8000-000000000020';
   v_frozen_manifest jsonb;
   v_canonical_vector constant text := $canonical_vector${"sourceVersions":{"array":[2,1],"emptyArray":[],"emptyObject":{},"escaped":"quote \" slash \\ newline\n","nil":null,"text":" β Nhật ký ","zero":"0.0000"},"sources":{"nested":{"A":1,"b":2}}}$canonical_vector$;
   v_manifest jsonb;
@@ -36,13 +44,8 @@ begin
   insert into auth.users(id, email) values
     ('c1000000-0000-4000-8000-000000000901', 'c1-importer-one@taskovia.invalid'),
     ('c1000000-0000-4000-8000-000000000902', 'c1-importer-two@taskovia.invalid');
-  insert into public.tenants(id, code, name) values
-    (v_tenant_a, 'c1-import-a', 'C1 import tenant A'),
-    (v_tenant_b, 'c1-import-b', 'C1 import tenant B');
-  insert into public.companies(id, tenant_id, code, name) values
-    (v_company_a1, v_tenant_a, 'C1-IMPORT-A1', 'C1 import company A1'),
-    (v_company_a2, v_tenant_a, 'C1-IMPORT-A2', 'C1 import company A2'),
-    (v_company_b1, v_tenant_b, 'C1-IMPORT-B1', 'C1 import company B1');
+  insert into public.tenants(id, code, name) values (v_tenant_b, 'c1-import-b', 'C1 import tenant B');
+  insert into public.companies(id, tenant_id, code, name) values (v_company_b1, v_tenant_b, 'C1-IMPORT-B1', 'C1 import company B1');
   insert into public.tenant_memberships(user_id, tenant_id, roles) values
     ('c1000000-0000-4000-8000-000000000901', v_tenant_a, array['member']),
     ('c1000000-0000-4000-8000-000000000902', v_tenant_a, array['member']);
@@ -50,18 +53,12 @@ begin
     ('c1000000-0000-4000-8000-000000000901', v_tenant_a, v_company_a1, array['member'], true),
     ('c1000000-0000-4000-8000-000000000902', v_tenant_a, v_company_a1, array['member'], true),
     ('c1000000-0000-4000-8000-000000000902', v_tenant_a, v_company_a2, array['member'], true);
-  insert into public.roles(id, tenant_id, company_id, code, name, description, is_system) values
-    ('c1000000-0000-4000-8000-000000000911', v_tenant_a, v_company_a1, 'c1_importer', 'C1 importer', 'Synthetic controlled-import capability', false),
-    ('c1000000-0000-4000-8000-000000000912', v_tenant_a, v_company_a2, 'c1_importer_a2', 'C1 importer A2', 'Synthetic controlled-import capability', false);
-  insert into public.role_permissions(role_id, permission_code) values
-    ('c1000000-0000-4000-8000-000000000911', 'cost.source.read'),
-    ('c1000000-0000-4000-8000-000000000911', 'cost.prepare'),
-    ('c1000000-0000-4000-8000-000000000912', 'cost.source.read'),
-    ('c1000000-0000-4000-8000-000000000912', 'cost.prepare');
+  insert into public.roles(id, tenant_id, company_id, code, name, description, is_system) values ('c1000000-0000-4000-8000-000000000913', v_tenant_a, v_company_a2, 'c1_importer_a2', 'C1 importer A2', 'Synthetic controlled-import capability', false);
+  insert into public.role_permissions(role_id, permission_code) values ('c1000000-0000-4000-8000-000000000913', 'cost.source.read'), ('c1000000-0000-4000-8000-000000000913', 'cost.prepare');
   insert into public.company_role_assignments(tenant_id, company_id, user_id, role_id, granted_by, grant_reason) values
     (v_tenant_a, v_company_a1, 'c1000000-0000-4000-8000-000000000901', 'c1000000-0000-4000-8000-000000000911', 'c1000000-0000-4000-8000-000000000901', 'Synthetic controlled-import fixture'),
     (v_tenant_a, v_company_a1, 'c1000000-0000-4000-8000-000000000902', 'c1000000-0000-4000-8000-000000000911', 'c1000000-0000-4000-8000-000000000901', 'Synthetic controlled-import fixture'),
-    (v_tenant_a, v_company_a2, 'c1000000-0000-4000-8000-000000000902', 'c1000000-0000-4000-8000-000000000912', 'c1000000-0000-4000-8000-000000000901', 'Synthetic controlled-import fixture');
+    (v_tenant_a, v_company_a2, 'c1000000-0000-4000-8000-000000000902', 'c1000000-0000-4000-8000-000000000913', 'c1000000-0000-4000-8000-000000000901', 'Synthetic controlled-import fixture');
   insert into public.company_cost_settings(company_id, tenant_id, enabled, created_by)
   values
     (v_company_a1, v_tenant_a, true, 'c1000000-0000-4000-8000-000000000901'),
@@ -70,7 +67,7 @@ begin
   insert into public.projects(id, tenant_id, company_id, code, name, origin, created_by) values
     ('c1000000-0000-4000-8000-000000000930', v_tenant_a, v_company_a1, 'C1-IMPORT-PROJECT-A1', 'Synthetic import project A1', 'manual', 'c1000000-0000-4000-8000-000000000901'),
     ('c1000000-0000-4000-8000-000000000940', v_tenant_a, v_company_a2, 'C1-IMPORT-PROJECT-A2', 'Synthetic import project A2', 'manual', 'c1000000-0000-4000-8000-000000000901'),
-    ('c1010000-0000-4000-8000-000000000930', v_tenant_b, v_company_b1, 'C1-IMPORT-PROJECT-B1', 'Synthetic import project B1', 'manual', 'c1000000-0000-4000-8000-000000000901');
+    ('c1200000-0000-4000-8000-000000000930', v_tenant_b, v_company_b1, 'C1-IMPORT-PROJECT-B1', 'Synthetic import project B1', 'manual', 'c1000000-0000-4000-8000-000000000901');
   insert into public.business_parties(id, tenant_id, company_id, code, display_name, party_kind, created_by)
   values ('c1000000-0000-4000-8000-000000000931', v_tenant_a, v_company_a1, 'C1-IMPORT-PARTY-A1', 'Synthetic import party A1', 'crew', 'c1000000-0000-4000-8000-000000000901');
   insert into public.project_engagements(id, tenant_id, company_id, project_id, party_id, code, name, currency_code, created_by)
@@ -79,11 +76,11 @@ begin
   values ('c1000000-0000-4000-8000-000000000933', v_tenant_a, v_company_a1, 'c1000000-0000-4000-8000-000000000932', 'C1-IMPORT-COMPONENT-A1', 'Synthetic import component A1', 'fixed', 'c1000000-0000-4000-8000-000000000901');
 
   insert into public.controlled_import_runs(id, tenant_id, company_id, run_id, actor_id, idempotency_key, payload_digest, manifest_digest, input_digests, workbook_family, adapter_id, adapter_version, manifest_snapshot, result, request_id)
-  values ('c1010000-0000-4000-8000-000000000950', v_tenant_b, v_company_b1, 'c1010000-0000-4000-8000-000000000951', 'c1000000-0000-4000-8000-000000000901', 'c1010000-0000-4000-8000-000000000952', repeat('d', 64), repeat('e', 64), array[repeat('f', 64)], 'unrelated-synthetic-v1', 'unrelated-synthetic', '1.0.0', '{}'::jsonb, '{}'::jsonb, 'c1010000-0000-4000-8000-000000000953');
+  values ('c1200000-0000-4000-8000-000000000950', v_tenant_b, v_company_b1, 'c1200000-0000-4000-8000-000000000951', 'c1000000-0000-4000-8000-000000000901', 'c1200000-0000-4000-8000-000000000952', repeat('d', 64), repeat('e', 64), array[repeat('f', 64)], 'unrelated-synthetic-v1', 'unrelated-synthetic', '1.0.0', '{}'::jsonb, '{}'::jsonb, 'c1200000-0000-4000-8000-000000000953');
   insert into public.accounting_sources(id, tenant_id, company_id, code, title, source_system, created_by)
-  values ('c1010000-0000-4000-8000-000000000954', v_tenant_b, v_company_b1, 'C1-UNRELATED-SOURCE', 'Unrelated synthetic source', 'synthetic', 'c1000000-0000-4000-8000-000000000901');
+  values ('c1200000-0000-4000-8000-000000000954', v_tenant_b, v_company_b1, 'C1-UNRELATED-SOURCE', 'Unrelated synthetic source', 'synthetic', 'c1000000-0000-4000-8000-000000000901');
   insert into public.accounting_source_versions(id, tenant_id, company_id, source_id, import_run_id, version_no, input_file_identity, input_file_sha256, original_filename, source_version_label, created_by)
-  values ('c1010000-0000-4000-8000-000000000955', v_tenant_b, v_company_b1, 'c1010000-0000-4000-8000-000000000954', 'c1010000-0000-4000-8000-000000000950', 1, 'unrelated.xlsx', repeat('f', 64), 'unrelated.xlsx', 'unrelated-v1', 'c1000000-0000-4000-8000-000000000901');
+  values ('c1200000-0000-4000-8000-000000000955', v_tenant_b, v_company_b1, 'c1200000-0000-4000-8000-000000000954', 'c1200000-0000-4000-8000-000000000950', 1, 'unrelated.xlsx', repeat('f', 64), 'unrelated.xlsx', 'unrelated-v1', 'c1000000-0000-4000-8000-000000000901');
 
   insert into c1_import_master_baseline(company_id, project_count, party_count, engagement_count, component_count)
   select company.id,
@@ -286,7 +283,7 @@ begin
     update public.accounting_source_versions version set source_version_label = 'mutated' where version.id = v_fixture_version_id and version.tenant_id = 'c1000000-0000-4000-8000-000000000010' and version.company_id = 'c1000000-0000-4000-8000-000000000020';
     raise exception 'C1 immutable source version was updated';
   exception when sqlstate 'P0001' then if sqlerrm <> 'HISTORY_IMMUTABLE' then raise; end if; end;
-  if not exists (select 1 from public.accounting_source_versions version where version.id = 'c1010000-0000-4000-8000-000000000955' and version.tenant_id = 'c1010000-0000-4000-8000-000000000010' and version.company_id = 'c1010000-0000-4000-8000-000000000020' and version.source_version_label = 'unrelated-v1') then raise exception 'C1 unrelated synthetic row changed'; end if;
+  if not exists (select 1 from public.accounting_source_versions version where version.id = 'c1200000-0000-4000-8000-000000000955' and version.tenant_id = 'c1200000-0000-4000-8000-000000000010' and version.company_id = 'c1200000-0000-4000-8000-000000000020' and version.source_version_label = 'unrelated-v1') then raise exception 'C1 unrelated synthetic row changed'; end if;
 end;
 $$;
 

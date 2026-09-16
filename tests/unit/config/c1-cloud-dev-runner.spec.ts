@@ -30,6 +30,41 @@ describe('C1 Cloud DEV runner', () => {
     expect(() => validateC1CloudDevSql(path, sql)).not.toThrow()
   })
 
+  it('keeps foundation in the c110/c111 transaction-only namespaces', () => {
+    const fixture = (name: string) => readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1', name), 'utf8')
+    const foundation = fixture('c1_foundation.test.sql')
+
+    expect(foundation).not.toContain('c1000000-0000-4000-8000-000000000010')
+    expect(foundation).toContain('c1100000-0000-4000-8000-000000000010')
+    expect(foundation).toContain('c1110000-0000-4000-8000-000000000010')
+  })
+
+  it('reserves c120 for controlled-import commands foreign fixtures', () => {
+    const fixture = (name: string) => readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1', name), 'utf8')
+    const commands = fixture('c1_controlled_import_commands.test.sql')
+
+    expect(commands).toContain('c1200000-0000-4000-8000-000000000010')
+    expect(commands).not.toContain('c1010000-0000-4000-8000-000000000010')
+  })
+
+  it('reserves c121 for controlled-import security foreign fixtures', () => {
+    const fixture = (name: string) => readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1', name), 'utf8')
+    const security = fixture('c1_controlled_import_security.test.sql')
+
+    expect(security).toContain('c1210000-0000-4000-8000-000000000010')
+    expect(security).not.toContain('c1010000-0000-4000-8000-000000000010')
+  })
+
+  it('keeps Project Cost and audited ownership fixture namespaces independent', () => {
+    const fixture = (name: string) => readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1', name), 'utf8')
+    const projectCost = fixture('c1_project_cost_items.test.sql')
+    const auditedOwnership = fixture('c1_audited_source_ownership_correction.test.sql')
+
+    expect(projectCost).toContain('c1010000-0000-4000-8000-000000000010')
+    expect(auditedOwnership).toContain('c1020000-0000-4000-8000-000000000010')
+    expect(auditedOwnership).toContain('c1030000-0000-4000-8000-000000000010')
+  })
+
   it('accepts the rollback-only audited source-ownership correction fixture', () => {
     const path = 'c1_audited_source_ownership_correction.test.sql'
     const sql = 'begin;\nselect 1;\nrollback;'

@@ -45,6 +45,16 @@ describe('C1 acceptance prerequisites migration contract', () => {
     expect(sql).not.toContain('10000000-0000-4000-8000-000000000020')
   })
 
+  it('keeps importer and source-only permissions as exact persistent tuples', () => {
+    const name = readdirSync(resolve(root, 'supabase/migrations')).find(value => migrationName.test(value))!
+    const sql = normalizeEol(readFileSync(resolve(root, 'supabase/migrations', name), 'utf8'))
+
+    expect(sql).toContain("('c1000000-0000-4000-8000-000000000911'::uuid, 'cost.source.read')")
+    expect(sql).toContain("('c1000000-0000-4000-8000-000000000911'::uuid, 'cost.prepare')")
+    expect(sql).toContain("('c1000000-0000-4000-8000-000000000912'::uuid, 'cost.source.read')")
+    expect(sql).not.toContain("('c1000000-0000-4000-8000-000000000912'::uuid, 'cost.prepare')")
+  })
+
   it('keeps the three applied C1 migrations immutable across checkout EOLs', () => {
     for (const [name, hash] of Object.entries(appliedMigrations)) {
       const sql = normalizeEol(readFileSync(resolve(root, 'supabase/migrations', name), 'utf8'))

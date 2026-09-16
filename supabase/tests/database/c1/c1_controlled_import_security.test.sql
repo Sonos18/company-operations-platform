@@ -10,12 +10,20 @@ create temporary table c1_import_security_fixture (
 grant select, update on c1_import_security_fixture to authenticated;
 
 do $$
+begin
+  if not exists (select 1 from public.tenants where id = 'c1000000-0000-4000-8000-000000000010'::uuid and code = 'c1-acceptance' and name = 'Taskovia C1 Acceptance' and deployment_mode = 'shared') then raise exception 'C1 security prerequisite tenant missing'; end if;
+  if not exists (select 1 from public.companies where id = 'c1000000-0000-4000-8000-000000000020'::uuid and tenant_id = 'c1000000-0000-4000-8000-000000000010'::uuid and code = 'C1-ACCEPTANCE-A1' and name = 'Taskovia C1 Acceptance Primary') then raise exception 'C1 security prerequisite company A1 missing'; end if;
+  if not exists (select 1 from public.companies where id = 'c1000000-0000-4000-8000-000000000021'::uuid and tenant_id = 'c1000000-0000-4000-8000-000000000010'::uuid and code = 'C1-ACCEPTANCE-A2' and name = 'Taskovia C1 Acceptance Denial Target') then raise exception 'C1 security prerequisite company A2 missing'; end if;
+  if exists ((select permission_code from public.role_permissions where role_id = 'c1000000-0000-4000-8000-000000000911'::uuid except select unnest(array['cost.source.read', 'cost.prepare']::text[])) union all (select unnest(array['cost.source.read', 'cost.prepare']::text[]) except select permission_code from public.role_permissions where role_id = 'c1000000-0000-4000-8000-000000000911'::uuid) union all (select permission_code from public.role_permissions where role_id = 'c1000000-0000-4000-8000-000000000912'::uuid except select unnest(array['cost.source.read']::text[])) union all (select unnest(array['cost.source.read']::text[]) except select permission_code from public.role_permissions where role_id = 'c1000000-0000-4000-8000-000000000912'::uuid)) then raise exception 'C1 security prerequisite role permissions invalid'; end if;
+end $$;
+
+do $$
 declare
   v_tenant_a constant uuid := 'c1000000-0000-4000-8000-000000000010';
   v_company_a1 constant uuid := 'c1000000-0000-4000-8000-000000000020';
   v_company_a2 constant uuid := 'c1000000-0000-4000-8000-000000000021';
-  v_tenant_b constant uuid := 'c1010000-0000-4000-8000-000000000010';
-  v_company_b1 constant uuid := 'c1010000-0000-4000-8000-000000000020';
+  v_tenant_b constant uuid := 'c1210000-0000-4000-8000-000000000010';
+  v_company_b1 constant uuid := 'c1210000-0000-4000-8000-000000000020';
   v_manifest jsonb;
   v_manifest_digest text;
   v_payload_digest text;
@@ -26,13 +34,8 @@ begin
     ('c1000000-0000-4000-8000-000000000901', 'c1-security-importer@taskovia.invalid'),
     ('c1000000-0000-4000-8000-000000000902', 'c1-security-viewer@taskovia.invalid'),
     ('c1000000-0000-4000-8000-000000000903', 'c1-security-project-only@taskovia.invalid');
-  insert into public.tenants(id, code, name) values
-    (v_tenant_a, 'c1-security-a', 'C1 security tenant A'),
-    (v_tenant_b, 'c1-security-b', 'C1 security tenant B');
-  insert into public.companies(id, tenant_id, code, name) values
-    (v_company_a1, v_tenant_a, 'C1-SECURITY-A1', 'C1 security company A1'),
-    (v_company_a2, v_tenant_a, 'C1-SECURITY-A2', 'C1 security company A2'),
-    (v_company_b1, v_tenant_b, 'C1-SECURITY-B1', 'C1 security company B1');
+  insert into public.tenants(id, code, name) values (v_tenant_b, 'c1-security-b', 'C1 security tenant B');
+  insert into public.companies(id, tenant_id, code, name) values (v_company_b1, v_tenant_b, 'C1-SECURITY-B1', 'C1 security company B1');
   insert into public.tenant_memberships(user_id, tenant_id, roles) values
     ('c1000000-0000-4000-8000-000000000901', v_tenant_a, array['member']),
     ('c1000000-0000-4000-8000-000000000902', v_tenant_a, array['member']),
@@ -43,14 +46,9 @@ begin
     ('c1000000-0000-4000-8000-000000000902', v_tenant_a, v_company_a1, array['member'], true),
     ('c1000000-0000-4000-8000-000000000903', v_tenant_a, v_company_a1, array['member'], true);
   insert into public.roles(id, tenant_id, company_id, code, name, description, is_system) values
-    ('c1000000-0000-4000-8000-000000000911', v_tenant_a, v_company_a1, 'c1_security_importer', 'C1 security importer', 'Synthetic source and prepare capability', false),
-    ('c1000000-0000-4000-8000-000000000912', v_tenant_a, v_company_a1, 'c1_security_viewer', 'C1 security viewer', 'Synthetic source-only capability', false),
     ('c1000000-0000-4000-8000-000000000913', v_tenant_a, v_company_a1, 'c1_security_project', 'C1 security project reader', 'Synthetic project-only capability', false),
     ('c1000000-0000-4000-8000-000000000921', v_tenant_a, v_company_a2, 'c1_security_disabled_importer', 'C1 disabled importer', 'Synthetic disabled-company capability', false);
   insert into public.role_permissions(role_id, permission_code) values
-    ('c1000000-0000-4000-8000-000000000911', 'cost.source.read'),
-    ('c1000000-0000-4000-8000-000000000911', 'cost.prepare'),
-    ('c1000000-0000-4000-8000-000000000912', 'cost.source.read'),
     ('c1000000-0000-4000-8000-000000000913', 'project.read'),
     ('c1000000-0000-4000-8000-000000000921', 'cost.source.read'),
     ('c1000000-0000-4000-8000-000000000921', 'cost.prepare');
@@ -122,7 +120,7 @@ end $$;
 do $$ begin
   begin perform public.c1_persist_controlled_import(fixture.company_id, fixture.request, fixture.payload_digest, 'c1000000-0000-4000-8000-000000000072') from c1_import_security_fixture fixture where fixture.label = 'disabled'; raise exception 'C1 disabled module import succeeded'; exception when sqlstate 'P0001' then if sqlerrm <> 'MODULE_DISABLED' then raise; end if; end;
   begin perform public.c1_persist_controlled_import('c1000000-0000-4000-8000-000000000020', fixture.request, fixture.payload_digest, 'c1000000-0000-4000-8000-000000000073') from c1_import_security_fixture fixture where fixture.label = 'disabled'; raise exception 'C1 manifest selected another company'; exception when sqlstate 'P0001' then if sqlerrm <> 'INPUT_INVALID' then raise; end if; end;
-  begin perform public.c1_get_controlled_import_result('c1010000-0000-4000-8000-000000000020', 'c1000000-0000-4000-8000-000000000060'); raise exception 'C1 cross-tenant result read succeeded'; exception when sqlstate 'P0001' then if sqlerrm <> 'COMPANY_FORBIDDEN' then raise; end if; end;
+  begin perform public.c1_get_controlled_import_result('c1210000-0000-4000-8000-000000000020', 'c1000000-0000-4000-8000-000000000060'); raise exception 'C1 cross-tenant result read succeeded'; exception when sqlstate 'P0001' then if sqlerrm <> 'COMPANY_FORBIDDEN' then raise; end if; end;
 end $$;
 reset role;
 

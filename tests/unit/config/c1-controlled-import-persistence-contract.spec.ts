@@ -26,6 +26,30 @@ function assertExplicitIndexColumnsExist(sql: string, expectedIndexCount = 7) {
 }
 
 describe('C1 controlled-import pre-Cloud SQL contract', () => {
+  it('consumes persistent c100 prerequisites while reserving c120 for commands foreign fixtures', () => {
+    const commands = readFileSync(resolve(root, 'supabase/tests/database/c1/c1_controlled_import_commands.test.sql'), 'utf8')
+
+    expect(commands).toContain('C1 import prerequisite tenant missing')
+    expect(commands).toContain("'c1200000-0000-4000-8000-000000000010'")
+    expect(commands).toContain("'c1200000-0000-4000-8000-000000000020'")
+    expect(commands).not.toContain("'c1010000-0000-4000-8000-000000000010'")
+    expect(commands).not.toContain("(v_tenant_a, 'c1-import-a', 'C1 import tenant A')")
+    expect(commands).not.toContain("(v_company_a1, v_tenant_a, 'C1-IMPORT-A1', 'C1 import company A1')")
+    expect(commands).not.toContain("('c1000000-0000-4000-8000-000000000911', v_tenant_a, v_company_a1, 'c1_importer'")
+  })
+
+  it('consumes persistent c100 prerequisites while reserving c121 for security foreign fixtures', () => {
+    const security = readFileSync(resolve(root, 'supabase/tests/database/c1/c1_controlled_import_security.test.sql'), 'utf8')
+
+    expect(security).toContain('C1 security prerequisite tenant missing')
+    expect(security).toContain("'c1210000-0000-4000-8000-000000000010'")
+    expect(security).toContain("'c1210000-0000-4000-8000-000000000020'")
+    expect(security).not.toContain("'c1010000-0000-4000-8000-000000000010'")
+    expect(security).not.toContain("(v_tenant_a, 'c1-security-a', 'C1 security tenant A')")
+    expect(security).not.toContain("(v_company_a1, v_tenant_a, 'C1-SECURITY-A1', 'C1 security company A1')")
+    expect(security).not.toContain("('c1000000-0000-4000-8000-000000000911', v_tenant_a, v_company_a1, 'c1_security_importer'")
+  })
+
   it('keeps P1 immutable and prepares exactly one forward P2 migration', () => {
     const p1 = normalizeEol(readFileSync(resolve(root, 'supabase/migrations/20260911145035_taskovia_c1_foundation.sql'), 'utf8'))
     expect(createHash('sha256').update(p1).digest('hex').toUpperCase()).toBe('538025216FEC8B67A8A94226D67B35F723D005069AEA00B003FB4DCE6089C556')
