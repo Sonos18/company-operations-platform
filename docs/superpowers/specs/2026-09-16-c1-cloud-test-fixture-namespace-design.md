@@ -8,13 +8,14 @@ Persistent C1 acceptance prerequisites were added after the original rollback-on
 
 | Namespace | Ownership | Persistence |
 | --- | --- | --- |
-| `c100` | C1 acceptance prerequisite baseline | persistent |
-| `c110` | Foundation primary synthetic fixture | transaction-only |
-| `c111` | Foundation foreign synthetic fixture | transaction-only |
+| `c100` | C1 acceptance prerequisite baseline plus controlled-import supplemental actors/data | persistent baseline; supplements transaction-only |
 | `c101` | Project Cost synthetic fixture | transaction-only |
 | `c102/c103` | Audited source ownership fixtures | transaction-only |
+| `c110/c111` | Foundation primary/foreign synthetic fixtures | transaction-only |
+| `c120` | Controlled-import commands foreign tenant/company fixture | transaction-only |
+| `c121` | Controlled-import security foreign tenant/company fixture | transaction-only |
 
-Controlled-import tests may reference the persistent `c100` baseline, but may not recreate its persistent tenant, company, or role identities. Every supplemental actor, membership, role assignment, project, source, run, and temporary record remains inside that SQL file's transaction.
+Controlled-import tests may reference the persistent `c100` baseline, but may not recreate its persistent tenant, company, or role identities. Their primary acceptance context remains c100; transaction-local supplemental actors, memberships, assignments, projects, sources, runs, and temporary records are allowed. Project Cost owns c101, so controlled-import tests must not use c101 after correction.
 
 ## Persistent acceptance contract
 
@@ -38,11 +39,11 @@ The persistent migration validates collisions before inserting and inserts the t
 
 ### Controlled import commands
 
-`c1_controlled_import_commands.test.sql` consumes and asserts the persistent `c100` tenant, companies `0020`/`0021`, and roles `0911`/`0912`. It does not insert those rows. Its extra users, memberships, assignments, projects, source records, runs, and any additional capability role are transaction-local and rolled back.
+`c1_controlled_import_commands.test.sql` consumes and asserts the persistent `c100` tenant, companies `0020`/`0021`, and roles `0911`/`0912`. It does not insert those rows. Its primary supplemental data is transaction-local; its foreign tenant/company fixture and every dependent foreign-only row use c120, not c101.
 
 ### Controlled import security
 
-`c1_controlled_import_security.test.sql` follows the same prerequisite-consumption rule. It preserves importer, source-only, project-only, and disabled-company denial semantics without granting `cost.prepare` to persistent role `0912`.
+`c1_controlled_import_security.test.sql` follows the same prerequisite-consumption rule. Its foreign tenant/company fixture and every dependent foreign-only row use c121, not c101. It preserves importer, source-only, project-only, and disabled-company denial semantics without granting `cost.prepare` to persistent role `0912`.
 
 ### Project Cost
 

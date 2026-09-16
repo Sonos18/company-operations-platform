@@ -4,7 +4,7 @@
 
 **Goal:** Remove the deterministic collision between persistent C1 acceptance prerequisites and rollback-only Cloud verification fixtures without weakening test isolation or changing Project Cost business behavior.
 
-**Architecture:** Reserve c100 for persistent acceptance prerequisites. Move foundation's self-contained fixture to c110/c111, while controlled-import tests consume and verify the persistent c100 prerequisite contract and create only transaction-local supplemental data.
+**Architecture:** Reserve c100 for persistent acceptance prerequisites, c101 for Project Cost, c110/c111 for foundation, c120 for controlled-import commands foreign fixtures, and c121 for controlled-import security foreign fixtures. Controlled-import tests consume and verify persistent c100 prerequisites while creating only transaction-local supplemental data.
 
 **Tech Stack:** PostgreSQL, Supabase SQL migrations/tests, Node.js Cloud DEV verification runner, Vitest.
 
@@ -12,7 +12,10 @@
 
 ## Global Constraints
 
-- `c100` is the persistent C1 acceptance prerequisite namespace; rollback-only verification tests must not recreate its tenant, companies `0020`/`0021`, or roles `0911`/`0912`.
+- `c100` is the persistent C1 acceptance prerequisite namespace; controlled-import supplemental data is transaction-local, but tests must not recreate its persistent tenant, companies `0020`/`0021`, or roles `0911`/`0912`.
+- `c101` is owned only by the transaction-only Project Cost fixture; controlled-import tests must not use it.
+- `c102/c103` remain the transaction-only audited source-ownership namespaces; `c110/c111` are the transaction-only foundation primary/foreign namespaces.
+- `c120` is the transaction-only controlled-import commands foreign namespace; `c121` is the transaction-only controlled-import security foreign namespace.
 - `c1_foundation.test.sql` remains self-contained, uses `c110/c111`, starts with `BEGIN`, ends with `ROLLBACK`, and contains no `COMMIT`.
 - Controlled-import command and security tests consume and assert the persistent c100 contract, then create only transaction-local supplemental rows.
 - Persistent role `c100...0911` has exactly `cost.source.read` and `cost.prepare`; persistent role `c100...0912` has exactly `cost.source.read` and never receives `cost.prepare`.
@@ -41,16 +44,22 @@ expect(foundation).not.toContain("c1000000-0000-4000-8000-000000000010")
 expect(foundation).toContain("c1100000-0000-4000-8000-000000000010")
 expect(foundation).toContain("c1110000-0000-4000-8000-000000000010")
 expect(commands).not.toMatch(/insert into public\.tenants[\s\S]*c1000000-0000-4000-8000-000000000010/iu)
-expect(security).not.toMatch(/insert into public\.roles[\s\S]*c1000000-0000-4000-8000-000000000912/iu)
-expect(prerequisites).toMatch(/000000000912[\s\S]*?cost\.source\.read/iu)
-expect(prerequisites).not.toMatch(/000000000912[\s\S]*?cost\.prepare/iu)
+expect(projectCost).toContain("c1010000-0000-4000-8000-000000000010")
+expect(commands).toContain("c1200000-0000-4000-8000-000000000010")
+expect(commands).not.toContain("c1010000-0000-4000-8000-000000000010")
+expect(security).toContain("c1210000-0000-4000-8000-000000000010")
+expect(security).not.toContain("c1010000-0000-4000-8000-000000000010")
+expect(prerequisites).toContain("('c1000000-0000-4000-8000-000000000911'::uuid, 'cost.source.read')")
+expect(prerequisites).toContain("('c1000000-0000-4000-8000-000000000911'::uuid, 'cost.prepare')")
+expect(prerequisites).toContain("('c1000000-0000-4000-8000-000000000912'::uuid, 'cost.source.read')")
+expect(prerequisites).not.toContain("('c1000000-0000-4000-8000-000000000912'::uuid, 'cost.prepare')")
 ```
 
 - [ ] **Step 2: Run the contracts RED.**
 
 Run: `pnpm exec vitest run tests/unit/config/c1-cloud-dev-runner.spec.ts tests/unit/config/c1-acceptance-prerequisites-contract.spec.ts tests/unit/config/c1-controlled-import-persistence-contract.spec.ts`
 
-Expected: FAIL because foundation still owns `c100/c101` and controlled-import fixtures still insert persistent c100 identities.
+Expected: FAIL because foundation still owns `c100/c101`, controlled-import fixtures still insert persistent c100 identities, and controlled-import foreign fixtures still claim c101.
 
 - [ ] **Step 3: Extend runner static checks.** Assert each of the five allowlisted SQL files starts with `BEGIN`, ends with `ROLLBACK`, contains no `COMMIT`, and the allowlist remains foundation → commands → security → audited ownership → Project Cost.
 
@@ -100,9 +109,9 @@ Expected RED before the SQL correction; PASS after every foundation reference is
 
 **Interfaces:**
 - Consumes persistent tenant `c100...0010`, companies `c100...0020`/`0021`, and roles `c100...0911`/`0912`.
-- Produces only transaction-local supplemental users, memberships, assignments, projects, sources, runs, and any added A2 capability role.
+- Produces transaction-local supplemental primary data plus c120 foreign tenant/company data; it does not use c101.
 
-- [ ] **Step 1: Write the failing command-fixture ownership tests.** Assert the file verifies the persistent tenant/company/role contract before use; assert it does not insert persistent c100 tenant/company/role rows; assert persistent `0911` is used for importer operations; assert any A2 capability role uses a new transaction-local reserved ID.
+- [ ] **Step 1: Write the failing command-fixture ownership tests.** Assert the file verifies the persistent tenant/company/role contract before use; assert it does not insert persistent c100 tenant/company/role rows; assert persistent `0911` is used for importer operations; assert `v_tenant_b`/`v_company_b1` use c120; assert c101 foreign tenant `...0010` is absent; and assert any A2 capability role uses a new transaction-local reserved ID.
 
 - [ ] **Step 2: Run RED.**
 
@@ -110,7 +119,7 @@ Run: `pnpm exec vitest run tests/unit/config/c1-controlled-import-persistence-co
 
 Expected: FAIL because the fixture recreates tenant/company/role identities.
 
-- [ ] **Step 3: Replace persistent-row inserts with prerequisite assertions.** Verify tenant code/name/deployment mode, A1/A2 company identity, role `0911` permissions (`cost.source.read`, `cost.prepare`), and role `0912` permission (`cost.source.read`) at the beginning of the transaction. Keep users, memberships, assignments, projects, sources, import runs, and source records transaction-local. Introduce a new local A2 role only if the fixture needs a capability not supplied by the persistent roles.
+- [ ] **Step 3: Replace persistent-row inserts with prerequisite assertions and re-home foreign data.** Verify tenant code/name/deployment mode, A1/A2 company identity, role `0911` permissions (`cost.source.read`, `cost.prepare`), and role `0912` permission (`cost.source.read`) at the beginning of the transaction. Set `v_tenant_b` to `c1200000-0000-4000-8000-000000000010` and `v_company_b1` to `c1200000-0000-4000-8000-000000000020`; move every dependent B-side project, controlled-import run, accounting source, source version, request/idempotency identifier, and foreign-only evidence row coherently into c120. Keep primary supplemental rows transaction-local. Introduce a new local A2 role only if the fixture needs a capability not supplied by the persistent roles.
 
 - [ ] **Step 4: Preserve canonicalization evidence deliberately.** The frozen manifest and canonical-vector tests in `c1-controlled-import-persistence-contract.spec.ts` use exact hashes. Recompute no hash by guesswork: run that exact static test after changing literal UUIDs, read its expected-vs-actual failure if it occurs, and update an expected digest only when the canonical manifest payload intentionally changed and the new digest is produced by `canonicalizeManifest`.
 
@@ -129,9 +138,9 @@ Expected: PASS; the fixture consumes persistent prerequisites, preserves frozen 
 
 **Interfaces:**
 - Consumes the same persistent c100 acceptance baseline.
-- Preserves source-only, importer, project-only, and disabled-company denial behavior without changing persistent role capabilities.
+- Produces c121 foreign tenant/company data and preserves source-only, importer, project-only, and disabled-company denial behavior without changing persistent role capabilities.
 
-- [ ] **Step 1: Write failing security-fixture ownership tests.** Assert no insert recreates persistent c100 tenant, A1/A2 company, role `0911`, or role `0912`; assert the fixture verifies prerequisite identity and exact role permissions; assert it never grants `cost.prepare` to `0912`.
+- [ ] **Step 1: Write failing security-fixture ownership tests.** Assert no insert recreates persistent c100 tenant, A1/A2 company, role `0911`, or role `0912`; assert the fixture verifies prerequisite identity and exact role permissions; assert it never grants `cost.prepare` to `0912`; assert `v_tenant_b`/`v_company_b1` use c121; and assert c101 foreign tenant `...0010` is absent.
 
 - [ ] **Step 2: Run RED.**
 
@@ -139,7 +148,7 @@ Run: `pnpm exec vitest run tests/unit/config/c1-controlled-import-persistence-co
 
 Expected: FAIL because the security fixture recreates the persistent identities.
 
-- [ ] **Step 3: Consume prerequisites and add local roles only when required.** Remove only persistent c100 tenant/company/role inserts. Retain transaction-local users, memberships, role assignments, sources, manifests, and denial data. A non-persistent role must use a new reserved synthetic ID and receive only the capability that its assertion needs.
+- [ ] **Step 3: Consume prerequisites, re-home foreign data, and add local roles only when required.** Remove only persistent c100 tenant/company/role inserts. Set `v_tenant_b` to `c1210000-0000-4000-8000-000000000010` and `v_company_b1` to `c1210000-0000-4000-8000-000000000020`; move every dependent B-side foreign identity into c121. Retain transaction-local users, memberships, role assignments, sources, manifests, and denial data. A non-persistent role must use a new reserved synthetic ID and receive only the capability that its assertion needs.
 
 - [ ] **Step 4: Run GREEN.**
 
@@ -158,7 +167,10 @@ Expected: PASS; `0912` remains source-only and all rollback/runner guards remain
 
 ```ts
 expect(projectCost).toContain('c1010000-0000-4000-8000-000000000010')
-expect(projectCost).not.toContain('c1000000-0000-4000-8000-000000000010')
+expect(commands).toContain('c1200000-0000-4000-8000-000000000010')
+expect(commands).not.toContain('c1010000-0000-4000-8000-000000000010')
+expect(security).toContain('c1210000-0000-4000-8000-000000000010')
+expect(security).not.toContain('c1010000-0000-4000-8000-000000000010')
 expect(auditedOwnership).toContain('c1020000-0000-4000-8000-000000000010')
 expect(auditedOwnership).toContain('c1030000-0000-4000-8000-000000000010')
 ```
@@ -209,7 +221,7 @@ Do not include `c1_project_cost_items.test.sql`, `c1_audited_source_ownership_co
 
 ## Plan self-review
 
-- The spec and plan reserve c100 for persistent prerequisites, c110/c111 for foundation, c101 for Project Cost, and c102/c103 for audited ownership.
+- The spec and plan reserve c100 for persistent prerequisites and controlled-import supplements, c101 for Project Cost, c102/c103 for audited ownership, c110/c111 for foundation, c120 for commands foreign data, and c121 for security foreign data.
 - Role `0911` retains `cost.source.read` and `cost.prepare`; role `0912` remains source-only.
 - No task edits the applied migration, performs Cloud cleanup, suppresses conflicts, reorders the runner, or changes Project Cost without direct evidence.
 - Every SQL correction has a named red/green static command, and Cloud execution remains separately authorized.
