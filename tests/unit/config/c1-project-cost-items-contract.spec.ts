@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -7,6 +7,8 @@ const migrationName = /_c1_project_cost_items\.sql$/u
 const migrations = readdirSync(resolve(root, 'supabase/migrations')).filter(name => migrationName.test(name))
 const sql = migrations.length === 1 ? readFileSync(resolve(root, 'supabase/migrations', migrations[0]!), 'utf8') : ''
 const permissions = readFileSync(resolve(root, 'shared/constants/permissions.ts'), 'utf8')
+const fixturePath = resolve(root, 'supabase/tests/database/c1/c1_project_cost_items.test.sql')
+const fixtureSql = existsSync(fixturePath) ? readFileSync(fixturePath, 'utf8').replace(/\r\n?/g, '\n').trim() : ''
 
 describe('C1 Project Cost database foundation', () => {
   it('prepares exactly one forward Project Cost migration', () => {
@@ -116,5 +118,19 @@ describe('C1 Project Cost database foundation', () => {
       'version = version + 1',
     ]) expect(sql).toContain(fragment)
     expect(sql).not.toContain('cost_document_events')
+  })
+
+  it('requires a rollback-safe synthetic Project Cost SQL boundary fixture', () => {
+    expect(existsSync(fixturePath)).toBe(true)
+    if (!fixtureSql) return
+    expect(fixtureSql).toMatch(/^begin\s*;/iu)
+    expect(fixtureSql).toMatch(/rollback\s*;$/iu)
+    expect(fixtureSql).not.toMatch(/\bcommit\s*;/iu)
+    expect(fixtureSql).not.toMatch(/\b(?:VQH|Eo Gi[oó]|Yong Mei|supabase_migrations|migration repair|db reset|seed)\b/iu)
+    for (const id of fixtureSql.matchAll(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu)) {
+      expect(id[0]).toMatch(/^c10[01][0-9a-f]{4}-/iu)
+    }
+    for (const rpc of ['c1_create_project_cost_item', 'c1_update_project_cost_item', 'c1_correct_project_cost_item']) expect(fixtureSql).toContain(`public.${rpc}`)
+    for (const assertion of ['C1_PC_PERMISSION_BOUNDARY', 'C1_PC_F04_SAME_ROW', 'C1_PC_F05_REFERENCE', 'C1_PC_F07_SOURCE_REUSE', 'C1_PC_IDEMPOTENCY', 'C1_PC_VERSION_CONFLICT', 'C1_PC_AUDIT_HISTORY']) expect(fixtureSql).toContain(assertion)
   })
 })
