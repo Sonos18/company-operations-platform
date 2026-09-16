@@ -131,6 +131,6 @@ describe('C1 Project Cost database foundation', () => {
       expect(id[0]).toMatch(/^c10[01][0-9a-f]{4}-/iu)
     }
     for (const rpc of ['c1_create_project_cost_item', 'c1_update_project_cost_item', 'c1_correct_project_cost_item']) expect(fixtureSql).toContain(`public.${rpc}`)
-    for (const assertion of ['C1_PC_PERMISSION_BOUNDARY', 'C1_PC_F04_SAME_ROW', 'C1_PC_F05_REFERENCE', 'C1_PC_F07_SOURCE_REUSE', 'C1_PC_IDEMPOTENCY', 'C1_PC_VERSION_CONFLICT', 'C1_PC_AUDIT_HISTORY']) expect(fixtureSql).toContain(assertion)
+    for (const assertion of ['C1_PC_PERMISSION_BOUNDARY', 'C1_PC_F04_SAME_ROW', 'C1_PC_F05_REFERENCE', 'C1_PC_F05_NULL_REFERENCE', 'C1_PC_F07_SOURCE_REUSE', 'C1_PC_IDEMPOTENCY', 'C1_PC_VERSION_CONFLICT', 'C1_PC_AUDIT_HISTORY', 'C1_PC_PROJECT_SCOPE', 'C1_PC_MODULE_DISABLED_READ', 'C1_PC_MODULE_DISABLED_COMMAND', 'C1_PC_AUDIT_ACL', 'C1_PC_ANON_UPDATE_RPC', 'C1_PC_ANON_CORRECT_RPC', 'C1_PC_SOURCE_DIRECT_ACL']) expect(fixtureSql).toContain(assertion)
   })
 })
