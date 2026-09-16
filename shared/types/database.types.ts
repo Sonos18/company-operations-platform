@@ -1782,6 +1782,164 @@ export type Database = {
           },
         ]
       }
+      project_cost_item_sources: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          project_cost_item_id: string
+          source_reported_figure_id: string
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          project_cost_item_id: string
+          source_reported_figure_id: string
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          project_cost_item_id?: string
+          source_reported_figure_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_cost_item_sources_company_id_tenant_id_fkey"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "project_cost_item_sources_project_cost_item_id_tenant_id_c_fkey"
+            columns: ["project_cost_item_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "project_cost_items"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "project_cost_item_sources_source_reported_figure_id_tenant_fkey"
+            columns: ["source_reported_figure_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "source_reported_figures"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      project_cost_items: {
+        Row: {
+          amount: number
+          amount_text: string
+          business_reference: string | null
+          company_id: string
+          component_id: string | null
+          created_at: string
+          created_by: string
+          currency_code: string
+          description: string
+          engagement_id: string | null
+          id: string
+          party_id: string | null
+          project_id: string
+          relevant_date: string | null
+          tenant_id: string
+          updated_at: string
+          version: number
+          work_status: string
+        }
+        Insert: {
+          amount: number
+          amount_text: string
+          business_reference?: string | null
+          company_id: string
+          component_id?: string | null
+          created_at?: string
+          created_by: string
+          currency_code: string
+          description: string
+          engagement_id?: string | null
+          id?: string
+          party_id?: string | null
+          project_id: string
+          relevant_date?: string | null
+          tenant_id: string
+          updated_at?: string
+          version?: number
+          work_status: string
+        }
+        Update: {
+          amount?: number
+          amount_text?: string
+          business_reference?: string | null
+          company_id?: string
+          component_id?: string | null
+          created_at?: string
+          created_by?: string
+          currency_code?: string
+          description?: string
+          engagement_id?: string | null
+          id?: string
+          party_id?: string | null
+          project_id?: string
+          relevant_date?: string | null
+          tenant_id?: string
+          updated_at?: string
+          version?: number
+          work_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_cost_items_company_id_tenant_id_fkey"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "project_cost_items_component_id_tenant_id_company_id_engag_fkey"
+            columns: [
+              "component_id",
+              "tenant_id",
+              "company_id",
+              "engagement_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "engagement_components"
+            referencedColumns: [
+              "id",
+              "tenant_id",
+              "company_id",
+              "engagement_id",
+            ]
+          },
+          {
+            foreignKeyName: "project_cost_items_engagement_id_tenant_id_company_id_proj_fkey"
+            columns: ["engagement_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_engagements"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "project_cost_items_party_id_tenant_id_company_id_fkey"
+            columns: ["party_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "business_parties"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "project_cost_items_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
       project_engagements: {
         Row: {
           code: string
@@ -3271,6 +3429,15 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_correct_project_cost_item: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_create_business_party: {
         Args: {
           target_company_id: string
@@ -3305,6 +3472,15 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_create_project_cost_item: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_get_controlled_import_result: {
         Args: { target_company_id: string; target_run_id: string }
         Returns: Json
@@ -3317,6 +3493,25 @@ export type Database = {
           target_request_id: string
         }
         Returns: Json
+      }
+      c1_probe_cost_source_read: {
+        Args: { target_company_id: string }
+        Returns: Json
+      }
+      c1_read_cost_source_hierarchy: {
+        Args: { target_company_id: string }
+        Returns: {
+          contractor_code: string
+          contractor_display_name: string
+          contractor_id: string
+          engagement_code: string
+          engagement_id: string
+          engagement_name: string
+          project_code: string
+          project_id: string
+          project_name: string
+          source_selection_id: string
+        }[]
       }
       c1_update_business_party: {
         Args: {
@@ -3346,6 +3541,15 @@ export type Database = {
         Returns: Json
       }
       c1_update_project: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_update_project_cost_item: {
         Args: {
           target_company_id: string
           target_id: string
