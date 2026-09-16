@@ -1,6 +1,9 @@
 begin;
 
-create temporary table c1_audited_real_snapshot (snapshot jsonb not null);
+create temporary table c1_audited_sentinel_snapshot (
+  selection_snapshot jsonb not null,
+  figure_snapshot jsonb not null
+) on commit drop;
 
 do $$
 begin
@@ -44,27 +47,10 @@ declare
   import_run_id constant uuid := 'c1020000-0000-4000-8000-000000000503';
   selection_id constant uuid := 'c1020000-0000-4000-8000-000000000601';
   failed_selection_id constant uuid := 'c1020000-0000-4000-8000-000000000602';
+  sentinel_selection_id constant uuid := 'c1020000-0000-4000-8000-000000000603';
   figure_id constant uuid := 'c1020000-0000-4000-8000-000000000701';
-  v_real_before jsonb;
-  v_real_after jsonb;
-  v_real_selection_count integer;
-  v_real_figure_count integer;
-  v_audit_count integer;
+  sentinel_figure_id constant uuid := 'c1020000-0000-4000-8000-000000000702';
 begin
-  select pg_catalog.jsonb_build_object(
-    'projects', (select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(project) order by project.id) from public.projects project where project.id in ('7e7e3904-d53b-4337-9360-22256887474a'::uuid, '22727545-1534-4c1a-9378-06969cb40f97'::uuid)),
-    'party', (select pg_catalog.to_jsonb(party) from public.business_parties party where party.id = '087485b2-d63f-45a3-90cf-5693abbf25d9'::uuid),
-    'engagement', (select pg_catalog.to_jsonb(engagement) from public.project_engagements engagement where engagement.id = '83cbc0d2-568b-4b17-b5a8-779f218dbd37'::uuid),
-    'selections', (select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(selection) order by selection.id) from public.source_selections selection where selection.mapped_party_id = '087485b2-d63f-45a3-90cf-5693abbf25d9'::uuid and selection.mapped_engagement_id = '83cbc0d2-568b-4b17-b5a8-779f218dbd37'::uuid),
-    'figures', (select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(figure) order by figure.id) from public.source_reported_figures figure where figure.party_id = '087485b2-d63f-45a3-90cf-5693abbf25d9'::uuid and figure.engagement_id = '83cbc0d2-568b-4b17-b5a8-779f218dbd37'::uuid)
-  ) into v_real_before;
-  select pg_catalog.count(*) into v_real_selection_count from public.source_selections selection where selection.mapped_party_id = '087485b2-d63f-45a3-90cf-5693abbf25d9'::uuid and selection.mapped_engagement_id = '83cbc0d2-568b-4b17-b5a8-779f218dbd37'::uuid;
-  select pg_catalog.count(*) into v_real_figure_count from public.source_reported_figures figure where figure.party_id = '087485b2-d63f-45a3-90cf-5693abbf25d9'::uuid and figure.engagement_id = '83cbc0d2-568b-4b17-b5a8-779f218dbd37'::uuid;
-  if v_real_selection_count <> 11 or v_real_figure_count <> 22 or v_real_before->'projects' is null or v_real_before->'party' is null or v_real_before->'engagement' is null then
-    raise exception 'C1 audited correction real-object snapshot is incomplete';
-  end if;
-  insert into c1_audited_real_snapshot(snapshot) values (v_real_before);
-
   insert into auth.users(id, email) values
     (corrector, 'c1-audited-corrector@taskovia.invalid'),
     (denied_actor, 'c1-audited-denied@taskovia.invalid');
@@ -114,9 +100,20 @@ begin
     (source_version_id, a_tenant, a_company, source_id, import_run_id, 1, 'c1-audited.xlsx', repeat('d', 64), 'c1-audited.xlsx', corrector);
   insert into public.source_selections(id, tenant_id, company_id, source_version_id, import_run_id, locator, locator_key, mapping_state, reviewed_mapping, mapped_project_id, mapped_party_id, mapped_engagement_id, mapped_component_id, observed_labels, raw_values, unresolved_issues, created_by) values
     (selection_id, a_tenant, a_company, source_version_id, import_run_id, '{"kind":"logical_section"}'::jsonb, 'c1-audited-selection', 'confirmed', '{}'::jsonb, old_project, old_party, old_engagement, null, array['C1 audited selection'], array['source fact'], array[]::text[], corrector),
-    (failed_selection_id, a_tenant, a_company, source_version_id, import_run_id, '{"kind":"logical_section"}'::jsonb, 'c1-audited-failed-selection', 'confirmed', '{}'::jsonb, old_project, old_party, old_engagement, old_component, array['C1 audited failure selection'], array['source fact'], array[]::text[], corrector);
+    (failed_selection_id, a_tenant, a_company, source_version_id, import_run_id, '{"kind":"logical_section"}'::jsonb, 'c1-audited-failed-selection', 'confirmed', '{}'::jsonb, old_project, old_party, old_engagement, old_component, array['C1 audited failure selection'], array['source fact'], array[]::text[], corrector),
+    (sentinel_selection_id, a_tenant, a_company, source_version_id, import_run_id, '{"kind":"logical_section"}'::jsonb, 'c1-audited-sentinel-selection', 'confirmed', '{}'::jsonb, old_project, old_party, old_engagement, null, array['C1 unrelated selection'], array['unrelated source fact'], array[]::text[], corrector);
   insert into public.source_reported_figures(id, tenant_id, company_id, source_selection_id, import_run_id, figure_identity, label, raw_value_text, value_state, amount_text, amount, metric_kind, basis, rounding_basis, period_basis, mapping_state, reviewed_mapping, project_id, party_id, engagement_id, scope_kind, scope_description, confirmation, created_by) values
-    (figure_id, a_tenant, a_company, selection_id, import_run_id, repeat('e', 64), 'C1 audited figure', '100', 'known', '100', 100, 'cost_total', 'net', 'exact', 'unknown', 'confirmed', '{}'::jsonb, old_project, old_party, old_engagement, 'whole_project', 'Synthetic audited correction fixture', 'unverified', corrector);
+    (figure_id, a_tenant, a_company, selection_id, import_run_id, repeat('e', 64), 'C1 audited figure', '100', 'known', '100', 100, 'cost_total', 'net', 'exact', 'unknown', 'confirmed', '{}'::jsonb, old_project, old_party, old_engagement, 'whole_project', 'Synthetic audited correction fixture', 'unverified', corrector),
+    (sentinel_figure_id, a_tenant, a_company, sentinel_selection_id, import_run_id, repeat('f', 64), 'C1 unrelated figure', '7', 'known', '7', 7, 'cost_total', 'net', 'exact', 'unknown', 'confirmed', '{}'::jsonb, old_project, old_party, old_engagement, 'whole_project', 'Synthetic unrelated source history', 'unverified', corrector);
+
+  insert into c1_audited_sentinel_snapshot(selection_snapshot, figure_snapshot)
+  select pg_catalog.to_jsonb(selection), pg_catalog.to_jsonb(figure)
+  from public.source_selections selection
+  join public.source_reported_figures figure on figure.source_selection_id = selection.id
+  where selection.id = sentinel_selection_id and figure.id = sentinel_figure_id;
+  if (select count(*) from c1_audited_sentinel_snapshot) <> 1 then
+    raise exception 'C1 audited correction synthetic sentinel snapshot is incomplete';
+  end if;
 
   if pg_catalog.has_function_privilege('public', 'private.c1_correct_source_selection_ownership(uuid,uuid,uuid,uuid,text)', 'execute')
      or pg_catalog.has_function_privilege('anon', 'private.c1_correct_source_selection_ownership(uuid,uuid,uuid,uuid,text)', 'execute')
@@ -200,7 +197,7 @@ $$;
 
 select set_config('request.jwt.claims', '{"sub":"c1020000-0000-4000-8000-000000000902","role":"authenticated"}', true);
 do $$
-declare v_audit_count integer; v_real_before jsonb; v_real_after jsonb;
+declare v_audit_count integer;
 begin
   select count(*) into v_audit_count from public.audit_events audit where audit.resource_id = 'c1020000-0000-4000-8000-000000000601';
   begin
@@ -215,7 +212,7 @@ $$;
 
 select set_config('request.jwt.claims', '{"sub":"c1020000-0000-4000-8000-000000000901","role":"authenticated"}', true);
 do $$
-declare v_audit_count integer; v_real_before jsonb; v_real_after jsonb;
+declare v_audit_count integer;
 begin
   select count(*) into v_audit_count from public.audit_events audit where audit.resource_id = 'c1020000-0000-4000-8000-000000000601';
   begin
@@ -240,16 +237,13 @@ begin
     raise exception 'C1 immutable figure field mutation unexpectedly succeeded';
   exception when sqlstate 'P0001' then if sqlerrm <> 'HISTORY_IMMUTABLE' then raise; end if; end;
 
-  select pg_catalog.jsonb_build_object(
-    'projects', (select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(project) order by project.id) from public.projects project where project.id in ('7e7e3904-d53b-4337-9360-22256887474a'::uuid, '22727545-1534-4c1a-9378-06969cb40f97'::uuid)),
-    'party', (select pg_catalog.to_jsonb(party) from public.business_parties party where party.id = '087485b2-d63f-45a3-90cf-5693abbf25d9'::uuid),
-    'engagement', (select pg_catalog.to_jsonb(engagement) from public.project_engagements engagement where engagement.id = '83cbc0d2-568b-4b17-b5a8-779f218dbd37'::uuid),
-    'selections', (select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(selection) order by selection.id) from public.source_selections selection where selection.mapped_party_id = '087485b2-d63f-45a3-90cf-5693abbf25d9'::uuid and selection.mapped_engagement_id = '83cbc0d2-568b-4b17-b5a8-779f218dbd37'::uuid),
-    'figures', (select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(figure) order by figure.id) from public.source_reported_figures figure where figure.party_id = '087485b2-d63f-45a3-90cf-5693abbf25d9'::uuid and figure.engagement_id = '83cbc0d2-568b-4b17-b5a8-779f218dbd37'::uuid)
-  ) into v_real_after;
-  select snapshot into v_real_before from c1_audited_real_snapshot;
-  if v_real_after is distinct from v_real_before then
-    raise exception 'C1 audited correction changed real Yong Mei state';
+  if (select pg_catalog.to_jsonb(selection) from public.source_selections selection where selection.id = 'c1020000-0000-4000-8000-000000000603'::uuid)
+     is distinct from (select snapshot.selection_snapshot from c1_audited_sentinel_snapshot snapshot) then
+    raise exception 'C1 audited correction changed unrelated selection';
+  end if;
+  if (select pg_catalog.to_jsonb(figure) from public.source_reported_figures figure where figure.id = 'c1020000-0000-4000-8000-000000000702'::uuid)
+     is distinct from (select snapshot.figure_snapshot from c1_audited_sentinel_snapshot snapshot) then
+    raise exception 'C1 audited correction changed unrelated figure';
   end if;
 end;
 $$;

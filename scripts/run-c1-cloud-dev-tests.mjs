@@ -19,6 +19,10 @@ export function validateC1CloudDevSql(path, sql) {
   if (/\bcommit\s*;/iu.test(normalized)) throw new Error('C1 SQL verification cannot commit')
   if (/\b(db\s+reset|migration\s+repair|supabase_migrations|seed|include-seed)\b/iu.test(normalized)) throw new Error('C1 SQL contains a forbidden Cloud DEV operation')
   if (/\bVQH\b|10000000-0000-4000-8000-0000000000/iu.test(normalized)) throw new Error('C1 SQL cannot reference real VQH identifiers')
+  if (path === 'c1_audited_source_ownership_correction.test.sql') {
+    const ids = normalized.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
+    if (ids.some(id => !/^c10[23][0-9a-f]{4}-/iu.test(id))) throw new Error('Audited source ownership SQL must use reserved synthetic UUIDs')
+  }
   if (path === 'c1_project_cost_items.test.sql') {
     const ids = normalized.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
     if (ids.some(id => !/^c10[01][0-9a-f]{4}-/iu.test(id))) throw new Error('Project Cost SQL must use reserved synthetic UUIDs')

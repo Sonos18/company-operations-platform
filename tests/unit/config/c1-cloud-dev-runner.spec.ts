@@ -72,6 +72,30 @@ describe('C1 Cloud DEV runner', () => {
     expect(() => validateC1CloudDevSql(path, sql)).not.toThrow()
   })
 
+  it('rejects non-synthetic UUIDs in audited source ownership SQL', () => {
+    expect(() => validateC1CloudDevSql(
+      'c1_audited_source_ownership_correction.test.sql',
+      "begin;\nselect 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';\nrollback;",
+    )).toThrow('Audited source ownership SQL must use reserved synthetic UUIDs')
+  })
+
+  it('keeps audited source ownership verification independent of real VQH rows', () => {
+    const path = 'c1_audited_source_ownership_correction.test.sql'
+    const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1', path), 'utf8')
+
+    expect(() => validateC1CloudDevSql(path, sql)).not.toThrow()
+    for (const id of [
+      '7e7e3904-d53b-4337-9360-22256887474a',
+      '22727545-1534-4c1a-9378-06969cb40f97',
+      '087485b2-d63f-45a3-90cf-5693abbf25d9',
+      '83cbc0d2-568b-4b17-b5a8-779f218dbd37',
+    ]) expect(sql).not.toContain(id)
+    expect(sql).not.toContain('C1 audited correction real-object snapshot is incomplete')
+    expect(sql).not.toContain('C1 audited correction changed real Yong Mei state')
+    expect(sql).toContain('C1 audited correction changed unrelated selection')
+    expect(sql).toContain('C1 audited correction changed unrelated figure')
+  })
+
   it('requires the Project Cost fixture in the guarded allowlist', () => {
     expect(() => validateC1CloudDevSql('c1_project_cost_items.test.sql', 'begin;\nselect 1;\nrollback;')).not.toThrow()
   })
