@@ -120,8 +120,8 @@ values ('c1010000-0000-4000-8000-000000000801', 'c1010000-0000-4000-8000-0000000
 insert into public.project_cost_items(id, tenant_id, company_id, project_id, description, amount, amount_text, currency_code, work_status, created_by)
 values ('c1010000-0000-4000-8000-000000000802', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000021', 'c1010000-0000-4000-8000-000000000104', 'C101 disabled item', 1, '1', 'VND', 'unknown', 'c1010000-0000-4000-8000-000000000902');
 insert into public.project_cost_items(id, tenant_id, company_id, project_id, description, amount, amount_text, currency_code, work_status, created_by)
-values ('c1010000-0000-4000-8000-000000000803', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000101', 'C101 high precision item', 9007199254740992.0000, '9007199254740992.0000', 'VND', 'unknown', 'c1010000-0000-4000-8000-000000000902');
-do $$ begin if not exists (select 1 from public.project_cost_items where id = 'c1010000-0000-4000-8000-000000000803' and amount = 9007199254740992.0000 and amount_text = '9007199254740992.0000') then raise exception 'C1_PC_DECIMAL_SAFE_AMOUNT high precision mismatch'; end if; end $$;
+values ('c1010000-0000-4000-8000-000000000803', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000101', 'C101 high precision item', 9007199254740993.0000, '9007199254740993.0000', 'VND', 'unknown', 'c1010000-0000-4000-8000-000000000902');
+do $$ begin if not exists (select 1 from public.project_cost_items where id = 'c1010000-0000-4000-8000-000000000803' and amount = 9007199254740993.0000 and amount_text = '9007199254740993.0000') then raise exception 'C1_PC_DECIMAL_SAFE_AMOUNT high precision mismatch'; end if; end $$;
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"c1010000-0000-4000-8000-000000000902","role":"authenticated"}', true);
