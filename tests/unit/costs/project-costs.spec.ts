@@ -58,8 +58,7 @@ describe('project cost contracts', () => {
 
   it('requires project and approved business fields', () => {
     for (const field of ['projectId', 'description', 'amount', 'currencyCode', 'workStatus'] as const) {
-      const input: Record<string, unknown> = { ...createInput }
-      delete input[field]
+      const input = Object.fromEntries(Object.entries(createInput).filter(([key]) => key !== field))
       expect(createProjectCostItemInputSchema.safeParse(input).success).toBe(false)
     }
   })
