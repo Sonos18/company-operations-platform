@@ -2,7 +2,7 @@
 
 ## Current Execution Scope — P3R
 
-The historical phase ledger and plans below are retained unchanged. The active Phase 3 direction is now [Minimal Project Cost Management for VQH](p3r-minimal-project-cost-scope.md), with its approved [minimal domain design](p3r-minimal-project-cost-domain-design.md): Project-scoped management costs for contractor/business-item visibility, execution or acceptance status, value, provenance, and Director-readable aggregation. Eo Gió and Yong Mei remain independent Projects. P3A/P3B financial-domain work is historical analysis; accounting, cash, receivable/payable, invoice, budget, forecast, and profit scope is deferred.
+The historical phase ledger and plans below are retained unchanged. The active Phase 3 direction is now [Minimal Project Cost Management for VQH](p3r-minimal-project-cost-scope.md), with its approved [minimal domain design](p3r-minimal-project-cost-domain-design.md) and [sequential implementation plan](../../superpowers/plans/2026-09-16-c1-p3r-minimal-project-cost-implementation.md): Project-scoped management costs for contractor/business-item visibility, execution or acceptance status, value, provenance, and Director-readable aggregation. Eo Gió and Yong Mei remain independent Projects. P3A/P3B financial-domain work is historical analysis; accounting, cash, receivable/payable, invoice, budget, forecast, and profit scope is deferred.
 
 ## Control Record
 
