@@ -11,6 +11,7 @@ export interface AuthenticatedHttpClient {
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
     schema: z.ZodType<T>
     body?: unknown
+    idempotencyKey?: string
   }): Promise<T>
 }
 
@@ -181,6 +182,7 @@ export function createAuthenticatedHttpClient(options: AuthenticatedHttpClientOp
       method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
       schema: z.ZodType<T>
       body?: unknown
+      idempotencyKey?: string
     }): Promise<T> {
       if (!isInternalApiUrl(input.url)) {
         throw clientError('unexpected', 'INTERNAL_ERROR', 'Yêu cầu không hợp lệ.', false)
@@ -213,8 +215,8 @@ export function createAuthenticatedHttpClient(options: AuthenticatedHttpClientOp
         response = await transport(input.url, {
           method: input.method ?? 'GET',
           headers: hasBody
-            ? { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
-            : { Authorization: `Bearer ${accessToken}` },
+            ? { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', ...(input.idempotencyKey === undefined ? {} : { 'Idempotency-Key': input.idempotencyKey }) }
+            : { Authorization: `Bearer ${accessToken}`, ...(input.idempotencyKey === undefined ? {} : { 'Idempotency-Key': input.idempotencyKey }) },
           ...(hasBody ? { body } : {}),
         })
       }
