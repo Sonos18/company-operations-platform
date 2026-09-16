@@ -107,6 +107,17 @@ describe('C1 Cloud DEV runner', () => {
     expect(() => validateC1CloudDevSql(path, sql)).not.toThrow()
   })
 
+  it('uses PERFORM when Project Cost RPC results are discarded', () => {
+    const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1/c1_project_cost_items.test.sql'), 'utf8')
+    const rpcSelects = [...sql.matchAll(/\bselect\s+public\.c1_(?:create|update|correct)_project_cost_item\s*\([^;]*;/giu)]
+      .map(([statement]) => statement)
+    const bareSelects = rpcSelects.filter(statement => !/\binto\b/iu.test(statement))
+
+    expect(rpcSelects.some(statement => /\binto\s+first_create\s*;/iu.test(statement))).toBe(true)
+    expect(rpcSelects.some(statement => /\binto\s+replay\s*;/iu.test(statement))).toBe(true)
+    expect(bareSelects, `${bareSelects.length} Project Cost RPC SELECT statements lack INTO`).toEqual([])
+  })
+
   it.each([
     ["begin;\nselect 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';\nrollback;", 'Project Cost SQL must use reserved synthetic UUIDs'],
     ["begin;\nselect 'Eo Gió';\nrollback;", 'Project Cost SQL cannot reference real VQH names'],
