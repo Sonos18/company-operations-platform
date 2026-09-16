@@ -1,4 +1,57 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const fail = () => { throw Object.assign(new Error('INPUT_INVALID'), { statusCode: 400, code: 'INPUT_INVALID' }) }
-export function createProjectCostRoutes({ service, context }: any) { return { async create(event: any, companyId: string, body: unknown) { if (!uuid.test(companyId)) fail(); const key = event?.headers?.['idempotency-key'] ?? event?.headers?.get?.('Idempotency-Key'); if (typeof key !== 'string' || !uuid.test(key)) fail(); return service.create(await context(event, companyId), body, key) } } }
+import type { H3Event } from 'h3'
+import { getHeader, getRouterParam, readBody } from 'h3'
+import { z } from 'zod'
+import { correctProjectCostItemInputSchema, createProjectCostItemInputSchema, updateProjectCostItemInputSchema } from '../../../shared/schemas/costs/project-costs'
+import { AppApiError } from '../../utils/api-error'
+import { c1RequestContext } from '../c1-master-data/context'
+import { ProjectCostRepository } from './project-cost.repository'
+import { ProjectCostService } from './project-cost.service'
+
+const uuid = z.string().uuid()
+type PatchInput = z.infer<typeof updateProjectCostItemInputSchema> | z.infer<typeof correctProjectCostItemInputSchema>
+
+export interface ProjectCostRouteDependencies {
+  resolveContext(event: H3Event, companyId: string): ReturnType<typeof c1RequestContext>
+  service?: ProjectCostService
+}
+
+function invalid(): never { throw new AppApiError(400, 'INPUT_INVALID', 'Định danh không hợp lệ.') }
+function param(event: H3Event, name: string) { const value = uuid.safeParse(getRouterParam(event, name)); if (!value.success) invalid(); return value.data }
+async function body<T>(event: H3Event, schema: z.ZodType<T>) { const value = schema.safeParse(await readBody(event)); if (!value.success) throw new AppApiError(400, 'INPUT_INVALID', 'Dữ liệu yêu cầu không hợp lệ.'); return value.data }
+function patchBody(value: unknown): PatchInput {
+  const update = updateProjectCostItemInputSchema.safeParse(value)
+  if (update.success) return update.data
+  const correction = correctProjectCostItemInputSchema.safeParse(value)
+  if (correction.success) return correction.data
+  throw new AppApiError(400, 'INPUT_INVALID', 'Dữ liệu yêu cầu không hợp lệ.')
+}
+
+export function createProjectCostRoutes(dependencies: ProjectCostRouteDependencies) {
+  async function resolved(event: H3Event) {
+    const context = await dependencies.resolveContext(event, param(event, 'companyId'))
+    return { context, service: dependencies.service ?? new ProjectCostService(new ProjectCostRepository(context.db)) }
+  }
+  return {
+    async summaries(event: H3Event) { const value = await resolved(event); return value.service.listSummaries(value.context) },
+    async project(event: H3Event) { const value = await resolved(event); return value.service.projectSummary(value.context, param(event, 'projectId')) },
+    async create(event: H3Event) {
+      const value = await resolved(event)
+      const projectId = param(event, 'projectId')
+      const input = await body(event, createProjectCostItemInputSchema)
+      const idempotencyKey = uuid.safeParse(getHeader(event, 'idempotency-key'))
+      if (!idempotencyKey.success || input.projectId !== projectId) throw new AppApiError(400, 'INPUT_INVALID', 'Dữ liệu yêu cầu không hợp lệ.')
+      return value.service.create(value.context, input, idempotencyKey.data)
+    },
+    async patch(event: H3Event) {
+      const value = await resolved(event)
+      const itemId = param(event, 'projectCostItemId')
+      const input = patchBody(await readBody(event))
+      return 'reason' in input ? value.service.correct(value.context, itemId, input) : value.service.update(value.context, itemId, input)
+    },
+  }
+}
+
+export function createSupabaseProjectCostRoutes(event: H3Event) {
+  const routes = createProjectCostRoutes({ resolveContext: c1RequestContext })
+  return { summaries: () => routes.summaries(event), project: () => routes.project(event), create: () => routes.create(event), patch: () => routes.patch(event) }
+}
