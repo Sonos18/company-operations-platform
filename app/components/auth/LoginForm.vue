@@ -65,5 +65,44 @@ async function submit(): Promise<void> {
 </template>
 
 <style scoped>
-.auth-form { display: grid; width: min(100%, 430px); gap: 18px; }.auth-form > div:first-child { display: grid; gap: 8px; }.auth-form h1 { font-size: clamp(2rem, 5vw, 2.7rem); }.auth-form > div:first-child > p:last-child { color: var(--ink-muted); line-height: 1.55; }.auth-field { display: grid; gap: 6px; }.auth-field label { color: var(--forest-deep); font-size: .85rem; font-weight: 700; }.auth-field input { min-height: 44px; padding: 9px 10px; border: 1px solid var(--line); background: white; color: var(--ink); font: inherit; }.field-error { margin: 0; color: #a3442d; font-size: .8rem; }.auth-form__submit { min-height: 46px; border: 0; background: var(--forest); color: white; cursor: pointer; font: inherit; font-weight: 750; }.auth-form__submit:disabled { cursor: wait; opacity: .65; }.auth-form a { width: fit-content; color: var(--forest); font-size: .9rem; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.auth-form { display: grid; width: min(100%, 430px); gap: 18px; }
+.auth-form > div:first-child { display: grid; gap: 8px; }
+.auth-form h1 { font-size: clamp(2rem, 5vw, 2.7rem); color: var(--color-text-primary); font-family: var(--font-sans); }
+.auth-form > div:first-child > p:last-child { color: var(--color-text-secondary); line-height: 1.55; }
+.auth-field { display: grid; gap: 6px; }
+.auth-field label { color: var(--color-text-primary); font-size: .85rem; font-weight: 650; }
+.auth-field input {
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: white;
+  color: var(--color-text-primary);
+  font: inherit;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.auth-field input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-box-shadow);
+}
+.field-error { margin: 0; color: var(--color-danger); font-size: .8rem; }
+.auth-form__submit {
+  min-height: 46px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--gradient-primary);
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.25);
+  transition: opacity 150ms ease, box-shadow 150ms ease;
+}
+.auth-form__submit:hover:not(:disabled) {
+  opacity: 0.95;
+  box-shadow: 0 6px 16px rgba(29, 78, 216, 0.35);
+}
+.auth-form__submit:disabled { cursor: wait; opacity: .65; }
+.auth-form a { width: fit-content; color: var(--color-primary); font-size: .9rem; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; }
 </style>

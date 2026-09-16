@@ -1,0 +1,115 @@
+/**
+ * Taskovia UI Foundation v1 - Canonical Cockpit Tools Design Tokens
+ * Visual language and color palette of jlcodes99/cockpit-tools
+ * Single source of truth for all Taskovia UI foundation styling.
+ */
+
+:root {
+  /* ==========================================================================
+     1. Brand & Semantic Colors
+     ========================================================================== */
+  --color-primary: #1d4ed8;
+  --color-primary-hover: #1e40af;
+  --color-primary-light: rgba(29, 78, 216, 0.12);
+  --color-accent: #0ea5a5;
+
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-warning-strong: #f97316;
+  --color-danger: #ef4444;
+
+  /* ==========================================================================
+     2. Surfaces & Backgrounds
+     ========================================================================== */
+  --color-bg-primary: #f6f5f2;
+  --color-bg-secondary: #ffffff;
+  --color-bg-tertiary: #eef2f7;
+  --color-surface-card: rgba(255, 255, 255, 0.75);
+  --color-hover: rgba(15, 23, 42, 0.06);
+
+  /* ==========================================================================
+     3. Typography & Content Colors
+     ========================================================================== */
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-muted: #94a3b8;
+
+  /* ==========================================================================
+     4. Borders & Dividers
+     ========================================================================== */
+  --color-border: rgba(15, 23, 42, 0.12);
+  --color-border-light: rgba(15, 23, 42, 0.08);
+
+  /* ==========================================================================
+     5. Gradients & Ambient Effects
+     ========================================================================== */
+  --gradient-primary: linear-gradient(135deg, #1d4ed8 0%, #0ea5a5 100%);
+  --app-background: radial-gradient(
+      circle at 12% 10%,
+      rgba(29, 78, 216, 0.12),
+      transparent 45%
+    ),
+    radial-gradient(
+      circle at 90% 5%,
+      rgba(14, 165, 165, 0.12),
+      transparent 40%
+    ),
+    linear-gradient(
+      180deg,
+      #f8f7f4 0%,
+      #eef1f6 100%
+    );
+
+  /* ==========================================================================
+     6. Border Radiuses
+     ========================================================================== */
+  --radius-xs: 8px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-card: 18px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-pill: 9999px;
+  --radius-full: 9999px;
+
+  /* ==========================================================================
+     7. Shadows
+     ========================================================================== */
+  --shadow-sm: 0 2px 6px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 12px 24px rgba(15, 23, 42, 0.12);
+  --shadow-lg: 0 20px 40px rgba(15, 23, 42, 0.18);
+
+  /* ==========================================================================
+     8. Typography Stacks
+     ========================================================================== */
+  --font-sans: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono Variable", monospace;
+
+  /* ==========================================================================
+     9. Focus States
+     ========================================================================== */
+  --focus-ring-color: rgba(29, 78, 216, 0.35);
+  --focus-outline: 2px solid var(--color-primary);
+  --focus-offset: 2px;
+  --focus-box-shadow: 0 0 0 3px var(--focus-ring-color);
+
+  /* ==========================================================================
+     10. Layout System Constants (Preserved for Navigation & E2E contracts)
+     ========================================================================== */
+  --header-height: 64px;
+  --sidebar-width: 224px;
+
+  /* ==========================================================================
+     11. Backward Compatibility Aliases (maps legacy tokens to Cockpit tokens)
+     ========================================================================== */
+  --paper: var(--color-bg-primary);
+  --paper-raised: var(--color-bg-secondary);
+  --forest: var(--color-primary);
+  --forest-deep: var(--color-text-primary);
+  --ink: var(--color-text-primary);
+  --ink-muted: var(--color-text-secondary);
+  --line: var(--color-border);
+  --coral: var(--color-warning-strong);
+  --mint: var(--color-accent);
+  --gold: var(--color-warning);
+}

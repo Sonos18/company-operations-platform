@@ -74,6 +74,9 @@ async function signOut(): Promise<void> {
 .app-shell {
   --shell-header-height: var(--header-height);
   --shell-sidebar-width: var(--sidebar-width);
+  min-height: 100vh;
+  background: var(--app-background);
+  background-attachment: fixed;
 }
 
 .app-shell[data-header-collapsed='true'] {
