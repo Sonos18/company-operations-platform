@@ -57,8 +57,25 @@ describe('C1 Project Cost database foundation', () => {
       expect(sql).toContain(`alter table public.${table} enable row level security`)
       expect(sql).toContain(`alter table public.${table} force row level security`)
     }
-    expect(sql).toContain("private.has_company_permission(tenant_id, company_id, 'cost.read')")
+    expect(sql).toContain("private.has_company_permission(target_tenant_id, target_company_id, 'cost.read')")
     expect(sql).not.toMatch(/grant\s+(?:insert|update|delete|all)\s+on\s+public\.project_cost(?:_item_sources|_items)\s+to\s+authenticated/iu)
+  })
+
+  it('grants authenticated SELECT on both Project Cost tables subject to module-aware cost.read RLS', () => {
+    if (!sql) return
+    expect(sql).toContain('grant select on public.project_cost_items, public.project_cost_item_sources to authenticated')
+    expect(sql).toMatch(/create function private\.c1_can_read_project_cost\(target_tenant_id uuid, target_company_id uuid\)[\s\S]*?public\.company_cost_settings[\s\S]*?settings\.enabled[\s\S]*?'cost\.read'/iu)
+    for (const table of ['project_cost_items', 'project_cost_item_sources']) {
+      expect(sql).toContain(`create policy c1_${table}_select on public.${table} for select to authenticated using (private.c1_can_read_project_cost(tenant_id, company_id))`)
+    }
+  })
+
+  it('uses a calendar-safe date parser from both direct command paths', () => {
+    if (!sql) return
+    const functionSql = (name: string) => sql.slice(sql.indexOf(`create function private.${name}`), sql.indexOf('$$;', sql.indexOf(`create function private.${name}`)))
+    expect(sql).toMatch(/create function private\.c1_parse_project_cost_date\(target_value text\)[\s\S]*?to_date[\s\S]*?datetime_field_overflow[\s\S]*?invalid_datetime_format[\s\S]*?INPUT_INVALID/iu)
+    expect(functionSql('c1_create_project_cost_item')).toContain('private.c1_parse_project_cost_date')
+    expect(functionSql('c1_update_project_cost_item')).toContain('private.c1_parse_project_cost_date')
   })
 
   it('adds only cost.manage and grants it to the dedicated VQH operator role', () => {

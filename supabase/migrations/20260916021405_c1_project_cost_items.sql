@@ -50,9 +50,26 @@ alter table public.project_cost_item_sources enable row level security;
 alter table public.project_cost_items force row level security;
 alter table public.project_cost_item_sources force row level security;
 revoke all on table public.project_cost_items, public.project_cost_item_sources from public, anon, authenticated;
-grant select on public.project_cost_items to authenticated;
-create policy c1_project_cost_items_select on public.project_cost_items for select to authenticated using (private.has_company_permission(tenant_id, company_id, 'cost.read'));
-create policy c1_project_cost_item_sources_select on public.project_cost_item_sources for select to authenticated using (private.has_company_permission(tenant_id, company_id, 'cost.read'));
+grant select on public.project_cost_items, public.project_cost_item_sources to authenticated;
+
+create function private.c1_can_read_project_cost(target_tenant_id uuid, target_company_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.company_cost_settings settings
+    where settings.tenant_id = target_tenant_id
+      and settings.company_id = target_company_id
+      and settings.enabled
+  )
+  and private.has_company_permission(target_tenant_id, target_company_id, 'cost.read');
+$$;
+
+create policy c1_project_cost_items_select on public.project_cost_items for select to authenticated using (private.c1_can_read_project_cost(tenant_id, company_id));
+create policy c1_project_cost_item_sources_select on public.project_cost_item_sources for select to authenticated using (private.c1_can_read_project_cost(tenant_id, company_id));
 
 insert into public.permissions(code, module, name, description) values
   ('cost.manage','cost','Manage Project Costs','Create and update C1 Project Cost items')
@@ -88,6 +105,32 @@ begin
   insert into public.role_permissions (role_id, permission_code)
   select v_role_id, permission.code from public.permissions permission where permission.code = 'cost.manage'
   on conflict do nothing;
+end;
+$$;
+
+create function private.c1_parse_project_cost_date(target_value text)
+returns date
+language plpgsql
+immutable
+strict
+security definer
+set search_path = ''
+as $$
+declare
+  v_date date;
+begin
+  if target_value !~ '^\d{4}-\d{2}-\d{2}$' then
+    raise exception using errcode = 'P0001', message = 'INPUT_INVALID';
+  end if;
+  begin
+    v_date := pg_catalog.to_date(target_value, 'FXYYYY-MM-DD');
+  exception when datetime_field_overflow or invalid_datetime_format then
+    raise exception using errcode = 'P0001', message = 'INPUT_INVALID';
+  end;
+  if pg_catalog.to_char(v_date, 'YYYY-MM-DD') <> target_value then
+    raise exception using errcode = 'P0001', message = 'INPUT_INVALID';
+  end if;
+  return v_date;
 end;
 $$;
 
@@ -145,7 +188,7 @@ begin
   v_party_id := case when target_input ? 'partyId' then (target_input->>'partyId')::uuid end;
   v_engagement_id := case when target_input ? 'engagementId' then (target_input->>'engagementId')::uuid end;
   v_component_id := case when target_input ? 'componentId' then (target_input->>'componentId')::uuid end;
-  v_relevant_date := case when target_input ? 'relevantDate' then (target_input->>'relevantDate')::date end;
+  v_relevant_date := case when target_input ? 'relevantDate' then private.c1_parse_project_cost_date(target_input->>'relevantDate') end;
   v_amount := (target_input->>'amount')::numeric;
   v_business_reference := case when jsonb_typeof(target_input->'businessReference') = 'string' then btrim(target_input->>'businessReference') end;
   v_confirmation_reference := btrim(target_input->>'nonOverlapConfirmationReference');
@@ -220,7 +263,7 @@ begin
   v_party_id := case when target_input ? 'partyId' then case when jsonb_typeof(target_input->'partyId') = 'null' then null else (target_input->>'partyId')::uuid end else v_item.party_id end;
   v_engagement_id := case when target_input ? 'engagementId' then case when jsonb_typeof(target_input->'engagementId') = 'null' then null else (target_input->>'engagementId')::uuid end else v_item.engagement_id end;
   v_component_id := case when target_input ? 'componentId' then case when jsonb_typeof(target_input->'componentId') = 'null' then null else (target_input->>'componentId')::uuid end else v_item.component_id end;
-  v_relevant_date := case when target_input ? 'relevantDate' then case when jsonb_typeof(target_input->'relevantDate') = 'null' then null else (target_input->>'relevantDate')::date end else v_item.relevant_date end;
+  v_relevant_date := case when target_input ? 'relevantDate' then case when jsonb_typeof(target_input->'relevantDate') = 'null' then null else private.c1_parse_project_cost_date(target_input->>'relevantDate') end else v_item.relevant_date end;
   v_work_status := case when target_input ? 'workStatus' then target_input->>'workStatus' else v_item.work_status end;
   if v_party_id is not null and not exists (select 1 from public.business_parties party where party.id = v_party_id and party.tenant_id = v_tenant_id and party.company_id = target_company_id) then raise exception using errcode = 'P0001', message = 'RESOURCE_NOT_FOUND'; end if;
   if v_engagement_id is not null and not exists (select 1 from public.project_engagements engagement where engagement.id = v_engagement_id and engagement.tenant_id = v_tenant_id and engagement.company_id = target_company_id and engagement.project_id = v_item.project_id and (v_party_id is null or engagement.party_id = v_party_id)) then raise exception using errcode = 'P0001', message = 'RESOURCE_NOT_FOUND'; end if;
@@ -283,5 +326,7 @@ create function public.c1_correct_project_cost_item(target_company_id uuid, targ
 returns jsonb language sql volatile security definer set search_path = '' as $$ select private.c1_correct_project_cost_item(target_company_id, target_id, target_input, target_request_id); $$;
 
 revoke all on function private.c1_create_project_cost_item(uuid, jsonb, uuid, uuid), private.c1_update_project_cost_item(uuid, uuid, jsonb, uuid), private.c1_correct_project_cost_item(uuid, uuid, jsonb, uuid) from public, anon, authenticated;
+revoke all on function private.c1_can_read_project_cost(uuid, uuid), private.c1_parse_project_cost_date(text) from public, anon, authenticated;
+grant execute on function private.c1_can_read_project_cost(uuid, uuid) to authenticated;
 revoke all on function public.c1_create_project_cost_item(uuid, jsonb, uuid, uuid), public.c1_update_project_cost_item(uuid, uuid, jsonb, uuid), public.c1_correct_project_cost_item(uuid, uuid, jsonb, uuid) from public, anon, authenticated;
 grant execute on function public.c1_create_project_cost_item(uuid, jsonb, uuid, uuid), public.c1_update_project_cost_item(uuid, uuid, jsonb, uuid), public.c1_correct_project_cost_item(uuid, uuid, jsonb, uuid) to authenticated;
