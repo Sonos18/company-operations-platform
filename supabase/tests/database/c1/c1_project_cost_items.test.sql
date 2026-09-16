@@ -90,6 +90,7 @@ begin
   select public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 tracked item','amount','100.0000','currencyCode','VND','workStatus','in_progress','nonOverlapConfirmationReference','C101-confirmation'), 'c1010000-0000-4000-8000-000000000711', 'c1010000-0000-4000-8000-000000000712') into first_create;
   item_id := (first_create->>'id')::uuid;
   if item_id is null or (first_create->>'version')::bigint <> 0 or (first_create->>'replayed')::boolean then raise exception 'C1_PC_IDEMPOTENCY first create result invalid'; end if;
+  if (select amount from public.project_cost_items where id = item_id) <> 100 or (select amount_text from public.project_cost_items where id = item_id) <> '100.0000' then raise exception 'C1_PC_DECIMAL_SAFE_AMOUNT create text mismatch'; end if;
   select public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 tracked item','amount','100.0000','currencyCode','VND','workStatus','in_progress','nonOverlapConfirmationReference','C101-confirmation'), 'c1010000-0000-4000-8000-000000000711', 'c1010000-0000-4000-8000-000000000713') into replay;
   if (replay->>'id')::uuid is distinct from item_id or (replay->>'version')::bigint <> 0 or not (replay->>'replayed')::boolean or (select count(*) from public.project_cost_items where id = item_id) <> 1 then raise exception 'C1_PC_IDEMPOTENCY replay created another item'; end if;
   begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 changed payload','amount','100.0000','currencyCode','VND','workStatus','in_progress','nonOverlapConfirmationReference','C101-confirmation'), 'c1010000-0000-4000-8000-000000000711', 'c1010000-0000-4000-8000-000000000714'); raise exception 'C1_PC_IDEMPOTENCY conflict missing'; exception when sqlstate 'P0001' then if sqlerrm <> 'IDEMPOTENCY_CONFLICT' then raise; end if; end;
@@ -114,10 +115,13 @@ end;
 $$;
 reset role;
 
-insert into public.project_cost_items(id, tenant_id, company_id, project_id, description, amount, currency_code, work_status, created_by)
-values ('c1010000-0000-4000-8000-000000000801', 'c1010000-0000-4000-8000-000000000011', 'c1010000-0000-4000-8000-000000000022', 'c1010000-0000-4000-8000-000000000103', 'C101 foreign item', 1, 'VND', 'unknown', 'c1010000-0000-4000-8000-000000000902');
-insert into public.project_cost_items(id, tenant_id, company_id, project_id, description, amount, currency_code, work_status, created_by)
-values ('c1010000-0000-4000-8000-000000000802', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000021', 'c1010000-0000-4000-8000-000000000104', 'C101 disabled item', 1, 'VND', 'unknown', 'c1010000-0000-4000-8000-000000000902');
+insert into public.project_cost_items(id, tenant_id, company_id, project_id, description, amount, amount_text, currency_code, work_status, created_by)
+values ('c1010000-0000-4000-8000-000000000801', 'c1010000-0000-4000-8000-000000000011', 'c1010000-0000-4000-8000-000000000022', 'c1010000-0000-4000-8000-000000000103', 'C101 foreign item', 1, '1', 'VND', 'unknown', 'c1010000-0000-4000-8000-000000000902');
+insert into public.project_cost_items(id, tenant_id, company_id, project_id, description, amount, amount_text, currency_code, work_status, created_by)
+values ('c1010000-0000-4000-8000-000000000802', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000021', 'c1010000-0000-4000-8000-000000000104', 'C101 disabled item', 1, '1', 'VND', 'unknown', 'c1010000-0000-4000-8000-000000000902');
+insert into public.project_cost_items(id, tenant_id, company_id, project_id, description, amount, amount_text, currency_code, work_status, created_by)
+values ('c1010000-0000-4000-8000-000000000803', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000101', 'C101 high precision item', 9007199254740992.0000, '9007199254740992.0000', 'VND', 'unknown', 'c1010000-0000-4000-8000-000000000902');
+do $$ begin if not exists (select 1 from public.project_cost_items where id = 'c1010000-0000-4000-8000-000000000803' and amount = 9007199254740992.0000 and amount_text = '9007199254740992.0000') then raise exception 'C1_PC_DECIMAL_SAFE_AMOUNT high precision mismatch'; end if; end $$;
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"c1010000-0000-4000-8000-000000000902","role":"authenticated"}', true);
@@ -153,7 +157,7 @@ begin
   begin perform public.c1_update_project_cost_item('c1010000-0000-4000-8000-000000000020', item_id, jsonb_build_object('description','C101 forbidden update','expectedVersion',item_version), 'c1010000-0000-4000-8000-000000000741'); raise exception 'C1_PC_PERMISSION_BOUNDARY corrector updated'; exception when sqlstate 'P0001' then if sqlerrm <> 'PERMISSION_DENIED' then raise; end if; end;
   begin perform public.c1_correct_project_cost_item('c1010000-0000-4000-8000-000000000020', item_id, jsonb_build_object('expectedVersion',item_version,'reason',' ' ,'amount','110.0000'), 'c1010000-0000-4000-8000-000000000742'); raise exception 'C1_PC_CORRECTION empty reason accepted'; exception when sqlstate 'P0001' then if sqlerrm <> 'INPUT_INVALID' then raise; end if; end;
   select public.c1_correct_project_cost_item('c1010000-0000-4000-8000-000000000020', item_id, jsonb_build_object('expectedVersion',item_version,'reason','C101 correction','amount','110.0000'), 'c1010000-0000-4000-8000-000000000731');
-  if (select amount from public.project_cost_items where id = item_id) <> 110 or (select version from public.project_cost_items where id = item_id) <> item_version + 1 then raise exception 'C1_PC_CORRECTION failed'; end if;
+  if (select amount from public.project_cost_items where id = item_id) <> 110 or (select amount_text from public.project_cost_items where id = item_id) <> '110.0000' or (select version from public.project_cost_items where id = item_id) <> item_version + 1 then raise exception 'C1_PC_DECIMAL_SAFE_AMOUNT correction failed'; end if;
 end $$;
 reset role;
 

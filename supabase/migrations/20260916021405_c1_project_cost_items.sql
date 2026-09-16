@@ -5,6 +5,7 @@ create table public.project_cost_items (
   project_id uuid not null,
   description text not null check (btrim(description) <> ''),
   amount numeric(20,4) not null check (amount >= 0),
+  amount_text text not null check (amount_text ~ '^\d{1,16}(\.\d{1,4})?$') check (amount_text::numeric = amount),
   currency_code text not null check (char_length(currency_code) = 3),
   work_status text not null check (work_status in ('unknown','in_progress','accepted')),
   business_reference text check (business_reference is null or btrim(business_reference) <> ''),
@@ -205,8 +206,8 @@ begin
     return jsonb_build_object('id', v_receipt.result_resource_id, 'version', v_receipt.result_version, 'replayed', true);
   end if;
 
-  insert into public.project_cost_items(tenant_id, company_id, project_id, description, amount, currency_code, work_status, business_reference, party_id, engagement_id, component_id, relevant_date, created_by)
-  values (v_tenant_id, target_company_id, v_project_id, btrim(target_input->>'description'), v_amount, btrim(target_input->>'currencyCode'), target_input->>'workStatus', v_business_reference, v_party_id, v_engagement_id, v_component_id, v_relevant_date, v_actor_id)
+  insert into public.project_cost_items(tenant_id, company_id, project_id, description, amount, amount_text, currency_code, work_status, business_reference, party_id, engagement_id, component_id, relevant_date, created_by)
+  values (v_tenant_id, target_company_id, v_project_id, btrim(target_input->>'description'), v_amount, target_input->>'amount', btrim(target_input->>'currencyCode'), target_input->>'workStatus', v_business_reference, v_party_id, v_engagement_id, v_component_id, v_relevant_date, v_actor_id)
   returning * into v_item;
   insert into public.cost_command_receipts(tenant_id, company_id, actor_id, command_name, idempotency_key, request_hash, result_resource_id, result_version)
   values (v_tenant_id, target_company_id, v_actor_id, 'project_cost_item.create', target_idempotency_key, v_request_hash, v_item.id, v_item.version);
@@ -290,6 +291,7 @@ declare
   v_item public.project_cost_items%rowtype;
   v_updated public.project_cost_items%rowtype;
   v_amount numeric(20,4);
+  v_amount_text text;
   v_work_status text;
   v_reason text;
 begin
@@ -309,9 +311,10 @@ begin
   if not found then raise exception using errcode = 'P0001', message = 'RESOURCE_NOT_FOUND'; end if;
   if v_item.version <> (target_input->>'expectedVersion')::bigint then raise exception using errcode = 'P0001', message = 'VERSION_CONFLICT'; end if;
   v_amount := case when target_input ? 'amount' then (target_input->>'amount')::numeric else v_item.amount end;
+  v_amount_text := case when target_input ? 'amount' then target_input->>'amount' else v_item.amount_text end;
   v_work_status := case when target_input ? 'workStatus' then target_input->>'workStatus' else v_item.work_status end;
   v_reason := btrim(target_input->>'reason');
-  update public.project_cost_items item set amount = v_amount, work_status = v_work_status, version = version + 1, updated_at = now() where item.id = v_item.id returning * into v_updated;
+  update public.project_cost_items item set amount = v_amount, amount_text = v_amount_text, work_status = v_work_status, version = version + 1, updated_at = now() where item.id = v_item.id returning * into v_updated;
   insert into public.audit_events(tenant_id, company_id, actor_id, action, resource_type, resource_id, request_id, before_summary, after_summary)
   values (v_tenant_id, target_company_id, v_actor_id, 'c1.project_cost_item.corrected', 'project_cost_item', v_item.id::text, target_request_id, to_jsonb(v_item), jsonb_build_object('item', to_jsonb(v_updated), 'reason', v_reason));
   return jsonb_build_object('id', v_updated.id, 'version', v_updated.version);
