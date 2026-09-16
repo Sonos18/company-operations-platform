@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  correctProjectCostItemInputSchema,
   createProjectCostItemInputSchema,
   projectCostItemSchema,
   projectCostSummarySchema,
@@ -23,6 +24,7 @@ const createInput = {
   amount: '100.0000',
   currencyCode: 'VND',
   workStatus: 'in_progress' as const,
+  nonOverlapConfirmationReference: 'VQH-2026-09-16-001',
 }
 
 const summary = {
@@ -74,9 +76,61 @@ describe('project cost contracts', () => {
     }).success).toBe(true)
   })
 
+  it('requires a non-overlap confirmation reference when creating an item', () => {
+    const input: Record<string, unknown> = { ...createInput }
+    delete input.nonOverlapConfirmationReference
+    expect(createProjectCostItemInputSchema.safeParse(input).success).toBe(false)
+  })
+
+  it('rejects empty or whitespace-only non-overlap confirmation references', () => {
+    expect(createProjectCostItemInputSchema.safeParse({ ...createInput, nonOverlapConfirmationReference: '' }).success).toBe(false)
+    expect(createProjectCostItemInputSchema.safeParse({ ...createInput, nonOverlapConfirmationReference: '   ' }).success).toBe(false)
+  })
+
+  it('accepts a non-empty non-overlap confirmation reference', () => {
+    expect(createProjectCostItemInputSchema.safeParse(createInput).success).toBe(true)
+  })
+
   it('requires expected version for updates', () => {
     expect(updateProjectCostItemInputSchema.safeParse({ description: 'Corrected framing' }).success).toBe(false)
-    expect(updateProjectCostItemInputSchema.safeParse({ description: 'Corrected framing', expectedVersion: 0 }).success).toBe(true)
+    expect(updateProjectCostItemInputSchema.safeParse({
+      description: 'Corrected framing',
+      workStatus: 'accepted',
+      partyId: ids.party,
+      engagementId: ids.engagement,
+      componentId: ids.component,
+      relevantDate: '2026-09-16',
+      expectedVersion: 0,
+    }).success).toBe(true)
+  })
+
+  it('rejects amount from the ordinary management update contract', () => {
+    expect(updateProjectCostItemInputSchema.safeParse({ amount: '125.0000', expectedVersion: 0 }).success).toBe(false)
+  })
+
+  it('rejects currency from the ordinary management update contract', () => {
+    expect(updateProjectCostItemInputSchema.safeParse({ currencyCode: 'USD', expectedVersion: 0 }).success).toBe(false)
+  })
+
+  it('requires expected version for corrections', () => {
+    expect(correctProjectCostItemInputSchema.safeParse({ reason: 'Correct source transcription', amount: '125.0000' }).success).toBe(false)
+  })
+
+  it('requires a non-empty correction reason', () => {
+    expect(correctProjectCostItemInputSchema.safeParse({ expectedVersion: 0, reason: '', amount: '125.0000' }).success).toBe(false)
+    expect(correctProjectCostItemInputSchema.safeParse({ expectedVersion: 0, reason: '   ', amount: '125.0000' }).success).toBe(false)
+  })
+
+  it('accepts a material amount correction', () => {
+    expect(correctProjectCostItemInputSchema.safeParse({ expectedVersion: 0, reason: 'Correct source transcription', amount: '125.0000' }).success).toBe(true)
+  })
+
+  it('accepts a material work-status correction', () => {
+    expect(correctProjectCostItemInputSchema.safeParse({ expectedVersion: 0, reason: 'Acceptance confirmed', workStatus: 'accepted' }).success).toBe(true)
+  })
+
+  it('rejects unsupported accounting fields from corrections', () => {
+    expect(correctProjectCostItemInputSchema.safeParse({ expectedVersion: 0, reason: 'Correct source transcription', amount: '125.0000', paidAmount: '125.0000' }).success).toBe(false)
   })
 
   it('accepts F06 totals from accepted and in-progress values only', () => {

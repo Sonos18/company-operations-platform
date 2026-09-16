@@ -22,8 +22,27 @@ const projectCostItemFieldsSchema = z.object({
   relevantDate: relevantDate.optional(),
 })
 
-export const createProjectCostItemInputSchema = projectCostItemFieldsSchema.extend({ projectId: uuid }).strict()
-export const updateProjectCostItemInputSchema = projectCostItemFieldsSchema.partial().extend({ expectedVersion: version }).strict()
+export const createProjectCostItemInputSchema = projectCostItemFieldsSchema.extend({
+  projectId: uuid,
+  nonOverlapConfirmationReference: text,
+}).strict()
+
+export const updateProjectCostItemInputSchema = z.object({
+  description: text.optional(),
+  partyId: uuid.nullable().optional(),
+  engagementId: uuid.nullable().optional(),
+  componentId: uuid.nullable().optional(),
+  relevantDate: relevantDate.nullable().optional(),
+  workStatus: projectCostWorkStatusSchema.optional(),
+  expectedVersion: version,
+}).strict()
+
+export const correctProjectCostItemInputSchema = z.object({
+  expectedVersion: version,
+  reason: text,
+  amount: decimalStringSchema.optional(),
+  workStatus: projectCostWorkStatusSchema.optional(),
+}).strict()
 
 const timestamp = z.string().datetime()
 export const projectCostItemSchema = z.object({
@@ -68,6 +87,7 @@ export const projectCostBreakdownSchema = z.object({
 export type ProjectCostWorkStatus = z.infer<typeof projectCostWorkStatusSchema>
 export type CreateProjectCostItemInput = z.infer<typeof createProjectCostItemInputSchema>
 export type UpdateProjectCostItemInput = z.infer<typeof updateProjectCostItemInputSchema>
+export type CorrectProjectCostItemInput = z.infer<typeof correctProjectCostItemInputSchema>
 export type ProjectCostItem = z.infer<typeof projectCostItemSchema>
 export type ProjectCostSummary = z.infer<typeof projectCostSummarySchema>
 export type ProjectCostBreakdown = z.infer<typeof projectCostBreakdownSchema>
