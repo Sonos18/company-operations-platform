@@ -6,8 +6,8 @@ import { ProjectCostService } from '../../../server/features/costs/project-cost.
 const context = (permissions: string[]) => ({ actorId: 'c1010000-0000-4000-8000-000000000902', tenantId: 'c1010000-0000-4000-8000-000000000010', companyId: 'c1010000-0000-4000-8000-000000000020', permissions, requestId: 'c1010000-0000-4000-8000-000000000999' })
 const createInput = { projectId: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount: '1.00', currencyCode: 'VND', workStatus: 'unknown' as const, nonOverlapConfirmationReference: 'confirmed' }
 const itemRow = (overrides: Record<string, unknown> = {}) => ({ id: 'c1010000-0000-4000-8000-000000000001', tenant_id: 'c1010000-0000-4000-8000-000000000010', company_id: 'c1010000-0000-4000-8000-000000000020', project_id: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount_text: '1.0000', currency_code: 'VND', work_status: 'unknown', business_reference: null, party_id: null, engagement_id: null, component_id: null, relevant_date: null, version: 0, created_by: 'c1010000-0000-4000-8000-000000000902', created_at: '2026-09-16T00:00:00.000Z', updated_at: '2026-09-16T00:00:00.000Z', ...overrides })
-const listClient = (data: unknown) => {
-  const result = Promise.resolve({ data, error: null })
+const listClient = (data: unknown, error: unknown = null) => {
+  const result = Promise.resolve({ data, error })
   const query = { select: vi.fn(), eq: vi.fn(), order: vi.fn(), then: result.then.bind(result) }
   query.select.mockReturnValue(query)
   query.eq.mockReturnValue(query)
@@ -81,6 +81,22 @@ describe('Project Cost service', () => {
     const repository = new ProjectCostRepository(listClient([itemRow(), itemRow({ id: 'c1010000-0000-4000-8000-000000000012', currency_code: 'USD' })]) as never)
 
     await expect(repository.listSummaries(context([]).tenantId, context([]).companyId)).rejects.toMatchObject({ statusCode: 500, code: 'INTERNAL_ERROR' })
+  })
+
+  it('maps MODULE_DISABLED read errors before data parsing on both read paths', async () => {
+    const error = { code: 'P0001', message: 'MODULE_DISABLED' }
+    const listRepository = new ProjectCostRepository(listClient(null, error) as never)
+    const summaryRepository = new ProjectCostRepository(listClient(null, error) as never)
+    const expected = { statusCode: 403, code: 'PERMISSION_DENIED', details: { reason: 'MODULE_DISABLED' } }
+
+    await expect(listRepository.listSummaries(context([]).tenantId, context([]).companyId)).rejects.toMatchObject(expected)
+    await expect(summaryRepository.projectSummary(context([]).tenantId, context([]).companyId, createInput.projectId)).rejects.toMatchObject(expected)
+  })
+
+  it('preserves MODULE_DISABLED as the reason for direct RPC errors', async () => {
+    const repository = new ProjectCostRepository({ rpc: vi.fn().mockResolvedValue({ data: null, error: { code: 'P0001', message: 'MODULE_DISABLED' } }) } as never)
+
+    await expect(repository.create(context(['cost.manage']), createInput, 'c1010000-0000-4000-8000-000000000998')).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED', details: { reason: 'MODULE_DISABLED' } })
   })
 
   it.each([

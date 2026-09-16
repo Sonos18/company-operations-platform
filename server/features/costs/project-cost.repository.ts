@@ -37,7 +37,8 @@ export function summarizeProjectCosts(rows: readonly ProjectCostRow[]): ProjectC
 function rpcError(error: unknown): never {
   const parsed = z.object({ code: z.string().optional(), message: z.string().optional() }).safeParse(error)
   const code = parsed.success ? [parsed.data.message, parsed.data.code].find(value => ['MODULE_DISABLED', 'PERMISSION_DENIED', 'RESOURCE_NOT_FOUND', 'IDEMPOTENCY_CONFLICT', 'VERSION_CONFLICT', 'INPUT_INVALID'].includes(value ?? '')) : undefined
-  if (code === 'MODULE_DISABLED' || code === 'PERMISSION_DENIED') throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.')
+  if (code === 'MODULE_DISABLED') throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', { reason: 'MODULE_DISABLED' })
+  if (code === 'PERMISSION_DENIED') throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.')
   if (code === 'RESOURCE_NOT_FOUND') throw new AppApiError(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy Project Cost.')
   if (code === 'IDEMPOTENCY_CONFLICT') throw new AppApiError(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency key không khớp.')
   if (code === 'VERSION_CONFLICT') throw new AppApiError(409, 'VERSION_CONFLICT', 'Dữ liệu đã thay đổi.')
@@ -52,8 +53,8 @@ export class ProjectCostRepository implements ProjectCostDataRepository {
 
   async listSummaries(tenantId: string, companyId: string) {
     const { data, error } = await this.client.from('project_cost_items').select(columns).eq('tenant_id', tenantId).eq('company_id', companyId)
-    const result = rows(data)
     if (error) return rpcError(error)
+    const result = rows(data)
     const grouped = new Map<string, ProjectCostRow[]>()
     for (const row of result) grouped.set(row.project_id, [...(grouped.get(row.project_id) ?? []), row])
     return [...grouped].map(([projectId, projectRows]) => ({ projectId, summary: summarizeProjectCosts(projectRows) })).sort((a, b) => a.projectId.localeCompare(b.projectId))
@@ -61,8 +62,8 @@ export class ProjectCostRepository implements ProjectCostDataRepository {
 
   async projectSummary(tenantId: string, companyId: string, projectId: string) {
     const { data, error } = await this.client.from('project_cost_items').select(columns).eq('tenant_id', tenantId).eq('company_id', companyId).eq('project_id', projectId).order('created_at').order('id')
-    const result = rows(data)
     if (error) return rpcError(error)
+    const result = rows(data)
     return projectCostBreakdownSchema.parse({ projectId, summary: summarizeProjectCosts(result), items: result.map(item) })
   }
 
