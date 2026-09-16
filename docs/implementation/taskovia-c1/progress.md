@@ -4,6 +4,14 @@
 
 The historical phase ledger and plans below are retained unchanged. The active Phase 3 direction is now [Minimal Project Cost Management for VQH](p3r-minimal-project-cost-scope.md), with its approved [minimal domain design](p3r-minimal-project-cost-domain-design.md) and [sequential implementation plan](../../superpowers/plans/2026-09-16-c1-p3r-minimal-project-cost-implementation.md): Project-scoped management costs for contractor/business-item visibility, execution or acceptance status, value, provenance, and Director-readable aggregation. Eo Gió and Yong Mei remain independent Projects. P3A/P3B financial-domain work is historical analysis; accounting, cash, receivable/payable, invoice, budget, forecast, and profit scope is deferred.
 
+## P3R Gate D — Cloud DEV verification
+
+**Status:** `P3R_GATE_D_COMPLETE_WITH_ACCEPTED_ADVISOR_WARNING`. The reviewed `20260916021405_c1_project_cost_items.sql` migration is applied to Cloud DEV; generated types were committed at `b51d7f3cd77696b7401f7fd7bac9ea7363562939`. The final C1 suite at tested SHA `8319af50b7481aba5d2282afd2f8185cb459d7cc` exited 0 and printed foundation, controlled-import commands, controlled-import security, audited source ownership, and `C1_PROJECT_COST_ITEMS_COMPLETE` markers.
+
+Both advisors exited 0 with no error-level finding. Security reported 19 warnings, including three Project Cost public SECURITY DEFINER RPC warnings accepted as known architecture behavior for this gate; performance reported one unrelated `workflow_definition_snapshots` warning. Focused local verification passed 131 tests with zero failures, typecheck, lint, and `git diff --check`. The [Gate D phase report](phase-reports/p3r-gate-d-cloud-verification.md) records the warning rationale and resolved fixture blockers.
+
+Gate E candidate confirmation is **NOT STARTED**; no real VQH Project Cost data has been loaded or mutated. Gate F, Gate G, and Gate H remain later P3R work. The original C1 phase ledger below is a historical record and does not set the current P3R gate status.
+
 ## Control Record
 
 | Field | Value |
@@ -13,10 +21,11 @@ The historical phase ledger and plans below are retained unchanged. The active P
 | Preserved Stage 01 checkpoint | `3d021b35b1228ffdd46a8dbb9884a59c00ab6c89` |
 | Preserved integration merge | `8a005a4b86202253db3a9258d9dd2733ef20ff97` |
 | EOL portability repair | `b2731f4ef72c10cbcafe9f176cc1e2b54b9c8cfd` |
-| Cloud DEV migration inspection | 33 source migrations / 33 applied migrations; P1 foundation applied in the authorized P1.4B run |
+| Historical P1 Cloud DEV migration inspection | 33 source migrations / 33 applied migrations; P1 foundation applied in the authorized P1.4B run |
 | Runtime used for P0.5/P0.6 verification | Node `v24.19.0`, pnpm `10.29.3` |
-| Current C1 branch | `feat/taskovia-c1` |
-| C1 implementation status | P1 complete; P2.0 accepted; P2.1 frozen; P2.3 Cloud fixtures accepted; focused workbook-family adapter plus offline/guarded execution/reconciliation commands implemented and real workbooks verified offline; final command-path Cloud evidence, concurrency, and P2.4 authorization remain, so P2 is partial; P3–P6 not started |
+| Current C1 branch | `main` (active P3R execution track) |
+| Active P3R execution status | Gate D complete with accepted known advisor warning; Gate E not started; no real VQH Project Cost load |
+| Historical original C1 status snapshot | P1 complete; P2.0 accepted; P2.1 frozen; P2.3 Cloud fixtures accepted; focused workbook-family adapter plus offline/guarded execution/reconciliation commands implemented and real workbooks verified offline; final command-path Cloud evidence, concurrency, and P2.4 authorization remained, so P2 was partial; P3–P6 were not started in that snapshot |
 
 ## P0 Result
 

@@ -3,7 +3,13 @@
 **Approved execution base:** `b2731f4ef72c10cbcafe9f176cc1e2b54b9c8cfd`
 **Spec baseline:** Taskovia C1 v1.2; v1.1 remains historical.
 **Historical P0 status:** allocation only; no C1 application, migration, fixture, or Cloud write had run.
-**Status after v1.2 transition:** P1 is complete and P2.1 is frozen. P2.3 schema/fixtures are accepted. The focused VQH-family adapter and prepare/execute/get-result command path now have deterministic local and private offline-workbook evidence, but the new command transport has not run against Cloud DEV. Concurrency remains not run, P2.4 is not authorized, P2 remains partial, and P3–P6 remain not started. See the [P2.3 execution review](phase-reports/p2-3-cloud-review.md) and [adapter/command review](phase-reports/p2-2-adapter-command-review.md).
+**Status after v1.2 transition (historical snapshot):** P1 is complete and P2.1 is frozen. P2.3 schema/fixtures are accepted. The focused VQH-family adapter and prepare/execute/get-result command path then had deterministic local and private offline-workbook evidence, but its command transport had not run against Cloud DEV at that snapshot. Concurrency was not run, P2.4 was not authorized, P2 was partial, and P3–P6 were not started in that historical track. See the [P2.3 execution review](phase-reports/p2-3-cloud-review.md) and [adapter/command review](phase-reports/p2-2-adapter-command-review.md).
+
+## P3R Minimal Project Cost acceptance overlay
+
+Active P3R Gate D is `P3R_GATE_D_COMPLETE_WITH_ACCEPTED_ADVISOR_WARNING`; see the [Gate D Cloud DEV verification report](phase-reports/p3r-gate-d-cloud-verification.md). The two Project Cost tables and guarded public create/update/correct RPC boundary were deployed to Cloud DEV. The final synthetic, transaction-wrapped C1 suite completed its five fixtures, including Project Cost permission and tenant/company/Project isolation, create idempotency, expected-version conflict, audit and provenance checks, same-row `in_progress` → `accepted` transition, and decimal-safe `amount_text` checks. The runner printed file completion markers, not individual assertion counts. No real VQH data was used as the final acceptance fixture.
+
+Both Gate D advisors exited 0 with no error-level findings; focused local verification passed 131 tests, typecheck, lint, and diff-check. Three Project Cost public SECURITY DEFINER RPC warnings were accepted as known architecture warnings for this gate, not marked fixed or globally resolved. Gate E real-data candidate confirmation and load are **NOT STARTED** and unaccepted; no real VQH Project Cost item was loaded. Director UI and browser acceptance remain later Gate G/H work. This overlay does not promote unrelated historical A01–A62, I01–I24, or financial arithmetic rows to final PASS.
 
 ## Evidence Rule
 
