@@ -66,6 +66,7 @@ export const permissionCodes = [
   'party.manage',
   'engagement.manage',
   'cost.read',
+  'cost.manage',
   'cost.source.read',
   'cost.prepare',
   'cost.publish_import',
