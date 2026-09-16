@@ -104,6 +104,25 @@ describe('project cost contracts', () => {
     }).success).toBe(true)
   })
 
+  it('rejects an ordinary update with no mutable field', () => {
+    expect(updateProjectCostItemInputSchema.safeParse({ expectedVersion: 0 }).success).toBe(false)
+  })
+
+  it('accepts each allowed ordinary update field with an expected version', () => {
+    for (const update of [
+      { description: 'Corrected framing' },
+      { partyId: ids.party },
+      { engagementId: ids.engagement },
+      { componentId: ids.component },
+      { relevantDate: '2026-09-16' },
+      { workStatus: 'accepted' },
+    ]) expect(updateProjectCostItemInputSchema.safeParse({ ...update, expectedVersion: 0 }).success).toBe(true)
+  })
+
+  it('accepts an explicit nullable hierarchy clear as an ordinary update', () => {
+    expect(updateProjectCostItemInputSchema.safeParse({ partyId: null, expectedVersion: 0 }).success).toBe(true)
+  })
+
   it('rejects amount from the ordinary management update contract', () => {
     expect(updateProjectCostItemInputSchema.safeParse({ amount: '125.0000', expectedVersion: 0 }).success).toBe(false)
   })
@@ -119,6 +138,10 @@ describe('project cost contracts', () => {
   it('requires a non-empty correction reason', () => {
     expect(correctProjectCostItemInputSchema.safeParse({ expectedVersion: 0, reason: '', amount: '125.0000' }).success).toBe(false)
     expect(correctProjectCostItemInputSchema.safeParse({ expectedVersion: 0, reason: '   ', amount: '125.0000' }).success).toBe(false)
+  })
+
+  it('rejects a correction with no material field', () => {
+    expect(correctProjectCostItemInputSchema.safeParse({ expectedVersion: 0, reason: 'Correction requested' }).success).toBe(false)
   })
 
   it('accepts a material amount correction', () => {

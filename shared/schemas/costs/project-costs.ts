@@ -35,14 +35,22 @@ export const updateProjectCostItemInputSchema = z.object({
   relevantDate: relevantDate.nullable().optional(),
   workStatus: projectCostWorkStatusSchema.optional(),
   expectedVersion: version,
-}).strict()
+}).strict().superRefine((value, context) => {
+  if (!['description', 'partyId', 'engagementId', 'componentId', 'relevantDate', 'workStatus'].some(field => Object.hasOwn(value, field))) {
+    context.addIssue({ code: 'custom', message: 'requires a mutable field' })
+  }
+})
 
 export const correctProjectCostItemInputSchema = z.object({
   expectedVersion: version,
   reason: text,
   amount: decimalStringSchema.optional(),
   workStatus: projectCostWorkStatusSchema.optional(),
-}).strict()
+}).strict().superRefine((value, context) => {
+  if (!['amount', 'workStatus'].some(field => Object.hasOwn(value, field))) {
+    context.addIssue({ code: 'custom', message: 'requires a material correction field' })
+  }
+})
 
 const timestamp = z.string().datetime()
 export const projectCostItemSchema = z.object({
