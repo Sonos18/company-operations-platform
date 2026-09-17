@@ -13,7 +13,7 @@ Both Gate D advisors exited 0 with no error-level findings; focused local verifi
 
 Post-Gate-E [RBAC hardening is COMPLETE](phase-reports/p3r-post-gate-e-rbac-hardening-cloud.md): canonical accountant read access and the narrowed dedicated operator capability were verified against Cloud DEV without changing Gate E data. It is not Gate F work; Gate F remains not started and unauthorized.
 
-Gate F is **COMPLETE**: [F1 local regression hardening](phase-reports/p3r-gate-f1-precloud-regression-hardening.md) and [F2 Cloud synthetic verification](phase-reports/p3r-gate-f2-cloud-verification.md) passed with unchanged Gate E data and zero run-owned synthetic residue. Gate G remains not started and unauthorized.
+Gate F is **COMPLETE**: [F1 local regression hardening](phase-reports/p3r-gate-f1-precloud-regression-hardening.md) and [F2 Cloud synthetic verification](phase-reports/p3r-gate-f2-cloud-verification.md) passed with unchanged Gate E data and zero run-owned synthetic residue. Gate G is **BLOCKED_PREFLIGHT** on `PROJECT_COST_PROJECT_METADATA_CONTRACT`; its narrow [metadata read RPC pre-Cloud checkpoint](phase-reports/p3r-gate-g-project-metadata-read-precloud.md) awaits separate Cloud DEV apply authorization.
 
 ## Evidence Rule
 

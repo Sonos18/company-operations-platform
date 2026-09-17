@@ -78,7 +78,7 @@ begin
   if pg_catalog.has_table_privilege('authenticated', 'public.project_cost_items', 'insert') or pg_catalog.has_table_privilege('authenticated', 'public.project_cost_items', 'update') or pg_catalog.has_table_privilege('authenticated', 'public.project_cost_items', 'delete') then raise exception 'C1_PC_PERMISSION_BOUNDARY direct item writes granted'; end if;
   if pg_catalog.has_table_privilege('authenticated', 'public.project_cost_item_sources', 'insert') or pg_catalog.has_table_privilege('authenticated', 'public.project_cost_item_sources', 'update') or pg_catalog.has_table_privilege('authenticated', 'public.project_cost_item_sources', 'delete') then raise exception 'C1_PC_SOURCE_DIRECT_ACL direct source writes granted'; end if;
   if pg_catalog.has_table_privilege('authenticated', 'public.audit_events', 'update') or pg_catalog.has_table_privilege('authenticated', 'public.audit_events', 'delete') then raise exception 'C1_PC_AUDIT_ACL audit writes granted'; end if;
-  if pg_catalog.has_function_privilege('authenticated', 'private.c1_create_project_cost_item(uuid,jsonb,uuid,uuid)', 'execute') or pg_catalog.has_function_privilege('authenticated', 'private.c1_update_project_cost_item(uuid,uuid,jsonb,uuid)', 'execute') or pg_catalog.has_function_privilege('authenticated', 'private.c1_correct_project_cost_item(uuid,uuid,jsonb,uuid)', 'execute') then raise exception 'C1_PC_PERMISSION_BOUNDARY private command execute granted'; end if;
+  if pg_catalog.has_function_privilege('authenticated', 'private.c1_create_project_cost_item(uuid,jsonb,uuid,uuid)', 'execute') or pg_catalog.has_function_privilege('authenticated', 'private.c1_update_project_cost_item(uuid,uuid,jsonb,uuid)', 'execute') or pg_catalog.has_function_privilege('authenticated', 'private.c1_correct_project_cost_item(uuid,uuid,jsonb,uuid)', 'execute') or pg_catalog.has_function_privilege('authenticated', 'private.c1_read_project_cost_project_metadata(uuid,uuid[])', 'execute') then raise exception 'C1_PC_PERMISSION_BOUNDARY private command execute granted'; end if;
 end;
 $$;
 
@@ -87,6 +87,7 @@ do $$ begin
   begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', '{}'::jsonb, 'c1010000-0000-4000-8000-000000000701', 'c1010000-0000-4000-8000-000000000702'); raise exception 'C1_PC_PERMISSION_BOUNDARY anonymous RPC succeeded'; exception when insufficient_privilege then null; end;
   begin perform public.c1_update_project_cost_item('c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000101', '{}'::jsonb, 'c1010000-0000-4000-8000-000000000703'); raise exception 'C1_PC_ANON_UPDATE_RPC anonymous update succeeded'; exception when insufficient_privilege then null; end;
   begin perform public.c1_correct_project_cost_item('c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000101', '{}'::jsonb, 'c1010000-0000-4000-8000-000000000704'); raise exception 'C1_PC_ANON_CORRECT_RPC anonymous correction succeeded'; exception when insufficient_privilege then null; end;
+  begin perform public.c1_read_project_cost_project_metadata('c1010000-0000-4000-8000-000000000020', array['c1010000-0000-4000-8000-000000000101'::uuid]); raise exception 'C1_PC_METADATA_ANON_RPC anonymous metadata read succeeded'; exception when insufficient_privilege then null; end;
 end $$;
 reset role;
 
@@ -218,9 +219,15 @@ reset role;
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"c1010000-0000-4000-8000-000000000901","role":"authenticated"}', true);
-do $$ begin
+do $$
+declare metadata jsonb;
+begin
   if (select count(*) from public.project_cost_items where company_id = 'c1010000-0000-4000-8000-000000000020') < 2 then raise exception 'C1_PC_READ reader cannot read scoped items'; end if;
   if (select count(*) from public.project_cost_items where company_id = 'c1010000-0000-4000-8000-000000000022') <> 0 then raise exception 'C1_PC_READ reader saw foreign company'; end if;
+  select public.c1_read_project_cost_project_metadata('c1010000-0000-4000-8000-000000000020', array['c1010000-0000-4000-8000-000000000101'::uuid, 'c1010000-0000-4000-8000-000000000104'::uuid, 'c1010000-0000-4000-8000-000000000103'::uuid]) into metadata;
+  if metadata <> jsonb_build_array(jsonb_build_object('projectId', 'c1010000-0000-4000-8000-000000000101'::uuid, 'projectCode', 'C101-P1', 'projectName', 'C101 project one')) then raise exception 'C1_PC_METADATA_SCOPE cost reader metadata result invalid'; end if;
+  if (select array_agg(key order by key) from jsonb_object_keys(metadata->0) key) <> array['projectCode','projectId','projectName'] then raise exception 'C1_PC_METADATA_MINIMIZATION metadata output fields widened'; end if;
+  if exists (select 1 from public.projects where company_id = 'c1010000-0000-4000-8000-000000000020') then raise exception 'C1_PC_METADATA_PROJECT_RLS cost reader gained direct Project Register read'; end if;
   begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', '{}'::jsonb, 'c1010000-0000-4000-8000-000000000729', 'c1010000-0000-4000-8000-000000000730'); raise exception 'C1_PC_PERMISSION_BOUNDARY reader created'; exception when sqlstate 'P0001' then if sqlerrm <> 'PERMISSION_DENIED' then raise; end if; end;
 end $$;
 reset role;
@@ -229,6 +236,7 @@ set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"c1010000-0000-4000-8000-000000000904","role":"authenticated"}', true);
 do $$ begin
   if (select count(*) from public.project_cost_items where company_id = 'c1010000-0000-4000-8000-000000000020') <> 0 then raise exception 'C1_PC_PERMISSION_BOUNDARY denied actor read'; end if;
+  begin perform public.c1_read_project_cost_project_metadata('c1010000-0000-4000-8000-000000000020', array['c1010000-0000-4000-8000-000000000101'::uuid]); raise exception 'C1_PC_METADATA_PERMISSION denied metadata read succeeded'; exception when sqlstate 'P0001' then if sqlerrm <> 'PERMISSION_DENIED' then raise; end if; end;
   begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', '{}'::jsonb, 'c1010000-0000-4000-8000-000000000739', 'c1010000-0000-4000-8000-000000000740'); raise exception 'C1_PC_PERMISSION_BOUNDARY denied actor created'; exception when sqlstate 'P0001' then if sqlerrm <> 'PERMISSION_DENIED' then raise; end if; end;
 end $$;
 reset role;
