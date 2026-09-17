@@ -139,7 +139,7 @@ begin
 
   select public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 provenance item','amount','4.0000','currencyCode','VND','workStatus','in_progress','nonOverlapConfirmationReference','C101-provenance','sourceFigureIds',jsonb_build_array('c1010000-0000-4000-8000-000000000604','c1010000-0000-4000-8000-000000000605')), 'c1010000-0000-4000-8000-000000000752', 'c1010000-0000-4000-8000-000000000753') into provenance_create;
   provenance_item_id := (provenance_create->>'id')::uuid;
-  if provenance_item_id is null or (select count(*) from public.project_cost_item_sources where project_cost_item_id = provenance_item_id) <> 2 or not exists (select 1 from public.audit_events where resource_type = 'project_cost_item' and resource_id = provenance_item_id::text and after_summary->'sourceFigureIds' = jsonb_build_array('c1010000-0000-4000-8000-000000000604','c1010000-0000-4000-8000-000000000605')) then raise exception 'C1_PC_PROVENANCE_COMMAND create links or audit missing'; end if;
+  if provenance_item_id is null or (select count(*) from public.project_cost_item_sources where project_cost_item_id = provenance_item_id) <> 2 then raise exception 'C1_PC_PROVENANCE_COMMAND create links missing'; end if;
   raise notice 'C1_PC_PROVENANCE_COMMAND';
 
   begin
@@ -188,6 +188,15 @@ begin
 end;
 $$;
 reset role;
+
+do $$
+declare provenance_item_id uuid;
+begin
+  select id into provenance_item_id from public.project_cost_items where description = 'C101 provenance item';
+  if provenance_item_id is null or not exists (select 1 from public.audit_events where resource_type = 'project_cost_item' and action = 'c1.project_cost_item.created' and request_id = 'c1010000-0000-4000-8000-000000000753' and resource_id = provenance_item_id::text and after_summary->'sourceFigureIds' = jsonb_build_array('c1010000-0000-4000-8000-000000000604','c1010000-0000-4000-8000-000000000605')) then raise exception 'C1_PC_PROVENANCE_AUDIT missing provenance creation audit'; end if;
+  raise notice 'C1_PC_PROVENANCE_AUDIT';
+end;
+$$;
 
 insert into public.project_cost_items(id, tenant_id, company_id, project_id, description, amount, amount_text, currency_code, work_status, created_by)
 values ('c1010000-0000-4000-8000-000000000801', 'c1010000-0000-4000-8000-000000000011', 'c1010000-0000-4000-8000-000000000022', 'c1010000-0000-4000-8000-000000000103', 'C101 foreign item', 1, '1', 'VND', 'unknown', 'c1010000-0000-4000-8000-000000000902');

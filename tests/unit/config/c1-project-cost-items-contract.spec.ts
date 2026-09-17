@@ -80,6 +80,22 @@ describe('C1 Project Cost database foundation', () => {
     for (const character of digestCharacters) expect(character).toMatch(/^[a-f0-9]$/u)
   })
 
+  it('verifies provenance audit only after the authenticated provenance command block resets role', () => {
+    const provenanceItemIndex = fixtureSql.indexOf("description','C101 provenance item'")
+    const authenticatedStart = fixtureSql.lastIndexOf('set local role authenticated;', provenanceItemIndex)
+    const authenticatedEnd = fixtureSql.indexOf('reset role;', provenanceItemIndex)
+    const authenticatedBlock = fixtureSql.slice(authenticatedStart, authenticatedEnd)
+    const privilegedAuditBlock = fixtureSql.slice(authenticatedEnd, fixtureSql.indexOf('insert into public.project_cost_items', authenticatedEnd))
+
+    expect(authenticatedStart).toBeGreaterThanOrEqual(0)
+    expect(authenticatedEnd).toBeGreaterThan(authenticatedStart)
+    expect(authenticatedBlock).not.toContain('public.audit_events')
+    expect(privilegedAuditBlock).toContain('public.audit_events')
+    expect(privilegedAuditBlock).toContain("request_id = 'c1010000-0000-4000-8000-000000000753'")
+    expect(privilegedAuditBlock).toContain("C1_PC_PROVENANCE_AUDIT")
+    expect(privilegedAuditBlock).toContain("'sourceFigureIds'")
+  })
+
   it('adds cost.manage to the shared permission catalog', () => {
     expect(permissions).toContain("'cost.manage'")
   })
