@@ -39,5 +39,45 @@ const descriptionId = computed(() => props.error ? `${props.id}-error` : undefin
 </template>
 
 <style scoped>
-.password-field { display: grid; gap: 6px; }.password-field label { color: var(--forest-deep); font-size: .85rem; font-weight: 700; }.password-field__input { display: flex; border: 1px solid var(--line); background: white; }.password-field input { min-width: 0; flex: 1; min-height: 44px; padding: 9px 10px; border: 0; background: transparent; color: var(--ink); font: inherit; }.password-field button { min-width: 52px; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--forest); cursor: pointer; font: inherit; font-size: .8rem; font-weight: 700; }.password-field button:disabled { cursor: wait; opacity: .55; }.field-error { margin: 0; color: #a3442d; font-size: .8rem; }
+.password-field { display: grid; gap: 6px; }
+.password-field label { color: var(--color-text-primary); font-size: .85rem; font-weight: 650; }
+.password-field__input {
+  display: flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: white;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.password-field__input:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-box-shadow);
+}
+.password-field input {
+  min-width: 0;
+  flex: 1;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font: inherit;
+  outline: none;
+}
+.password-field button {
+  min-width: 52px;
+  border: 0;
+  border-left: 1px solid var(--color-border-light);
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: .8rem;
+  font-weight: 650;
+  transition: background-color 150ms ease;
+}
+.password-field button:hover:not(:disabled) {
+  background: var(--color-hover);
+}
+.password-field button:disabled { cursor: wait; opacity: .55; }
+.field-error { margin: 0; color: var(--color-danger); font-size: .8rem; }
 </style>

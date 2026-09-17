@@ -30,7 +30,7 @@ export default defineNuxtConfig({
           name: "description",
           content: PRODUCT_BRAND.description,
         },
-        { name: "theme-color", content: "#1A3C2B" },
+        { name: "theme-color", content: "#1d4ed8" },
       ],
     },
   },
