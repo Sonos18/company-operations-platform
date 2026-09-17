@@ -6,6 +6,9 @@ const root = resolve(import.meta.dirname, '../../..')
 const migrationName = /_c1_project_cost_items\.sql$/u
 const migrations = readdirSync(resolve(root, 'supabase/migrations')).filter(name => migrationName.test(name))
 const sql = migrations.length === 1 ? readFileSync(resolve(root, 'supabase/migrations', migrations[0]!), 'utf8') : ''
+const provenanceMigrationName = /_c1_project_cost_item_provenance_command\.sql$/u
+const provenanceMigrations = readdirSync(resolve(root, 'supabase/migrations')).filter(name => provenanceMigrationName.test(name))
+const provenanceSql = provenanceMigrations.length === 1 ? readFileSync(resolve(root, 'supabase/migrations', provenanceMigrations[0]!), 'utf8') : ''
 const permissions = readFileSync(resolve(root, 'shared/constants/permissions.ts'), 'utf8')
 const fixturePath = resolve(root, 'supabase/tests/database/c1/c1_project_cost_items.test.sql')
 const fixtureSql = existsSync(fixturePath) ? readFileSync(fixturePath, 'utf8').replace(/\r\n?/g, '\n').trim() : ''
@@ -13,6 +16,34 @@ const fixtureSql = existsSync(fixturePath) ? readFileSync(fixturePath, 'utf8').r
 describe('C1 Project Cost database foundation', () => {
   it('prepares exactly one forward Project Cost migration', () => {
     expect(migrations).toHaveLength(1)
+  })
+
+  it('prepares exactly one forward Project Cost provenance-command migration', () => {
+    expect(provenanceMigrations).toHaveLength(1)
+  })
+
+  it('extends only the private create command with optional scoped provenance input', () => {
+    expect(provenanceSql).toContain('create or replace function private.c1_create_project_cost_item(')
+    expect(provenanceSql).toContain('target_company_id uuid')
+    expect(provenanceSql).toContain('target_input jsonb')
+    expect(provenanceSql).toContain('target_idempotency_key uuid')
+    expect(provenanceSql).toContain('target_request_id uuid')
+    expect(provenanceSql).toContain("'sourceFigureIds'")
+    expect(provenanceSql).toContain('jsonb_typeof(target_input->\'sourceFigureIds\')')
+    expect(provenanceSql).toContain('jsonb_array_length(target_input->\'sourceFigureIds\') > 0')
+    expect(provenanceSql).toContain('jsonb_array_elements(target_input->\'sourceFigureIds\')')
+    expect(provenanceSql).toContain("message = 'INPUT_INVALID'")
+    expect(provenanceSql).toContain('public.source_reported_figures')
+    expect(provenanceSql).toContain('tenant_id = v_tenant_id')
+    expect(provenanceSql).toContain('company_id = target_company_id')
+    expect(provenanceSql).toContain("message = 'RESOURCE_NOT_FOUND'")
+    expect(provenanceSql).toContain('insert into public.project_cost_item_sources')
+    expect(provenanceSql).toContain("'sourceFigureIds'")
+    expect(provenanceSql).not.toMatch(/create function public\.c1_(?:create_project_cost_item_source|link_project_cost_source|attach_project_cost_source)/iu)
+  })
+
+  it('requires synthetic provenance command fixture assertions while preserving source-reuse and direct-write denial', () => {
+    for (const assertion of ['C1_PC_PROVENANCE_COMMAND', 'C1_PC_PROVENANCE_DUPLICATE_INPUT', 'C1_PC_PROVENANCE_SCOPE', 'C1_PC_PROVENANCE_IDEMPOTENT', 'C1_PC_F07_SOURCE_REUSE', 'C1_PC_SOURCE_DIRECT_ACL']) expect(fixtureSql).toContain(assertion)
   })
 
   it('adds cost.manage to the shared permission catalog', () => {

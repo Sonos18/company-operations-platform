@@ -4,7 +4,7 @@ import { createProjectCostRoutes } from '../../../server/features/costs/project-
 const { getHeader, getRouterParam, readBody } = vi.hoisted(() => ({ getHeader: vi.fn(), getRouterParam: vi.fn(), readBody: vi.fn() }))
 vi.mock('h3', async importOriginal => ({ ...await importOriginal<typeof import('h3')>(), getHeader, getRouterParam, readBody }))
 
-const ids = { companyId: 'c1010000-0000-4000-8000-000000000020', projectId: 'c1010000-0000-4000-8000-000000000101', itemId: 'c1010000-0000-4000-8000-000000000001', actorId: 'c1010000-0000-4000-8000-000000000902', tenantId: 'c1010000-0000-4000-8000-000000000010', requestId: 'c1010000-0000-4000-8000-000000000999', idempotencyKey: 'c1010000-0000-4000-8000-000000000998' }
+const ids = { companyId: 'c1010000-0000-4000-8000-000000000020', projectId: 'c1010000-0000-4000-8000-000000000101', itemId: 'c1010000-0000-4000-8000-000000000001', actorId: 'c1010000-0000-4000-8000-000000000902', tenantId: 'c1010000-0000-4000-8000-000000000010', requestId: 'c1010000-0000-4000-8000-000000000999', idempotencyKey: 'c1010000-0000-4000-8000-000000000998', sourceFigure1: 'c1010000-0000-4000-8000-000000000604', sourceFigure2: 'c1010000-0000-4000-8000-000000000605' }
 const trustedContext = { actorId: ids.actorId, tenantId: ids.tenantId, companyId: ids.companyId, permissions: ['cost.read', 'cost.manage', 'cost.correct'], requestId: ids.requestId }
 const createInput = { projectId: ids.projectId, description: 'Synthetic', amount: '1.00', currencyCode: 'VND', workStatus: 'unknown', nonOverlapConfirmationReference: 'confirmed' }
 
@@ -58,6 +58,22 @@ describe('Project Cost routes', () => {
 
     await expect(value.routes.create({} as never)).resolves.toMatchObject({ id: ids.itemId })
     expect(service.create).toHaveBeenCalledWith(trustedContext, createInput, ids.idempotencyKey)
+  })
+
+  it('preserves valid source figure provenance IDs through strict POST parsing', async () => {
+    const input = { ...createInput, sourceFigureIds: [ids.sourceFigure1, ids.sourceFigure2] }
+    readBody.mockResolvedValue(input)
+    const service = { create: vi.fn().mockResolvedValue({ id: ids.itemId, version: 0, replayed: false }) }
+
+    await route(service).routes.create({} as never)
+    expect(service.create).toHaveBeenCalledWith(trustedContext, input, ids.idempotencyKey)
+  })
+
+  it.each([{ sourceFigureIds: [] }, { sourceFigureIds: [ids.sourceFigure1, ids.sourceFigure1] }])('rejects invalid source figure provenance arrays without creating', ({ sourceFigureIds }) => {
+    readBody.mockResolvedValue({ ...createInput, sourceFigureIds })
+    const service = { create: vi.fn() }
+
+    return expect(route(service).routes.create({} as never)).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' }).then(() => expect(service.create).not.toHaveBeenCalled())
   })
 
   it.each([undefined, 'not-a-uuid'])('rejects invalid idempotency key %s without creating', async key => {

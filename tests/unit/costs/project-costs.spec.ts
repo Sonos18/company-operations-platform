@@ -16,6 +16,8 @@ const ids = {
   party: 'c1000000-0000-4000-8000-000000000005',
   engagement: 'c1000000-0000-4000-8000-000000000006',
   component: 'c1000000-0000-4000-8000-000000000007',
+  sourceFigure1: 'c1000000-0000-4000-8000-000000000008',
+  sourceFigure2: 'c1000000-0000-4000-8000-000000000009',
 }
 
 const createInput = {
@@ -73,6 +75,22 @@ describe('project cost contracts', () => {
       componentId: ids.component,
       relevantDate: '2026-09-16',
     }).success).toBe(true)
+  })
+
+  it('accepts optional unique source figure provenance IDs without exposing them on items', () => {
+    expect(createProjectCostItemInputSchema.safeParse({ ...createInput, sourceFigureIds: [ids.sourceFigure1, ids.sourceFigure2] }).success).toBe(true)
+    expect(createProjectCostItemInputSchema.safeParse(createInput).success).toBe(true)
+    expect(projectCostItemSchema.safeParse({
+      id: ids.item, tenantId: ids.tenant, companyId: ids.company, projectId: ids.project,
+      description: createInput.description, amount: createInput.amount, currencyCode: createInput.currencyCode,
+      workStatus: createInput.workStatus, businessReference: null, partyId: null, engagementId: null,
+      componentId: null, relevantDate: null, version: 0, createdAt: '2026-09-16T00:00:00.000Z',
+      updatedAt: '2026-09-16T00:00:00.000Z', sourceFigureIds: [ids.sourceFigure1],
+    }).success).toBe(false)
+  })
+
+  it.each([{ sourceFigureIds: [] }, { sourceFigureIds: ['not-a-uuid'] }, { sourceFigureIds: [ids.sourceFigure1, ids.sourceFigure1] }])('rejects invalid source figure provenance IDs: $sourceFigureIds', ({ sourceFigureIds }) => {
+    expect(createProjectCostItemInputSchema.safeParse({ ...createInput, sourceFigureIds }).success).toBe(false)
   })
 
   it('requires a non-overlap confirmation reference when creating an item', () => {

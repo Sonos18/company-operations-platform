@@ -140,6 +140,24 @@ describe('Project Cost service', () => {
     expect(repository.create).toHaveBeenCalledOnce()
   })
 
+  it('passes valid source figure provenance IDs unchanged to the guarded create repository', async () => {
+    const repository = { create: vi.fn().mockResolvedValue({ id: 'c1010000-0000-4000-8000-000000000001', version: 0, replayed: false }) }
+    const service = new ProjectCostService(repository as never)
+    const input = { ...createInput, sourceFigureIds: ['c1010000-0000-4000-8000-000000000604', 'c1010000-0000-4000-8000-000000000605'] }
+
+    await service.create(context(['cost.manage']), input, 'c1010000-0000-4000-8000-000000000998')
+    expect(repository.create).toHaveBeenCalledWith(context(['cost.manage']), input, 'c1010000-0000-4000-8000-000000000998')
+  })
+
+  it('rejects duplicate source figure provenance IDs before repository invocation', async () => {
+    const repository = { create: vi.fn() }
+    const service = new ProjectCostService(repository as never)
+    const sourceFigureId = 'c1010000-0000-4000-8000-000000000604'
+
+    await expect(service.create(context(['cost.manage']), { ...createInput, sourceFigureIds: [sourceFigureId, sourceFigureId] }, 'c1010000-0000-4000-8000-000000000998')).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' })
+    expect(repository.create).not.toHaveBeenCalled()
+  })
+
   it('requires cost.manage for ordinary updates and cost.correct for corrections', async () => {
     const repository = { update: vi.fn().mockResolvedValue({ id: 'c1010000-0000-4000-8000-000000000001', version: 1 }) }
     const service = new ProjectCostService(repository as never)

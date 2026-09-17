@@ -7,6 +7,7 @@ const text = z.string().trim().min(1)
 const version = z.number().int().nonnegative()
 const currencyCode = z.string().trim().length(3)
 const relevantDate = z.string().date()
+const sourceFigureIds = z.array(uuid).min(1).refine(ids => new Set(ids).size === ids.length, 'source figure IDs must be unique')
 
 export const projectCostWorkStatusSchema = z.enum(['unknown', 'in_progress', 'accepted'])
 
@@ -25,6 +26,7 @@ const projectCostItemFieldsSchema = z.object({
 export const createProjectCostItemInputSchema = projectCostItemFieldsSchema.extend({
   projectId: uuid,
   nonOverlapConfirmationReference: text,
+  sourceFigureIds: sourceFigureIds.optional(),
 }).strict()
 
 export const updateProjectCostItemInputSchema = z.object({
