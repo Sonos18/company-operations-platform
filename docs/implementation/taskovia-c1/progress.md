@@ -10,7 +10,7 @@ The historical phase ledger and plans below are retained unchanged. The active P
 
 Both advisors exited 0 with no error-level finding. Security reported 19 warnings, including three Project Cost public SECURITY DEFINER RPC warnings accepted as known architecture behavior for this gate; performance reported one unrelated `workflow_definition_snapshots` warning. Focused local verification passed 131 tests with zero failures, typecheck, lint, and `git diff --check`. The [Gate D phase report](phase-reports/p3r-gate-d-cloud-verification.md) records the warning rationale and resolved fixture blockers.
 
-Gate E candidate confirmation is **NOT STARTED**; no real VQH Project Cost data has been loaded or mutated. Gate F, Gate G, and Gate H remain later P3R work. The original C1 phase ledger below is a historical record and does not set the current P3R gate status.
+Gate E business confirmation is **VQH_BUSINESS_APPROVED**; the [VQH Project Cost confirmation packet](p3r-vqh-project-cost-confirmation-packet.md) records nine approved logical, non-overlapping management Project Cost items. Eo Gió has five `in_progress` items totaling `5641725896` VND. Yong Mei has four `accepted` items totaling `242562376` VND. Real VQH Project Cost load is **NOT EXECUTED** and **NOT AUTHORIZED**. Gate F is not started and remains aggregation/API hardening; Gate G and Gate H remain later P3R work. The original C1 phase ledger below is a historical record and does not set the current P3R gate status.
 
 ## Control Record
 
@@ -24,7 +24,7 @@ Gate E candidate confirmation is **NOT STARTED**; no real VQH Project Cost data 
 | Historical P1 Cloud DEV migration inspection | 33 source migrations / 33 applied migrations; P1 foundation applied in the authorized P1.4B run |
 | Runtime used for P0.5/P0.6 verification | Node `v24.19.0`, pnpm `10.29.3` |
 | Current C1 branch | `main` (active P3R execution track) |
-| Active P3R execution status | Gate D complete with accepted known advisor warning; Gate E not started; no real VQH Project Cost load |
+| Active P3R execution status | Gate D complete with accepted known advisor warning; Gate E business confirmation approved for nine items; real VQH Project Cost load not executed or authorized; Gate F aggregation/API hardening not started |
 | Historical original C1 status snapshot | P1 complete; P2.0 accepted; P2.1 frozen; P2.3 Cloud fixtures accepted; focused workbook-family adapter plus offline/guarded execution/reconciliation commands implemented and real workbooks verified offline; final command-path Cloud evidence, concurrency, and P2.4 authorization remained, so P2 was partial; P3–P6 were not started in that snapshot |
 
 ## P0 Result
