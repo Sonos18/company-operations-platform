@@ -47,7 +47,7 @@ watch([projectId, () => companyAccess.activeCompanyId], () => load(), { immediat
 
 <template>
   <section class="cost-detail" data-testid="cost-project-detail">
-    <NuxtLink class="back-link" to="/costs"><UIcon name="i-lucide-arrow-left" aria-hidden="true" /> Dữ liệu nguồn chi phí</NuxtLink>
+    <NuxtLink class="back-link" to="/costs/sources"><UIcon name="i-lucide-arrow-left" aria-hidden="true" /> Dữ liệu nguồn chi phí</NuxtLink>
     <header class="detail-heading glass-panel"><div><p class="eyebrow">Project · source view</p><h1>{{ detail?.project?.name ?? 'Dữ liệu nguồn của dự án' }}</h1><p>Số liệu từ hồ sơ kế toán — chưa xác nhận tài chính</p></div><span v-if="detail" class="issue-count">{{ detail.engagements.length }} liên kết nhà thầu</span></header>
     <div v-if="status === 'loading'" class="state-panel" aria-live="polite">Đang tải dữ liệu nguồn…</div>
     <div v-else-if="status === 'module'" class="state-panel"><h2>Chưa bật dữ liệu nguồn</h2><p>Module nguồn chi phí chưa được bật cho công ty này.</p></div>

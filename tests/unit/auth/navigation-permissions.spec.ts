@@ -30,6 +30,15 @@ describe('navigation permissions', () => {
 
     expect(filterNavigationLinks(canonicalNavigationLinks, accessFor(['opportunity.read'])).map(link => link.to))
       .toEqual(['/opportunities'])
+
+    expect(filterNavigationLinks(canonicalNavigationLinks, accessFor(['cost.read'])).map(link => link.to))
+      .toEqual(['/costs'])
+
+    expect(filterNavigationLinks(canonicalNavigationLinks, accessFor(['cost.source.read'])).map(link => link.to))
+      .toEqual(['/costs/sources'])
+
+    expect(filterNavigationLinks(canonicalNavigationLinks, accessFor(['cost.read', 'cost.source.read'])).map(link => link.to))
+      .toEqual(['/costs', '/costs/sources'])
   })
 
   it('exposes the Stage 01 configuration admin link only to users with its read permission', () => {
@@ -48,7 +57,8 @@ describe('navigation permissions', () => {
       { to: '/my-work', label: 'Công việc của tôi', icon: 'i-lucide-circle-check-big', requiredPermission: 'task.read_assigned' },
       { to: '/employees', label: 'Nhân sự', icon: 'i-lucide-users-round', requiredAnyPermissions: ['employee.read_directory', 'employee.read_all'] },
       { to: '/opportunities', label: 'Cơ hội', icon: 'i-lucide-target', requiredPermission: 'opportunity.read' },
-      { to: '/costs', label: 'Nguồn chi phí', icon: 'i-lucide-database-zap', requiredPermission: 'cost.source.read' },
+      { to: '/costs', label: 'Chi phí dự án', icon: 'i-lucide-receipt', requiredPermission: 'cost.read' },
+      { to: '/costs/sources', label: 'Nguồn chi phí', icon: 'i-lucide-database-zap', requiredPermission: 'cost.source.read' },
     ])
   })
 

@@ -23,7 +23,8 @@ export const canonicalNavigationLinks: readonly NavigationLink[] = [
     requiredAnyPermissions: ['employee.read_directory', 'employee.read_all'],
   },
   { to: '/opportunities', label: 'Cơ hội', icon: 'i-lucide-target', requiredPermission: 'opportunity.read' },
-  { to: '/costs', label: 'Nguồn chi phí', icon: 'i-lucide-database-zap', requiredPermission: 'cost.source.read' },
+  { to: '/costs', label: 'Chi phí dự án', icon: 'i-lucide-receipt', requiredPermission: 'cost.read' },
+  { to: '/costs/sources', label: 'Nguồn chi phí', icon: 'i-lucide-database-zap', requiredPermission: 'cost.source.read' },
 ]
 
 export const canonicalAdminLinks: readonly NavigationLink[] = [
