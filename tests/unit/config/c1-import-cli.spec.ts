@@ -29,6 +29,22 @@ describe('C1 import CLI', () => {
     expect(invalid.status).not.toBe(0)
   })
 
+  it('dispatches help and invalid commands without the workbook processor', async () => {
+    const adapter = '../../../server/features/costs/imports/vqh-workbook-family-adapter'
+    vi.resetModules()
+    vi.doMock(adapter, () => { throw new Error('WORKBOOK_PROCESSOR_LOADED') })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    try {
+      const { run: isolatedRun } = await import('../../../scripts/c1-import')
+      await expect(isolatedRun(['--help'])).resolves.toBeUndefined()
+      await expect(isolatedRun(['invalid'])).rejects.toThrow('UNKNOWN_COMMAND:invalid')
+    } finally {
+      log.mockRestore()
+      vi.doUnmock(adapter)
+      vi.resetModules()
+    }
+  })
+
   it('has no side effects when imported', () => {
     const cli = resolve(process.cwd(), 'scripts/c1-import.ts')
     const imported = spawnSync(process.execPath, ['--import', 'tsx', '--eval', `import(${JSON.stringify(pathToFileURL(cli).href)}).then(() => console.log('IMPORTED'))`], { encoding: 'utf8' })

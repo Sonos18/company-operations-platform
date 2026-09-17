@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { CANONICAL_DEV_PROJECT_REF } from './assert-cloud-dev-target.mjs'
 import { apiErrorBodySchema, type ApiErrorCode } from '../shared/schemas/api-error'
 import { ControlledImportCommandError, controlledImportExecutionPacketSchema, createControlledImportCommand, validateControlledImportDestination } from '../server/features/costs/imports/controlled-import.command'
-import { prepareVqhWorkbookImport } from '../server/features/costs/imports/vqh-workbook-family-adapter'
+import type { prepareVqhWorkbookImport } from '../server/features/costs/imports/vqh-workbook-family-adapter'
 
 const help = `Taskovia C1 controlled import\n\nprepare --manifest <json> --digest <sha256> --company <uuid> --bind <fileIdentity=path>... --output <dir>\nexecute --packet <json> --preparation <json> --bind <fileIdentity=path>... --endpoint <https-url> --access-token-env <name> --execute --output <dir>\nget-result --packet <json> --endpoint <https-url> --access-token-env <name> --output <dir>`
 function option(args: string[], name: string) { const index = args.indexOf(name); return index < 0 ? undefined : args[index + 1] }
@@ -55,11 +55,14 @@ function httpTransport(endpoint: string, token: string, fetcher: typeof fetch) {
   return { persist: (companyId: string, requestBody: unknown) => request(`/api/companies/${companyId}/controlled-imports`, { method: 'POST', body: JSON.stringify(requestBody) }), get: (companyId: string, runId: string) => request(`/api/companies/${companyId}/controlled-imports/${runId}`) }
 }
 
-export async function run(argv = process.argv.slice(2), dependencies: { env: Record<string, string | undefined>; fetch: typeof fetch; prepare: typeof prepareVqhWorkbookImport; evidence?: typeof fileEvidence } = { env: process.env, fetch: globalThis.fetch, prepare: prepareVqhWorkbookImport }) {
+type Dependencies = { env: Record<string, string | undefined>; fetch: typeof fetch; prepare?: typeof prepareVqhWorkbookImport; evidence?: typeof fileEvidence }
+async function prepare(dependencies: Dependencies) { return dependencies.prepare ?? (await import('../server/features/costs/imports/vqh-workbook-family-adapter')).prepareVqhWorkbookImport }
+
+export async function run(argv = process.argv.slice(2), dependencies: Dependencies = { env: process.env, fetch: globalThis.fetch }) {
   if (argv.length === 0 || argv.includes('--help')) { console.log(help); return }
   const mode = argv[0]
   if (mode === 'prepare') {
-    const result = await prepareVqhWorkbookImport({ manifest: json(required(argv, '--manifest')), approvedManifestDigest: required(argv, '--digest'), targetCompanyId: required(argv, '--company'), bindings: bindings(argv), outputDirectory: resolve(required(argv, '--output')) })
+    const result = await (await prepare(dependencies))({ manifest: json(required(argv, '--manifest')), approvedManifestDigest: required(argv, '--digest'), targetCompanyId: required(argv, '--company'), bindings: bindings(argv), outputDirectory: resolve(required(argv, '--output')) })
     console.log(JSON.stringify({ manifestDigest: result.manifestDigest, counts: result.counts, unresolved: result.unresolved, provenance: result.provenance }))
     return
   }
@@ -79,7 +82,7 @@ export async function run(argv = process.argv.slice(2), dependencies: { env: Rec
     try {
       if (mode === 'execute') {
         const saved = json(required(argv, '--preparation'))
-        const fresh = await dependencies.prepare({ manifest: saved.manifest, approvedManifestDigest: packet.manifestDigest, targetCompanyId: packet.companyId, bindings: bindings(argv), outputDirectory: resolve(outputDirectory, 'pre-dispatch') })
+        const fresh = await (await prepare(dependencies))({ manifest: saved.manifest, approvedManifestDigest: packet.manifestDigest, targetCompanyId: packet.companyId, bindings: bindings(argv), outputDirectory: resolve(outputDirectory, 'pre-dispatch') })
         result = await command.execute({ execute: argv.includes('--execute'), packet, preparation: fresh, beforeDispatch: ({ requestDigest }) => evidence.open(outputDirectory, { schemaVersion: 1, attemptId, status: 'LAUNCH_INTENDED', serverExecutionProven: false, operation: { runId: packet.runId, idempotencyKey: packet.idempotencyKey, authorizationReference: packet.authorizationReference, manifestDigest: packet.manifestDigest, inputDigests: packet.inputDigests, requestDigest }, destination: packet.destination }) })
       } else {
         evidence.open(outputDirectory, { schemaVersion: 1, attemptId, status: 'RECONCILIATION_INTENDED', serverExecutionProven: false, operation: { runId: packet.runId, idempotencyKey: packet.idempotencyKey }, destination: packet.destination })
