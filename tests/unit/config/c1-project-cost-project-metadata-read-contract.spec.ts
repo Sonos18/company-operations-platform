@@ -22,6 +22,7 @@ describe('C1 Project Cost Project metadata read contract', () => {
     expect(sql).toContain('project.tenant_id = v_tenant_id')
     expect(sql).toContain('project.company_id = target_company_id')
     expect(sql).toContain('project.id = any(target_project_ids)')
+    expect(sql).toMatch(/and exists \(\s*select 1\s*from public\.project_cost_items cost_item\s*where cost_item\.tenant_id = v_tenant_id\s*and cost_item\.company_id = target_company_id\s*and cost_item\.project_id = project\.id/iu)
     expect(sql).toContain("jsonb_build_object('projectId', project.id, 'projectCode', project.code, 'projectName', project.name)")
   })
 
@@ -47,6 +48,6 @@ describe('C1 Project Cost Project metadata read contract', () => {
 
     expect(fixture).toMatch(/^begin\s*;/iu)
     expect(fixture).toMatch(/rollback\s*;$/iu)
-    for (const assertion of ['C1_PC_METADATA_ANON_RPC', 'C1_PC_METADATA_SCOPE', 'C1_PC_METADATA_MINIMIZATION', 'C1_PC_METADATA_PROJECT_RLS', 'C1_PC_METADATA_PERMISSION']) expect(fixture).toContain(assertion)
+    for (const assertion of ['C1_PC_METADATA_ANON_RPC', 'C1_PC_METADATA_SCOPE', 'C1_PC_METADATA_NO_COST_PROJECT', 'C1_PC_METADATA_MINIMIZATION', 'C1_PC_METADATA_PROJECT_RLS', 'C1_PC_METADATA_PERMISSION']) expect(fixture).toContain(assertion)
   })
 })

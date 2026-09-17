@@ -48,6 +48,7 @@ begin
   insert into public.projects(id, tenant_id, company_id, code, name, origin, created_by) values
     ('c1010000-0000-4000-8000-000000000101', tenant_a, company_a, 'C101-P1', 'C101 project one', 'manual', manager),
     ('c1010000-0000-4000-8000-000000000102', tenant_a, company_a, 'C101-P2', 'C101 project two', 'manual', manager),
+    ('c1010000-0000-4000-8000-000000000105', tenant_a, company_a, 'C101-P5', 'C101 project without costs', 'manual', manager),
     ('c1010000-0000-4000-8000-000000000104', tenant_a, company_disabled, 'C101-P4', 'C101 disabled project', 'manual', manager),
     ('c1010000-0000-4000-8000-000000000103', tenant_b, company_b, 'C101-P3', 'C101 project foreign', 'manual', manager);
   insert into public.business_parties(id, tenant_id, company_id, code, display_name, party_kind, created_by) values
@@ -224,8 +225,9 @@ declare metadata jsonb;
 begin
   if (select count(*) from public.project_cost_items where company_id = 'c1010000-0000-4000-8000-000000000020') < 2 then raise exception 'C1_PC_READ reader cannot read scoped items'; end if;
   if (select count(*) from public.project_cost_items where company_id = 'c1010000-0000-4000-8000-000000000022') <> 0 then raise exception 'C1_PC_READ reader saw foreign company'; end if;
-  select public.c1_read_project_cost_project_metadata('c1010000-0000-4000-8000-000000000020', array['c1010000-0000-4000-8000-000000000101'::uuid, 'c1010000-0000-4000-8000-000000000104'::uuid, 'c1010000-0000-4000-8000-000000000103'::uuid]) into metadata;
+  select public.c1_read_project_cost_project_metadata('c1010000-0000-4000-8000-000000000020', array['c1010000-0000-4000-8000-000000000101'::uuid, 'c1010000-0000-4000-8000-000000000105'::uuid, 'c1010000-0000-4000-8000-000000000104'::uuid, 'c1010000-0000-4000-8000-000000000103'::uuid]) into metadata;
   if metadata <> jsonb_build_array(jsonb_build_object('projectId', 'c1010000-0000-4000-8000-000000000101'::uuid, 'projectCode', 'C101-P1', 'projectName', 'C101 project one')) then raise exception 'C1_PC_METADATA_SCOPE cost reader metadata result invalid'; end if;
+  if metadata @> jsonb_build_array(jsonb_build_object('projectId', 'c1010000-0000-4000-8000-000000000105'::uuid)) then raise exception 'C1_PC_METADATA_NO_COST_PROJECT cost reader saw Project without Project Cost'; end if;
   if (select array_agg(key order by key) from jsonb_object_keys(metadata->0) key) <> array['projectCode','projectId','projectName'] then raise exception 'C1_PC_METADATA_MINIMIZATION metadata output fields widened'; end if;
   if exists (select 1 from public.projects where company_id = 'c1010000-0000-4000-8000-000000000020') then raise exception 'C1_PC_METADATA_PROJECT_RLS cost reader gained direct Project Register read'; end if;
   begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', '{}'::jsonb, 'c1010000-0000-4000-8000-000000000729', 'c1010000-0000-4000-8000-000000000730'); raise exception 'C1_PC_PERMISSION_BOUNDARY reader created'; exception when sqlstate 'P0001' then if sqlerrm <> 'PERMISSION_DENIED' then raise; end if; end;

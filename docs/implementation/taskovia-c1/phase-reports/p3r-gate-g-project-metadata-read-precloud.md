@@ -16,6 +16,11 @@ security:
   projects_rls_changed: false
   rbac_changed: false
 
+least_privilege_hardening:
+  same_company_project_without_project_cost_excluded: true
+  projects_rls_changed: false
+  rbac_changed: false
+
 cloud:
   applied: false
   queries: 0
@@ -31,3 +36,8 @@ The static and rollback-safe synthetic contracts cover public-wrapper access,
 private execute denial, unchanged direct Projects RLS, denied actors,
 tenant/company filtering, and output minimization. This checkpoint changes no
 application TypeScript contract and does not apply the migration to Cloud DEV.
+
+Pre-Cloud review additionally required the projection to correlate every
+returned Project with an in-scope `project_cost_items` row. The synthetic
+fixture now includes a same-company Project without Project Cost records and
+asserts that its metadata is excluded.

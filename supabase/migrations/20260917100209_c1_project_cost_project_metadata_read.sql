@@ -30,7 +30,14 @@ begin
   from public.projects project
   where project.tenant_id = v_tenant_id
     and project.company_id = target_company_id
-    and project.id = any(target_project_ids);
+    and project.id = any(target_project_ids)
+    and exists (
+      select 1
+      from public.project_cost_items cost_item
+      where cost_item.tenant_id = v_tenant_id
+        and cost_item.company_id = target_company_id
+        and cost_item.project_id = project.id
+    );
 
   return v_result;
 end;
