@@ -12,7 +12,7 @@ Both advisors exited 0 with no error-level finding. Security reported 19 warning
 
 Gate E business confirmation is **VQH_BUSINESS_APPROVED**; the original deterministic [execution packet v1](phase-reports/p3r-gate-e-vqh-project-cost-execution-packet.md) remains **SUPERSEDED_FOR_EXECUTION_ACTOR** and the accountant-pinned [execution packet v2](phase-reports/p3r-gate-e-vqh-project-cost-execution-packet-v2.md) executed successfully. The [real VQH load report](phase-reports/p3r-gate-e-vqh-project-cost-real-load.md) records nine Project Cost items, 15 provenance links, nine create receipts, nine audit events, and exact Eo Gió/Yong Mei aggregate reconciliation. Gate E real VQH Project Cost load is **COMPLETE**. Gate F is **NOT STARTED** and **NOT AUTHORIZED**; Gate G and Gate H remain later P3R work. The original C1 phase ledger below is a historical record and does not set the current P3R gate status.
 
-Post-Gate-E RBAC hardening is [PRE_CLOUD_READY / NOT_APPLIED](phase-reports/p3r-post-gate-e-rbac-hardening-precloud.md): the forward migration adds `cost.read` to canonical `accountant` and narrows `c1_vqh_cost_operator` to `cost.manage` plus `cost.correct`. Gate E remains **COMPLETE** and Gate F remains **NOT STARTED / NOT AUTHORIZED**.
+Post-Gate-E [RBAC hardening is COMPLETE](phase-reports/p3r-post-gate-e-rbac-hardening-cloud.md): canonical `accountant` has `cost.read` and `c1_vqh_cost_operator` has only `cost.manage` plus `cost.correct`. Gate E remains **COMPLETE** and Gate F remains **NOT STARTED / NOT AUTHORIZED**.
 
 ## Control Record
 

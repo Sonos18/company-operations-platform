@@ -11,7 +11,7 @@ Active P3R Gate D is `P3R_GATE_D_COMPLETE_WITH_ACCEPTED_ADVISOR_WARNING`; see th
 
 Both Gate D advisors exited 0 with no error-level findings; focused local verification passed 131 tests, typecheck, lint, and diff-check. Three Project Cost public SECURITY DEFINER RPC warnings were accepted as known architecture warnings for this gate, not marked fixed or globally resolved. Gate E VQH business confirmation and the accountant-pinned [execution packet v2](phase-reports/p3r-gate-e-vqh-project-cost-execution-packet-v2.md) are **PASS**. The [real VQH load](phase-reports/p3r-gate-e-vqh-project-cost-real-load.md) created exactly nine non-overlapping Project Cost items with 15 provenance links, nine command receipts, nine audit events, and the approved Eo Gió/Yong Mei aggregates. Packet v1 remains **SUPERSEDED_FOR_EXECUTION_ACTOR**. Gate F aggregation/API hardening, Gate G Director Project Cost UI, and Gate H acceptance remain unstarted and unauthorized. This overlay does not promote unrelated historical A01–A62, I01–I24, or financial arithmetic rows to final PASS.
 
-The post-Gate-E [RBAC hardening candidate](phase-reports/p3r-post-gate-e-rbac-hardening-precloud.md) is **PRE_CLOUD_READY / NOT_APPLIED**. It is not Gate F work and does not change the completed Gate E data; separate Cloud DEV authorization is required before application.
+Post-Gate-E [RBAC hardening is COMPLETE](phase-reports/p3r-post-gate-e-rbac-hardening-cloud.md): canonical accountant read access and the narrowed dedicated operator capability were verified against Cloud DEV without changing Gate E data. It is not Gate F work; Gate F remains not started and unauthorized.
 
 ## Evidence Rule
 
