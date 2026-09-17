@@ -80,6 +80,15 @@ describe('C1 Project Cost database foundation', () => {
     for (const character of digestCharacters) expect(character).toMatch(/^[a-f0-9]$/u)
   })
 
+  it('scopes F07 source-reuse cardinality to its two intended Project Cost items', () => {
+    const start = fixtureSql.indexOf("figure_id := 'c1010000-0000-4000-8000-000000000604'")
+    const f07 = fixtureSql.slice(start, fixtureSql.indexOf('C1_PC_AUDIT_HISTORY', start))
+
+    expect(f07).not.toContain('where source_reported_figure_id = figure_id) <> 2')
+    expect(f07).toMatch(/source_reported_figure_id = figure_id[\s\S]*?project_cost_item_id in \(item_a, item_b\)[\s\S]*?<> 2/iu)
+    expect(f07).toContain('C1_PC_F07_SOURCE_REUSE')
+  })
+
   it('verifies provenance audit only after the authenticated provenance command block resets role', () => {
     const provenanceItemIndex = fixtureSql.indexOf("description','C101 provenance item'")
     const authenticatedStart = fixtureSql.lastIndexOf('set local role authenticated;', provenanceItemIndex)

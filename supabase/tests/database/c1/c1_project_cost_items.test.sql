@@ -255,7 +255,8 @@ begin
   insert into public.project_cost_item_sources(tenant_id, company_id, project_cost_item_id, source_reported_figure_id) values ('c1010000-0000-4000-8000-000000000010','c1010000-0000-4000-8000-000000000020',item_a,figure_id);
   begin insert into public.project_cost_item_sources(tenant_id, company_id, project_cost_item_id, source_reported_figure_id) values ('c1010000-0000-4000-8000-000000000010','c1010000-0000-4000-8000-000000000020',item_a,figure_id); raise exception 'C1_PC_F07_SOURCE_REUSE duplicate pair accepted'; exception when unique_violation then null; end;
   insert into public.project_cost_item_sources(tenant_id, company_id, project_cost_item_id, source_reported_figure_id) values ('c1010000-0000-4000-8000-000000000010','c1010000-0000-4000-8000-000000000020',item_b,figure_id);
-  if (select count(*) from public.project_cost_item_sources where source_reported_figure_id = figure_id) <> 2 then raise exception 'C1_PC_F07_SOURCE_REUSE source reuse rejected'; end if;
+  if (select count(*) from public.project_cost_item_sources where source_reported_figure_id = figure_id and project_cost_item_id in (item_a, item_b)) <> 2 then raise exception 'C1_PC_F07_SOURCE_REUSE source reuse rejected'; end if;
+  raise notice 'C1_PC_F07_SOURCE_REUSE';
   if not exists (select 1 from public.audit_events where resource_type = 'project_cost_item' and action = 'c1.project_cost_item.created' and after_summary ? 'nonOverlapConfirmationReference') or not exists (select 1 from public.audit_events where resource_type = 'project_cost_item' and action = 'c1.project_cost_item.updated' and before_summary is not null and after_summary is not null) or not exists (select 1 from public.audit_events where resource_type = 'project_cost_item' and action = 'c1.project_cost_item.corrected' and after_summary ? 'reason') then raise exception 'C1_PC_AUDIT_HISTORY missing command audit'; end if;
 end;
 $$;
