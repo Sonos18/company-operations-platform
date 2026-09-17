@@ -147,7 +147,7 @@ begin
     raise exception 'C1_PC_PROVENANCE_DUPLICATE_INPUT duplicate source IDs accepted';
   exception when sqlstate 'P0001' then if sqlerrm <> 'INPUT_INVALID' then raise; end if;
   end;
-  if exists (select 1 from public.project_cost_items where description = 'C101 provenance duplicate input') or exists (select 1 from public.cost_command_receipts where idempotency_key = 'c1010000-0000-4000-8000-000000000754') then raise exception 'C1_PC_PROVENANCE_DUPLICATE_INPUT failed create residue'; end if;
+  if exists (select 1 from public.project_cost_items where description = 'C101 provenance duplicate input') then raise exception 'C1_PC_PROVENANCE_DUPLICATE_INPUT failed create residue'; end if;
   raise notice 'C1_PC_PROVENANCE_DUPLICATE_INPUT';
 
   begin
@@ -155,7 +155,7 @@ begin
     raise exception 'C1_PC_PROVENANCE_INVALID_SHAPE scalar source IDs accepted';
   exception when sqlstate 'P0001' then if sqlerrm <> 'INPUT_INVALID' then raise; end if;
   end;
-  if exists (select 1 from public.project_cost_items where description = 'C101 provenance invalid shape') or exists (select 1 from public.cost_command_receipts where idempotency_key = 'c1010000-0000-4000-8000-000000000762') or exists (select 1 from public.project_cost_item_sources link join public.project_cost_items item on item.id = link.project_cost_item_id where item.description = 'C101 provenance invalid shape') then raise exception 'C1_PC_PROVENANCE_INVALID_SHAPE failed create residue'; end if;
+  if exists (select 1 from public.project_cost_items where description = 'C101 provenance invalid shape') or exists (select 1 from public.project_cost_item_sources link join public.project_cost_items item on item.id = link.project_cost_item_id where item.description = 'C101 provenance invalid shape') then raise exception 'C1_PC_PROVENANCE_INVALID_SHAPE failed create residue'; end if;
   raise notice 'C1_PC_PROVENANCE_INVALID_SHAPE';
 
   begin
@@ -163,7 +163,7 @@ begin
     raise exception 'C1_PC_PROVENANCE_INVALID_UUID malformed source ID accepted';
   exception when sqlstate 'P0001' then if sqlerrm <> 'INPUT_INVALID' then raise; end if;
   end;
-  if exists (select 1 from public.project_cost_items where description = 'C101 provenance invalid UUID') or exists (select 1 from public.cost_command_receipts where idempotency_key = 'c1010000-0000-4000-8000-000000000764') or exists (select 1 from public.project_cost_item_sources link join public.project_cost_items item on item.id = link.project_cost_item_id where item.description = 'C101 provenance invalid UUID') then raise exception 'C1_PC_PROVENANCE_INVALID_UUID failed create residue'; end if;
+  if exists (select 1 from public.project_cost_items where description = 'C101 provenance invalid UUID') or exists (select 1 from public.project_cost_item_sources link join public.project_cost_items item on item.id = link.project_cost_item_id where item.description = 'C101 provenance invalid UUID') then raise exception 'C1_PC_PROVENANCE_INVALID_UUID failed create residue'; end if;
   raise notice 'C1_PC_PROVENANCE_INVALID_UUID';
 
   begin
@@ -171,7 +171,7 @@ begin
     raise exception 'C1_PC_PROVENANCE_SCOPE foreign source accepted';
   exception when sqlstate 'P0001' then if sqlerrm <> 'RESOURCE_NOT_FOUND' then raise; end if;
   end;
-  if exists (select 1 from public.project_cost_items where description = 'C101 provenance foreign source') or exists (select 1 from public.cost_command_receipts where idempotency_key = 'c1010000-0000-4000-8000-000000000756') then raise exception 'C1_PC_PROVENANCE_SCOPE failed create residue'; end if;
+  if exists (select 1 from public.project_cost_items where description = 'C101 provenance foreign source') then raise exception 'C1_PC_PROVENANCE_SCOPE failed create residue'; end if;
   raise notice 'C1_PC_PROVENANCE_SCOPE';
 
   select public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 provenance item','amount','4.0000','currencyCode','VND','workStatus','in_progress','nonOverlapConfirmationReference','C101-provenance','sourceFigureIds',jsonb_build_array('c1010000-0000-4000-8000-000000000604','c1010000-0000-4000-8000-000000000605')), 'c1010000-0000-4000-8000-000000000752', 'c1010000-0000-4000-8000-000000000758') into provenance_replay;
@@ -195,6 +195,8 @@ begin
   select id into provenance_item_id from public.project_cost_items where description = 'C101 provenance item';
   if provenance_item_id is null or not exists (select 1 from public.audit_events where resource_type = 'project_cost_item' and action = 'c1.project_cost_item.created' and request_id = 'c1010000-0000-4000-8000-000000000753' and resource_id = provenance_item_id::text and after_summary->'sourceFigureIds' = jsonb_build_array('c1010000-0000-4000-8000-000000000604','c1010000-0000-4000-8000-000000000605')) then raise exception 'C1_PC_PROVENANCE_AUDIT missing provenance creation audit'; end if;
   raise notice 'C1_PC_PROVENANCE_AUDIT';
+  if exists (select 1 from public.cost_command_receipts where company_id = 'c1010000-0000-4000-8000-000000000020' and actor_id = 'c1010000-0000-4000-8000-000000000902' and command_name = 'project_cost_item.create' and idempotency_key in ('c1010000-0000-4000-8000-000000000754','c1010000-0000-4000-8000-000000000762','c1010000-0000-4000-8000-000000000764','c1010000-0000-4000-8000-000000000756')) then raise exception 'C1_PC_PROVENANCE_FAILED_CREATE_RESIDUE receipt created'; end if;
+  raise notice 'C1_PC_PROVENANCE_FAILED_CREATE_RESIDUE';
 end;
 $$;
 

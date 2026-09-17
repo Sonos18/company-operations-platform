@@ -89,11 +89,15 @@ describe('C1 Project Cost database foundation', () => {
 
     expect(authenticatedStart).toBeGreaterThanOrEqual(0)
     expect(authenticatedEnd).toBeGreaterThan(authenticatedStart)
-    expect(authenticatedBlock).not.toContain('public.audit_events')
-    expect(privilegedAuditBlock).toContain('public.audit_events')
+    for (const protectedTable of ['public.audit_events', 'public.cost_command_receipts']) {
+      expect(authenticatedBlock).not.toContain(protectedTable)
+      expect(privilegedAuditBlock).toContain(protectedTable)
+    }
     expect(privilegedAuditBlock).toContain("request_id = 'c1010000-0000-4000-8000-000000000753'")
     expect(privilegedAuditBlock).toContain("C1_PC_PROVENANCE_AUDIT")
+    expect(privilegedAuditBlock).toContain("C1_PC_PROVENANCE_FAILED_CREATE_RESIDUE")
     expect(privilegedAuditBlock).toContain("'sourceFigureIds'")
+    for (const idempotencyKey of ['754', '762', '764', '756']) expect(privilegedAuditBlock).toContain(`c1010000-0000-4000-8000-000000000${idempotencyKey}`)
   })
 
   it('adds cost.manage to the shared permission catalog', () => {
