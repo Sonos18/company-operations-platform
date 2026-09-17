@@ -73,6 +73,13 @@ describe('C1 Project Cost database foundation', () => {
     for (const assertion of ['C1_PC_PROVENANCE_INVALID_SHAPE', 'C1_PC_PROVENANCE_INVALID_UUID']) expect(fixtureSql).toContain(assertion)
   })
 
+  it('uses only lowercase hexadecimal characters in synthetic 64-character digest generators', () => {
+    const digestCharacters = [...fixtureSql.matchAll(/repeat\('([^'])',\s*64\)/gu)].map(([, character]) => character)
+
+    expect(digestCharacters.length).toBeGreaterThan(0)
+    for (const character of digestCharacters) expect(character).toMatch(/^[a-f0-9]$/u)
+  })
+
   it('adds cost.manage to the shared permission catalog', () => {
     expect(permissions).toContain("'cost.manage'")
   })
