@@ -77,6 +77,33 @@ describe('Project Cost service', () => {
     await expect(repository.listSummaries(context([]).tenantId, context([]).companyId)).resolves.toEqual([{ projectId: createInput.projectId, summary: { acceptedValue: '0.0000', acceptedCount: 1, inProgressValue: '2.5000', inProgressCount: 1, unknownStatusValue: '7.0000', unknownCount: 1, totalTrackedWorkValue: '2.5000' } }])
   })
 
+  it('isolates mixed-order multi-project aggregates and returns deterministic project ordering', async () => {
+    const projectB = 'c1010000-0000-4000-8000-000000000102'
+    const repository = new ProjectCostRepository(listClient([
+      itemRow({ id: 'c1010000-0000-4000-8000-000000000021', project_id: projectB, amount_text: '2.0000', work_status: 'unknown' }),
+      itemRow({ id: 'c1010000-0000-4000-8000-000000000022', project_id: createInput.projectId, amount_text: '20.0000', work_status: 'unknown' }),
+      itemRow({ id: 'c1010000-0000-4000-8000-000000000023', project_id: projectB, amount_text: '5.0000', work_status: 'in_progress' }),
+      itemRow({ id: 'c1010000-0000-4000-8000-000000000024', project_id: createInput.projectId, amount_text: '50.0000', work_status: 'in_progress' }),
+      itemRow({ id: 'c1010000-0000-4000-8000-000000000025', project_id: projectB, amount_text: '10.0000', work_status: 'accepted' }),
+      itemRow({ id: 'c1010000-0000-4000-8000-000000000026', project_id: createInput.projectId, amount_text: '100.0000', work_status: 'accepted' }),
+    ]) as never)
+
+    await expect(repository.listSummaries(context([]).tenantId, context([]).companyId)).resolves.toEqual([
+      { projectId: createInput.projectId, summary: { acceptedValue: '100.0000', acceptedCount: 1, inProgressValue: '50.0000', inProgressCount: 1, unknownStatusValue: '20.0000', unknownCount: 1, totalTrackedWorkValue: '150.0000' } },
+      { projectId: projectB, summary: { acceptedValue: '10.0000', acceptedCount: 1, inProgressValue: '5.0000', inProgressCount: 1, unknownStatusValue: '2.0000', unknownCount: 1, totalTrackedWorkValue: '15.0000' } },
+    ])
+  })
+
+  it('reads aggregation from project_cost_items without source or provenance queries', async () => {
+    const client = listClient([itemRow()])
+    const repository = new ProjectCostRepository(client as never)
+
+    await repository.listSummaries(context([]).tenantId, context([]).companyId)
+
+    expect(client.from).toHaveBeenCalledTimes(1)
+    expect(client.from).toHaveBeenCalledWith('project_cost_items')
+  })
+
   it('rejects mixed-currency project cost summaries as INTERNAL_ERROR', async () => {
     const repository = new ProjectCostRepository(listClient([itemRow(), itemRow({ id: 'c1010000-0000-4000-8000-000000000012', currency_code: 'USD' })]) as never)
 
@@ -131,6 +158,16 @@ describe('Project Cost service', () => {
 
     await expect(service.projectSummary(context(['cost.read']), createInput.projectId)).resolves.toMatchObject({ projectId: createInput.projectId })
     expect(repository.projectSummary).toHaveBeenCalledWith(context([]).tenantId, context([]).companyId, createInput.projectId)
+  })
+
+  it.each([['cost.manage'], ['cost.correct']])('does not treat %s as independent read access', async permission => {
+    const repository = { listSummaries: vi.fn(), projectSummary: vi.fn() }
+    const service = new ProjectCostService(repository as never)
+
+    await expect(service.listSummaries(context([permission]))).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    await expect(service.projectSummary(context([permission]), createInput.projectId)).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    expect(repository.listSummaries).not.toHaveBeenCalled()
+    expect(repository.projectSummary).not.toHaveBeenCalled()
   })
 
   it('allows cost.manage create without cost.read and preserves idempotency input', async () => {

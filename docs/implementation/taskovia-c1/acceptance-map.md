@@ -13,6 +13,8 @@ Both Gate D advisors exited 0 with no error-level findings; focused local verifi
 
 Post-Gate-E [RBAC hardening is COMPLETE](phase-reports/p3r-post-gate-e-rbac-hardening-cloud.md): canonical accountant read access and the narrowed dedicated operator capability were verified against Cloud DEV without changing Gate E data. It is not Gate F work; Gate F remains not started and unauthorized.
 
+Gate F1 [local regression hardening](phase-reports/p3r-gate-f1-precloud-regression-hardening.md) is **PRE_CLOUD_READY** with no Cloud execution or production behavior change. F2 remains separately authorized Cloud synthetic verification; Gate F is not complete and Gate G remains not started.
+
 ## Evidence Rule
 
 An acceptance row is **partial** until all listed layers have evidence: shared schema/unit, server/HTTP, database/RLS/storage when applicable, UI/E2E when user-visible, and the P6 synthetic acceptance run. A source-file inspection, mock-only test, report commit, or real workbook presence is never final acceptance evidence.

@@ -77,7 +77,7 @@ describe('HTTP Project Cost repository', () => {
     expect(client.request).not.toHaveBeenCalled()
   })
 
-  it.each(['sourceReportedFigureId', 'workbook', 'sheet', 'locator'])('rejects extra normal response field %s', async field => {
+  it.each(['sourceReportedFigureId', 'sourceFigureIds', 'workbook', 'sheet', 'locator', 'paidAmount', 'invoice', 'reconciliation'])('rejects extra normal response field %s', async field => {
     const client = responseClient([{ projectId: ids.project, summary, [field]: 'forbidden' }])
     const repository = createHttpProjectCostRepository({ companyId: ids.company, client: client as never })
 
