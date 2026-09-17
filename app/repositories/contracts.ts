@@ -34,7 +34,7 @@ import type {
 } from '../../shared/schemas/stage01-config'
 import type { BusinessParty, CompanyCostSettings, CreateBusinessPartyInput, CreateEngagementComponentInput, CreateEngagementInput, CreateProjectRegisterInput, Engagement, EngagementComponent, ProjectRegister, UpdateBusinessPartyInput, UpdateEngagementComponentInput, UpdateEngagementInput, UpdateProjectRegisterInput } from '../../shared/schemas/costs/master-data'
 import type { CostSourceFiguresQuery, CostSourceOverview, CostSourceProjectDetail, CostSourceProvenance, CostSourceFigure } from '../../shared/schemas/costs/source-read-model'
-import type { CorrectProjectCostItemInput, CreateProjectCostItemInput, ProjectCostBreakdown, ProjectCostSummary, UpdateProjectCostItemInput } from '../../shared/schemas/costs/project-costs'
+import type { CorrectProjectCostItemInput, CreateProjectCostItemInput, ProjectCostBreakdown, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, UpdateProjectCostItemInput } from '../../shared/schemas/costs/project-costs'
 
 export interface CompanyRepository {
   getCurrent(): Promise<Company>
@@ -136,7 +136,7 @@ export interface CostSettingsRepository { get(): Promise<CompanyCostSettings> }
 export interface CostSourceReadRepository { overview(): Promise<CostSourceOverview>; project(projectId: string): Promise<CostSourceProjectDetail>; figures(projectId: string, query?: Partial<CostSourceFiguresQuery>): Promise<{ items: CostSourceFigure[]; nextCursor: string | null }>; provenance(figureId: string): Promise<CostSourceProvenance> }
 export type ProjectCostCreateDraft = Omit<CreateProjectCostItemInput, 'projectId'>
 export type ProjectCostPatchInput = UpdateProjectCostItemInput | CorrectProjectCostItemInput
-export interface ProjectCostSummaryEntry { projectId: string; summary: ProjectCostSummary }
+export type ProjectCostSummaryEntry = SharedProjectCostSummaryEntry
 export interface ProjectCostCreateResult { id: string; version: number; replayed: boolean }
 export interface ProjectCostMutationResult { id: string; version: number }
 export interface ProjectCostRepository { summaries(): Promise<ProjectCostSummaryEntry[]>; project(projectId: string): Promise<ProjectCostBreakdown>; create(projectId: string, input: ProjectCostCreateDraft): Promise<ProjectCostCreateResult>; update(projectCostItemId: string, input: ProjectCostPatchInput): Promise<ProjectCostMutationResult> }

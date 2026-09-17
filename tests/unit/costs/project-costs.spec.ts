@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   correctProjectCostItemInputSchema,
   createProjectCostItemInputSchema,
+  projectCostBreakdownSchema,
   projectCostItemSchema,
   projectCostSummarySchema,
   projectCostWorkStatusSchema,
@@ -204,5 +205,18 @@ describe('project cost contracts', () => {
       updatedAt: '2026-09-16T00:00:00.000Z',
       paymentStatus: 'paid',
     }).success).toBe(false)
+  })
+
+  it('requires strict Project metadata on Project Cost summary entries and breakdowns', async () => {
+    const model = await import('../../../shared/schemas/costs/project-costs') as Record<string, { safeParse(value: unknown): { success: boolean } }>
+    const metadata = { projectId: ids.project, projectCode: 'C101-P1', projectName: 'C101 project one' }
+    const entry = { ...metadata, summary }
+    const breakdown = { ...metadata, summary, items: [] }
+
+    expect(model.projectCostSummaryEntrySchema.safeParse({ projectId: ids.project, summary }).success).toBe(false)
+    expect(model.projectCostSummaryEntrySchema.safeParse(entry).success).toBe(true)
+    expect(projectCostBreakdownSchema.safeParse({ projectId: ids.project, summary, items: [] }).success).toBe(false)
+    expect(projectCostBreakdownSchema.safeParse(breakdown).success).toBe(true)
+    expect(projectCostBreakdownSchema.safeParse({ ...breakdown, sourceFigureIds: [ids.sourceFigure1] }).success).toBe(false)
   })
 })

@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js'
 import { z } from 'zod'
-import { projectCostBreakdownSchema, projectCostItemSchema, projectCostSummarySchema, type CreateProjectCostItemInput, type CorrectProjectCostItemInput, type ProjectCostBreakdown, type ProjectCostItem, type ProjectCostSummary, type UpdateProjectCostItemInput } from '../../../shared/schemas/costs/project-costs'
+import { projectCostBreakdownSchema, projectCostItemSchema, projectCostProjectMetadataSchema, projectCostSummaryEntrySchema, projectCostSummarySchema, type CreateProjectCostItemInput, type CorrectProjectCostItemInput, type ProjectCostBreakdown, type ProjectCostItem, type ProjectCostSummary, type ProjectCostSummaryEntry, type UpdateProjectCostItemInput } from '../../../shared/schemas/costs/project-costs'
 import { AppApiError } from '../../utils/api-error'
 import type { UserSupabaseClient } from '../../utils/supabase-client'
 
@@ -16,9 +16,9 @@ type Acknowledgement = z.infer<typeof acknowledgementSchema>
 type CreateAcknowledgement = z.infer<typeof createAcknowledgementSchema>
 type QueryResult = { data: unknown; error: unknown }
 interface Query extends PromiseLike<QueryResult> { select(columns: string): Query; eq(column: string, value: string): Query; order(column: string): Query }
-interface Client { from(table: 'project_cost_items'): Query; rpc(name: 'c1_create_project_cost_item' | 'c1_update_project_cost_item' | 'c1_correct_project_cost_item', args: Record<string, unknown>): Promise<QueryResult> }
+interface Client { from(table: 'project_cost_items'): Query; rpc(name: 'c1_create_project_cost_item' | 'c1_update_project_cost_item' | 'c1_correct_project_cost_item' | 'c1_read_project_cost_project_metadata', args: Record<string, unknown>): Promise<QueryResult> }
 export interface ProjectCostRequestContext { companyId: string; requestId: string }
-export interface ProjectCostDataRepository { listSummaries(tenantId: string, companyId: string): Promise<Array<{ projectId: string; summary: ProjectCostSummary }>>; projectSummary(tenantId: string, companyId: string, projectId: string): Promise<ProjectCostBreakdown>; create(context: ProjectCostRequestContext, input: CreateProjectCostItemInput, idempotencyKey: string): Promise<CreateAcknowledgement>; update(context: ProjectCostRequestContext, id: string, mutation: { kind: 'update'; input: UpdateProjectCostItemInput } | { kind: 'correction'; input: CorrectProjectCostItemInput }): Promise<Acknowledgement> }
+export interface ProjectCostDataRepository { listSummaries(tenantId: string, companyId: string): Promise<ProjectCostSummaryEntry[]>; projectSummary(tenantId: string, companyId: string, projectId: string): Promise<ProjectCostBreakdown>; create(context: ProjectCostRequestContext, input: CreateProjectCostItemInput, idempotencyKey: string): Promise<CreateAcknowledgement>; update(context: ProjectCostRequestContext, id: string, mutation: { kind: 'update'; input: UpdateProjectCostItemInput } | { kind: 'correction'; input: CorrectProjectCostItemInput }): Promise<Acknowledgement> }
 
 function fail(message: string): never { throw new AppApiError(500, 'INTERNAL_ERROR', message) }
 function rows(value: unknown): ProjectCostRow[] { const parsed = z.array(rowSchema).safeParse(value); return parsed.success ? parsed.data : fail('Không thể đọc Project Cost.') }
@@ -46,10 +46,28 @@ function rpcError(error: unknown): never {
   return fail('Không thể cập nhật Project Cost.')
 }
 
+function metadata(value: unknown, projectIds: readonly string[]) {
+  const parsed = z.array(projectCostProjectMetadataSchema).safeParse(value)
+  if (!parsed.success || parsed.data.length !== projectIds.length) return fail('Không thể đọc Project Cost.')
+  const expected = new Set(projectIds)
+  const found = new Map<string, z.infer<typeof projectCostProjectMetadataSchema>>()
+  for (const entry of parsed.data) {
+    if (!expected.has(entry.projectId) || found.has(entry.projectId)) return fail('Không thể đọc Project Cost.')
+    found.set(entry.projectId, entry)
+  }
+  return found.size === expected.size ? found : fail('Không thể đọc Project Cost.')
+}
+
 export class ProjectCostRepository implements ProjectCostDataRepository {
   private readonly client: Client
 
   constructor(client: UserSupabaseClient) { this.client = client as unknown as Client }
+
+  private async projectMetadata(companyId: string, projectIds: readonly string[]) {
+    const { data, error } = await this.client.rpc('c1_read_project_cost_project_metadata', { target_company_id: companyId, target_project_ids: projectIds })
+    if (error) return rpcError(error)
+    return metadata(data, projectIds)
+  }
 
   async listSummaries(tenantId: string, companyId: string) {
     const { data, error } = await this.client.from('project_cost_items').select(columns).eq('tenant_id', tenantId).eq('company_id', companyId)
@@ -57,14 +75,19 @@ export class ProjectCostRepository implements ProjectCostDataRepository {
     const result = rows(data)
     const grouped = new Map<string, ProjectCostRow[]>()
     for (const row of result) grouped.set(row.project_id, [...(grouped.get(row.project_id) ?? []), row])
-    return [...grouped].map(([projectId, projectRows]) => ({ projectId, summary: summarizeProjectCosts(projectRows) })).sort((a, b) => a.projectId.localeCompare(b.projectId))
+    if (grouped.size === 0) return []
+    const summaries = [...grouped].map(([projectId, projectRows]) => ({ projectId, summary: summarizeProjectCosts(projectRows) })).sort((a, b) => a.projectId.localeCompare(b.projectId))
+    const projectMetadata = await this.projectMetadata(companyId, summaries.map(entry => entry.projectId))
+    return summaries.map(entry => projectCostSummaryEntrySchema.parse({ ...projectMetadata.get(entry.projectId)!, ...entry }))
   }
 
   async projectSummary(tenantId: string, companyId: string, projectId: string) {
     const { data, error } = await this.client.from('project_cost_items').select(columns).eq('tenant_id', tenantId).eq('company_id', companyId).eq('project_id', projectId).order('created_at').order('id')
     if (error) return rpcError(error)
     const result = rows(data)
-    return projectCostBreakdownSchema.parse({ projectId, summary: summarizeProjectCosts(result), items: result.map(item) })
+    if (result.length === 0) throw new AppApiError(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy Project Cost.')
+    const projectMetadata = await this.projectMetadata(companyId, [projectId])
+    return projectCostBreakdownSchema.parse({ ...projectMetadata.get(projectId)!, projectId, summary: summarizeProjectCosts(result), items: result.map(item) })
   }
 
   async create(context: ProjectCostRequestContext, input: CreateProjectCostItemInput, idempotencyKey: string) {

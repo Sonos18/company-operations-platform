@@ -4,17 +4,18 @@ import { createHttpProjectCostRepository } from '../../../app/repositories/http/
 const ids = { company: 'c1010000-0000-4000-8000-000000000020', project: 'c1010000-0000-4000-8000-000000000101', item: 'c1010000-0000-4000-8000-000000000001', key: 'c1010000-0000-4000-8000-000000000998', sourceFigure1: 'c1010000-0000-4000-8000-000000000604', sourceFigure2: 'c1010000-0000-4000-8000-000000000605' }
 const summary = { acceptedValue: '0.0000', acceptedCount: 0, inProgressValue: '0.0000', inProgressCount: 0, unknownStatusValue: '0.0000', unknownCount: 0, totalTrackedWorkValue: '0.0000' }
 const item = { id: ids.item, tenantId: 'c1010000-0000-4000-8000-000000000010', companyId: ids.company, projectId: ids.project, description: 'Synthetic', amount: '1.0000', currencyCode: 'VND', workStatus: 'unknown', businessReference: null, partyId: null, engagementId: null, componentId: null, relevantDate: null, version: 0, createdAt: '2026-09-16T00:00:00.000Z', updatedAt: '2026-09-16T00:00:00.000Z' }
-const breakdown = { projectId: ids.project, summary, items: [item] }
+const metadata = { projectId: ids.project, projectCode: 'C101-P1', projectName: 'C101 project one' }
+const breakdown = { ...metadata, summary, items: [item] }
 const draft = { description: 'Synthetic', amount: '1.0000', currencyCode: 'VND', workStatus: 'unknown', nonOverlapConfirmationReference: 'confirmed' }
 const responseClient = (response: unknown) => ({ request: vi.fn().mockImplementation(async input => input.schema.parse(response)) })
 
 describe('HTTP Project Cost repository', () => {
   it('gets strict company summaries from the current encoded company URL', async () => {
     const companyId = vi.fn().mockReturnValue('company/id')
-    const client = responseClient([{ projectId: ids.project, summary }])
+    const client = responseClient([{ ...metadata, summary }])
     const repository = createHttpProjectCostRepository({ companyId, client: client as never })
 
-    await expect(repository.summaries()).resolves.toEqual([{ projectId: ids.project, summary }])
+    await expect(repository.summaries()).resolves.toEqual([{ ...metadata, summary }])
     expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/companies/company%2Fid/project-costs', method: 'GET' }))
     expect(companyId).toHaveBeenCalledOnce()
   })
@@ -89,6 +90,21 @@ describe('HTTP Project Cost repository', () => {
     const repository = createHttpProjectCostRepository({ companyId: ids.company, client: client as never })
 
     await expect(repository.project(ids.project)).rejects.toThrow()
+  })
+
+  it.each(['projectCode', 'projectName'])('rejects a Project Cost response missing required metadata %s', async field => {
+    const response = field === 'projectCode'
+      ? { projectId: ids.project, projectName: metadata.projectName, summary }
+      : { projectId: ids.project, projectCode: metadata.projectCode, summary }
+    const client = responseClient([response])
+
+    await expect(createHttpProjectCostRepository({ companyId: ids.company, client: client as never }).summaries()).rejects.toThrow()
+  })
+
+  it('rejects unexpected Project metadata fields', async () => {
+    const client = responseClient([{ ...metadata, summary, operationalState: 'active' }])
+
+    await expect(createHttpProjectCostRepository({ companyId: ids.company, client: client as never }).summaries()).rejects.toThrow()
   })
 
   it('rejects extra fields in create and mutation acknowledgements', async () => {

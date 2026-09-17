@@ -6,6 +6,7 @@ import { ProjectCostService } from '../../../server/features/costs/project-cost.
 const context = (permissions: string[]) => ({ actorId: 'c1010000-0000-4000-8000-000000000902', tenantId: 'c1010000-0000-4000-8000-000000000010', companyId: 'c1010000-0000-4000-8000-000000000020', permissions, requestId: 'c1010000-0000-4000-8000-000000000999' })
 const createInput = { projectId: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount: '1.00', currencyCode: 'VND', workStatus: 'unknown' as const, nonOverlapConfirmationReference: 'confirmed' }
 const itemRow = (overrides: Record<string, unknown> = {}) => ({ id: 'c1010000-0000-4000-8000-000000000001', tenant_id: 'c1010000-0000-4000-8000-000000000010', company_id: 'c1010000-0000-4000-8000-000000000020', project_id: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount_text: '1.0000', currency_code: 'VND', work_status: 'unknown', business_reference: null, party_id: null, engagement_id: null, component_id: null, relevant_date: null, version: 0, created_by: 'c1010000-0000-4000-8000-000000000902', created_at: '2026-09-16T00:00:00.000Z', updated_at: '2026-09-16T00:00:00.000Z', ...overrides })
+const metadata = (projectId: string) => ({ projectId, projectCode: projectId.endsWith('102') ? 'C101-P2' : 'C101-P1', projectName: projectId.endsWith('102') ? 'C101 project two' : 'C101 project one' })
 const listClient = (data: unknown, error: unknown = null) => {
   const result = Promise.resolve({ data, error })
   const query = { select: vi.fn(), eq: vi.fn(), order: vi.fn(), then: result.then.bind(result) }
@@ -14,12 +15,15 @@ const listClient = (data: unknown, error: unknown = null) => {
   query.order.mockReturnValue(query)
   const select = query.select
   const from = vi.fn().mockReturnValue({ select })
-  return { from, select, query }
+  const projectIds = Array.isArray(data) ? [...new Set(data.map(row => (row as { project_id: string }).project_id))] : []
+  const rpc = vi.fn().mockResolvedValue({ data: projectIds.map(metadata), error: null })
+  return { from, select, query, rpc }
 }
 
 describe('Project Cost service', () => {
   it('maps a snake_case database row to the public project cost item without losing decimal text', async () => {
     const client = {
+      rpc: vi.fn().mockResolvedValue({ data: [metadata('c1010000-0000-4000-8000-000000000101')], error: null }),
       from: vi.fn().mockReturnValue({
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
@@ -74,7 +78,7 @@ describe('Project Cost service', () => {
     ])
     const repository = new ProjectCostRepository(client as never)
 
-    await expect(repository.listSummaries(context([]).tenantId, context([]).companyId)).resolves.toEqual([{ projectId: createInput.projectId, summary: { acceptedValue: '0.0000', acceptedCount: 1, inProgressValue: '2.5000', inProgressCount: 1, unknownStatusValue: '7.0000', unknownCount: 1, totalTrackedWorkValue: '2.5000' } }])
+    await expect(repository.listSummaries(context([]).tenantId, context([]).companyId)).resolves.toEqual([{ ...metadata(createInput.projectId), summary: { acceptedValue: '0.0000', acceptedCount: 1, inProgressValue: '2.5000', inProgressCount: 1, unknownStatusValue: '7.0000', unknownCount: 1, totalTrackedWorkValue: '2.5000' } }])
   })
 
   it('isolates mixed-order multi-project aggregates and returns deterministic project ordering', async () => {
@@ -89,9 +93,52 @@ describe('Project Cost service', () => {
     ]) as never)
 
     await expect(repository.listSummaries(context([]).tenantId, context([]).companyId)).resolves.toEqual([
-      { projectId: createInput.projectId, summary: { acceptedValue: '100.0000', acceptedCount: 1, inProgressValue: '50.0000', inProgressCount: 1, unknownStatusValue: '20.0000', unknownCount: 1, totalTrackedWorkValue: '150.0000' } },
-      { projectId: projectB, summary: { acceptedValue: '10.0000', acceptedCount: 1, inProgressValue: '5.0000', inProgressCount: 1, unknownStatusValue: '2.0000', unknownCount: 1, totalTrackedWorkValue: '15.0000' } },
+      { ...metadata(createInput.projectId), summary: { acceptedValue: '100.0000', acceptedCount: 1, inProgressValue: '50.0000', inProgressCount: 1, unknownStatusValue: '20.0000', unknownCount: 1, totalTrackedWorkValue: '150.0000' } },
+      { ...metadata(projectB), summary: { acceptedValue: '10.0000', acceptedCount: 1, inProgressValue: '5.0000', inProgressCount: 1, unknownStatusValue: '2.0000', unknownCount: 1, totalTrackedWorkValue: '15.0000' } },
     ])
+  })
+
+  it('enriches distinct Project Cost summaries through one metadata RPC call', async () => {
+    const projectB = 'c1010000-0000-4000-8000-000000000102'
+    const client = listClient([itemRow(), itemRow({ id: 'c1010000-0000-4000-8000-000000000002', project_id: projectB })])
+    const repository = new ProjectCostRepository(client as never)
+
+    await expect(repository.listSummaries(context([]).tenantId, context([]).companyId)).resolves.toMatchObject([
+      { ...metadata(createInput.projectId) },
+      { ...metadata(projectB) },
+    ])
+    expect(client.rpc).toHaveBeenCalledWith('c1_read_project_cost_project_metadata', { target_company_id: context([]).companyId, target_project_ids: expect.arrayContaining([createInput.projectId, projectB]) })
+    expect(client.rpc).toHaveBeenCalledOnce()
+  })
+
+  it('returns an empty summary list without a metadata RPC call', async () => {
+    const client = listClient([])
+
+    await expect(new ProjectCostRepository(client as never).listSummaries(context([]).tenantId, context([]).companyId)).resolves.toEqual([])
+    expect(client.rpc).not.toHaveBeenCalled()
+  })
+
+  it('fails closed for an empty Project Cost detail or inconsistent metadata', async () => {
+    const empty = listClient([])
+    await expect(new ProjectCostRepository(empty as never).projectSummary(context([]).tenantId, context([]).companyId, createInput.projectId)).rejects.toMatchObject({ statusCode: 404, code: 'RESOURCE_NOT_FOUND' })
+
+    for (const metadataResponse of [[], [metadata(createInput.projectId), metadata(createInput.projectId)], [metadata('c1010000-0000-4000-8000-000000000102')]]) {
+      const client = listClient([itemRow()])
+      client.rpc.mockResolvedValue({ data: metadataResponse, error: null })
+      await expect(new ProjectCostRepository(client as never).projectSummary(context([]).tenantId, context([]).companyId, createInput.projectId)).rejects.toMatchObject({ statusCode: 500, code: 'INTERNAL_ERROR' })
+    }
+  })
+
+  it('fails closed for summary metadata mismatches and preserves metadata RPC permission failures', async () => {
+    for (const metadataResponse of [[], [metadata(createInput.projectId), metadata(createInput.projectId)], [metadata('c1010000-0000-4000-8000-000000000102')], [{ ...metadata(createInput.projectId), operationalState: 'forbidden' }]]) {
+      const client = listClient([itemRow()])
+      client.rpc.mockResolvedValue({ data: metadataResponse, error: null })
+      await expect(new ProjectCostRepository(client as never).listSummaries(context([]).tenantId, context([]).companyId)).rejects.toMatchObject({ statusCode: 500, code: 'INTERNAL_ERROR' })
+    }
+
+    const client = listClient([itemRow()])
+    client.rpc.mockResolvedValue({ data: null, error: { code: 'P0001', message: 'PERMISSION_DENIED' } })
+    await expect(new ProjectCostRepository(client as never).listSummaries(context([]).tenantId, context([]).companyId)).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
   })
 
   it('reads aggregation from project_cost_items without source or provenance queries', async () => {

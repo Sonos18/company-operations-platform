@@ -10,6 +10,7 @@ const relevantDate = z.string().date()
 const sourceFigureIds = z.array(uuid).min(1).refine(ids => new Set(ids).size === ids.length, 'source figure IDs must be unique')
 
 export const projectCostWorkStatusSchema = z.enum(['unknown', 'in_progress', 'accepted'])
+export const projectCostProjectMetadataSchema = z.object({ projectId: uuid, projectCode: text, projectName: text }).strict()
 
 const projectCostItemFieldsSchema = z.object({
   description: text,
@@ -88,11 +89,11 @@ export const projectCostSummarySchema = z.object({
   }
 })
 
-export const projectCostBreakdownSchema = z.object({
-  projectId: uuid,
+export const projectCostSummaryEntrySchema = projectCostProjectMetadataSchema.extend({
   summary: projectCostSummarySchema,
-  items: z.array(projectCostItemSchema),
 }).strict()
+
+export const projectCostBreakdownSchema = projectCostProjectMetadataSchema.extend({ summary: projectCostSummarySchema, items: z.array(projectCostItemSchema) }).strict()
 
 export type ProjectCostWorkStatus = z.infer<typeof projectCostWorkStatusSchema>
 export type CreateProjectCostItemInput = z.infer<typeof createProjectCostItemInputSchema>
@@ -100,4 +101,5 @@ export type UpdateProjectCostItemInput = z.infer<typeof updateProjectCostItemInp
 export type CorrectProjectCostItemInput = z.infer<typeof correctProjectCostItemInputSchema>
 export type ProjectCostItem = z.infer<typeof projectCostItemSchema>
 export type ProjectCostSummary = z.infer<typeof projectCostSummarySchema>
+export type ProjectCostSummaryEntry = z.infer<typeof projectCostSummaryEntrySchema>
 export type ProjectCostBreakdown = z.infer<typeof projectCostBreakdownSchema>

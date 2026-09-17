@@ -13,7 +13,7 @@ Both Gate D advisors exited 0 with no error-level findings; focused local verifi
 
 Post-Gate-E [RBAC hardening is COMPLETE](phase-reports/p3r-post-gate-e-rbac-hardening-cloud.md): canonical accountant read access and the narrowed dedicated operator capability were verified against Cloud DEV without changing Gate E data. It is not Gate F work; Gate F remains not started and unauthorized.
 
-Gate F is **COMPLETE**: [F1 local regression hardening](phase-reports/p3r-gate-f1-precloud-regression-hardening.md) and [F2 Cloud synthetic verification](phase-reports/p3r-gate-f2-cloud-verification.md) passed with unchanged Gate E data and zero run-owned synthetic residue. Gate G's narrow [metadata read RPC](phase-reports/p3r-gate-g-project-metadata-read-cloud.md) is **BACKEND_METADATA_ENABLER_CLOUD_VERIFIED**; the TypeScript contract remains pending and UI remains **BLOCKED_PENDING_TYPESCRIPT_CONTRACT**.
+Gate F is **COMPLETE**: [F1 local regression hardening](phase-reports/p3r-gate-f1-precloud-regression-hardening.md) and [F2 Cloud synthetic verification](phase-reports/p3r-gate-f2-cloud-verification.md) passed with unchanged Gate E data and zero run-owned synthetic residue. Gate G's narrow [metadata read RPC](phase-reports/p3r-gate-g-project-metadata-read-cloud.md) is **BACKEND_METADATA_ENABLER_CLOUD_VERIFIED** and its [TypeScript read contract](phase-reports/p3r-gate-g-project-metadata-typescript-contract.md) is **COMPLETE**; the Director UI is **READY_TO_RESUME / NOT YET IMPLEMENTED**.
 
 ## Evidence Rule
 
