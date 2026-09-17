@@ -14,7 +14,7 @@ Gate E business confirmation is **VQH_BUSINESS_APPROVED**; the original determin
 
 Post-Gate-E [RBAC hardening is COMPLETE](phase-reports/p3r-post-gate-e-rbac-hardening-cloud.md): canonical `accountant` has `cost.read` and `c1_vqh_cost_operator` has only `cost.manage` plus `cost.correct`. Gate E remains **COMPLETE** and Gate F remains **NOT STARTED / NOT AUTHORIZED**.
 
-Gate F1 [pre-Cloud read and aggregation regression hardening](phase-reports/p3r-gate-f1-precloud-regression-hardening.md) is **PRE_CLOUD_READY**. It adds local regression coverage only; F2 Cloud synthetic verification remains **NOT AUTHORIZED** and Gate F is not complete. Gate G remains **NOT STARTED / NOT AUTHORIZED**.
+Gate F is **COMPLETE**: [F1 local regression hardening](phase-reports/p3r-gate-f1-precloud-regression-hardening.md) and [F2 Cloud synthetic verification](phase-reports/p3r-gate-f2-cloud-verification.md) passed. The one rollback-safe F2 suite left no run-owned synthetic residue and Gate E data remained unchanged. Gate G remains **NOT STARTED / NOT AUTHORIZED**.
 
 ## Control Record
 
