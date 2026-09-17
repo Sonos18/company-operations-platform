@@ -42,8 +42,35 @@ describe('C1 Project Cost database foundation', () => {
     expect(provenanceSql).not.toMatch(/create function public\.c1_(?:create_project_cost_item_source|link_project_cost_source|attach_project_cost_source)/iu)
   })
 
+  it('uses the canonical 8-4-4-4-12 UUID grammar for source figure IDs', () => {
+    const sourceUuidPattern = provenanceSql.match(/source_figure_id\s+#>>\s+'\{\}'\s*!~\*\s+'([^']+)'/iu)?.[1]
+
+    expect(sourceUuidPattern).toBe('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+    expect(new RegExp(sourceUuidPattern!, 'iu').test('c1010000-0000-4000-8000-000000000604')).toBe(true)
+  })
+
+  it('establishes sourceFigureIds as an array before every array-only operation', () => {
+    const typeGuard = "if jsonb_typeof(target_input->'sourceFigureIds') is distinct from 'array' then"
+    const typeGuardIndex = provenanceSql.indexOf(typeGuard)
+
+    expect(typeGuardIndex).toBeGreaterThanOrEqual(0)
+    for (const arrayOperation of [
+      "jsonb_array_length(target_input->'sourceFigureIds')",
+      "jsonb_array_elements(target_input->'sourceFigureIds')",
+      "jsonb_array_elements_text(target_input->'sourceFigureIds')",
+    ]) {
+      const operationIndex = provenanceSql.indexOf(arrayOperation)
+      expect(operationIndex).toBeGreaterThan(typeGuardIndex)
+      expect(provenanceSql.slice(0, typeGuardIndex)).not.toContain(arrayOperation)
+    }
+  })
+
   it('requires synthetic provenance command fixture assertions while preserving source-reuse and direct-write denial', () => {
     for (const assertion of ['C1_PC_PROVENANCE_COMMAND', 'C1_PC_PROVENANCE_DUPLICATE_INPUT', 'C1_PC_PROVENANCE_SCOPE', 'C1_PC_PROVENANCE_IDEMPOTENT', 'C1_PC_F07_SOURCE_REUSE', 'C1_PC_SOURCE_DIRECT_ACL']) expect(fixtureSql).toContain(assertion)
+  })
+
+  it('requires synthetic non-array and malformed source UUID rejection assertions', () => {
+    for (const assertion of ['C1_PC_PROVENANCE_INVALID_SHAPE', 'C1_PC_PROVENANCE_INVALID_UUID']) expect(fixtureSql).toContain(assertion)
   })
 
   it('adds cost.manage to the shared permission catalog', () => {

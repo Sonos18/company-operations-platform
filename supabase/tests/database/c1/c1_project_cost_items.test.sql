@@ -151,6 +151,22 @@ begin
   raise notice 'C1_PC_PROVENANCE_DUPLICATE_INPUT';
 
   begin
+    perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 provenance invalid shape','amount','5.5000','currencyCode','VND','workStatus','unknown','nonOverlapConfirmationReference','C101-provenance-invalid-shape','sourceFigureIds','not-an-array'), 'c1010000-0000-4000-8000-000000000762', 'c1010000-0000-4000-8000-000000000763');
+    raise exception 'C1_PC_PROVENANCE_INVALID_SHAPE scalar source IDs accepted';
+  exception when sqlstate 'P0001' then if sqlerrm <> 'INPUT_INVALID' then raise; end if;
+  end;
+  if exists (select 1 from public.project_cost_items where description = 'C101 provenance invalid shape') or exists (select 1 from public.cost_command_receipts where idempotency_key = 'c1010000-0000-4000-8000-000000000762') or exists (select 1 from public.project_cost_item_sources link join public.project_cost_items item on item.id = link.project_cost_item_id where item.description = 'C101 provenance invalid shape') then raise exception 'C1_PC_PROVENANCE_INVALID_SHAPE failed create residue'; end if;
+  raise notice 'C1_PC_PROVENANCE_INVALID_SHAPE';
+
+  begin
+    perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 provenance invalid UUID','amount','5.6000','currencyCode','VND','workStatus','unknown','nonOverlapConfirmationReference','C101-provenance-invalid-uuid','sourceFigureIds',jsonb_build_array('not-a-uuid')), 'c1010000-0000-4000-8000-000000000764', 'c1010000-0000-4000-8000-000000000765');
+    raise exception 'C1_PC_PROVENANCE_INVALID_UUID malformed source ID accepted';
+  exception when sqlstate 'P0001' then if sqlerrm <> 'INPUT_INVALID' then raise; end if;
+  end;
+  if exists (select 1 from public.project_cost_items where description = 'C101 provenance invalid UUID') or exists (select 1 from public.cost_command_receipts where idempotency_key = 'c1010000-0000-4000-8000-000000000764') or exists (select 1 from public.project_cost_item_sources link join public.project_cost_items item on item.id = link.project_cost_item_id where item.description = 'C101 provenance invalid UUID') then raise exception 'C1_PC_PROVENANCE_INVALID_UUID failed create residue'; end if;
+  raise notice 'C1_PC_PROVENANCE_INVALID_UUID';
+
+  begin
     perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 provenance foreign source','amount','6.0000','currencyCode','VND','workStatus','unknown','nonOverlapConfirmationReference','C101-provenance-foreign','sourceFigureIds',jsonb_build_array('c1010000-0000-4000-8000-000000000613')), 'c1010000-0000-4000-8000-000000000756', 'c1010000-0000-4000-8000-000000000757');
     raise exception 'C1_PC_PROVENANCE_SCOPE foreign source accepted';
   exception when sqlstate 'P0001' then if sqlerrm <> 'RESOURCE_NOT_FOUND' then raise; end if;

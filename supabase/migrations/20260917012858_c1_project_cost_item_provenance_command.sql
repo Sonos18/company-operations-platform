@@ -47,15 +47,21 @@ begin
      or (target_input ? 'engagementId' and (jsonb_typeof(target_input->'engagementId') is distinct from 'string' or target_input->>'engagementId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))
      or (target_input ? 'componentId' and (jsonb_typeof(target_input->'componentId') is distinct from 'string' or target_input->>'componentId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))
      or (target_input ? 'relevantDate' and (jsonb_typeof(target_input->'relevantDate') is distinct from 'string' or target_input->>'relevantDate' !~ '^\d{4}-\d{2}-\d{2}$'))
-     or (target_input ? 'sourceFigureIds' and (
-       jsonb_typeof(target_input->'sourceFigureIds') is distinct from 'array'
-       or not (jsonb_array_length(target_input->'sourceFigureIds') > 0)
-       or exists (select 1 from jsonb_array_elements(target_input->'sourceFigureIds') source_figure_id where jsonb_typeof(source_figure_id) is distinct from 'string' or source_figure_id #>> '{}' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
-       or (select count(*) from jsonb_array_elements_text(target_input->'sourceFigureIds')) <> (select count(distinct source_figure_id) from jsonb_array_elements_text(target_input->'sourceFigureIds') source_figure_id)
-     ))
   then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
 
   if target_input ? 'sourceFigureIds' then
+    if jsonb_typeof(target_input->'sourceFigureIds') is distinct from 'array' then
+      raise exception using errcode = 'P0001', message = 'INPUT_INVALID';
+    end if;
+    if not (jsonb_array_length(target_input->'sourceFigureIds') > 0) then
+      raise exception using errcode = 'P0001', message = 'INPUT_INVALID';
+    end if;
+    if exists (select 1 from jsonb_array_elements(target_input->'sourceFigureIds') source_figure_id where jsonb_typeof(source_figure_id) is distinct from 'string' or source_figure_id #>> '{}' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') then
+      raise exception using errcode = 'P0001', message = 'INPUT_INVALID';
+    end if;
+    if (select count(*) from jsonb_array_elements_text(target_input->'sourceFigureIds')) <> (select count(distinct source_figure_id) from jsonb_array_elements_text(target_input->'sourceFigureIds') source_figure_id) then
+      raise exception using errcode = 'P0001', message = 'INPUT_INVALID';
+    end if;
     select array_agg(source_figure_id.value::uuid order by source_figure_id.ordinality) into v_source_figure_ids
       from jsonb_array_elements_text(target_input->'sourceFigureIds') with ordinality source_figure_id(value, ordinality);
     if (select count(*) from public.source_reported_figures figure where figure.id = any(v_source_figure_ids) and figure.tenant_id = v_tenant_id and figure.company_id = target_company_id) <> cardinality(v_source_figure_ids) then
