@@ -11,6 +11,7 @@ const mockSummaries = [
     projectCode: 'C101-P1',
     projectName: 'Synthetic Project Alpha',
     summary: {
+      currencyCode: 'VND',
       acceptedValue: '242562376.0000',
       acceptedCount: 4,
       inProgressValue: '0.0000',
@@ -25,6 +26,7 @@ const mockSummaries = [
     projectCode: 'C101-P2',
     projectName: 'Synthetic Project Beta',
     summary: {
+      currencyCode: 'USD',
       acceptedValue: '0.0000',
       acceptedCount: 0,
       inProgressValue: '5641725896.0000',
@@ -41,6 +43,7 @@ const mockBreakdownAlpha = {
   projectCode: 'C101-P1',
   projectName: 'Synthetic Project Alpha',
   summary: {
+    currencyCode: 'VND',
     acceptedValue: '242562376.0000',
     acceptedCount: 4,
     inProgressValue: '0.0000',
@@ -107,6 +110,42 @@ const mockBreakdownAlpha = {
   ],
 }
 
+const mockBreakdownBeta = {
+  projectId: projectIdBeta,
+  projectCode: 'C101-P2',
+  projectName: 'Synthetic Project Beta',
+  summary: {
+    currencyCode: 'USD',
+    acceptedValue: '0.0000',
+    acceptedCount: 0,
+    inProgressValue: '5641725896.0000',
+    inProgressCount: 5,
+    unknownStatusValue: '0.0000',
+    unknownCount: 0,
+    totalTrackedWorkValue: '5641725896.0000',
+  },
+  items: [
+    {
+      id: '10000000-0000-4000-8000-000000000204',
+      tenantId: '10000000-0000-4000-8000-000000000001',
+      companyId: '10000000-0000-4000-8000-000000000002',
+      projectId: projectIdBeta,
+      description: 'Dịch vụ thiết kế hệ thống HVAC',
+      amount: '5641725896.0000',
+      currencyCode: 'USD',
+      workStatus: 'in_progress' as const,
+      businessReference: 'REF-BETA-01',
+      partyId: null,
+      engagementId: null,
+      componentId: null,
+      relevantDate: '2026-09-01',
+      version: 1,
+      createdAt: '2026-09-01T08:00:00.000Z',
+      updatedAt: '2026-09-01T08:00:00.000Z',
+    },
+  ],
+}
+
 test.describe('Director Project Cost UI', () => {
   test('renders Project Cost overview on /costs, displays metrics, and excludes unknown from total', async ({ page }) => {
     let requestedProjectCosts = false
@@ -141,10 +180,19 @@ test.describe('Director Project Cost UI', () => {
     // Metrics verification
     // Total tracked must be 242,562,376 (does NOT include unknown 15,000,000)
     await expect(alphaCard.getByTestId('total-tracked-value')).toContainText('242,562,376')
+    await expect(alphaCard.getByTestId('total-tracked-value')).toContainText('VND')
     await expect(alphaCard.getByTestId('accepted-value')).toContainText('242,562,376')
     await expect(alphaCard.getByTestId('accepted-count')).toContainText('4')
     await expect(alphaCard.getByTestId('unknown-value')).toContainText('15,000,000')
     await expect(alphaCard.getByTestId('unknown-count')).toContainText('1')
+
+    // Beta card: USD summary currency verification
+    const betaCard = page.getByTestId(`project-cost-card-${projectIdBeta}`)
+    await expect(betaCard).toBeVisible()
+    await expect(betaCard.getByText('Synthetic Project Beta')).toBeVisible()
+    await expect(betaCard.getByText('C101-P2')).toBeVisible()
+    await expect(betaCard.getByTestId('total-tracked-value')).toContainText('USD')
+    await expect(betaCard.getByTestId('total-tracked-value')).not.toContainText('VND')
 
     // Business-only boundary: no forbidden technical/accounting terms
     const pageText = await page.locator('main').innerText()
@@ -196,6 +244,18 @@ test.describe('Director Project Cost UI', () => {
     // Back link navigates to /costs
     const backLink = page.getByTestId('project-cost-detail').getByRole('link', { name: 'Quay lại danh sách chi phí dự án' })
     await expect(backLink).toHaveAttribute('href', '/costs')
+  })
+
+  test('renders Project Cost detail for USD project with correct summary currency and no hardcoded VND', async ({ page }) => {
+    await page.route(`**/api/companies/**/projects/${projectIdBeta}/project-costs`, async (route) => {
+      await route.fulfill({ json: mockBreakdownBeta })
+    })
+
+    await page.goto(`/costs/${projectIdBeta}`)
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Synthetic Project Beta')
+    const totalTracked = page.getByTestId('detail-total-tracked')
+    await expect(totalTracked).toContainText('USD')
+    await expect(totalTracked).not.toContainText('VND')
   })
 
   test('preserves Cost Source overview on /costs/sources', async ({ page }) => {
@@ -317,8 +377,8 @@ test.describe('Director Project Cost UI', () => {
     await page.route('**/api/companies/**/project-costs', async (route) => {
       await route.fulfill({ json: mockSummaries })
     })
-    await page.route(`**/api/companies/**/projects/${projectIdAlpha}/project-costs`, async (route) => {
-      await route.fulfill({ json: mockBreakdownAlpha })
+    await page.route(`**/api/companies/**/projects/${projectIdBeta}/project-costs`, async (route) => {
+      await route.fulfill({ json: mockBreakdownBeta })
     })
 
     // Desktop 1440
@@ -338,7 +398,7 @@ test.describe('Director Project Cost UI', () => {
 
     // Detail desktop 1440
     await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`/costs/${projectIdAlpha}`)
+    await page.goto(`/costs/${projectIdBeta}`)
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
     await page.screenshot({ path: 'test-results/gate-g-detail-1440.png', fullPage: true })
     violations = (await new AxeBuilder({ page }).include('main').analyze()).violations

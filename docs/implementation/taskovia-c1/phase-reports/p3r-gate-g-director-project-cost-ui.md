@@ -1,12 +1,12 @@
 # C1-P3R Gate G Director Project Cost UI Report
 
 ```yaml
-status: PASS_GATE_G_UI_IMPLEMENTATION_READY_FOR_REVIEW
-phase: C1-P3R-GATE-G-DIRECTOR-PROJECT-COST-UI
+status: PASS_GATE_G_UI_CURRENCY_ALIGNED_READY_FOR_FINAL_REVIEW
+phase: C1-P3R-GATE-G-DIRECTOR-PROJECT-COST-UI-CURRENCY-ALIGNMENT
 
 baseline:
   branch: feat/taskovia-gate-g-director-project-cost-ui
-  synced_from_main: 78916a94dc715c88946dee74f5644be6f363082d
+  merge_base_main: 6e2d3d11f144e851a8947832165fd86201146b57
 
 routes:
   /costs:
@@ -39,6 +39,18 @@ project_metadata:
   separate_project_register_request: false
   hardcoded_vqh_metadata: false
 
+currency_review:
+  original_finding: hardcoded_VND
+  severity: IMPORTANT
+  resolved: true
+
+currency_contract:
+  source: ProjectCostSummary.currencyCode
+  overview_hardcoded_currency: false
+  detail_hardcoded_currency: false
+  multi_project_multi_currency_tested: true
+  usd_fixture_tested: true
+
 project_cost_ui:
   accepted_visible: true
   in_progress_visible: true
@@ -67,6 +79,7 @@ visual:
   accessibility_axe: PASS
 
 testing:
+  red_evidence: PASS
   focused_e2e: PASS
   navigation_unit_tests: PASS
   typecheck: PASS
@@ -81,10 +94,16 @@ visual_evidence:
   detail_desktop: test-results/gate-g-detail-1440.png
   detail_mobile: test-results/gate-g-detail-390.png
   source_sanity: test-results/gate-g-sources-sanity.png
+  usd_fixture_visible_in:
+    - test-results/gate-g-overview-1440.png (Project Beta card)
+    - test-results/gate-g-overview-390.png (Project Beta card)
+    - test-results/gate-g-detail-1440.png (Synthetic Project Beta breakdown)
+    - test-results/gate-g-detail-390.png (Synthetic Project Beta breakdown)
 
 safety:
   cloud_db_commands: 0
   backend_changes: 0
+  new_shared_changes: 0
   migration_changes: 0
   rbac_changes: 0
   auth_changes: 0
@@ -92,28 +111,30 @@ safety:
 gates:
   gate_f: COMPLETE
   gate_g_database_enabler: CLOUD_VERIFIED
-  gate_g_typescript_contract: COMPLETE
-  gate_g_ui: IMPLEMENTED_PENDING_REVIEW
+  gate_g_metadata_contract: COMPLETE
+  gate_g_currency_contract: COMPLETE
+  gate_g_ui: CURRENCY_ALIGNED_PENDING_FINAL_REVIEW
   gate_h: NOT_STARTED_NOT_AUTHORIZED
 ```
 
 ## Summary
 
-The Director Project Cost UI implementation is complete and ready for review on the feature branch `feat/taskovia-gate-g-director-project-cost-ui`.
+The Director Project Cost UI currency alignment review fix is complete on the feature branch `feat/taskovia-gate-g-director-project-cost-ui`.
 
-1. **Routes & Boundaries:**
-   - `/costs` serves as the Director-facing Project Cost overview, guarded exclusively by `cost.read`, rendering project cards with project names, codes, tracked totals, accepted metrics, in-progress metrics, and unknown metrics.
-   - `/costs/:projectId` serves as the Director-facing Project Cost breakdown, displaying detailed item status, description, date, business reference, amount, and currency without leaking internal relation IDs or source mechanics.
-   - `/costs/sources` preserves the technical Cost Source overview under `cost.source.read`.
-   - `/costs/projects/:projectId` preserves technical Cost Source detail under `cost.source.read`, with back navigation returning to `/costs/sources`.
+1. **Review Finding Resolution:**
+   - ChatGPT review identified an Important finding: `/costs` overview and `/costs/:projectId` detail hardcoded `VND` in summary displays, which broke multi-currency correctness for non-VND projects.
+   - The M2.1 contract added `summary.currencyCode` to the canonical `ProjectCostSummary` schema.
+   - The UI was updated to consume `entry.summary.currencyCode` (overview) and `detail.summary.currencyCode` (detail), eliminating all hardcoded `VND` strings from the Project Cost UI.
 
-2. **No Data / Contract Leakage:**
-   - All Project metadata is consumed directly from `repositories.projectCosts`.
-   - No separate Project Register (`repositories.projects`, `repositories.projectRegister`) calls are made.
-   - No write controls, modals, or editing flows are exposed.
+2. **Multi-Currency Verification:**
+   - Both VND and USD synthetic project fixtures are exercised in the automated test suite.
+   - Overview tests verify that `Synthetic Project Alpha` renders `VND` and `Synthetic Project Beta` renders `USD` on the same page.
+   - Detail tests verify that `Synthetic Project Beta` renders `USD` in its summary card and on its items.
+   - Initial RED test runs proved the original bug failed before code edits, and GREEN runs confirmed the fix.
 
-3. **Verification:**
-   - Playwright E2E suite (`project-costs.spec.ts` + `app-shell-navigation.spec.ts`, 27 tests) passes green.
+3. **Boundaries & Verification:**
+   - No write operations, creation forms, or edit controls added.
+   - Zero database mutations, zero cloud DB commands (`pnpm db:dev:*`), zero migrations, zero RBAC/Auth changes.
+   - Playwright E2E suite (`project-costs.spec.ts` + `app-shell-navigation.spec.ts`, 28 tests) passed green.
    - Accessibility tests via AxeBuilder confirm zero WCAG violations on both desktop and mobile viewports.
-   - `pnpm verify:app` (unit tests, typecheck, lint, build) exits 0.
-   - Zero database mutations, migrations, or RBAC changes occurred.
+   - `pnpm verify:app` (unit tests, typecheck, lint, build) exited 0.

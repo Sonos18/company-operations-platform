@@ -107,7 +107,7 @@ watch(() => companyAccess.activeCompanyId, load, { immediate: true })
           <span class="total-label">Tổng đang theo dõi</span>
           <span class="total-value" data-testid="total-tracked-value">
             {{ formatMoney(entry.summary.totalTrackedWorkValue) }}
-            <span class="currency">VND</span>
+            <span class="currency">{{ entry.summary.currencyCode }}</span>
           </span>
         </div>
 
