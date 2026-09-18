@@ -31,6 +31,7 @@ const createInput = {
 }
 
 const summary = {
+  currencyCode: 'VND',
   acceptedValue: '100.0000',
   acceptedCount: 1,
   inProgressValue: '50.0000',
@@ -177,6 +178,15 @@ describe('project cost contracts', () => {
   it('accepts F06 totals from accepted and in-progress values only', () => {
     expect(projectCostSummarySchema.safeParse(summary).success).toBe(true)
     expect(projectCostSummarySchema.safeParse({ ...summary, unknownStatusValue: '999.0000' }).success).toBe(true)
+  })
+
+  it('requires a strict three-letter summary currency', () => {
+    const withoutCurrency = Object.fromEntries(Object.entries(summary).filter(([key]) => key !== 'currencyCode'))
+    expect(projectCostSummarySchema.safeParse(withoutCurrency).success).toBe(false)
+    expect(projectCostSummarySchema.safeParse(summary).success).toBe(true)
+    expect(projectCostSummarySchema.safeParse({ ...summary, currencyCode: 'USD' }).success).toBe(true)
+    expect(projectCostSummarySchema.safeParse({ ...summary, currencyCode: 'VN' }).success).toBe(false)
+    expect(projectCostSummarySchema.safeParse({ ...summary, paidAmount: '1' }).success).toBe(false)
   })
 
   it('rejects a total that includes unknown status value', () => {

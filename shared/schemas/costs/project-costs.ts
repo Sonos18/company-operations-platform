@@ -76,6 +76,7 @@ export const projectCostItemSchema = z.object({
 }).strict()
 
 export const projectCostSummarySchema = z.object({
+  currencyCode,
   acceptedValue: decimalStringSchema,
   acceptedCount: z.number().int().nonnegative(),
   inProgressValue: decimalStringSchema,

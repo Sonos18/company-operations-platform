@@ -78,7 +78,7 @@ describe('Project Cost service', () => {
     ])
     const repository = new ProjectCostRepository(client as never)
 
-    await expect(repository.listSummaries(context([]).tenantId, context([]).companyId)).resolves.toEqual([{ ...metadata(createInput.projectId), summary: { acceptedValue: '0.0000', acceptedCount: 1, inProgressValue: '2.5000', inProgressCount: 1, unknownStatusValue: '7.0000', unknownCount: 1, totalTrackedWorkValue: '2.5000' } }])
+    await expect(repository.listSummaries(context([]).tenantId, context([]).companyId)).resolves.toEqual([{ ...metadata(createInput.projectId), summary: { currencyCode: 'VND', acceptedValue: '0.0000', acceptedCount: 1, inProgressValue: '2.5000', inProgressCount: 1, unknownStatusValue: '7.0000', unknownCount: 1, totalTrackedWorkValue: '2.5000' } }])
   })
 
   it('isolates mixed-order multi-project aggregates and returns deterministic project ordering', async () => {
@@ -93,8 +93,17 @@ describe('Project Cost service', () => {
     ]) as never)
 
     await expect(repository.listSummaries(context([]).tenantId, context([]).companyId)).resolves.toEqual([
-      { ...metadata(createInput.projectId), summary: { acceptedValue: '100.0000', acceptedCount: 1, inProgressValue: '50.0000', inProgressCount: 1, unknownStatusValue: '20.0000', unknownCount: 1, totalTrackedWorkValue: '150.0000' } },
-      { ...metadata(projectB), summary: { acceptedValue: '10.0000', acceptedCount: 1, inProgressValue: '5.0000', inProgressCount: 1, unknownStatusValue: '2.0000', unknownCount: 1, totalTrackedWorkValue: '15.0000' } },
+      { ...metadata(createInput.projectId), summary: { currencyCode: 'VND', acceptedValue: '100.0000', acceptedCount: 1, inProgressValue: '50.0000', inProgressCount: 1, unknownStatusValue: '20.0000', unknownCount: 1, totalTrackedWorkValue: '150.0000' } },
+      { ...metadata(projectB), summary: { currencyCode: 'VND', acceptedValue: '10.0000', acceptedCount: 1, inProgressValue: '5.0000', inProgressCount: 1, unknownStatusValue: '2.0000', unknownCount: 1, totalTrackedWorkValue: '15.0000' } },
+    ])
+  })
+
+  it('derives independent summary currencies from persisted Project Cost rows', async () => {
+    const projectB = 'c1010000-0000-4000-8000-000000000102'
+    const repository = new ProjectCostRepository(listClient([itemRow({ currency_code: 'VND' }), itemRow({ id: 'c1010000-0000-4000-8000-000000000002', project_id: projectB, currency_code: 'USD' })]) as never)
+    await expect(repository.listSummaries(context([]).tenantId, context([]).companyId)).resolves.toMatchObject([
+      { projectId: createInput.projectId, summary: { currencyCode: 'VND' } },
+      { projectId: projectB, summary: { currencyCode: 'USD' } },
     ])
   })
 
