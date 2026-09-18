@@ -165,6 +165,9 @@ const mockItem1Details = {
       unitCode: null,
       unitPrice: null,
       amount: '50000000.0000',
+      retentionKind: null,
+      retentionRateBps: null,
+      retentionAmount: null,
       relevantDate: '2026-08-01',
       reference: 'OB-01',
       note: 'Chuyển giao từ kỳ trước',
@@ -182,6 +185,9 @@ const mockItem1Details = {
       unitCode: 'tim',
       unitPrice: '35000000.0000',
       amount: '70000000.0000',
+      retentionKind: null,
+      retentionRateBps: null,
+      retentionAmount: null,
       relevantDate: '2026-08-15',
       reference: 'BB-01',
       note: null,
@@ -207,6 +213,9 @@ const mockItem2Details = {
       unitCode: 'tấn',
       unitPrice: '11672607.2381',
       amount: '122562376.0000',
+      retentionKind: null,
+      retentionRateBps: null,
+      retentionAmount: null,
       relevantDate: '2026-08-20',
       reference: 'HD-102',
       note: 'Đợt 1',
@@ -232,12 +241,102 @@ const mockItem3Details = {
       unitCode: 'gói',
       unitPrice: '15000000.0000',
       amount: '15000000.0000',
+      retentionKind: null,
+      retentionRateBps: null,
+      retentionAmount: null,
       relevantDate: '2026-08-25',
       reference: null,
       note: null,
       version: 0,
       createdAt: '2026-08-25T00:00:00.000Z',
       updatedAt: '2026-08-25T00:00:00.000Z',
+    },
+  ],
+}
+
+const projectIdYongMei = '10000000-0000-4000-8000-000000000103'
+const yongMeiItemId = '10000000-0000-4000-8000-000000000205'
+
+const mockBreakdownYongMei = {
+  projectId: projectIdYongMei,
+  projectCode: 'YM-001',
+  projectName: 'Dự án kết cấu thép Yong Mei',
+  summary: {
+    currencyCode: 'VND',
+    acceptedValue: '0.0000',
+    acceptedCount: 0,
+    inProgressValue: '107530000.0000',
+    inProgressCount: 1,
+    unknownStatusValue: '0.0000',
+    unknownCount: 0,
+    totalTrackedWorkValue: '107530000.0000',
+  },
+  items: [
+    {
+      id: yongMeiItemId,
+      tenantId: '10000000-0000-4000-8000-000000000001',
+      companyId: '10000000-0000-4000-8000-000000000002',
+      projectId: projectIdYongMei,
+      description: 'Gia công lắp dựng kết cấu thép Yong Mei',
+      amount: '107530000.0000',
+      currencyCode: 'VND',
+      workStatus: 'in_progress' as const,
+      businessReference: 'YM-SUBCONTRACT-01',
+      partyId: null,
+      engagementId: null,
+      componentId: null,
+      relevantDate: '2026-08-20',
+      version: 1,
+      createdAt: '2026-08-10T08:00:00.000Z',
+      updatedAt: '2026-08-20T08:00:00.000Z',
+    },
+  ],
+}
+
+const mockYongMeiDetails = {
+  projectCostItemId: yongMeiItemId,
+  totalAmount: '107530000.0000',
+  currencyCode: 'VND',
+  details: [
+    {
+      id: '10000000-0000-4000-8000-000000000505',
+      projectCostItemId: yongMeiItemId,
+      lineNo: 1,
+      detailKind: 'line_item' as const,
+      description: 'Gia công lắp dựng kết cấu thép Yong Mei đợt 1',
+      quantity: '1.0000',
+      unitCode: 'gói',
+      unitPrice: '31200000.0000',
+      amount: '31200000.0000',
+      retentionKind: 'warranty' as const,
+      retentionRateBps: 500,
+      retentionAmount: '1560000.0000',
+      relevantDate: '2026-08-10',
+      reference: 'YM-01',
+      note: 'Bảo hành 5%',
+      version: 0,
+      createdAt: '2026-08-10T00:00:00.000Z',
+      updatedAt: '2026-08-10T00:00:00.000Z',
+    },
+    {
+      id: '10000000-0000-4000-8000-000000000506',
+      projectCostItemId: yongMeiItemId,
+      lineNo: 2,
+      detailKind: 'line_item' as const,
+      description: 'Gia công lắp dựng kết cấu thép Yong Mei đợt 2',
+      quantity: '1.0000',
+      unitCode: 'gói',
+      unitPrice: '76330000.0000',
+      amount: '76330000.0000',
+      retentionKind: 'warranty' as const,
+      retentionRateBps: 500,
+      retentionAmount: '3816500.0000',
+      relevantDate: '2026-08-20',
+      reference: 'YM-02',
+      note: 'Bảo hành 5%',
+      version: 0,
+      createdAt: '2026-08-20T00:00:00.000Z',
+      updatedAt: '2026-08-20T00:00:00.000Z',
     },
   ],
 }
@@ -707,5 +806,144 @@ test.describe('Director Project Cost UI', () => {
     // Accessibility check on expanded mobile view
     const violations = (await new AxeBuilder({ page }).include('main').analyze()).violations
     expect(violations).toEqual([])
+  })
+
+  test('desktop UI renders structured warranty retention for Yong Mei subcontract cost without altering parent totals', async ({ page }) => {
+    await page.route(`**/api/companies/**/projects/${projectIdYongMei}/project-costs`, async (route) => {
+      await route.fulfill({ json: mockBreakdownYongMei })
+    })
+
+    await page.route(`**/api/companies/**/project-costs/${yongMeiItemId}/details`, async (route) => {
+      await route.fulfill({ json: mockYongMeiDetails })
+    })
+
+    await page.goto(`/costs/${projectIdYongMei}`)
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Dự án kết cấu thép Yong Mei')
+
+    // Invariant: Parent / project summary totals remain 107,530,000 VND, NOT altered by retention
+    await expect(page.getByTestId('detail-total-tracked')).toContainText('107,530,000')
+    await expect(page.getByTestId('detail-in-progress')).toContainText('107,530,000')
+
+    // Expand Yong Mei item
+    const toggleBtn = page.locator(`[data-testid="toggle-details-${yongMeiItemId}"]`)
+    await toggleBtn.click()
+
+    const nestedRow = page.locator(`[data-testid="details-row-${yongMeiItemId}"]`)
+    await expect(nestedRow).toBeVisible()
+
+    // Compact retention summary banner shows derived total 5,376,500 VND
+    const retentionBanner = nestedRow.locator('[data-testid="retention-summary-banner"]')
+    await expect(retentionBanner).toBeVisible()
+    await expect(retentionBanner.getByText('Giữ lại bảo hành:')).toBeVisible()
+    await expect(retentionBanner.getByText('5,376,500 VND')).toBeVisible()
+
+    // Desktop table lines
+    const desktopTable = nestedRow.locator('.nested-table')
+    await expect(desktopTable).toBeVisible()
+
+    // Line 1: primary recognized amount 31,200,000 VND and retention 1,560,000 VND
+    await expect(desktopTable.getByText('Gia công lắp dựng kết cấu thép Yong Mei đợt 1')).toBeVisible()
+    await expect(desktopTable.getByText('31,200,000 VND')).toBeVisible()
+    await expect(desktopTable.getByText('Giữ lại bảo hành 5%')).toHaveCount(2)
+    await expect(desktopTable.getByText('1,560,000 VND')).toBeVisible()
+
+    // Line 2: primary recognized amount 76,330,000 VND and retention 3,816,500 VND
+    await expect(desktopTable.getByText('Gia công lắp dựng kết cấu thép Yong Mei đợt 2')).toBeVisible()
+    await expect(desktopTable.getByText('76,330,000 VND')).toBeVisible()
+    await expect(desktopTable.getByText('3,816,500 VND')).toBeVisible()
+
+    // Invariant: 102,153,500 is NOT labeled as paid / advance / payment
+    const pageContent = await page.content()
+    expect(pageContent).not.toMatch(/102[,.]?153[,.]?500.*(paid|advance|payment|thanh toán|tạm ứng)/i)
+    expect(pageContent).not.toMatch(/(paid|advance|payment|thanh toán|tạm ứng).*102[,.]?153[,.]?500/i)
+
+    // Invariant: Parent recognized amount on item row remains 107,530,000 VND
+    const parentRow = page.locator(`[data-testid="cost-item-row-${yongMeiItemId}"]`)
+    await expect(parentRow.locator('.col-amount')).toContainText('107,530,000 VND')
+
+    // Accessibility check on desktop view
+    const violations = (await new AxeBuilder({ page }).include('main').analyze()).violations
+    expect(violations).toEqual([])
+  })
+
+  test('mobile viewport renders structured warranty retention without horizontal overflow', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+
+    await page.route(`**/api/companies/**/projects/${projectIdYongMei}/project-costs`, async (route) => {
+      await route.fulfill({ json: mockBreakdownYongMei })
+    })
+
+    await page.route(`**/api/companies/**/project-costs/${yongMeiItemId}/details`, async (route) => {
+      await route.fulfill({ json: mockYongMeiDetails })
+    })
+
+    await page.goto(`/costs/${projectIdYongMei}`)
+
+    // Expand Yong Mei item
+    const toggleBtn = page.locator(`[data-testid="toggle-details-${yongMeiItemId}"]`)
+    await toggleBtn.click()
+
+    const nestedRow = page.locator(`[data-testid="details-row-${yongMeiItemId}"]`)
+    await expect(nestedRow).toBeVisible()
+
+    // Mobile stacked cards are visible, desktop nested table is hidden
+    const mobileCards = nestedRow.locator('.nested-mobile-cards')
+    await expect(mobileCards).toBeVisible()
+    await expect(nestedRow.locator('.nested-table-container')).toBeHidden()
+
+    // Compact retention summary banner is visible on mobile
+    const retentionBanner = nestedRow.locator('[data-testid="retention-summary-banner"]')
+    await expect(retentionBanner).toBeVisible()
+    await expect(retentionBanner.getByText('Giữ lại bảo hành:')).toBeVisible()
+    await expect(retentionBanner.getByText('5,376,500 VND')).toBeVisible()
+
+    // Check card 1 retention
+    await expect(mobileCards.getByText('Gia công lắp dựng kết cấu thép Yong Mei đợt 1')).toBeVisible()
+    await expect(mobileCards.getByText('31,200,000 VND')).toBeVisible()
+    await expect(mobileCards.getByText('1,560,000 VND')).toBeVisible()
+
+    // Check card 2 retention
+    await expect(mobileCards.getByText('Gia công lắp dựng kết cấu thép Yong Mei đợt 2')).toBeVisible()
+    await expect(mobileCards.getByText('76,330,000 VND')).toBeVisible()
+    await expect(mobileCards.getByText('3,816,500 VND')).toBeVisible()
+
+    // Tap target size >= 44px
+    const toggleBox = await toggleBtn.boundingBox()
+    expect(toggleBox?.height).toBeGreaterThanOrEqual(44)
+
+    // No horizontal overflow at 390px
+    await expect.poll(() => page.locator('body').evaluate(element => element.scrollWidth <= window.innerWidth)).toBe(true)
+
+    // Accessibility check on mobile view
+    const violations = (await new AxeBuilder({ page }).include('main').analyze()).violations
+    expect(violations).toEqual([])
+  })
+
+  test('details without retention do not render an empty retention section or summary banner', async ({ page }) => {
+    await page.route(`**/api/companies/**/projects/${projectIdAlpha}/project-costs`, async (route) => {
+      await route.fulfill({ json: mockBreakdownAlpha })
+    })
+
+    await page.route(`**/api/companies/**/project-costs/${item1Id}/details`, async (route) => {
+      await route.fulfill({ json: mockItem1Details })
+    })
+
+    await page.goto(`/costs/${projectIdAlpha}`)
+
+    // Expand item 1 (no retention)
+    await page.locator(`[data-testid="toggle-details-${item1Id}"]`).click()
+
+    const nestedRow = page.locator(`[data-testid="details-row-${item1Id}"]`)
+    await expect(nestedRow).toBeVisible()
+
+    // No retention summary banner rendered
+    await expect(nestedRow.locator('[data-testid="retention-summary-banner"]')).toHaveCount(0)
+
+    // No detail retention sublines rendered
+    await expect(nestedRow.locator('[data-testid="detail-retention-subline"]')).toHaveCount(0)
+    await expect(nestedRow.locator('[data-testid="mobile-retention-subline"]')).toHaveCount(0)
+
+    // Text "Giữ lại bảo hành" does not appear
+    await expect(nestedRow.getByText('Giữ lại bảo hành')).toHaveCount(0)
   })
 })

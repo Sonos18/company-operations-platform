@@ -97,6 +97,7 @@ export const projectCostSummaryEntrySchema = projectCostProjectMetadataSchema.ex
 export const projectCostBreakdownSchema = projectCostProjectMetadataSchema.extend({ summary: projectCostSummarySchema, items: z.array(projectCostItemSchema) }).strict()
 
 export const projectCostDetailKindSchema = z.enum(['opening_balance', 'line_item'])
+export const projectCostRetentionKindSchema = z.enum(['warranty', 'other'])
 
 export const projectCostItemDetailSchema = z.object({
   id: uuid,
@@ -108,13 +109,42 @@ export const projectCostItemDetailSchema = z.object({
   unitCode: z.string().nullable(),
   unitPrice: decimalStringSchema.nullable(),
   amount: decimalStringSchema,
+  retentionKind: projectCostRetentionKindSchema.nullable(),
+  retentionRateBps: z.number().int().min(0).max(10000).nullable(),
+  retentionAmount: decimalStringSchema.nullable(),
   relevantDate: relevantDate.nullable(),
   reference: z.string().nullable(),
   note: z.string().nullable(),
   version,
   createdAt: timestamp,
   updatedAt: timestamp,
-}).strict()
+}).strict().superRefine((val, ctx) => {
+  const hasKind = val.retentionKind !== null
+  const hasAmount = val.retentionAmount !== null
+  const hasRate = val.retentionRateBps !== null
+
+  if (!hasKind && !hasAmount) {
+    if (hasRate) {
+      ctx.addIssue({ code: 'custom', path: ['retentionRateBps'], message: 'retentionRateBps must be null when retention is not present' })
+    }
+    return
+  }
+
+  if (!hasKind) {
+    ctx.addIssue({ code: 'custom', path: ['retentionKind'], message: 'retentionKind must be non-null when retention is present' })
+  }
+  if (!hasAmount) {
+    ctx.addIssue({ code: 'custom', path: ['retentionAmount'], message: 'retentionAmount must be non-null when retention is present' })
+  }
+
+  if (val.retentionAmount !== null) {
+    const retAmt = new Decimal(val.retentionAmount)
+    const detailAmt = new Decimal(val.amount)
+    if (retAmt.greaterThan(detailAmt)) {
+      ctx.addIssue({ code: 'custom', path: ['retentionAmount'], message: 'retentionAmount cannot be greater than detail amount' })
+    }
+  }
+})
 
 export const projectCostDetailsResponseSchema = z.object({
   projectCostItemId: uuid,
@@ -132,5 +162,6 @@ export type ProjectCostSummary = z.infer<typeof projectCostSummarySchema>
 export type ProjectCostSummaryEntry = z.infer<typeof projectCostSummaryEntrySchema>
 export type ProjectCostBreakdown = z.infer<typeof projectCostBreakdownSchema>
 export type ProjectCostDetailKind = z.infer<typeof projectCostDetailKindSchema>
+export type ProjectCostRetentionKind = z.infer<typeof projectCostRetentionKindSchema>
 export type ProjectCostItemDetail = z.infer<typeof projectCostItemDetailSchema>
 export type ProjectCostDetailsResponse = z.infer<typeof projectCostDetailsResponseSchema>

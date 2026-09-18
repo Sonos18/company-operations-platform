@@ -331,6 +331,9 @@ describe('Project Cost service', () => {
       unit_code: 'm2',
       unit_price_text: '10.0000',
       amount_text: '100.0000',
+      retention_kind: null,
+      retention_rate_bps: null,
+      retention_amount_text: null,
       relevant_date: '2026-09-17',
       reference: 'BB-01',
       note: 'Ghi chú',
@@ -400,6 +403,9 @@ describe('Project Cost service', () => {
             unitCode: 'm2',
             unitPrice: '10.0000',
             amount: '100.0000',
+            retentionKind: null,
+            retentionRateBps: null,
+            retentionAmount: null,
             relevantDate: '2026-09-17',
             reference: 'BB-01',
             note: 'Ghi chú',
@@ -493,6 +499,52 @@ describe('Project Cost service', () => {
       const repository = new ProjectCostRepository(client as never)
 
       await expect(repository.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)).rejects.toMatchObject({
+        statusCode: 500,
+        code: 'INTERNAL_ERROR',
+      })
+    })
+
+    it('selects and maps the three DB retention columns to camelCase retentionKind, retentionRateBps, retentionAmount', async () => {
+      const row = makeDetailRow({
+        retention_kind: 'warranty',
+        retention_rate_bps: 500,
+        retention_amount_text: '5.0000',
+      })
+      const client = makeDetailsClient([parentRow], [row])
+      const repository = new ProjectCostRepository(client as never)
+
+      const result = await repository.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)
+      expect(client.detailsQuery.select).toHaveBeenCalledWith(
+        'id,tenant_id,company_id,project_cost_item_id,line_no,detail_kind,description,quantity_text,unit_code,unit_price_text,amount_text,retention_kind,retention_rate_bps,retention_amount_text,relevant_date,reference,note,version,created_by,created_at,updated_at',
+      )
+      expect(result.details[0]!.retentionKind).toBe('warranty')
+      expect(result.details[0]!.retentionRateBps).toBe(500)
+      expect(result.details[0]!.retentionAmount).toBe('5.0000')
+    })
+
+    it('preserves SUM(detail.amount) == parent.amount invariant regardless of retentionAmount', async () => {
+      // Recognized cost is 100.0000; warranty retention is 5.0000.
+      // Invariant must check SUM(detail.amount) == parent.amount (100 == 100).
+      // Retention must NOT be subtracted from the invariant.
+      const rowWithRetention = makeDetailRow({
+        amount_text: '100.0000',
+        retention_kind: 'warranty',
+        retention_rate_bps: 500,
+        retention_amount_text: '5.0000',
+      })
+      const client = makeDetailsClient([parentRow], [rowWithRetention])
+      const repository = new ProjectCostRepository(client as never)
+
+      const result = await repository.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)
+      expect(result.totalAmount).toBe('100.0000')
+      expect(result.details[0]!.amount).toBe('100.0000')
+      expect(result.details[0]!.retentionAmount).toBe('5.0000')
+
+      // If parent amount erroneously expected amountAfterRetention (95.0000), it would throw INTERNAL_ERROR
+      const parentErroneouslySubtracted = { ...parentRow, amount_text: '95.0000' }
+      const clientBadParent = makeDetailsClient([parentErroneouslySubtracted], [rowWithRetention])
+      const repositoryBadParent = new ProjectCostRepository(clientBadParent as never)
+      await expect(repositoryBadParent.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)).rejects.toMatchObject({
         statusCode: 500,
         code: 'INTERNAL_ERROR',
       })

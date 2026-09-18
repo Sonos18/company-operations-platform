@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import Decimal from 'decimal.js'
 import { ClientError } from '../../errors/client-error'
-import type { ProjectCostDetailsResponse } from '../../../shared/schemas/costs/project-costs'
+import type { ProjectCostDetailsResponse, ProjectCostItemDetail, ProjectCostRetentionKind } from '../../../shared/schemas/costs/project-costs'
 definePageMeta({ requiredPermission: 'cost.read' })
 
 const route = useRoute()
@@ -94,6 +95,28 @@ function statusBadge(workStatus: string) {
   if (workStatus === 'accepted') return { label: 'Đã nghiệm thu', variant: 'cockpit-badge--success' }
   if (workStatus === 'in_progress') return { label: 'Đang thực hiện', variant: 'cockpit-badge--warning' }
   return { label: 'Chưa xác định', variant: 'cockpit-badge--neutral' }
+}
+
+function formatRetentionLabel(kind: ProjectCostRetentionKind | null | undefined, rateBps: number | null | undefined): string {
+  const base = kind === 'warranty' ? 'Giữ lại bảo hành' : 'Khoản giữ lại'
+  if (rateBps != null) {
+    const ratePercent = new Decimal(rateBps).div(100).toString()
+    return `${base} ${ratePercent}%`
+  }
+  return base
+}
+
+function getRetentionSummary(details: ProjectCostItemDetail[] | undefined): { label: string; amount: string } | null {
+  if (!details || details.length === 0) return null
+  const retentionDetails = details.filter(d => d.retentionAmount != null)
+  if (retentionDetails.length === 0) return null
+  const hasWarranty = retentionDetails.some(d => d.retentionKind === 'warranty')
+  const label = hasWarranty ? 'Giữ lại bảo hành' : 'Khoản giữ lại'
+  const total = retentionDetails.reduce((acc, d) => acc.add(new Decimal(d.retentionAmount!)), new Decimal(0))
+  return {
+    label,
+    amount: total.toFixed(4),
+  }
 }
 
 async function load() {
@@ -324,6 +347,21 @@ watch([projectId, () => companyAccess.activeCompanyId], () => load(), { immediat
                       </div>
 
                       <div v-else-if="getItemDetails(item.id)" class="nested-content">
+                        <!-- Retention Summary Banner -->
+                        <div
+                          v-if="getRetentionSummary(getItemDetails(item.id)?.details)"
+                          class="retention-summary-banner"
+                          data-testid="retention-summary-banner"
+                        >
+                          <div class="retention-summary-content">
+                            <UIcon name="i-lucide-shield-check" class="retention-summary-icon" aria-hidden="true" />
+                            <span class="retention-summary-label">{{ getRetentionSummary(getItemDetails(item.id)?.details)!.label }}:</span>
+                            <span class="retention-summary-amount font-mono">
+                              {{ formatMoney(getRetentionSummary(getItemDetails(item.id)?.details)!.amount) }} {{ getItemDetails(item.id)!.currencyCode }}
+                            </span>
+                          </div>
+                        </div>
+
                         <!-- Desktop Nested Table -->
                         <div class="nested-table-container">
                           <table class="nested-table">
@@ -363,8 +401,14 @@ watch([projectId, () => companyAccess.activeCompanyId], () => load(), { immediat
                                   <span v-if="d.unitPrice">{{ formatMoney(d.unitPrice) }}</span>
                                   <span v-else class="empty-cell">—</span>
                                 </td>
-                                <td class="nested-col-amount text-right font-mono font-bold">
-                                  {{ formatMoney(d.amount) }} {{ getItemDetails(item.id)!.currencyCode }}
+                                <td class="nested-col-amount text-right font-mono">
+                                  <div class="amount-primary font-bold">
+                                    {{ formatMoney(d.amount) }} {{ getItemDetails(item.id)!.currencyCode }}
+                                  </div>
+                                  <div v-if="d.retentionAmount" class="retention-subline" data-testid="detail-retention-subline">
+                                    <span class="retention-label">{{ formatRetentionLabel(d.retentionKind, d.retentionRateBps) }}</span>
+                                    <span class="retention-amount">{{ formatMoney(d.retentionAmount) }} {{ getItemDetails(item.id)!.currencyCode }}</span>
+                                  </div>
                                 </td>
                                 <td class="nested-col-date font-mono">
                                   <span v-if="d.relevantDate">{{ formatDate(d.relevantDate) }}</span>
@@ -399,9 +443,15 @@ watch([projectId, () => companyAccess.activeCompanyId], () => load(), { immediat
                                 </span>
                                 <span class="card-desc">{{ d.description }}</span>
                               </div>
-                              <span class="card-amount font-mono">
-                                {{ formatMoney(d.amount) }} {{ getItemDetails(item.id)!.currencyCode }}
-                              </span>
+                              <div class="card-amount-block text-right">
+                                <span class="card-amount font-mono">
+                                  {{ formatMoney(d.amount) }} {{ getItemDetails(item.id)!.currencyCode }}
+                                </span>
+                                <div v-if="d.retentionAmount" class="retention-subline" data-testid="mobile-retention-subline">
+                                  <span class="retention-label">{{ formatRetentionLabel(d.retentionKind, d.retentionRateBps) }}</span>
+                                  <span class="retention-amount font-mono">{{ formatMoney(d.retentionAmount) }} {{ getItemDetails(item.id)!.currencyCode }}</span>
+                                </div>
+                              </div>
                             </div>
 
                             <div class="detail-card-grid">
@@ -845,9 +895,73 @@ watch([projectId, () => companyAccess.activeCompanyId], () => load(), { immediat
   white-space: nowrap;
 }
 
+.nested-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.retention-summary-banner {
+  display: flex;
+  align-items: center;
+  padding: 9px 14px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+}
+
+.retention-summary-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.retention-summary-icon {
+  width: 16px;
+  height: 16px;
+  color: #0284c7;
+}
+
+.retention-summary-label {
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: var(--color-text-secondary);
+}
+
+.retention-summary-amount {
+  font-size: 0.86rem;
+  font-weight: 750;
+  color: var(--color-text-primary);
+}
+
 .nested-col-amount {
-  width: 140px;
+  width: 160px;
   white-space: nowrap;
+}
+
+.amount-primary {
+  line-height: 1.3;
+}
+
+.retention-subline {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  margin-top: 3px;
+  line-height: 1.2;
+}
+
+.retention-label {
+  font-size: 0.72rem;
+  font-weight: 550;
+  color: var(--color-text-secondary);
+}
+
+.retention-amount {
+  font-size: 0.76rem;
+  font-weight: 650;
+  color: #92400e;
 }
 
 .font-bold {
@@ -903,6 +1017,18 @@ watch([projectId, () => companyAccess.activeCompanyId], () => load(), { immediat
     flex-direction: column;
     gap: 8px;
     box-sizing: border-box;
+  }
+
+  .nested-detail-area {
+    padding: 12px 10px;
+  }
+
+  .card-amount-block {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    flex-shrink: 0;
+    text-align: right;
   }
 
   .detail-card-top {

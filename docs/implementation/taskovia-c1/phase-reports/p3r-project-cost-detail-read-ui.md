@@ -1,7 +1,7 @@
-# C1-P3R Project Cost Detail Read Model + UI Report
+# C1-P3R Project Cost Detail Read Model + UI Report (with Warranty Retention Amendment)
 
 ```yaml
-status: PASS_PROJECT_COST_DETAIL_READ_UI_READY_FOR_REVIEW
+status: PASS_PROJECT_COST_DETAIL_RETENTION_READY_FOR_REVIEW
 phase: C1-P3R-PROJECT-COST-DETAIL-READ-UI
 
 api:
@@ -12,6 +12,8 @@ data:
   source: project_cost_item_details
   parent_total_derived: true
   double_count: false
+  retention_metadata: implemented
+  retention_alters_totals: false
 
 safety:
   migrations: 0
@@ -25,38 +27,40 @@ gates:
 
 ## Summary
 
-This task implements the bounded read-only Project Cost Detail v1 model and UI:
+This task implements and amends the bounded read-only Project Cost Detail v1 model and UI with structured subcontract warranty retention:
 
 1. **Shared Read Contract**:
    - Added `projectCostDetailKindSchema` (`'opening_balance' | 'line_item'`).
-   - Added `projectCostItemDetailSchema` (strict camelCase schema with offset-aware ISO timestamps for Postgres compatibility).
-   - Added `projectCostDetailsResponseSchema` (`projectCostItemId`, `totalAmount`, `currencyCode`, `details: detail[]`).
+   - Extended `projectCostItemDetailSchema` with structured warranty retention fields:
+     - `retentionKind: z.enum(['warranty', 'other']).nullable()`
+     - `retentionRateBps: z.number().int().min(0).max(10000).nullable()`
+     - `retentionAmount: decimalStringSchema.nullable()`
+   - Enforced schema consistency via `superRefine`: all three fields are null when no retention; `retentionKind` and `retentionAmount` must be non-null when retention is present; `retentionRateBps` can be null or integer bps; and `retentionAmount` cannot exceed detail `amount` using decimal-safe comparison.
+   - Preserved `projectCostDetailsResponseSchema` (`projectCostItemId`, `totalAmount`, `currencyCode`, `details: detail[]`).
 
 2. **Server Read Implementation**:
    - Single GET endpoint: `GET /api/companies/:companyId/project-costs/:projectCostItemId/details`.
    - Requires `cost.read` permission within standard `c1RequestContext`.
-   - Reads parent `project_cost_items` scoped to `tenant_id`, `company_id`, and `projectCostItemId` (returns 404 if not found).
-   - Reads `public.project_cost_item_details` scoped to tenant, company, and project cost item, ordered by `line_no ASC, id ASC`.
-   - Decimal-safe arithmetic checks `SUM(details.amount) == parent.amount_text`. Throws `500 INTERNAL_ERROR` if mismatched; returns empty details array if zero details exist.
+   - Selected and mapped `retention_kind -> retentionKind`, `retention_rate_bps -> retentionRateBps`, `retention_amount_text -> retentionAmount`.
+   - Financial invariant strictly preserved: `SUM(detail.amount) == parent.amount_text`. Retention is explanatory metadata and does NOT alter or participate in parent totals.
    - Zero database writes, zero migrations, zero RBAC changes.
 
 3. **Frontend Repository**:
-   - Extended `ProjectCostRepository` and `createHttpProjectCostRepository` with `details(projectCostItemId)`.
-   - Calls `GET /api/companies/:companyId/project-costs/:projectCostItemId/details` and validates response with `projectCostDetailsResponseSchema`.
+   - `createHttpProjectCostRepository` supports structured warranty retention and strictly validates responses against `projectCostDetailsResponseSchema`.
 
 4. **Project Cost Detail UI (`app/pages/costs/[projectId].vue`)**:
-   - Preserves parent rows as canonical representations without double-counting amounts in project totals.
-   - Expandable detail area per row with "Xem chi tiết" / "Thu gọn" button (44px minimum tap target, `aria-expanded`, `aria-controls`).
-   - Lazy loads detail data only upon parent row expansion; caches results in session memory to avoid duplicate fetches.
-   - Independent status handling per expanded item (loading, ready, empty, error) with localized "Thử lại" retry action.
-   - Desktop view: structured nested table (Nội dung, Số lượng, ĐVT, Đơn giá, Thành tiền, Ngày, Tham chiếu / Ghi chú), with "Số liệu ban đầu" badge for `opening_balance` and `—` for null fields.
-   - Mobile view: compact stacked cards without horizontal overflow, accessible color contrast meeting WCAG 2 AA.
+   - Recognized amount remains visually primary.
+   - For details with warranty retention: renders localized retention subline directly underneath recognized amount (`Giữ lại bảo hành [X%]`, e.g., `Giữ lại bảo hành 5%` with `1,560,000 VND`). Never exposes "500 bps".
+   - Details without retention do not render an empty retention block.
+   - Compact retention summary bar rendered at top of expanded detail area when one or more details have retention (e.g. `Giữ lại bảo hành: 5,376,500 VND`).
+   - Mobile view: renders retention in compact stacked cards without horizontal page overflow at 390px; maintains minimum 44px interactive tap targets.
+   - Yong Mei subcontract cost fixture: total recognized cost `107,530,000 VND`, retention total `5,376,500 VND`. Amount after retention (`102,153,500`) is NOT authoritative and is NOT labeled as paid, advance, payment, or equivalent.
 
 5. **Verification**:
-   - Shared contract unit tests: 32 tests passing in `tests/unit/costs/project-costs.spec.ts`.
-   - Server service & repository unit tests: 41 tests passing in `tests/unit/server/project-cost.service.spec.ts`.
-   - HTTP repository unit tests: 24 tests passing in `tests/unit/repositories/http-project-cost-repository.spec.ts`.
-   - Playwright E2E tests: 14 tests passing in `tests/e2e/project-costs.spec.ts` (including lazy-load, session caching, independent row state, retry on failure, and mobile rendering with zero axe violations).
-   - Full test suite: 128 test files / 1032 unit tests passing (`pnpm test:unit`).
+   - Shared contract unit tests: 35 tests passing in `tests/unit/costs/project-costs.spec.ts`.
+   - Server service & repository unit tests: 43 tests passing in `tests/unit/server/project-cost.service.spec.ts`.
+   - HTTP repository unit tests: 25 tests passing in `tests/unit/repositories/http-project-cost-repository.spec.ts`.
+   - Playwright E2E tests: 17 tests passing in `tests/e2e/project-costs.spec.ts` (including desktop retention rendering, mobile 390px view without horizontal overflow, zero axe violations, and no-retention isolation).
+   - Full test suite: 128 test files / 1,038 unit tests passing (`pnpm test:unit`).
    - Full application verification (`pnpm verify:app`): unit tests, typecheck, lint, and build all passed.
    - `git diff --check`: clean (0 whitespace/formatting errors).
