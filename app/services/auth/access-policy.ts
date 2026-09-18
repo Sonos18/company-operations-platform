@@ -34,7 +34,8 @@ const blockedAccessStatePaths = new Set(['/select-company', '/no-access', '/forb
 
 export function resolvePreferredRoute(permissions: readonly PermissionCode[] = []): string {
   if (permissions.includes('project.read')) return '/projects'
-  if (permissions.includes('cost.source.read')) return '/costs'
+  if (permissions.includes('cost.read')) return '/costs'
+  if (permissions.includes('cost.source.read')) return '/costs/sources'
   return '/forbidden'
 }
 
@@ -60,7 +61,7 @@ function hasSelectedCompany(input: AccessNavigationInput): boolean {
     && (input.companyIds ?? []).includes(input.activeCompanyId)
 }
 
-function resolveAuthenticatedDestination(input: AccessNavigationInput): string {
+export function resolveAuthenticatedDestination(input: AccessNavigationInput): string {
   const companyIds = input.companyIds ?? []
   const selectedCompany = hasSelectedCompany(input)
 

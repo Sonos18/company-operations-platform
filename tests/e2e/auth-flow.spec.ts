@@ -87,6 +87,24 @@ test('persists a successful login across reload and clears it after logout', asy
   await expect(page).toHaveURL(/\/login$/)
 })
 
+test('lands accountant-style and source-only users on their authorized Cost routes', async ({ page }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['cost.read', 'cost.source.read'] })]
+  await page.goto('/login')
+  await page.getByLabel('Email').fill('accountant@example.com')
+  await page.getByLabel('Mật khẩu', { exact: true }).fill(authState.password)
+  await page.getByRole('button', { name: 'Đăng nhập' }).click()
+  await expect(page).toHaveURL(/\/costs$/)
+  expect(page.url()).not.toContain('/forbidden')
+
+  authState.sessionCompanies = [createCompany({ permissions: ['cost.source.read'] })]
+  await page.getByRole('button', { name: 'Đăng xuất' }).click()
+  await page.getByLabel('Email').fill('source@example.com')
+  await page.getByLabel('Mật khẩu', { exact: true }).fill(authState.password)
+  await page.getByRole('button', { name: 'Đăng nhập' }).click()
+  await expect(page).toHaveURL(/\/costs\/sources$/)
+  expect(page.url()).not.toContain('/forbidden')
+})
+
 test('rejects malformed app-session authorization and sends a non-empty bearer token after login', async ({ page }) => {
   await page.goto('/login')
   const rejectedStatuses = await page.evaluate(async () => Promise.all([
