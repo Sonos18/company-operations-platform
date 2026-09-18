@@ -103,7 +103,8 @@ async function signOut(): Promise<void> {
   }
 
   .app-main {
-    padding: calc(var(--shell-header-height) + 16px) 14px 86px;
+    --mobile-nav-bottom-clearance: calc(130px + env(safe-area-inset-bottom, 0px));
+    padding: calc(var(--shell-header-height) + 16px) 14px var(--mobile-nav-bottom-clearance);
   }
 }
 

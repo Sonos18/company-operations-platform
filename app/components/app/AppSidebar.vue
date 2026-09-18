@@ -14,7 +14,11 @@ const companyAccessStore = useNuxtApp().$companyAccessStore
 const visibleLinks = computed(() => filterNavigationLinks(canonicalNavigationLinks, companyAccessStore))
 
 function isActive(to: string) {
-  return route.path === to || (to === '/projects' && route.path.startsWith('/projects/'))
+  if (route.path === to) return true
+  if (to === '/projects') return route.path.startsWith('/projects/')
+  if (to === '/costs') return route.path.startsWith('/costs/') && !route.path.startsWith('/costs/sources') && !route.path.startsWith('/costs/projects/')
+  if (to === '/costs/sources') return route.path.startsWith('/costs/projects/')
+  return false
 }
 </script>
 
@@ -171,11 +175,12 @@ function isActive(to: string) {
   .mobile-nav {
     position: fixed;
     z-index: 60;
-    inset: auto 10px 10px;
+    inset: auto 10px calc(10px + env(safe-area-inset-bottom, 0px));
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     min-height: 58px;
     padding: 5px;
+    gap: 4px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: var(--radius-sm);
     background: #0f172a;
@@ -186,6 +191,8 @@ function isActive(to: string) {
     place-items: center;
     align-content: center;
     gap: 2px;
+    min-height: 44px;
+    padding: 4px;
     border-radius: 6px;
     color: #94a3b8;
     font-size: 0.67rem;
