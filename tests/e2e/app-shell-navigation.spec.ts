@@ -240,3 +240,193 @@ test('resets compact state after a full reload', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Thu gọn thanh điều hướng phía trên' })).toHaveAttribute('aria-expanded', 'true')
   await expect(page.getByRole('button', { name: 'Thu gọn thanh điều hướng bên trái' })).toHaveAttribute('aria-expanded', 'true')
 })
+
+test('arranges six mobile navigation links into a balanced 3x2 grid with touch-sized targets and page clearance', async ({ page }) => {
+  await page.route('**/api/companies/**/project-costs', async (route) => {
+    await route.fulfill({
+      json: [
+        {
+          projectId: '10000000-0000-4000-8000-000000000101',
+          projectCode: 'P-1',
+          projectName: 'Project Alpha',
+          summary: {
+            currencyCode: 'VND',
+            acceptedValue: '100.0000',
+            acceptedCount: 1,
+            inProgressValue: '200.0000',
+            inProgressCount: 2,
+            unknownStatusValue: '0.0000',
+            unknownCount: 0,
+            totalTrackedWorkValue: '300.0000',
+          },
+        },
+        {
+          projectId: '10000000-0000-4000-8000-000000000102',
+          projectCode: 'P-2',
+          projectName: 'Project Beta',
+          summary: {
+            currencyCode: 'USD',
+            acceptedValue: '50.0000',
+            acceptedCount: 1,
+            inProgressValue: '0.0000',
+            inProgressCount: 0,
+            unknownStatusValue: '0.0000',
+            unknownCount: 0,
+            totalTrackedWorkValue: '50.0000',
+          },
+        },
+        {
+          projectId: '10000000-0000-4000-8000-000000000103',
+          projectCode: 'P-3',
+          projectName: 'Project Gamma',
+          summary: {
+            currencyCode: 'VND',
+            acceptedValue: '10.0000',
+            acceptedCount: 1,
+            inProgressValue: '20.0000',
+            inProgressCount: 1,
+            unknownStatusValue: '0.0000',
+            unknownCount: 0,
+            totalTrackedWorkValue: '30.0000',
+          },
+        },
+        {
+          projectId: '10000000-0000-4000-8000-000000000104',
+          projectCode: 'P-4',
+          projectName: 'Project Delta',
+          summary: {
+            currencyCode: 'VND',
+            acceptedValue: '15.0000',
+            acceptedCount: 1,
+            inProgressValue: '25.0000',
+            inProgressCount: 1,
+            unknownStatusValue: '0.0000',
+            unknownCount: 0,
+            totalTrackedWorkValue: '40.0000',
+          },
+        },
+        {
+          projectId: '10000000-0000-4000-8000-000000000105',
+          projectCode: 'P-5',
+          projectName: 'Project Epsilon',
+          summary: {
+            currencyCode: 'VND',
+            acceptedValue: '80.0000',
+            acceptedCount: 1,
+            inProgressValue: '90.0000',
+            inProgressCount: 1,
+            unknownStatusValue: '0.0000',
+            unknownCount: 0,
+            totalTrackedWorkValue: '170.0000',
+          },
+        },
+      ],
+    })
+  })
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/costs')
+
+  const mobileNav = page.locator('.mobile-nav')
+  await expect(mobileNav).toBeVisible()
+
+  const links = mobileNav.getByRole('link')
+  await expect(links).toHaveCount(6)
+
+  // B. Tap targets: every visible mobile navigation link height >= 44
+  const boxes = []
+  for (let i = 0; i < 6; i++) {
+    const box = await links.nth(i).boundingBox()
+    expect(box).not.toBeNull()
+    expect(box!.height).toBeGreaterThanOrEqual(44)
+    boxes.push(box!)
+  }
+
+  // A. Navigation layout: exactly two rows with 3 links each
+  const rows: typeof boxes[] = []
+  for (const box of boxes) {
+    const midY = box.y + box.height / 2
+    let foundRow = rows.find(r => Math.abs(r[0].y + r[0].height / 2 - midY) < 10)
+    if (!foundRow) {
+      foundRow = []
+      rows.push(foundRow)
+    }
+    foundRow.push(box)
+  }
+
+  expect(rows).toHaveLength(2)
+  expect(rows[0]).toHaveLength(3)
+  expect(rows[1]).toHaveLength(3)
+
+  // Exactly three distinct horizontal positions per row
+  for (const row of rows) {
+    const xPositions = row.map(b => Math.round(b.x))
+    const uniqueX = new Set(xPositions)
+    expect(uniqueX.size).toBe(3)
+  }
+
+  // C. No horizontal overflow
+  const dimensions = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    content: document.documentElement.scrollWidth,
+  }))
+  expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
+
+  // D. Page content clearance on a long page
+  await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }))
+  const lastCard = page.locator('.project-card').last()
+  await expect(lastCard).toBeVisible()
+  await expect.poll(async () => {
+    const cardBox = await lastCard.boundingBox()
+    const navBox = await mobileNav.boundingBox()
+    if (!cardBox || !navBox) return false
+    return cardBox.y + cardBox.height <= navBox.y
+  }).toBe(true)
+})
+
+test('highlights correct mobile navigation link for project costs and cost sources', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  // /costs overview
+  await page.goto('/costs')
+  const costLink = page.locator('.mobile-nav a[href="/costs"]')
+  const sourceLink = page.locator('.mobile-nav a[href="/costs/sources"]')
+  await expect(costLink).toHaveClass(/active/)
+  await expect(sourceLink).not.toHaveClass(/active/)
+
+  // /costs/sources
+  await page.goto('/costs/sources')
+  await expect(sourceLink).toHaveClass(/active/)
+  await expect(costLink).not.toHaveClass(/active/)
+})
+
+test('preserves touch targets and avoids overflow when 3, 4, or 5 links are visible', async ({ page, authState }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  const permMap = {
+    3: ['project.read', 'task.read_assigned', 'employee.read_directory'],
+    4: ['project.read', 'task.read_assigned', 'employee.read_directory', 'opportunity.read'],
+    5: ['project.read', 'task.read_assigned', 'employee.read_directory', 'opportunity.read', 'cost.read'],
+  } as const
+
+  for (const count of [3, 4, 5] as const) {
+    authState.sessionCompanies[0].permissions = [...permMap[count]]
+    await page.goto('/projects')
+
+    const mobileNav = page.locator('.mobile-nav')
+    const links = mobileNav.getByRole('link')
+    await expect(links).toHaveCount(count)
+
+    for (let i = 0; i < count; i++) {
+      const box = await links.nth(i).boundingBox()
+      expect(box).not.toBeNull()
+      expect(box!.height).toBeGreaterThanOrEqual(44)
+    }
+
+    const dimensions = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      content: document.documentElement.scrollWidth,
+    }))
+    expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
+  }
+})

@@ -1,8 +1,8 @@
 # C1-P3R Gate G Director Project Cost UI Report
 
 ```yaml
-status: PASS_GATE_G_UI_CURRENCY_ALIGNED_READY_FOR_FINAL_REVIEW
-phase: C1-P3R-GATE-G-DIRECTOR-PROJECT-COST-UI-CURRENCY-ALIGNMENT
+status: PASS_GATE_G_UI_FINAL_REVIEW_FIXES_COMPLETE
+phase: C1-P3R-GATE-G-DIRECTOR-PROJECT-COST-UI-FINAL-REVIEW-FIX
 
 baseline:
   branch: feat/taskovia-gate-g-director-project-cost-ui
@@ -51,6 +51,23 @@ currency_contract:
   multi_project_multi_currency_tested: true
   usd_fixture_tested: true
 
+mobile_navigation_review:
+  original_finding: unbalanced_4_plus_2_mobile_navigation
+  severity: IMPORTANT
+  resolved: true
+
+mobile_navigation:
+  layout_390: 3x2
+  minimum_tap_target_px: 44
+  content_clearance_verified: true
+  horizontal_overflow: false
+  safe_area_accounted_for: true
+
+visual:
+  mobile_overview: PASS
+  mobile_detail: PASS
+  mobile_cost_source: PASS
+
 project_cost_ui:
   accepted_visible: true
   in_progress_visible: true
@@ -72,7 +89,7 @@ state_safety:
   error_retry: handled
   not_found: handled
 
-visual:
+visual_foundation:
   cockpit_foundation: preserved
   desktop_1440: verified
   mobile_390: verified
@@ -113,7 +130,7 @@ gates:
   gate_g_database_enabler: CLOUD_VERIFIED
   gate_g_metadata_contract: COMPLETE
   gate_g_currency_contract: COMPLETE
-  gate_g_ui: CURRENCY_ALIGNED_PENDING_FINAL_REVIEW
+  gate_g_ui: FINAL_REVIEW_FIXES_COMPLETE_PENDING_MERGE_REVIEW
   gate_h: NOT_STARTED_NOT_AUTHORIZED
 ```
 
@@ -138,3 +155,9 @@ The Director Project Cost UI currency alignment review fix is complete on the fe
    - Playwright E2E suite (`project-costs.spec.ts` + `app-shell-navigation.spec.ts`, 28 tests) passed green.
    - Accessibility tests via AxeBuilder confirm zero WCAG violations on both desktop and mobile viewports.
    - `pnpm verify:app` (unit tests, typecheck, lint, build) exited 0.
+
+4. **Mobile Navigation Review Fix:**
+   - Visual review identified an Important finding: with 6 permission-filtered links at 390px, a 4-column layout created an unbalanced 4+2 grid with sub-44px tap targets and insufficient bottom clearance.
+   - Fixed `.mobile-nav` to a balanced 3 columns × 2 rows grid (`repeat(3, minmax(0, 1fr))`) with `min-height: 44px` on each link and safe-area inset support.
+   - Updated `.app-main` mobile bottom padding to `calc(130px + env(safe-area-inset-bottom, 0px))` ensuring page content clearance on long pages.
+   - Verified that 3, 4, 5, and 6 links do not produce horizontal overflow or unusable tap targets.
