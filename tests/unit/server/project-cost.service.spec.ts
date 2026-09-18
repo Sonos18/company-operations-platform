@@ -269,4 +269,45 @@ describe('Project Cost service', () => {
     await expect(service.create(context(['cost.manage']), { ...createInput, amount: 'not-a-decimal' }, 'c1010000-0000-4000-8000-000000000998')).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' })
     expect(repository.create).not.toHaveBeenCalled()
   })
+
+  it('accepts PostgreSQL timestamptz with explicit timezone offsets in listSummaries', async () => {
+    const row = itemRow({
+      created_at: '2026-09-17T07:45:34.829269+00:00',
+      updated_at: '2026-09-17T07:45:34.829269+00:00',
+    })
+    const repository = new ProjectCostRepository(listClient([row]) as never)
+
+    await expect(repository.listSummaries(context([]).tenantId, context([]).companyId)).resolves.toEqual([
+      {
+        ...metadata(createInput.projectId),
+        summary: {
+          currencyCode: 'VND',
+          acceptedValue: '0.0000',
+          acceptedCount: 0,
+          inProgressValue: '0.0000',
+          inProgressCount: 0,
+          unknownStatusValue: '1.0000',
+          unknownCount: 1,
+          totalTrackedWorkValue: '0.0000',
+        },
+      },
+    ])
+  })
+
+  it('accepts PostgreSQL timestamptz with explicit timezone offsets in projectSummary', async () => {
+    const row = itemRow({
+      created_at: '2026-09-17T07:45:34.829269+00:00',
+      updated_at: '2026-09-17T07:45:34.829269+00:00',
+    })
+    const repository = new ProjectCostRepository(listClient([row]) as never)
+
+    await expect(repository.projectSummary(context([]).tenantId, context([]).companyId, createInput.projectId)).resolves.toMatchObject({
+      items: [
+        expect.objectContaining({
+          createdAt: '2026-09-17T07:45:34.829269+00:00',
+          updatedAt: '2026-09-17T07:45:34.829269+00:00',
+        }),
+      ],
+    })
+  })
 })
