@@ -55,7 +55,7 @@ export const correctProjectCostItemInputSchema = z.object({
   }
 })
 
-const timestamp = z.string().datetime()
+const timestamp = z.string().datetime({ offset: true })
 export const projectCostItemSchema = z.object({
   id: uuid,
   tenantId: uuid,

@@ -229,4 +229,44 @@ describe('project cost contracts', () => {
     expect(projectCostBreakdownSchema.safeParse(breakdown).success).toBe(true)
     expect(projectCostBreakdownSchema.safeParse({ ...breakdown, sourceFigureIds: [ids.sourceFigure1] }).success).toBe(false)
   })
+
+  it('accepts PostgreSQL timestamptz with explicit timezone offsets and UTC Z timestamps, rejecting malformed', () => {
+    const baseItem = {
+      id: ids.item,
+      tenantId: ids.tenant,
+      companyId: ids.company,
+      projectId: ids.project,
+      description: createInput.description,
+      amount: createInput.amount,
+      currencyCode: createInput.currencyCode,
+      workStatus: createInput.workStatus,
+      businessReference: null,
+      partyId: null,
+      engagementId: null,
+      componentId: null,
+      relevantDate: null,
+      version: 0,
+    }
+
+    // PostgreSQL explicit offset timestamp (+00:00)
+    expect(projectCostItemSchema.safeParse({
+      ...baseItem,
+      createdAt: '2026-09-17T07:45:34.829269+00:00',
+      updatedAt: '2026-09-17T07:45:34.829269+00:00',
+    }).success).toBe(true)
+
+    // UTC Z timestamp
+    expect(projectCostItemSchema.safeParse({
+      ...baseItem,
+      createdAt: '2026-09-17T07:45:34.829Z',
+      updatedAt: '2026-09-17T07:45:34.829Z',
+    }).success).toBe(true)
+
+    // Malformed / non-datetime value
+    expect(projectCostItemSchema.safeParse({
+      ...baseItem,
+      createdAt: 'not-a-datetime',
+      updatedAt: '2026-09-17T07:45:34.829Z',
+    }).success).toBe(false)
+  })
 })
