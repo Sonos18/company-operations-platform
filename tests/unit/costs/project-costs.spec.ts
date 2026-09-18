@@ -3,6 +3,9 @@ import {
   correctProjectCostItemInputSchema,
   createProjectCostItemInputSchema,
   projectCostBreakdownSchema,
+  projectCostDetailKindSchema,
+  projectCostDetailsResponseSchema,
+  projectCostItemDetailSchema,
   projectCostItemSchema,
   projectCostSummarySchema,
   projectCostWorkStatusSchema,
@@ -268,5 +271,93 @@ describe('project cost contracts', () => {
       createdAt: 'not-a-datetime',
       updatedAt: '2026-09-17T07:45:34.829Z',
     }).success).toBe(false)
+  })
+
+  it('validates projectCostItemDetailSchema accepting opening_balance and line_item with strict attributes', () => {
+    const detailId = 'c1000000-0000-4000-8000-000000000099'
+    const validDetail = {
+      id: detailId,
+      projectCostItemId: ids.item,
+      lineNo: 1,
+      detailKind: 'line_item' as const,
+      description: 'Lắp đặt cốp pha dầm sàn',
+      quantity: '120.5000',
+      unitCode: 'm2',
+      unitPrice: '250000.0000',
+      amount: '30125000.0000',
+      relevantDate: '2026-09-17',
+      reference: 'BB-01',
+      note: 'Nghiệm thu đợt 1',
+      version: 0,
+      createdAt: '2026-09-17T07:45:34.829269+00:00',
+      updatedAt: '2026-09-17T07:45:34.829Z',
+    }
+
+    expect(projectCostItemDetailSchema.safeParse(validDetail).success).toBe(true)
+    expect(projectCostDetailKindSchema.safeParse('opening_balance').success).toBe(true)
+    expect(projectCostDetailKindSchema.safeParse('line_item').success).toBe(true)
+    expect(projectCostDetailKindSchema.safeParse('unsupported').success).toBe(false)
+
+    // opening_balance with null nullable fields
+    const openingBalance = {
+      ...validDetail,
+      detailKind: 'opening_balance' as const,
+      quantity: null,
+      unitCode: null,
+      unitPrice: null,
+      relevantDate: null,
+      reference: null,
+      note: null,
+    }
+    expect(projectCostItemDetailSchema.safeParse(openingBalance).success).toBe(true)
+
+    // Rejects non-positive lineNo
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, lineNo: 0 }).success).toBe(false)
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, lineNo: -1 }).success).toBe(false)
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, lineNo: 1.5 }).success).toBe(false)
+
+    // Rejects empty description
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, description: '' }).success).toBe(false)
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, description: '   ' }).success).toBe(false)
+
+    // Rejects invalid amount or quantity
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, amount: 'invalid' }).success).toBe(false)
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, quantity: 'invalid' }).success).toBe(false)
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, unitPrice: 'invalid' }).success).toBe(false)
+
+    // Strict schema rejects extra fields
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, extraField: 'not allowed' }).success).toBe(false)
+  })
+
+  it('validates projectCostDetailsResponseSchema with strict attributes', () => {
+    const detailId = 'c1000000-0000-4000-8000-000000000099'
+    const detail = {
+      id: detailId,
+      projectCostItemId: ids.item,
+      lineNo: 1,
+      detailKind: 'line_item' as const,
+      description: 'Lắp đặt cốp pha dầm sàn',
+      quantity: '10.0000',
+      unitCode: 'm2',
+      unitPrice: '10.0000',
+      amount: '100.0000',
+      relevantDate: '2026-09-17',
+      reference: null,
+      note: null,
+      version: 0,
+      createdAt: '2026-09-17T07:45:34.829269+00:00',
+      updatedAt: '2026-09-17T07:45:34.829Z',
+    }
+    const response = {
+      projectCostItemId: ids.item,
+      totalAmount: '100.0000',
+      currencyCode: 'VND',
+      details: [detail],
+    }
+
+    expect(projectCostDetailsResponseSchema.safeParse(response).success).toBe(true)
+    expect(projectCostDetailsResponseSchema.safeParse({ ...response, currencyCode: 'VN' }).success).toBe(false)
+    expect(projectCostDetailsResponseSchema.safeParse({ ...response, totalAmount: 'invalid' }).success).toBe(false)
+    expect(projectCostDetailsResponseSchema.safeParse({ ...response, extra: 'forbidden' }).success).toBe(false)
   })
 })

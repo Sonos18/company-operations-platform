@@ -310,4 +310,192 @@ describe('Project Cost service', () => {
       ],
     })
   })
+
+  describe('itemDetails', () => {
+    const parentRow = {
+      id: 'c1010000-0000-4000-8000-000000000001',
+      tenant_id: 'c1010000-0000-4000-8000-000000000010',
+      company_id: 'c1010000-0000-4000-8000-000000000020',
+      amount_text: '100.0000',
+      currency_code: 'VND',
+    }
+    const makeDetailRow = (overrides: Record<string, unknown> = {}) => ({
+      id: 'c1010000-0000-4000-8000-000000000031',
+      tenant_id: 'c1010000-0000-4000-8000-000000000010',
+      company_id: 'c1010000-0000-4000-8000-000000000020',
+      project_cost_item_id: parentRow.id,
+      line_no: 1,
+      detail_kind: 'line_item',
+      description: 'Lắp đặt cốp pha',
+      quantity_text: '10.0000',
+      unit_code: 'm2',
+      unit_price_text: '10.0000',
+      amount_text: '100.0000',
+      relevant_date: '2026-09-17',
+      reference: 'BB-01',
+      note: 'Ghi chú',
+      version: 0,
+      created_by: 'c1010000-0000-4000-8000-000000000902',
+      created_at: '2026-09-17T07:45:34.829269+00:00',
+      updated_at: '2026-09-17T07:45:34.829269+00:00',
+      ...overrides,
+    })
+
+    const makeDetailsClient = (parentData: unknown, detailsData: unknown, parentError: unknown = null, detailsError: unknown = null) => {
+      const parentQuery: Record<string, unknown> = {
+        select: vi.fn(),
+        eq: vi.fn(),
+        then: Promise.resolve({ data: parentData, error: parentError }).then.bind(Promise.resolve({ data: parentData, error: parentError })),
+      }
+      parentQuery.select = vi.fn().mockReturnValue(parentQuery)
+      parentQuery.eq = vi.fn().mockReturnValue(parentQuery)
+
+      const detailsQuery: Record<string, unknown> = {
+        select: vi.fn(),
+        eq: vi.fn(),
+        order: vi.fn(),
+        then: Promise.resolve({ data: detailsData, error: detailsError }).then.bind(Promise.resolve({ data: detailsData, error: detailsError })),
+      }
+      detailsQuery.select = vi.fn().mockReturnValue(detailsQuery)
+      detailsQuery.eq = vi.fn().mockReturnValue(detailsQuery)
+      detailsQuery.order = vi.fn().mockReturnValue(detailsQuery)
+
+      const from = vi.fn().mockImplementation((table: string) => {
+        if (table === 'project_cost_items') return parentQuery
+        if (table === 'project_cost_item_details') return detailsQuery
+        throw new Error(`Unexpected table: ${table}`)
+      })
+      return { from, parentQuery, detailsQuery }
+    }
+
+    it('requires cost.read permission to read item details', async () => {
+      const repository = { itemDetails: vi.fn() }
+      const service = new ProjectCostService(repository as never)
+
+      await expect(service.itemDetails(context([]), parentRow.id)).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'PERMISSION_DENIED',
+      })
+      expect(repository.itemDetails).not.toHaveBeenCalled()
+    })
+
+    it('allows cost.read to get detail list with parent metadata and mapped details', async () => {
+      const client = makeDetailsClient([parentRow], [makeDetailRow()])
+      const repository = new ProjectCostRepository(client as never)
+      const service = new ProjectCostService(repository)
+
+      const result = await service.itemDetails(context(['cost.read']), parentRow.id)
+      expect(result).toEqual({
+        projectCostItemId: parentRow.id,
+        totalAmount: '100.0000',
+        currencyCode: 'VND',
+        details: [
+          {
+            id: 'c1010000-0000-4000-8000-000000000031',
+            projectCostItemId: parentRow.id,
+            lineNo: 1,
+            detailKind: 'line_item',
+            description: 'Lắp đặt cốp pha',
+            quantity: '10.0000',
+            unitCode: 'm2',
+            unitPrice: '10.0000',
+            amount: '100.0000',
+            relevantDate: '2026-09-17',
+            reference: 'BB-01',
+            note: 'Ghi chú',
+            version: 0,
+            createdAt: '2026-09-17T07:45:34.829269+00:00',
+            updatedAt: '2026-09-17T07:45:34.829269+00:00',
+          },
+        ],
+      })
+    })
+
+    it('orders details by line_no ASC, id ASC and scopes to tenant, company, and parent item', async () => {
+      const client = makeDetailsClient([parentRow], [
+        makeDetailRow({ id: 'c1010000-0000-4000-8000-000000000031', line_no: 1, amount_text: '40.0000' }),
+        makeDetailRow({ id: 'c1010000-0000-4000-8000-000000000032', line_no: 2, amount_text: '60.0000' }),
+      ])
+      const repository = new ProjectCostRepository(client as never)
+
+      await repository.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)
+
+      expect(client.from).toHaveBeenCalledWith('project_cost_item_details')
+      expect(client.detailsQuery.eq).toHaveBeenCalledWith('tenant_id', context([]).tenantId)
+      expect(client.detailsQuery.eq).toHaveBeenCalledWith('company_id', context([]).companyId)
+      expect(client.detailsQuery.eq).toHaveBeenCalledWith('project_cost_item_id', parentRow.id)
+      expect(client.detailsQuery.order).toHaveBeenCalledWith('line_no')
+    })
+
+    it('returns 404 RESOURCE_NOT_FOUND if parent item is not found or in different company', async () => {
+      const client = makeDetailsClient([], [])
+      const repository = new ProjectCostRepository(client as never)
+
+      await expect(repository.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'RESOURCE_NOT_FOUND',
+      })
+    })
+
+    it('parses opening_balance detail correctly with null quantity, unit price, reference', async () => {
+      const openingRow = makeDetailRow({
+        detail_kind: 'opening_balance',
+        quantity_text: null,
+        unit_code: null,
+        unit_price_text: null,
+        relevant_date: null,
+        reference: null,
+        note: null,
+      })
+      const client = makeDetailsClient([parentRow], [openingRow])
+      const repository = new ProjectCostRepository(client as never)
+
+      const result = await repository.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)
+      expect(result.details[0]).toMatchObject({
+        detailKind: 'opening_balance',
+        quantity: null,
+        unitCode: null,
+        unitPrice: null,
+        relevantDate: null,
+        reference: null,
+        note: null,
+      })
+    })
+
+    it('accepts PostgreSQL timestamptz with +00:00 offsets on detail rows', async () => {
+      const row = makeDetailRow({
+        created_at: '2026-09-17T07:45:34.829269+00:00',
+        updated_at: '2026-09-17T07:45:34.829269+00:00',
+      })
+      const client = makeDetailsClient([parentRow], [row])
+      const repository = new ProjectCostRepository(client as never)
+
+      const result = await repository.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)
+      expect(result.details[0]!.createdAt).toBe('2026-09-17T07:45:34.829269+00:00')
+    })
+
+    it('returns empty details array when item has no detail rows without failing invariant', async () => {
+      const client = makeDetailsClient([parentRow], [])
+      const repository = new ProjectCostRepository(client as never)
+
+      const result = await repository.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)
+      expect(result).toEqual({
+        projectCostItemId: parentRow.id,
+        totalAmount: '100.0000',
+        currencyCode: 'VND',
+        details: [],
+      })
+    })
+
+    it('rejects with 500 INTERNAL_ERROR when sum of details does not equal parent amount', async () => {
+      const mismatchedRow = makeDetailRow({ amount_text: '95.0000' })
+      const client = makeDetailsClient([parentRow], [mismatchedRow])
+      const repository = new ProjectCostRepository(client as never)
+
+      await expect(repository.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)).rejects.toMatchObject({
+        statusCode: 500,
+        code: 'INTERNAL_ERROR',
+      })
+    })
+  })
 })

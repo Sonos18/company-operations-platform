@@ -146,6 +146,102 @@ const mockBreakdownBeta = {
   ],
 }
 
+const item1Id = '10000000-0000-4000-8000-000000000201'
+const item2Id = '10000000-0000-4000-8000-000000000202'
+const item3Id = '10000000-0000-4000-8000-000000000203'
+
+const mockItem1Details = {
+  projectCostItemId: item1Id,
+  totalAmount: '120000000.0000',
+  currencyCode: 'VND',
+  details: [
+    {
+      id: '10000000-0000-4000-8000-000000000501',
+      projectCostItemId: item1Id,
+      lineNo: 1,
+      detailKind: 'opening_balance' as const,
+      description: 'Số dư đầu kỳ cọc khoan nhồi',
+      quantity: null,
+      unitCode: null,
+      unitPrice: null,
+      amount: '50000000.0000',
+      relevantDate: '2026-08-01',
+      reference: 'OB-01',
+      note: 'Chuyển giao từ kỳ trước',
+      version: 0,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    },
+    {
+      id: '10000000-0000-4000-8000-000000000502',
+      projectCostItemId: item1Id,
+      lineNo: 2,
+      detailKind: 'line_item' as const,
+      description: 'Khoan cọc thí nghiệm D800',
+      quantity: '2.0000',
+      unitCode: 'tim',
+      unitPrice: '35000000.0000',
+      amount: '70000000.0000',
+      relevantDate: '2026-08-15',
+      reference: 'BB-01',
+      note: null,
+      version: 0,
+      createdAt: '2026-08-15T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z',
+    },
+  ],
+}
+
+const mockItem2Details = {
+  projectCostItemId: item2Id,
+  totalAmount: '122562376.0000',
+  currencyCode: 'VND',
+  details: [
+    {
+      id: '10000000-0000-4000-8000-000000000503',
+      projectCostItemId: item2Id,
+      lineNo: 1,
+      detailKind: 'line_item' as const,
+      description: 'Thép CB400 d20 đài móng',
+      quantity: '10.5000',
+      unitCode: 'tấn',
+      unitPrice: '11672607.2381',
+      amount: '122562376.0000',
+      relevantDate: '2026-08-20',
+      reference: 'HD-102',
+      note: 'Đợt 1',
+      version: 0,
+      createdAt: '2026-08-20T00:00:00.000Z',
+      updatedAt: '2026-08-20T00:00:00.000Z',
+    },
+  ],
+}
+
+const mockItem3Details = {
+  projectCostItemId: item3Id,
+  totalAmount: '15000000.0000',
+  currencyCode: 'VND',
+  details: [
+    {
+      id: '10000000-0000-4000-8000-000000000504',
+      projectCostItemId: item3Id,
+      lineNo: 1,
+      detailKind: 'line_item' as const,
+      description: 'Chi phí khoan mẫu địa chất',
+      quantity: '1.0000',
+      unitCode: 'gói',
+      unitPrice: '15000000.0000',
+      amount: '15000000.0000',
+      relevantDate: '2026-08-25',
+      reference: null,
+      note: null,
+      version: 0,
+      createdAt: '2026-08-25T00:00:00.000Z',
+      updatedAt: '2026-08-25T00:00:00.000Z',
+    },
+  ],
+}
+
 test.describe('Director Project Cost UI', () => {
   test('renders Project Cost overview on /costs, displays metrics, and excludes unknown from total', async ({ page }) => {
     let requestedProjectCosts = false
@@ -426,5 +522,190 @@ test.describe('Director Project Cost UI', () => {
     await page.goto('/costs/sources')
     await expect(page.getByRole('heading', { level: 1, name: 'Dữ liệu nguồn chi phí' })).toBeVisible()
     await page.screenshot({ path: 'test-results/gate-g-sources-sanity.png', fullPage: true })
+  })
+
+  test('lazy-loads details only after expansion, caches result, and avoids double counting parent total', async ({ page }) => {
+    let item1FetchCount = 0
+
+    await page.route(`**/api/companies/**/projects/${projectIdAlpha}/project-costs`, async (route) => {
+      await route.fulfill({ json: mockBreakdownAlpha })
+    })
+
+    await page.route(`**/api/companies/**/project-costs/${item1Id}/details`, async (route) => {
+      item1FetchCount++
+      await route.fulfill({ json: mockItem1Details })
+    })
+
+    await page.goto(`/costs/${projectIdAlpha}`)
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Synthetic Project Alpha')
+
+    // Initial load: 0 detail calls
+    expect(item1FetchCount).toBe(0)
+    await expect(page.locator(`[data-testid="details-row-${item1Id}"]`)).toHaveCount(0)
+
+    // Expand item 1
+    const toggleBtn = page.locator(`[data-testid="toggle-details-${item1Id}"]`)
+    await toggleBtn.click()
+
+    // 1 detail call made
+    expect(item1FetchCount).toBe(1)
+    const nestedRow = page.locator(`[data-testid="details-row-${item1Id}"]`)
+    await expect(nestedRow).toBeVisible()
+    const desktopTable = nestedRow.locator('.nested-table')
+
+    // Opening balance line: badge "Số liệu ban đầu"
+    await expect(desktopTable.getByText('Số liệu ban đầu')).toBeVisible()
+    await expect(desktopTable.getByText('Số dư đầu kỳ cọc khoan nhồi')).toBeVisible()
+    await expect(desktopTable.getByText('OB-01')).toBeVisible()
+    await expect(desktopTable.getByText('Chuyển giao từ kỳ trước')).toBeVisible()
+
+    // Line item
+    await expect(desktopTable.getByText('Khoan cọc thí nghiệm D800')).toBeVisible()
+    await expect(desktopTable.getByText('70,000,000 VND')).toBeVisible()
+    await expect(desktopTable.getByText('35,000,000')).toBeVisible()
+    await expect(desktopTable.getByText('15/08/2026')).toBeVisible()
+    await expect(desktopTable.getByText('BB-01')).toBeVisible()
+
+    // Invariant: No double counting in project summary
+    await expect(page.getByTestId('detail-total-tracked')).toContainText('242,562,376')
+    await expect(page.getByTestId('detail-accepted')).toContainText('242,562,376')
+
+    // Collapse item 1
+    await toggleBtn.click()
+    await expect(page.locator(`[data-testid="details-row-${item1Id}"]`)).toHaveCount(0)
+
+    // Re-expand item 1: should use session cache and NOT make a second request
+    await toggleBtn.click()
+    await expect(page.locator(`[data-testid="details-row-${item1Id}"]`)).toBeVisible()
+    expect(item1FetchCount).toBe(1)
+  })
+
+  test('maintains independent detail state between different parent rows', async ({ page }) => {
+    let item1FetchCount = 0
+    let item2FetchCount = 0
+
+    await page.route(`**/api/companies/**/projects/${projectIdAlpha}/project-costs`, async (route) => {
+      await route.fulfill({ json: mockBreakdownAlpha })
+    })
+
+    await page.route(`**/api/companies/**/project-costs/${item1Id}/details`, async (route) => {
+      item1FetchCount++
+      await route.fulfill({ json: mockItem1Details })
+    })
+
+    await page.route(`**/api/companies/**/project-costs/${item2Id}/details`, async (route) => {
+      item2FetchCount++
+      await route.fulfill({ json: mockItem2Details })
+    })
+
+    await page.goto(`/costs/${projectIdAlpha}`)
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Synthetic Project Alpha')
+
+    // Expand item 1
+    await page.locator(`[data-testid="toggle-details-${item1Id}"]`).click()
+    const item1Row = page.locator(`[data-testid="details-row-${item1Id}"]`)
+    await expect(item1Row).toBeVisible()
+    await expect(item1Row.locator('.nested-table').getByText('Khoan cọc thí nghiệm D800')).toBeVisible()
+    await expect(page.locator(`[data-testid="details-row-${item2Id}"]`)).toHaveCount(0)
+    expect(item1FetchCount).toBe(1)
+    expect(item2FetchCount).toBe(0)
+
+    // Expand item 2
+    await page.locator(`[data-testid="toggle-details-${item2Id}"]`).click()
+    const item2Row = page.locator(`[data-testid="details-row-${item2Id}"]`)
+    await expect(item1Row).toBeVisible()
+    await expect(item2Row).toBeVisible()
+    await expect(item2Row.locator('.nested-table').getByText('Thép CB400 d20 đài móng')).toBeVisible()
+    expect(item1FetchCount).toBe(1)
+    expect(item2FetchCount).toBe(1)
+
+    // Check item 2 content
+    await expect(item2Row.locator('.nested-table').getByText('122,562,376 VND')).toBeVisible()
+  })
+
+  test('detail request error does not break project page and allows retry', async ({ page }) => {
+    let attempt = 0
+
+    await page.route(`**/api/companies/**/projects/${projectIdAlpha}/project-costs`, async (route) => {
+      await route.fulfill({ json: mockBreakdownAlpha })
+    })
+
+    await page.route(`**/api/companies/**/project-costs/${item3Id}/details`, async (route) => {
+      attempt++
+      if (attempt === 1) {
+        await route.fulfill({ status: 500, json: { message: 'Internal error' } })
+      }
+      else {
+        await route.fulfill({ json: mockItem3Details })
+      }
+    })
+
+    await page.goto(`/costs/${projectIdAlpha}`)
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Synthetic Project Alpha')
+
+    // Expand item 3
+    await page.locator(`[data-testid="toggle-details-${item3Id}"]`).click()
+
+    // Error message and retry button appear in item 3 detail area
+    const errorRow = page.locator(`[data-testid="details-row-${item3Id}"]`)
+    await expect(errorRow).toBeVisible()
+    await expect(errorRow.getByText('Không thể tải chi tiết hạng mục.')).toBeVisible()
+    const retryBtn = page.locator(`[data-testid="retry-details-${item3Id}"]`)
+    await expect(retryBtn).toBeVisible()
+
+    // The rest of the page remains fully functional
+    await expect(page.getByTestId('detail-total-tracked')).toContainText('242,562,376')
+    await expect(page.getByText('Thi công cọc khoan nhồi D800')).toBeVisible()
+
+    // Click retry
+    await retryBtn.click()
+
+    // Item 3 details load successfully
+    const desktopTable = errorRow.locator('.nested-table')
+    await expect(desktopTable.getByText('Chi phí khoan mẫu địa chất')).toBeVisible()
+    await expect(desktopTable.getByText('15,000,000 VND')).toBeVisible()
+  })
+
+  test('mobile viewport renders compact stacked detail cards without horizontal page overflow', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+
+    await page.route(`**/api/companies/**/projects/${projectIdAlpha}/project-costs`, async (route) => {
+      await route.fulfill({ json: mockBreakdownAlpha })
+    })
+
+    await page.route(`**/api/companies/**/project-costs/${item1Id}/details`, async (route) => {
+      await route.fulfill({ json: mockItem1Details })
+    })
+
+    await page.goto(`/costs/${projectIdAlpha}`)
+
+    // Expand item 1
+    const toggleBtn = page.locator(`[data-testid="toggle-details-${item1Id}"]`)
+    await toggleBtn.click()
+
+    const nestedRow = page.locator(`[data-testid="details-row-${item1Id}"]`)
+    await expect(nestedRow).toBeVisible()
+
+    // Mobile stacked cards are visible, desktop nested table container is hidden
+    const mobileCards = nestedRow.locator('.nested-mobile-cards')
+    await expect(mobileCards).toBeVisible()
+    const desktopTable = nestedRow.locator('.nested-table-container')
+    await expect(desktopTable).toBeHidden()
+
+    // Check card content
+    await expect(mobileCards.getByText('Số liệu ban đầu')).toBeVisible()
+    await expect(mobileCards.getByText('Số dư đầu kỳ cọc khoan nhồi')).toBeVisible()
+    await expect(mobileCards.getByText('Khoan cọc thí nghiệm D800')).toBeVisible()
+
+    // Tap target size >= 44px
+    const toggleBox = await toggleBtn.boundingBox()
+    expect(toggleBox?.height).toBeGreaterThanOrEqual(44)
+
+    // No horizontal overflow
+    await expect.poll(() => page.locator('body').evaluate(element => element.scrollWidth <= window.innerWidth)).toBe(true)
+
+    // Accessibility check on expanded mobile view
+    const violations = (await new AxeBuilder({ page }).include('main').analyze()).violations
+    expect(violations).toEqual([])
   })
 })

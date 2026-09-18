@@ -16,4 +16,5 @@ export class ProjectCostService {
   async create(context: ProjectCostServiceContext, value: unknown, idempotencyKey: string) { requirePermission(context, 'cost.manage'); return this.repository.create(context, input(createProjectCostItemInputSchema, value), idempotencyKey) }
   async update(context: ProjectCostServiceContext, id: string, value: unknown) { requirePermission(context, 'cost.manage'); return this.repository.update(context, id, { kind: 'update', input: input(updateProjectCostItemInputSchema, value) }) }
   async correct(context: ProjectCostServiceContext, id: string, value: unknown) { requirePermission(context, 'cost.correct'); return this.repository.update(context, id, { kind: 'correction', input: input(correctProjectCostItemInputSchema, value) }) }
+  async itemDetails(context: ProjectCostServiceContext, projectCostItemId: string) { requirePermission(context, 'cost.read'); return this.repository.itemDetails(context.tenantId, context.companyId, projectCostItemId) }
 }

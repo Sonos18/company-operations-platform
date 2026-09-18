@@ -96,6 +96,33 @@ export const projectCostSummaryEntrySchema = projectCostProjectMetadataSchema.ex
 
 export const projectCostBreakdownSchema = projectCostProjectMetadataSchema.extend({ summary: projectCostSummarySchema, items: z.array(projectCostItemSchema) }).strict()
 
+export const projectCostDetailKindSchema = z.enum(['opening_balance', 'line_item'])
+
+export const projectCostItemDetailSchema = z.object({
+  id: uuid,
+  projectCostItemId: uuid,
+  lineNo: z.number().int().positive(),
+  detailKind: projectCostDetailKindSchema,
+  description: text,
+  quantity: decimalStringSchema.nullable(),
+  unitCode: z.string().nullable(),
+  unitPrice: decimalStringSchema.nullable(),
+  amount: decimalStringSchema,
+  relevantDate: relevantDate.nullable(),
+  reference: z.string().nullable(),
+  note: z.string().nullable(),
+  version,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+}).strict()
+
+export const projectCostDetailsResponseSchema = z.object({
+  projectCostItemId: uuid,
+  totalAmount: decimalStringSchema,
+  currencyCode,
+  details: z.array(projectCostItemDetailSchema),
+}).strict()
+
 export type ProjectCostWorkStatus = z.infer<typeof projectCostWorkStatusSchema>
 export type CreateProjectCostItemInput = z.infer<typeof createProjectCostItemInputSchema>
 export type UpdateProjectCostItemInput = z.infer<typeof updateProjectCostItemInputSchema>
@@ -104,3 +131,6 @@ export type ProjectCostItem = z.infer<typeof projectCostItemSchema>
 export type ProjectCostSummary = z.infer<typeof projectCostSummarySchema>
 export type ProjectCostSummaryEntry = z.infer<typeof projectCostSummaryEntrySchema>
 export type ProjectCostBreakdown = z.infer<typeof projectCostBreakdownSchema>
+export type ProjectCostDetailKind = z.infer<typeof projectCostDetailKindSchema>
+export type ProjectCostItemDetail = z.infer<typeof projectCostItemDetailSchema>
+export type ProjectCostDetailsResponse = z.infer<typeof projectCostDetailsResponseSchema>

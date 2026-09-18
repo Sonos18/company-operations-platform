@@ -34,7 +34,7 @@ import type {
 } from '../../shared/schemas/stage01-config'
 import type { BusinessParty, CompanyCostSettings, CreateBusinessPartyInput, CreateEngagementComponentInput, CreateEngagementInput, CreateProjectRegisterInput, Engagement, EngagementComponent, ProjectRegister, UpdateBusinessPartyInput, UpdateEngagementComponentInput, UpdateEngagementInput, UpdateProjectRegisterInput } from '../../shared/schemas/costs/master-data'
 import type { CostSourceFiguresQuery, CostSourceOverview, CostSourceProjectDetail, CostSourceProvenance, CostSourceFigure } from '../../shared/schemas/costs/source-read-model'
-import type { CorrectProjectCostItemInput, CreateProjectCostItemInput, ProjectCostBreakdown, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, UpdateProjectCostItemInput } from '../../shared/schemas/costs/project-costs'
+import type { CorrectProjectCostItemInput, CreateProjectCostItemInput, ProjectCostBreakdown, ProjectCostDetailsResponse, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, UpdateProjectCostItemInput } from '../../shared/schemas/costs/project-costs'
 
 export interface CompanyRepository {
   getCurrent(): Promise<Company>
@@ -139,7 +139,13 @@ export type ProjectCostPatchInput = UpdateProjectCostItemInput | CorrectProjectC
 export type ProjectCostSummaryEntry = SharedProjectCostSummaryEntry
 export interface ProjectCostCreateResult { id: string; version: number; replayed: boolean }
 export interface ProjectCostMutationResult { id: string; version: number }
-export interface ProjectCostRepository { summaries(): Promise<ProjectCostSummaryEntry[]>; project(projectId: string): Promise<ProjectCostBreakdown>; create(projectId: string, input: ProjectCostCreateDraft): Promise<ProjectCostCreateResult>; update(projectCostItemId: string, input: ProjectCostPatchInput): Promise<ProjectCostMutationResult> }
+export interface ProjectCostRepository {
+  summaries(): Promise<ProjectCostSummaryEntry[]>
+  project(projectId: string): Promise<ProjectCostBreakdown>
+  details(projectCostItemId: string): Promise<ProjectCostDetailsResponse>
+  create(projectId: string, input: ProjectCostCreateDraft): Promise<ProjectCostCreateResult>
+  update(projectCostItemId: string, input: ProjectCostPatchInput): Promise<ProjectCostMutationResult>
+}
 
 export interface RepositoryRegistry {
   context: Readonly<CompanyContext>

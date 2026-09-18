@@ -48,10 +48,20 @@ export function createProjectCostRoutes(dependencies: ProjectCostRouteDependenci
       const input = patchBody(await readBody(event))
       return 'reason' in input ? value.service.correct(value.context, itemId, input) : value.service.update(value.context, itemId, input)
     },
+    async details(event: H3Event) {
+      const value = await resolved(event)
+      return value.service.itemDetails(value.context, param(event, 'projectCostItemId'))
+    },
   }
 }
 
 export function createSupabaseProjectCostRoutes(event: H3Event) {
   const routes = createProjectCostRoutes({ resolveContext: c1RequestContext })
-  return { summaries: () => routes.summaries(event), project: () => routes.project(event), create: () => routes.create(event), patch: () => routes.patch(event) }
+  return {
+    summaries: () => routes.summaries(event),
+    project: () => routes.project(event),
+    create: () => routes.create(event),
+    patch: () => routes.patch(event),
+    details: () => routes.details(event),
+  }
 }
