@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import Decimal from 'decimal.js'
 import { ClientError } from '../../errors/client-error'
+import type { ProjectCostDetailsResponse, ProjectCostItemDetail, ProjectCostRetentionKind } from '../../../shared/schemas/costs/project-costs'
 definePageMeta({ requiredPermission: 'cost.read' })
 
 const route = useRoute()
@@ -10,6 +12,62 @@ const projectId = computed(() => String(route.params.projectId ?? ''))
 const detail = ref<Awaited<ReturnType<typeof repositories.projectCosts.project>> | null>(null)
 const status = ref<'loading' | 'ready' | 'module' | 'permission' | 'empty' | 'not_found' | 'error'>('loading')
 let request = 0
+
+const expandedItemIds = ref<Set<string>>(new Set())
+const detailsCache = ref<Map<string, ProjectCostDetailsResponse>>(new Map())
+const itemDetailsState = ref<Map<string, { status: 'loading' | 'ready' | 'empty' | 'error'; error?: string }>>(new Map())
+
+function isExpanded(itemId: string): boolean {
+  return expandedItemIds.value.has(itemId)
+}
+
+function getItemDetailState(itemId: string) {
+  return itemDetailsState.value.get(itemId) ?? { status: 'loading' as const }
+}
+
+function getItemDetails(itemId: string): ProjectCostDetailsResponse | undefined {
+  return detailsCache.value.get(itemId)
+}
+
+async function loadItemDetails(itemId: string) {
+  const currentMap = new Map(itemDetailsState.value)
+  currentMap.set(itemId, { status: 'loading' })
+  itemDetailsState.value = currentMap
+
+  try {
+    const result = await repositories.projectCosts.details(itemId)
+    const newCache = new Map(detailsCache.value)
+    newCache.set(itemId, result)
+    detailsCache.value = newCache
+
+    const newMap = new Map(itemDetailsState.value)
+    newMap.set(itemId, { status: result.details.length === 0 ? 'empty' : 'ready' })
+    itemDetailsState.value = newMap
+  }
+  catch {
+    const newMap = new Map(itemDetailsState.value)
+    newMap.set(itemId, { status: 'error', error: 'Không thể tải chi tiết hạng mục.' })
+    itemDetailsState.value = newMap
+  }
+}
+
+async function toggleExpand(itemId: string) {
+  const next = new Set(expandedItemIds.value)
+  if (next.has(itemId)) {
+    next.delete(itemId)
+    expandedItemIds.value = next
+    return
+  }
+
+  next.add(itemId)
+  expandedItemIds.value = next
+
+  if (detailsCache.value.has(itemId)) {
+    return
+  }
+
+  await loadItemDetails(itemId)
+}
 
 function formatMoney(value: string | null | undefined): string {
   if (!value) return '0'
@@ -39,10 +97,35 @@ function statusBadge(workStatus: string) {
   return { label: 'Chưa xác định', variant: 'cockpit-badge--neutral' }
 }
 
+function formatRetentionLabel(kind: ProjectCostRetentionKind | null | undefined, rateBps: number | null | undefined): string {
+  const base = kind === 'warranty' ? 'Giữ lại bảo hành' : 'Khoản giữ lại'
+  if (rateBps != null) {
+    const ratePercent = new Decimal(rateBps).div(100).toString()
+    return `${base} ${ratePercent}%`
+  }
+  return base
+}
+
+function getRetentionSummary(details: ProjectCostItemDetail[] | undefined): { label: string; amount: string } | null {
+  if (!details || details.length === 0) return null
+  const retentionDetails = details.filter(d => d.retentionAmount != null)
+  if (retentionDetails.length === 0) return null
+  const hasWarranty = retentionDetails.some(d => d.retentionKind === 'warranty')
+  const label = hasWarranty ? 'Giữ lại bảo hành' : 'Khoản giữ lại'
+  const total = retentionDetails.reduce((acc, d) => acc.add(new Decimal(d.retentionAmount!)), new Decimal(0))
+  return {
+    label,
+    amount: total.toFixed(4),
+  }
+}
+
 async function load() {
   if (!projectId.value) return
   const current = ++request
   status.value = 'loading'
+  expandedItemIds.value = new Set()
+  detailsCache.value = new Map()
+  itemDetailsState.value = new Map()
   try {
     const value = await repositories.projectCosts.project(projectId.value)
     if (current !== request) return
@@ -184,32 +267,225 @@ watch([projectId, () => companyAccess.activeCompanyId], () => load(), { immediat
                 <th scope="col" class="col-ref">Mã tham chiếu</th>
                 <th scope="col" class="col-date">Ngày ghi nhận</th>
                 <th scope="col" class="col-amount text-right">Giá trị công việc</th>
+                <th scope="col" class="col-action text-right">Chi tiết</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in detail.items" :key="item.id" class="item-row">
-                <td class="col-status">
-                  <span class="cockpit-badge" :class="statusBadge(item.workStatus).variant">
-                    {{ statusBadge(item.workStatus).label }}
-                  </span>
-                </td>
-                <td class="col-desc">
-                  <span class="item-description">{{ item.description }}</span>
-                </td>
-                <td class="col-ref">
-                  <span v-if="item.businessReference" class="business-ref">{{ item.businessReference }}</span>
-                  <span v-else class="empty-cell">—</span>
-                </td>
-                <td class="col-date">
-                  <span v-if="item.relevantDate" class="relevant-date">{{ formatDate(item.relevantDate) }}</span>
-                  <span v-else class="empty-cell">—</span>
-                </td>
-                <td class="col-amount text-right">
-                  <span class="amount-value font-mono">
-                    {{ formatMoney(item.amount) }} {{ item.currencyCode }}
-                  </span>
-                </td>
-              </tr>
+              <template v-for="item in detail.items" :key="item.id">
+                <tr
+                  class="item-row"
+                  :class="{ 'item-row--expanded': isExpanded(item.id) }"
+                  :data-testid="`cost-item-row-${item.id}`"
+                  @click="toggleExpand(item.id)"
+                >
+                  <td class="col-status">
+                    <span class="cockpit-badge" :class="statusBadge(item.workStatus).variant">
+                      {{ statusBadge(item.workStatus).label }}
+                    </span>
+                  </td>
+                  <td class="col-desc">
+                    <span class="item-description">{{ item.description }}</span>
+                  </td>
+                  <td class="col-ref">
+                    <span v-if="item.businessReference" class="business-ref">{{ item.businessReference }}</span>
+                    <span v-else class="empty-cell">—</span>
+                  </td>
+                  <td class="col-date">
+                    <span v-if="item.relevantDate" class="relevant-date">{{ formatDate(item.relevantDate) }}</span>
+                    <span v-else class="empty-cell">—</span>
+                  </td>
+                  <td class="col-amount text-right">
+                    <span class="amount-value font-mono">
+                      {{ formatMoney(item.amount) }} {{ item.currencyCode }}
+                    </span>
+                  </td>
+                  <td class="col-action text-right">
+                    <button
+                      type="button"
+                      class="expand-btn cockpit-btn cockpit-btn--ghost"
+                      :aria-expanded="isExpanded(item.id)"
+                      :aria-controls="`details-${item.id}`"
+                      :data-testid="`toggle-details-${item.id}`"
+                      @click.stop="toggleExpand(item.id)"
+                    >
+                      <span>{{ isExpanded(item.id) ? 'Thu gọn' : 'Xem chi tiết' }}</span>
+                      <UIcon :name="isExpanded(item.id) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" aria-hidden="true" />
+                    </button>
+                  </td>
+                </tr>
+
+                <tr
+                  v-if="isExpanded(item.id)"
+                  :id="`details-${item.id}`"
+                  class="nested-row"
+                  :data-testid="`details-row-${item.id}`"
+                >
+                  <td colspan="6" class="nested-cell">
+                    <div class="nested-detail-area">
+                      <div v-if="getItemDetailState(item.id).status === 'loading'" class="nested-status-box" aria-live="polite">
+                        <UIcon name="i-lucide-loader-2" class="spin" aria-hidden="true" />
+                        <span>Đang tải chi tiết hạng mục…</span>
+                      </div>
+
+                      <div v-else-if="getItemDetailState(item.id).status === 'error'" class="nested-status-box nested-status-box--error" role="alert">
+                        <UIcon name="i-lucide-circle-alert" aria-hidden="true" />
+                        <span>Không thể tải chi tiết hạng mục.</span>
+                        <button
+                          type="button"
+                          class="cockpit-btn cockpit-btn--secondary retry-btn"
+                          :data-testid="`retry-details-${item.id}`"
+                          @click.stop="loadItemDetails(item.id)"
+                        >
+                          <UIcon name="i-lucide-refresh-cw" aria-hidden="true" />
+                          <span>Thử lại</span>
+                        </button>
+                      </div>
+
+                      <div v-else-if="getItemDetailState(item.id).status === 'empty' || (getItemDetails(item.id)?.details.length === 0)" class="nested-status-box">
+                        <UIcon name="i-lucide-inbox" aria-hidden="true" />
+                        <span>Chưa có chi tiết cho hạng mục này.</span>
+                      </div>
+
+                      <div v-else-if="getItemDetails(item.id)" class="nested-content">
+                        <!-- Retention Summary Banner -->
+                        <div
+                          v-if="getRetentionSummary(getItemDetails(item.id)?.details)"
+                          class="retention-summary-banner"
+                          data-testid="retention-summary-banner"
+                        >
+                          <div class="retention-summary-content">
+                            <UIcon name="i-lucide-shield-check" class="retention-summary-icon" aria-hidden="true" />
+                            <span class="retention-summary-label">{{ getRetentionSummary(getItemDetails(item.id)?.details)!.label }}:</span>
+                            <span class="retention-summary-amount font-mono">
+                              {{ formatMoney(getRetentionSummary(getItemDetails(item.id)?.details)!.amount) }} {{ getItemDetails(item.id)!.currencyCode }}
+                            </span>
+                          </div>
+                        </div>
+
+                        <!-- Desktop Nested Table -->
+                        <div class="nested-table-container">
+                          <table class="nested-table">
+                            <thead>
+                              <tr>
+                                <th scope="col" class="nested-col-desc">Nội dung</th>
+                                <th scope="col" class="nested-col-qty text-right">Số lượng</th>
+                                <th scope="col" class="nested-col-unit">ĐVT</th>
+                                <th scope="col" class="nested-col-price text-right">Đơn giá</th>
+                                <th scope="col" class="nested-col-amount text-right">Thành tiền</th>
+                                <th scope="col" class="nested-col-date">Ngày</th>
+                                <th scope="col" class="nested-col-ref">Tham chiếu / Ghi chú</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr v-for="d in getItemDetails(item.id)!.details" :key="d.id" class="nested-item-row">
+                                <td class="nested-col-desc">
+                                  <div class="desc-wrapper">
+                                    <span
+                                      v-if="d.detailKind === 'opening_balance'"
+                                      class="cockpit-badge cockpit-badge--neutral opening-badge"
+                                    >
+                                      Số liệu ban đầu
+                                    </span>
+                                    <span class="detail-description">{{ d.description }}</span>
+                                  </div>
+                                </td>
+                                <td class="nested-col-qty text-right font-mono">
+                                  <span v-if="d.quantity">{{ formatMoney(d.quantity) }}</span>
+                                  <span v-else class="empty-cell">—</span>
+                                </td>
+                                <td class="nested-col-unit">
+                                  <span v-if="d.unitCode">{{ d.unitCode }}</span>
+                                  <span v-else class="empty-cell">—</span>
+                                </td>
+                                <td class="nested-col-price text-right font-mono">
+                                  <span v-if="d.unitPrice">{{ formatMoney(d.unitPrice) }}</span>
+                                  <span v-else class="empty-cell">—</span>
+                                </td>
+                                <td class="nested-col-amount text-right font-mono">
+                                  <div class="amount-primary font-bold">
+                                    {{ formatMoney(d.amount) }} {{ getItemDetails(item.id)!.currencyCode }}
+                                  </div>
+                                  <div v-if="d.retentionAmount" class="retention-subline" data-testid="detail-retention-subline">
+                                    <span class="retention-label">{{ formatRetentionLabel(d.retentionKind, d.retentionRateBps) }}</span>
+                                    <span class="retention-amount">{{ formatMoney(d.retentionAmount) }} {{ getItemDetails(item.id)!.currencyCode }}</span>
+                                  </div>
+                                </td>
+                                <td class="nested-col-date font-mono">
+                                  <span v-if="d.relevantDate">{{ formatDate(d.relevantDate) }}</span>
+                                  <span v-else class="empty-cell">—</span>
+                                </td>
+                                <td class="nested-col-ref">
+                                  <div class="ref-note-wrapper">
+                                    <span v-if="d.reference" class="business-ref">{{ d.reference }}</span>
+                                    <span v-if="d.note" class="detail-note">{{ d.note }}</span>
+                                    <span v-if="!d.reference && !d.note" class="empty-cell">—</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+
+                        <!-- Mobile Compact Stacked Cards -->
+                        <div class="nested-mobile-cards">
+                          <div
+                            v-for="d in getItemDetails(item.id)!.details"
+                            :key="d.id"
+                            class="detail-card"
+                          >
+                            <div class="detail-card-top">
+                              <div class="detail-card-title">
+                                <span
+                                  v-if="d.detailKind === 'opening_balance'"
+                                  class="cockpit-badge cockpit-badge--neutral opening-badge"
+                                >
+                                  Số liệu ban đầu
+                                </span>
+                                <span class="card-desc">{{ d.description }}</span>
+                              </div>
+                              <div class="card-amount-block text-right">
+                                <span class="card-amount font-mono">
+                                  {{ formatMoney(d.amount) }} {{ getItemDetails(item.id)!.currencyCode }}
+                                </span>
+                                <div v-if="d.retentionAmount" class="retention-subline" data-testid="mobile-retention-subline">
+                                  <span class="retention-label">{{ formatRetentionLabel(d.retentionKind, d.retentionRateBps) }}</span>
+                                  <span class="retention-amount font-mono">{{ formatMoney(d.retentionAmount) }} {{ getItemDetails(item.id)!.currencyCode }}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div class="detail-card-grid">
+                              <div class="card-field">
+                                <span class="field-label">Số lượng & Đơn giá</span>
+                                <span class="field-value font-mono">
+                                  <template v-if="d.quantity">
+                                    {{ formatMoney(d.quantity) }} {{ d.unitCode || '' }}
+                                    <template v-if="d.unitPrice"> × {{ formatMoney(d.unitPrice) }}</template>
+                                  </template>
+                                  <template v-else>—</template>
+                                </span>
+                              </div>
+
+                              <div v-if="d.relevantDate" class="card-field">
+                                <span class="field-label">Ngày</span>
+                                <span class="field-value font-mono">{{ formatDate(d.relevantDate) }}</span>
+                              </div>
+
+                              <div v-if="d.reference || d.note" class="card-field full-width">
+                                <span class="field-label">Tham chiếu / Ghi chú</span>
+                                <div class="field-value ref-note-wrapper">
+                                  <span v-if="d.reference" class="business-ref">{{ d.reference }}</span>
+                                  <span v-if="d.note" class="detail-note">{{ d.note }}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </template>
             </tbody>
           </table>
         </div>
@@ -395,8 +671,17 @@ watch([projectId, () => companyAccess.activeCompanyId], () => load(), { immediat
   white-space: nowrap;
 }
 
-.cost-table tbody tr:hover {
+.item-row {
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.item-row:hover {
   background: var(--color-hover);
+}
+
+.item-row--expanded {
+  background: var(--color-bg-tertiary);
 }
 
 .col-status {
@@ -446,7 +731,12 @@ watch([projectId, () => companyAccess.activeCompanyId], () => load(), { immediat
 }
 
 .col-amount {
-  width: 200px;
+  width: 180px;
+  white-space: nowrap;
+}
+
+.col-action {
+  width: 140px;
   white-space: nowrap;
 }
 
@@ -459,6 +749,346 @@ watch([projectId, () => companyAccess.activeCompanyId], () => load(), { immediat
   font-size: 0.95rem;
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
+}
+
+.expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 10px;
+  color: var(--color-primary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.expand-btn:hover {
+  color: var(--color-primary-hover);
+  background: var(--color-hover);
+}
+
+.nested-row {
+  background: var(--color-bg-tertiary);
+}
+
+.nested-cell {
+  padding: 0 !important;
+  border-bottom: 2px solid var(--color-border-light);
+}
+
+.nested-detail-area {
+  padding: 16px 20px;
+  background: var(--color-bg-secondary);
+  border-left: 3px solid var(--color-primary);
+}
+
+.nested-status-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  font-size: 0.88rem;
+  color: var(--color-text-secondary);
+}
+
+.nested-status-box :deep(svg) {
+  width: 20px;
+  height: 20px;
+  color: var(--color-primary);
+}
+
+.nested-status-box--error {
+  color: #dc2626;
+}
+
+.nested-status-box--error :deep(svg) {
+  color: #dc2626;
+}
+
+.retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 16px;
+  margin-left: auto;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.nested-table-container {
+  overflow-x: auto;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-secondary);
+}
+
+.nested-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.nested-table th,
+.nested-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border-light);
+  font-size: 0.82rem;
+  vertical-align: middle;
+}
+
+.nested-table th {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.nested-col-desc {
+  min-width: 200px;
+}
+
+.desc-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.opening-badge {
+  font-size: 0.68rem;
+  padding: 2px 6px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.detail-description {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  line-height: 1.35;
+}
+
+.nested-col-qty {
+  width: 100px;
+  white-space: nowrap;
+}
+
+.nested-col-unit {
+  width: 70px;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+}
+
+.nested-col-price {
+  width: 120px;
+  white-space: nowrap;
+}
+
+.nested-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.retention-summary-banner {
+  display: flex;
+  align-items: center;
+  padding: 9px 14px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+}
+
+.retention-summary-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.retention-summary-icon {
+  width: 16px;
+  height: 16px;
+  color: #0284c7;
+}
+
+.retention-summary-label {
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: var(--color-text-secondary);
+}
+
+.retention-summary-amount {
+  font-size: 0.86rem;
+  font-weight: 750;
+  color: var(--color-text-primary);
+}
+
+.nested-col-amount {
+  width: 160px;
+  white-space: nowrap;
+}
+
+.amount-primary {
+  line-height: 1.3;
+}
+
+.retention-subline {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  margin-top: 3px;
+  line-height: 1.2;
+}
+
+.retention-label {
+  font-size: 0.72rem;
+  font-weight: 550;
+  color: var(--color-text-secondary);
+}
+
+.retention-amount {
+  font-size: 0.76rem;
+  font-weight: 650;
+  color: #92400e;
+}
+
+.font-bold {
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.nested-col-date {
+  width: 110px;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+}
+
+.nested-col-ref {
+  min-width: 140px;
+}
+
+.ref-note-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-note {
+  font-size: 0.76rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.nested-mobile-cards {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .nested-table-container {
+    display: none;
+  }
+
+  .nested-mobile-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .detail-card {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-sizing: border-box;
+  }
+
+  .nested-detail-area {
+    padding: 12px 10px;
+  }
+
+  .card-amount-block {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    flex-shrink: 0;
+    text-align: right;
+  }
+
+  .detail-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .detail-card-title {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .card-desc {
+    font-size: 0.86rem;
+    font-weight: 650;
+    color: var(--color-text-primary);
+    line-height: 1.35;
+  }
+
+  .card-amount {
+    font-size: 0.88rem;
+    font-weight: 750;
+    color: var(--color-text-primary);
+    white-space: nowrap;
+  }
+
+  .detail-card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--color-border-light);
+  }
+
+  .card-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .card-field.full-width {
+    grid-column: 1 / -1;
+  }
+
+  .field-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    letter-spacing: 0.02em;
+  }
+
+  .field-value {
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+  }
 }
 
 .state-panel {

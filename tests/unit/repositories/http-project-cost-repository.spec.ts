@@ -122,4 +122,146 @@ describe('HTTP Project Cost repository', () => {
     await expect(createHttpProjectCostRepository({ companyId: ids.company, client: createClient as never, createIdempotencyKey: () => ids.key }).create(ids.project, draft)).rejects.toThrow()
     await expect(createHttpProjectCostRepository({ companyId: ids.company, client: mutationClient as never }).update(ids.item, { description: 'Renamed', expectedVersion: 2 })).rejects.toThrow()
   })
+
+  it('gets project cost item details through encoded current-company and projectCostItem paths', async () => {
+    const detailItem = {
+      id: 'c1010000-0000-4000-8000-000000000002',
+      projectCostItemId: ids.item,
+      lineNo: 1,
+      detailKind: 'line_item' as const,
+      description: 'First detail line',
+      quantity: '2.0000',
+      unitCode: 'm2',
+      unitPrice: '500.0000',
+      amount: '1000.0000',
+      retentionKind: null,
+      retentionRateBps: null,
+      retentionAmount: null,
+      relevantDate: '2026-09-17',
+      reference: 'REF-001',
+      note: null,
+      version: 0,
+      createdAt: '2026-09-17T07:45:34.829269+00:00',
+      updatedAt: '2026-09-17T07:45:34.829269+00:00',
+    }
+    const detailsResponse = {
+      projectCostItemId: ids.item,
+      totalAmount: '1000.0000',
+      currencyCode: 'VND',
+      details: [detailItem],
+    }
+    const client = responseClient(detailsResponse)
+    const repository = createHttpProjectCostRepository({ companyId: 'company/id', client: client as never })
+
+    await expect(repository.details('item/id')).resolves.toEqual(detailsResponse)
+    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({
+      url: '/api/companies/company%2Fid/project-costs/item%2Fid/details',
+      method: 'GET',
+    }))
+  })
+
+  it('gets project cost item details through encoded current-company and projectCostItem paths with structured warranty retention', async () => {
+    const detailItem = {
+      id: 'c1010000-0000-4000-8000-000000000002',
+      projectCostItemId: ids.item,
+      lineNo: 1,
+      detailKind: 'line_item' as const,
+      description: 'First detail line',
+      quantity: '2.0000',
+      unitCode: 'm2',
+      unitPrice: '500.0000',
+      amount: '1000.0000',
+      retentionKind: 'warranty' as const,
+      retentionRateBps: 500,
+      retentionAmount: '50.0000',
+      relevantDate: '2026-09-17',
+      reference: 'REF-001',
+      note: null,
+      version: 0,
+      createdAt: '2026-09-17T07:45:34.829269+00:00',
+      updatedAt: '2026-09-17T07:45:34.829269+00:00',
+    }
+    const detailsResponse = {
+      projectCostItemId: ids.item,
+      totalAmount: '1000.0000',
+      currencyCode: 'VND',
+      details: [detailItem],
+    }
+    const client = responseClient(detailsResponse)
+    const repository = createHttpProjectCostRepository({ companyId: 'company/id', client: client as never })
+
+    await expect(repository.details('item/id')).resolves.toEqual(detailsResponse)
+    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({
+      url: '/api/companies/company%2Fid/project-costs/item%2Fid/details',
+      method: 'GET',
+    }))
+  })
+
+  it('rejects a malformed project cost item details response', async () => {
+    const clientExtraField = responseClient({
+      projectCostItemId: ids.item,
+      totalAmount: '1000.0000',
+      currencyCode: 'VND',
+      details: [],
+      unexpectedField: 'forbidden',
+    })
+    const clientInvalidKind = responseClient({
+      projectCostItemId: ids.item,
+      totalAmount: '1000.0000',
+      currencyCode: 'VND',
+      details: [{
+        id: 'c1010000-0000-4000-8000-000000000002',
+        projectCostItemId: ids.item,
+        lineNo: 1,
+        detailKind: 'invalid_kind',
+        description: 'First detail line',
+        quantity: null,
+        unitCode: null,
+        unitPrice: null,
+        amount: '1000.0000',
+        retentionKind: null,
+        retentionRateBps: null,
+        retentionAmount: null,
+        relevantDate: null,
+        reference: null,
+        note: null,
+        version: 0,
+        createdAt: '2026-09-17T07:45:34.829269+00:00',
+        updatedAt: '2026-09-17T07:45:34.829269+00:00',
+      }],
+    })
+    const clientExcessRetention = responseClient({
+      projectCostItemId: ids.item,
+      totalAmount: '1000.0000',
+      currencyCode: 'VND',
+      details: [{
+        id: 'c1010000-0000-4000-8000-000000000002',
+        projectCostItemId: ids.item,
+        lineNo: 1,
+        detailKind: 'line_item',
+        description: 'First detail line',
+        quantity: null,
+        unitCode: null,
+        unitPrice: null,
+        amount: '1000.0000',
+        retentionKind: 'warranty',
+        retentionRateBps: 500,
+        retentionAmount: '1000.0001',
+        relevantDate: null,
+        reference: null,
+        note: null,
+        version: 0,
+        createdAt: '2026-09-17T07:45:34.829269+00:00',
+        updatedAt: '2026-09-17T07:45:34.829269+00:00',
+      }],
+    })
+
+    const repositoryExtra = createHttpProjectCostRepository({ companyId: ids.company, client: clientExtraField as never })
+    const repositoryInvalidKind = createHttpProjectCostRepository({ companyId: ids.company, client: clientInvalidKind as never })
+    const repositoryExcessRetention = createHttpProjectCostRepository({ companyId: ids.company, client: clientExcessRetention as never })
+
+    await expect(repositoryExtra.details(ids.item)).rejects.toThrow()
+    await expect(repositoryInvalidKind.details(ids.item)).rejects.toThrow()
+    await expect(repositoryExcessRetention.details(ids.item)).rejects.toThrow()
+  })
 })

@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js'
 import { z } from 'zod'
-import { projectCostBreakdownSchema, projectCostItemSchema, projectCostProjectMetadataSchema, projectCostSummaryEntrySchema, projectCostSummarySchema, type CreateProjectCostItemInput, type CorrectProjectCostItemInput, type ProjectCostBreakdown, type ProjectCostItem, type ProjectCostSummary, type ProjectCostSummaryEntry, type UpdateProjectCostItemInput } from '../../../shared/schemas/costs/project-costs'
+import { projectCostBreakdownSchema, projectCostDetailsResponseSchema, projectCostItemDetailSchema, projectCostItemSchema, projectCostProjectMetadataSchema, projectCostSummaryEntrySchema, projectCostSummarySchema, type CreateProjectCostItemInput, type CorrectProjectCostItemInput, type ProjectCostBreakdown, type ProjectCostDetailsResponse, type ProjectCostItem, type ProjectCostItemDetail, type ProjectCostSummary, type ProjectCostSummaryEntry, type UpdateProjectCostItemInput } from '../../../shared/schemas/costs/project-costs'
 import { AppApiError } from '../../utils/api-error'
 import type { UserSupabaseClient } from '../../utils/supabase-client'
 
@@ -8,21 +8,32 @@ const columns = 'id,tenant_id,company_id,project_id,description,amount_text,curr
 const rowSchema = z.object({
   id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), project_id: z.string().uuid(), description: z.string(), amount_text: z.string(), currency_code: z.string().length(3), work_status: z.enum(['unknown', 'in_progress', 'accepted']), business_reference: z.string().nullable(), party_id: z.string().uuid().nullable(), engagement_id: z.string().uuid().nullable(), component_id: z.string().uuid().nullable(), relevant_date: z.string().date().nullable(), version: z.number().int().nonnegative(), created_by: z.string().uuid(), created_at: z.string().datetime({ offset: true }), updated_at: z.string().datetime({ offset: true }),
 }).strict()
+const parentRowSchema = z.object({
+  id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), amount_text: z.string(), currency_code: z.string().length(3),
+}).passthrough()
+const detailColumns = 'id,tenant_id,company_id,project_cost_item_id,line_no,detail_kind,description,quantity_text,unit_code,unit_price_text,amount_text,retention_kind,retention_rate_bps,retention_amount_text,relevant_date,reference,note,version,created_by,created_at,updated_at'
+const detailRowSchema = z.object({
+  id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), project_cost_item_id: z.string().uuid(), line_no: z.number().int().positive(), detail_kind: z.enum(['opening_balance', 'line_item']), description: z.string().trim().min(1), quantity_text: z.string().nullable(), unit_code: z.string().nullable(), unit_price_text: z.string().nullable(), amount_text: z.string(), retention_kind: z.enum(['warranty', 'other']).nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), retention_amount_text: z.string().nullable(), relevant_date: z.string().date().nullable(), reference: z.string().nullable(), note: z.string().nullable(), version: z.number().int().nonnegative(), created_by: z.string().uuid(), created_at: z.string().datetime({ offset: true }), updated_at: z.string().datetime({ offset: true }),
+}).strict()
 const acknowledgementSchema = z.object({ id: z.string().uuid(), version: z.number().int().nonnegative() }).strict()
 const createAcknowledgementSchema = acknowledgementSchema.extend({ replayed: z.boolean() }).strict()
 
 type ProjectCostRow = z.infer<typeof rowSchema>
+type ProjectCostDetailRow = z.infer<typeof detailRowSchema>
 type Acknowledgement = z.infer<typeof acknowledgementSchema>
 type CreateAcknowledgement = z.infer<typeof createAcknowledgementSchema>
 type QueryResult = { data: unknown; error: unknown }
 interface Query extends PromiseLike<QueryResult> { select(columns: string): Query; eq(column: string, value: string): Query; order(column: string): Query }
-interface Client { from(table: 'project_cost_items'): Query; rpc(name: 'c1_create_project_cost_item' | 'c1_update_project_cost_item' | 'c1_correct_project_cost_item' | 'c1_read_project_cost_project_metadata', args: Record<string, unknown>): Promise<QueryResult> }
+interface Client { from(table: 'project_cost_items' | 'project_cost_item_details'): Query; rpc(name: 'c1_create_project_cost_item' | 'c1_update_project_cost_item' | 'c1_correct_project_cost_item' | 'c1_read_project_cost_project_metadata', args: Record<string, unknown>): Promise<QueryResult> }
 export interface ProjectCostRequestContext { companyId: string; requestId: string }
-export interface ProjectCostDataRepository { listSummaries(tenantId: string, companyId: string): Promise<ProjectCostSummaryEntry[]>; projectSummary(tenantId: string, companyId: string, projectId: string): Promise<ProjectCostBreakdown>; create(context: ProjectCostRequestContext, input: CreateProjectCostItemInput, idempotencyKey: string): Promise<CreateAcknowledgement>; update(context: ProjectCostRequestContext, id: string, mutation: { kind: 'update'; input: UpdateProjectCostItemInput } | { kind: 'correction'; input: CorrectProjectCostItemInput }): Promise<Acknowledgement> }
+export interface ProjectCostDataRepository { listSummaries(tenantId: string, companyId: string): Promise<ProjectCostSummaryEntry[]>; projectSummary(tenantId: string, companyId: string, projectId: string): Promise<ProjectCostBreakdown>; itemDetails(tenantId: string, companyId: string, projectCostItemId: string): Promise<ProjectCostDetailsResponse>; create(context: ProjectCostRequestContext, input: CreateProjectCostItemInput, idempotencyKey: string): Promise<CreateAcknowledgement>; update(context: ProjectCostRequestContext, id: string, mutation: { kind: 'update'; input: UpdateProjectCostItemInput } | { kind: 'correction'; input: CorrectProjectCostItemInput }): Promise<Acknowledgement> }
 
 function fail(message: string): never { throw new AppApiError(500, 'INTERNAL_ERROR', message) }
 function rows(value: unknown): ProjectCostRow[] { const parsed = z.array(rowSchema).safeParse(value); return parsed.success ? parsed.data : fail('Không thể đọc Project Cost.') }
+function detailRows(value: unknown): ProjectCostDetailRow[] { const parsed = z.array(detailRowSchema).safeParse(value); return parsed.success ? parsed.data : fail('Không thể đọc chi tiết Project Cost.') }
 function item(row: ProjectCostRow): ProjectCostItem { return projectCostItemSchema.parse({ id: row.id, tenantId: row.tenant_id, companyId: row.company_id, projectId: row.project_id, description: row.description, amount: row.amount_text, currencyCode: row.currency_code, workStatus: row.work_status, businessReference: row.business_reference, partyId: row.party_id, engagementId: row.engagement_id, componentId: row.component_id, relevantDate: row.relevant_date, version: row.version, createdAt: row.created_at, updatedAt: row.updated_at }) }
+function detailItem(row: ProjectCostDetailRow): ProjectCostItemDetail { return projectCostItemDetailSchema.parse({ id: row.id, projectCostItemId: row.project_cost_item_id, lineNo: row.line_no, detailKind: row.detail_kind, description: row.description, quantity: row.quantity_text, unitCode: row.unit_code, unitPrice: row.unit_price_text, amount: row.amount_text, retentionKind: row.retention_kind, retentionRateBps: row.retention_rate_bps, retentionAmount: row.retention_amount_text, relevantDate: row.relevant_date, reference: row.reference, note: row.note, version: row.version, createdAt: row.created_at, updatedAt: row.updated_at }) }
+
 
 export function summarizeProjectCosts(rows: readonly ProjectCostRow[]): ProjectCostSummary {
   if (rows.length === 0) return fail('Không thể đọc Project Cost.')
@@ -104,5 +115,36 @@ export class ProjectCostRepository implements ProjectCostDataRepository {
     if (error) return rpcError(error)
     const acknowledgement = acknowledgementSchema.safeParse(data)
     return acknowledgement.success ? acknowledgement.data : fail('Không thể cập nhật Project Cost.')
+  }
+
+  async itemDetails(tenantId: string, companyId: string, projectCostItemId: string): Promise<ProjectCostDetailsResponse> {
+    const parentRes = await this.client.from('project_cost_items').select('id,tenant_id,company_id,amount_text,currency_code').eq('tenant_id', tenantId).eq('company_id', companyId).eq('id', projectCostItemId)
+    if (parentRes.error) return rpcError(parentRes.error)
+    const parsedParents = z.array(parentRowSchema).safeParse(parentRes.data)
+    if (!parsedParents.success || parsedParents.data.length === 0) {
+      throw new AppApiError(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy Project Cost.')
+    }
+    const parent = parsedParents.data[0]!
+
+    const detailsRes = await this.client.from('project_cost_item_details').select(detailColumns).eq('tenant_id', tenantId).eq('company_id', companyId).eq('project_cost_item_id', projectCostItemId).order('line_no').order('id')
+    if (detailsRes.error) return rpcError(detailsRes.error)
+    const dRows = detailRows(detailsRes.data)
+
+    if (dRows.length > 0) {
+      let sum = new Decimal(0)
+      for (const row of dRows) {
+        sum = sum.plus(new Decimal(row.amount_text))
+      }
+      if (!sum.eq(new Decimal(parent.amount_text))) {
+        return fail('Tổng chi tiết không khớp với số tiền của Project Cost.')
+      }
+    }
+
+    return projectCostDetailsResponseSchema.parse({
+      projectCostItemId: parent.id,
+      totalAmount: parent.amount_text,
+      currencyCode: parent.currency_code,
+      details: dRows.map(detailItem),
+    })
   }
 }

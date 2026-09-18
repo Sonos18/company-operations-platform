@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import { correctProjectCostItemInputSchema, createProjectCostItemInputSchema, projectCostBreakdownSchema, projectCostSummaryEntrySchema, updateProjectCostItemInputSchema } from '../../../shared/schemas/costs/project-costs'
+import { correctProjectCostItemInputSchema, createProjectCostItemInputSchema, projectCostBreakdownSchema, projectCostDetailsResponseSchema, projectCostSummaryEntrySchema, updateProjectCostItemInputSchema } from '../../../shared/schemas/costs/project-costs'
 import type { ProjectCostCreateDraft, ProjectCostCreateResult, ProjectCostMutationResult, ProjectCostPatchInput, ProjectCostRepository, ProjectCostSummaryEntry } from '../contracts'
+import type { ProjectCostDetailsResponse } from '../../../shared/schemas/costs/project-costs'
 import type { AuthenticatedHttpClient } from './authenticated-http-client'
 
 const createAcknowledgementSchema = z.object({ id: z.string().uuid(), version: z.number().int().nonnegative(), replayed: z.boolean() }).strict()
@@ -18,6 +19,7 @@ export function createHttpProjectCostRepository(options: { companyId: string | (
   return {
     summaries: (): Promise<ProjectCostSummaryEntry[]> => options.client.request({ url: `${base()}/project-costs`, method: 'GET', schema: z.array(projectCostSummaryEntrySchema) }),
     project: projectId => options.client.request({ url: `${base()}/projects/${id(projectId)}/project-costs`, method: 'GET', schema: projectCostBreakdownSchema }),
+    details: (projectCostItemId: string): Promise<ProjectCostDetailsResponse> => options.client.request({ url: `${base()}/project-costs/${id(projectCostItemId)}/details`, method: 'GET', schema: projectCostDetailsResponseSchema }),
     create: (projectId: string, input: ProjectCostCreateDraft): Promise<ProjectCostCreateResult> => {
       const body = createProjectCostItemInputSchema.parse({ ...input, projectId })
       const idempotencyKey = (options.createIdempotencyKey ?? (() => globalThis.crypto.randomUUID()))()

@@ -3,6 +3,9 @@ import {
   correctProjectCostItemInputSchema,
   createProjectCostItemInputSchema,
   projectCostBreakdownSchema,
+  projectCostDetailKindSchema,
+  projectCostDetailsResponseSchema,
+  projectCostItemDetailSchema,
   projectCostItemSchema,
   projectCostSummarySchema,
   projectCostWorkStatusSchema,
@@ -268,5 +271,261 @@ describe('project cost contracts', () => {
       createdAt: 'not-a-datetime',
       updatedAt: '2026-09-17T07:45:34.829Z',
     }).success).toBe(false)
+  })
+
+  it('validates projectCostItemDetailSchema accepting opening_balance and line_item with strict attributes', () => {
+    const detailId = 'c1000000-0000-4000-8000-000000000099'
+    const validDetail = {
+      id: detailId,
+      projectCostItemId: ids.item,
+      lineNo: 1,
+      detailKind: 'line_item' as const,
+      description: 'Lắp đặt cốp pha dầm sàn',
+      quantity: '120.5000',
+      unitCode: 'm2',
+      unitPrice: '250000.0000',
+      amount: '30125000.0000',
+      retentionKind: null,
+      retentionRateBps: null,
+      retentionAmount: null,
+      relevantDate: '2026-09-17',
+      reference: 'BB-01',
+      note: 'Nghiệm thu đợt 1',
+      version: 0,
+      createdAt: '2026-09-17T07:45:34.829269+00:00',
+      updatedAt: '2026-09-17T07:45:34.829Z',
+    }
+
+    expect(projectCostItemDetailSchema.safeParse(validDetail).success).toBe(true)
+    expect(projectCostDetailKindSchema.safeParse('opening_balance').success).toBe(true)
+    expect(projectCostDetailKindSchema.safeParse('line_item').success).toBe(true)
+    expect(projectCostDetailKindSchema.safeParse('unsupported').success).toBe(false)
+
+    // opening_balance with null nullable fields
+    const openingBalance = {
+      ...validDetail,
+      detailKind: 'opening_balance' as const,
+      quantity: null,
+      unitCode: null,
+      unitPrice: null,
+      relevantDate: null,
+      reference: null,
+      note: null,
+    }
+    expect(projectCostItemDetailSchema.safeParse(openingBalance).success).toBe(true)
+
+    // Rejects non-positive lineNo
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, lineNo: 0 }).success).toBe(false)
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, lineNo: -1 }).success).toBe(false)
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, lineNo: 1.5 }).success).toBe(false)
+
+    // Rejects empty description
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, description: '' }).success).toBe(false)
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, description: '   ' }).success).toBe(false)
+
+    // Rejects invalid amount or quantity
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, amount: 'invalid' }).success).toBe(false)
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, quantity: 'invalid' }).success).toBe(false)
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, unitPrice: 'invalid' }).success).toBe(false)
+
+    // Strict schema rejects extra fields
+    expect(projectCostItemDetailSchema.safeParse({ ...validDetail, extraField: 'not allowed' }).success).toBe(false)
+  })
+
+  it('accepts valid warranty retention and all-null retention in projectCostItemDetailSchema', () => {
+    const base = {
+      id: 'c1000000-0000-4000-8000-000000000099',
+      projectCostItemId: ids.item,
+      lineNo: 1,
+      detailKind: 'line_item' as const,
+      description: 'Gia công lắp dựng kết cấu thép',
+      quantity: '1.0000',
+      unitCode: 'gói',
+      unitPrice: '100000000.0000',
+      amount: '100000000.0000',
+      relevantDate: '2026-09-17',
+      reference: null,
+      note: null,
+      version: 0,
+      createdAt: '2026-09-17T07:45:34.829269+00:00',
+      updatedAt: '2026-09-17T07:45:34.829Z',
+    }
+
+    // 1. All-null retention is accepted
+    expect(projectCostItemDetailSchema.safeParse({
+      ...base,
+      retentionKind: null,
+      retentionRateBps: null,
+      retentionAmount: null,
+    }).success).toBe(true)
+
+    // 2. Valid warranty retention with rate is accepted (e.g. 5% = 500 bps, 5,000,000 on 100,000,000)
+    expect(projectCostItemDetailSchema.safeParse({
+      ...base,
+      retentionKind: 'warranty',
+      retentionRateBps: 500,
+      retentionAmount: '5000000.0000',
+    }).success).toBe(true)
+
+    // 3. Valid warranty retention without rate is accepted (rate is optional when source does not specify)
+    expect(projectCostItemDetailSchema.safeParse({
+      ...base,
+      retentionKind: 'warranty',
+      retentionRateBps: null,
+      retentionAmount: '5000000.0000',
+    }).success).toBe(true)
+
+    // 4. Other retention kind is accepted
+    expect(projectCostItemDetailSchema.safeParse({
+      ...base,
+      retentionKind: 'other',
+      retentionRateBps: 1000,
+      retentionAmount: '10000000.0000',
+    }).success).toBe(true)
+  })
+
+  it('rejects malformed retention combinations in projectCostItemDetailSchema', () => {
+    const base = {
+      id: 'c1000000-0000-4000-8000-000000000099',
+      projectCostItemId: ids.item,
+      lineNo: 1,
+      detailKind: 'line_item' as const,
+      description: 'Gia công lắp dựng kết cấu thép',
+      quantity: '1.0000',
+      unitCode: 'gói',
+      unitPrice: '100000000.0000',
+      amount: '100000000.0000',
+      relevantDate: '2026-09-17',
+      reference: null,
+      note: null,
+      version: 0,
+      createdAt: '2026-09-17T07:45:34.829269+00:00',
+      updatedAt: '2026-09-17T07:45:34.829Z',
+    }
+
+    // retentionKind present but retentionAmount is null
+    expect(projectCostItemDetailSchema.safeParse({
+      ...base,
+      retentionKind: 'warranty',
+      retentionRateBps: 500,
+      retentionAmount: null,
+    }).success).toBe(false)
+
+    // retentionAmount present but retentionKind is null
+    expect(projectCostItemDetailSchema.safeParse({
+      ...base,
+      retentionKind: null,
+      retentionRateBps: null,
+      retentionAmount: '5000000.0000',
+    }).success).toBe(false)
+
+    // retentionRateBps present when retention is otherwise null
+    expect(projectCostItemDetailSchema.safeParse({
+      ...base,
+      retentionKind: null,
+      retentionRateBps: 500,
+      retentionAmount: null,
+    }).success).toBe(false)
+
+    // retentionRateBps out of range (< 0 or > 10000)
+    expect(projectCostItemDetailSchema.safeParse({
+      ...base,
+      retentionKind: 'warranty',
+      retentionRateBps: -1,
+      retentionAmount: '5000000.0000',
+    }).success).toBe(false)
+
+    expect(projectCostItemDetailSchema.safeParse({
+      ...base,
+      retentionKind: 'warranty',
+      retentionRateBps: 10001,
+      retentionAmount: '5000000.0000',
+    }).success).toBe(false)
+
+    // Unsupported retention kind
+    expect(projectCostItemDetailSchema.safeParse({
+      ...base,
+      retentionKind: 'unsupported',
+      retentionRateBps: 500,
+      retentionAmount: '5000000.0000',
+    }).success).toBe(false)
+  })
+
+  it('rejects retention amount greater than detail amount using decimal-safe comparison', () => {
+    const base = {
+      id: 'c1000000-0000-4000-8000-000000000099',
+      projectCostItemId: ids.item,
+      lineNo: 1,
+      detailKind: 'line_item' as const,
+      description: 'Gia công kết cấu',
+      quantity: null,
+      unitCode: null,
+      unitPrice: null,
+      amount: '10000000.0000',
+      relevantDate: null,
+      reference: null,
+      note: null,
+      version: 0,
+      createdAt: '2026-09-17T07:45:34.829269+00:00',
+      updatedAt: '2026-09-17T07:45:34.829Z',
+    }
+
+    // retentionAmount equal to detail amount is accepted (100% retention)
+    expect(projectCostItemDetailSchema.safeParse({
+      ...base,
+      retentionKind: 'warranty',
+      retentionRateBps: 10000,
+      retentionAmount: '10000000.0000',
+    }).success).toBe(true)
+
+    // retentionAmount greater than detail amount is rejected
+    expect(projectCostItemDetailSchema.safeParse({
+      ...base,
+      retentionKind: 'warranty',
+      retentionRateBps: 500,
+      retentionAmount: '10000000.0001',
+    }).success).toBe(false)
+
+    expect(projectCostItemDetailSchema.safeParse({
+      ...base,
+      retentionKind: 'warranty',
+      retentionRateBps: null,
+      retentionAmount: '15000000.0000',
+    }).success).toBe(false)
+  })
+
+  it('validates projectCostDetailsResponseSchema with strict attributes', () => {
+    const detailId = 'c1000000-0000-4000-8000-000000000099'
+    const detail = {
+      id: detailId,
+      projectCostItemId: ids.item,
+      lineNo: 1,
+      detailKind: 'line_item' as const,
+      description: 'Lắp đặt cốp pha dầm sàn',
+      quantity: '10.0000',
+      unitCode: 'm2',
+      unitPrice: '10.0000',
+      amount: '100.0000',
+      retentionKind: 'warranty' as const,
+      retentionRateBps: 500,
+      retentionAmount: '5.0000',
+      relevantDate: '2026-09-17',
+      reference: null,
+      note: null,
+      version: 0,
+      createdAt: '2026-09-17T07:45:34.829269+00:00',
+      updatedAt: '2026-09-17T07:45:34.829Z',
+    }
+    const response = {
+      projectCostItemId: ids.item,
+      totalAmount: '100.0000',
+      currencyCode: 'VND',
+      details: [detail],
+    }
+
+    expect(projectCostDetailsResponseSchema.safeParse(response).success).toBe(true)
+    expect(projectCostDetailsResponseSchema.safeParse({ ...response, currencyCode: 'VN' }).success).toBe(false)
+    expect(projectCostDetailsResponseSchema.safeParse({ ...response, totalAmount: 'invalid' }).success).toBe(false)
+    expect(projectCostDetailsResponseSchema.safeParse({ ...response, extra: 'forbidden' }).success).toBe(false)
   })
 })
