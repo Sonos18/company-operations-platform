@@ -25,13 +25,14 @@ function rows(value: unknown): ProjectCostRow[] { const parsed = z.array(rowSche
 function item(row: ProjectCostRow): ProjectCostItem { return projectCostItemSchema.parse({ id: row.id, tenantId: row.tenant_id, companyId: row.company_id, projectId: row.project_id, description: row.description, amount: row.amount_text, currencyCode: row.currency_code, workStatus: row.work_status, businessReference: row.business_reference, partyId: row.party_id, engagementId: row.engagement_id, componentId: row.component_id, relevantDate: row.relevant_date, version: row.version, createdAt: row.created_at, updatedAt: row.updated_at }) }
 
 export function summarizeProjectCosts(rows: readonly ProjectCostRow[]): ProjectCostSummary {
+  if (rows.length === 0) return fail('Không thể đọc Project Cost.')
   if (new Set(rows.map(row => row.currency_code)).size > 1) return fail('Project Cost có nhiều loại tiền tệ.')
   let accepted = new Decimal(0); let inProgress = new Decimal(0); let unknown = new Decimal(0); let acceptedCount = 0; let inProgressCount = 0; let unknownCount = 0
   for (const row of rows) {
     const amount = new Decimal(row.amount_text)
     if (row.work_status === 'accepted') { accepted = accepted.plus(amount); acceptedCount += 1 } else if (row.work_status === 'in_progress') { inProgress = inProgress.plus(amount); inProgressCount += 1 } else { unknown = unknown.plus(amount); unknownCount += 1 }
   }
-  return projectCostSummarySchema.parse({ acceptedValue: accepted.toFixed(4), acceptedCount, inProgressValue: inProgress.toFixed(4), inProgressCount, unknownStatusValue: unknown.toFixed(4), unknownCount, totalTrackedWorkValue: accepted.plus(inProgress).toFixed(4) })
+  return projectCostSummarySchema.parse({ currencyCode: rows[0]!.currency_code, acceptedValue: accepted.toFixed(4), acceptedCount, inProgressValue: inProgress.toFixed(4), inProgressCount, unknownStatusValue: unknown.toFixed(4), unknownCount, totalTrackedWorkValue: accepted.plus(inProgress).toFixed(4) })
 }
 
 function rpcError(error: unknown): never {
