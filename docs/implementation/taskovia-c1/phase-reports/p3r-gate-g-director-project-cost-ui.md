@@ -1,8 +1,8 @@
 # C1-P3R Gate G Director Project Cost UI Report
 
 ```yaml
-status: PASS_GATE_G_UI_FINAL_REVIEW_FIXES_COMPLETE
-phase: C1-P3R-GATE-G-DIRECTOR-PROJECT-COST-UI-FINAL-REVIEW-FIX
+status: PASS_GATE_G_COMPLETE
+phase: C1-P3R-GATE-G-DIRECTOR-PROJECT-COST-UI-COMPLETE
 
 baseline:
   branch: feat/taskovia-gate-g-director-project-cost-ui
@@ -130,7 +130,8 @@ gates:
   gate_g_database_enabler: CLOUD_VERIFIED
   gate_g_metadata_contract: COMPLETE
   gate_g_currency_contract: COMPLETE
-  gate_g_ui: FINAL_REVIEW_FIXES_COMPLETE_PENDING_MERGE_REVIEW
+  gate_g_director_project_cost_ui: COMPLETE
+  gate_g: COMPLETE
   gate_h: NOT_STARTED_NOT_AUTHORIZED
 ```
 
