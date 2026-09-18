@@ -1,7 +1,7 @@
 # C1-P3R VQH Accountant Cost Source Read
 
 ```yaml
-status: PRE_CLOUD_READY
+status: PASS_VQH_ACCOUNTANT_COST_SOURCE_READ_CLOUD_VERIFIED
 scope:
   role: accountant
   added_permission: cost.source.read
@@ -25,7 +25,20 @@ operator:
     - cost.correct
     - cost.manage
 cloud:
-  applied: false
+  migration: 20260918034150_c1_vqh_accountant_cost_source_read
+  applied: true
+  parity_clean: true
+accountant_user:
+  authenticated: true
+  project_cost_read: PASS
+  cost_source_read: PASS
+integrity:
+  project_cost_items: 9
+  project_cost_item_sources: 15
+  business_data_delta: 0
+snapshot_helper:
+  classification: LOCAL_READ_ONLY_HELPER_BUG
+  corrected: true
 gates:
   gate_g: COMPLETE
   gate_h: NOT_STARTED_NOT_AUTHORIZED

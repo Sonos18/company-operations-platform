@@ -16,6 +16,8 @@ Post-Gate-E [RBAC hardening is COMPLETE](phase-reports/p3r-post-gate-e-rbac-hard
 
 Gate F is **COMPLETE**: [F1 local regression hardening](phase-reports/p3r-gate-f1-precloud-regression-hardening.md) and [F2 Cloud synthetic verification](phase-reports/p3r-gate-f2-cloud-verification.md) passed. The one rollback-safe F2 suite left no run-owned synthetic residue and Gate E data remained unchanged. Gate G's [metadata read RPC](phase-reports/p3r-gate-g-project-metadata-read-cloud.md) is **CLOUD_VERIFIED**, its [TypeScript metadata contract](phase-reports/p3r-gate-g-project-metadata-typescript-contract.md) and [summary currency contract](phase-reports/p3r-gate-g-project-cost-summary-currency-contract.md) are **COMPLETE**, the [Director Project Cost UI](phase-reports/p3r-gate-g-director-project-cost-ui.md) is **COMPLETE**, and Gate G is **COMPLETE**. Gate H remains **NOT_STARTED / NOT_AUTHORIZED**.
 
+Post-Gate-G Cloud DEV RBAC verification confirms `accountant` has `cost.read` and `cost.source.read`; `c1_vqh_cost_operator` remains exactly `cost.manage` and `cost.correct`.
+
 ## Control Record
 
 | Field | Value |

@@ -15,6 +15,8 @@ Post-Gate-E [RBAC hardening is COMPLETE](phase-reports/p3r-post-gate-e-rbac-hard
 
 Gate F is **COMPLETE**: [F1 local regression hardening](phase-reports/p3r-gate-f1-precloud-regression-hardening.md) and [F2 Cloud synthetic verification](phase-reports/p3r-gate-f2-cloud-verification.md) passed with unchanged Gate E data and zero run-owned synthetic residue. Gate G's narrow [metadata read RPC](phase-reports/p3r-gate-g-project-metadata-read-cloud.md) is **CLOUD_VERIFIED**, its [TypeScript metadata contract](phase-reports/p3r-gate-g-project-metadata-typescript-contract.md) and [summary currency contract](phase-reports/p3r-gate-g-project-cost-summary-currency-contract.md) are **COMPLETE**, the [Director Project Cost UI](phase-reports/p3r-gate-g-director-project-cost-ui.md) is **COMPLETE**, and Gate G is **COMPLETE**. Gate H remains **NOT_STARTED / NOT_AUTHORIZED**.
 
+Post-Gate-G Cloud DEV RBAC verification confirms `accountant` has `cost.read` and `cost.source.read`; `c1_vqh_cost_operator` remains exactly `cost.manage` and `cost.correct`.
+
 ## Evidence Rule
 
 An acceptance row is **partial** until all listed layers have evidence: shared schema/unit, server/HTTP, database/RLS/storage when applicable, UI/E2E when user-visible, and the P6 synthetic acceptance run. A source-file inspection, mock-only test, report commit, or real workbook presence is never final acceptance evidence.
