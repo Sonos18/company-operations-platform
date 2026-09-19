@@ -211,6 +211,7 @@ declare
   v_index pg_index%rowtype;
   v_index_relid oid;
   v_expected_attnums smallint[];
+  v_actual_attnums smallint[];
   v_indexdef text;
 begin
   select array_agg(attribute.attnum::smallint order by expected_column.ordinality) into v_expected_attnums
@@ -224,6 +225,11 @@ begin
     if not found then
       raise exception using errcode = 'P0001', message = 'C1_PCD_SCHEMA_DRIFT_INDEX_SCOPE', detail = 'missing pg_index row';
     end if;
+    select array(
+      select key_column.key_attnum::smallint
+      from unnest(v_index.indkey::smallint[]) with ordinality as key_column(key_attnum, ordinality)
+      order by key_column.ordinality
+    ) into v_actual_attnums;
     select pg_get_indexdef(v_index_relid) into v_indexdef;
     if v_index.indrelid <> v_table
       or v_index.indisunique
@@ -232,7 +238,7 @@ begin
       or not v_index.indisready
       or v_index.indnkeyatts <> 4
       or v_index.indnatts <> 4
-      or v_index.indkey::smallint[] is distinct from v_expected_attnums
+      or v_actual_attnums is distinct from v_expected_attnums
       or not exists (select 1 from pg_class index_class join pg_am access_method on access_method.oid = index_class.relam where index_class.oid = v_index_relid and access_method.amname = 'btree') then
       raise exception using errcode = 'P0001', message = 'C1_PCD_SCHEMA_DRIFT_INDEX_SCOPE', detail = coalesce(v_indexdef, 'missing pg_index row');
     end if;

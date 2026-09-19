@@ -33,6 +33,10 @@ describe('C1 Project Cost Detail schema reconciliation', () => {
     expect(catalogNameArrays).toHaveLength(5)
     expect(executableSql).not.toMatch(/array_agg\(attribute\.attname\s+order by key_column\.ordinality\)/iu)
     expect(executableSql).toMatch(/if not found then\s+select \* into v_constraint from pg_constraint constraint_row\s+where constraint_row\.conrelid = v_table and constraint_row\.contype = 'f'[\s\S]*?= v_expected\.local_columns/iu)
+    expect(executableSql).toContain('v_actual_attnums smallint[]')
+    expect(executableSql).toMatch(/select array\(\s*select key_column\.key_attnum::smallint\s*from unnest\(v_index\.indkey::smallint\[\]\)\s*with ordinality as key_column\(key_attnum, ordinality\)\s*order by key_column\.ordinality\s*\)\s*into v_actual_attnums/iu)
+    expect(executableSql).toContain('v_actual_attnums is distinct from v_expected_attnums')
+    expect(executableSql).not.toContain('v_index.indkey::smallint[] is distinct from v_expected_attnums')
 
     for (const fragment of [
       'pg_attribute', 'pg_attrdef', 'pg_get_expr', 'attnotnull', 'C1_PCD_SCHEMA_DRIFT_COLUMN',
