@@ -4,7 +4,7 @@ import { sumFinanceMoney } from '../../../../shared/utils/project-finance-money'
 import { AppApiError } from '../../../utils/api-error'
 import type { UserSupabaseClient } from '../../../utils/supabase-client'
 import { FinanceReadLimitError } from './read-pages'
-import { ProjectFinanceMetadataReader, ProjectFinanceTableReader, type FinanceDbClient, type FinanceDirectory, type FinancePartyRow, type FinanceProjectContextRow, type FinanceDetailRow, type FinanceTableRows } from './project-finance.queries'
+import { ProjectFinanceMetadataReader, ProjectFinanceTableReader, type FinanceDbClient, type FinanceDirectory, type FinancePartyRow, type FinanceProjectContextRow, type FinanceDetailRow, type FinanceTableRows, type FinanceSummaryTableRows } from './project-finance.queries'
 import { paymentTotal, referenceHeadroom, summarizeFinanceRows } from './project-finance.summary'
 
 export type FinanceScope = { actorId?: string, tenantId: string, companyId: string, requestId?: string, permissions?: readonly string[], db?: UserSupabaseClient }
@@ -44,9 +44,10 @@ export class ProjectFinanceReadRepository<T extends { signature: string }> {
 type ConcreteSource = {
   read(scope: FinanceScope, projectId: string, fullDetails?: boolean): Promise<{ signature: string, readSet: FinanceTableReadSet, consistent: () => Promise<boolean> }>
   directory(scope: FinanceScope, query: ProjectDirectoryQuery): Promise<FinanceDirectory>
-  readMany(scope: FinanceScope, projectIds: readonly string[], directory: FinanceDirectory): Promise<{ signature: string, readSets: Map<string, FinanceTableReadSet>, consistent: () => Promise<boolean> }>
+  readMany(scope: FinanceScope, projectIds: readonly string[], directory: FinanceDirectory): Promise<{ signature: string, readSets: Map<string, FinanceSummaryTableReadSet>, consistent: () => Promise<boolean> }>
 }
 type FinanceTableReadSet = FinanceTableRows & { context: FinanceProjectContextRow, parties: readonly FinancePartyRow[] }
+type FinanceSummaryTableReadSet = FinanceSummaryTableRows & { context: FinanceProjectContextRow, parties: readonly FinancePartyRow[] }
 
 function page<T>(rows: readonly T[], query: FinanceListQuery, match: (row: T) => boolean, order: (left: T, right: T) => number, amount: (rows: readonly T[]) => string | null) {
   const filtered = rows.filter(match).sort(order)
@@ -204,7 +205,7 @@ async function readSet(metadata: ProjectFinanceMetadataReader, tables: ProjectFi
   return { context, categories, costItems, details, budgets: budgets as FinanceTableRows['budgets'], budgetLines: budgetLines as FinanceTableRows['budgetLines'], ownerAdvances: ownerAdvances as FinanceTableRows['ownerAdvances'], subcontracts: subcontracts as FinanceTableRows['subcontracts'], payments: payments as FinanceTableRows['payments'], parties }
 }
 
-function coherent(readSet: FinanceTableReadSet): boolean {
+function coherent(readSet: FinanceSummaryTableReadSet): boolean {
   const detailsByItem = new Map<string, typeof readSet.details>()
   for (const detail of readSet.details) detailsByItem.set(detail.project_cost_item_id, [...(detailsByItem.get(detail.project_cost_item_id) ?? []), detail])
   for (const item of readSet.costItems) {
@@ -221,19 +222,34 @@ function coherent(readSet: FinanceTableReadSet): boolean {
   })
 }
 
-async function collectMany(metadata: ProjectFinanceMetadataReader, tables: ProjectFinanceTableReader, scope: FinanceScope, projectIds: readonly string[], directory: FinanceDirectory): Promise<Map<string, FinanceTableReadSet>> {
+function groupByKey<T>(rows: readonly T[], key: (row: T) => string): Map<string, T[]> {
+  const grouped = new Map<string, T[]>()
+  for (const row of rows) grouped.set(key(row), [...(grouped.get(key(row)) ?? []), row])
+  return grouped
+}
+
+async function collectMany(metadata: ProjectFinanceMetadataReader, tables: ProjectFinanceTableReader, scope: FinanceScope, projectIds: readonly string[], directory: FinanceDirectory): Promise<Map<string, FinanceSummaryTableReadSet>> {
   if (projectIds.length === 0) return new Map()
   const [categories, costItems, budgets, budgetLines, ownerAdvances, subcontracts, payments] = await Promise.all([
     tables.categories(scope.tenantId, scope.companyId), tables.costItemsForProjects(scope.tenantId, scope.companyId, projectIds), tables.budgetsForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.budgetLinesForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.ownerAdvancesForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.subcontractsForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.paymentsForProjects(scope.tenantId, scope.companyId, projectIds, false),
   ])
   const details = await tables.detailAggregates(scope.tenantId, scope.companyId, costItems.map(item => item.id))
-  const result = new Map<string, FinanceTableReadSet>()
+  const costItemsByProject = groupByKey(costItems, row => row.project_id)
+  const detailsByItem = groupByKey(details, row => row.project_cost_item_id)
+  const budgetsByProject = groupByKey(budgets, row => row.project_id)
+  const budgetLinesByProject = groupByKey(budgetLines, row => row.project_id)
+  const ownerAdvancesByProject = groupByKey(ownerAdvances, row => row.project_id)
+  const subcontractsByProject = groupByKey(subcontracts, row => row.project_id)
+  const paymentsByProject = groupByKey(payments, row => row.project_id)
+  const result = new Map<string, FinanceSummaryTableReadSet>()
   for (const project of directory.projects) {
-    const scopedContracts = subcontracts.filter(row => row.project_id === project.projectId)
+    const scopedCostItems = costItemsByProject.get(project.projectId) ?? []
+    const scopedDetails = scopedCostItems.flatMap(item => detailsByItem.get(item.id) ?? [])
+    const scopedContracts = subcontractsByProject.get(project.projectId) ?? []
     const partyIds = [...new Set(scopedContracts.map(contract => contract.subcontractor_party_id))]
     const parties: FinancePartyRow[] = []
     for (let index = 0; index < partyIds.length; index += 50) parties.push(...await metadata.parties(scope.companyId, project.projectId, partyIds.slice(index, index + 50)))
-    result.set(project.projectId, { context: { projectId: project.projectId, projectCode: project.projectCode, projectName: project.projectName, defaultCurrencyCode: directory.defaultCurrencyCode, moneyScale: directory.moneyScale, timeZone: directory.timeZone }, categories, costItems: costItems.filter(row => row.project_id === project.projectId), details: details.filter(row => costItems.some(item => item.project_id === project.projectId && item.id === row.project_cost_item_id)), budgets: budgets as FinanceTableRows['budgets'], budgetLines: budgetLines as FinanceTableRows['budgetLines'], ownerAdvances: ownerAdvances as FinanceTableRows['ownerAdvances'], subcontracts: scopedContracts as FinanceTableRows['subcontracts'], payments: payments as FinanceTableRows['payments'], parties })
+    result.set(project.projectId, { context: { projectId: project.projectId, projectCode: project.projectCode, projectName: project.projectName, defaultCurrencyCode: directory.defaultCurrencyCode, moneyScale: directory.moneyScale, timeZone: directory.timeZone }, categories, costItems: scopedCostItems, details: scopedDetails, budgets: budgetsByProject.get(project.projectId) ?? [], budgetLines: budgetLinesByProject.get(project.projectId) ?? [], ownerAdvances: ownerAdvancesByProject.get(project.projectId) ?? [], subcontracts: scopedContracts, payments: paymentsByProject.get(project.projectId) ?? [], parties })
   }
   return result
 }

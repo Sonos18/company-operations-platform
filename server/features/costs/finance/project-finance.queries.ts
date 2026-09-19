@@ -47,6 +47,12 @@ const ownerAdvanceAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, com
 const subcontractAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, subcontractor_party_id: uuid, code: z.string().min(1), contract_no: z.string().nullable(), contract_name: z.string().min(1), contract_date: date.nullable(), contract_value_text: money.nullable(), currency_code: currency, warranty_retention_rate_bps: z.number().int().min(0).max(10000).nullable(), is_active: z.boolean(), version, updated_at: timestamp }).strict()
 const paymentAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, project_subcontract_id: uuid, paid_amount_text: money, warranty_retention_amount_text: money.nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), currency_code: currency, status: z.string().min(1), payment_date: date.nullable(), created_at: timestamp, version, updated_at: timestamp }).strict()
 
+export type FinanceBudgetAggregateRow = z.infer<typeof budgetAggregateRowSchema>
+export type FinanceBudgetLineAggregateRow = z.infer<typeof budgetLineAggregateRowSchema>
+export type FinanceOwnerAdvanceAggregateRow = z.infer<typeof ownerAdvanceAggregateRowSchema>
+export type FinanceSubcontractAggregateRow = z.infer<typeof subcontractAggregateRowSchema>
+export type FinancePaymentAggregateRow = z.infer<typeof paymentAggregateRowSchema>
+
 type QueryResult = { data: unknown, error: unknown }
 export type TableQuery = {
   select(columns: string): TableQuery
@@ -239,4 +245,11 @@ export type FinanceTableRows = {
   ownerAdvances: RowByTable['advances'][]
   subcontracts: RowByTable['subcontracts'][]
   payments: RowByTable['payments'][]
+}
+export type FinanceSummaryTableRows = Omit<FinanceTableRows, 'budgets' | 'budgetLines' | 'ownerAdvances' | 'subcontracts' | 'payments'> & {
+  budgets: FinanceBudgetAggregateRow[]
+  budgetLines: FinanceBudgetLineAggregateRow[]
+  ownerAdvances: FinanceOwnerAdvanceAggregateRow[]
+  subcontracts: FinanceSubcontractAggregateRow[]
+  payments: FinancePaymentAggregateRow[]
 }

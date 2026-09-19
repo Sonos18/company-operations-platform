@@ -11,6 +11,15 @@ const ids = {
   materials: 'c1070000-0000-4000-8000-000000000040', subcontract: 'c1070000-0000-4000-8000-000000000041', materialsItem: 'c1070000-0000-4000-8000-000000000050', legacyItem: 'c1070000-0000-4000-8000-000000000051', party: 'c1070000-0000-4000-8000-000000000060', contract: 'c1070000-0000-4000-8000-000000000070',
   detailNoRetention: 'c1070000-0000-4000-8000-000000000080', detailZeroRetention: 'c1070000-0000-4000-8000-000000000081', detailWarranty: 'c1070000-0000-4000-8000-000000000082', detailOther: 'c1070000-0000-4000-8000-000000000083', legacyDetail: 'c1070000-0000-4000-8000-000000000084', paymentNoRetention: 'c1070000-0000-4000-8000-000000000090', paymentZeroRetention: 'c1070000-0000-4000-8000-000000000091', paymentWarranty: 'c1070000-0000-4000-8000-000000000092',
 }
+const multiIds = {
+  projectB: 'c1070000-0000-4000-8000-000000000032', projectC: 'c1070000-0000-4000-8000-000000000033',
+  itemB: 'c1070000-0000-4000-8000-000000000120', itemC: 'c1070000-0000-4000-8000-000000000121',
+  partyB: 'c1070000-0000-4000-8000-000000000122', partyC: 'c1070000-0000-4000-8000-000000000123',
+  contractB: 'c1070000-0000-4000-8000-000000000124', contractC: 'c1070000-0000-4000-8000-000000000125',
+  budgetB: 'c1070000-0000-4000-8000-000000000126', budgetC: 'c1070000-0000-4000-8000-000000000127',
+  lineB: 'c1070000-0000-4000-8000-000000000128', lineC: 'c1070000-0000-4000-8000-000000000129',
+  paymentB: 'c1070000-0000-4000-8000-000000000130', paymentC: 'c1070000-0000-4000-8000-000000000131',
+}
 
 const createdAt = '2026-01-01T00:00:00.000Z'
 const context = { projectId: ids.project, projectCode: 'P107', projectName: 'Finance regression project', defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok' }
@@ -52,6 +61,20 @@ function readSet(budgetAmount = '400.00'): FinanceTableRows & { context: typeof 
     payments: [payment(ids.paymentNoRetention, '10.0000', null), payment(ids.paymentZeroRetention, '20.0000', '0'), payment(ids.paymentWarranty, '30.0000', '5.0000'), payment('c1070000-0000-4000-8000-000000000093', '99.0000', '9.0000', '2026-02-11', 'voided')],
     parties: [{ partyId: ids.party, code: 'PARTY-107', displayName: 'Synthetic party', partyKind: 'organization' }],
   }
+}
+
+function multiSnapshot(projectId: string, projectCode: string, currencyCode: string, itemId: string, partyId: string, contractId: string, budgetId: string, lineId: string, paymentId: string, budgetAmount: string, ownerAmount: string | null, costAmount: string) {
+  const rows = readSet(budgetAmount)
+  rows.context = { ...context, projectId, projectCode, projectName: projectCode, defaultCurrencyCode: currencyCode }
+  rows.costItems = [{ ...rows.costItems[0]!, id: itemId, project_id: projectId, amount_text: costAmount, currency_code: currencyCode }]
+  rows.details = []
+  rows.budgets = [{ ...rows.budgets[0]!, id: budgetId, project_id: projectId, currency_code: currencyCode, total_amount_text: budgetAmount, detail_mode: 'categorized' }]
+  rows.budgetLines = [{ id: lineId, tenant_id: ids.tenant, company_id: ids.company, project_id: projectId, budget_version_id: budgetId, cost_category_id: ids.materials, line_no: 1, amount_text: budgetAmount, description: 'Budget line', reference: null, source_reference: null, note: null, version: 0, updated_at: createdAt }]
+  rows.ownerAdvances = ownerAmount === null ? [] : [{ id: `${ownerAmount === '100.0000' ? 'c1070000-0000-4000-8000-000000000132' : 'c1070000-0000-4000-8000-000000000133'}`, tenant_id: ids.tenant, company_id: ids.company, project_id: projectId, amount_text: ownerAmount, currency_code: currencyCode, status: 'recorded', description: 'Owner receipt', payer_name: 'Owner', receipt_no: projectCode, received_date: '2026-02-01', reference: null, source_reference: null, note: null, version: 0, created_at: createdAt, updated_at: createdAt }]
+  rows.subcontracts = [{ id: contractId, tenant_id: ids.tenant, company_id: ids.company, project_id: projectId, subcontractor_party_id: partyId, code: `${projectCode}-SC`, contract_no: null, contract_name: 'Contract', contract_date: '2026-01-01', contract_value_text: currencyCode === 'USD' ? '1000.0000' : '1000000.0000', currency_code: currencyCode, warranty_retention_rate_bps: 500, is_active: true, reference: null, source_reference: null, note: null, version: 0, updated_at: createdAt }]
+  rows.payments = [{ id: paymentId, tenant_id: ids.tenant, company_id: ids.company, project_id: projectId, project_subcontract_id: contractId, paid_amount_text: currencyCode === 'USD' ? '200.0000' : '200000.0000', warranty_retention_amount_text: currencyCode === 'USD' ? '10.0000' : '10000.0000', retention_rate_bps: 500, currency_code: currencyCode, status: 'recorded', description: 'Payment', payment_date: '2026-02-02', payment_reference: null, source_reference: null, note: null, created_at: createdAt, version: 0, updated_at: createdAt }]
+  rows.parties = [{ partyId, code: `${projectCode}-PARTY`, displayName: `${projectCode} party`, partyKind: 'organization' }]
+  return rows
 }
 
 function concrete(rows: FinanceTableRows & { context: typeof context, parties: readonly { partyId: string, code: string, displayName: string, partyKind: 'organization' }[] }) {
@@ -99,6 +122,63 @@ function fakeSupabase(rows: ReturnType<typeof readSet>) {
       if (name === 'c1_read_project_cost_read_context') return { data: context, error: null }
       if (name === 'c1_read_project_finance_directory') return { data: { defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName }], nextCursor: null }, error: null }
       return { data: rows.parties.filter(party => (args.target_party_ids as string[]).includes(party.partyId)), error: null }
+    },
+  }
+}
+
+function fakeSupabaseMulti(projectRows: readonly ReturnType<typeof multiSnapshot>[]) {
+  const tableRows: Record<string, readonly Record<string, unknown>[]> = {
+    cost_categories: projectRows[0]!.categories,
+    project_cost_items: projectRows.flatMap(rows => rows.costItems),
+    project_cost_item_details: [],
+    project_budget_versions: projectRows.flatMap(rows => rows.budgets),
+    project_budget_lines: projectRows.flatMap(rows => rows.budgetLines),
+    project_owner_advances: projectRows.flatMap(rows => rows.ownerAdvances),
+    project_subcontracts: projectRows.flatMap(rows => rows.subcontracts),
+    project_subcontract_payments: projectRows.flatMap(rows => rows.payments),
+  }
+  const batchProjectQueries: Array<{ table: string, ids: string[] }> = []
+  let contextCalls = 0
+  let directoryCalls = 0
+  return {
+    batchProjectQueries,
+    get contextCalls() { return contextCalls },
+    get directoryCalls() { return directoryCalls },
+    from(table: string) {
+      let selected = ''
+      const equals = new Map<string, string>()
+      const ins = new Map<string, readonly string[]>()
+      let greaterThan: string | null = null
+      const query = {
+        select(columns: string) { selected = columns; return query },
+        eq(field: string, value: string) { equals.set(field, value); return query },
+        in(field: string, values: readonly string[]) { ins.set(field, values); if (field === 'project_id') batchProjectQueries.push({ table, ids: [...values] }); return query },
+        gt(_field: string, value: string) { greaterThan = value; return query },
+        order() { return query },
+        async limit(size: number) {
+          const fields = selected.split(',')
+          const values = [...(tableRows[table] ?? [])].filter(row => [...equals].every(([field, value]) => row[field] === value)).filter(row => [...ins].every(([field, allowed]) => allowed.includes(String(row[field])))).filter(row => greaterThan === null || String(row.id) > greaterThan)
+          values.sort((left, right) => String(left.id).localeCompare(String(right.id)))
+          return { data: values.slice(0, size).map(row => Object.fromEntries(fields.map(field => [field, row[field]]))), error: null }
+        },
+      }
+      return query
+    },
+    async rpc(name: string, args: Record<string, unknown>) {
+      if (name === 'c1_read_project_cost_read_context') {
+        contextCalls += 1
+        const found = args.target_company_id === ids.company ? projectRows.find(rows => rows.context.projectId === args.target_project_id) : undefined
+        return { data: found?.context, error: null }
+      }
+      if (name === 'c1_read_project_finance_directory') {
+        directoryCalls += 1
+        const afterId = typeof args.target_after_id === 'string' ? args.target_after_id : null
+        const limit = Number(args.target_limit)
+        const projects = projectRows.map(rows => ({ projectId: rows.context.projectId, projectCode: rows.context.projectCode, projectName: rows.context.projectName })).sort((left, right) => left.projectId.localeCompare(right.projectId)).filter(project => afterId === null || project.projectId > afterId).slice(0, limit)
+        return { data: { defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects, nextCursor: projects.length === limit ? projects.at(-1)?.projectId ?? null : null }, error: null }
+      }
+      const found = args.target_company_id === ids.company ? projectRows.find(rows => rows.subcontracts.some(contract => contract.project_id === args.target_project_id)) : undefined
+      return { data: found?.parties.filter(party => (args.target_party_ids as string[]).includes(party.partyId)) ?? [], error: null }
     },
   }
 }
@@ -201,6 +281,36 @@ describe('C1 finance review regressions on concrete production readers', () => {
     await expect(repository.subcontractor(scope, ids.project, ids.party, paymentQuery)).resolves.toHaveProperty('payments')
     await expect(repository.subcontract(scope, ids.project, ids.contract, paymentQuery)).resolves.toHaveProperty('contract')
     await expect(repository.itemDetails(scope, ids.project, ids.materialsItem, itemQuery)).resolves.toHaveProperty('kind', 'ordinary')
+  })
+
+  it('F04 partitions every project-owned relation in a batched factory directory read', async () => {
+    const projectA = multiSnapshot(ids.project, 'P-A', 'VND', 'c1070000-0000-4000-8000-000000000140', 'c1070000-0000-4000-8000-000000000141', 'c1070000-0000-4000-8000-000000000142', 'c1070000-0000-4000-8000-000000000143', 'c1070000-0000-4000-8000-000000000144', 'c1070000-0000-4000-8000-000000000145', '100.0000', '100.0000', '10.0000')
+    const projectB = multiSnapshot(multiIds.projectB, 'P-B', 'USD', multiIds.itemB, multiIds.partyB, multiIds.contractB, multiIds.budgetB, multiIds.lineB, multiIds.paymentB, '200.0000', '200.0000', '20.0000')
+    const projectC = multiSnapshot(multiIds.projectC, 'P-C', 'VND', multiIds.itemC, multiIds.partyC, multiIds.contractC, multiIds.budgetC, multiIds.lineC, multiIds.paymentC, '300.0000', null, '30.0000')
+    const db = fakeSupabaseMulti([projectA, projectB, projectC])
+    const repository = createSupabaseProjectFinanceRepository(db as never)
+    const result = await repository.listProjects(scope, { pageSize: 100 })
+    expect(db.contextCalls).toBe(0)
+    expect(db.directoryCalls).toBe(1)
+    expect(result.projects.map(project => project.project.projectId)).toEqual([ids.project, multiIds.projectB, multiIds.projectC])
+    const byId = new Map(result.projects.map(project => [project.project.projectId, project]))
+    expect(byId.get(ids.project)?.summary.ownerAdvances).toMatchObject({ state: 'recorded', amount: '100.0000' })
+    expect(byId.get(multiIds.projectB)?.summary.ownerAdvances).toMatchObject({ state: 'recorded', amount: '200.0000' })
+    expect(byId.get(multiIds.projectC)?.summary.ownerAdvances).toMatchObject({ state: 'not_recorded', amount: null })
+    expect(byId.get(ids.project)?.summary.budget.amount).toBe('100.0000')
+    expect(byId.get(multiIds.projectB)?.summary.budget.amount).toBe('200.0000')
+    expect(byId.get(multiIds.projectC)?.summary.budget.amount).toBe('300.0000')
+    expect(byId.get(ids.project)?.project.currencyCode).toBe('VND')
+    expect(byId.get(multiIds.projectB)?.project.currencyCode).toBe('USD')
+    expect(byId.get(ids.project)?.summary.warrantyRetention.amount).toBe('10000.0000')
+    expect(byId.get(multiIds.projectB)?.summary.warrantyRetention.amount).toBe('10.0000')
+    for (const projectId of [ids.project, multiIds.projectB, multiIds.projectC]) {
+      const overview = await repository.overview(scope, projectId)
+      expect(overview.summary).toEqual(byId.get(projectId)?.summary)
+    }
+    expect(db.contextCalls).toBe(6)
+    expect(db.directoryCalls).toBe(1)
+    expect(db.batchProjectQueries.filter(query => query.ids.length === 3).length).toBe(24)
   })
 
   it('keeps the documented deterministic date tie-break', () => {

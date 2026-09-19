@@ -2,12 +2,12 @@ import { financeOverviewSchema, type FinanceCategoryRow, type FinanceOverview, t
 import { deriveFinanceDate, compareFinanceRows } from '../../../../shared/utils/project-finance-dates'
 import { subtractFinanceMoney, sumFinanceMoney } from '../../../../shared/utils/project-finance-money'
 import { AppApiError } from '../../../utils/api-error'
-import type { FinanceProjectContextRow, FinanceTableRows } from './project-finance.queries'
+import type { FinanceProjectContextRow, FinanceSummaryTableRows } from './project-finance.queries'
 
-type RawCategory = FinanceTableRows['categories'][number]
-type RawItem = FinanceTableRows['costItems'][number]
-type RawDetail = FinanceTableRows['details'][number]
-type RawPayment = FinanceTableRows['payments'][number]
+type RawCategory = FinanceSummaryTableRows['categories'][number]
+type RawItem = FinanceSummaryTableRows['costItems'][number]
+type RawDetail = FinanceSummaryTableRows['details'][number]
+type RawPayment = FinanceSummaryTableRows['payments'][number]
 
 const expectedCategoryCodes = ['materials', 'machinery', 'direct_labor', 'subcontract_labor', 'other'] as const
 const isZero = (value: string) => /^0(?:\.0*)?$/.test(value)
@@ -70,7 +70,7 @@ function context(row: FinanceProjectContextRow, currencyCode: string) {
   return { projectId: row.projectId, projectCode: row.projectCode, projectName: row.projectName, currencyCode, moneyScale: row.moneyScale, timeZone: row.timeZone }
 }
 
-function currencySet(rows: FinanceTableRows): Set<string> {
+function currencySet(rows: FinanceSummaryTableRows): Set<string> {
   const result = new Set<string>(rows.costItems.map(row => row.currency_code))
   for (const value of rows.budgets.filter(row => row.status === 'approved').map(row => row.currency_code)) if (value) result.add(value)
   for (const value of rows.ownerAdvances.filter(row => row.status === 'recorded').map(row => row.currency_code)) if (value) result.add(value)
@@ -79,7 +79,7 @@ function currencySet(rows: FinanceTableRows): Set<string> {
   return result
 }
 
-export function summarizeFinanceRows(input: { context: FinanceProjectContextRow, rows: FinanceTableRows }): FinanceOverview {
+export function summarizeFinanceRows(input: { context: FinanceProjectContextRow, rows: FinanceSummaryTableRows }): FinanceOverview {
   const currencies = currencySet(input.rows)
   if (currencies.size > 1) throw new AppApiError(500, 'INTERNAL_ERROR', 'Dữ liệu tài chính có nhiều loại tiền tệ.', { reason: 'MIXED_CURRENCY' })
   const currencyCode = [...currencies][0] ?? input.context.defaultCurrencyCode
