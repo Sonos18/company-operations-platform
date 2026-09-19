@@ -121,6 +121,7 @@ describe('C1 Cloud DEV runner', () => {
       'C1_PCD_DEFERRED_TRIGGER_BEFORE_CHECKPOINT', 'C1_PCD_DERIVED_EQUAL_TOTAL_NO_VERSION_CHURN',
     ]) expect(sql).toContain(label)
     expect(sql).toContain('set constraints all immediate')
+    expect(sql).toMatch(/update public\.project_cost_item_details\s+set\s+project_cost_item_id = 'c1010000-0000-4000-8000-000000000307',\s+line_no = 2\s+where id = 'c1010000-0000-4000-8000-000000000641'/iu)
   })
 
   it('accepts the actual rollback-only Project Cost fixture before any Cloud command', () => {

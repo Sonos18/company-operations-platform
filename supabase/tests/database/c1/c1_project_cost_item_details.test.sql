@@ -222,7 +222,10 @@ insert into public.project_cost_item_details(id, tenant_id, company_id, project_
   ('c1010000-0000-4000-8000-000000000642', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000307', 1, 'C101 destination detail', '10', 'c1010000-0000-4000-8000-000000000903');
 set constraints all immediate;
 set constraints all deferred;
-update public.project_cost_item_details set project_cost_item_id = 'c1010000-0000-4000-8000-000000000307' where id = 'c1010000-0000-4000-8000-000000000641';
+update public.project_cost_item_details
+set project_cost_item_id = 'c1010000-0000-4000-8000-000000000307',
+    line_no = 2
+where id = 'c1010000-0000-4000-8000-000000000641';
 set constraints all immediate;
 do $$
 begin
