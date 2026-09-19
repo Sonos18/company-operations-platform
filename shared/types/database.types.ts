@@ -714,6 +714,59 @@ export type Database = {
           },
         ]
       }
+      cost_categories: {
+        Row: {
+          code: string
+          company_id: string
+          created_at: string
+          created_by: string
+          display_order: number
+          id: string
+          is_active: boolean
+          name: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string
+          version: number
+        }
+        Insert: {
+          code: string
+          company_id: string
+          created_at?: string
+          created_by: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          name: string
+          tenant_id: string
+          updated_at?: string
+          updated_by: string
+          version?: number
+        }
+        Update: {
+          code?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          name?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "c1fc_category_company"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+        ]
+      }
       cost_command_receipts: {
         Row: {
           actor_id: string
@@ -1782,6 +1835,172 @@ export type Database = {
           },
         ]
       }
+      project_budget_lines: {
+        Row: {
+          amount: number | null
+          amount_text: string
+          budget_version_id: string
+          company_id: string
+          cost_category_id: string
+          created_at: string
+          created_by: string
+          description: string
+          id: string
+          line_no: number
+          note: string | null
+          project_id: string
+          reference: string | null
+          source_reference: string | null
+          tenant_id: string
+          updated_at: string
+          updated_by: string
+          version: number
+        }
+        Insert: {
+          amount?: number | null
+          amount_text: string
+          budget_version_id: string
+          company_id: string
+          cost_category_id: string
+          created_at?: string
+          created_by: string
+          description: string
+          id?: string
+          line_no: number
+          note?: string | null
+          project_id: string
+          reference?: string | null
+          source_reference?: string | null
+          tenant_id: string
+          updated_at?: string
+          updated_by: string
+          version?: number
+        }
+        Update: {
+          amount?: number | null
+          amount_text?: string
+          budget_version_id?: string
+          company_id?: string
+          cost_category_id?: string
+          created_at?: string
+          created_by?: string
+          description?: string
+          id?: string
+          line_no?: number
+          note?: string | null
+          project_id?: string
+          reference?: string | null
+          source_reference?: string | null
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "c1fc_budget_line_category"
+            columns: ["cost_category_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "cost_categories"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "c1fc_budget_line_parent"
+            columns: [
+              "budget_version_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "project_budget_versions"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      project_budget_versions: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          company_id: string
+          created_at: string
+          created_by: string
+          currency_code: string
+          detail_mode: string
+          effective_date: string | null
+          id: string
+          name: string
+          note: string | null
+          project_id: string
+          reference: string | null
+          revision_no: number
+          source_reference: string | null
+          status: string
+          tenant_id: string
+          total_amount: number | null
+          total_amount_text: string
+          updated_at: string
+          updated_by: string
+          version: number
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          company_id: string
+          created_at?: string
+          created_by: string
+          currency_code: string
+          detail_mode?: string
+          effective_date?: string | null
+          id?: string
+          name: string
+          note?: string | null
+          project_id: string
+          reference?: string | null
+          revision_no: number
+          source_reference?: string | null
+          status?: string
+          tenant_id: string
+          total_amount?: number | null
+          total_amount_text: string
+          updated_at?: string
+          updated_by: string
+          version?: number
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          currency_code?: string
+          detail_mode?: string
+          effective_date?: string | null
+          id?: string
+          name?: string
+          note?: string | null
+          project_id?: string
+          reference?: string | null
+          revision_no?: number
+          source_reference?: string | null
+          status?: string
+          tenant_id?: string
+          total_amount?: number | null
+          total_amount_text?: string
+          updated_at?: string
+          updated_by?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "c1fc_budget_project"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
       project_cost_item_details: {
         Row: {
           amount_text: string
@@ -1925,6 +2144,7 @@ export type Database = {
           business_reference: string | null
           company_id: string
           component_id: string | null
+          cost_category_id: string | null
           created_at: string
           created_by: string
           currency_code: string
@@ -1945,6 +2165,7 @@ export type Database = {
           business_reference?: string | null
           company_id: string
           component_id?: string | null
+          cost_category_id?: string | null
           created_at?: string
           created_by: string
           currency_code: string
@@ -1965,6 +2186,7 @@ export type Database = {
           business_reference?: string | null
           company_id?: string
           component_id?: string | null
+          cost_category_id?: string | null
           created_at?: string
           created_by?: string
           currency_code?: string
@@ -1980,6 +2202,13 @@ export type Database = {
           work_status?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "c1fc_cost_item_category"
+            columns: ["cost_category_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "cost_categories"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
           {
             foreignKeyName: "project_cost_items_company_id_tenant_id_fkey"
             columns: ["company_id", "tenant_id"]
@@ -2089,6 +2318,274 @@ export type Database = {
           },
           {
             foreignKeyName: "project_engagements_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      project_owner_advances: {
+        Row: {
+          amount: number | null
+          amount_text: string
+          company_id: string
+          created_at: string
+          created_by: string
+          currency_code: string
+          description: string
+          id: string
+          note: string | null
+          payer_name: string | null
+          project_id: string
+          receipt_no: string | null
+          received_date: string | null
+          reference: string | null
+          source_reference: string | null
+          status: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string
+          version: number
+          void_reason: string | null
+        }
+        Insert: {
+          amount?: number | null
+          amount_text: string
+          company_id: string
+          created_at?: string
+          created_by: string
+          currency_code: string
+          description: string
+          id?: string
+          note?: string | null
+          payer_name?: string | null
+          project_id: string
+          receipt_no?: string | null
+          received_date?: string | null
+          reference?: string | null
+          source_reference?: string | null
+          status?: string
+          tenant_id: string
+          updated_at?: string
+          updated_by: string
+          version?: number
+          void_reason?: string | null
+        }
+        Update: {
+          amount?: number | null
+          amount_text?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          currency_code?: string
+          description?: string
+          id?: string
+          note?: string | null
+          payer_name?: string | null
+          project_id?: string
+          receipt_no?: string | null
+          received_date?: string | null
+          reference?: string | null
+          source_reference?: string | null
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string
+          version?: number
+          void_reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "c1fc_owner_project"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      project_subcontract_payments: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string
+          currency_code: string
+          description: string
+          id: string
+          note: string | null
+          paid_amount: number | null
+          paid_amount_text: string
+          payment_date: string | null
+          payment_reference: string | null
+          project_id: string
+          project_subcontract_id: string
+          retention_rate_bps: number | null
+          source_reference: string | null
+          status: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string
+          version: number
+          void_reason: string | null
+          warranty_retention_amount: number | null
+          warranty_retention_amount_text: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by: string
+          currency_code: string
+          description: string
+          id?: string
+          note?: string | null
+          paid_amount?: number | null
+          paid_amount_text: string
+          payment_date?: string | null
+          payment_reference?: string | null
+          project_id: string
+          project_subcontract_id: string
+          retention_rate_bps?: number | null
+          source_reference?: string | null
+          status?: string
+          tenant_id: string
+          updated_at?: string
+          updated_by: string
+          version?: number
+          void_reason?: string | null
+          warranty_retention_amount?: number | null
+          warranty_retention_amount_text?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          currency_code?: string
+          description?: string
+          id?: string
+          note?: string | null
+          paid_amount?: number | null
+          paid_amount_text?: string
+          payment_date?: string | null
+          payment_reference?: string | null
+          project_id?: string
+          project_subcontract_id?: string
+          retention_rate_bps?: number | null
+          source_reference?: string | null
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string
+          version?: number
+          void_reason?: string | null
+          warranty_retention_amount?: number | null
+          warranty_retention_amount_text?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "c1fc_payment_contract"
+            columns: [
+              "project_subcontract_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+              "currency_code",
+            ]
+            isOneToOne: false
+            referencedRelation: "project_subcontracts"
+            referencedColumns: [
+              "id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+              "currency_code",
+            ]
+          },
+        ]
+      }
+      project_subcontracts: {
+        Row: {
+          code: string
+          company_id: string
+          contract_date: string | null
+          contract_name: string
+          contract_no: string | null
+          contract_value: number | null
+          contract_value_text: string | null
+          created_at: string
+          created_by: string
+          currency_code: string
+          id: string
+          is_active: boolean
+          note: string | null
+          project_id: string
+          reference: string | null
+          source_reference: string | null
+          subcontractor_party_id: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string
+          version: number
+          warranty_retention_rate_bps: number | null
+        }
+        Insert: {
+          code: string
+          company_id: string
+          contract_date?: string | null
+          contract_name: string
+          contract_no?: string | null
+          contract_value?: number | null
+          contract_value_text?: string | null
+          created_at?: string
+          created_by: string
+          currency_code: string
+          id?: string
+          is_active?: boolean
+          note?: string | null
+          project_id: string
+          reference?: string | null
+          source_reference?: string | null
+          subcontractor_party_id: string
+          tenant_id: string
+          updated_at?: string
+          updated_by: string
+          version?: number
+          warranty_retention_rate_bps?: number | null
+        }
+        Update: {
+          code?: string
+          company_id?: string
+          contract_date?: string | null
+          contract_name?: string
+          contract_no?: string | null
+          contract_value?: number | null
+          contract_value_text?: string | null
+          created_at?: string
+          created_by?: string
+          currency_code?: string
+          id?: string
+          is_active?: boolean
+          note?: string | null
+          project_id?: string
+          reference?: string | null
+          source_reference?: string | null
+          subcontractor_party_id?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string
+          version?: number
+          warranty_retention_rate_bps?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "c1fc_subcontract_party"
+            columns: ["subcontractor_party_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "business_parties"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "c1fc_subcontract_project"
             columns: ["project_id", "tenant_id", "company_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -3602,6 +4099,10 @@ export type Database = {
       }
       c1_read_project_cost_project_metadata: {
         Args: { target_company_id: string; target_project_ids: string[] }
+        Returns: Json
+      }
+      c1_read_project_cost_read_context: {
+        Args: { target_company_id: string; target_project_id: string }
         Returns: Json
       }
       c1_update_business_party: {
