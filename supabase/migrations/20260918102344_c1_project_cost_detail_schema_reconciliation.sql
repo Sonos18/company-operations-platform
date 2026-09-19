@@ -59,7 +59,7 @@ begin
     updated_at timestamptz not null default now(),
     retention_kind text constraint project_cost_item_details_retention_kind_check check (retention_kind is null or retention_kind in ('warranty', 'other')),
     retention_rate_bps integer constraint project_cost_item_details_retention_rate_bps_check check (retention_rate_bps is null or retention_rate_bps between 0 and 10000),
-    retention_amount_text text constraint project_cost_item_details_retention_amount_text_check check (retention_amount_text is null or retention_amount_text ~ '^\d{1,16}(\.\d{1,4})?$'),
+    retention_amount_text text constraint project_cost_item_details_retention_amount_text_check check (retention_amount_text is null or retention_amount_text ~ '^[0-9]{1,16}([.][0-9]{1,4})?$'),
     constraint project_cost_item_details_retention_amount_lte_amount_check check (retention_amount_text is null or retention_amount_text::numeric <= amount_text::numeric),
     constraint project_cost_item_details_retention_shape_check check ((retention_kind is null and retention_rate_bps is null and retention_amount_text is null) or (retention_kind is not null and retention_amount_text is not null))
   ) on commit drop;
@@ -277,17 +277,15 @@ declare
   v_tenant_id uuid;
   v_company_id uuid;
   v_amount numeric;
-  v_amount_text text;
 begin
   select item.tenant_id, item.company_id into v_tenant_id, v_company_id from public.project_cost_items item where item.id = target_id for update;
   if not found then return; end if;
   select coalesce(sum(detail.amount_text::numeric), 0) into v_amount
   from public.project_cost_item_details detail
   where detail.project_cost_item_id = target_id and detail.tenant_id = v_tenant_id and detail.company_id = v_company_id;
-  v_amount_text := to_char(v_amount, 'FM9999999999999999.0000');
-  if exists (select 1 from public.project_cost_items item where item.id = target_id and (item.amount is distinct from v_amount or item.amount_text is distinct from v_amount_text)) then
+  if exists (select 1 from public.project_cost_items item where item.id = target_id and item.amount is distinct from v_amount) then
     perform set_config('taskovia.project_cost_detail_sync', '1', true);
-    update public.project_cost_items item set amount = v_amount, amount_text = v_amount_text, version = item.version + 1, updated_at = now() where item.id = target_id;
+    update public.project_cost_items item set amount = v_amount, amount_text = v_amount::text, version = item.version + 1, updated_at = now() where item.id = target_id;
     perform set_config('taskovia.project_cost_detail_sync', '0', true);
   end if;
 end;

@@ -50,7 +50,8 @@ begin
     ('c1010000-0000-4000-8000-000000000305', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 retention parent', 0, '0', 'VND', 'unknown', manager),
     ('c1010000-0000-4000-8000-000000000306', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 move source parent', 0, '0', 'VND', 'unknown', manager),
     ('c1010000-0000-4000-8000-000000000307', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 move destination parent', 0, '0', 'VND', 'unknown', manager),
-    ('c1010000-0000-4000-8000-000000000308', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 validation parent', 0, '0', 'VND', 'unknown', manager);
+    ('c1010000-0000-4000-8000-000000000308', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 validation parent', 0, '0', 'VND', 'unknown', manager),
+    ('c1010000-0000-4000-8000-000000000309', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 equal-total parent', 100, '100', 'VND', 'unknown', manager);
 end;
 $$;
 
@@ -58,6 +59,21 @@ insert into public.project_cost_item_details(id, tenant_id, company_id, project_
   ('c1010000-0000-4000-8000-000000000601', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000301', 1, 'C101 reader detail', '10', 'c1010000-0000-4000-8000-000000000903'),
   ('c1010000-0000-4000-8000-000000000602', 'c1010000-0000-4000-8000-000000000011', 'c1010000-0000-4000-8000-000000000021', 'c1010000-0000-4000-8000-000000000302', 1, 'C101 foreign detail', '10', 'c1010000-0000-4000-8000-000000000903');
 set constraints all immediate;
+set constraints all deferred;
+
+insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, created_by)
+values ('c1010000-0000-4000-8000-000000000632', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000309', 1, 'C101 equal-total detail', '100', 'c1010000-0000-4000-8000-000000000903');
+set constraints all immediate;
+do $$
+begin
+  if (select amount from public.project_cost_items where id = 'c1010000-0000-4000-8000-000000000309') <> 100
+    or (select amount_text from public.project_cost_items where id = 'c1010000-0000-4000-8000-000000000309') <> '100'
+    or (select version from public.project_cost_items where id = 'c1010000-0000-4000-8000-000000000309') <> 0 then
+    raise exception 'C1_PCD_DERIVED_EQUAL_TOTAL_NO_VERSION_CHURN';
+  end if;
+  raise notice 'C1_PCD_DERIVED_EQUAL_TOTAL_NO_VERSION_CHURN';
+end;
+$$;
 set constraints all deferred;
 
 do $$
@@ -77,7 +93,7 @@ set local role authenticated;
 select pg_catalog.set_config('request.jwt.claims', '{"sub":"c1010000-0000-4000-8000-000000000901","role":"authenticated"}', true);
 do $$
 begin
-  if (select count(*) from public.project_cost_item_details where company_id = 'c1010000-0000-4000-8000-000000000020') <> 1 then
+  if (select count(*) from public.project_cost_item_details where company_id = 'c1010000-0000-4000-8000-000000000020') <> 2 then
     raise exception 'C1_PCD_RLS_READ_ALLOWED';
   end if;
   if (select count(*) from public.project_cost_item_details where company_id = 'c1010000-0000-4000-8000-000000000021') <> 0 then
