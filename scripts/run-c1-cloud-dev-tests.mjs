@@ -10,6 +10,7 @@ const allowlist = [
   'c1_controlled_import_security.test.sql',
   'c1_audited_source_ownership_correction.test.sql',
   'c1_project_cost_items.test.sql',
+  'c1_project_cost_item_details.test.sql',
 ]
 
 export function validateC1CloudDevSql(path, sql) {
@@ -23,9 +24,10 @@ export function validateC1CloudDevSql(path, sql) {
     const ids = normalized.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
     if (ids.some(id => !/^c10[23][0-9a-f]{4}-/iu.test(id))) throw new Error('Audited source ownership SQL must use reserved synthetic UUIDs')
   }
-  if (path === 'c1_project_cost_items.test.sql') {
+  if (path === 'c1_project_cost_items.test.sql' || path === 'c1_project_cost_item_details.test.sql') {
     const ids = normalized.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
     if (ids.some(id => !/^c10[01][0-9a-f]{4}-/iu.test(id))) throw new Error('Project Cost SQL must use reserved synthetic UUIDs')
+    if (path === 'c1_project_cost_item_details.test.sql' && !ids.some(id => /^c101[0-9a-f]{4}-/iu.test(id))) throw new Error('Project Cost Detail SQL must include c101 synthetic fixture identifiers')
     if (/\b(?:Eo\s+Gi\p{L}*|Yong\s+Mei)\b/iu.test(normalized)) throw new Error('Project Cost SQL cannot reference real VQH names')
   }
 }
