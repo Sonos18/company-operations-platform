@@ -1,39 +1,8 @@
-import { z } from 'zod'
 import { financeOverviewSchema, type FinanceCategoryRow, type FinanceOverview, type MoneyObservation } from '../../../../shared/schemas/costs/project-finance'
 import { deriveFinanceDate, compareFinanceRows } from '../../../../shared/utils/project-finance-dates'
 import { subtractFinanceMoney, sumFinanceMoney } from '../../../../shared/utils/project-finance-money'
 import { AppApiError } from '../../../utils/api-error'
 import type { FinanceProjectContextRow, FinanceTableRows } from './project-finance.queries'
-
-type Payment = { paidAmount: string, retentionAmount: string | null, status: 'recorded' | 'voided' }
-
-export function summarizeProjectFinance(input: {
-  ordinaryAmounts: readonly string[]
-  recordedPayments: readonly Payment[]
-  legacySubcontractHasData: boolean
-  hasUnmappedParent: boolean
-  approvedBudget: string | null
-  ownerAdvanceAmounts: readonly string[]
-}) {
-  const payments = input.recordedPayments.filter(payment => payment.status === 'recorded')
-  const paidAmounts = payments.map(payment => payment.paidAmount)
-  const retentionAmounts = payments.flatMap(payment => payment.retentionAmount === null ? [] : [payment.retentionAmount])
-  const knownSubtotal = sumFinanceMoney(input.ordinaryAmounts)
-  const subcontractIncomplete = input.legacySubcontractHasData
-  const costState = input.hasUnmappedParent || subcontractIncomplete ? 'needs_reconciliation' : input.ordinaryAmounts.length === 0 ? 'not_recorded' : 'recorded'
-  const issues = [
-    ...(input.hasUnmappedParent ? [{ code: 'UNMAPPED_COST_ITEM' as const, categoryId: null }] : []),
-    ...(subcontractIncomplete ? [{ code: 'LEGACY_SUBCONTRACT_RECONCILIATION_REQUIRED' as const, categoryId: null }] : []),
-  ]
-  return {
-    cost: { state: costState, amount: costState === 'recorded' ? knownSubtotal : null, recordedCount: input.ordinaryAmounts.length, knownSubtotal },
-    recordedPaymentsTotal: sumFinanceMoney(paidAmounts),
-    warrantyRetention: retentionAmounts.length === 0
-      ? { state: 'not_recorded' as const, amount: null, recordedCount: 0 }
-      : { state: 'recorded' as const, amount: sumFinanceMoney(retentionAmounts), recordedCount: retentionAmounts.length },
-    issues,
-  }
-}
 
 type RawCategory = FinanceTableRows['categories'][number]
 type RawItem = FinanceTableRows['costItems'][number]
@@ -55,11 +24,11 @@ function retentionObservation(rows: readonly { retentionKind?: string | null, re
   return { state: 'recorded', amount: sumFinanceMoney(known), recordedCount: known.length }
 }
 
-function latestDate(rows: readonly { id: string, created_at: string, relevant_date?: string | null }[], timeZone: string) {
+function latestDate(rows: readonly { id: string, created_at: string, relevant_date?: string | null, line_no?: number }[], timeZone: string) {
   if (rows.length === 0) return { latestRecordedDate: null, latestRecordedDateSource: null } as const
   const mapped = rows.map(row => {
     const derived = deriveFinanceDate(row.relevant_date ?? null, row.created_at, timeZone)
-    return { id: row.id, createdAt: row.created_at, effectiveDate: derived.effectiveDate, source: derived.usedFallback ? 'created_at' as const : 'business_date' as const }
+    return { id: row.id, createdAt: row.created_at, lineNo: row.line_no, effectiveDate: derived.effectiveDate, source: derived.usedFallback ? 'created_at' as const : 'business_date' as const }
   }).sort((left, right) => compareFinanceRows(left, right, 'newest'))
   return { latestRecordedDate: mapped[0]!.effectiveDate, latestRecordedDateSource: mapped[0]!.source }
 }
@@ -73,6 +42,9 @@ function categoryRow(category: RawCategory, items: readonly RawItem[], details: 
   const costValues = category.code === 'subcontract_labor' ? recordedPayments.map(payment => payment.paid_amount_text) : categoryItems.map(item => item.amount_text)
   const cost = legacy ? { state: 'needs_reconciliation' as const, amount: null, recordedCount: categoryItems.length } : observation(costValues)
   const item = categoryItems.length === 1 ? categoryItems[0]! : null
+  const dateRows = category.code === 'subcontract_labor'
+    ? recordedPayments.map(payment => ({ id: payment.id, created_at: payment.created_at, relevant_date: payment.payment_date }))
+    : categoryDetails.length > 0 ? categoryDetails : categoryItems
   return {
     categoryId: category.id,
     code: category.code,
@@ -84,7 +56,7 @@ function categoryRow(category: RawCategory, items: readonly RawItem[], details: 
     businessReference: item?.business_reference ?? null,
     cost,
     detailCount: categoryDetails.length,
-    ...latestDate(categoryItems, timeZone),
+    ...latestDate(dateRows, timeZone),
     warrantyRetention: category.code === 'subcontract_labor'
       ? retentionObservation(recordedPayments.map(payment => ({ retentionAmount: payment.warranty_retention_amount_text })))
       : retentionObservation(categoryDetails.map(detail => ({ retentionKind: detail.retention_kind, retentionAmount: detail.retention_amount_text }))),
@@ -126,8 +98,9 @@ export function summarizeFinanceRows(input: { context: FinanceProjectContextRow,
   const cost = { state: costComplete ? 'recorded' as const : unmapped.length > 0 || categories.some(category => category.legacyReconciliationRequired) ? 'needs_reconciliation' as const : 'not_recorded' as const, amount: costComplete ? knownSubtotal : null, recordedCount: categoryCost.filter(value => value.state === 'recorded').reduce((total, value) => total + value.recordedCount, 0), knownSubtotal }
   const budget = approvedBudget ? observation([approvedBudget.total_amount_text]) : observation([])
   const ownerAdvances = observation(advances.map(advance => advance.amount_text))
+  const ordinaryItemIds = new Set(input.rows.costItems.filter(item => item.cost_category_id === null || categoryById.get(item.cost_category_id)?.code !== 'subcontract_labor').map(item => item.id))
   const warrantyRows = [
-    ...input.rows.details.filter(detail => detail.retention_kind === 'warranty').map(detail => ({ retentionKind: detail.retention_kind, retentionAmount: detail.retention_amount_text })),
+    ...input.rows.details.filter(detail => ordinaryItemIds.has(detail.project_cost_item_id) && detail.retention_kind === 'warranty').map(detail => ({ retentionKind: detail.retention_kind, retentionAmount: detail.retention_amount_text })),
     ...input.rows.payments.filter(payment => payment.status === 'recorded').map(payment => ({ retentionAmount: payment.warranty_retention_amount_text })),
   ]
   const warrantyRetention = retentionObservation(warrantyRows)
@@ -154,7 +127,7 @@ export function summarizeFinanceRows(input: { context: FinanceProjectContextRow,
       ownerAdvances,
       cost,
       warrantyRetention,
-      reference: approvedBudget ? { kind: 'approved_budget', amount: approvedBudget.total_amount_text } : advances.length > 0 ? { kind: 'owner_advance', amount: sumFinanceMoney(advances.map(advance => advance.amount_text)) } : { kind: 'none', amount: null },
+      reference: approvedBudget ? { kind: 'approved_budget', amount: sumFinanceMoney([approvedBudget.total_amount_text]) } : advances.length > 0 ? { kind: 'owner_advance', amount: sumFinanceMoney(advances.map(advance => advance.amount_text)) } : { kind: 'none', amount: null },
       margin: { state: 'unavailable', amount: null, reasons },
       issues,
     },
@@ -174,5 +147,3 @@ export function referenceHeadroom(contractValue: string | null, payments: readon
   if (total.retentionCount !== total.count) return { value: null, reason: 'RETENTION_NOT_RECORDED' as const }
   return { value: subtractFinanceMoney(contractValue, [total.amount, total.retentionAmount ?? '0.0000']), reason: null }
 }
-
-export const financePaymentRowType = z.object({ id: z.string().uuid() })

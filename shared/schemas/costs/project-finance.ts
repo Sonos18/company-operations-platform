@@ -78,8 +78,6 @@ export const financeOverviewSchema = z.object({
 
 const pageSize = z.coerce.number().refine(value => value === 25 || value === 50 || value === 100, 'pageSize must be 25, 50 or 100')
 const page = z.coerce.number().int().positive()
-const dateSource = z.enum(['business_date', 'created_at'])
-
 export const projectDirectoryQuerySchema = z.object({ afterId: uuid.optional(), pageSize: pageSize.default(25) }).strict()
 export const financeListQuerySchema = z.object({
   page: page.default(1),
@@ -115,7 +113,7 @@ const budgetLineSchema = z.object({ id: uuid, categoryId: uuid, lineNo: z.number
 export const financeBudgetSchema = z.object({ schemaVersion: z.literal(1), project: financeProjectContextSchema, state: z.enum(['approved', 'not_recorded']), header: budgetHeaderSchema.nullable(), lines: z.array(budgetLineSchema) }).strict()
 
 const receiptRowSchema = z.object({
-  id: uuid, description: text, amount: aggregateMoney, payerName: z.string().nullable(), receiptNo: z.string().nullable(), receivedDate: date.nullable(), effectiveDate: date, dateSource,
+  id: uuid, description: text, amount: aggregateMoney, payerName: z.string().nullable(), receiptNo: z.string().nullable(), receivedDate: date.nullable(), effectiveDate: date, dateSource: z.enum(['received_date', 'created_at']),
   recordStatus: z.enum(['recorded', 'voided']), reference: z.string().nullable(), sourceReference: z.string().nullable(), note: z.string().nullable(), createdAt: timestamp, version,
 }).strict()
 export const financeOwnerAdvancesSchema = z.object({
@@ -135,7 +133,7 @@ export const financeSubcontractorListSchema = z.object({
 
 const paymentRowSchema = z.object({
   id: uuid, contractId: uuid, contractCode: text, contractNo: z.string().nullable(), description: text, paidAmount: aggregateMoney, warrantyRetentionAmount: aggregateMoney.nullable(),
-  retentionRateBps: z.number().int().min(0).max(10000).nullable(), paymentDate: date.nullable(), effectiveDate: date, dateSource,
+  retentionRateBps: z.number().int().min(0).max(10000).nullable(), paymentDate: date.nullable(), effectiveDate: date, dateSource: z.enum(['payment_date', 'created_at']),
   recordStatus: z.enum(['recorded', 'voided']), reference: z.string().nullable(), sourceReference: z.string().nullable(), note: z.string().nullable(), createdAt: timestamp, version,
 }).strict()
 const paymentsPageSchema = z.object({

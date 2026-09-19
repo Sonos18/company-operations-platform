@@ -41,6 +41,11 @@ export const subcontractRowSchema = z.object({
 export const paymentRowSchema = z.object({
   id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, project_subcontract_id: uuid, paid_amount_text: money, warranty_retention_amount_text: money.nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), currency_code: currency, status: z.string().min(1), description: z.string(), payment_date: date.nullable(), payment_reference: z.string().nullable(), source_reference: z.string().nullable(), note: z.string().nullable(), created_at: timestamp, version, updated_at: timestamp,
 }).strict()
+const budgetAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, currency_code: currency, detail_mode: z.enum(['summary', 'categorized']), total_amount_text: money, status: z.string().min(1), version, updated_at: timestamp }).strict()
+const budgetLineAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, budget_version_id: uuid, cost_category_id: uuid, line_no: z.number().int().positive(), amount_text: money, version, updated_at: timestamp }).strict()
+const ownerAdvanceAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, amount_text: money, currency_code: currency, status: z.string().min(1), version, updated_at: timestamp }).strict()
+const subcontractAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, subcontractor_party_id: uuid, code: z.string().min(1), contract_no: z.string().nullable(), contract_name: z.string().min(1), contract_date: date.nullable(), contract_value_text: money.nullable(), currency_code: currency, warranty_retention_rate_bps: z.number().int().min(0).max(10000).nullable(), is_active: z.boolean(), version, updated_at: timestamp }).strict()
+const paymentAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, project_subcontract_id: uuid, paid_amount_text: money, warranty_retention_amount_text: money.nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), currency_code: currency, status: z.string().min(1), payment_date: date.nullable(), created_at: timestamp, version, updated_at: timestamp }).strict()
 
 type QueryResult = { data: unknown, error: unknown }
 export type TableQuery = {
@@ -83,6 +88,9 @@ function assertScope<T extends { tenant_id: string, company_id: string }>(rows: 
   if (rows.some(row => row.tenant_id !== tenantId || row.company_id !== companyId)) throw new AppApiError(500, 'INTERNAL_ERROR', message)
   return [...rows]
 }
+function assertProjectScope<T extends { project_id?: string }>(rows: readonly T[], projectIds: readonly string[], message: string): void {
+  if (rows.some(row => row.project_id === undefined || !projectIds.includes(row.project_id))) throw new AppApiError(500, 'INTERNAL_ERROR', message)
+}
 
 export class ProjectFinanceMetadataReader {
   constructor(private readonly client: Pick<FinanceDbClient, 'rpc'>) {}
@@ -92,6 +100,7 @@ export class ProjectFinanceMetadataReader {
     if (error) return mapFinanceReadError(error)
     const parsed = contextSchema.safeParse(data)
     if (!parsed.success) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi metadata dự án không hợp lệ.')
+    if (parsed.data.projectId !== projectId) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi metadata dự án không hợp lệ.')
     return parsed.data
   }
 
@@ -100,6 +109,9 @@ export class ProjectFinanceMetadataReader {
     if (error) return mapFinanceReadError(error)
     const parsed = directorySchema.safeParse(data)
     if (!parsed.success) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi metadata không hợp lệ.')
+    if (afterId !== null && parsed.data.projects.some(project => project.projectId <= afterId)) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi metadata không hợp lệ.')
+    for (let index = 1; index < parsed.data.projects.length; index += 1) if (parsed.data.projects[index - 1]!.projectId >= parsed.data.projects[index]!.projectId) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi metadata không hợp lệ.')
+    if (parsed.data.nextCursor !== null && parsed.data.projects.at(-1)?.projectId !== parsed.data.nextCursor) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi metadata không hợp lệ.')
     return parsed.data
   }
 
@@ -109,7 +121,8 @@ export class ProjectFinanceMetadataReader {
     const { data, error } = await this.client.rpc('c1_read_project_finance_parties', { target_company_id: companyId, target_project_id: projectId, target_party_ids: [...partyIds] })
     if (error) return mapFinanceReadError(error)
     const parsed = parseRows(data, partySchema, 'Phản hồi nhà thầu không hợp lệ.')
-    if (parsed.length !== partyIds.length || parsed.some(row => !partyIds.includes(row.partyId))) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi nhà thầu không hợp lệ.')
+    const returnedIds = parsed.map(row => row.partyId)
+    if (parsed.length !== partyIds.length || new Set(returnedIds).size !== returnedIds.length || new Set(returnedIds).size !== new Set(partyIds).size || returnedIds.some(id => !partyIds.includes(id))) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi nhà thầu không hợp lệ.')
     return parsed
   }
 }
@@ -123,6 +136,13 @@ const columns = {
   advances: 'id,tenant_id,company_id,project_id,amount_text,currency_code,status,description,payer_name,receipt_no,received_date,reference,source_reference,note,version,created_at,updated_at',
   subcontracts: 'id,tenant_id,company_id,project_id,subcontractor_party_id,code,contract_no,contract_name,contract_date,contract_value_text,currency_code,warranty_retention_rate_bps,is_active,reference,source_reference,note,version,updated_at',
   payments: 'id,tenant_id,company_id,project_id,project_subcontract_id,paid_amount_text,warranty_retention_amount_text,retention_rate_bps,currency_code,status,description,payment_date,payment_reference,source_reference,note,created_at,version,updated_at',
+} as const
+const aggregateColumns = {
+  budgets: 'id,tenant_id,company_id,project_id,currency_code,detail_mode,total_amount_text,status,version,updated_at',
+  budgetLines: 'id,tenant_id,company_id,project_id,budget_version_id,cost_category_id,line_no,amount_text,version,updated_at',
+  advances: 'id,tenant_id,company_id,project_id,amount_text,currency_code,status,version,updated_at',
+  subcontracts: 'id,tenant_id,company_id,project_id,subcontractor_party_id,code,contract_no,contract_name,contract_date,contract_value_text,currency_code,warranty_retention_rate_bps,is_active,version,updated_at',
+  payments: 'id,tenant_id,company_id,project_id,project_subcontract_id,paid_amount_text,warranty_retention_amount_text,retention_rate_bps,currency_code,status,payment_date,created_at,version,updated_at',
 } as const
 const detailAggregateColumns = 'id,tenant_id,company_id,project_cost_item_id,line_no,amount_text,retention_kind,retention_rate_bps,retention_amount_text,relevant_date,version,created_at,updated_at'
 
@@ -147,38 +167,44 @@ const schemas: { [K in TableName]: z.ZodType<RowByTable[K]> } = {
 export class ProjectFinanceTableReader {
   constructor(private readonly client: Pick<FinanceDbClient, 'from'>) {}
 
-  private async scan<K extends TableName>(table: K, tenantId: string, companyId: string, projectIds?: readonly string[]): Promise<RowByTable[K][]> {
+  private async scanProjected<T extends { id: string, tenant_id: string, company_id: string }>(table: string, columnsText: string, schema: z.ZodType<T>, tenantId: string, companyId: string, projectIds?: readonly string[]): Promise<T[]> {
     if (projectIds && projectIds.length === 0) return []
     const chunks = projectIds ? Array.from({ length: Math.ceil(projectIds.length / 50) }, (_, index) => projectIds.slice(index * 50, index * 50 + 50)) : [undefined]
-    const result: RowByTable[K][] = []
+    const result: T[] = []
     for (const chunk of chunks) {
       const rows = await scanUuidRows(async (afterId, size) => {
-        let query = this.client.from(tableNames[table]).select(columns[table]).eq('tenant_id', tenantId).eq('company_id', companyId)
+        let query = this.client.from(table).select(columnsText).eq('tenant_id', tenantId).eq('company_id', companyId)
         if (chunk) query = chunk.length === 1 ? query.eq('project_id', chunk[0]!) : query.in('project_id', chunk)
         if (afterId !== null) query = query.gt('id', afterId)
         const response = await query.order('id', { ascending: true }).limit(size)
         if (response.error) return mapFinanceReadError(response.error)
-        const parsed = parseRows(response.data, schemas[table], `Phản hồi ${table} không hợp lệ.`)
-        return assertScope(parsed, tenantId, companyId, `Phản hồi ${table} không hợp lệ.`) as RowByTable[K][]
+        const parsed = parseRows(response.data, schema, `Phản hồi ${table} không hợp lệ.`)
+        const scoped = assertScope(parsed, tenantId, companyId, `Phản hồi ${table} không hợp lệ.`)
+        if (chunk) assertProjectScope(scoped as readonly { project_id?: string }[], chunk, `Phản hồi ${table} không hợp lệ.`)
+        return scoped
       })
       result.push(...rows)
     }
     return result
   }
 
+  private scan<K extends TableName>(table: K, tenantId: string, companyId: string, projectIds?: readonly string[]): Promise<RowByTable[K][]> {
+    return this.scanProjected(tableNames[table], columns[table], schemas[table], tenantId, companyId, projectIds)
+  }
+
   categories(tenantId: string, companyId: string) { return this.scan('categories', tenantId, companyId) }
   costItems(tenantId: string, companyId: string, projectId: string) { return this.costItemsForProjects(tenantId, companyId, [projectId]) }
   costItemsForProjects(tenantId: string, companyId: string, projectIds: readonly string[]) { return this.scan('items', tenantId, companyId, projectIds) }
-  budgets(tenantId: string, companyId: string, projectId: string) { return this.budgetsForProjects(tenantId, companyId, [projectId]) }
-  budgetsForProjects(tenantId: string, companyId: string, projectIds: readonly string[]) { return this.scan('budgets', tenantId, companyId, projectIds) }
-  budgetLines(tenantId: string, companyId: string, projectId: string) { return this.budgetLinesForProjects(tenantId, companyId, [projectId]) }
-  budgetLinesForProjects(tenantId: string, companyId: string, projectIds: readonly string[]) { return this.scan('budgetLines', tenantId, companyId, projectIds) }
-  ownerAdvances(tenantId: string, companyId: string, projectId: string) { return this.ownerAdvancesForProjects(tenantId, companyId, [projectId]) }
-  ownerAdvancesForProjects(tenantId: string, companyId: string, projectIds: readonly string[]) { return this.scan('advances', tenantId, companyId, projectIds) }
-  subcontracts(tenantId: string, companyId: string, projectId: string) { return this.subcontractsForProjects(tenantId, companyId, [projectId]) }
-  subcontractsForProjects(tenantId: string, companyId: string, projectIds: readonly string[]) { return this.scan('subcontracts', tenantId, companyId, projectIds) }
-  payments(tenantId: string, companyId: string, projectId: string) { return this.paymentsForProjects(tenantId, companyId, [projectId]) }
-  paymentsForProjects(tenantId: string, companyId: string, projectIds: readonly string[]) { return this.scan('payments', tenantId, companyId, projectIds) }
+  budgets(tenantId: string, companyId: string, projectId: string, full = true) { return this.budgetsForProjects(tenantId, companyId, [projectId], full) }
+  budgetsForProjects(tenantId: string, companyId: string, projectIds: readonly string[], full = true) { return full ? this.scan('budgets', tenantId, companyId, projectIds) : this.scanProjected('project_budget_versions', aggregateColumns.budgets, budgetAggregateRowSchema, tenantId, companyId, projectIds) }
+  budgetLines(tenantId: string, companyId: string, projectId: string, full = true) { return this.budgetLinesForProjects(tenantId, companyId, [projectId], full) }
+  budgetLinesForProjects(tenantId: string, companyId: string, projectIds: readonly string[], full = true) { return full ? this.scan('budgetLines', tenantId, companyId, projectIds) : this.scanProjected('project_budget_lines', aggregateColumns.budgetLines, budgetLineAggregateRowSchema, tenantId, companyId, projectIds) }
+  ownerAdvances(tenantId: string, companyId: string, projectId: string, full = true) { return this.ownerAdvancesForProjects(tenantId, companyId, [projectId], full) }
+  ownerAdvancesForProjects(tenantId: string, companyId: string, projectIds: readonly string[], full = true) { return full ? this.scan('advances', tenantId, companyId, projectIds) : this.scanProjected('project_owner_advances', aggregateColumns.advances, ownerAdvanceAggregateRowSchema, tenantId, companyId, projectIds) }
+  subcontracts(tenantId: string, companyId: string, projectId: string, full = true) { return this.subcontractsForProjects(tenantId, companyId, [projectId], full) }
+  subcontractsForProjects(tenantId: string, companyId: string, projectIds: readonly string[], full = true) { return full ? this.scan('subcontracts', tenantId, companyId, projectIds) : this.scanProjected('project_subcontracts', aggregateColumns.subcontracts, subcontractAggregateRowSchema, tenantId, companyId, projectIds) }
+  payments(tenantId: string, companyId: string, projectId: string, full = true) { return this.paymentsForProjects(tenantId, companyId, [projectId], full) }
+  paymentsForProjects(tenantId: string, companyId: string, projectIds: readonly string[], full = true) { return full ? this.scan('payments', tenantId, companyId, projectIds) : this.scanProjected('project_subcontract_payments', aggregateColumns.payments, paymentAggregateRowSchema, tenantId, companyId, projectIds) }
 
   private async detailScan<T extends { id: string, tenant_id: string, company_id: string, project_cost_item_id: string }>(tenantId: string, companyId: string, itemIds: readonly string[], columnsText: string, schema: z.ZodType<T>) {
     if (itemIds.length === 0) return [] as T[]

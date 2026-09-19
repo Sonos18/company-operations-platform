@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { financeOverviewSchema, moneyObservationSchema } from '../../../shared/schemas/costs/project-finance'
 import { deriveFinanceDate, compareFinanceRows } from '../../../shared/utils/project-finance-dates'
 import { computeConfirmedMargin, subtractFinanceMoney, sumFinanceMoney } from '../../../shared/utils/project-finance-money'
-import { summarizeProjectFinance } from '../../../server/features/costs/finance/project-finance.summary'
+import { summarizeFinanceRows } from '../../../server/features/costs/finance/project-finance.summary'
 
 describe('C1 finance read contracts', () => {
   it('keeps recorded zero distinct from an unrecorded observation', () => {
@@ -46,18 +46,17 @@ describe('C1 finance read contracts', () => {
     expect(() => financeOverviewSchema.parse({ ...overview, workStatus: 'unknown' })).toThrow()
   })
 
-  it('does not turn legacy subcontract coverage into a zero-cost claim', () => {
-    const result = summarizeProjectFinance({
-      ordinaryAmounts: ['100.0000', '20.0000', '30.0000', '10.0000'],
-      recordedPayments: [{ paidAmount: '40.0000', retentionAmount: '5.0000', status: 'recorded' }, { paidAmount: '50.0000', retentionAmount: '5.0000', status: 'recorded' }, { paidAmount: '999.0000', retentionAmount: '1.0000', status: 'voided' }],
-      legacySubcontractHasData: true,
-      hasUnmappedParent: false,
-      approvedBudget: null,
-      ownerAdvanceAmounts: [],
+  it('uses the production reducer for legacy subcontract reconciliation', () => {
+    const result = summarizeFinanceRows({
+      context: { projectId: '00000000-0000-4000-8000-000000000001', projectCode: 'P', projectName: 'Project', defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok' },
+      rows: {
+        categories: [{ id: '00000000-0000-4000-8000-000000000040', tenant_id: '00000000-0000-4000-8000-000000000010', company_id: '00000000-0000-4000-8000-000000000020', code: 'subcontract_labor', name: 'Subcontract', display_order: 1, is_active: true, version: 0 }],
+        costItems: [{ id: '00000000-0000-4000-8000-000000000050', tenant_id: '00000000-0000-4000-8000-000000000010', company_id: '00000000-0000-4000-8000-000000000020', project_id: '00000000-0000-4000-8000-000000000001', cost_category_id: '00000000-0000-4000-8000-000000000040', description: 'Legacy', business_reference: null, amount_text: '100.0000', currency_code: 'VND', relevant_date: null, version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }],
+        details: [{ id: '00000000-0000-4000-8000-000000000060', tenant_id: '00000000-0000-4000-8000-000000000010', company_id: '00000000-0000-4000-8000-000000000020', project_cost_item_id: '00000000-0000-4000-8000-000000000050', line_no: 1, amount_text: '100.0000', retention_kind: 'warranty', retention_rate_bps: 500, retention_amount_text: '5.0000', relevant_date: '2026-01-01', version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }],
+        budgets: [], budgetLines: [], ownerAdvances: [], subcontracts: [], payments: [],
+      },
     })
-    expect(result.cost).toEqual({ state: 'needs_reconciliation', amount: null, recordedCount: 4, knownSubtotal: '160.0000' })
-    expect(result.recordedPaymentsTotal).toBe('90.0000')
-    expect(result.warrantyRetention).toEqual({ state: 'recorded', amount: '10.0000', recordedCount: 2 })
-    expect(result.issues).toContainEqual({ code: 'LEGACY_SUBCONTRACT_RECONCILIATION_REQUIRED', categoryId: null })
+    expect(result.categories[0]?.cost.state).toBe('needs_reconciliation')
+    expect(result.summary.warrantyRetention.state).toBe('not_recorded')
   })
 })

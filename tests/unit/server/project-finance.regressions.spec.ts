@@ -1,0 +1,209 @@
+import { describe, expect, it } from 'vitest'
+import { financeListQuerySchema, itemDetailQuerySchema, paymentQuerySchema } from '../../../shared/schemas/costs/project-finance'
+import { compareFinanceRows } from '../../../shared/utils/project-finance-dates'
+import { sumFinanceMoney } from '../../../shared/utils/project-finance-money'
+import { AppApiError } from '../../../server/utils/api-error'
+import { ProjectFinanceMetadataReader, ProjectFinanceTableReader, type FinanceTableRows } from '../../../server/features/costs/finance/project-finance.queries'
+import { ConcreteProjectFinanceRepository, createSupabaseProjectFinanceRepository } from '../../../server/features/costs/finance/project-finance.repository'
+
+const ids = {
+  tenant: 'c1070000-0000-4000-8000-000000000010', company: 'c1070000-0000-4000-8000-000000000020', project: 'c1070000-0000-4000-8000-000000000030', otherProject: 'c1070000-0000-4000-8000-000000000031',
+  materials: 'c1070000-0000-4000-8000-000000000040', subcontract: 'c1070000-0000-4000-8000-000000000041', materialsItem: 'c1070000-0000-4000-8000-000000000050', legacyItem: 'c1070000-0000-4000-8000-000000000051', party: 'c1070000-0000-4000-8000-000000000060', contract: 'c1070000-0000-4000-8000-000000000070',
+  detailNoRetention: 'c1070000-0000-4000-8000-000000000080', detailZeroRetention: 'c1070000-0000-4000-8000-000000000081', detailWarranty: 'c1070000-0000-4000-8000-000000000082', detailOther: 'c1070000-0000-4000-8000-000000000083', legacyDetail: 'c1070000-0000-4000-8000-000000000084', paymentNoRetention: 'c1070000-0000-4000-8000-000000000090', paymentZeroRetention: 'c1070000-0000-4000-8000-000000000091', paymentWarranty: 'c1070000-0000-4000-8000-000000000092',
+}
+
+const createdAt = '2026-01-01T00:00:00.000Z'
+const context = { projectId: ids.project, projectCode: 'P107', projectName: 'Finance regression project', defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok' }
+const scope = { tenantId: ids.tenant, companyId: ids.company, permissions: ['cost.read'] }
+const directoryQuery = { afterId: undefined, pageSize: 25 } as const
+const listQuery = financeListQuerySchema.parse({ page: 1, pageSize: 100, sort: 'newest' })
+const paymentQuery = paymentQuerySchema.parse({ page: 1, pageSize: 100, sort: 'newest', retention: 'all' })
+const itemQuery = itemDetailQuerySchema.parse({ page: 1, pageSize: 100, sort: 'newest', retention: 'all' })
+
+function category(id: string, code: string, displayOrder: number) {
+  return { id, tenant_id: ids.tenant, company_id: ids.company, code, name: code, display_order: displayOrder, is_active: true, version: 0 }
+}
+function item(id: string, categoryId: string, amount: string, relevantDate: string | null = '2026-01-10') {
+  return { id, tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, cost_category_id: categoryId, description: id, business_reference: null, amount_text: amount, currency_code: 'VND', relevant_date: relevantDate, version: 0, created_at: createdAt, updated_at: createdAt }
+}
+function detail(id: string, itemId: string, lineNo: number, amount: string, retentionKind: 'warranty' | 'other' | null, retentionAmount: string | null, relevantDate: string | null) {
+  return { id, tenant_id: ids.tenant, company_id: ids.company, project_cost_item_id: itemId, line_no: lineNo, detail_kind: 'line_item' as const, description: id, quantity_text: null, unit_code: null, unit_price_text: null, amount_text: amount, retention_kind: retentionKind, retention_rate_bps: retentionKind === null ? null : 500, retention_amount_text: retentionAmount, relevant_date: relevantDate, reference: null, note: null, version: 0, created_at: createdAt, updated_at: createdAt }
+}
+function payment(id: string, amount: string, retention: string | null, paymentDate = '2026-02-10', status: 'recorded' | 'voided' = 'recorded') {
+  return { id, tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, project_subcontract_id: ids.contract, paid_amount_text: amount, warranty_retention_amount_text: retention, retention_rate_bps: 500, currency_code: 'VND', status, description: id, payment_date: paymentDate, payment_reference: null, source_reference: null, note: null, created_at: createdAt, version: 0, updated_at: createdAt }
+}
+
+function readSet(budgetAmount = '400.00'): FinanceTableRows & { context: typeof context, parties: readonly { partyId: string, code: string, displayName: string, partyKind: 'organization' }[] } {
+  return {
+    context,
+    categories: [category(ids.materials, 'materials', 1), category(ids.subcontract, 'subcontract_labor', 2)],
+    costItems: [item(ids.materialsItem, ids.materials, '100.0000', '2026-01-10'), item(ids.legacyItem, ids.subcontract, '50.0000', '2026-01-01')],
+    details: [
+      detail(ids.detailNoRetention, ids.materialsItem, 1, '10.0000', null, null, '2026-02-01'),
+      detail(ids.detailZeroRetention, ids.materialsItem, 2, '20.0000', 'warranty', '0', '2026-02-02'),
+      detail(ids.detailWarranty, ids.materialsItem, 3, '60.0000', 'warranty', '5.0000', '2026-02-03'),
+      detail(ids.detailOther, ids.materialsItem, 4, '10.0000', 'other', '2.0000', '2026-02-04'),
+      detail(ids.legacyDetail, ids.legacyItem, 1, '50.0000', 'warranty', '5.0000', '2026-02-05'),
+    ],
+    budgets: [{ id: 'c1070000-0000-4000-8000-000000000100', tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, revision_no: 1, name: 'Approved', currency_code: 'VND', detail_mode: 'summary', total_amount_text: budgetAmount, status: 'approved', approved_at: createdAt, effective_date: '2026-01-01', reference: null, source_reference: null, note: null, version: 0, updated_at: createdAt }],
+    budgetLines: [],
+    ownerAdvances: [],
+    subcontracts: [{ id: ids.contract, tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, subcontractor_party_id: ids.party, code: 'SC-107', contract_no: null, contract_name: 'Contract', contract_date: '2026-01-01', contract_value_text: '1000.0000', currency_code: 'VND', warranty_retention_rate_bps: 500, is_active: true, reference: null, source_reference: null, note: null, version: 0, updated_at: createdAt }],
+    payments: [payment(ids.paymentNoRetention, '10.0000', null), payment(ids.paymentZeroRetention, '20.0000', '0'), payment(ids.paymentWarranty, '30.0000', '5.0000'), payment('c1070000-0000-4000-8000-000000000093', '99.0000', '9.0000', '2026-02-11', 'voided')],
+    parties: [{ partyId: ids.party, code: 'PARTY-107', displayName: 'Synthetic party', partyKind: 'organization' }],
+  }
+}
+
+function concrete(rows: FinanceTableRows & { context: typeof context, parties: readonly { partyId: string, code: string, displayName: string, partyKind: 'organization' }[] }) {
+  const source = {
+    read: async (_scope: unknown, _projectId: string, _fullDetails?: boolean) => ({ signature: 'stable', readSet: rows, consistent: async () => true }),
+    directory: async () => ({ defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName }], nextCursor: null }),
+    readMany: async () => new Map([[ids.project, rows]]),
+  }
+  return new ConcreteProjectFinanceRepository(source as never)
+}
+
+function fakeSupabase(rows: ReturnType<typeof readSet>) {
+  const tableRows: Record<string, readonly Record<string, unknown>[]> = {
+    cost_categories: rows.categories,
+    project_cost_items: rows.costItems,
+    project_cost_item_details: rows.details,
+    project_budget_versions: rows.budgets,
+    project_budget_lines: rows.budgetLines,
+    project_owner_advances: rows.ownerAdvances,
+    project_subcontracts: rows.subcontracts,
+    project_subcontract_payments: rows.payments,
+  }
+  return {
+    from(table: string) {
+      let selected = ''
+      const equals = new Map<string, string>()
+      const ins = new Map<string, readonly string[]>()
+      let greaterThan: string | null = null
+      const query = {
+        select(columns: string) { selected = columns; return query },
+        eq(field: string, value: string) { equals.set(field, value); return query },
+        in(field: string, values: readonly string[]) { ins.set(field, values); return query },
+        gt(_field: string, value: string) { greaterThan = value; return query },
+        order() { return query },
+        async limit(size: number) {
+          const fields = selected.split(',')
+          const values = [...(tableRows[table] ?? [])].filter(row => [...equals].every(([field, value]) => row[field] === value)).filter(row => [...ins].every(([field, allowed]) => allowed.includes(String(row[field])))).filter(row => greaterThan === null || String(row.id) > greaterThan)
+          values.sort((left, right) => String(left.id).localeCompare(String(right.id)))
+          return { data: values.slice(0, size).map(row => Object.fromEntries(fields.map(field => [field, row[field]]))), error: null }
+        },
+      }
+      return query
+    },
+    async rpc(name: string, args: Record<string, unknown>) {
+      if (name === 'c1_read_project_cost_read_context') return { data: context, error: null }
+      if (name === 'c1_read_project_finance_directory') return { data: { defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName }], nextCursor: null }, error: null }
+      return { data: rows.parties.filter(party => (args.target_party_ids as string[]).includes(party.partyId)), error: null }
+    },
+  }
+}
+
+describe('C1 finance review regressions on concrete production readers', () => {
+  it('F01 includes no-retention, zero-retention, warranty and other rows in default and filtered pages', async () => {
+    const repository = concrete(readSet())
+    const item = await repository.itemDetails(scope, ids.project, ids.materialsItem, itemQuery)
+    const party = await repository.subcontractor(scope, ids.project, ids.party, paymentQuery)
+    const contract = await repository.subcontract(scope, ids.project, ids.contract, paymentQuery)
+    expect(item.kind).toBe('ordinary')
+    if (item.kind === 'ordinary') expect(item.details.pagination).toMatchObject({ filteredCount: 4, filteredAmount: '100.0000', fullCount: 4, fullAmount: '100.0000' })
+    expect(party.payments.pagination).toMatchObject({ filteredCount: 3, filteredAmount: '60.0000', fullCount: 3, fullAmount: '60.0000' })
+    expect(contract.payments.pagination).toMatchObject({ filteredCount: 3, filteredAmount: '60.0000', fullCount: 3, fullAmount: '60.0000' })
+    const warranty = await repository.subcontract(scope, ids.project, ids.contract, paymentQuerySchema.parse({ page: 1, pageSize: 100, sort: 'newest', retention: 'warranty' }))
+    expect(warranty.payments.pagination.filteredCount).toBe(2)
+    const noRecordedRetention = await repository.subcontract(scope, ids.project, ids.contract, paymentQuerySchema.parse({ page: 1, pageSize: 100, sort: 'newest', retention: 'no_recorded_retention' }))
+    expect(noRecordedRetention.payments.rows.map(row => row.id)).toEqual([ids.paymentNoRetention])
+    const other = await repository.itemDetails(scope, ids.project, ids.materialsItem, itemDetailQuerySchema.parse({ page: 1, pageSize: 100, sort: 'newest', retention: 'other' }))
+    const noDetailRetention = await repository.itemDetails(scope, ids.project, ids.materialsItem, itemDetailQuerySchema.parse({ page: 1, pageSize: 100, sort: 'newest', retention: 'no_recorded_retention' }))
+    if (other.kind === 'ordinary' && noDetailRetention.kind === 'ordinary') {
+      expect(other.details.rows.map(row => row.id)).toEqual([ids.detailOther])
+      expect(noDetailRetention.details.rows.map(row => row.id)).toEqual([ids.detailNoRetention])
+    }
+  })
+
+  it.each(['0', '400', '400.00', '400.0000', '9999999999999999.9999'])('F02 normalizes approved reference %s', async budgetAmount => {
+    const result = await concrete(readSet(budgetAmount)).overview(scope, ids.project)
+    expect(result.summary.reference.amount).toBe(sumFinanceMoney([budgetAmount]))
+    expect(result.summary.budget.amount).toBe(sumFinanceMoney([budgetAmount]))
+  })
+
+  it('F03 excludes legacy subcontract retention from canonical summary retention', async () => {
+    const result = await concrete(readSet()).overview(scope, ids.project)
+    expect(result.summary.warrantyRetention).toEqual({ state: 'needs_reconciliation', amount: null, recordedCount: 4 })
+    expect(result.categories.find(category => category.code === 'subcontract_labor')).toMatchObject({ legacyReconciliationRequired: true, warrantyRetention: { state: 'needs_reconciliation', amount: null, recordedCount: 2 } })
+  })
+
+  it('F05 uses latest detail/payment dates and row-specific date sources', async () => {
+    const result = await concrete(readSet()).overview(scope, ids.project)
+    expect(result.categories.find(category => category.code === 'materials')).toMatchObject({ latestRecordedDate: '2026-02-04', latestRecordedDateSource: 'business_date' })
+    expect(result.categories.find(category => category.code === 'subcontract_labor')).toMatchObject({ latestRecordedDate: '2026-02-10', latestRecordedDateSource: 'business_date' })
+    const contract = await concrete(readSet()).subcontract(scope, ids.project, ids.contract, paymentQuery)
+    expect(contract.payments.rows[0]?.dateSource).toBe('payment_date')
+    const rows = readSet()
+    rows.ownerAdvances = [{ id: 'c1070000-0000-4000-8000-000000000110', tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, amount_text: '1.0000', currency_code: 'VND', status: 'recorded', description: 'Receipt', payer_name: 'Owner', receipt_no: 'R-107', received_date: '2026-02-12', reference: null, source_reference: null, note: null, version: 0, created_at: createdAt, updated_at: createdAt }]
+    const advances = await concrete(rows).ownerAdvances(scope, ids.project, listQuery)
+    expect(advances.rows[0]?.dateSource).toBe('received_date')
+  })
+
+  it('F06 rejects wrong project rows, wrong context identity and duplicate party responses', async () => {
+    const wrongProject = { ...readSet().costItems[0]!, project_id: 'c1070000-0000-4000-8000-000000000032' }
+    let after: string | null = null
+    const query = { select: () => query, eq: () => query, in: () => query, gt: (_field: string, value: string) => { after = value; return query }, order: () => query, limit: async () => ({ data: after === null ? [wrongProject] : [], error: null }) }
+    const reader = new ProjectFinanceTableReader({ from: () => query } as never)
+    await expect(reader.costItemsForProjects(ids.tenant, ids.company, [ids.project, ids.otherProject])).rejects.toMatchObject({ code: 'INTERNAL_ERROR' })
+    const metadata = new ProjectFinanceMetadataReader({ rpc: async name => name === 'c1_read_project_cost_read_context' ? { data: { ...context, projectId: ids.otherProject }, error: null } : { data: [{ ...readSet().parties[0], partyId: ids.party }, { ...readSet().parties[0], partyId: ids.party }], error: null } })
+    await expect(metadata.context(ids.company, ids.project)).rejects.toMatchObject({ code: 'INTERNAL_ERROR' })
+    await expect(metadata.parties(ids.company, ids.project, [ids.party, ids.materials])).rejects.toMatchObject({ code: 'INTERNAL_ERROR' })
+  })
+
+  it('F04 retries batched directory collection without overview-per-project calls', async () => {
+    const rows = readSet()
+    const maps = [new Map([[ids.project, rows]]), new Map([[ids.project, rows]])]
+    let reads = 0
+    const repository = new ConcreteProjectFinanceRepository({
+      directory: async () => ({ defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName }], nextCursor: null }),
+      read: async () => ({ signature: 'unused', readSet: rows, consistent: async () => true }),
+      readMany: async () => ({ readSets: maps[Math.min(reads++, 1)]!, signature: `v${reads}`, consistent: async () => reads > 1 }),
+    } as never)
+    await expect(repository.listProjects(scope, directoryQuery)).resolves.toMatchObject({ projects: [{ project: { projectId: ids.project } }] })
+    expect(reads).toBe(2)
+  })
+
+  it('F04 fails closed on permanent batched inconsistency and later collection errors', async () => {
+    const rows = readSet()
+    let attempts = 0
+    const unstable = new ConcreteProjectFinanceRepository({
+      directory: async () => ({ defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName }], nextCursor: null }),
+      read: async () => ({ signature: 'unused', readSet: rows, consistent: async () => true }),
+      readMany: async () => ({ readSets: new Map([[ids.project, rows]]), signature: `v${++attempts}`, consistent: async () => false }),
+    } as never)
+    await expect(unstable.listProjects(scope, directoryQuery)).rejects.toMatchObject({ code: 'INTERNAL_ERROR', details: { reason: 'DATA_CONSISTENCY_ERROR' } })
+    expect(attempts).toBe(2)
+    const failing = new ConcreteProjectFinanceRepository({
+      directory: async () => ({ defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName }], nextCursor: null }),
+      read: async () => ({ signature: 'unused', readSet: rows, consistent: async () => true }),
+      readMany: async () => { throw new AppApiError(500, 'INTERNAL_ERROR', 'later page failed') },
+    } as never)
+    await expect(failing.listProjects(scope, directoryQuery)).rejects.toMatchObject({ code: 'INTERNAL_ERROR' })
+  })
+
+  it('F07 exercises every concrete factory method and strict response path with nonempty data', async () => {
+    const repository = createSupabaseProjectFinanceRepository(fakeSupabase(readSet()) as never)
+    await expect(repository.listProjects(scope, directoryQuery)).resolves.toMatchObject({ projects: [{ project: { projectId: ids.project } }] })
+    await expect(repository.overview(scope, ids.project)).resolves.toHaveProperty('summary')
+    await expect(repository.budget(scope, ids.project)).resolves.toHaveProperty('header')
+    await expect(repository.ownerAdvances(scope, ids.project, listQuery)).resolves.toHaveProperty('pagination')
+    await expect(repository.subcontractors(scope, ids.project)).resolves.toHaveProperty('parties')
+    await expect(repository.subcontractor(scope, ids.project, ids.party, paymentQuery)).resolves.toHaveProperty('payments')
+    await expect(repository.subcontract(scope, ids.project, ids.contract, paymentQuery)).resolves.toHaveProperty('contract')
+    await expect(repository.itemDetails(scope, ids.project, ids.materialsItem, itemQuery)).resolves.toHaveProperty('kind', 'ordinary')
+  })
+
+  it('keeps the documented deterministic date tie-break', () => {
+    expect(compareFinanceRows({ effectiveDate: '2026-02-01', createdAt, lineNo: 1, id: ids.detailNoRetention }, { effectiveDate: '2026-02-01', createdAt, lineNo: 2, id: ids.detailWarranty }, 'newest')).toBeLessThan(0)
+  })
+})

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { FinanceReadLimitError, scanUuidRows } from '../../../server/features/costs/finance/read-pages'
 import { ProjectFinanceMetadataReader, ProjectFinanceTableReader } from '../../../server/features/costs/finance/project-finance.queries'
-import { ConnectedProjectFinanceRepository, ProjectFinanceReadRepository, createSupabaseProjectFinanceRepository } from '../../../server/features/costs/finance/project-finance.repository'
+import { ProjectFinanceReadRepository, createSupabaseProjectFinanceRepository } from '../../../server/features/costs/finance/project-finance.repository'
 
 const rows = (count: number) => Array.from({ length: count }, (_, index) => ({ id: `${String(index + 1).padStart(8, '0')}-0000-4000-8000-000000000001` }))
 
@@ -92,20 +92,4 @@ describe('C1 finance bounded reads', () => {
     expect(attempts).toBe(2)
   })
 
-  it('collects scoped reader outputs, rechecks them, then summarizes the real read set', async () => {
-    let reads = 0
-    const repository = new ConnectedProjectFinanceRepository({
-      read: async () => ({
-        signature: `v${++reads}`,
-        readSet: {
-          categories: [{ id: '00000000-0000-4000-8000-000000000040', code: 'materials' }],
-          costItems: [{ id: '00000000-0000-4000-8000-000000000050', cost_category_id: '00000000-0000-4000-8000-000000000040', amount_text: '5.0000' }],
-          details: [], budgets: [], ownerAdvances: [], subcontracts: [], payments: [],
-        },
-      }),
-      consistent: value => value.signature === 'v2',
-    })
-    await expect(repository.overview()).resolves.toMatchObject({ cost: { state: 'recorded', amount: '5.0000' } })
-    expect(reads).toBe(2)
-  })
 })

@@ -19,19 +19,6 @@ export interface FinanceReadRepository {
   itemDetails(scope: FinanceScope, projectId: string, itemId: string, query: ItemDetailQuery): Promise<FinanceItemDetails>
 }
 
-export type FinanceReadSet = {
-  categories: readonly { id: string, code: string, name?: string, display_order?: number, is_active?: boolean }[]
-  costItems: readonly { id: string, cost_category_id: string | null, amount_text: string, description?: string, business_reference?: string | null, currency_code?: string, relevant_date?: string | null, version?: number, created_at?: string, updated_at?: string }[]
-  details: readonly { id?: string, project_cost_item_id: string, amount_text?: string, retention_kind?: string | null, retention_amount_text?: string | null, relevant_date?: string | null, created_at?: string, updated_at?: string, version?: number }[]
-  budgets: readonly { id?: string, status: string, total_amount_text: string, currency_code?: string, project_id?: string }[]
-  budgetLines?: readonly unknown[]
-  ownerAdvances: readonly { status: string, amount_text: string }[]
-  subcontracts: readonly unknown[]
-  payments: readonly { status: 'recorded' | 'voided', paid_amount_text: string, warranty_retention_amount_text: string | null }[]
-  context?: FinanceProjectContextRow
-  parties?: readonly FinancePartyRow[]
-}
-
 function repositoryError(error: unknown): never {
   if (error instanceof AppApiError) throw error
   if (error instanceof FinanceReadLimitError) throw new AppApiError(500, 'INTERNAL_ERROR', 'Dữ liệu tài chính vượt quá giới hạn đọc.', { reason: 'READ_LIMIT_EXCEEDED' })
@@ -40,35 +27,6 @@ function repositoryError(error: unknown): never {
 }
 
 function signature(value: unknown): string { return JSON.stringify(value) }
-
-export function summarizeFinanceReadSet(readSet: FinanceReadSet) {
-  const categoryById = new Map(readSet.categories.map(category => [category.id, category.code]))
-  const unmapped = readSet.costItems.some(item => item.cost_category_id === null || !categoryById.has(item.cost_category_id))
-  const legacySubcontract = readSet.costItems.some(item => item.cost_category_id !== null && categoryById.get(item.cost_category_id) === 'subcontract_labor' && ((!/^0(?:\.0*)?$/.test(item.amount_text)) || readSet.details.some(detail => detail.project_cost_item_id === item.id)))
-  const ordinary = readSet.costItems.filter(item => item.cost_category_id !== null && categoryById.get(item.cost_category_id) !== 'subcontract_labor').map(item => item.amount_text)
-  return summarizeFinanceReadSetLegacy({
-    ordinaryAmounts: ordinary,
-    recordedPayments: readSet.payments.map(payment => ({ paidAmount: payment.paid_amount_text, retentionAmount: payment.warranty_retention_amount_text, status: payment.status })),
-    legacySubcontractHasData: legacySubcontract,
-    hasUnmappedParent: unmapped,
-    approvedBudget: readSet.budgets.find(budget => budget.status === 'approved')?.total_amount_text ?? null,
-    ownerAdvanceAmounts: readSet.ownerAdvances.filter(advance => advance.status === 'recorded').map(advance => advance.amount_text),
-  })
-}
-
-function summarizeFinanceReadSetLegacy(input: Parameters<typeof summarizeFinanceReadSetLegacyInput>[0]) { return summarizeFinanceReadSetLegacyInput(input) }
-function summarizeFinanceReadSetLegacyInput(input: { ordinaryAmounts: readonly string[], recordedPayments: readonly { paidAmount: string, retentionAmount: string | null, status: 'recorded' | 'voided' }[], legacySubcontractHasData: boolean, hasUnmappedParent: boolean, approvedBudget: string | null, ownerAdvanceAmounts: readonly string[] }) {
-  const payments = input.recordedPayments.filter(payment => payment.status === 'recorded')
-  const retention = payments.flatMap(payment => payment.retentionAmount === null ? [] : [payment.retentionAmount])
-  const knownSubtotal = sumFinanceMoney(input.ordinaryAmounts)
-  const costState = input.hasUnmappedParent || input.legacySubcontractHasData ? 'needs_reconciliation' : input.ordinaryAmounts.length === 0 ? 'not_recorded' : 'recorded'
-  return {
-    cost: { state: costState, amount: costState === 'recorded' ? knownSubtotal : null, recordedCount: input.ordinaryAmounts.length, knownSubtotal },
-    recordedPaymentsTotal: sumFinanceMoney(payments.map(payment => payment.paidAmount)),
-    warrantyRetention: retention.length === 0 ? { state: 'not_recorded' as const, amount: null, recordedCount: 0 } : { state: 'recorded' as const, amount: sumFinanceMoney(retention), recordedCount: retention.length },
-    issues: [...(input.hasUnmappedParent ? [{ code: 'UNMAPPED_COST_ITEM' as const, categoryId: null }] : []), ...(input.legacySubcontractHasData ? [{ code: 'LEGACY_SUBCONTRACT_RECONCILIATION_REQUIRED' as const, categoryId: null }] : [])],
-  }
-}
 
 export class ProjectFinanceReadRepository<T extends { signature: string }> {
   constructor(private readonly source: { read(): Promise<T>, consistent(value: T): boolean | Promise<boolean> }) {}
@@ -86,7 +44,7 @@ export class ProjectFinanceReadRepository<T extends { signature: string }> {
 type ConcreteSource = {
   read(scope: FinanceScope, projectId: string, fullDetails?: boolean): Promise<{ signature: string, readSet: FinanceTableReadSet, consistent: () => Promise<boolean> }>
   directory(scope: FinanceScope, query: ProjectDirectoryQuery): Promise<FinanceDirectory>
-  readMany(scope: FinanceScope, projectIds: readonly string[], directory: FinanceDirectory): Promise<Map<string, FinanceTableReadSet>>
+  readMany(scope: FinanceScope, projectIds: readonly string[], directory: FinanceDirectory): Promise<{ signature: string, readSets: Map<string, FinanceTableReadSet>, consistent: () => Promise<boolean> }>
 }
 type FinanceTableReadSet = FinanceTableRows & { context: FinanceProjectContextRow, parties: readonly FinancePartyRow[] }
 
@@ -101,13 +59,24 @@ function page<T>(rows: readonly T[], query: FinanceListQuery, match: (row: T) =>
 function textMatch(query: FinanceListQuery, values: readonly (string | null | undefined)[]) { const q = query.q?.trim().toLocaleLowerCase(); return !q || values.some(value => value?.toLocaleLowerCase().includes(q)) }
 function dateMatch(query: FinanceListQuery, effectiveDate: string) { return (!query.dateFrom || effectiveDate >= query.dateFrom) && (!query.dateTo || effectiveDate <= query.dateTo) }
 function rowOrder(query: FinanceListQuery) { return (left: { effectiveDate: string, createdAt: string, id: string, lineNo?: number }, right: typeof left) => compareFinanceRows(left, right, query.sort) }
+function paymentRetentionMatches(row: { warrantyRetentionAmount: string | null }, retention: PaymentQuery['retention']) {
+  if (retention === 'all') return true
+  if (retention === 'warranty') return row.warrantyRetentionAmount !== null
+  return row.warrantyRetentionAmount === null
+}
+function detailRetentionMatches(row: { retentionKind: 'warranty' | 'other' | null, retentionAmount: string | null }, retention: ItemDetailQuery['retention']) {
+  if (retention === 'all') return true
+  if (retention === 'warranty') return row.retentionKind === 'warranty'
+  if (retention === 'other') return row.retentionKind === 'other'
+  return row.retentionAmount === null
+}
 function paymentView(payment: FinanceTableRows['payments'][number], contract: FinanceTableRows['subcontracts'][number], timeZone: string) {
   const date = deriveFinanceDate(payment.payment_date, payment.created_at, timeZone)
-  return { id: payment.id, contractId: contract.id, contractCode: contract.code, contractNo: contract.contract_no, description: payment.description, paidAmount: sumFinanceMoney([payment.paid_amount_text]), warrantyRetentionAmount: payment.warranty_retention_amount_text === null ? null : sumFinanceMoney([payment.warranty_retention_amount_text]), retentionRateBps: payment.retention_rate_bps, paymentDate: payment.payment_date, effectiveDate: date.effectiveDate, dateSource: date.usedFallback ? 'created_at' as const : 'business_date' as const, recordStatus: payment.status === 'recorded' ? 'recorded' as const : 'voided' as const, reference: payment.payment_reference, sourceReference: payment.source_reference, note: payment.note, createdAt: payment.created_at, version: payment.version }
+  return { id: payment.id, contractId: contract.id, contractCode: contract.code, contractNo: contract.contract_no, description: payment.description, paidAmount: sumFinanceMoney([payment.paid_amount_text]), warrantyRetentionAmount: payment.warranty_retention_amount_text === null ? null : sumFinanceMoney([payment.warranty_retention_amount_text]), retentionRateBps: payment.retention_rate_bps, paymentDate: payment.payment_date, effectiveDate: date.effectiveDate, dateSource: date.usedFallback ? 'created_at' as const : 'payment_date' as const, recordStatus: payment.status === 'recorded' ? 'recorded' as const : 'voided' as const, reference: payment.payment_reference, sourceReference: payment.source_reference, note: payment.note, createdAt: payment.created_at, version: payment.version }
 }
 
 function paymentPage(rows: readonly ReturnType<typeof paymentView>[], query: PaymentQuery) {
-  const visible = rows.filter(row => row.recordStatus === 'recorded').filter(row => query.retention === 'all' || query.retention === 'warranty' ? row.warrantyRetentionAmount !== null : row.warrantyRetentionAmount === null).filter(row => textMatch(query, [row.description, row.reference, row.contractCode, row.contractNo, row.note])).filter(row => dateMatch(query, row.effectiveDate))
+  const visible = rows.filter(row => row.recordStatus === 'recorded').filter(row => paymentRetentionMatches(row, query.retention)).filter(row => textMatch(query, [row.description, row.reference, row.contractCode, row.contractNo, row.note])).filter(row => dateMatch(query, row.effectiveDate))
   const full = rows.filter(row => row.recordStatus === 'recorded')
   const selected = page(full, query, row => visible.includes(row), rowOrder(query), values => values.length === 0 ? '0.0000' : sumFinanceMoney(values.map(row => row.paidAmount)))
   const total = paymentTotal(full.map(row => ({ paid_amount_text: row.paidAmount, warranty_retention_amount_text: row.warrantyRetentionAmount, status: row.recordStatus })))
@@ -122,30 +91,6 @@ function contractSummary(contract: FinanceTableRows['subcontracts'][number], pay
 function findParty(readSet: FinanceTableReadSet, partyId: string) { const party = readSet.parties.find(value => value.partyId === partyId); if (!party) throw new AppApiError(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy nhà thầu.'); return party }
 function findContract(readSet: FinanceTableReadSet, contractId: string) { const contract = readSet.subcontracts.find(value => value.id === contractId); if (!contract) throw new AppApiError(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy hợp đồng.'); return contract }
 
-export class ConnectedProjectFinanceRepository {
-  private readonly retry: ProjectFinanceReadRepository<{ signature: string, readSet: FinanceReadSet }>
-
-  constructor(source: { read(): Promise<{ signature: string, readSet: FinanceReadSet }>, consistent(value: { signature: string, readSet: FinanceReadSet }): boolean | Promise<boolean> }) {
-    this.retry = new ProjectFinanceReadRepository(source)
-  }
-
-  async overview(scope?: FinanceScope, projectId?: string) {
-    const value = await this.retry.collect()
-    if (scope && projectId && value.readSet.context && 'categories' in value.readSet && 'costItems' in value.readSet) {
-      return financeOverviewSchema.parse(summarizeFinanceRows({ context: value.readSet.context, rows: value.readSet as unknown as FinanceTableRows }))
-    }
-    return summarizeFinanceReadSet(value.readSet)
-  }
-
-  listProjects(): Promise<FinanceProjectList> { throw new AppApiError(500, 'INTERNAL_ERROR', 'Finance reader is unavailable.') }
-  budget(): Promise<FinanceBudget> { throw new AppApiError(500, 'INTERNAL_ERROR', 'Finance reader is unavailable.') }
-  ownerAdvances(): Promise<FinanceOwnerAdvances> { throw new AppApiError(500, 'INTERNAL_ERROR', 'Finance reader is unavailable.') }
-  subcontractors(): Promise<FinanceSubcontractorList> { throw new AppApiError(500, 'INTERNAL_ERROR', 'Finance reader is unavailable.') }
-  subcontractor(): Promise<FinanceSubcontractorDetail> { throw new AppApiError(500, 'INTERNAL_ERROR', 'Finance reader is unavailable.') }
-  subcontract(): Promise<FinanceSubcontractDetail> { throw new AppApiError(500, 'INTERNAL_ERROR', 'Finance reader is unavailable.') }
-  itemDetails(): Promise<FinanceItemDetails> { throw new AppApiError(500, 'INTERNAL_ERROR', 'Finance reader is unavailable.') }
-}
-
 export class ConcreteProjectFinanceRepository implements FinanceReadRepository {
   constructor(private readonly source: ConcreteSource) {}
 
@@ -158,20 +103,23 @@ export class ConcreteProjectFinanceRepository implements FinanceReadRepository {
 
   async listProjects(scope: FinanceScope, query: ProjectDirectoryQuery) {
     const directory = await this.source.directory(scope, query)
-    const readSets = await this.source.readMany(scope, directory.projects.map(project => project.projectId), directory)
-    const projects = directory.projects.map(project => {
-      const readSet = readSets.get(project.projectId)
-      if (!readSet) throw new AppApiError(500, 'INTERNAL_ERROR', 'Không thể đọc dữ liệu tài chính của dự án.')
-      const overview = summarizeFinanceRows({ context: { ...readSet.context, projectCode: project.projectCode, projectName: project.projectName }, rows: readSet })
-      return { project: overview.project, summary: overview.summary }
-    })
-    return financeProjectListSchema.parse({ schemaVersion: 1, projects, nextCursor: directory.nextCursor })
+    try {
+      const retry = new ProjectFinanceReadRepository({ read: () => this.source.readMany(scope, directory.projects.map(project => project.projectId), directory), consistent: value => value.consistent() })
+      const { readSets } = await retry.collect()
+      const projects = directory.projects.map(project => {
+        const readSet = readSets.get(project.projectId)
+        if (!readSet) throw new AppApiError(500, 'INTERNAL_ERROR', 'Không thể đọc dữ liệu tài chính của dự án.')
+        const overview = summarizeFinanceRows({ context: { ...readSet.context, projectCode: project.projectCode, projectName: project.projectName }, rows: readSet })
+        return { project: overview.project, summary: overview.summary }
+      })
+      return financeProjectListSchema.parse({ schemaVersion: 1, projects, nextCursor: directory.nextCursor })
+    } catch (error) { return repositoryError(error) }
   }
 
   async overview(scope: FinanceScope, projectId: string) { const readSet = await this.read(scope, projectId); return financeOverviewSchema.parse(summarizeFinanceRows({ context: readSet.context, rows: readSet })) }
 
   async budget(scope: FinanceScope, projectId: string) {
-    const readSet = await this.read(scope, projectId)
+    const readSet = await this.read(scope, projectId, true)
     const project = financeOverviewSchema.parse(summarizeFinanceRows({ context: readSet.context, rows: readSet })).project
     const approved = readSet.budgets.filter(row => row.status === 'approved')[0] ?? null
     if (!approved) return financeBudgetSchema.parse({ schemaVersion: 1, project, state: 'not_recorded', header: null, lines: [] })
@@ -184,9 +132,9 @@ export class ConcreteProjectFinanceRepository implements FinanceReadRepository {
   }
 
   async ownerAdvances(scope: FinanceScope, projectId: string, query: FinanceListQuery) {
-    const readSet = await this.read(scope, projectId)
+    const readSet = await this.read(scope, projectId, true)
     const overview = summarizeFinanceRows({ context: readSet.context, rows: readSet })
-    const all = readSet.ownerAdvances.map(row => { const derived = deriveFinanceDate(row.received_date, row.created_at, readSet.context.timeZone); return { id: row.id, description: row.description, amount: sumFinanceMoney([row.amount_text]), payerName: row.payer_name, receiptNo: row.receipt_no, receivedDate: row.received_date, effectiveDate: derived.effectiveDate, dateSource: derived.usedFallback ? 'created_at' as const : 'business_date' as const, recordStatus: row.status === 'recorded' ? 'recorded' as const : 'voided' as const, reference: row.reference, sourceReference: row.source_reference, note: row.note, createdAt: row.created_at, version: row.version } })
+    const all = readSet.ownerAdvances.map(row => { const derived = deriveFinanceDate(row.received_date, row.created_at, readSet.context.timeZone); return { id: row.id, description: row.description, amount: sumFinanceMoney([row.amount_text]), payerName: row.payer_name, receiptNo: row.receipt_no, receivedDate: row.received_date, effectiveDate: derived.effectiveDate, dateSource: derived.usedFallback ? 'created_at' as const : 'received_date' as const, recordStatus: row.status === 'recorded' ? 'recorded' as const : 'voided' as const, reference: row.reference, sourceReference: row.source_reference, note: row.note, createdAt: row.created_at, version: row.version } })
     const recorded = all.filter(row => row.recordStatus === 'recorded')
     const selected = page(recorded, query, row => textMatch(query, [row.description, row.payerName, row.receiptNo, row.reference, row.note]) && dateMatch(query, row.effectiveDate), rowOrder(query), values => values.length === 0 ? '0.0000' : sumFinanceMoney(values.map(row => row.amount)))
     const fullAmount = recorded.length === 0 ? '0.0000' : sumFinanceMoney(recorded.map(row => row.amount))
@@ -206,7 +154,7 @@ export class ConcreteProjectFinanceRepository implements FinanceReadRepository {
   }
 
   async subcontractor(scope: FinanceScope, projectId: string, partyId: string, query: PaymentQuery) {
-    const readSet = await this.read(scope, projectId)
+    const readSet = await this.read(scope, projectId, true)
     const overview = summarizeFinanceRows({ context: readSet.context, rows: readSet })
     const party = findParty(readSet, partyId)
     const contracts = readSet.subcontracts.filter(contract => contract.subcontractor_party_id === partyId)
@@ -217,7 +165,7 @@ export class ConcreteProjectFinanceRepository implements FinanceReadRepository {
   }
 
   async subcontract(scope: FinanceScope, projectId: string, subcontractId: string, query: PaymentQuery) {
-    const readSet = await this.read(scope, projectId)
+    const readSet = await this.read(scope, projectId, true)
     const overview = summarizeFinanceRows({ context: readSet.context, rows: readSet })
     const contract = findContract(readSet, subcontractId)
     const party = findParty(readSet, contract.subcontractor_party_id)
@@ -239,7 +187,7 @@ export class ConcreteProjectFinanceRepository implements FinanceReadRepository {
     const details = readSet.details.filter(detail => detail.project_cost_item_id === item.id) as unknown as FinanceDetailRow[]
     if (category.code === 'subcontract_labor' && (details.length > 0 || !/^0(?:\.0*)?$/.test(item.amount_text))) return financeItemDetailsSchema.parse({ schemaVersion: 1, kind: 'legacy_subcontract', project: overview.project, category, item: { id: item.id, description: item.description, businessReference: item.business_reference, parentAmount: sumFinanceMoney([item.amount_text]), currencyCode: item.currency_code, version: item.version }, reason: 'LEGACY_SUBCONTRACT_RECONCILIATION_REQUIRED' })
     const rows = details.map(detail => { const derived = deriveFinanceDate(detail.relevant_date, detail.created_at, readSet.context.timeZone); return { id: detail.id, lineNo: detail.line_no, detailKind: detail.detail_kind, description: detail.description, quantity: detail.quantity_text, unitCode: detail.unit_code, unitPrice: detail.unit_price_text, amount: sumFinanceMoney([detail.amount_text]), retentionKind: detail.retention_kind, retentionRateBps: detail.retention_rate_bps, retentionAmount: detail.retention_amount_text === null ? null : sumFinanceMoney([detail.retention_amount_text]), relevantDate: detail.relevant_date, effectiveDate: derived.effectiveDate, dateSource: derived.usedFallback ? 'created_at' as const : 'relevant_date' as const, reference: detail.reference, note: detail.note, createdAt: detail.created_at, version: detail.version } })
-    const selected = page(rows, query, row => textMatch(query, [row.description, row.reference, row.note]) && dateMatch(query, row.effectiveDate) && (query.retention === 'all' || query.retention === 'warranty' ? row.retentionKind === 'warranty' : query.retention === 'other' ? row.retentionKind === 'other' : row.retentionAmount === null), rowOrder(query), values => values.length === 0 ? '0.0000' : sumFinanceMoney(values.map(row => row.amount)))
+    const selected = page(rows, query, row => textMatch(query, [row.description, row.reference, row.note]) && dateMatch(query, row.effectiveDate) && detailRetentionMatches(row, query.retention), rowOrder(query), values => values.length === 0 ? '0.0000' : sumFinanceMoney(values.map(row => row.amount)))
     return financeItemDetailsSchema.parse({ schemaVersion: 1, kind: 'ordinary', project: overview.project, category, item: { id: item.id, description: item.description, businessReference: item.business_reference, parentAmount: sumFinanceMoney([item.amount_text]), currencyCode: item.currency_code, version: item.version }, details: { rows: selected.rows, pagination: { ...selected.pagination, fullAmount: rows.length === 0 ? '0.0000' : sumFinanceMoney(rows.map(row => row.amount)) } } })
   }
 }
@@ -247,13 +195,13 @@ export class ConcreteProjectFinanceRepository implements FinanceReadRepository {
 async function readSet(metadata: ProjectFinanceMetadataReader, tables: ProjectFinanceTableReader, scope: FinanceScope, projectId: string, fullDetails = false): Promise<FinanceTableReadSet> {
   const context = await metadata.context(scope.companyId, projectId)
   const [categories, costItems, budgets, budgetLines, ownerAdvances, subcontracts, payments] = await Promise.all([
-    tables.categories(scope.tenantId, scope.companyId), tables.costItems(scope.tenantId, scope.companyId, projectId), tables.budgets(scope.tenantId, scope.companyId, projectId), tables.budgetLines(scope.tenantId, scope.companyId, projectId), tables.ownerAdvances(scope.tenantId, scope.companyId, projectId), tables.subcontracts(scope.tenantId, scope.companyId, projectId), tables.payments(scope.tenantId, scope.companyId, projectId),
+    tables.categories(scope.tenantId, scope.companyId), tables.costItems(scope.tenantId, scope.companyId, projectId), tables.budgets(scope.tenantId, scope.companyId, projectId, fullDetails), tables.budgetLines(scope.tenantId, scope.companyId, projectId, fullDetails), tables.ownerAdvances(scope.tenantId, scope.companyId, projectId, fullDetails), tables.subcontracts(scope.tenantId, scope.companyId, projectId, fullDetails), tables.payments(scope.tenantId, scope.companyId, projectId, fullDetails),
   ])
   const details = await (fullDetails ? tables.details(scope.tenantId, scope.companyId, costItems.map(item => item.id)) : tables.detailAggregates(scope.tenantId, scope.companyId, costItems.map(item => item.id)))
   const partyIds = [...new Set(subcontracts.map(contract => contract.subcontractor_party_id))]
   const parties: FinancePartyRow[] = []
   for (let index = 0; index < partyIds.length; index += 50) parties.push(...await metadata.parties(scope.companyId, projectId, partyIds.slice(index, index + 50)))
-  return { context, categories, costItems, details, budgets, budgetLines, ownerAdvances, subcontracts, payments, parties }
+  return { context, categories, costItems, details, budgets: budgets as FinanceTableRows['budgets'], budgetLines: budgetLines as FinanceTableRows['budgetLines'], ownerAdvances: ownerAdvances as FinanceTableRows['ownerAdvances'], subcontracts: subcontracts as FinanceTableRows['subcontracts'], payments: payments as FinanceTableRows['payments'], parties }
 }
 
 function coherent(readSet: FinanceTableReadSet): boolean {
@@ -273,10 +221,10 @@ function coherent(readSet: FinanceTableReadSet): boolean {
   })
 }
 
-async function readMany(metadata: ProjectFinanceMetadataReader, tables: ProjectFinanceTableReader, scope: FinanceScope, projectIds: readonly string[], directory: FinanceDirectory): Promise<Map<string, FinanceTableReadSet>> {
+async function collectMany(metadata: ProjectFinanceMetadataReader, tables: ProjectFinanceTableReader, scope: FinanceScope, projectIds: readonly string[], directory: FinanceDirectory): Promise<Map<string, FinanceTableReadSet>> {
   if (projectIds.length === 0) return new Map()
   const [categories, costItems, budgets, budgetLines, ownerAdvances, subcontracts, payments] = await Promise.all([
-    tables.categories(scope.tenantId, scope.companyId), tables.costItemsForProjects(scope.tenantId, scope.companyId, projectIds), tables.budgetsForProjects(scope.tenantId, scope.companyId, projectIds), tables.budgetLinesForProjects(scope.tenantId, scope.companyId, projectIds), tables.ownerAdvancesForProjects(scope.tenantId, scope.companyId, projectIds), tables.subcontractsForProjects(scope.tenantId, scope.companyId, projectIds), tables.paymentsForProjects(scope.tenantId, scope.companyId, projectIds),
+    tables.categories(scope.tenantId, scope.companyId), tables.costItemsForProjects(scope.tenantId, scope.companyId, projectIds), tables.budgetsForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.budgetLinesForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.ownerAdvancesForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.subcontractsForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.paymentsForProjects(scope.tenantId, scope.companyId, projectIds, false),
   ])
   const details = await tables.detailAggregates(scope.tenantId, scope.companyId, costItems.map(item => item.id))
   const result = new Map<string, FinanceTableReadSet>()
@@ -285,7 +233,7 @@ async function readMany(metadata: ProjectFinanceMetadataReader, tables: ProjectF
     const partyIds = [...new Set(scopedContracts.map(contract => contract.subcontractor_party_id))]
     const parties: FinancePartyRow[] = []
     for (let index = 0; index < partyIds.length; index += 50) parties.push(...await metadata.parties(scope.companyId, project.projectId, partyIds.slice(index, index + 50)))
-    result.set(project.projectId, { context: { projectId: project.projectId, projectCode: project.projectCode, projectName: project.projectName, defaultCurrencyCode: directory.defaultCurrencyCode, moneyScale: directory.moneyScale, timeZone: directory.timeZone }, categories, costItems: costItems.filter(row => row.project_id === project.projectId), details: details.filter(row => costItems.some(item => item.project_id === project.projectId && item.id === row.project_cost_item_id)), budgets: budgets.filter(row => row.project_id === project.projectId), budgetLines: budgetLines.filter(row => row.project_id === project.projectId), ownerAdvances: ownerAdvances.filter(row => row.project_id === project.projectId), subcontracts: scopedContracts, payments: payments.filter(row => row.project_id === project.projectId), parties })
+    result.set(project.projectId, { context: { projectId: project.projectId, projectCode: project.projectCode, projectName: project.projectName, defaultCurrencyCode: directory.defaultCurrencyCode, moneyScale: directory.moneyScale, timeZone: directory.timeZone }, categories, costItems: costItems.filter(row => row.project_id === project.projectId), details: details.filter(row => costItems.some(item => item.project_id === project.projectId && item.id === row.project_cost_item_id)), budgets: budgets as FinanceTableRows['budgets'], budgetLines: budgetLines as FinanceTableRows['budgetLines'], ownerAdvances: ownerAdvances as FinanceTableRows['ownerAdvances'], subcontracts: scopedContracts as FinanceTableRows['subcontracts'], payments: payments as FinanceTableRows['payments'], parties })
   }
   return result
 }
@@ -304,7 +252,19 @@ export function createSupabaseProjectFinanceRepository(db: UserSupabaseClient): 
       } }
     },
     directory: (scope, query) => metadata.directory(scope.companyId, query.afterId ?? null, query.pageSize),
-    readMany: (scope, projectIds, directory) => readMany(metadata, tables, scope, projectIds, directory),
+    async readMany(scope, projectIds, directory) {
+      const collect = () => collectMany(metadata, tables, scope, projectIds, directory)
+      const readSets = await collect()
+      const expected = signature([...readSets.entries()])
+      return {
+        signature: expected,
+        readSets,
+        consistent: async () => {
+          const current = await collect()
+          return [...readSets.values()].every(coherent) && [...current.values()].every(coherent) && signature([...current.entries()]) === expected
+        },
+      }
+    },
   }
   return new ConcreteProjectFinanceRepository(source)
 }

@@ -30,6 +30,7 @@ Directory queries use `afterId` and `pageSize=25|50|100`. Detail queries use `pa
 - Budget: the single approved `project_budget_versions` row and its categorized lines when `detail_mode=categorized`.
 - Contractor identity: linked party IDs from `c1_read_project_finance_parties`; grouping is by party ID, not display name.
 - Dates: explicit business date wins; otherwise the created timestamp is converted using the company's configured IANA timezone.
+- Row date provenance remains source-specific: ordinary details use `relevant_date|created_at`, receipts use `received_date|created_at`, payments use `payment_date|created_at`; aggregate category metadata normalizes this to `business_date|created_at`.
 
 ## Response states
 
@@ -43,7 +44,7 @@ An empty valid project is still HTTP 200. A legacy subcontract parent with a non
 
 `margin.amount` is currently always `null`. The API returns fixed reasons such as `NO_APPROVED_BUDGET`, `COST_INCOMPLETE`, `RETENTION_INCOMPLETE`, and `BUDGET_BASIS_UNCONFIRMED`. Unknown retention is not zero. `referenceHeadroom` is `null` when contract value or a recorded retention value is missing and may be negative when computable.
 
-Synthetic recorded example:
+Synthetic empty-project response:
 
 ```json
 {
@@ -52,13 +53,25 @@ Synthetic recorded example:
   "summary": {
     "budget":{"state":"not_recorded","amount":null,"recordedCount":0},
     "ownerAdvances":{"state":"not_recorded","amount":null,"recordedCount":0},
-    "cost":{"state":"needs_reconciliation","amount":null,"recordedCount":4,"knownSubtotal":"160.0000"},
-    "warrantyRetention":{"state":"recorded","amount":"10.0000","recordedCount":2},
+    "cost":{"state":"not_recorded","amount":null,"recordedCount":0,"knownSubtotal":"0.0000"},
+    "warrantyRetention":{"state":"not_recorded","amount":null,"recordedCount":0},
     "reference":{"kind":"none","amount":null},
     "margin":{"state":"unavailable","amount":null,"reasons":["NO_APPROVED_BUDGET","COST_INCOMPLETE","RETENTION_INCOMPLETE"]},
-    "issues":[{"code":"LEGACY_SUBCONTRACT_RECONCILIATION_REQUIRED","categoryId":"c1050000-0000-4000-8000-000000000040"}]
+    "issues":[
+      {"code":"MISSING_CATEGORY_RECORD","categoryId":"c1050000-0000-4000-8000-000000000040"},
+      {"code":"MISSING_CATEGORY_RECORD","categoryId":"c1050000-0000-4000-8000-000000000041"},
+      {"code":"MISSING_CATEGORY_RECORD","categoryId":"c1050000-0000-4000-8000-000000000042"},
+      {"code":"MISSING_CATEGORY_RECORD","categoryId":"c1050000-0000-4000-8000-000000000043"},
+      {"code":"MISSING_CATEGORY_RECORD","categoryId":"c1050000-0000-4000-8000-000000000044"}
+    ]
   },
-  "categories": []
+  "categories":[
+    {"categoryId":"c1050000-0000-4000-8000-000000000040","code":"materials","name":"materials","displayOrder":1,"isActive":true,"itemId":null,"description":null,"businessReference":null,"cost":{"state":"not_recorded","amount":null,"recordedCount":0},"detailCount":0,"latestRecordedDate":null,"latestRecordedDateSource":null,"warrantyRetention":{"state":"not_recorded","amount":null,"recordedCount":0},"recordedPaymentsTotal":null,"recordedPaymentCount":0,"legacyReconciliationRequired":false},
+    {"categoryId":"c1050000-0000-4000-8000-000000000041","code":"machinery","name":"machinery","displayOrder":2,"isActive":true,"itemId":null,"description":null,"businessReference":null,"cost":{"state":"not_recorded","amount":null,"recordedCount":0},"detailCount":0,"latestRecordedDate":null,"latestRecordedDateSource":null,"warrantyRetention":{"state":"not_recorded","amount":null,"recordedCount":0},"recordedPaymentsTotal":null,"recordedPaymentCount":0,"legacyReconciliationRequired":false},
+    {"categoryId":"c1050000-0000-4000-8000-000000000042","code":"direct_labor","name":"direct_labor","displayOrder":3,"isActive":true,"itemId":null,"description":null,"businessReference":null,"cost":{"state":"not_recorded","amount":null,"recordedCount":0},"detailCount":0,"latestRecordedDate":null,"latestRecordedDateSource":null,"warrantyRetention":{"state":"not_recorded","amount":null,"recordedCount":0},"recordedPaymentsTotal":null,"recordedPaymentCount":0,"legacyReconciliationRequired":false},
+    {"categoryId":"c1050000-0000-4000-8000-000000000043","code":"subcontract_labor","name":"subcontract_labor","displayOrder":4,"isActive":true,"itemId":null,"description":null,"businessReference":null,"cost":{"state":"not_recorded","amount":null,"recordedCount":0},"detailCount":0,"latestRecordedDate":null,"latestRecordedDateSource":null,"warrantyRetention":{"state":"not_recorded","amount":null,"recordedCount":0},"recordedPaymentsTotal":"0.0000","recordedPaymentCount":0,"legacyReconciliationRequired":false},
+    {"categoryId":"c1050000-0000-4000-8000-000000000044","code":"other","name":"other","displayOrder":5,"isActive":true,"itemId":null,"description":null,"businessReference":null,"cost":{"state":"not_recorded","amount":null,"recordedCount":0},"detailCount":0,"latestRecordedDate":null,"latestRecordedDateSource":null,"warrantyRetention":{"state":"not_recorded","amount":null,"recordedCount":0},"recordedPaymentsTotal":null,"recordedPaymentCount":0,"legacyReconciliationRequired":false}
+  ]
 }
 ```
 
