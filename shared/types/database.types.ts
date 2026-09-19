@@ -1782,6 +1782,93 @@ export type Database = {
           },
         ]
       }
+      project_cost_item_details: {
+        Row: {
+          amount_text: string
+          company_id: string
+          created_at: string
+          created_by: string
+          description: string
+          detail_kind: string
+          id: string
+          line_no: number
+          note: string | null
+          project_cost_item_id: string
+          quantity_text: string | null
+          reference: string | null
+          relevant_date: string | null
+          retention_amount_text: string | null
+          retention_kind: string | null
+          retention_rate_bps: number | null
+          tenant_id: string
+          unit_code: string | null
+          unit_price_text: string | null
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          amount_text: string
+          company_id: string
+          created_at?: string
+          created_by: string
+          description: string
+          detail_kind?: string
+          id?: string
+          line_no: number
+          note?: string | null
+          project_cost_item_id: string
+          quantity_text?: string | null
+          reference?: string | null
+          relevant_date?: string | null
+          retention_amount_text?: string | null
+          retention_kind?: string | null
+          retention_rate_bps?: number | null
+          tenant_id: string
+          unit_code?: string | null
+          unit_price_text?: string | null
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          amount_text?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          description?: string
+          detail_kind?: string
+          id?: string
+          line_no?: number
+          note?: string | null
+          project_cost_item_id?: string
+          quantity_text?: string | null
+          reference?: string | null
+          relevant_date?: string | null
+          retention_amount_text?: string | null
+          retention_kind?: string | null
+          retention_rate_bps?: number | null
+          tenant_id?: string
+          unit_code?: string | null
+          unit_price_text?: string | null
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_cost_item_details_company_id_tenant_id_fkey"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "project_cost_item_details_project_cost_item_id_tenant_id_c_fkey"
+            columns: ["project_cost_item_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "project_cost_items"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
       project_cost_item_sources: {
         Row: {
           company_id: string
@@ -3512,6 +3599,10 @@ export type Database = {
           project_name: string
           source_selection_id: string
         }[]
+      }
+      c1_read_project_cost_project_metadata: {
+        Args: { target_company_id: string; target_project_ids: string[] }
+        Returns: Json
       }
       c1_update_business_party: {
         Args: {

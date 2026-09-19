@@ -100,6 +100,29 @@ describe('C1 Cloud DEV runner', () => {
     expect(() => validateC1CloudDevSql('c1_project_cost_items.test.sql', 'begin;\nselect 1;\nrollback;')).not.toThrow()
   })
 
+  it('requires the rollback-only Project Cost Detail fixture to declare c101 synthetic identities', () => {
+    expect(() => validateC1CloudDevSql('c1_project_cost_item_details.test.sql', 'begin;\nselect 1;\nrollback;')).toThrow('Project Cost Detail SQL must include c101 synthetic fixture identifiers')
+    expect(() => validateC1CloudDevSql('c1_project_cost_item_details.test.sql', "begin;\nselect 'c1010000-0000-4000-8000-000000000001';\nrollback;")).not.toThrow()
+  })
+
+  it('keeps the Project Cost Detail fixture transactional and covers its named invariants', () => {
+    const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1/c1_project_cost_item_details.test.sql'), 'utf8')
+
+    expect(() => validateC1CloudDevSql('c1_project_cost_item_details.test.sql', sql)).not.toThrow()
+    expect(sql.trim()).toMatch(/^begin\s*;[\s\S]*rollback\s*;$/iu)
+    expect(sql).not.toMatch(/\bcommit\s*;/iu)
+    for (const label of [
+      'C1_PCD_DIRECT_WRITE_DENIED', 'C1_PCD_RLS_READ_ALLOWED', 'C1_PCD_RLS_READ_DENIED', 'C1_PCD_RLS_SCOPE_ISOLATION',
+      'C1_PCD_INSERT_DERIVES_PARENT', 'C1_PCD_DETAIL_SUM_PARENT_INVARIANT', 'C1_PCD_RETENTION_EXCLUDED_FROM_PARENT',
+      'C1_PCD_PARENT_AMOUNT_GUARD', 'C1_PCD_UPDATE_REDERIVES_PARENT', 'C1_PCD_DELETE_REDERIVES_PARENT',
+      'C1_PCD_MOVE_REDERIVES_BOTH_PARENTS', 'C1_PCD_DUPLICATE_LINE_NO_REJECTED', 'C1_PCD_INVALID_LINE_NO_REJECTED',
+      'C1_PCD_INVALID_DECIMAL_REJECTED', 'C1_PCD_RETENTION_SHAPE_REJECTED', 'C1_PCD_RETENTION_KIND_REJECTED',
+      'C1_PCD_RETENTION_RATE_REJECTED', 'C1_PCD_RETENTION_AMOUNT_EXCEEDS_COST_REJECTED', 'C1_PCD_DERIVED_VERSION_CHANGE_ONLY',
+      'C1_PCD_DEFERRED_TRIGGER_BEFORE_CHECKPOINT',
+    ]) expect(sql).toContain(label)
+    expect(sql).toContain('set constraints all immediate')
+  })
+
   it('accepts the actual rollback-only Project Cost fixture before any Cloud command', () => {
     const path = 'c1_project_cost_items.test.sql'
     const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1', path), 'utf8')
@@ -127,6 +150,16 @@ describe('C1 Cloud DEV runner', () => {
     ['begin;\nselect * from supabase_migrations;\nrollback;', 'C1 SQL contains a forbidden Cloud DEV operation'],
   ])('rejects unsafe Project Cost fixture SQL: %s', (sql, message) => {
     expect(() => validateC1CloudDevSql('c1_project_cost_items.test.sql', sql)).toThrow(message)
+  })
+
+  it.each([
+    ['select 1;\nrollback;', 'C1 SQL verification must start with begin and end with rollback'],
+    ['begin;\nselect 1;', 'C1 SQL verification must start with begin and end with rollback'],
+    ["begin;\nselect 'c1010000-0000-4000-8000-000000000001';\ncommit;\nrollback;", 'C1 SQL verification cannot commit'],
+    ["begin;\nselect '10000000-0000-4000-8000-000000000010';\nrollback;", 'C1 SQL cannot reference real VQH identifiers'],
+    ["begin;\nselect 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';\nrollback;", 'Project Cost SQL must use reserved synthetic UUIDs'],
+  ])('rejects unsafe Project Cost Detail fixture SQL: %s', (sql, message) => {
+    expect(() => validateC1CloudDevSql('c1_project_cost_item_details.test.sql', sql)).toThrow(message)
   })
 
 
