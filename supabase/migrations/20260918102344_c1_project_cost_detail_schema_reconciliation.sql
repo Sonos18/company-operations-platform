@@ -130,7 +130,7 @@ begin
   loop
     select * into v_constraint from pg_constraint constraint_row where constraint_row.conrelid = v_table and constraint_row.conname = v_expected.conname;
     if found then
-      select array_agg(attribute.attname order by key_column.ordinality) into v_columns
+      select array_agg(attribute.attname::text order by key_column.ordinality) into v_columns
       from unnest(v_constraint.conkey) with ordinality as key_column(attnum, ordinality)
       join pg_attribute attribute on attribute.attrelid = v_table and attribute.attnum = key_column.attnum;
       if v_constraint.contype <> v_expected.contype or v_columns is distinct from v_expected.columns then
@@ -139,7 +139,7 @@ begin
     else
       select * into v_constraint from pg_constraint constraint_row
       where constraint_row.conrelid = v_table and constraint_row.contype = v_expected.contype
-        and (select array_agg(attribute.attname order by key_column.ordinality) from unnest(constraint_row.conkey) with ordinality as key_column(attnum, ordinality) join pg_attribute attribute on attribute.attrelid = v_table and attribute.attnum = key_column.attnum) = v_expected.columns
+        and (select array_agg(attribute.attname::text order by key_column.ordinality) from unnest(constraint_row.conkey) with ordinality as key_column(attnum, ordinality) join pg_attribute attribute on attribute.attrelid = v_table and attribute.attnum = key_column.attnum) = v_expected.columns
       limit 1;
       if not found then
         if v_expected.contype = 'p' and exists (select 1 from pg_constraint where conrelid = v_table and contype = 'p') then
@@ -179,12 +179,12 @@ begin
     if not found then
       select * into v_constraint from pg_constraint constraint_row
       where constraint_row.conrelid = v_table and constraint_row.contype = 'f'
-        and (select array_agg(attribute.attname order by key_column.ordinality) from unnest(constraint_row.conkey) with ordinality as key_column(attnum, ordinality) join pg_attribute attribute on attribute.attrelid = v_table and attribute.attnum = key_column.attnum) = v_expected.local_columns
+        and (select array_agg(attribute.attname::text order by key_column.ordinality) from unnest(constraint_row.conkey) with ordinality as key_column(attnum, ordinality) join pg_attribute attribute on attribute.attrelid = v_table and attribute.attnum = key_column.attnum) = v_expected.local_columns
       limit 1;
     end if;
     if found then
-      select array_agg(attribute.attname order by key_column.ordinality) into v_local_columns from unnest(v_constraint.conkey) with ordinality as key_column(attnum, ordinality) join pg_attribute attribute on attribute.attrelid = v_table and attribute.attnum = key_column.attnum;
-      select array_agg(attribute.attname order by key_column.ordinality) into v_referenced_columns from unnest(v_constraint.confkey) with ordinality as key_column(attnum, ordinality) join pg_attribute attribute on attribute.attrelid = v_constraint.confrelid and attribute.attnum = key_column.attnum;
+      select array_agg(attribute.attname::text order by key_column.ordinality) into v_local_columns from unnest(v_constraint.conkey) with ordinality as key_column(attnum, ordinality) join pg_attribute attribute on attribute.attrelid = v_table and attribute.attnum = key_column.attnum;
+      select array_agg(attribute.attname::text order by key_column.ordinality) into v_referenced_columns from unnest(v_constraint.confkey) with ordinality as key_column(attnum, ordinality) join pg_attribute attribute on attribute.attrelid = v_constraint.confrelid and attribute.attnum = key_column.attnum;
       if v_constraint.contype <> 'f'
         or v_local_columns is distinct from v_expected.local_columns
         or v_constraint.confrelid <> v_expected.referenced_table

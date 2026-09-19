@@ -29,6 +29,11 @@ describe('C1 Project Cost Detail schema reconciliation', () => {
     expect(syncFunction).not.toContain('to_char(')
     expect(syncFunction).not.toContain('amount_text is distinct from')
 
+    const catalogNameArrays = [...executableSql.matchAll(/array_agg\(attribute\.attname::text order by key_column\.ordinality\)/giu)]
+    expect(catalogNameArrays).toHaveLength(5)
+    expect(executableSql).not.toMatch(/array_agg\(attribute\.attname\s+order by key_column\.ordinality\)/iu)
+    expect(executableSql).toMatch(/if not found then\s+select \* into v_constraint from pg_constraint constraint_row\s+where constraint_row\.conrelid = v_table and constraint_row\.contype = 'f'[\s\S]*?= v_expected\.local_columns/iu)
+
     for (const fragment of [
       'pg_attribute', 'pg_attrdef', 'pg_get_expr', 'attnotnull', 'C1_PCD_SCHEMA_DRIFT_COLUMN',
       'pg_constraint', "contype = 'c'", 'add constraint', 'not valid', 'validate constraint',
