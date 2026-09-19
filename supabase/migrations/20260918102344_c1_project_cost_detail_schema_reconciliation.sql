@@ -276,7 +276,7 @@ begin
 end;
 $$;
 
-create or replace function private.c1_sync_project_cost_item_amount(target_id uuid)
+create or replace function private.c1_sync_project_cost_item_amount(target_project_cost_item_id uuid)
 returns void language plpgsql security definer set search_path = ''
 as $$
 declare
@@ -284,14 +284,14 @@ declare
   v_company_id uuid;
   v_amount numeric;
 begin
-  select item.tenant_id, item.company_id into v_tenant_id, v_company_id from public.project_cost_items item where item.id = target_id for update;
+  select item.tenant_id, item.company_id into v_tenant_id, v_company_id from public.project_cost_items item where item.id = target_project_cost_item_id for update;
   if not found then return; end if;
   select coalesce(sum(detail.amount_text::numeric), 0) into v_amount
   from public.project_cost_item_details detail
-  where detail.project_cost_item_id = target_id and detail.tenant_id = v_tenant_id and detail.company_id = v_company_id;
-  if exists (select 1 from public.project_cost_items item where item.id = target_id and item.amount is distinct from v_amount) then
+  where detail.project_cost_item_id = target_project_cost_item_id and detail.tenant_id = v_tenant_id and detail.company_id = v_company_id;
+  if exists (select 1 from public.project_cost_items item where item.id = target_project_cost_item_id and item.amount is distinct from v_amount) then
     perform set_config('taskovia.project_cost_detail_sync', '1', true);
-    update public.project_cost_items item set amount = v_amount, amount_text = v_amount::text, version = item.version + 1, updated_at = now() where item.id = target_id;
+    update public.project_cost_items item set amount = v_amount, amount_text = v_amount::text, version = item.version + 1, updated_at = now() where item.id = target_project_cost_item_id;
     perform set_config('taskovia.project_cost_detail_sync', '0', true);
   end if;
 end;

@@ -22,7 +22,10 @@ describe('C1 Project Cost Detail schema reconciliation', () => {
     expect(executableSql).toMatch(/for v_expected_constraint in[\s\S]*?pg_constraint[\s\S]*?pg_temp\.c1_pcd_contract[\s\S]*?contype = 'c'/iu)
     expect(executableSql).toContain("retention_amount_text ~ '^[0-9]{1,16}([.][0-9]{1,4})?$'")
 
-    const syncFunction = sql.match(/create or replace function private\.c1_sync_project_cost_item_amount\(target_id uuid\)[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
+    const syncFunction = sql.match(/create or replace function private\.c1_sync_project_cost_item_amount\([\s\S]*?\)\s*returns void[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
+    expect(sql).toMatch(/create or replace function private\.c1_sync_project_cost_item_amount\(\s*target_project_cost_item_id uuid\s*\)/iu)
+    expect(syncFunction).not.toMatch(/\btarget_id\b/iu)
+    expect(syncFunction).toMatch(/\btarget_project_cost_item_id\b/iu)
     expect(syncFunction).toContain('sum(detail.amount_text::numeric)')
     expect(syncFunction).toContain('amount is distinct from v_amount')
     expect(syncFunction).toContain('amount_text = v_amount::text')
