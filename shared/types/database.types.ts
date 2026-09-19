@@ -3604,6 +3604,10 @@ export type Database = {
         Args: { target_company_id: string; target_project_ids: string[] }
         Returns: Json
       }
+      c1_read_project_cost_read_context: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
       c1_update_business_party: {
         Args: {
           target_company_id: string
