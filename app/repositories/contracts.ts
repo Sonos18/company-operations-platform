@@ -35,6 +35,7 @@ import type {
 import type { BusinessParty, CompanyCostSettings, CreateBusinessPartyInput, CreateEngagementComponentInput, CreateEngagementInput, CreateProjectRegisterInput, Engagement, EngagementComponent, ProjectRegister, UpdateBusinessPartyInput, UpdateEngagementComponentInput, UpdateEngagementInput, UpdateProjectRegisterInput } from '../../shared/schemas/costs/master-data'
 import type { CostSourceFiguresQuery, CostSourceOverview, CostSourceProjectDetail, CostSourceProvenance, CostSourceFigure } from '../../shared/schemas/costs/source-read-model'
 import type { CorrectProjectCostItemInput, CreateProjectCostItemInput, ProjectCostBreakdown, ProjectCostDetailsResponse, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, UpdateProjectCostItemInput } from '../../shared/schemas/costs/project-costs'
+import type { FinanceBudget, FinanceItemDetails, FinanceListQuery, FinanceOwnerAdvances, FinanceOverview, FinanceProjectList, FinanceSubcontractDetail, FinanceSubcontractorDetail, FinanceSubcontractorList, ItemDetailQuery, PaymentQuery, ProjectDirectoryQuery } from '../../shared/schemas/costs/project-finance'
 
 export interface CompanyRepository {
   getCurrent(): Promise<Company>
@@ -146,6 +147,17 @@ export interface ProjectCostRepository {
   create(projectId: string, input: ProjectCostCreateDraft): Promise<ProjectCostCreateResult>
   update(projectCostItemId: string, input: ProjectCostPatchInput): Promise<ProjectCostMutationResult>
 }
+export interface ProjectFinanceRepository {
+  listProjects(query?: Partial<ProjectDirectoryQuery>): Promise<FinanceProjectList>
+  overview(projectId: string): Promise<FinanceOverview>
+  budget(projectId: string): Promise<FinanceBudget>
+  ownerAdvances(projectId: string, query?: Partial<FinanceListQuery>): Promise<FinanceOwnerAdvances>
+  subcontractors(projectId: string): Promise<FinanceSubcontractorList>
+  subcontractor(projectId: string, partyId: string, query?: Partial<PaymentQuery>): Promise<FinanceSubcontractorDetail>
+  subcontract(projectId: string, subcontractId: string, query?: Partial<PaymentQuery>): Promise<FinanceSubcontractDetail>
+  itemDetails(projectId: string, itemId: string, query?: Partial<ItemDetailQuery>): Promise<FinanceItemDetails>
+}
+export type { FinanceBudget, FinanceItemDetails, FinanceOwnerAdvances, FinanceOverview, FinanceProjectList, FinanceSubcontractDetail, FinanceSubcontractorDetail, FinanceSubcontractorList }
 
 export interface RepositoryRegistry {
   context: Readonly<CompanyContext>
@@ -165,7 +177,8 @@ export interface RepositoryRegistry {
   costSettings: CostSettingsRepository
   costSourceRead: CostSourceReadRepository
   projectCosts: ProjectCostRepository
+  projectFinance: ProjectFinanceRepository
   prototype: PrototypeRepository
 }
 
-export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01' | 'stage01Config' | 'projectRegister' | 'businessParties' | 'engagements' | 'costSettings' | 'costSourceRead' | 'projectCosts'>
+export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01' | 'stage01Config' | 'projectRegister' | 'businessParties' | 'engagements' | 'costSettings' | 'costSourceRead' | 'projectCosts' | 'projectFinance'>
