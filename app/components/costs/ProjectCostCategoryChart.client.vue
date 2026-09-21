@@ -184,35 +184,21 @@ const donutOption = computed(() => {
 })
 
 interface ChartClickParams {
+  componentType?: string
+  seriesType?: string
   data?: { categoryId?: string }
   dataIndex?: number
 }
 
 function handleChartClick(params: unknown) {
   const p = params as ChartClickParams | undefined
-  const categoryId = p?.data?.categoryId
-    || (p?.dataIndex != null ? chartData.value.visibleItems[p.dataIndex]?.categoryId : undefined)
+  // Authoritative series datum event check: legend, background, or axes clicks must NOT navigate
+  if (p?.componentType !== 'series') return
+
+  const categoryId = p.data?.categoryId
+    || (p.dataIndex != null ? chartData.value.visibleItems[p.dataIndex]?.categoryId : undefined)
   if (categoryId) {
     emit('select-category', categoryId)
-  }
-}
-
-function handleDomClick(event: MouseEvent) {
-  let target = event.target as SVGElement | HTMLElement | null
-  while (target && target.tagName !== 'svg' && target.classList && !target.classList.contains('chart-canvas-wrapper')) {
-    const fill = target.getAttribute?.('fill') || (target as HTMLElement).style?.fill
-    const stroke = target.getAttribute?.('stroke') || (target as HTMLElement).style?.stroke
-    const color = (fill && fill !== 'none' && !fill.startsWith('url')) ? fill : stroke
-    if (color) {
-      const matched = chartData.value.visibleItems.find(item =>
-        item.color.toLowerCase() === color.toLowerCase()
-      )
-      if (matched) {
-        emit('select-category', matched.categoryId)
-        return
-      }
-    }
-    target = target.parentElement
   }
 }
 </script>
@@ -259,7 +245,7 @@ function handleDomClick(event: MouseEvent) {
         <h3 class="chart-panel-title">
           Số tiền theo danh mục
         </h3>
-        <div class="chart-canvas-wrapper" @click="handleDomClick">
+        <div class="chart-canvas-wrapper">
           <VChart
             :option="chartOption"
             autoresize
@@ -281,7 +267,7 @@ function handleDomClick(event: MouseEvent) {
             Chưa đối soát
           </span>
         </div>
-        <div class="chart-canvas-wrapper" @click="handleDomClick">
+        <div class="chart-canvas-wrapper">
           <VChart
             :option="donutOption"
             autoresize

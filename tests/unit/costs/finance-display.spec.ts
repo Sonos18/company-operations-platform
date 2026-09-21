@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   categoryDisplayName,
+  computePageRetentionBreakdown,
+  computeProjectKpiCards,
   formatCostDisplay,
   formatDateProvenance,
   formatFinanceMoney,
   formatManagementHeadline,
   formatMarginReasons,
   formatOperationalState,
+  formatOwnerReceiptsDisplay,
   formatProvisionalProfitDisplay,
   formatReferenceDisplay,
   formatRetentionCount,
@@ -285,6 +288,140 @@ describe('finance display helpers', () => {
 
     it('preserves existing custom database name when provided', () => {
       expect(categoryDisplayName('materials', 'Vật liệu xây dựng phần thô')).toBe('Vật liệu xây dựng phần thô')
+    })
+  })
+
+  describe('formatOwnerReceiptsDisplay (R06)', () => {
+    it('shows receipts amount when budget and receipts are both present', () => {
+      const res = formatOwnerReceiptsDisplay({
+        receipts: { state: 'recorded', amount: '300000000.0000', recordedCount: 3 },
+        budget: { state: 'recorded', amount: '1000000000.0000' },
+        currencyCode: 'VND',
+      })
+      expect(res.label).toBe('Thu từ chủ đầu tư')
+      expect(res.value).toBe('300,000,000 VND')
+      expect(res.isAvailable).toBe(true)
+      expect(res.colorScheme).toBe('receipts')
+      expect(res.budgetSecondaryText).toBe('Dự toán: 1,000,000,000 VND')
+    })
+
+    it('shows "Chưa ghi nhận" for budget-only project without receipts (never budget amount)', () => {
+      const res = formatOwnerReceiptsDisplay({
+        receipts: { state: 'not_recorded', amount: null, recordedCount: 0 },
+        budget: { state: 'recorded', amount: '500000000.0000' },
+        currencyCode: 'VND',
+      })
+      expect(res.label).toBe('Thu từ chủ đầu tư')
+      expect(res.value).toBe('Chưa ghi nhận')
+      expect(res.isAvailable).toBe(false)
+      expect(res.colorScheme).toBe('neutral')
+      expect(res.budgetSecondaryText).toBe('Dự toán: 500,000,000 VND')
+    })
+
+    it('shows receipts without budget secondary text when no budget exists', () => {
+      const res = formatOwnerReceiptsDisplay({
+        receipts: { state: 'recorded', amount: '250000000.0000', recordedCount: 1 },
+        budget: { state: 'not_recorded', amount: null },
+        currencyCode: 'VND',
+      })
+      expect(res.value).toBe('250,000,000 VND')
+      expect(res.budgetSecondaryText).toBeNull()
+    })
+
+    it('formats recorded zero receipts distinctly as "0 VND"', () => {
+      const res = formatOwnerReceiptsDisplay({
+        receipts: { state: 'recorded', amount: '0.0000', recordedCount: 1 },
+        currencyCode: 'VND',
+      })
+      expect(res.value).toBe('0 VND')
+      expect(res.isAvailable).toBe(true)
+    })
+
+    it('shows "Chưa đối soát" for needs_reconciliation receipts state', () => {
+      const res = formatOwnerReceiptsDisplay({
+        receipts: { state: 'needs_reconciliation', amount: null },
+        currencyCode: 'VND',
+      })
+      expect(res.value).toBe('Chưa đối soát')
+      expect(res.badgeVariant).toBe('cockpit-badge--warning')
+    })
+  })
+
+  describe('computePageRetentionBreakdown (R04)', () => {
+    it('separates warranty from other retention and labels as page-only', () => {
+      const rows = [
+        { retentionAmount: '10000000.0000', retentionKind: 'warranty' as const },
+        { retentionAmount: '20000000.0000', retentionKind: 'other' as const },
+        { retentionAmount: '5000000.0000', retentionKind: 'warranty' as const },
+        { retentionAmount: null, retentionKind: null },
+      ]
+      const res = computePageRetentionBreakdown(rows, 'VND')
+      expect(res.warranty).toEqual({
+        amount: '15,000,000 VND',
+        count: 2,
+        label: 'Bảo hành trên trang này',
+      })
+      expect(res.other).toEqual({
+        amount: '20,000,000 VND',
+        count: 1,
+        label: 'Khoản giữ lại khác trên trang này',
+      })
+    })
+
+    it('handles warranty-only rows', () => {
+      const rows = [{ retentionAmount: '50000000.0000', retentionKind: 'warranty' as const }]
+      const res = computePageRetentionBreakdown(rows, 'VND')
+      expect(res.warranty?.amount).toBe('50,000,000 VND')
+      expect(res.other).toBeNull()
+    })
+
+    it('handles other-only rows', () => {
+      const rows = [{ retentionAmount: '30000000.0000', retentionKind: 'other' as const }]
+      const res = computePageRetentionBreakdown(rows, 'VND')
+      expect(res.warranty).toBeNull()
+      expect(res.other?.amount).toBe('30,000,000 VND')
+    })
+
+    it('returns nulls for empty or all-null rows', () => {
+      expect(computePageRetentionBreakdown([])).toEqual({ warranty: null, other: null })
+      expect(computePageRetentionBreakdown([{ retentionAmount: null, retentionKind: null }])).toEqual({
+        warranty: null,
+        other: null,
+      })
+    })
+  })
+
+  describe('computeProjectKpiCards (R06, Improvement B)', () => {
+    it('produces all four typed KPI view models consistently', () => {
+      const summary = {
+        budget: { state: 'recorded', amount: '500000000.0000', recordedCount: 1 },
+        cost: { state: 'recorded' as const, amount: '350000000.0000', knownSubtotal: '350000000.0000' },
+        warrantyRetention: { state: 'recorded' as const, amount: '25000000.0000', recordedCount: 2 },
+        management: {
+          receipts: { state: 'recorded', amount: '400000000.0000', recordedCount: 2 },
+          result: { state: 'provisional', amount: '25000000.0000', basis: 'owner_receipts' },
+        },
+      }
+      const kpis = computeProjectKpiCards(summary, { currencyCode: 'VND', moneyScale: 0 })
+
+      expect(kpis.provisionalProfit.value).toBe('25,000,000 VND')
+      expect(kpis.receipts.value).toBe('400,000,000 VND')
+      expect(kpis.receipts.budgetSecondaryText).toBe('Dự toán: 500,000,000 VND')
+      expect(kpis.cost.value).toBe('350,000,000 VND')
+      expect(kpis.warranty.value).toBe('25,000,000 VND')
+    })
+  })
+
+  describe('formatProvisionalProfitDisplay named input support', () => {
+    it('accepts named options object', () => {
+      const res = formatProvisionalProfitDisplay({
+        result: { state: 'provisional', amount: '100000000.0000', basis: 'owner_receipts' },
+        costState: 'recorded',
+        currencyCode: 'VND',
+        moneyScale: 0,
+      })
+      expect(res.value).toBe('100,000,000 VND')
+      expect(res.label).toBe('Lợi nhuận tạm tính')
     })
   })
 })

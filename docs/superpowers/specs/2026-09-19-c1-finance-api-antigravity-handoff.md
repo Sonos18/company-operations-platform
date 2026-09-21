@@ -74,20 +74,36 @@ Tooltip mapping: `accounting_source_unverified` → “Recorded from accounting 
 
 The valid directory/overview browser fixtures in `tests/e2e/project-costs.spec.ts` now include required `project.operationalState` and `summary.management` fields, including the company-switch and empty-project cases. They are parsed with the exported strict response schemas before browser tests run. Intentional error responses remain unchanged. The complete mocked Costs Playwright run passed 15/15 after this repair. Vue components and product UI behavior were not edited in this backend handoff.
 
-## UI adoption and verification status (Antigravity checkpoint)
+## UI adoption and verification status (Antigravity final review checkpoint)
 
-- **UI integration delivered**:
-  - `/costs` (Directory) and `/costs/:projectId` (Detail) updated to bind `summary.management` and `project.operationalState`.
-  - Main Headline (Position 1): Displays server-selected headline (`provisional_result` with basis caption "Theo số đã thu" / "Theo dự toán", or `owner_receipts` with receipt total and caption "Theo sổ thu kế toán · Chưa đối soát ngân hàng", or `unavailable` with documented margin reasons without fabricating zero).
-  - Reference (Position 2): Displays approved budget or owner receipts reference ("Dự toán được duyệt" vs "Thu từ chủ đầu tư") accompanied by an accessible info disclosure button and popover explaining that receipts represent advances from accounting sources and are not an approved budget or final margin.
-  - Cost (Position 3): Displays prominent recorded subtotal with explicit qualifier "Phần đã ghi nhận · Chưa đối soát" when incomplete or requiring reconciliation; never converts empty subtotal into confirmed zero cost.
-  - Project Operational State: Displays persisted `project.operationalState` badges (`active` → "Đang thực hiện", `completed` → "Hoàn thành", `paused` → "Tạm dừng", `unknown` → "Chưa cập nhật trạng thái").
-  - Accessibility & Interaction: Replaced outer card link with interactive card region and inner title link to avoid nested interactive button violations; popover supports pointer hover, keyboard focus, click/touch pinning, Escape dismissibility, and outside click dismissibility.
-- **Verification status**:
-  - `tests/unit/costs/finance-display.spec.ts`: 26/26 passed.
-  - `tests/e2e/project-costs.spec.ts`: 18/18 passed in Playwright (including 1440px desktop, 390px mobile viewport, and Axe accessibility assertions).
-  - `pnpm verify:app`: 138 test files, 1,119 unit tests passed; typecheck passed; lint passed; build succeeded.
-  - `git diff --check`: passed (0 issues).
+### Current UI integration (R01–R06 corrected pass)
+
+- **Position 1 (Lợi nhuận tạm tính)**: Displays server-selected management result (`provisional` with basis caption "Theo số đã thu" / "Theo dự toán", or `unavailable` with documented margin reasons without fabricating zero).
+- **Position 2 (Thu từ chủ đầu tư - Owner Receipts)**: *(Supersedes earlier reference-budget display)* Strictly bound to `summary.management.receipts`. Shows receipts amount when recorded. When an approved budget is present, displays secondary compact text `Dự toán: <amount>`. Accompanied by accessible info disclosure popover explaining accounting source origin.
+- **Position 3 (Chi phí)**: Displays prominent recorded subtotal with explicit qualifier "Phần đã ghi nhận · Chưa đối soát" when incomplete or requiring reconciliation; never converts empty subtotal into confirmed zero cost.
+- **Position 4 (Bảo hành)**: Full category warranty retention figure respecting its state and null value.
+- **Project Operational State**: Displays persisted `project.operationalState` badges (`active` → "Đang thực hiện", `completed` → "Hoàn thành", `paused` → "Tạm dừng", `unknown` → "Chưa cập nhật trạng thái").
+- **Category Ledgers & Subcontractors (R01, R02, R03, R04)**:
+  - Extracted route components: `ProjectCostOrdinaryLedger.vue`, `ProjectCostSubcontractLedger.vue`, and `ProjectCostSubcontractorTable.vue`.
+  - Independent async request streams (`overview`, `subcontractorList`, `contractorPayments`, `ordinaryLedger`) managed by `createAsyncRequestTracker`, capturing immutable request parameters and invalidating stale generation/completion.
+  - Pagination controls (previous/next/page, clamping, pageSize 25/50/100) bound to API pagination with automatic reset to page 1 on filter/size changes. Local validation blocks inverted date ranges (`dateFrom > dateTo`).
+  - Separation of full totals (`fullCount`, `fullAmount`) from filtered counts/amounts.
+  - Page-only retention labeled with `(trên trang này)` via `computePageRetentionBreakdown`; warranty and other retention remain strictly separated.
+  - Old identity data cleared immediately upon selection change to prevent displaying stale financial amounts during pending or failed loads.
+- **Error Mapping (R05)**:
+  - Centralized `mapCostsError` checking `MODULE_DISABLED` reason first, then company forbidden, permission denied, not found, and generic errors.
+- **Chart Interaction Ownership**:
+  - `ProjectCostCategoryChart.client.vue` binds ECharts `@click` handler directly to series data events with `categoryId`, eliminating SVG DOM inspection and fill/stroke color guessing.
+
+### Historical Checkpoint Verification Record (superseded by R01–R06 final verification pass)
+- **Superseded historical runs**:
+  - `tests/unit/costs/finance-display.spec.ts`: 26/26 passed in initial adoption.
+  - `tests/e2e/project-costs.spec.ts`: 18/18 passed in initial adoption.
+  - `pnpm verify:app`: 138 test files, 1,119 unit tests passed in initial checkpoint.
+- **Current Verification Suite**:
+  - Extended unit tests: `tests/unit/costs/ledger-pagination.spec.ts` (15 tests), `tests/unit/costs/async-request-tracker.spec.ts` (4 tests), `tests/unit/costs/costs-error-mapper.spec.ts` (7 tests), `tests/unit/costs/finance-display.spec.ts` (32 tests).
+  - Total unit tests: 142 test files, 1,169 tests passing.
+  - E2E Playwright tests: `tests/e2e/project-costs.spec.ts` (22 tests) and `tests/e2e/cost-source-ui.spec.ts` covering 1440px desktop, 390px mobile, chart series navigation, pagination, error/retry states, and accessibility.
 - **Combined Acceptance / Real HTTP Smoke Check Ownership**:
   - `LOCAL_UI_VERIFICATION` = PASS.
   - `LIVE_HTTP` = `NOT_RUN_REQUIRES_LOGIN`.

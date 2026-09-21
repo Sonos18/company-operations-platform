@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ClientError } from '../../errors/client-error'
 import type { FinanceProjectList } from '../../../shared/schemas/costs/project-finance'
 import {
   formatCostDisplay,
   formatOperationalState,
+  formatOwnerReceiptsDisplay,
   formatProvisionalProfitDisplay,
-  formatReferenceDisplay,
   formatWarrantyRetentionDisplay,
 } from '../../utils/costs/finance-display'
+import { mapCostsApiError } from '../../utils/costs/costs-error-mapper'
+import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 
 definePageMeta({ requiredPermission: 'cost.read' })
 
@@ -21,7 +22,7 @@ const pinnedInfoId = ref<string | null>(null)
 const hoveredInfoId = ref<string | null>(null)
 const focusedInfoId = ref<string | null>(null)
 const isInfoDismissed = ref(false)
-let request = 0
+const requestTracker = createAsyncRequestTracker()
 
 function isInfoOpen(id: string) {
   if (isInfoDismissed.value) return false
@@ -92,7 +93,7 @@ onMounted(() => {
 })
 
 async function load() {
-  const current = ++request
+  const token = requestTracker.start({ companyId: companyAccess.activeCompanyId })
   status.value = 'loading'
   projects.value = []
   nextCursor.value = null
@@ -100,26 +101,27 @@ async function load() {
 
   try {
     const value = await repositories.projectFinance.listProjects()
-    if (current !== request) return
+    if (!token.isCurrent()) return
     projects.value = value.projects
     nextCursor.value = value.nextCursor
     status.value = value.projects.length ? 'ready' : 'empty'
   }
   catch (error) {
-    if (current !== request) return
-    status.value = error instanceof ClientError && error.reason === 'MODULE_DISABLED' ? 'module'
-      : error instanceof ClientError && error.code === 'PERMISSION_DENIED' ? 'permission' : 'error'
+    if (!token.isCurrent()) return
+    const mapped = mapCostsApiError(error, 'directory')
+    status.value = mapped === 'module' ? 'module'
+      : mapped === 'permission' ? 'permission' : 'error'
   }
 }
 
 async function loadMore() {
   if (!nextCursor.value || loadingMore.value) return
-  const current = request
+  const currentGen = requestTracker.generation
   loadingMore.value = true
 
   try {
     const value = await repositories.projectFinance.listProjects({ afterId: nextCursor.value })
-    if (current !== request) return
+    if (requestTracker.generation !== currentGen) return
     projects.value = [...projects.value, ...value.projects]
     nextCursor.value = value.nextCursor
   }
@@ -127,7 +129,7 @@ async function loadMore() {
     // Keep already loaded cards visible
   }
   finally {
-    if (current === request) {
+    if (requestTracker.generation === currentGen) {
       loadingMore.value = false
     }
   }
@@ -136,7 +138,7 @@ async function loadMore() {
 watch(() => companyAccess.activeCompanyId, load, { immediate: true })
 
 onUnmounted(() => {
-  request++
+  requestTracker.invalidate()
   window.removeEventListener('click', onDocumentClick)
   window.removeEventListener('keydown', onDocumentKeydown)
 })
@@ -274,19 +276,19 @@ onUnmounted(() => {
           </div>
 
           <div class="metrics-grid">
-            <!-- Position 2: Reference (Dự toán được duyệt / Thu từ chủ đầu tư / Dự toán) -->
-            <div class="metric-item">
+            <!-- Position 2: Thu từ chủ đầu tư (R06) -->
+            <div class="metric-item" data-testid="receipts-metric-item">
               <div class="metric-top">
                 <span
                   class="cockpit-badge"
-                  :class="formatReferenceDisplay(entry.summary.management?.reference ?? entry.summary.reference, entry.project.currencyCode, entry.project.moneyScale).badgeVariant"
+                  :class="formatOwnerReceiptsDisplay({ receipts: entry.summary.management?.receipts, budget: entry.summary.budget, currencyCode: entry.project.currencyCode, moneyScale: entry.project.moneyScale }).badgeVariant"
                 >
-                  {{ formatReferenceDisplay(entry.summary.management?.reference ?? entry.summary.reference, entry.project.currencyCode, entry.project.moneyScale).label }}
+                  {{ formatOwnerReceiptsDisplay({ receipts: entry.summary.management?.receipts, budget: entry.summary.budget, currencyCode: entry.project.currencyCode, moneyScale: entry.project.moneyScale }).label }}
                 </span>
 
-                <!-- Info disclosure for receipt references -->
+                <!-- Info disclosure for receipt references / budget -->
                 <div
-                  v-if="formatReferenceDisplay(entry.summary.management?.reference ?? entry.summary.reference, entry.project.currencyCode, entry.project.moneyScale).isOwnerReceipts"
+                  v-if="formatOwnerReceiptsDisplay({ receipts: entry.summary.management?.receipts, budget: entry.summary.budget, currencyCode: entry.project.currencyCode, moneyScale: entry.project.moneyScale }).hasDisclosure"
                   class="info-disclosure-anchor"
                 >
                   <button
@@ -313,14 +315,21 @@ onUnmounted(() => {
                     @click.stop
                   >
                     <p class="info-tooltip-text">
-                      {{ formatReferenceDisplay(entry.summary.management?.reference ?? entry.summary.reference, entry.project.currencyCode, entry.project.moneyScale).tooltipText }}
+                      {{ formatOwnerReceiptsDisplay({ receipts: entry.summary.management?.receipts, budget: entry.summary.budget, currencyCode: entry.project.currencyCode, moneyScale: entry.project.moneyScale }).tooltipText }}
                     </p>
                   </div>
                 </div>
               </div>
 
               <span class="metric-value" data-testid="accepted-value" data-testid-alt="reference-value">
-                {{ formatReferenceDisplay(entry.summary.management?.reference ?? entry.summary.reference, entry.project.currencyCode, entry.project.moneyScale).value }}
+                {{ formatOwnerReceiptsDisplay({ receipts: entry.summary.management?.receipts, budget: entry.summary.budget, currencyCode: entry.project.currencyCode, moneyScale: entry.project.moneyScale }).value }}
+              </span>
+              <span
+                v-if="formatOwnerReceiptsDisplay({ receipts: entry.summary.management?.receipts, budget: entry.summary.budget, currencyCode: entry.project.currencyCode, moneyScale: entry.project.moneyScale }).budgetSecondaryText"
+                class="metric-subline"
+                data-testid="budget-secondary-subline"
+              >
+                {{ formatOwnerReceiptsDisplay({ receipts: entry.summary.management?.receipts, budget: entry.summary.budget, currencyCode: entry.project.currencyCode, moneyScale: entry.project.moneyScale }).budgetSecondaryText }}
               </span>
             </div>
 

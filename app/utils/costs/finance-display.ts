@@ -1,3 +1,5 @@
+import Decimal from 'decimal.js'
+
 export function formatFinanceMoney(
   value: string | null | undefined,
   currencyCode?: string,
@@ -83,8 +85,22 @@ export function formatOperationalState(
   }
 }
 
-export function formatProvisionalProfitDisplay(
+export interface ProvisionalProfitNamedInput {
   result: {
+    state: 'provisional' | 'unavailable' | string
+    amount: string | null
+    basis?: string
+    components?: { receipts?: string | null; cost?: string | null; independentlyHeldRetention?: string | null }
+    reasons?: string[]
+  } | null | undefined
+  costState?: string
+  resultReasons?: string[] | null
+  currencyCode?: string
+  moneyScale?: number
+}
+
+export function formatProvisionalProfitDisplay(
+  resultOrInput: ProvisionalProfitNamedInput | {
     state: 'provisional' | 'unavailable' | string
     amount: string | null
     basis?: string
@@ -105,22 +121,40 @@ export function formatProvisionalProfitDisplay(
   colorScheme: 'provisional' | 'danger' | 'unavailable' | 'profit' | 'negative'
   isNegative: boolean
 } {
+  let result: {
+    state: 'provisional' | 'unavailable' | string
+    amount: string | null
+    basis?: string
+    components?: { receipts?: string | null; cost?: string | null; independentlyHeldRetention?: string | null }
+    reasons?: string[]
+  } | null | undefined
   let currencyCode: string
   let moneyScale: number
   let costState: string | undefined
   let resultReasons: string[] | null | undefined
 
-  if (arg2 === 'recorded' || arg2 === 'needs_reconciliation' || arg2 === 'not_recorded') {
-    costState = arg2
-    resultReasons = Array.isArray(arg3) ? arg3 : null
-    currencyCode = typeof arg4 === 'string' ? arg4 : 'VND'
-    moneyScale = typeof arg5 === 'number' ? arg5 : 0
+  if (resultOrInput && typeof resultOrInput === 'object' && 'result' in resultOrInput && !('state' in resultOrInput)) {
+    const named = resultOrInput as ProvisionalProfitNamedInput
+    result = named.result
+    costState = named.costState
+    resultReasons = named.resultReasons
+    currencyCode = named.currencyCode ?? 'VND'
+    moneyScale = named.moneyScale ?? 0
   }
   else {
-    currencyCode = typeof arg2 === 'string' ? arg2 : 'VND'
-    moneyScale = typeof arg3 === 'number' ? arg3 : 0
-    costState = typeof arg4 === 'string' ? arg4 : undefined
-    resultReasons = Array.isArray(arg5) ? arg5 : null
+    result = resultOrInput as typeof result
+    if (arg2 === 'recorded' || arg2 === 'needs_reconciliation' || arg2 === 'not_recorded') {
+      costState = arg2
+      resultReasons = Array.isArray(arg3) ? arg3 : null
+      currencyCode = typeof arg4 === 'string' ? arg4 : 'VND'
+      moneyScale = typeof arg5 === 'number' ? arg5 : 0
+    }
+    else {
+      currencyCode = typeof arg2 === 'string' ? arg2 : 'VND'
+      moneyScale = typeof arg3 === 'number' ? arg3 : 0
+      costState = typeof arg4 === 'string' ? arg4 : undefined
+      resultReasons = Array.isArray(arg5) ? arg5 : null
+    }
   }
 
   const label = 'Lợi nhuận tạm tính'
@@ -162,6 +196,99 @@ export function formatProvisionalProfitDisplay(
     isAvailable: false,
     colorScheme: 'unavailable',
     isNegative: false,
+  }
+}
+
+export interface OwnerReceiptsInput {
+  receipts: {
+    state: 'recorded' | 'not_recorded' | 'needs_reconciliation' | string
+    amount: string | null
+    recordedCount?: number
+  } | null | undefined
+  budget?: {
+    state: 'recorded' | 'not_recorded' | 'needs_reconciliation' | string
+    amount: string | null
+  } | null | undefined
+  currencyCode?: string
+  moneyScale?: number
+}
+
+/**
+ * Formats Owner Receipts KPI display (R06).
+ *
+ * Requirements (R06):
+ * 1. Binds strictly to summary.management.receipts, NOT management.reference.
+ * 2. When budget=1000 and receipts=300, displays 300.
+ * 3. When receipts missing/not_recorded, displays "Chưa ghi nhận" (never budget).
+ * 4. Preserves budget as secondary text when present (e.g. "Dự toán: 1,000 VND").
+ * 5. Distinct recorded zero ("0 VND") vs missing ("Chưa ghi nhận").
+ */
+export function formatOwnerReceiptsDisplay(
+  input: OwnerReceiptsInput | { state: string; amount: string | null; recordedCount?: number } | null | undefined,
+  budgetArg?: { state: string; amount: string | null } | null | undefined,
+  currencyCodeArg?: string,
+  moneyScaleArg = 0,
+) {
+  let receipts: { state: string; amount: string | null; recordedCount?: number } | null | undefined
+  let budget: { state: string; amount: string | null } | null | undefined
+  let currencyCode = currencyCodeArg ?? 'VND'
+  let moneyScale = moneyScaleArg
+
+  if (input && typeof input === 'object' && 'receipts' in input) {
+    receipts = input.receipts
+    budget = input.budget
+    currencyCode = input.currencyCode ?? 'VND'
+    moneyScale = input.moneyScale ?? 0
+  }
+  else {
+    receipts = input as typeof receipts
+    budget = budgetArg
+  }
+
+  const label = 'Thu từ chủ đầu tư'
+  let value: string
+  let badgeVariant = 'cockpit-badge--accent'
+  let colorScheme: 'receipts' | 'neutral' = 'receipts'
+  let isAvailable = false
+  const state = receipts?.state ?? 'not_recorded'
+
+  if (receipts?.state === 'recorded' && receipts.amount != null) {
+    value = formatFinanceMoney(receipts.amount, currencyCode, moneyScale) ?? '0'
+    isAvailable = true
+  }
+  else if (receipts?.state === 'needs_reconciliation') {
+    value = 'Chưa đối soát'
+    badgeVariant = 'cockpit-badge--warning'
+  }
+  else {
+    value = 'Chưa ghi nhận'
+    badgeVariant = 'cockpit-badge--neutral'
+    colorScheme = 'neutral'
+  }
+
+  const budgetFormatted = (budget?.state === 'recorded' && budget.amount != null)
+    ? formatFinanceMoney(budget.amount, currencyCode, moneyScale)
+    : null
+  const budgetSecondaryText = budgetFormatted ? `Dự toán: ${budgetFormatted}` : null
+
+  const isOwnerReceipts = receipts?.state === 'recorded'
+  const tooltipText = isOwnerReceipts
+    ? 'Số tham chiếu là khoản thu từ chủ đầu tư, không phải dự toán.'
+    : (budgetFormatted ? `Dự toán: ${budgetFormatted}` : null)
+  const hasDisclosure = Boolean(tooltipText)
+
+  return {
+    label,
+    value,
+    badgeVariant,
+    colorScheme,
+    isAvailable,
+    state,
+    recordedCount: receipts?.recordedCount ?? 0,
+    budgetSecondaryText,
+    tooltipText,
+    hasDisclosure,
+    isOwnerReceipts,
   }
 }
 
@@ -341,5 +468,135 @@ export function categoryDisplayName(code: string, name: string): string {
     case 'subcontract_labor': return 'Nhân công thầu phụ'
     case 'other': return 'Chi phí khác'
     default: return name || code
+  }
+}
+
+export interface PageRetentionBreakdown {
+  warranty: {
+    amount: string | null
+    count: number
+    label: string
+  } | null
+  other: {
+    amount: string | null
+    count: number
+    label: string
+  } | null
+}
+
+/**
+ * Computes separate warranty and other retention figures for page-level rows (R04).
+ *
+ * Requirements (R04):
+ * 1. Warranty and other retention remain separate observations. Never sum warranty and other together.
+ * 2. Explicitly labelled as page-only ("trên trang này").
+ * 3. Keeps null distinct from recorded zero.
+ */
+export function computePageRetentionBreakdown(
+  rows: Array<{ retentionAmount: string | null; retentionKind: 'warranty' | 'other' | null }> | undefined,
+  currencyCode = 'VND',
+  moneyScale = 0,
+): PageRetentionBreakdown {
+  if (!rows || rows.length === 0) {
+    return { warranty: null, other: null }
+  }
+
+  let warrantyTotal = new Decimal(0)
+  let warrantyCount = 0
+  let hasWarranty = false
+
+  let otherTotal = new Decimal(0)
+  let otherCount = 0
+  let hasOther = false
+
+  for (const row of rows) {
+    if (row.retentionAmount != null) {
+      const amt = new Decimal(row.retentionAmount)
+      if (row.retentionKind === 'warranty') {
+        warrantyTotal = warrantyTotal.add(amt)
+        warrantyCount++
+        hasWarranty = true
+      }
+      else {
+        otherTotal = otherTotal.add(amt)
+        otherCount++
+        hasOther = true
+      }
+    }
+  }
+
+  return {
+    warranty: hasWarranty ? {
+      amount: formatFinanceMoney(warrantyTotal.toFixed(4), currencyCode, moneyScale),
+      count: warrantyCount,
+      label: 'Bảo hành trên trang này',
+    } : null,
+    other: hasOther ? {
+      amount: formatFinanceMoney(otherTotal.toFixed(4), currencyCode, moneyScale),
+      count: otherCount,
+      label: 'Khoản giữ lại khác trên trang này',
+    } : null,
+  }
+}
+
+export interface ProjectKpisViewModel {
+  provisionalProfit: ReturnType<typeof formatProvisionalProfitDisplay>
+  receipts: ReturnType<typeof formatOwnerReceiptsDisplay>
+  cost: ReturnType<typeof formatCostDisplay>
+  warranty: ReturnType<typeof formatWarrantyRetentionDisplay>
+}
+
+/**
+ * Consolidates the four core financial KPI concepts across directory and project detail (R06, Improvement B).
+ *
+ * Concept 1: Lợi nhuận tạm tính (provisional profit)
+ * Concept 2: Thu từ chủ đầu tư (owner receipts from summary.management.receipts)
+ * Concept 3: Chi phí (recorded cost)
+ * Concept 4: Bảo hành (warranty retention)
+ */
+export function computeProjectKpiCards(
+  summary: {
+    budget?: { state: 'recorded' | 'not_recorded' | 'needs_reconciliation' | string; amount: string | null; recordedCount?: number }
+    cost?: { state: 'recorded' | 'not_recorded' | 'needs_reconciliation'; amount: string | null; knownSubtotal?: string | null }
+    warrantyRetention?: { state: 'recorded' | 'not_recorded' | 'needs_reconciliation'; amount: string | null; recordedCount: number }
+    management?: {
+      receipts?: { state: 'recorded' | 'not_recorded' | 'needs_reconciliation' | string; amount: string | null; recordedCount?: number }
+      result?: { state: 'provisional' | 'unavailable' | string; amount: string | null; basis?: string; reasons?: string[] }
+    } | null
+  } | null | undefined,
+  project?: {
+    currencyCode?: string
+    moneyScale?: number
+  } | null,
+): ProjectKpisViewModel {
+  const currencyCode = project?.currencyCode ?? 'VND'
+  const moneyScale = project?.moneyScale ?? 0
+
+  const safeSummary = summary ?? {}
+
+  return {
+    provisionalProfit: formatProvisionalProfitDisplay({
+      result: safeSummary.management?.result,
+      costState: safeSummary.cost?.state,
+      resultReasons: safeSummary.management?.result?.reasons,
+      currencyCode,
+      moneyScale,
+    }),
+    receipts: formatOwnerReceiptsDisplay({
+      receipts: safeSummary.management?.receipts,
+      budget: safeSummary.budget,
+      currencyCode,
+      moneyScale,
+    }),
+    cost: formatCostDisplay(
+      safeSummary.cost ?? { state: 'not_recorded', amount: null },
+      currencyCode,
+      moneyScale,
+    ),
+    warranty: formatWarrantyRetentionDisplay(
+      safeSummary.warrantyRetention ?? { state: 'not_recorded', amount: null, recordedCount: 0 },
+      currencyCode,
+      moneyScale,
+    ),
   }
 }

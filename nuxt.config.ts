@@ -8,7 +8,7 @@ export default defineNuxtConfig({
     storesDirs: ['./app/stores/**'],
   },
   css: ["~/assets/css/main.css"],
-  devtools: { enabled: true },
+  devtools: { enabled: false },
   runtimeConfig: {
     supabaseServiceRoleKey: '',
     public: {

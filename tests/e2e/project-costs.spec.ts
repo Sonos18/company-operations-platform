@@ -328,6 +328,54 @@ const mockItem1Details = financeItemDetailsSchema.parse({
   },
 })
 
+const mockItem1DetailsPage2 = financeItemDetailsSchema.parse({
+  schemaVersion: 1 as const,
+  kind: 'ordinary' as const,
+  project: mockProjectAlpha,
+  category: mockCategoryMaterials,
+  item: {
+    id: item1Id,
+    description: 'Thi công cọc khoan nhồi D800',
+    businessReference: 'REF-ALPHA-01',
+    parentAmount: '120000000.0000',
+    currencyCode: 'VND',
+    version: 1,
+  },
+  details: {
+    rows: [
+      {
+        id: '60000000-0000-4000-8000-000000000026',
+        lineNo: 26,
+        detailKind: 'line_item' as const,
+        description: 'Vật liệu phụ gia đông kết nhanh trang 2',
+        quantity: '10.0000',
+        unitCode: 'thung',
+        unitPrice: '1500000.0000',
+        amount: '15000000.0000',
+        retentionKind: null,
+        retentionRateBps: null,
+        retentionAmount: null,
+        relevantDate: '2026-08-20',
+        effectiveDate: '2026-08-20',
+        dateSource: 'relevant_date' as const,
+        reference: 'HD-P2-01',
+        note: 'Trang 2',
+        createdAt: '2026-08-20T00:00:00.000Z',
+        version: 0,
+      },
+    ],
+    pagination: {
+      page: 2,
+      pageSize: 25 as const,
+      totalPages: 3,
+      filteredCount: 65,
+      fullCount: 65,
+      filteredAmount: '120000000.0000',
+      fullAmount: '120000000.0000',
+    },
+  },
+})
+
 const mockItem2Details = financeItemDetailsSchema.parse({
   schemaVersion: 1 as const,
   kind: 'ordinary' as const,
@@ -777,9 +825,10 @@ test.describe('Director Project Finance UI', () => {
     await expect(alphaCard.getByTestId('total-tracked-value')).toContainText('Chưa đủ dữ liệu')
     await expect(alphaCard.getByTestId('margin-reasons')).toContainText('Cơ sở dự toán chưa xác nhận')
 
-    // 2. Position 2: Dự toán được duyệt -> 300,000,000 VND
-    await expect(alphaCard.getByText('Dự toán được duyệt')).toBeVisible()
-    await expect(alphaCard.getByTestId('accepted-value')).toContainText('300,000,000 VND')
+    // 2. Position 2: Thu từ chủ đầu tư -> Chưa ghi nhận, secondary budget 300,000,000 VND (R06)
+    await expect(alphaCard.getByText('Thu từ chủ đầu tư')).toBeVisible()
+    await expect(alphaCard.getByTestId('accepted-value')).toContainText('Chưa ghi nhận')
+    await expect(alphaCard.getByTestId('budget-secondary-subline')).toContainText('Dự toán: 300,000,000 VND')
 
     // 3. Position 3: Chi phí -> 242,562,376 VND
     await expect(alphaCard.getByText('Chi phí', { exact: true })).toBeVisible()
@@ -889,7 +938,8 @@ test.describe('Director Project Finance UI', () => {
     await expect(page.getByTestId('detail-provisional-profit-card')).toBeVisible()
     await expect(page.getByTestId('detail-total-tracked')).toContainText('Chưa đủ dữ liệu')
     await expect(page.getByTestId('detail-margin-reasons')).toContainText('Cơ sở dự toán chưa xác nhận')
-    await expect(page.getByTestId('detail-accepted')).toContainText('300,000,000 VND')
+    await expect(page.getByTestId('detail-accepted')).toContainText('Chưa ghi nhận')
+    await expect(page.getByTestId('detail-budget-subline')).toContainText('Dự toán: 300,000,000 VND')
     await expect(page.getByTestId('detail-in-progress')).toContainText('242,562,376 VND')
     await expect(page.getByTestId('detail-unknown')).toContainText('15,000,000 VND')
     await expect(page.getByTestId('detail-warranty-count')).toContainText('(1 khoản)')
@@ -907,8 +957,8 @@ test.describe('Director Project Finance UI', () => {
     await expect(page.getByRole('columnheader', { name: 'Trạng thái' })).toBeVisible()
 
     // Chart direct click on column navigates to category detail page
-    const chartBar = page.locator('[data-testid="category-chart-canvas"] .echarts-wrapper svg path[stroke="#2563eb"]').last()
-    await chartBar.click({ force: true })
+    const chartBar = page.locator('[data-testid="category-chart-canvas"] .echarts-wrapper svg path:not([fill="none"])').nth(1)
+    await chartBar.click()
     await expect(page).toHaveURL(new RegExp(`/costs/${projectIdAlpha}/categories/${categoryIdMat}`))
 
     // Back link on category page navigates back to project
@@ -1199,6 +1249,25 @@ test.describe('Director Project Finance UI', () => {
     await expect(page).toHaveURL(new RegExp(`/costs/${projectIdAlpha}$`))
   })
 
+  test('renders ordinary category page 2 with desktop and 390px screenshots', async ({ page }) => {
+    await page.route(`**/api/companies/**/projects/${projectIdAlpha}/finance`, async (route) => {
+      await route.fulfill({ json: mockOverviewAlpha })
+    })
+    await page.route(`**/api/companies/**/projects/${projectIdAlpha}/finance/items/${item1Id}/details*`, async (route) => {
+      await route.fulfill({ json: mockItem1DetailsPage2 })
+    })
+
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`/costs/${projectIdAlpha}/categories/${categoryIdMat}?page=2`)
+    await expect(page.getByTestId('ordinary-detail-table')).toBeVisible()
+    await expect(page.getByText('Trang 2 / 3')).toBeVisible()
+    await page.screenshot({ path: 'test-results/gate-g-ordinary-page2-1440.png', fullPage: true })
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect.poll(() => page.locator('body').evaluate(element => element.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.screenshot({ path: 'test-results/gate-g-ordinary-page2-390.png', fullPage: true })
+  })
+
   test('ordinary category detail error allows retry', async ({ page }) => {
     let attempt = 0
     await page.route(`**/api/companies/**/projects/${projectIdAlpha}/finance`, async (route) => {
@@ -1343,6 +1412,13 @@ test.describe('Director Project Finance UI', () => {
     await expect(paymentsTable.getByText('Gia công lắp dựng kết cấu thép đợt 2')).toBeVisible()
     await expect(paymentsTable.getByText('76,330,000 VND')).toBeVisible()
     await expect(paymentsTable.getByText('Ngày nhập hệ thống')).toBeVisible()
+
+    // Screenshot payment ledger desktop 1440 and mobile 390
+    await page.screenshot({ path: 'test-results/gate-g-payment-ledger-1440.png', fullPage: true })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect.poll(() => page.locator('body').evaluate(element => element.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.screenshot({ path: 'test-results/gate-g-payment-ledger-390.png', fullPage: true })
+    await page.setViewportSize({ width: 1440, height: 900 })
 
     // Back to contractors clears contractId/partyId query
     await page.getByTestId('back-to-contractors-btn').click()
@@ -1640,9 +1716,8 @@ test.describe('Director Project Finance UI', () => {
     await expect(page.getByTestId('category-donut-canvas')).toBeVisible()
     await expect(page.getByText('Tỷ trọng số liệu hiển thị')).toBeVisible()
 
-    // Click on top layer of Materials donut slice
-    const donutSlice = page.locator('[data-testid="category-donut-canvas"] .echarts-wrapper svg path[stroke="#2563eb"][d*="A"]').last()
-    await donutSlice.click({ force: true })
+    // Click on Materials donut slice (radius ~92px at center-right of 341x320 chart, center is 170.5, 160)
+    await page.locator('[data-testid="category-donut-canvas"] .echarts-wrapper').click({ position: { x: 260, y: 160 } })
     await expect(page).toHaveURL(new RegExp(`/costs/${projectIdAlpha}/categories/${categoryIdMat}`))
   })
 })

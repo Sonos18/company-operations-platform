@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ClientError } from '../../../errors/client-error'
 import type { FinanceOverview } from '../../../../shared/schemas/costs/project-finance'
 import {
-  formatCostDisplay,
+  computeProjectKpiCards,
   formatOperationalState,
-  formatProvisionalProfitDisplay,
-  formatReferenceDisplay,
-  formatWarrantyRetentionDisplay,
 } from '../../../utils/costs/finance-display'
+import { mapCostsApiError } from '../../../utils/costs/costs-error-mapper'
+import { createAsyncRequestTracker } from '../../../utils/costs/async-request-tracker'
 import ProjectCostCategoryChart from '../../../components/costs/ProjectCostCategoryChart.client.vue'
 
 definePageMeta({ requiredPermission: 'cost.read' })
@@ -20,7 +18,9 @@ const companyAccess = useNuxtApp().$companyAccessStore
 const projectId = computed(() => String(route.params.projectId ?? ''))
 const overview = ref<FinanceOverview | null>(null)
 const status = ref<'loading' | 'ready' | 'module' | 'permission' | 'empty' | 'not_found' | 'error'>('loading')
-let request = 0
+const requestTracker = createAsyncRequestTracker()
+
+const kpis = computed(() => computeProjectKpiCards(overview.value?.summary, overview.value?.project))
 
 // Info tooltip popover state
 const isPinned = ref(false)
@@ -89,6 +89,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  requestTracker.invalidate()
   window.removeEventListener('keydown', handleGlobalKeydown)
   window.removeEventListener('click', handleOutsideClick)
 })
@@ -103,33 +104,33 @@ async function loadOverview() {
     return
   }
 
-  const currentRequest = ++request
+  const token = requestTracker.start({ projectId: projectId.value, companyId: companyAccess.activeCompanyId })
   status.value = 'loading'
+  overview.value = null
   dismissInfo()
 
   try {
     const data = await repositories.projectFinance.overview(projectId.value)
-    if (currentRequest !== request) return
+    if (!token.isCurrent()) return
 
     overview.value = data
     status.value = data.categories.length === 0 ? 'empty' : 'ready'
   }
   catch (err: unknown) {
-    if (currentRequest !== request) return
+    if (!token.isCurrent()) return
 
-    if (err instanceof ClientError) {
-      if (err.code === 'RESOURCE_NOT_FOUND') {
-        status.value = 'not_found'
-        return
-      }
-      if (err.code === 'PERMISSION_DENIED') {
-        status.value = 'permission'
-        return
-      }
-      if (err.reason === 'MODULE_DISABLED') {
-        status.value = 'module'
-        return
-      }
+    const mapped = mapCostsApiError(err, 'project')
+    if (mapped === 'module') {
+      status.value = 'module'
+      return
+    }
+    if (mapped === 'permission') {
+      status.value = 'permission'
+      return
+    }
+    if (mapped === 'not_found') {
+      status.value = 'not_found'
+      return
     }
     status.value = 'error'
   }
@@ -226,53 +227,53 @@ watch(
           <!-- Position 1: Lợi nhuận tạm tính -->
           <div
             class="summary-card"
-            :class="`headline-theme--${formatProvisionalProfitDisplay(overview.summary.management?.result, overview.project.currencyCode, overview.project.moneyScale).colorScheme}`"
+            :class="`headline-theme--${kpis.provisionalProfit.colorScheme}`"
             data-testid="detail-provisional-profit-card"
           >
             <div class="summary-tag">
               <span class="summary-label">
-                {{ formatProvisionalProfitDisplay(overview.summary.management?.result, overview.project.currencyCode, overview.project.moneyScale).label }}
+                {{ kpis.provisionalProfit.label }}
               </span>
               <span
-                v-if="formatProvisionalProfitDisplay(overview.summary.management?.result, overview.project.currencyCode, overview.project.moneyScale).caption"
+                v-if="kpis.provisionalProfit.caption"
                 class="headline-caption"
                 data-testid="detail-headline-caption"
               >
-                {{ formatProvisionalProfitDisplay(overview.summary.management?.result, overview.project.currencyCode, overview.project.moneyScale).caption }}
+                {{ kpis.provisionalProfit.caption }}
               </span>
             </div>
             <div class="summary-value-row">
               <span
                 class="summary-number"
                 :class="{
-                  'is-negative-value': formatProvisionalProfitDisplay(overview.summary.management?.result, overview.project.currencyCode, overview.project.moneyScale).isNegative,
-                  'is-unavailable-value': !formatProvisionalProfitDisplay(overview.summary.management?.result, overview.project.currencyCode, overview.project.moneyScale).isAvailable
+                  'is-negative-value': kpis.provisionalProfit.isNegative,
+                  'is-unavailable-value': !kpis.provisionalProfit.isAvailable
                 }"
                 data-testid="detail-total-tracked"
                 data-testid-alt="detail-expected-profit"
               >
-                {{ formatProvisionalProfitDisplay(overview.summary.management?.result, overview.project.currencyCode, overview.project.moneyScale).value }}
+                {{ kpis.provisionalProfit.value }}
               </span>
               <span
-                v-if="!formatProvisionalProfitDisplay(overview.summary.management?.result, overview.project.currencyCode, overview.project.moneyScale).isAvailable"
+                v-if="!kpis.provisionalProfit.isAvailable"
                 class="unavailable-info-icon"
                 role="img"
-                :title="formatProvisionalProfitDisplay(overview.summary.management?.result, overview.project.currencyCode, overview.project.moneyScale).reasons ?? 'Chưa đủ dữ liệu tài chính để tính lợi nhuận'"
+                :title="kpis.provisionalProfit.reasons ?? 'Chưa đủ dữ liệu tài chính để tính lợi nhuận'"
                 aria-label="Thông tin thiếu dữ liệu"
               >
                 <UIcon name="i-lucide-info" class="compact-info-icon" aria-hidden="true" />
               </span>
             </div>
             <span
-              v-if="formatProvisionalProfitDisplay(overview.summary.management?.result, overview.project.currencyCode, overview.project.moneyScale).reasons"
+              v-if="kpis.provisionalProfit.reasons"
               class="summary-subtext"
               data-testid="detail-margin-reasons"
             >
-              {{ formatProvisionalProfitDisplay(overview.summary.management?.result, overview.project.currencyCode, overview.project.moneyScale).reasons }}
+              {{ kpis.provisionalProfit.reasons }}
             </span>
           </div>
 
-          <!-- Position 2: Thu từ chủ đầu tư -->
+          <!-- Position 2: Thu từ chủ đầu tư (R06) -->
           <div
             class="summary-card"
             data-testid="detail-receipts-card"
@@ -280,14 +281,14 @@ watch(
             <div class="summary-tag">
               <span
                 class="cockpit-badge"
-                :class="formatReferenceDisplay(overview.summary.management?.reference ?? overview.summary.reference, overview.project.currencyCode, overview.project.moneyScale).badgeVariant"
+                :class="kpis.receipts.badgeVariant"
               >
-                {{ formatReferenceDisplay(overview.summary.management?.reference ?? overview.summary.reference, overview.project.currencyCode, overview.project.moneyScale).label }}
+                {{ kpis.receipts.label }}
               </span>
 
-              <!-- Info disclosure for receipt references -->
+              <!-- Info disclosure for receipts / budget -->
               <div
-                v-if="formatReferenceDisplay(overview.summary.management?.reference ?? overview.summary.reference, overview.project.currencyCode, overview.project.moneyScale).isOwnerReceipts"
+                v-if="kpis.receipts.hasDisclosure"
                 class="info-disclosure-anchor"
               >
                 <button
@@ -314,14 +315,21 @@ watch(
                   @click.stop
                 >
                   <p class="info-tooltip-text">
-                    {{ formatReferenceDisplay(overview.summary.management?.reference ?? overview.summary.reference, overview.project.currencyCode, overview.project.moneyScale).tooltipText }}
+                    {{ kpis.receipts.tooltipText }}
                   </p>
                 </div>
               </div>
             </div>
 
             <span class="summary-number" data-testid="detail-accepted" data-testid-alt="detail-reference">
-              {{ formatReferenceDisplay(overview.summary.management?.reference ?? overview.summary.reference, overview.project.currencyCode, overview.project.moneyScale).value }}
+              {{ kpis.receipts.value }}
+            </span>
+            <span
+              v-if="kpis.receipts.budgetSecondaryText"
+              class="summary-subline"
+              data-testid="detail-budget-subline"
+            >
+              {{ kpis.receipts.budgetSecondaryText }}
             </span>
           </div>
 
@@ -332,25 +340,25 @@ watch(
                 Chi phí
               </span>
               <span
-                v-if="formatCostDisplay(overview.summary.cost).stateLabel"
+                v-if="kpis.cost.stateLabel"
                 class="cockpit-badge cockpit-badge--warning"
                 data-testid="detail-cost-reconciliation-badge"
               >
-                {{ formatCostDisplay(overview.summary.cost).stateLabel }}
+                {{ kpis.cost.stateLabel }}
               </span>
             </div>
             <span class="summary-number" data-testid="detail-in-progress" data-testid-alt="detail-cost">
-              {{ formatCostDisplay(overview.summary.cost, overview.project.currencyCode, overview.project.moneyScale).value }}
+              {{ kpis.cost.value }}
             </span>
             <!-- Render knownSubtotal ONLY if it differs from value to avoid duplicate amount display -->
             <span
-              v-if="formatCostDisplay(overview.summary.cost, overview.project.currencyCode, overview.project.moneyScale).knownSubtotal
-                && formatCostDisplay(overview.summary.cost).state !== 'recorded'
-                && formatCostDisplay(overview.summary.cost, overview.project.currencyCode, overview.project.moneyScale).knownSubtotal !== formatCostDisplay(overview.summary.cost, overview.project.currencyCode, overview.project.moneyScale).value"
+              v-if="kpis.cost.knownSubtotal
+                && kpis.cost.state !== 'recorded'
+                && kpis.cost.knownSubtotal !== kpis.cost.value"
               class="summary-subline"
               data-testid="detail-known-subtotal"
             >
-              {{ formatCostDisplay(overview.summary.cost, overview.project.currencyCode, overview.project.moneyScale).knownSubtotal }}
+              {{ kpis.cost.knownSubtotal }}
             </span>
           </div>
 
@@ -359,11 +367,11 @@ watch(
             <div class="summary-tag">
               <span class="cockpit-badge metric-badge--warranty">Bảo hành đã ghi nhận</span>
               <span class="count" data-testid="detail-warranty-count">
-                {{ formatWarrantyRetentionDisplay(overview.summary.warrantyRetention).countText }}
+                {{ kpis.warranty.countText }}
               </span>
             </div>
             <span class="summary-number" data-testid="detail-unknown" data-testid-alt="detail-warranty-retention">
-              {{ formatWarrantyRetentionDisplay(overview.summary.warrantyRetention, overview.project.currencyCode, overview.project.moneyScale).value }}
+              {{ kpis.warranty.value }}
             </span>
           </div>
         </div>
