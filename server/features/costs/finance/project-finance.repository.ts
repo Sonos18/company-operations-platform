@@ -234,6 +234,7 @@ async function collectMany(metadata: ProjectFinanceMetadataReader, tables: Proje
     tables.categories(scope.tenantId, scope.companyId), tables.costItemsForProjects(scope.tenantId, scope.companyId, projectIds), tables.budgetsForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.budgetLinesForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.ownerAdvancesForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.subcontractsForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.paymentsForProjects(scope.tenantId, scope.companyId, projectIds, false),
   ])
   const details = await tables.detailAggregates(scope.tenantId, scope.companyId, costItems.map(item => item.id))
+  const operationalStates = await metadata.operationalStates(scope.companyId, projectIds)
   const costItemsByProject = groupByKey(costItems, row => row.project_id)
   const detailsByItem = groupByKey(details, row => row.project_cost_item_id)
   const budgetsByProject = groupByKey(budgets, row => row.project_id)
@@ -249,7 +250,7 @@ async function collectMany(metadata: ProjectFinanceMetadataReader, tables: Proje
     const partyIds = [...new Set(scopedContracts.map(contract => contract.subcontractor_party_id))]
     const parties: FinancePartyRow[] = []
     for (let index = 0; index < partyIds.length; index += 50) parties.push(...await metadata.parties(scope.companyId, project.projectId, partyIds.slice(index, index + 50)))
-    result.set(project.projectId, { context: { projectId: project.projectId, projectCode: project.projectCode, projectName: project.projectName, defaultCurrencyCode: directory.defaultCurrencyCode, moneyScale: directory.moneyScale, timeZone: directory.timeZone }, categories, costItems: scopedCostItems, details: scopedDetails, budgets: budgetsByProject.get(project.projectId) ?? [], budgetLines: budgetLinesByProject.get(project.projectId) ?? [], ownerAdvances: ownerAdvancesByProject.get(project.projectId) ?? [], subcontracts: scopedContracts, payments: paymentsByProject.get(project.projectId) ?? [], parties })
+    result.set(project.projectId, { context: { projectId: project.projectId, projectCode: project.projectCode, projectName: project.projectName, defaultCurrencyCode: directory.defaultCurrencyCode, moneyScale: directory.moneyScale, timeZone: directory.timeZone, operationalState: operationalStates.get(project.projectId)! }, categories, costItems: scopedCostItems, details: scopedDetails, budgets: budgetsByProject.get(project.projectId) ?? [], budgetLines: budgetLinesByProject.get(project.projectId) ?? [], ownerAdvances: ownerAdvancesByProject.get(project.projectId) ?? [], subcontracts: scopedContracts, payments: paymentsByProject.get(project.projectId) ?? [], parties })
   }
   return result
 }

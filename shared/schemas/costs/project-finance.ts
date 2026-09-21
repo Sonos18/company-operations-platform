@@ -26,6 +26,7 @@ export const financeProjectContextSchema = z.object({
   currencyCode,
   moneyScale: z.number().int().min(0).max(4),
   timeZone: text,
+  operationalState: z.enum(['active', 'completed', 'paused', 'unknown']),
 }).strict()
 
 export const financeIssueSchema = z.object({
@@ -66,6 +67,19 @@ const financeSummarySchema = z.object({
   warrantyRetention: moneyObservationSchema,
   reference: z.object({ kind: z.enum(['approved_budget', 'owner_advance', 'none']), amount: aggregateMoney.nullable() }).strict(),
   margin: z.object({ state: z.literal('unavailable'), amount: z.null(), reasons: z.array(z.enum(['NO_APPROVED_BUDGET', 'COST_INCOMPLETE', 'RETENTION_INCOMPLETE', 'BUDGET_BASIS_UNCONFIRMED'])) }).strict(),
+  management: z.object({
+    receipts: z.object({
+      state: financeObservationStateSchema, amount: aggregateMoney.nullable(), recordedCount: z.number().int().nonnegative(),
+      origin: z.enum(['canonical_ledger', 'none']), quality: z.enum(['accounting_source_unverified', 'not_recorded']),
+      coverage: z.enum(['recorded_rows_only', 'none']), sourceReferences: z.array(z.string()),
+    }).strict(),
+    reference: z.object({ kind: z.enum(['approved_budget', 'owner_receipts', 'none']), amount: aggregateMoney.nullable(), basis: z.enum(['unconfirmed_cost_budget', 'recorded_owner_receipts', 'none']) }).strict(),
+    result: z.object({ state: z.enum(['provisional', 'unavailable']), amount: signedAggregateMoney.nullable(), basis: z.enum(['owner_receipts', 'approved_budget_unconfirmed', 'none']),
+      components: z.object({ receipts: aggregateMoney.nullable(), cost: aggregateMoney.nullable(), independentlyHeldRetention: aggregateMoney.nullable() }).strict(),
+      reasons: z.array(z.enum(['NO_REFERENCE', 'COST_INCOMPLETE', 'RETENTION_INCOMPLETE', 'BUDGET_BASIS_UNCONFIRMED'])),
+    }).strict(),
+    headline: z.object({ kind: z.enum(['provisional_result', 'owner_receipts', 'unavailable']), amount: signedAggregateMoney.nullable(), basis: z.enum(['provisional_owner_receipts_result', 'recorded_owner_receipts', 'none']) }).strict(),
+  }).strict(),
   issues: z.array(financeIssueSchema),
 }).strict()
 

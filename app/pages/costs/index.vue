@@ -1,34 +1,109 @@
 <script setup lang="ts">
 import { ClientError } from '../../errors/client-error'
+import type { FinanceProjectList } from '../../../shared/schemas/costs/project-finance'
+import {
+  formatCostDisplay,
+  formatOperationalState,
+  formatProvisionalProfitDisplay,
+  formatReferenceDisplay,
+  formatWarrantyRetentionDisplay,
+} from '../../utils/costs/finance-display'
+
 definePageMeta({ requiredPermission: 'cost.read' })
 
 const repositories = useRepositories()
 const companyAccess = useNuxtApp().$companyAccessStore
-const summaries = ref<Awaited<ReturnType<typeof repositories.projectCosts.summaries>>>([])
+const projects = ref<FinanceProjectList['projects']>([])
+const nextCursor = ref<string | null>(null)
+const loadingMore = ref(false)
 const status = ref<'loading' | 'ready' | 'module' | 'permission' | 'empty' | 'error'>('loading')
+const pinnedInfoId = ref<string | null>(null)
+const hoveredInfoId = ref<string | null>(null)
+const focusedInfoId = ref<string | null>(null)
+const isInfoDismissed = ref(false)
 let request = 0
 
-function formatMoney(value: string | null | undefined): string {
-  if (!value) return '0'
-  const parts = value.split('.')
-  const integerPart = parts[0] ?? '0'
-  const decimalPart = parts[1]
-  const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-  if (decimalPart && Number(decimalPart) > 0) {
-    const trimmedDecimal = decimalPart.replace(/0+$/, '')
-    return `${formattedInteger}.${trimmedDecimal}`
-  }
-  return formattedInteger
+function isInfoOpen(id: string) {
+  if (isInfoDismissed.value) return false
+  return pinnedInfoId.value === id || hoveredInfoId.value === id || focusedInfoId.value === id
 }
+
+function onInfoHover(id: string) {
+  isInfoDismissed.value = false
+  hoveredInfoId.value = id
+}
+
+function onInfoLeave(id: string) {
+  if (hoveredInfoId.value === id) {
+    hoveredInfoId.value = null
+  }
+}
+
+function onInfoFocus(id: string) {
+  isInfoDismissed.value = false
+  focusedInfoId.value = id
+}
+
+function onInfoBlur(id: string) {
+  if (focusedInfoId.value === id) {
+    focusedInfoId.value = null
+  }
+}
+
+function toggleInfo(id: string) {
+  if (pinnedInfoId.value === id) {
+    pinnedInfoId.value = null
+    hoveredInfoId.value = null
+    focusedInfoId.value = null
+  }
+  else {
+    isInfoDismissed.value = false
+    pinnedInfoId.value = id
+  }
+}
+
+function dismissInfo() {
+  isInfoDismissed.value = true
+  pinnedInfoId.value = null
+  hoveredInfoId.value = null
+  focusedInfoId.value = null
+}
+
+function onCardClick(projectId: string, event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  if (target?.closest('.info-disclosure-anchor')) return
+  navigateTo(`/costs/${projectId}`)
+}
+
+function onDocumentKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') dismissInfo()
+}
+
+function onDocumentClick(event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  if (!target?.closest('.info-disclosure-anchor')) {
+    dismissInfo()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('click', onDocumentClick)
+  window.addEventListener('keydown', onDocumentKeydown)
+})
 
 async function load() {
   const current = ++request
   status.value = 'loading'
+  projects.value = []
+  nextCursor.value = null
+  dismissInfo()
+
   try {
-    const value = await repositories.projectCosts.summaries()
+    const value = await repositories.projectFinance.listProjects()
     if (current !== request) return
-    summaries.value = value
-    status.value = value.length ? 'ready' : 'empty'
+    projects.value = value.projects
+    nextCursor.value = value.nextCursor
+    status.value = value.projects.length ? 'ready' : 'empty'
   }
   catch (error) {
     if (current !== request) return
@@ -37,7 +112,34 @@ async function load() {
   }
 }
 
+async function loadMore() {
+  if (!nextCursor.value || loadingMore.value) return
+  const current = request
+  loadingMore.value = true
+
+  try {
+    const value = await repositories.projectFinance.listProjects({ afterId: nextCursor.value })
+    if (current !== request) return
+    projects.value = [...projects.value, ...value.projects]
+    nextCursor.value = value.nextCursor
+  }
+  catch {
+    // Keep already loaded cards visible
+  }
+  finally {
+    if (current === request) {
+      loadingMore.value = false
+    }
+  }
+}
+
 watch(() => companyAccess.activeCompanyId, load, { immediate: true })
+
+onUnmounted(() => {
+  request++
+  window.removeEventListener('click', onDocumentClick)
+  window.removeEventListener('keydown', onDocumentKeydown)
+})
 </script>
 
 <template>
@@ -51,7 +153,7 @@ watch(() => companyAccess.activeCompanyId, load, { immediate: true })
       <div class="heading-badge">
         <span class="cockpit-badge cockpit-badge--primary">
           <UIcon name="i-lucide-receipt" aria-hidden="true" />
-          {{ summaries.length }} dự án
+          {{ projects.length }} dự án
         </span>
       </div>
     </header>
@@ -86,59 +188,199 @@ watch(() => companyAccess.activeCompanyId, load, { immediate: true })
       <button type="button" class="cockpit-btn cockpit-btn--primary" @click="load">Thử lại</button>
     </div>
 
-    <div v-else-if="status === 'ready'" class="project-grid" aria-label="Danh sách dự án theo dõi chi phí">
-      <NuxtLink
-        v-for="entry in summaries"
-        :key="entry.projectId"
-        :to="`/costs/${entry.projectId}`"
-        class="cockpit-card cockpit-card--interactive project-card"
-        :data-testid="`project-cost-card-${entry.projectId}`"
-        :aria-label="`Chi tiết chi phí dự án ${entry.projectName} mã ${entry.projectCode}`"
-      >
-        <header class="project-header">
-          <div class="project-identity">
-            <span class="project-code">{{ entry.projectCode }}</span>
-            <h2 class="project-name">{{ entry.projectName }}</h2>
-          </div>
-          <UIcon name="i-lucide-chevron-right" class="card-arrow" aria-hidden="true" />
-        </header>
-
-        <div class="tracked-total-box">
-          <span class="total-label">Tổng đang theo dõi</span>
-          <span class="total-value" data-testid="total-tracked-value">
-            {{ formatMoney(entry.summary.totalTrackedWorkValue) }}
-            <span class="currency">{{ entry.summary.currencyCode }}</span>
-          </span>
-        </div>
-
-        <div class="metrics-grid">
-          <div class="metric-item">
-            <div class="metric-top">
-              <span class="cockpit-badge cockpit-badge--success">Đã nghiệm thu</span>
-              <span class="metric-count" data-testid="accepted-count">({{ entry.summary.acceptedCount }})</span>
+    <div v-else-if="status === 'ready'" class="project-directory-wrapper">
+      <div class="project-grid" aria-label="Danh sách dự án theo dõi chi phí">
+        <article
+          v-for="entry in projects"
+          :key="entry.project.projectId"
+          class="cockpit-card cockpit-card--interactive project-card"
+          :data-testid="`project-cost-card-${entry.project.projectId}`"
+          :aria-label="`Chi tiết chi phí dự án ${entry.project.projectName} mã ${entry.project.projectCode}`"
+          tabindex="0"
+          role="region"
+          @click="onCardClick(entry.project.projectId, $event)"
+          @keydown.enter.self="navigateTo(`/costs/${entry.project.projectId}`)"
+        >
+          <header class="project-header">
+            <div class="project-identity">
+              <span class="project-code">{{ entry.project.projectCode }}</span>
+              <NuxtLink
+                :to="`/costs/${entry.project.projectId}`"
+                class="project-name-link"
+                @click.stop
+              >
+                <h2 class="project-name">{{ entry.project.projectName }}</h2>
+              </NuxtLink>
             </div>
-            <span class="metric-value" data-testid="accepted-value">{{ formatMoney(entry.summary.acceptedValue) }}</span>
-          </div>
-
-          <div class="metric-item">
-            <div class="metric-top">
-              <span class="cockpit-badge cockpit-badge--warning">Đang thực hiện</span>
-              <span class="metric-count" data-testid="in-progress-count">({{ entry.summary.inProgressCount }})</span>
+            <div class="project-header-right">
+              <span
+                class="cockpit-badge project-status-badge"
+                :class="formatOperationalState(entry.project.operationalState).badgeVariant"
+                data-testid="project-operational-state"
+              >
+                {{ formatOperationalState(entry.project.operationalState).label }}
+              </span>
+              <UIcon name="i-lucide-chevron-right" class="card-arrow" aria-hidden="true" />
             </div>
-            <span class="metric-value" data-testid="in-progress-value">{{ formatMoney(entry.summary.inProgressValue) }}</span>
-          </div>
-        </div>
+          </header>
 
-        <footer class="project-footer">
-          <div class="unknown-metric">
-            <span class="cockpit-badge cockpit-badge--neutral">Chưa xác định</span>
-            <span class="unknown-numbers">
-              <span class="unknown-value" data-testid="unknown-value">{{ formatMoney(entry.summary.unknownStatusValue) }}</span>
-              <span class="unknown-count" data-testid="unknown-count">({{ entry.summary.unknownCount }} mục)</span>
+          <!-- Position 1: Lợi nhuận tạm tính -->
+          <div
+            class="tracked-total-box"
+            :class="`headline-theme--${formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).colorScheme}`"
+            data-testid="provisional-profit-box"
+          >
+            <div class="total-header">
+              <span class="total-label">
+                {{ formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).label }}
+              </span>
+              <span
+                v-if="formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).caption"
+                class="headline-caption"
+                data-testid="headline-caption"
+              >
+                {{ formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).caption }}
+              </span>
+            </div>
+            <div class="total-value-row">
+              <span
+                class="total-value"
+                :class="{
+                  'is-negative-value': formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).isNegative,
+                  'is-unavailable-value': !formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).isAvailable
+                }"
+                data-testid="total-tracked-value"
+                data-testid-alt="expected-profit-value"
+              >
+                {{ formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).value }}
+              </span>
+              <span
+                v-if="!formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).isAvailable"
+                class="unavailable-info-icon"
+                role="img"
+                :title="formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).reasons ?? 'Chưa đủ dữ liệu tài chính để tính lợi nhuận'"
+                aria-label="Thông tin thiếu dữ liệu"
+              >
+                <UIcon name="i-lucide-info" class="compact-info-icon" aria-hidden="true" />
+              </span>
+            </div>
+            <span
+              v-if="formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).reasons"
+              class="total-subtext"
+              data-testid="margin-reasons"
+            >
+              {{ formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).reasons }}
             </span>
           </div>
-        </footer>
-      </NuxtLink>
+
+          <div class="metrics-grid">
+            <!-- Position 2: Reference (Dự toán được duyệt / Thu từ chủ đầu tư / Dự toán) -->
+            <div class="metric-item">
+              <div class="metric-top">
+                <span
+                  class="cockpit-badge"
+                  :class="formatReferenceDisplay(entry.summary.management?.reference ?? entry.summary.reference, entry.project.currencyCode, entry.project.moneyScale).badgeVariant"
+                >
+                  {{ formatReferenceDisplay(entry.summary.management?.reference ?? entry.summary.reference, entry.project.currencyCode, entry.project.moneyScale).label }}
+                </span>
+
+                <!-- Info disclosure for receipt references -->
+                <div
+                  v-if="formatReferenceDisplay(entry.summary.management?.reference ?? entry.summary.reference, entry.project.currencyCode, entry.project.moneyScale).isOwnerReceipts"
+                  class="info-disclosure-anchor"
+                >
+                  <button
+                    type="button"
+                    class="info-trigger-btn"
+                    :aria-expanded="isInfoOpen(entry.project.projectId) ? 'true' : 'false'"
+                    aria-label="Thông tin nguồn thu từ chủ đầu tư"
+                    :aria-describedby="`info-popover-${entry.project.projectId}`"
+                    data-testid="info-disclosure-btn"
+                    @click.stop="toggleInfo(entry.project.projectId)"
+                    @mouseenter="onInfoHover(entry.project.projectId)"
+                    @mouseleave="onInfoLeave(entry.project.projectId)"
+                    @focus="onInfoFocus(entry.project.projectId)"
+                    @blur="onInfoBlur(entry.project.projectId)"
+                  >
+                    <UIcon name="i-lucide-info" class="info-icon" aria-hidden="true" />
+                  </button>
+                  <div
+                    v-show="isInfoOpen(entry.project.projectId)"
+                    :id="`info-popover-${entry.project.projectId}`"
+                    role="tooltip"
+                    class="info-tooltip-popover cockpit-card"
+                    data-testid="info-tooltip-popover"
+                    @click.stop
+                  >
+                    <p class="info-tooltip-text">
+                      {{ formatReferenceDisplay(entry.summary.management?.reference ?? entry.summary.reference, entry.project.currencyCode, entry.project.moneyScale).tooltipText }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <span class="metric-value" data-testid="accepted-value" data-testid-alt="reference-value">
+                {{ formatReferenceDisplay(entry.summary.management?.reference ?? entry.summary.reference, entry.project.currencyCode, entry.project.moneyScale).value }}
+              </span>
+            </div>
+
+            <!-- Position 3: Chi phí (recorded / not_recorded / needs_reconciliation) -->
+            <div class="metric-item">
+              <div class="metric-top">
+                <span class="cockpit-badge metric-badge--cost">
+                  Chi phí
+                </span>
+                <span
+                  v-if="formatCostDisplay(entry.summary.cost).stateLabel"
+                  class="cockpit-badge cockpit-badge--warning"
+                  data-testid="cost-state-badge"
+                >
+                  {{ formatCostDisplay(entry.summary.cost).stateLabel }}
+                </span>
+              </div>
+              <span class="metric-value" data-testid="in-progress-value" data-testid-alt="cost-value">
+                {{ formatCostDisplay(entry.summary.cost, entry.project.currencyCode, entry.project.moneyScale).value }}
+              </span>
+              <span
+                v-if="formatCostDisplay(entry.summary.cost, entry.project.currencyCode, entry.project.moneyScale).knownSubtotal && formatCostDisplay(entry.summary.cost, entry.project.currencyCode, entry.project.moneyScale).knownSubtotal !== formatCostDisplay(entry.summary.cost, entry.project.currencyCode, entry.project.moneyScale).value && formatCostDisplay(entry.summary.cost).state !== 'recorded'"
+                class="metric-subline"
+                data-testid="known-subtotal-subline"
+              >
+                {{ formatCostDisplay(entry.summary.cost, entry.project.currencyCode, entry.project.moneyScale).knownSubtotal }}
+              </span>
+            </div>
+          </div>
+
+          <!-- Position 4: Bảo hành đã ghi nhận -->
+          <footer class="project-footer">
+            <div class="unknown-metric">
+              <span class="cockpit-badge metric-badge--warranty">Bảo hành đã ghi nhận</span>
+              <span class="unknown-numbers">
+                <span class="unknown-value" data-testid="unknown-value" data-testid-alt="warranty-retention-value">
+                  {{ formatWarrantyRetentionDisplay(entry.summary.warrantyRetention, entry.project.currencyCode, entry.project.moneyScale).value }}
+                </span>
+                <span class="unknown-count" data-testid="unknown-count" data-testid-alt="warranty-retention-count">
+                  {{ formatWarrantyRetentionDisplay(entry.summary.warrantyRetention).countText }}
+                </span>
+              </span>
+            </div>
+          </footer>
+        </article>
+      </div>
+
+      <!-- Pagination / Load more -->
+      <div v-if="nextCursor" class="pagination-footer">
+        <button
+          type="button"
+          class="cockpit-btn cockpit-btn--secondary"
+          :disabled="loadingMore"
+          data-testid="load-more-projects"
+          @click="loadMore"
+        >
+          <UIcon v-if="loadingMore" name="i-lucide-loader-2" class="spin" aria-hidden="true" />
+          <span>{{ loadingMore ? 'Đang tải…' : 'Tải thêm dự án' }}</span>
+        </button>
+      </div>
     </div>
   </section>
 </template>
@@ -202,6 +444,12 @@ watch(() => companyAccess.activeCompanyId, load, { immediate: true })
   color: var(--color-primary);
 }
 
+.project-directory-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
 .project-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -215,6 +463,7 @@ watch(() => companyAccess.activeCompanyId, load, { immediate: true })
   padding: 24px;
   text-decoration: none;
   min-height: 240px;
+  cursor: pointer;
 }
 
 .project-header {
@@ -228,6 +477,24 @@ watch(() => companyAccess.activeCompanyId, load, { immediate: true })
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.project-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.project-name-link {
+  color: inherit;
+  text-decoration: none;
+  outline-offset: 3px;
+}
+
+.project-name-link:hover .project-name,
+.project-card:hover .project-name {
+  color: var(--color-primary);
 }
 
 .project-code {
@@ -246,6 +513,7 @@ watch(() => companyAccess.activeCompanyId, load, { immediate: true })
   font-weight: 700;
   margin: 0;
   line-height: 1.35;
+  transition: color 150ms ease;
 }
 
 .card-arrow {
@@ -272,6 +540,102 @@ watch(() => companyAccess.activeCompanyId, load, { immediate: true })
   gap: 4px;
 }
 
+.total-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.headline-caption {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.total-value-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.unavailable-info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+}
+
+.compact-info-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.is-unavailable-value {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.info-disclosure-anchor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.info-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.info-trigger-btn:hover,
+.info-trigger-btn:focus-visible {
+  color: var(--color-primary);
+  background-color: var(--color-bg-tertiary);
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.info-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.info-tooltip-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(300px, calc(100vw - 48px));
+  max-width: calc(100vw - 48px);
+  padding: 10px 12px;
+  background: var(--color-bg-primary, #ffffff);
+  border: 1px solid var(--color-border-light, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.info-tooltip-text {
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
 .total-label {
   font-size: 0.78rem;
   font-weight: 600;
@@ -287,6 +651,68 @@ watch(() => companyAccess.activeCompanyId, load, { immediate: true })
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
+}
+
+.total-subtext {
+  font-size: 0.76rem;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+  line-height: 1.35;
+  font-weight: 500;
+}
+
+.headline-theme--profit {
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.headline-theme--profit .total-label {
+  color: #059669;
+}
+
+.headline-theme--negative {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.headline-theme--negative .total-label {
+  color: #dc2626;
+}
+
+.headline-theme--receipts {
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.22);
+}
+
+.headline-theme--receipts .total-label {
+  color: #15803d;
+}
+
+.headline-theme--provisional {
+  background: rgba(14, 165, 165, 0.08);
+  border: 1px solid rgba(14, 165, 165, 0.25);
+}
+
+.headline-theme--provisional .total-label {
+  color: #0d8282;
+}
+
+.headline-theme--budget {
+  background: rgba(29, 78, 216, 0.08);
+  border: 1px solid rgba(29, 78, 216, 0.22);
+}
+
+.headline-theme--budget .total-label {
+  color: #1d4ed8;
+}
+
+.headline-theme--unavailable {
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-light);
+}
+
+.is-negative-value {
+  color: var(--color-danger) !important;
 }
 
 .currency {
@@ -316,10 +742,16 @@ watch(() => companyAccess.activeCompanyId, load, { immediate: true })
   gap: 6px;
 }
 
-.metric-count {
-  font-size: 0.74rem;
-  color: var(--color-text-secondary);
-  font-weight: 600;
+.metric-badge--cost {
+  background: rgba(249, 115, 22, 0.12);
+  color: #9a3412;
+  font-weight: 700;
+}
+
+.metric-badge--warranty {
+  background: rgba(139, 92, 246, 0.12);
+  color: #6d28d9;
+  font-weight: 700;
 }
 
 .metric-value {
@@ -328,6 +760,13 @@ watch(() => companyAccess.activeCompanyId, load, { immediate: true })
   font-weight: 700;
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
+}
+
+.metric-subline {
+  font-size: 0.74rem;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  margin-top: 2px;
 }
 
 .project-footer {
@@ -358,6 +797,12 @@ watch(() => companyAccess.activeCompanyId, load, { immediate: true })
 .unknown-count {
   color: var(--color-text-secondary);
   font-size: 0.75rem;
+}
+
+.pagination-footer {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
 }
 
 @keyframes spin {

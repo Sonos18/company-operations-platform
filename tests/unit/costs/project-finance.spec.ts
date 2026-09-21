@@ -30,7 +30,7 @@ describe('C1 finance read contracts', () => {
   it('keeps new overview responses status-free and strict', () => {
     const overview = {
       schemaVersion: 1,
-      project: { projectId: '00000000-0000-4000-8000-000000000001', projectCode: 'P', projectName: 'Project', currencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok' },
+      project: { projectId: '00000000-0000-4000-8000-000000000001', projectCode: 'P', projectName: 'Project', currencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', operationalState: 'unknown' },
       summary: {
         budget: { state: 'not_recorded', amount: null, recordedCount: 0 },
         ownerAdvances: { state: 'not_recorded', amount: null, recordedCount: 0 },
@@ -38,6 +38,12 @@ describe('C1 finance read contracts', () => {
         warrantyRetention: { state: 'not_recorded', amount: null, recordedCount: 0 },
         reference: { kind: 'none', amount: null },
         margin: { state: 'unavailable', amount: null, reasons: ['NO_APPROVED_BUDGET'] },
+        management: {
+          receipts: { state: 'not_recorded', amount: null, recordedCount: 0, origin: 'none', quality: 'not_recorded', coverage: 'none', sourceReferences: [] },
+          reference: { kind: 'none', amount: null, basis: 'none' },
+          result: { state: 'unavailable', amount: null, basis: 'none', components: { receipts: null, cost: null, independentlyHeldRetention: null }, reasons: ['NO_REFERENCE'] },
+          headline: { kind: 'unavailable', amount: null, basis: 'none' },
+        },
         issues: [],
       },
       categories: [],
@@ -48,15 +54,16 @@ describe('C1 finance read contracts', () => {
 
   it('uses the production reducer for legacy subcontract reconciliation', () => {
     const result = summarizeFinanceRows({
-      context: { projectId: '00000000-0000-4000-8000-000000000001', projectCode: 'P', projectName: 'Project', defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok' },
+      context: { projectId: '00000000-0000-4000-8000-000000000001', projectCode: 'P', projectName: 'Project', defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', operationalState: 'unknown' },
       rows: {
         categories: [{ id: '00000000-0000-4000-8000-000000000040', tenant_id: '00000000-0000-4000-8000-000000000010', company_id: '00000000-0000-4000-8000-000000000020', code: 'subcontract_labor', name: 'Subcontract', display_order: 1, is_active: true, version: 0 }],
         costItems: [{ id: '00000000-0000-4000-8000-000000000050', tenant_id: '00000000-0000-4000-8000-000000000010', company_id: '00000000-0000-4000-8000-000000000020', project_id: '00000000-0000-4000-8000-000000000001', cost_category_id: '00000000-0000-4000-8000-000000000040', description: 'Legacy', business_reference: null, amount_text: '100.0000', currency_code: 'VND', relevant_date: null, version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }],
         details: [{ id: '00000000-0000-4000-8000-000000000060', tenant_id: '00000000-0000-4000-8000-000000000010', company_id: '00000000-0000-4000-8000-000000000020', project_cost_item_id: '00000000-0000-4000-8000-000000000050', line_no: 1, amount_text: '100.0000', retention_kind: 'warranty', retention_rate_bps: 500, retention_amount_text: '5.0000', relevant_date: '2026-01-01', version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }],
-        budgets: [], budgetLines: [], ownerAdvances: [], subcontracts: [], payments: [],
+        budgets: [], budgetLines: [], ownerAdvances: [{ id: '00000000-0000-4000-8000-000000000070', tenant_id: '00000000-0000-4000-8000-000000000010', company_id: '00000000-0000-4000-8000-000000000020', project_id: '00000000-0000-4000-8000-000000000001', amount_text: '200.0000', currency_code: 'VND', status: 'recorded', source_reference: 'synthetic/receipt', version: 0, updated_at: '2026-01-01T00:00:00.000Z' }], subcontracts: [], payments: [],
       },
     })
     expect(result.categories[0]?.cost.state).toBe('needs_reconciliation')
     expect(result.summary.warrantyRetention.state).toBe('not_recorded')
+    expect(result.summary.management.result).toMatchObject({ state: 'unavailable', amount: null, reasons: ['COST_INCOMPLETE'] })
   })
 })

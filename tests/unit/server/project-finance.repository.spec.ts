@@ -20,6 +20,8 @@ describe('C1 finance bounded reads', () => {
         ? { data: { projectId: '00000000-0000-4000-8000-000000000030', projectCode: 'P', projectName: 'Project', defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok' }, error: null }
         : name === 'c1_read_project_finance_directory'
           ? { data: { defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [], nextCursor: null }, error: null }
+          : name === 'c1_read_project_finance_operational_states'
+            ? { data: [{ projectId: '00000000-0000-4000-8000-000000000030', operationalState: 'unknown' }], error: null }
           : { data: [], error: null },
       from: () => query,
     } as never)

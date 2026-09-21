@@ -10,7 +10,7 @@ const money = financeRowMoneySchema
 const timestamp = financeTimestampSchema
 const version = financeVersionSchema
 
-export type FinanceProjectContextRow = { projectId: string, projectCode: string, projectName: string, defaultCurrencyCode: string, moneyScale: number, timeZone: string }
+export type FinanceProjectContextRow = { projectId: string, projectCode: string, projectName: string, defaultCurrencyCode: string, moneyScale: number, timeZone: string, operationalState: 'active' | 'completed' | 'paused' | 'unknown' }
 export type FinanceDirectory = { defaultCurrencyCode: string, moneyScale: number, timeZone: string, projects: { projectId: string, projectCode: string, projectName: string }[], nextCursor: string | null }
 export type FinancePartyRow = { partyId: string, code: string, displayName: string, partyKind: 'organization' | 'crew' }
 
@@ -43,7 +43,7 @@ export const paymentRowSchema = z.object({
 }).strict()
 const budgetAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, currency_code: currency, detail_mode: z.enum(['summary', 'categorized']), total_amount_text: money, status: z.string().min(1), version, updated_at: timestamp }).strict()
 const budgetLineAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, budget_version_id: uuid, cost_category_id: uuid, line_no: z.number().int().positive(), amount_text: money, version, updated_at: timestamp }).strict()
-const ownerAdvanceAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, amount_text: money, currency_code: currency, status: z.string().min(1), version, updated_at: timestamp }).strict()
+const ownerAdvanceAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, amount_text: money, currency_code: currency, status: z.string().min(1), source_reference: z.string().nullable(), version, updated_at: timestamp }).strict()
 const subcontractAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, subcontractor_party_id: uuid, code: z.string().min(1), contract_no: z.string().nullable(), contract_name: z.string().min(1), contract_date: date.nullable(), contract_value_text: money.nullable(), currency_code: currency, warranty_retention_rate_bps: z.number().int().min(0).max(10000).nullable(), is_active: z.boolean(), version, updated_at: timestamp }).strict()
 const paymentAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, project_subcontract_id: uuid, paid_amount_text: money, warranty_retention_amount_text: money.nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), currency_code: currency, status: z.string().min(1), payment_date: date.nullable(), created_at: timestamp, version, updated_at: timestamp }).strict()
 
@@ -62,7 +62,7 @@ export type TableQuery = {
   order(column: string, options: { ascending: boolean }): TableQuery
   limit(size: number): Promise<QueryResult>
 }
-type RpcName = 'c1_read_project_finance_directory' | 'c1_read_project_finance_parties' | 'c1_read_project_cost_read_context'
+type RpcName = 'c1_read_project_finance_directory' | 'c1_read_project_finance_parties' | 'c1_read_project_cost_read_context' | 'c1_read_project_finance_operational_states'
 type Rpc = (name: RpcName, args: Record<string, unknown>) => Promise<QueryResult>
 export type FinanceDbClient = { from(table: string): TableQuery, rpc: Rpc }
 
@@ -72,6 +72,7 @@ const directorySchema = z.object({
 }).strict()
 const contextSchema = z.object({ projectId: uuid, projectCode: z.string().min(1), projectName: z.string().min(1), defaultCurrencyCode: currency, moneyScale: z.number().int().min(0).max(4), timeZone: z.string().min(1) }).strict()
 const partySchema = z.object({ partyId: uuid, code: z.string().min(1), displayName: z.string().min(1), partyKind: z.enum(['organization', 'crew']) }).strict()
+const operationalStateRowSchema = z.object({ projectId: uuid, operationalState: z.enum(['active', 'completed', 'paused', 'unknown']) }).strict()
 
 export function mapFinanceReadError(error: unknown): never {
   const parsed = z.object({ code: z.string().optional(), message: z.string().optional() }).safeParse(error)
@@ -107,7 +108,18 @@ export class ProjectFinanceMetadataReader {
     const parsed = contextSchema.safeParse(data)
     if (!parsed.success) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi metadata dự án không hợp lệ.')
     if (parsed.data.projectId !== projectId) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi metadata dự án không hợp lệ.')
-    return parsed.data
+    const states = await this.operationalStates(companyId, [projectId])
+    return { ...parsed.data, operationalState: states.get(projectId)! }
+  }
+
+  async operationalStates(companyId: string, projectIds: readonly string[]): Promise<Map<string, FinanceProjectContextRow['operationalState']>> {
+    if (projectIds.length < 1 || projectIds.length > 100 || new Set(projectIds).size !== projectIds.length || projectIds.some(id => !uuid.safeParse(id).success)) throw new AppApiError(400, 'INPUT_INVALID', 'Dữ liệu yêu cầu không hợp lệ.')
+    const { data, error } = await this.client.rpc('c1_read_project_finance_operational_states', { target_company_id: companyId, target_project_ids: [...projectIds] })
+    if (error) return mapFinanceReadError(error)
+    const rows = parseRows(data, operationalStateRowSchema, 'Phản hồi trạng thái dự án không hợp lệ.')
+    const states = new Map(rows.map(row => [row.projectId, row.operationalState]))
+    if (rows.length !== projectIds.length || states.size !== projectIds.length || rows.some(row => !projectIds.includes(row.projectId))) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi trạng thái dự án không hợp lệ.')
+    return states
   }
 
   async directory(companyId: string, afterId: string | null, limit: number): Promise<FinanceDirectory> {
@@ -146,7 +158,7 @@ const columns = {
 const aggregateColumns = {
   budgets: 'id,tenant_id,company_id,project_id,currency_code,detail_mode,total_amount_text,status,version,updated_at',
   budgetLines: 'id,tenant_id,company_id,project_id,budget_version_id,cost_category_id,line_no,amount_text,version,updated_at',
-  advances: 'id,tenant_id,company_id,project_id,amount_text,currency_code,status,version,updated_at',
+  advances: 'id,tenant_id,company_id,project_id,amount_text,currency_code,status,source_reference,version,updated_at',
   subcontracts: 'id,tenant_id,company_id,project_id,subcontractor_party_id,code,contract_no,contract_name,contract_date,contract_value_text,currency_code,warranty_retention_rate_bps,is_active,version,updated_at',
   payments: 'id,tenant_id,company_id,project_id,project_subcontract_id,paid_amount_text,warranty_retention_amount_text,retention_rate_bps,currency_code,status,payment_date,created_at,version,updated_at',
 } as const

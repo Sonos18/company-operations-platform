@@ -3,8 +3,9 @@ import { financeListQuerySchema, itemDetailQuerySchema, paymentQuerySchema } fro
 import { compareFinanceRows } from '../../../shared/utils/project-finance-dates'
 import { sumFinanceMoney } from '../../../shared/utils/project-finance-money'
 import { AppApiError } from '../../../server/utils/api-error'
-import { ProjectFinanceMetadataReader, ProjectFinanceTableReader, type FinanceTableRows } from '../../../server/features/costs/finance/project-finance.queries'
+import { ProjectFinanceMetadataReader, ProjectFinanceTableReader, type FinanceProjectContextRow, type FinanceTableRows } from '../../../server/features/costs/finance/project-finance.queries'
 import { ConcreteProjectFinanceRepository, createSupabaseProjectFinanceRepository } from '../../../server/features/costs/finance/project-finance.repository'
+import { ProjectFinanceService } from '../../../server/features/costs/finance/project-finance.service'
 
 const ids = {
   tenant: 'c1070000-0000-4000-8000-000000000010', company: 'c1070000-0000-4000-8000-000000000020', project: 'c1070000-0000-4000-8000-000000000030', otherProject: 'c1070000-0000-4000-8000-000000000031',
@@ -22,7 +23,7 @@ const multiIds = {
 }
 
 const createdAt = '2026-01-01T00:00:00.000Z'
-const context = { projectId: ids.project, projectCode: 'P107', projectName: 'Finance regression project', defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok' }
+const context: FinanceProjectContextRow = { projectId: ids.project, projectCode: 'P107', projectName: 'Finance regression project', defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', operationalState: 'unknown' }
 const scope = { tenantId: ids.tenant, companyId: ids.company, permissions: ['cost.read'] }
 const directoryQuery = { afterId: undefined, pageSize: 25 } as const
 const listQuery = financeListQuerySchema.parse({ page: 1, pageSize: 100, sort: 'newest' })
@@ -119,7 +120,8 @@ function fakeSupabase(rows: ReturnType<typeof readSet>) {
       return query
     },
     async rpc(name: string, args: Record<string, unknown>) {
-      if (name === 'c1_read_project_cost_read_context') return { data: context, error: null }
+      if (name === 'c1_read_project_cost_read_context') return { data: { projectId: context.projectId, projectCode: context.projectCode, projectName: context.projectName, defaultCurrencyCode: context.defaultCurrencyCode, moneyScale: context.moneyScale, timeZone: context.timeZone }, error: null }
+      if (name === 'c1_read_project_finance_operational_states') return { data: [{ projectId: ids.project, operationalState: context.operationalState }], error: null }
       if (name === 'c1_read_project_finance_directory') return { data: { defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName }], nextCursor: null }, error: null }
       return { data: rows.parties.filter(party => (args.target_party_ids as string[]).includes(party.partyId)), error: null }
     },
@@ -140,11 +142,14 @@ function fakeSupabaseMulti(projectRows: readonly ReturnType<typeof multiSnapshot
   const batchProjectQueries: Array<{ table: string, ids: string[] }> = []
   let contextCalls = 0
   let directoryCalls = 0
+  let stateCalls = 0
   return {
     batchProjectQueries,
     get contextCalls() { return contextCalls },
     get directoryCalls() { return directoryCalls },
+    get stateCalls() { return stateCalls },
     from(table: string) {
+      if (!(table in tableRows)) throw new Error(`Unexpected table read: ${table}`)
       let selected = ''
       const equals = new Map<string, string>()
       const ins = new Map<string, readonly string[]>()
@@ -165,13 +170,20 @@ function fakeSupabaseMulti(projectRows: readonly ReturnType<typeof multiSnapshot
       return query
     },
     async rpc(name: string, args: Record<string, unknown>) {
+      if (name === 'c1_read_project_finance_operational_states') {
+        stateCalls += 1
+        if (args.target_company_id !== ids.company) return { data: null, error: { code: 'COMPANY_FORBIDDEN' } }
+        const projectIds = args.target_project_ids as string[]
+        return { data: projectRows.filter(rows => projectIds.includes(rows.context.projectId)).map(rows => ({ projectId: rows.context.projectId, operationalState: rows.context.operationalState })), error: null }
+      }
       if (name === 'c1_read_project_cost_read_context') {
         contextCalls += 1
         const found = args.target_company_id === ids.company ? projectRows.find(rows => rows.context.projectId === args.target_project_id) : undefined
-        return { data: found?.context, error: null }
+        return { data: found ? { projectId: found.context.projectId, projectCode: found.context.projectCode, projectName: found.context.projectName, defaultCurrencyCode: found.context.defaultCurrencyCode, moneyScale: found.context.moneyScale, timeZone: found.context.timeZone } : null, error: null }
       }
       if (name === 'c1_read_project_finance_directory') {
         directoryCalls += 1
+        if (args.target_company_id !== ids.company) return { data: null, error: { code: 'COMPANY_FORBIDDEN' } }
         const afterId = typeof args.target_after_id === 'string' ? args.target_after_id : null
         const limit = Number(args.target_limit)
         const projects = projectRows.map(rows => ({ projectId: rows.context.projectId, projectCode: rows.context.projectCode, projectName: rows.context.projectName })).sort((left, right) => left.projectId.localeCompare(right.projectId)).filter(project => afterId === null || project.projectId > afterId).slice(0, limit)
@@ -292,6 +304,7 @@ describe('C1 finance review regressions on concrete production readers', () => {
     const result = await repository.listProjects(scope, { pageSize: 100 })
     expect(db.contextCalls).toBe(0)
     expect(db.directoryCalls).toBe(1)
+    expect(db.stateCalls).toBe(2)
     expect(result.projects.map(project => project.project.projectId)).toEqual([ids.project, multiIds.projectB, multiIds.projectC])
     const byId = new Map(result.projects.map(project => [project.project.projectId, project]))
     expect(byId.get(ids.project)?.summary.ownerAdvances).toMatchObject({ state: 'recorded', amount: '100.0000' })
@@ -311,6 +324,81 @@ describe('C1 finance review regressions on concrete production readers', () => {
     expect(db.contextCalls).toBe(6)
     expect(db.directoryCalls).toBe(1)
     expect(db.batchProjectQueries.filter(query => query.ids.length === 3).length).toBe(24)
+  })
+
+  it('uses only scoped recorded owner advances for management receipts and headline', async () => {
+    const projectA = multiSnapshot(ids.project, 'P-A', 'VND', 'c1070000-0000-4000-8000-000000000140', 'c1070000-0000-4000-8000-000000000141', 'c1070000-0000-4000-8000-000000000142', 'c1070000-0000-4000-8000-000000000143', 'c1070000-0000-4000-8000-000000000144', 'c1070000-0000-4000-8000-000000000145', '100.0000', '100.0000', '10.0000')
+    const projectB = multiSnapshot(multiIds.projectB, 'P-B', 'USD', multiIds.itemB, multiIds.partyB, multiIds.contractB, multiIds.budgetB, multiIds.lineB, multiIds.paymentB, '200.0000', '200.0000', '20.0000')
+    const projectC = multiSnapshot(multiIds.projectC, 'P-C', 'VND', multiIds.itemC, multiIds.partyC, multiIds.contractC, multiIds.budgetC, multiIds.lineC, multiIds.paymentC, '300.0000', null, '30.0000')
+    projectB.context.operationalState = 'active'
+    projectC.context.operationalState = 'completed'
+    projectA.budgets = []
+    projectA.budgetLines = []
+    projectA.ownerAdvances = [
+      { ...projectA.ownerAdvances[0]!, amount_text: '50.0000', source_reference: 'synthetic-book/J3' },
+      { ...projectA.ownerAdvances[0]!, id: 'c1070000-0000-4000-8000-000000000146', amount_text: '50.0000', source_reference: 'synthetic-book/J4' },
+      { ...projectA.ownerAdvances[0]!, id: 'c1070000-0000-4000-8000-000000000147', amount_text: '999.0000', status: 'voided', source_reference: 'synthetic-book/subtotal' },
+    ]
+    const db = fakeSupabaseMulti([projectA, projectB, projectC])
+    const repository = createSupabaseProjectFinanceRepository(db as never)
+    const service = new ProjectFinanceService(repository)
+    await expect(service.listProjects({ ...scope, permissions: [] }, { pageSize: 100 })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    await expect(service.listProjects({ ...scope, companyId: ids.otherProject }, { pageSize: 100 })).rejects.toMatchObject({ code: 'COMPANY_FORBIDDEN' })
+    const result = await repository.listProjects(scope, { pageSize: 100 })
+    const byId = new Map(result.projects.map(row => [row.project.projectId, row]))
+    expect(byId.get(ids.project)?.summary.management).toMatchObject({
+      receipts: { amount: '100.0000', recordedCount: 2, origin: 'canonical_ledger', quality: 'accounting_source_unverified', coverage: 'recorded_rows_only', sourceReferences: ['synthetic-book/J3', 'synthetic-book/J4'] },
+      reference: { kind: 'owner_receipts', amount: '100.0000' },
+      result: { state: 'unavailable', amount: null, reasons: expect.arrayContaining(['COST_INCOMPLETE']) },
+      headline: { kind: 'owner_receipts', amount: '100.0000' },
+    })
+    expect(byId.get(multiIds.projectB)?.summary.management).toMatchObject({ receipts: { amount: '200.0000', recordedCount: 1 }, reference: { kind: 'approved_budget', amount: '200.0000' } })
+    expect(byId.get(multiIds.projectC)?.summary.management).toMatchObject({ receipts: { amount: null, recordedCount: 0, origin: 'none' } })
+    expect(byId.get(ids.project)?.project.operationalState).toBe('unknown')
+    expect(byId.get(multiIds.projectB)?.project.operationalState).toBe('active')
+    expect(byId.get(multiIds.projectC)?.project.operationalState).toBe('completed')
+    expect(db.contextCalls).toBe(0)
+    for (const projectId of [ids.project, multiIds.projectB, multiIds.projectC]) {
+      const overview = await repository.overview(scope, projectId)
+      expect(overview.summary.management).toEqual(byId.get(projectId)?.summary.management)
+    }
+  })
+
+  it.each(['active', 'completed', 'paused', 'unknown'] as const)('preserves the %s lifecycle state without inferring it from finance rows', async operationalState => {
+    const rows = readSet()
+    rows.context = { ...context, operationalState }
+    const result = await concrete(rows).overview(scope, ids.project)
+    expect(result.project.operationalState).toBe(operationalState)
+  })
+
+  it('computes a provisional negative result without subtracting ordinary retention twice', async () => {
+    const rows = readSet()
+    rows.categories = [
+      category(ids.materials, 'materials', 1),
+      category('c1070000-0000-4000-8000-000000000150', 'machinery', 2),
+      category('c1070000-0000-4000-8000-000000000151', 'direct_labor', 3),
+      category(ids.subcontract, 'subcontract_labor', 4),
+      category('c1070000-0000-4000-8000-000000000152', 'other', 5),
+    ]
+    rows.costItems = [
+      item(ids.materialsItem, ids.materials, '25.0000'),
+      item('c1070000-0000-4000-8000-000000000153', 'c1070000-0000-4000-8000-000000000150', '25.0000'),
+      item('c1070000-0000-4000-8000-000000000154', 'c1070000-0000-4000-8000-000000000151', '25.0000'),
+      item('c1070000-0000-4000-8000-000000000155', 'c1070000-0000-4000-8000-000000000152', '25.0000'),
+    ]
+    rows.details = [detail(ids.detailWarranty, ids.materialsItem, 1, '25.0000', 'warranty', '5.0000', '2026-02-03')]
+    rows.budgets = []
+    rows.payments = [payment(ids.paymentWarranty, '20.0000', '10.0000')]
+    rows.ownerAdvances = [{ id: 'c1070000-0000-4000-8000-000000000156', tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, amount_text: '100.0000', currency_code: 'VND', status: 'recorded', description: 'Synthetic owner receipt', payer_name: null, receipt_no: null, received_date: '2026-02-01', reference: null, source_reference: 'synthetic/J3', note: null, version: 0, created_at: createdAt, updated_at: createdAt }]
+    const repository = createSupabaseProjectFinanceRepository(fakeSupabase(rows) as never)
+    const overview = await repository.overview(scope, ids.project)
+    expect(overview.summary.cost).toMatchObject({ state: 'recorded', amount: '120.0000' })
+    expect(overview.summary.warrantyRetention).toMatchObject({ state: 'recorded', amount: '15.0000' })
+    expect(overview.summary.management.result).toEqual({ state: 'provisional', amount: '-30.0000', basis: 'owner_receipts', components: { receipts: '100.0000', cost: '120.0000', independentlyHeldRetention: '10.0000' }, reasons: [] })
+    expect(overview.summary.management.headline).toEqual({ kind: 'provisional_result', amount: '-30.0000', basis: 'provisional_owner_receipts_result' })
+    expect(overview.summary.margin.amount).toBeNull()
+    const directory = await repository.listProjects(scope, directoryQuery)
+    expect(directory.projects[0]?.summary.management).toEqual(overview.summary.management)
   })
 
   it('keeps the documented deterministic date tie-break', () => {

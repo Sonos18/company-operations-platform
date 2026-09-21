@@ -12,6 +12,7 @@ const allowlist = [
   'c1_project_cost_items.test.sql',
   'c1_project_cost_item_details.test.sql',
   'c1_project_finance_metadata_read.test.sql',
+  'c1_project_finance_operational_state_read.test.sql',
 ]
 
 export function validateC1CloudDevSql(path, sql) {
@@ -34,6 +35,10 @@ export function validateC1CloudDevSql(path, sql) {
   if (path === 'c1_project_finance_metadata_read.test.sql') {
     const ids = normalized.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
     if (ids.some(id => !/^c104[0-9a-f]{4}-/iu.test(id))) throw new Error('Finance metadata SQL must use reserved c104 synthetic UUIDs')
+  }
+  if (path === 'c1_project_finance_operational_state_read.test.sql') {
+    const ids = normalized.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
+    if (ids.some(id => !/^c105[0-9a-f]{4}-/iu.test(id))) throw new Error('Finance lifecycle SQL must use reserved c105 synthetic UUIDs')
   }
 }
 

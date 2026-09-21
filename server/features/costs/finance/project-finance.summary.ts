@@ -67,7 +67,7 @@ function categoryRow(category: RawCategory, items: readonly RawItem[], details: 
 }
 
 function context(row: FinanceProjectContextRow, currencyCode: string) {
-  return { projectId: row.projectId, projectCode: row.projectCode, projectName: row.projectName, currencyCode, moneyScale: row.moneyScale, timeZone: row.timeZone }
+  return { projectId: row.projectId, projectCode: row.projectCode, projectName: row.projectName, currencyCode, moneyScale: row.moneyScale, timeZone: row.timeZone, operationalState: row.operationalState }
 }
 
 function currencySet(rows: FinanceSummaryTableRows): Set<string> {
@@ -119,6 +119,48 @@ export function summarizeFinanceRows(input: { context: FinanceProjectContextRow,
     ...(warrantyRetention.state !== 'recorded' ? ['RETENTION_INCOMPLETE' as const] : []),
     ...(approvedBudget ? ['BUDGET_BASIS_UNCONFIRMED' as const] : []),
   ]
+  const receipts = {
+    ...ownerAdvances,
+    origin: advances.length > 0 ? 'canonical_ledger' as const : 'none' as const,
+    quality: advances.length > 0 ? 'accounting_source_unverified' as const : 'not_recorded' as const,
+    coverage: advances.length > 0 ? 'recorded_rows_only' as const : 'none' as const,
+    sourceReferences: [...new Set(advances.flatMap(advance => advance.source_reference === null ? [] : [advance.source_reference]))].sort(),
+  }
+  const managementReference = approvedBudget
+    ? { kind: 'approved_budget' as const, amount: budget.amount, basis: 'unconfirmed_cost_budget' as const }
+    : advances.length > 0
+      ? { kind: 'owner_receipts' as const, amount: ownerAdvances.amount, basis: 'recorded_owner_receipts' as const }
+      : { kind: 'none' as const, amount: null, basis: 'none' as const }
+  const recordedPayments = input.rows.payments.filter(payment => payment.status === 'recorded')
+  const heldRetention = recordedPayments.length > 0
+    ? (recordedPayments.every(payment => payment.warranty_retention_amount_text !== null)
+        ? sumFinanceMoney(recordedPayments.map(payment => payment.warranty_retention_amount_text!))
+        : null)
+    : '0.0000'
+  const recordedCost = cost.amount
+  const resultReasons = [
+    ...(advances.length === 0 ? ['NO_REFERENCE' as const] : []),
+    ...(recordedCost === null ? ['COST_INCOMPLETE' as const] : []),
+    ...(heldRetention === null ? ['RETENTION_INCOMPLETE' as const] : []),
+  ]
+  const canCalculate = ownerAdvances.amount !== null && recordedCost !== null && heldRetention !== null
+  const resultAmount = canCalculate ? subtractFinanceMoney(ownerAdvances.amount!, [recordedCost, heldRetention]) : null
+  const management = {
+    receipts,
+    reference: managementReference,
+    result: {
+      state: canCalculate ? 'provisional' as const : 'unavailable' as const,
+      amount: resultAmount,
+      basis: advances.length > 0 ? 'owner_receipts' as const : approvedBudget ? 'approved_budget_unconfirmed' as const : 'none' as const,
+      components: { receipts: ownerAdvances.amount, cost: recordedCost, independentlyHeldRetention: heldRetention },
+      reasons: canCalculate ? [] : resultReasons,
+    },
+    headline: resultAmount !== null
+      ? { kind: 'provisional_result' as const, amount: resultAmount, basis: 'provisional_owner_receipts_result' as const }
+      : ownerAdvances.amount !== null
+        ? { kind: 'owner_receipts' as const, amount: ownerAdvances.amount, basis: 'recorded_owner_receipts' as const }
+        : { kind: 'unavailable' as const, amount: null, basis: 'none' as const },
+  }
   return financeOverviewSchema.parse({
     schemaVersion: 1,
     project,
@@ -129,6 +171,7 @@ export function summarizeFinanceRows(input: { context: FinanceProjectContextRow,
       warrantyRetention,
       reference: approvedBudget ? { kind: 'approved_budget', amount: sumFinanceMoney([approvedBudget.total_amount_text]) } : advances.length > 0 ? { kind: 'owner_advance', amount: sumFinanceMoney(advances.map(advance => advance.amount_text)) } : { kind: 'none', amount: null },
       margin: { state: 'unavailable', amount: null, reasons },
+      management,
       issues,
     },
     categories,

@@ -4113,6 +4113,10 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_read_project_finance_operational_states: {
+        Args: { target_company_id: string; target_project_ids: string[] }
+        Returns: Json
+      }
       c1_read_project_finance_parties: {
         Args: {
           target_company_id: string
