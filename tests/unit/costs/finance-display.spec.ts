@@ -97,12 +97,12 @@ describe('finance display helpers', () => {
 
   describe('formatProvisionalProfitDisplay', () => {
     it('formats positive provisional profit with emerald green and basis', () => {
-      const res = formatProvisionalProfitDisplay(
-        { state: 'provisional', amount: '350000000.0000', basis: 'owner_receipts' },
-        'recorded',
-        [],
-        'VND',
-      )
+      const res = formatProvisionalProfitDisplay({
+        result: { state: 'provisional', amount: '350000000.0000', basis: 'owner_receipts' },
+        costState: 'recorded',
+        resultReasons: [],
+        currencyCode: 'VND',
+      })
       expect(res.label).toBe('Lợi nhuận tạm tính')
       expect(res.value).toBe('350,000,000 VND')
       expect(res.isAvailable).toBe(true)
@@ -113,12 +113,12 @@ describe('finance display helpers', () => {
     })
 
     it('formats negative provisional profit with red danger styling', () => {
-      const res = formatProvisionalProfitDisplay(
-        { state: 'provisional', amount: '-30000000.0000', basis: 'owner_receipts' },
-        'recorded',
-        [],
-        'VND',
-      )
+      const res = formatProvisionalProfitDisplay({
+        result: { state: 'provisional', amount: '-30000000.0000', basis: 'owner_receipts' },
+        costState: 'recorded',
+        resultReasons: [],
+        currencyCode: 'VND',
+      })
       expect(res.label).toBe('Lợi nhuận tạm tính')
       expect(res.value).toBe('-30,000,000 VND')
       expect(res.isAvailable).toBe(true)
@@ -127,22 +127,22 @@ describe('finance display helpers', () => {
     })
 
     it('includes partial cost caveat in tooltip when cost needs reconciliation', () => {
-      const res = formatProvisionalProfitDisplay(
-        { state: 'provisional', amount: '150000000.0000', basis: 'owner_receipts' },
-        'needs_reconciliation',
-        [],
-        'VND',
-      )
+      const res = formatProvisionalProfitDisplay({
+        result: { state: 'provisional', amount: '150000000.0000', basis: 'owner_receipts' },
+        costState: 'needs_reconciliation',
+        resultReasons: [],
+        currencyCode: 'VND',
+      })
       expect(res.tooltipText).toContain('Chi phí chưa đối soát đầy đủ')
     })
 
     it('formats unavailable profit as "Chưa đủ dữ liệu" with reasons', () => {
-      const res = formatProvisionalProfitDisplay(
-        { state: 'unavailable', amount: null, reasons: ['COST_INCOMPLETE'] },
-        'not_recorded',
-        ['COST_INCOMPLETE'],
-        'VND',
-      )
+      const res = formatProvisionalProfitDisplay({
+        result: { state: 'unavailable', amount: null, reasons: ['COST_INCOMPLETE'] },
+        costState: 'not_recorded',
+        resultReasons: ['COST_INCOMPLETE'],
+        currencyCode: 'VND',
+      })
       expect(res.label).toBe('Lợi nhuận tạm tính')
       expect(res.value).toBe('Chưa đủ dữ liệu')
       expect(res.isAvailable).toBe(false)
@@ -226,7 +226,10 @@ describe('finance display helpers', () => {
 
   describe('formatCostDisplay', () => {
     it('formats recorded state with amount', () => {
-      const res = formatCostDisplay({ state: 'recorded', amount: '120000000.0000' }, 'VND')
+      const res = formatCostDisplay({
+        cost: { state: 'recorded', amount: '120000000.0000' },
+        currencyCode: 'VND',
+      })
       expect(res.label).toBe('Chi phí')
       expect(res.value).toBe('120,000,000 VND')
       expect(res.knownSubtotal).toBeNull()
@@ -234,20 +237,27 @@ describe('finance display helpers', () => {
     })
 
     it('formats not_recorded state with "Chưa ghi nhận"', () => {
-      const res = formatCostDisplay({ state: 'not_recorded', amount: null })
+      const res = formatCostDisplay({
+        cost: { state: 'not_recorded', amount: null },
+      })
       expect(res.value).toBe('Chưa ghi nhận')
       expect(res.sublineLabel).toBeNull()
     })
 
     it('formats not_recorded state with knownSubtotal of 0.0000 as "Chưa ghi nhận" without subline', () => {
-      const res = formatCostDisplay({ state: 'not_recorded', amount: null, knownSubtotal: '0.0000' })
+      const res = formatCostDisplay({
+        cost: { state: 'not_recorded', amount: null, knownSubtotal: '0.0000' },
+      })
       expect(res.value).toBe('Chưa ghi nhận')
       expect(res.knownSubtotal).toBeNull()
       expect(res.sublineLabel).toBeNull()
     })
 
     it('formats needs_reconciliation state with known amount and stateLabel without prefix', () => {
-      const res = formatCostDisplay({ state: 'needs_reconciliation', amount: null, knownSubtotal: '50000000.0000' }, 'VND')
+      const res = formatCostDisplay({
+        cost: { state: 'needs_reconciliation', amount: null, knownSubtotal: '50000000.0000' },
+        currencyCode: 'VND',
+      })
       expect(res.value).toBe('50,000,000 VND')
       expect(res.stateLabel).toBe('Chưa đối soát')
       expect(res.knownSubtotal).toBe('50,000,000 VND')
@@ -257,7 +267,10 @@ describe('finance display helpers', () => {
 
   describe('formatWarrantyRetentionDisplay', () => {
     it('formats recorded warranty retention with amount, row count, and warranty badge', () => {
-      const res = formatWarrantyRetentionDisplay({ state: 'recorded', amount: '15000000.0000', recordedCount: 2 }, 'VND')
+      const res = formatWarrantyRetentionDisplay({
+        warranty: { state: 'recorded', amount: '15000000.0000', recordedCount: 2 },
+        currencyCode: 'VND',
+      })
       expect(res.label).toBe('Bảo hành đã ghi nhận')
       expect(res.value).toBe('15,000,000 VND')
       expect(res.countText).toBe('(2 khoản)')
@@ -265,13 +278,17 @@ describe('finance display helpers', () => {
     })
 
     it('formats not_recorded warranty retention with row count', () => {
-      const res = formatWarrantyRetentionDisplay({ state: 'not_recorded', amount: null, recordedCount: 0 })
+      const res = formatWarrantyRetentionDisplay({
+        warranty: { state: 'not_recorded', amount: null, recordedCount: 0 },
+      })
       expect(res.value).toBe('Chưa ghi nhận')
       expect(res.countText).toBe('(0 khoản)')
     })
 
     it('formats needs_reconciliation warranty retention with row count', () => {
-      const res = formatWarrantyRetentionDisplay({ state: 'needs_reconciliation', amount: null, recordedCount: 1 })
+      const res = formatWarrantyRetentionDisplay({
+        warranty: { state: 'needs_reconciliation', amount: null, recordedCount: 1 },
+      })
       expect(res.value).toBe('Chưa đối soát')
       expect(res.countText).toBe('(1 khoản)')
     })

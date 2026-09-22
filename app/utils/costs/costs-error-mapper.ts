@@ -1,4 +1,4 @@
-import { ClientError } from '../../errors/client-error'
+import type { ClientError } from '../../errors/client-error'
 
 export type CostsUiErrorState =
   | 'module'
@@ -39,24 +39,39 @@ export function mapCostsApiError(
     return 'aborted'
   }
 
-  if (err instanceof ClientError) {
+  const candidate = (typeof err === 'object' && err !== null)
+    ? (err as Partial<ClientError> & { statusCode?: number; status?: number })
+    : null
+
+  if (candidate) {
     // 1. MODULE_DISABLED reason must be checked FIRST before general code
-    if (err.reason === 'MODULE_DISABLED') {
+    if (candidate.reason === 'MODULE_DISABLED') {
       return 'module'
     }
     // 2. Missing permissions / wrong company
-    if (err.code === 'PERMISSION_DENIED' || err.kind === 'authorization') {
+    if (
+      candidate.code === 'PERMISSION_DENIED'
+      || candidate.kind === 'authorization'
+      || candidate.statusCode === 403
+      || candidate.status === 403
+    ) {
       return 'permission'
     }
     // 3. Resource not found
-    if (err.code === 'RESOURCE_NOT_FOUND') {
+    if (
+      candidate.code === 'RESOURCE_NOT_FOUND'
+      || candidate.statusCode === 404
+      || candidate.status === 404
+    ) {
       return 'not_found'
     }
     // 4. Validation error
     if (
-      err.code === 'INPUT_INVALID'
-      || err.code === 'VALIDATION_FAILED'
-      || err.kind === 'validation'
+      candidate.code === 'INPUT_INVALID'
+      || candidate.code === 'VALIDATION_FAILED'
+      || candidate.kind === 'validation'
+      || candidate.statusCode === 400
+      || candidate.status === 400
     ) {
       return 'validation_error'
     }

@@ -193,7 +193,7 @@ const distinctContractorCount = computed(() => {
               </td>
               <td class="td-retention text-right font-mono">
                 <div class="retention-cell">
-                  <span v-if="row.recordedRetentionTotal != null">{{ formatFinanceMoney(row.recordedRetentionTotal, currencyCode, moneyScale) }}</span>
+                  <span v-if="row.recordedRetentionTotal != null && formatFinanceMoney(row.recordedRetentionTotal, currencyCode, moneyScale) != null">{{ formatFinanceMoney(row.recordedRetentionTotal, currencyCode, moneyScale) }}</span>
                   <span v-else class="text-muted">—</span>
                 </div>
               </td>
@@ -273,7 +273,7 @@ const distinctContractorCount = computed(() => {
               <div class="card-amount-item">
                 <span class="card-field-label">Bảo hành:</span>
                 <span class="card-field-value font-mono">
-                  <template v-if="row.recordedRetentionTotal != null">
+                  <template v-if="row.recordedRetentionTotal != null && formatFinanceMoney(row.recordedRetentionTotal, currencyCode, moneyScale) != null">
                     {{ formatFinanceMoney(row.recordedRetentionTotal, currencyCode, moneyScale) }}
                   </template>
                   <span v-else class="text-muted">—</span>

@@ -1,133 +1,94 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import type {
   FinanceSubcontractDetail,
   FinanceSubcontractorDetail,
-  PaymentQuery,
 } from '../../../shared/schemas/costs/project-finance'
 import {
   formatDateProvenance,
   formatFinanceMoney,
 } from '../../utils/costs/finance-display'
+import type { LedgerUiStatus } from '../../composables/costs/useLedgerQueryController'
 
 interface Props {
   detail: FinanceSubcontractorDetail | FinanceSubcontractDetail | null
-  status: 'idle' | 'loading' | 'ready' | 'empty' | 'error'
+  status: LedgerUiStatus
   currencyCode?: string
   moneyScale?: number
-  initialPage?: number
-  initialPageSize?: 25 | 50 | 100
+
+  // Controlled query props (RR01)
+  search?: string
+  dateFrom?: string
+  dateTo?: string
+  retention?: 'all' | 'warranty' | 'no_recorded_retention'
+  page?: number
+  pageSize?: 25 | 50 | 100
+  isPendingDispatch?: boolean
+  dateValidationError?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   currencyCode: 'VND',
   moneyScale: 0,
-  initialPage: 1,
-  initialPageSize: 25,
+  search: '',
+  dateFrom: '',
+  dateTo: '',
+  retention: 'all',
+  page: 1,
+  pageSize: 25,
+  isPendingDispatch: false,
+  dateValidationError: null,
 })
 
 const emit = defineEmits<{
-  (e: 'back' | 'retry'): void
-  (e: 'change-query', query: Partial<PaymentQuery>): void
+  'back': []
+  'retry': []
+  'search-input': [value: string]
+  'update:dateFrom': [value: string]
+  'update:dateTo': [value: string]
+  'update:retention': [value: 'all' | 'warranty' | 'no_recorded_retention']
+  'update:pageSize': [value: 25 | 50 | 100]
+  'change-page': [newPage: number]
+  'clear-filters': []
 }>()
 
-// Filter states
-const page = ref(props.initialPage)
-const pageSize = ref<25 | 50 | 100>(props.initialPageSize)
-const search = ref('')
-const dateFrom = ref('')
-const dateTo = ref('')
-const retention = ref<'all' | 'warranty' | 'no_recorded_retention'>('all')
-
-// Local validation for date range (R01)
-const dateValidationError = computed<string | null>(() => {
-  if (dateFrom.value && dateTo.value && dateFrom.value > dateTo.value) {
-    return 'Ngày kết thúc không được trước ngày bắt đầu'
-  }
-  return null
-})
-
-// Debounce timer for search
-let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
-
-function emitQuery(resetPage = false) {
-  if (dateValidationError.value) {
-    // Inverted date range: do not submit invalid request (R01)
-    return
-  }
-
-  if (resetPage) {
-    page.value = 1
-  }
-
-  const query: Partial<PaymentQuery> = {
-    page: page.value,
-    pageSize: pageSize.value,
-    sort: 'newest',
-    retention: retention.value,
-  }
-
-  if (search.value.trim()) query.q = search.value.trim()
-  if (dateFrom.value) query.dateFrom = dateFrom.value
-  if (dateTo.value) query.dateTo = dateTo.value
-
-  emit('change-query', query)
-}
-
-function onSearchInput() {
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
-  searchDebounceTimer = setTimeout(() => {
-    emitQuery(true)
-  }, 300)
-}
-
-function onFilterChange() {
-  emitQuery(true)
-}
-
-function onPageSizeChange() {
-  emitQuery(true)
-}
-
-function goToPage(newPage: number) {
-  const maxPages = props.detail?.payments.pagination.totalPages ?? 1
-  const clamped = Math.max(1, Math.min(newPage, maxPages))
-  if (clamped !== page.value) {
-    page.value = clamped
-    emitQuery(false)
-  }
-}
-
-function resetFilters() {
-  search.value = ''
-  dateFrom.value = ''
-  dateTo.value = ''
-  retention.value = 'all'
-  page.value = 1
-  emitQuery(true)
-}
-
-// Sync page if updated by parent response envelope
-watch(
-  () => props.detail?.payments.pagination.page,
-  (serverPage) => {
-    if (serverPage != null && serverPage !== page.value) {
-      page.value = serverPage
-    }
-  },
-)
-
 const pagination = computed(() => props.detail?.payments.pagination ?? null)
+
 const isFiltered = computed(() => {
   if (!pagination.value) return false
   return (
-    Boolean(search.value.trim())
-    || Boolean(dateFrom.value)
-    || Boolean(dateTo.value)
-    || retention.value !== 'all'
+    Boolean(props.search.trim())
+    || Boolean(props.dateFrom)
+    || Boolean(props.dateTo)
+    || props.retention !== 'all'
     || pagination.value.filteredCount !== pagination.value.fullCount
   )
 })
+
+function onSearchInput(event: Event) {
+  const target = event.target as HTMLInputElement
+  emit('search-input', target.value)
+}
+
+function onDateFromChange(event: Event) {
+  const target = event.target as HTMLInputElement
+  emit('update:dateFrom', target.value)
+}
+
+function onDateToChange(event: Event) {
+  const target = event.target as HTMLInputElement
+  emit('update:dateTo', target.value)
+}
+
+function onRetentionChange(event: Event) {
+  const target = event.target as HTMLSelectElement
+  emit('update:retention', target.value as 'all' | 'warranty' | 'no_recorded_retention')
+}
+
+function onPageSizeChange(event: Event) {
+  const target = event.target as HTMLSelectElement
+  emit('update:pageSize', Number(target.value) as 25 | 50 | 100)
+}
 </script>
 
 <template>
@@ -145,7 +106,7 @@ const isFiltered = computed(() => {
     </div>
 
     <!-- Contractor Summary Banner (only when detail is available and not in error) -->
-    <div v-if="detail && status !== 'error'" class="contractor-summary-card cockpit-card">
+    <div v-if="detail && status !== 'error' && status !== 'permission' && status !== 'not_found' && status !== 'module'" class="contractor-summary-card cockpit-card">
       <div class="contractor-title-row">
         <div>
           <h2 class="contractor-name" data-testid="contractor-name-header">
@@ -181,7 +142,7 @@ const isFiltered = computed(() => {
         <div class="search-box">
           <input
             id="payment-search-input"
-            v-model="search"
+            :value="search"
             type="search"
             class="cockpit-input search-input"
             placeholder="Tìm nội dung, tham chiếu..."
@@ -189,37 +150,42 @@ const isFiltered = computed(() => {
             aria-label="Tìm nội dung, tham chiếu"
             @input="onSearchInput"
           >
+          <span v-if="isPendingDispatch" class="search-pending-indicator" aria-live="polite">
+            Đang tìm kiếm…
+          </span>
         </div>
 
         <div class="date-range-box">
           <label class="filter-label" for="payment-date-from">Từ:</label>
           <input
             id="payment-date-from"
-            v-model="dateFrom"
+            :value="dateFrom"
             type="date"
             class="cockpit-input date-input"
             data-testid="payment-date-from"
             aria-label="Từ ngày"
-            @change="onFilterChange"
+            @input="onDateFromChange"
+            @change="onDateFromChange"
           >
           <label class="filter-label" for="payment-date-to">Đến:</label>
           <input
             id="payment-date-to"
-            v-model="dateTo"
+            :value="dateTo"
             type="date"
             class="cockpit-input date-input"
             data-testid="payment-date-to"
             aria-label="Đến ngày"
-            @change="onFilterChange"
+            @input="onDateToChange"
+            @change="onDateToChange"
           >
         </div>
 
         <select
-          v-model="retention"
+          :value="retention"
           class="cockpit-select"
           aria-label="Lọc theo bảo hành"
           data-testid="payment-retention-select"
-          @change="onFilterChange"
+          @change="onRetentionChange"
         >
           <option value="all">
             Tất cả khoản
@@ -237,7 +203,7 @@ const isFiltered = computed(() => {
           type="button"
           class="cockpit-btn cockpit-btn--ghost btn-sm"
           data-testid="clear-payment-filters-btn"
-          @click="resetFilters"
+          @click="emit('clear-filters')"
         >
           <span>Xóa lọc</span>
         </button>
@@ -247,8 +213,8 @@ const isFiltered = computed(() => {
         {{ dateValidationError }}
       </div>
 
-      <!-- Scope & Totals Display (R01) -->
-      <div v-if="pagination && status === 'ready'" class="totals-status-bar" data-testid="payment-totals-bar">
+      <!-- Scope & Totals Display (RR01) -->
+      <div v-if="pagination && (status === 'ready' || status === 'empty')" class="totals-status-bar" data-testid="payment-totals-bar">
         <div class="full-total-info">
           <span>Toàn bộ: <strong>{{ pagination.fullCount }} khoản</strong> ({{ formatFinanceMoney(pagination.fullAmount, currencyCode, moneyScale) ?? '0 VND' }})</span>
         </div>
@@ -266,7 +232,42 @@ const isFiltered = computed(() => {
       <p>Đang tải danh sách đợt thanh toán…</p>
     </div>
 
-    <!-- Error State with Retry (R03) -->
+    <!-- Module Disabled State (RR04) -->
+    <div v-else-if="status === 'module'" class="state-panel cockpit-card" data-testid="payment-ledger-module-disabled">
+      <UIcon name="i-lucide-toggle-left" aria-hidden="true" />
+      <h2>Tính năng chưa kích hoạt</h2>
+      <p>Mô-đun quản lý chi phí chưa được kích hoạt cho công ty này.</p>
+    </div>
+
+    <!-- Permission Denied State (RR04) -->
+    <div v-else-if="status === 'permission'" class="state-panel cockpit-card" data-testid="payment-ledger-permission-denied">
+      <UIcon name="i-lucide-shield-alert" aria-hidden="true" />
+      <h2>Không có quyền truy cập</h2>
+      <p>Bạn không có quyền xem đợt thanh toán của nhà thầu này.</p>
+    </div>
+
+    <!-- Not Found State (RR04) -->
+    <div v-else-if="status === 'not_found'" class="state-panel cockpit-card" data-testid="payment-ledger-not-found">
+      <UIcon name="i-lucide-file-question" aria-hidden="true" />
+      <h2>Không tìm thấy nhà thầu hoặc hợp đồng</h2>
+      <p>Dữ liệu thanh toán của nhà thầu không tồn tại hoặc đã bị xóa.</p>
+    </div>
+
+    <!-- Validation Error State (RR04) -->
+    <div v-else-if="status === 'validation_error'" class="state-panel cockpit-card state-panel--warning" data-testid="payment-ledger-validation-error">
+      <UIcon name="i-lucide-alert-triangle" aria-hidden="true" />
+      <h2>Điều kiện lọc không hợp lệ</h2>
+      <p>{{ dateValidationError ?? 'Vui lòng kiểm tra lại điều kiện lọc trước khi tải dữ liệu.' }}</p>
+      <button
+        type="button"
+        class="cockpit-btn cockpit-btn--secondary btn-sm"
+        @click="emit('clear-filters')"
+      >
+        Đặt lại bộ lọc
+      </button>
+    </div>
+
+    <!-- Error State with Retry (RR04) -->
     <div v-else-if="status === 'error'" class="state-panel cockpit-card state-panel--error" role="alert" data-testid="payment-ledger-error">
       <UIcon name="i-lucide-circle-alert" aria-hidden="true" />
       <h2>Không thể tải đợt thanh toán</h2>
@@ -291,7 +292,7 @@ const isFiltered = computed(() => {
         type="button"
         class="cockpit-btn cockpit-btn--secondary btn-sm"
         data-testid="empty-clear-filters-btn"
-        @click="resetFilters"
+        @click="emit('clear-filters')"
       >
         Xóa bộ lọc
       </button>
@@ -316,7 +317,7 @@ const isFiltered = computed(() => {
                 Giữ lại bảo hành
               </th>
               <th scope="col" class="col-ref">
-                Tham chiếu / Ghi chú
+                Tham chiếu & Ghi chú
               </th>
             </tr>
           </thead>
@@ -345,31 +346,33 @@ const isFiltered = computed(() => {
                 {{ formatFinanceMoney(p.paidAmount, currencyCode, moneyScale) }}
               </td>
               <td class="col-retention text-right font-mono">
-                <template v-if="p.warrantyRetentionAmount">
+                <template v-if="p.warrantyRetentionAmount != null && p.warrantyRetentionAmount !== ''">
                   <div class="retention-sub">
                     <span>{{ formatFinanceMoney(p.warrantyRetentionAmount, currencyCode, moneyScale) }}</span>
-                    <span v-if="p.retentionRateBps != null" class="rate-hint text-xs">({{ (p.retentionRateBps / 100) }}%)</span>
+                    <span v-if="p.retentionRateBps != null && Number(p.warrantyRetentionAmount) > 0" class="rate-hint text-xs">({{ (p.retentionRateBps / 100) }}%)</span>
                   </div>
                 </template>
                 <span v-else class="text-muted">—</span>
               </td>
               <td class="col-ref">
-                <span v-if="p.reference" class="font-mono text-xs">{{ p.reference }}</span>
-                <span v-else-if="p.note" class="text-xs text-muted">{{ p.note }}</span>
-                <span v-else class="text-muted">—</span>
+                <div class="ref-note-cell">
+                  <span v-if="p.reference" class="font-mono text-xs ref-badge">{{ p.reference }}</span>
+                  <p v-if="p.note" class="row-note text-xs text-muted">{{ p.note }}</p>
+                  <span v-if="!p.reference && !p.note" class="text-muted">—</span>
+                </div>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <!-- Pagination Controls (R01) -->
+      <!-- Pagination Controls (RR01) -->
       <div v-if="pagination && pagination.totalPages > 0" class="pagination-bar cockpit-card" data-testid="payment-pagination-bar">
         <div class="page-size-selector">
           <label for="payment-page-size" class="text-xs text-secondary">Hiển thị:</label>
           <select
             id="payment-page-size"
-            v-model="pageSize"
+            :value="pageSize"
             class="cockpit-select page-size-select"
             data-testid="payment-page-size-select"
             @change="onPageSizeChange"
@@ -396,9 +399,9 @@ const isFiltered = computed(() => {
             <button
               type="button"
               class="cockpit-btn cockpit-btn--secondary btn-sm"
-              :disabled="pagination.page <= 1"
+              :disabled="page <= 1"
               data-testid="payment-prev-page-btn"
-              @click="goToPage(pagination.page - 1)"
+              @click="emit('change-page', page - 1)"
             >
               <UIcon name="i-lucide-chevron-left" aria-hidden="true" />
               <span>Trước</span>
@@ -407,9 +410,9 @@ const isFiltered = computed(() => {
             <button
               type="button"
               class="cockpit-btn cockpit-btn--secondary btn-sm"
-              :disabled="pagination.page >= pagination.totalPages"
+              :disabled="page >= pagination.totalPages"
               data-testid="payment-next-page-btn"
-              @click="goToPage(pagination.page + 1)"
+              @click="emit('change-page', page + 1)"
             >
               <span>Sau</span>
               <UIcon name="i-lucide-chevron-right" aria-hidden="true" />
@@ -426,35 +429,37 @@ const isFiltered = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  width: 100%;
 }
 
 .ledger-header-nav {
-  display: flex;
-  align-items: center;
+  margin-bottom: 4px;
 }
 
 .back-to-contractors-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  background: transparent;
+  gap: 6px;
+  background: none;
   border: none;
   color: var(--color-primary);
-  font-size: 0.9rem;
-  font-weight: 600;
+  font-size: 0.85rem;
+  font-weight: 500;
   cursor: pointer;
-  padding: 6px 0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.15s ease;
 }
 
 .back-to-contractors-btn:hover {
-  text-decoration: underline;
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
 }
 
 .contractor-summary-card {
-  padding: 20px;
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   border-radius: var(--radius-lg, 12px);
 }
 
@@ -469,12 +474,12 @@ const isFiltered = computed(() => {
 .contractor-name {
   font-size: 1.25rem;
   font-weight: 700;
+  margin: 0 0 4px 0;
   color: var(--color-text-primary);
-  margin: 0;
 }
 
 .contractor-dossier-name {
-  color: var(--color-primary);
+  color: var(--color-text-secondary);
   margin-top: 4px;
 }
 
@@ -482,20 +487,18 @@ const isFiltered = computed(() => {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  background: var(--color-surface-subtle, #f8fafc);
-  padding: 10px 16px;
-  border-radius: var(--radius-md, 8px);
-  border: 1px solid var(--color-border);
+  gap: 2px;
 }
 
 .contractor-total-badge .label {
   font-size: 0.75rem;
   color: var(--color-text-secondary);
-  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .contractor-total-badge .value {
-  font-size: 1.15rem;
+  font-size: 1.25rem;
   color: var(--color-text-primary);
 }
 
@@ -503,12 +506,12 @@ const isFiltered = computed(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  color: #b45309;
-  font-size: 0.85rem;
   padding: 10px 14px;
   border-radius: var(--radius-md, 8px);
+  background: var(--color-warning-subtle, rgba(245, 158, 11, 0.08));
+  border: 1px solid var(--color-warning-border, rgba(245, 158, 11, 0.25));
+  color: var(--color-warning-text, #92400e);
+  font-size: 0.825rem;
   line-height: 1.4;
 }
 
@@ -530,10 +533,22 @@ const isFiltered = computed(() => {
 .search-box {
   flex: 1;
   min-width: 200px;
+  position: relative;
 }
 
 .search-input {
   width: 100%;
+}
+
+.search-pending-indicator {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  color: var(--color-primary);
+  font-weight: 500;
+  pointer-events: none;
 }
 
 .date-range-box {
@@ -582,10 +597,13 @@ const isFiltered = computed(() => {
 .table-container {
   overflow-x: auto;
   border-radius: var(--radius-lg, 12px);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .payment-table {
   width: 100%;
+  min-width: 760px;
   border-collapse: collapse;
   font-size: 0.875rem;
 }
@@ -614,7 +632,7 @@ const isFiltered = computed(() => {
 
 .col-date { width: 140px; }
 .col-paid { width: 160px; }
-.col-retention { width: 170px; }
+.col-retention { width: 160px; }
 .col-ref { width: 180px; }
 
 .date-cell {
@@ -636,7 +654,27 @@ const isFiltered = computed(() => {
 
 .rate-hint {
   color: var(--color-text-secondary);
-  opacity: 0.75;
+  opacity: 0.7;
+}
+
+.ref-note-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ref-badge {
+  background: var(--color-surface-subtle, #f1f5f9);
+  padding: 2px 6px;
+  border-radius: 4px;
+  width: fit-content;
+  font-size: 0.75rem;
+}
+
+.row-note {
+  margin: 0;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .text-muted {
@@ -691,6 +729,23 @@ const isFiltered = computed(() => {
   padding: 40px 20px;
   text-align: center;
   color: var(--color-text-secondary);
+  gap: 8px;
+}
+
+.state-panel h2 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 4px 0;
+  color: var(--color-text-primary);
+}
+
+.state-panel--warning {
+  border-color: var(--color-warning, #f59e0b);
+  background: var(--color-warning-subtle, rgba(245, 158, 11, 0.04));
+}
+
+.state-panel--warning h2 {
+  color: var(--color-warning, #f59e0b);
 }
 
 .state-panel--error {
@@ -699,9 +754,6 @@ const isFiltered = computed(() => {
 }
 
 .state-panel--error h2 {
-  font-size: 1rem;
-  font-weight: 700;
   color: var(--color-danger, #ef4444);
-  margin: 8px 0 4px 0;
 }
 </style>

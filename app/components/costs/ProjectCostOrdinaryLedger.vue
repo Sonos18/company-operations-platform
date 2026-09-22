@@ -1,123 +1,57 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import type {
   FinanceItemDetails,
-  ItemDetailQuery,
 } from '../../../shared/schemas/costs/project-finance'
 import {
   computePageRetentionBreakdown,
   formatDateProvenance,
   formatFinanceMoney,
 } from '../../utils/costs/finance-display'
+import type { LedgerUiStatus } from '../../composables/costs/useLedgerQueryController'
 
 interface Props {
   details: FinanceItemDetails | null
-  status: 'idle' | 'loading' | 'ready' | 'empty' | 'error'
+  status: LedgerUiStatus
   currencyCode?: string
   moneyScale?: number
   itemId?: string | null
-  initialPage?: number
-  initialPageSize?: 25 | 50 | 100
+
+  // Controlled query props (RR01)
+  search?: string
+  dateFrom?: string
+  dateTo?: string
+  retention?: 'all' | 'warranty' | 'other' | 'no_recorded_retention'
+  page?: number
+  pageSize?: 25 | 50 | 100
+  isPendingDispatch?: boolean
+  dateValidationError?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   currencyCode: 'VND',
   moneyScale: 0,
   itemId: null,
-  initialPage: 1,
-  initialPageSize: 25,
+  search: '',
+  dateFrom: '',
+  dateTo: '',
+  retention: 'all',
+  page: 1,
+  pageSize: 25,
+  isPendingDispatch: false,
+  dateValidationError: null,
 })
 
 const emit = defineEmits<{
-  (e: 'change-query', query: Partial<ItemDetailQuery>): void
-  (e: 'retry'): void
+  'search-input': [value: string]
+  'update:dateFrom': [value: string]
+  'update:dateTo': [value: string]
+  'update:retention': [value: 'all' | 'warranty' | 'other' | 'no_recorded_retention']
+  'update:pageSize': [value: 25 | 50 | 100]
+  'change-page': [newPage: number]
+  'clear-filters': []
+  'retry': []
 }>()
-
-// Filter states
-const page = ref(props.initialPage)
-const pageSize = ref<25 | 50 | 100>(props.initialPageSize)
-const search = ref('')
-const dateFrom = ref('')
-const dateTo = ref('')
-const retention = ref<'all' | 'warranty' | 'other' | 'no_recorded_retention'>('all')
-
-// Local validation for date range (R01)
-const dateValidationError = computed<string | null>(() => {
-  if (dateFrom.value && dateTo.value && dateFrom.value > dateTo.value) {
-    return 'Ngày kết thúc không được trước ngày bắt đầu'
-  }
-  return null
-})
-
-// Debounce timer for search
-let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
-
-function emitQuery(resetPage = false) {
-  if (dateValidationError.value) {
-    // Inverted date range: do not submit invalid request (R01)
-    return
-  }
-
-  if (resetPage) {
-    page.value = 1
-  }
-
-  const query: Partial<ItemDetailQuery> = {
-    page: page.value,
-    pageSize: pageSize.value,
-    sort: 'newest',
-    retention: retention.value,
-  }
-
-  if (search.value.trim()) query.q = search.value.trim()
-  if (dateFrom.value) query.dateFrom = dateFrom.value
-  if (dateTo.value) query.dateTo = dateTo.value
-
-  emit('change-query', query)
-}
-
-function onSearchInput() {
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
-  searchDebounceTimer = setTimeout(() => {
-    emitQuery(true)
-  }, 300)
-}
-
-function onFilterChange() {
-  emitQuery(true)
-}
-
-function onPageSizeChange() {
-  emitQuery(true)
-}
-
-function goToPage(newPage: number) {
-  const maxPages = pagination.value?.totalPages ?? 1
-  const clamped = Math.max(1, Math.min(newPage, maxPages))
-  if (clamped !== page.value) {
-    page.value = clamped
-    emitQuery(false)
-  }
-}
-
-function resetFilters() {
-  search.value = ''
-  dateFrom.value = ''
-  dateTo.value = ''
-  retention.value = 'all'
-  page.value = 1
-  emitQuery(true)
-}
-
-// Sync page if updated by parent response envelope
-watch(
-  () => props.details?.kind === 'ordinary' ? props.details.details.pagination.page : undefined,
-  (serverPage) => {
-    if (serverPage != null && serverPage !== page.value) {
-      page.value = serverPage
-    }
-  },
-)
 
 const ordinaryData = computed(() => {
   if (props.details?.kind === 'ordinary') {
@@ -131,10 +65,10 @@ const pagination = computed(() => ordinaryData.value?.pagination ?? null)
 const isFiltered = computed(() => {
   if (!pagination.value) return false
   return (
-    Boolean(search.value.trim())
-    || Boolean(dateFrom.value)
-    || Boolean(dateTo.value)
-    || retention.value !== 'all'
+    Boolean(props.search.trim())
+    || Boolean(props.dateFrom)
+    || Boolean(props.dateTo)
+    || props.retention !== 'all'
     || pagination.value.filteredCount !== pagination.value.fullCount
   )
 })
@@ -144,6 +78,31 @@ const pageRetention = computed(() => {
   if (!ordinaryData.value?.rows) return null
   return computePageRetentionBreakdown(ordinaryData.value.rows, props.currencyCode, props.moneyScale)
 })
+
+function onSearchInput(event: Event) {
+  const target = event.target as HTMLInputElement
+  emit('search-input', target.value)
+}
+
+function onDateFromChange(event: Event) {
+  const target = event.target as HTMLInputElement
+  emit('update:dateFrom', target.value)
+}
+
+function onDateToChange(event: Event) {
+  const target = event.target as HTMLInputElement
+  emit('update:dateTo', target.value)
+}
+
+function onRetentionChange(event: Event) {
+  const target = event.target as HTMLSelectElement
+  emit('update:retention', target.value as 'all' | 'warranty' | 'other' | 'no_recorded_retention')
+}
+
+function onPageSizeChange(event: Event) {
+  const target = event.target as HTMLSelectElement
+  emit('update:pageSize', Number(target.value) as 25 | 50 | 100)
+}
 </script>
 
 <template>
@@ -154,7 +113,7 @@ const pageRetention = computed(() => {
         <div class="search-box">
           <input
             id="ordinary-search-input"
-            v-model="search"
+            :value="search"
             type="search"
             class="cockpit-input search-input"
             placeholder="Tìm theo nội dung, tham chiếu..."
@@ -162,37 +121,42 @@ const pageRetention = computed(() => {
             aria-label="Tìm theo nội dung, tham chiếu"
             @input="onSearchInput"
           >
+          <span v-if="isPendingDispatch" class="search-pending-indicator" aria-live="polite">
+            Đang tìm kiếm…
+          </span>
         </div>
 
         <div class="date-range-box">
           <label class="filter-label" for="ordinary-date-from">Từ:</label>
           <input
             id="ordinary-date-from"
-            v-model="dateFrom"
+            :value="dateFrom"
             type="date"
             class="cockpit-input date-input"
             data-testid="ordinary-date-from"
             aria-label="Từ ngày"
-            @change="onFilterChange"
+            @input="onDateFromChange"
+            @change="onDateFromChange"
           >
           <label class="filter-label" for="ordinary-date-to">Đến:</label>
           <input
             id="ordinary-date-to"
-            v-model="dateTo"
+            :value="dateTo"
             type="date"
             class="cockpit-input date-input"
             data-testid="ordinary-date-to"
             aria-label="Đến ngày"
-            @change="onFilterChange"
+            @input="onDateToChange"
+            @change="onDateToChange"
           >
         </div>
 
         <select
-          v-model="retention"
+          :value="retention"
           class="cockpit-select"
           aria-label="Lọc theo khoản giữ lại"
           data-testid="ordinary-retention-select"
-          @change="onFilterChange"
+          @change="onRetentionChange"
         >
           <option value="all">
             Tất cả khoản
@@ -213,7 +177,7 @@ const pageRetention = computed(() => {
           type="button"
           class="cockpit-btn cockpit-btn--ghost btn-sm"
           data-testid="clear-ordinary-filters-btn"
-          @click="resetFilters"
+          @click="emit('clear-filters')"
         >
           <span>Xóa lọc</span>
         </button>
@@ -223,8 +187,8 @@ const pageRetention = computed(() => {
         {{ dateValidationError }}
       </div>
 
-      <!-- Scope & Totals Display (R01) -->
-      <div v-if="pagination && status === 'ready'" class="totals-status-bar" data-testid="ordinary-totals-bar">
+      <!-- Scope & Totals Display (RR01) -->
+      <div v-if="pagination && (status === 'ready' || status === 'empty')" class="totals-status-bar" data-testid="ordinary-totals-bar">
         <div class="full-total-info">
           <span>Toàn bộ: <strong>{{ pagination.fullCount }} khoản</strong> ({{ formatFinanceMoney(pagination.fullAmount, currencyCode, moneyScale) ?? '0 VND' }})</span>
         </div>
@@ -242,14 +206,50 @@ const pageRetention = computed(() => {
       <p>Đang tải chi tiết hạng mục…</p>
     </div>
 
-    <!-- Error State with Retry (R03) -->
+    <!-- Module Disabled State (RR04) -->
+    <div v-else-if="status === 'module'" class="state-panel cockpit-card" data-testid="ordinary-ledger-module-disabled">
+      <UIcon name="i-lucide-toggle-left" aria-hidden="true" />
+      <h2>Tính năng chưa kích hoạt</h2>
+      <p>Mô-đun quản lý chi phí chưa được kích hoạt cho công ty này.</p>
+    </div>
+
+    <!-- Permission Denied State (RR04) -->
+    <div v-else-if="status === 'permission'" class="state-panel cockpit-card" data-testid="ordinary-ledger-permission-denied">
+      <UIcon name="i-lucide-shield-alert" aria-hidden="true" />
+      <h2>Không có quyền truy cập</h2>
+      <p>Bạn không có quyền xem chi tiết chi phí này.</p>
+    </div>
+
+    <!-- Not Found State (RR04) -->
+    <div v-else-if="status === 'not_found'" class="state-panel cockpit-card" data-testid="ordinary-ledger-not-found">
+      <UIcon name="i-lucide-file-question" aria-hidden="true" />
+      <h2>Không tìm thấy hạng mục</h2>
+      <p>Hạng mục chi phí này không tồn tại hoặc đã bị xóa.</p>
+    </div>
+
+    <!-- Validation Error State (RR04) -->
+    <div v-else-if="status === 'validation_error'" class="state-panel cockpit-card state-panel--warning" data-testid="ordinary-ledger-validation-error">
+      <UIcon name="i-lucide-alert-triangle" aria-hidden="true" />
+      <h2>Điều kiện lọc không hợp lệ</h2>
+      <p>{{ dateValidationError ?? 'Vui lòng kiểm tra lại điều kiện lọc trước khi tải dữ liệu.' }}</p>
+      <button
+        type="button"
+        class="cockpit-btn cockpit-btn--secondary btn-sm"
+        @click="emit('clear-filters')"
+      >
+        Đặt lại bộ lọc
+      </button>
+    </div>
+
+    <!-- Error State with Retry (RR04) -->
     <div v-else-if="status === 'error'" class="state-panel cockpit-card state-panel--error" role="alert" data-testid="ordinary-ledger-error">
       <UIcon name="i-lucide-circle-alert" aria-hidden="true" />
       <h2>Không thể tải chi tiết hạng mục</h2>
+      <p>Đã xảy ra lỗi khi lấy chi tiết hạng mục từ máy chủ.</p>
       <button
         type="button"
         class="cockpit-btn cockpit-btn--secondary"
-        :data-testid="`retry-details-${itemId}`"
+        :data-testid="itemId ? `retry-details-${itemId}` : 'retry-details'"
         @click="emit('retry')"
       >
         <UIcon name="i-lucide-refresh-cw" aria-hidden="true" />
@@ -260,13 +260,13 @@ const pageRetention = computed(() => {
     <!-- Empty State -->
     <div v-else-if="status === 'empty'" class="state-panel cockpit-card" data-testid="ordinary-ledger-empty">
       <UIcon name="i-lucide-inbox" aria-hidden="true" />
-      <p>Chưa có chi tiết cho hạng mục này.</p>
+      <p>Chưa có chi tiết cho hạng mục này phù hợp với điều kiện tìm kiếm.</p>
       <button
         v-if="isFiltered"
         type="button"
         class="cockpit-btn cockpit-btn--secondary btn-sm"
         data-testid="ordinary-empty-clear-filters-btn"
-        @click="resetFilters"
+        @click="emit('clear-filters')"
       >
         Xóa bộ lọc
       </button>
@@ -297,7 +297,7 @@ const pageRetention = computed(() => {
         </div>
       </div>
 
-      <!-- Items Table -->
+      <!-- Items Table: Desktop & Tablet with all restored fields (RR03) -->
       <div class="table-container cockpit-card" tabindex="0" aria-label="Bảng chi tiết hạng mục">
         <table class="detail-table" data-testid="ordinary-detail-table">
           <thead>
@@ -308,6 +308,9 @@ const pageRetention = computed(() => {
               <th scope="col" class="col-desc">
                 Nội dung chi phí
               </th>
+              <th scope="col" class="col-qty text-right">
+                Khối lượng / Đơn giá
+              </th>
               <th scope="col" class="col-amount text-right">
                 Số tiền
               </th>
@@ -315,7 +318,7 @@ const pageRetention = computed(() => {
                 Khoản giữ lại
               </th>
               <th scope="col" class="col-ref">
-                Tham chiếu
+                Tham chiếu & Ghi chú
               </th>
             </tr>
           </thead>
@@ -326,6 +329,7 @@ const pageRetention = computed(() => {
               class="detail-row"
               :data-testid="`detail-row-${row.id}`"
             >
+              <!-- Date & Date provenance badge -->
               <td class="col-date font-mono">
                 <div class="date-cell">
                   <span>{{ formatDateProvenance(row.effectiveDate, row.dateSource).dateText }}</span>
@@ -337,6 +341,8 @@ const pageRetention = computed(() => {
                   </span>
                 </div>
               </td>
+
+              <!-- Description & Opening Balance badge -->
               <td class="col-desc font-medium">
                 <div class="desc-cell">
                   <span
@@ -345,40 +351,58 @@ const pageRetention = computed(() => {
                   >
                     Số liệu ban đầu
                   </span>
-                  <span>{{ row.description }}</span>
+                  <span class="desc-text">{{ row.description }}</span>
                 </div>
               </td>
+
+              <!-- Quantity, UnitCode, UnitPrice (RR03 restored) -->
+              <td class="col-qty text-right">
+                <div v-if="row.quantity != null || row.unitPrice != null" class="qty-unit-cell font-mono text-xs">
+                  <span v-if="row.quantity != null" class="qty-val"><span data-testid="row-qty">{{ row.quantity }}</span><span v-if="row.unitCode" data-testid="row-unit"> {{ row.unitCode }}</span></span>
+                  <span v-if="row.quantity != null && row.unitPrice != null" class="qty-separator">×</span>
+                  <span v-if="row.unitPrice != null" class="unit-price-val" data-testid="row-unit-price">{{ formatFinanceMoney(row.unitPrice, currencyCode, moneyScale) }}</span>
+                </div>
+                <span v-else class="text-muted">—</span>
+              </td>
+
+              <!-- Amount -->
               <td class="col-amount text-right font-mono font-bold">
                 {{ formatFinanceMoney(row.amount, currencyCode, moneyScale) }}
               </td>
+
+              <!-- Retention -->
               <td class="col-retention text-right font-mono">
-                <template v-if="row.retentionAmount">
+                <template v-if="row.retentionAmount != null && row.retentionAmount !== ''">
                   <div class="retention-sub">
                     <span>{{ formatFinanceMoney(row.retentionAmount, currencyCode, moneyScale) }}</span>
-                    <span class="text-xs text-muted">
+                    <span v-if="Number(row.retentionAmount) > 0" class="text-xs text-muted">
                       ({{ row.retentionKind === 'warranty' ? 'Bảo hành' : 'Khác' }}{{ row.retentionRateBps != null ? ` ${(row.retentionRateBps / 100)}%` : '' }})
                     </span>
                   </div>
                 </template>
                 <span v-else class="text-muted">—</span>
               </td>
+
+              <!-- Reference AND full Note when both exist (RR03 restored) -->
               <td class="col-ref">
-                <span v-if="row.reference" class="font-mono text-xs">{{ row.reference }}</span>
-                <span v-else-if="row.note" class="text-xs text-muted">{{ row.note }}</span>
-                <span v-else class="text-muted">—</span>
+                <div class="ref-note-cell">
+                  <span v-if="row.reference" class="font-mono text-xs ref-badge" data-testid="row-reference">{{ row.reference }}</span>
+                  <p v-if="row.note" class="row-note text-xs text-muted" data-testid="row-note">{{ row.note }}</p>
+                  <span v-if="!row.reference && !row.note" class="text-muted">—</span>
+                </div>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <!-- Pagination Controls (R01) -->
+      <!-- Pagination Controls (RR01) -->
       <div v-if="pagination && pagination.totalPages > 0" class="pagination-bar cockpit-card" data-testid="ordinary-pagination-bar">
         <div class="page-size-selector">
           <label for="ordinary-page-size" class="text-xs text-secondary">Hiển thị:</label>
           <select
             id="ordinary-page-size"
-            v-model="pageSize"
+            :value="pageSize"
             class="cockpit-select page-size-select"
             data-testid="ordinary-page-size-select"
             @change="onPageSizeChange"
@@ -405,9 +429,9 @@ const pageRetention = computed(() => {
             <button
               type="button"
               class="cockpit-btn cockpit-btn--secondary btn-sm"
-              :disabled="pagination.page <= 1"
+              :disabled="page <= 1"
               data-testid="ordinary-prev-page-btn"
-              @click="goToPage(pagination.page - 1)"
+              @click="emit('change-page', page - 1)"
             >
               <UIcon name="i-lucide-chevron-left" aria-hidden="true" />
               <span>Trước</span>
@@ -416,9 +440,9 @@ const pageRetention = computed(() => {
             <button
               type="button"
               class="cockpit-btn cockpit-btn--secondary btn-sm"
-              :disabled="pagination.page >= pagination.totalPages"
+              :disabled="page >= pagination.totalPages"
               data-testid="ordinary-next-page-btn"
-              @click="goToPage(pagination.page + 1)"
+              @click="emit('change-page', page + 1)"
             >
               <span>Sau</span>
               <UIcon name="i-lucide-chevron-right" aria-hidden="true" />
@@ -435,6 +459,7 @@ const pageRetention = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  width: 100%;
 }
 
 .filter-toolbar {
@@ -455,10 +480,22 @@ const pageRetention = computed(() => {
 .search-box {
   flex: 1;
   min-width: 200px;
+  position: relative;
 }
 
 .search-input {
   width: 100%;
+}
+
+.search-pending-indicator {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  color: var(--color-primary);
+  font-weight: 500;
+  pointer-events: none;
 }
 
 .date-range-box {
@@ -544,10 +581,13 @@ const pageRetention = computed(() => {
 .table-container {
   overflow-x: auto;
   border-radius: var(--radius-lg, 12px);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .detail-table {
   width: 100%;
+  min-width: 760px;
   border-collapse: collapse;
   font-size: 0.875rem;
 }
@@ -574,9 +614,10 @@ const pageRetention = computed(() => {
   background: var(--color-surface-hover, rgba(0, 0, 0, 0.015));
 }
 
-.col-date { width: 140px; }
-.col-amount { width: 160px; }
-.col-retention { width: 180px; }
+.col-date { width: 130px; }
+.col-qty { width: 160px; }
+.col-amount { width: 150px; }
+.col-retention { width: 160px; }
 .col-ref { width: 180px; }
 
 .date-cell {
@@ -598,6 +639,38 @@ const pageRetention = computed(() => {
 
 .date-badge {
   width: fit-content;
+}
+
+.qty-unit-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.qty-separator {
+  margin: 0 2px;
+  opacity: 0.6;
+}
+
+.ref-note-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ref-badge {
+  background: var(--color-surface-subtle, #f1f5f9);
+  padding: 2px 6px;
+  border-radius: 4px;
+  width: fit-content;
+  font-size: 0.75rem;
+}
+
+.row-note {
+  margin: 0;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .retention-sub {
@@ -659,6 +732,23 @@ const pageRetention = computed(() => {
   padding: 40px 20px;
   text-align: center;
   color: var(--color-text-secondary);
+  gap: 8px;
+}
+
+.state-panel h2 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 4px 0;
+  color: var(--color-text-primary);
+}
+
+.state-panel--warning {
+  border-color: var(--color-warning, #f59e0b);
+  background: var(--color-warning-subtle, rgba(245, 158, 11, 0.04));
+}
+
+.state-panel--warning h2 {
+  color: var(--color-warning, #f59e0b);
 }
 
 .state-panel--error {
@@ -667,9 +757,6 @@ const pageRetention = computed(() => {
 }
 
 .state-panel--error h2 {
-  font-size: 1rem;
-  font-weight: 700;
   color: var(--color-danger, #ef4444);
-  margin: 8px 0 4px 0;
 }
 </style>

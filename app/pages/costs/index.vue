@@ -1,14 +1,13 @@
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import type { FinanceProjectList } from '../../../shared/schemas/costs/project-finance'
 import {
-  formatCostDisplay,
+  computeProjectKpiCards,
   formatOperationalState,
-  formatOwnerReceiptsDisplay,
-  formatProvisionalProfitDisplay,
-  formatWarrantyRetentionDisplay,
 } from '../../utils/costs/finance-display'
 import { mapCostsApiError } from '../../utils/costs/costs-error-mapper'
 import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
+import ProjectCostInfoDisclosure from '../../components/costs/ProjectCostInfoDisclosure.vue'
 
 definePageMeta({ requiredPermission: 'cost.read' })
 
@@ -18,57 +17,15 @@ const projects = ref<FinanceProjectList['projects']>([])
 const nextCursor = ref<string | null>(null)
 const loadingMore = ref(false)
 const status = ref<'loading' | 'ready' | 'module' | 'permission' | 'empty' | 'error'>('loading')
-const pinnedInfoId = ref<string | null>(null)
-const hoveredInfoId = ref<string | null>(null)
-const focusedInfoId = ref<string | null>(null)
-const isInfoDismissed = ref(false)
 const requestTracker = createAsyncRequestTracker()
 
-function isInfoOpen(id: string) {
-  if (isInfoDismissed.value) return false
-  return pinnedInfoId.value === id || hoveredInfoId.value === id || focusedInfoId.value === id
-}
-
-function onInfoHover(id: string) {
-  isInfoDismissed.value = false
-  hoveredInfoId.value = id
-}
-
-function onInfoLeave(id: string) {
-  if (hoveredInfoId.value === id) {
-    hoveredInfoId.value = null
-  }
-}
-
-function onInfoFocus(id: string) {
-  isInfoDismissed.value = false
-  focusedInfoId.value = id
-}
-
-function onInfoBlur(id: string) {
-  if (focusedInfoId.value === id) {
-    focusedInfoId.value = null
-  }
-}
-
-function toggleInfo(id: string) {
-  if (pinnedInfoId.value === id) {
-    pinnedInfoId.value = null
-    hoveredInfoId.value = null
-    focusedInfoId.value = null
-  }
-  else {
-    isInfoDismissed.value = false
-    pinnedInfoId.value = id
-  }
-}
-
-function dismissInfo() {
-  isInfoDismissed.value = true
-  pinnedInfoId.value = null
-  hoveredInfoId.value = null
-  focusedInfoId.value = null
-}
+// Single typed 4-KPI view model computed once per project card (Maintainability B)
+const projectCards = computed(() => {
+  return projects.value.map(entry => ({
+    ...entry,
+    kpis: computeProjectKpiCards(entry.summary, entry.project),
+  }))
+})
 
 function onCardClick(projectId: string, event: MouseEvent) {
   const target = event.target as HTMLElement | null
@@ -76,28 +33,11 @@ function onCardClick(projectId: string, event: MouseEvent) {
   navigateTo(`/costs/${projectId}`)
 }
 
-function onDocumentKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') dismissInfo()
-}
-
-function onDocumentClick(event: MouseEvent) {
-  const target = event.target as HTMLElement | null
-  if (!target?.closest('.info-disclosure-anchor')) {
-    dismissInfo()
-  }
-}
-
-onMounted(() => {
-  window.addEventListener('click', onDocumentClick)
-  window.addEventListener('keydown', onDocumentKeydown)
-})
-
 async function load() {
   const token = requestTracker.start({ companyId: companyAccess.activeCompanyId })
   status.value = 'loading'
   projects.value = []
   nextCursor.value = null
-  dismissInfo()
 
   try {
     const value = await repositories.projectFinance.listProjects()
@@ -139,8 +79,6 @@ watch(() => companyAccess.activeCompanyId, load, { immediate: true })
 
 onUnmounted(() => {
   requestTracker.invalidate()
-  window.removeEventListener('click', onDocumentClick)
-  window.removeEventListener('keydown', onDocumentKeydown)
 })
 </script>
 
@@ -193,7 +131,7 @@ onUnmounted(() => {
     <div v-else-if="status === 'ready'" class="project-directory-wrapper">
       <div class="project-grid" aria-label="Danh sách dự án theo dõi chi phí">
         <article
-          v-for="entry in projects"
+          v-for="entry in projectCards"
           :key="entry.project.projectId"
           class="cockpit-card cockpit-card--interactive project-card"
           :data-testid="`project-cost-card-${entry.project.projectId}`"
@@ -229,49 +167,49 @@ onUnmounted(() => {
           <!-- Position 1: Lợi nhuận tạm tính -->
           <div
             class="tracked-total-box"
-            :class="`headline-theme--${formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).colorScheme}`"
+            :class="`headline-theme--${entry.kpis.provisionalProfit.colorScheme}`"
             data-testid="provisional-profit-box"
           >
             <div class="total-header">
               <span class="total-label">
-                {{ formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).label }}
+                {{ entry.kpis.provisionalProfit.label }}
               </span>
               <span
-                v-if="formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).caption"
+                v-if="entry.kpis.provisionalProfit.caption"
                 class="headline-caption"
                 data-testid="headline-caption"
               >
-                {{ formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).caption }}
+                {{ entry.kpis.provisionalProfit.caption }}
               </span>
             </div>
             <div class="total-value-row">
               <span
                 class="total-value"
                 :class="{
-                  'is-negative-value': formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).isNegative,
-                  'is-unavailable-value': !formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).isAvailable
+                  'is-negative-value': entry.kpis.provisionalProfit.isNegative,
+                  'is-unavailable-value': !entry.kpis.provisionalProfit.isAvailable
                 }"
                 data-testid="total-tracked-value"
                 data-testid-alt="expected-profit-value"
               >
-                {{ formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).value }}
+                {{ entry.kpis.provisionalProfit.value }}
               </span>
               <span
-                v-if="!formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).isAvailable"
+                v-if="!entry.kpis.provisionalProfit.isAvailable"
                 class="unavailable-info-icon"
                 role="img"
-                :title="formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).reasons ?? 'Chưa đủ dữ liệu tài chính để tính lợi nhuận'"
+                :title="entry.kpis.provisionalProfit.reasons ?? 'Chưa đủ dữ liệu tài chính để tính lợi nhuận'"
                 aria-label="Thông tin thiếu dữ liệu"
               >
                 <UIcon name="i-lucide-info" class="compact-info-icon" aria-hidden="true" />
               </span>
             </div>
             <span
-              v-if="formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).reasons"
+              v-if="entry.kpis.provisionalProfit.reasons"
               class="total-subtext"
               data-testid="margin-reasons"
             >
-              {{ formatProvisionalProfitDisplay(entry.summary.management?.result, entry.project.currencyCode, entry.project.moneyScale).reasons }}
+              {{ entry.kpis.provisionalProfit.reasons }}
             </span>
           </div>
 
@@ -281,55 +219,30 @@ onUnmounted(() => {
               <div class="metric-top">
                 <span
                   class="cockpit-badge"
-                  :class="formatOwnerReceiptsDisplay({ receipts: entry.summary.management?.receipts, budget: entry.summary.budget, currencyCode: entry.project.currencyCode, moneyScale: entry.project.moneyScale }).badgeVariant"
+                  :class="entry.kpis.receipts.badgeVariant"
                 >
-                  {{ formatOwnerReceiptsDisplay({ receipts: entry.summary.management?.receipts, budget: entry.summary.budget, currencyCode: entry.project.currencyCode, moneyScale: entry.project.moneyScale }).label }}
+                  {{ entry.kpis.receipts.label }}
                 </span>
 
-                <!-- Info disclosure for receipt references / budget -->
-                <div
-                  v-if="formatOwnerReceiptsDisplay({ receipts: entry.summary.management?.receipts, budget: entry.summary.budget, currencyCode: entry.project.currencyCode, moneyScale: entry.project.moneyScale }).hasDisclosure"
-                  class="info-disclosure-anchor"
-                >
-                  <button
-                    type="button"
-                    class="info-trigger-btn"
-                    :aria-expanded="isInfoOpen(entry.project.projectId) ? 'true' : 'false'"
-                    aria-label="Thông tin nguồn thu từ chủ đầu tư"
-                    :aria-describedby="`info-popover-${entry.project.projectId}`"
-                    data-testid="info-disclosure-btn"
-                    @click.stop="toggleInfo(entry.project.projectId)"
-                    @mouseenter="onInfoHover(entry.project.projectId)"
-                    @mouseleave="onInfoLeave(entry.project.projectId)"
-                    @focus="onInfoFocus(entry.project.projectId)"
-                    @blur="onInfoBlur(entry.project.projectId)"
-                  >
-                    <UIcon name="i-lucide-info" class="info-icon" aria-hidden="true" />
-                  </button>
-                  <div
-                    v-show="isInfoOpen(entry.project.projectId)"
-                    :id="`info-popover-${entry.project.projectId}`"
-                    role="tooltip"
-                    class="info-tooltip-popover cockpit-card"
-                    data-testid="info-tooltip-popover"
-                    @click.stop
-                  >
-                    <p class="info-tooltip-text">
-                      {{ formatOwnerReceiptsDisplay({ receipts: entry.summary.management?.receipts, budget: entry.summary.budget, currencyCode: entry.project.currencyCode, moneyScale: entry.project.moneyScale }).tooltipText }}
-                    </p>
-                  </div>
-                </div>
+                <!-- Info disclosure for receipt references / budget (Maintainability D) -->
+                <ProjectCostInfoDisclosure
+                  v-if="entry.kpis.receipts.hasDisclosure"
+                  :id="entry.project.projectId"
+                  :tooltip-text="entry.kpis.receipts.tooltipText!"
+                  button-test-id="info-disclosure-btn"
+                  popover-test-id="info-tooltip-popover"
+                />
               </div>
 
               <span class="metric-value" data-testid="accepted-value" data-testid-alt="reference-value">
-                {{ formatOwnerReceiptsDisplay({ receipts: entry.summary.management?.receipts, budget: entry.summary.budget, currencyCode: entry.project.currencyCode, moneyScale: entry.project.moneyScale }).value }}
+                {{ entry.kpis.receipts.value }}
               </span>
               <span
-                v-if="formatOwnerReceiptsDisplay({ receipts: entry.summary.management?.receipts, budget: entry.summary.budget, currencyCode: entry.project.currencyCode, moneyScale: entry.project.moneyScale }).budgetSecondaryText"
+                v-if="entry.kpis.receipts.budgetSecondaryText"
                 class="metric-subline"
                 data-testid="budget-secondary-subline"
               >
-                {{ formatOwnerReceiptsDisplay({ receipts: entry.summary.management?.receipts, budget: entry.summary.budget, currencyCode: entry.project.currencyCode, moneyScale: entry.project.moneyScale }).budgetSecondaryText }}
+                {{ entry.kpis.receipts.budgetSecondaryText }}
               </span>
             </div>
 
@@ -340,22 +253,22 @@ onUnmounted(() => {
                   Chi phí
                 </span>
                 <span
-                  v-if="formatCostDisplay(entry.summary.cost).stateLabel"
+                  v-if="entry.kpis.cost.stateLabel"
                   class="cockpit-badge cockpit-badge--warning"
                   data-testid="cost-state-badge"
                 >
-                  {{ formatCostDisplay(entry.summary.cost).stateLabel }}
+                  {{ entry.kpis.cost.stateLabel }}
                 </span>
               </div>
               <span class="metric-value" data-testid="in-progress-value" data-testid-alt="cost-value">
-                {{ formatCostDisplay(entry.summary.cost, entry.project.currencyCode, entry.project.moneyScale).value }}
+                {{ entry.kpis.cost.value }}
               </span>
               <span
-                v-if="formatCostDisplay(entry.summary.cost, entry.project.currencyCode, entry.project.moneyScale).knownSubtotal && formatCostDisplay(entry.summary.cost, entry.project.currencyCode, entry.project.moneyScale).knownSubtotal !== formatCostDisplay(entry.summary.cost, entry.project.currencyCode, entry.project.moneyScale).value && formatCostDisplay(entry.summary.cost).state !== 'recorded'"
+                v-if="entry.kpis.cost.knownSubtotal && entry.kpis.cost.knownSubtotal !== entry.kpis.cost.value && entry.kpis.cost.state !== 'recorded'"
                 class="metric-subline"
                 data-testid="known-subtotal-subline"
               >
-                {{ formatCostDisplay(entry.summary.cost, entry.project.currencyCode, entry.project.moneyScale).knownSubtotal }}
+                {{ entry.kpis.cost.knownSubtotal }}
               </span>
             </div>
           </div>
@@ -366,10 +279,10 @@ onUnmounted(() => {
               <span class="cockpit-badge metric-badge--warranty">Bảo hành đã ghi nhận</span>
               <span class="unknown-numbers">
                 <span class="unknown-value" data-testid="unknown-value" data-testid-alt="warranty-retention-value">
-                  {{ formatWarrantyRetentionDisplay(entry.summary.warrantyRetention, entry.project.currencyCode, entry.project.moneyScale).value }}
+                  {{ entry.kpis.warranty.value }}
                 </span>
                 <span class="unknown-count" data-testid="unknown-count" data-testid-alt="warranty-retention-count">
-                  {{ formatWarrantyRetentionDisplay(entry.summary.warrantyRetention).countText }}
+                  {{ entry.kpis.warranty.countText }}
                 </span>
               </span>
             </div>

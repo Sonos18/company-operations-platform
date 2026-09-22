@@ -97,6 +97,7 @@ function fakeSupabase(rows: ReturnType<typeof readSet>) {
     project_owner_advances: rows.ownerAdvances,
     project_subcontracts: rows.subcontracts,
     project_subcontract_payments: rows.payments,
+    project_cost_reconciliation_resolutions: [],
   }
   return {
     from(table: string) {
@@ -138,6 +139,7 @@ function fakeSupabaseMulti(projectRows: readonly ReturnType<typeof multiSnapshot
     project_owner_advances: projectRows.flatMap(rows => rows.ownerAdvances),
     project_subcontracts: projectRows.flatMap(rows => rows.subcontracts),
     project_subcontract_payments: projectRows.flatMap(rows => rows.payments),
+    project_cost_reconciliation_resolutions: [],
   }
   const batchProjectQueries: Array<{ table: string, ids: string[] }> = []
   let contextCalls = 0
@@ -323,7 +325,7 @@ describe('C1 finance review regressions on concrete production readers', () => {
     }
     expect(db.contextCalls).toBe(6)
     expect(db.directoryCalls).toBe(1)
-    expect(db.batchProjectQueries.filter(query => query.ids.length === 3).length).toBe(24)
+    expect(db.batchProjectQueries.filter(query => query.ids.length === 3).length).toBe(26)
   })
 
   it('uses only scoped recorded owner advances for management receipts and headline', async () => {

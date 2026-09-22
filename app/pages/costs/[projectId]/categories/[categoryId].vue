@@ -7,8 +7,6 @@ import type {
   FinanceSubcontractDetail,
   FinanceSubcontractorDetail,
   FinanceSubcontractorList,
-  ItemDetailQuery,
-  PaymentQuery,
 } from '../../../../../shared/schemas/costs/project-finance'
 import {
   categoryDisplayName,
@@ -17,6 +15,7 @@ import {
 import { getCategoryAccentColor } from '../../../../utils/costs/category-chart'
 import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
 import { mapCostsApiError } from '../../../../utils/costs/costs-error-mapper'
+import { createLedgerQueryController } from '../../../../composables/costs/useLedgerQueryController'
 import ProjectCostSubcontractorTable, { type SubcontractorTableRow } from '../../../../components/costs/ProjectCostSubcontractorTable.vue'
 import ProjectCostSubcontractLedger from '../../../../components/costs/ProjectCostSubcontractLedger.vue'
 import ProjectCostOrdinaryLedger from '../../../../components/costs/ProjectCostOrdinaryLedger.vue'
@@ -34,11 +33,9 @@ const selectedPartyId = computed(() => (route.query.partyId ? String(route.query
 const selectedContractId = computed(() => (route.query.contractId ? String(route.query.contractId) : null))
 const isViewingPayments = computed(() => Boolean(selectedPartyId.value || selectedContractId.value))
 
-// Independent async stream trackers (R02, R03)
+// Independent async stream trackers & controllers (RR01, RR02, RR04)
 const overviewTracker = createAsyncRequestTracker()
-const ordinaryTracker = createAsyncRequestTracker()
 const subcontractorsTracker = createAsyncRequestTracker()
-const paymentsTracker = createAsyncRequestTracker()
 
 // Page status
 const overview = ref<FinanceOverview | null>(null)
@@ -50,29 +47,65 @@ const currentCategory = computed<FinanceCategoryRow | null>(() => {
   return overview.value.categories.find(c => c.categoryId === categoryId.value) ?? null
 })
 
-// Ordinary Category State
-const ordinaryDetails = ref<FinanceItemDetails | null>(null)
-const ordinaryStatus = ref<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle')
-const ordinaryPage = ref(1)
-const ordinaryPageSize = ref<25 | 50 | 100>(25)
-const ordinarySearch = ref('')
-const ordinaryDateFrom = ref('')
-const ordinaryDateTo = ref('')
-const ordinaryRetention = ref<'all' | 'warranty' | 'other' | 'no_recorded_retention'>('all')
-
-// Subcontract Category State
+// Subcontractors List State
 const subcontractorList = ref<FinanceSubcontractorList | null>(null)
 const subcontractorsStatus = ref<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle')
 
-// Selected Contractor Payments State
-const contractorDetail = ref<FinanceSubcontractorDetail | FinanceSubcontractDetail | null>(null)
-const contractorDetailStatus = ref<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle')
-const paymentPage = ref(1)
-const paymentPageSize = ref<25 | 50 | 100>(25)
-const paymentSearch = ref('')
-const paymentDateFrom = ref('')
-const paymentDateTo = ref('')
-const paymentRetention = ref<'all' | 'warranty' | 'no_recorded_retention'>('all')
+// Authoritative Ordinary Ledger Controller (RR01, RR02, RR04)
+const ordinaryController = createLedgerQueryController<
+  FinanceItemDetails,
+  { projectId: string; itemId: string },
+  'all' | 'warranty' | 'other' | 'no_recorded_retention'
+>({
+  defaultRetention: 'all',
+  defaultPageSize: 25,
+  getContext: () => {
+    const cat = currentCategory.value
+    if (!projectId.value || !cat?.itemId) return null
+    return { projectId: projectId.value, itemId: cat.itemId }
+  },
+  fetcher: async (ctx, query) => {
+    return await repositories.projectFinance.itemDetails(ctx.projectId, ctx.itemId, query)
+  },
+  extractPagination: (data) => {
+    if (data.kind === 'ordinary') {
+      return data.details.pagination
+    }
+    return null
+  },
+  extractRowsCount: (data) => {
+    if (data.kind === 'ordinary') {
+      return data.details.rows.length
+    }
+    return 0
+  },
+})
+
+// Authoritative Payments Ledger Controller (RR01, RR02, RR04)
+const paymentsController = createLedgerQueryController<
+  FinanceSubcontractorDetail | FinanceSubcontractDetail,
+  { projectId: string; partyId: string | null; contractId: string | null },
+  'all' | 'warranty' | 'no_recorded_retention'
+>({
+  defaultRetention: 'all',
+  defaultPageSize: 25,
+  getContext: () => {
+    if (!projectId.value || (!selectedPartyId.value && !selectedContractId.value)) return null
+    return {
+      projectId: projectId.value,
+      partyId: selectedPartyId.value,
+      contractId: selectedContractId.value,
+    }
+  },
+  fetcher: async (ctx, query) => {
+    if (ctx.contractId) {
+      return await repositories.projectFinance.subcontract(ctx.projectId, ctx.contractId, query)
+    }
+    return await repositories.projectFinance.subcontractor(ctx.projectId, ctx.partyId!, query)
+  },
+  extractPagination: (data) => data.payments.pagination,
+  extractRowsCount: (data) => data.payments.rows.length,
+})
 
 // Load project overview to resolve category
 async function loadOverview() {
@@ -80,6 +113,13 @@ async function loadOverview() {
     pageStatus.value = 'project_not_found'
     return
   }
+
+  // Invalidate subordinate streams immediately when overview reloads (RR02)
+  overviewTracker.invalidate()
+  subcontractorsTracker.invalidate()
+  ordinaryController.resetContext()
+  paymentsController.resetContext()
+  subcontractorList.value = null
 
   const token = overviewTracker.start({ projectId: projectId.value, categoryId: categoryId.value })
   pageStatus.value = 'loading'
@@ -104,7 +144,7 @@ async function loadOverview() {
     }
     else {
       pageStatus.value = 'ready'
-      await loadOrdinaryDetails()
+      await ordinaryController.executeDispatch(true)
     }
   }
   catch (err: unknown) {
@@ -125,54 +165,6 @@ async function loadOverview() {
   }
 }
 
-// Load ordinary item details
-async function loadOrdinaryDetails(queryOverride?: Partial<ItemDetailQuery>) {
-  const cat = currentCategory.value
-  if (!projectId.value || !cat?.itemId) return
-
-  if (queryOverride) {
-    if (queryOverride.page !== undefined) ordinaryPage.value = queryOverride.page
-    if (queryOverride.pageSize !== undefined) ordinaryPageSize.value = queryOverride.pageSize as 25 | 50 | 100
-    if (queryOverride.q !== undefined) ordinarySearch.value = queryOverride.q
-    if (queryOverride.dateFrom !== undefined) ordinaryDateFrom.value = queryOverride.dateFrom
-    if (queryOverride.dateTo !== undefined) ordinaryDateTo.value = queryOverride.dateTo
-    if (queryOverride.retention !== undefined) ordinaryRetention.value = queryOverride.retention
-  }
-
-  const query: Partial<ItemDetailQuery> = {
-    page: ordinaryPage.value,
-    pageSize: ordinaryPageSize.value,
-    sort: 'newest',
-    retention: ordinaryRetention.value,
-  }
-  if (ordinarySearch.value.trim()) query.q = ordinarySearch.value.trim()
-  if (ordinaryDateFrom.value) query.dateFrom = ordinaryDateFrom.value
-  if (ordinaryDateTo.value) query.dateTo = ordinaryDateTo.value
-
-  const token = ordinaryTracker.start({ projectId: projectId.value, itemId: cat.itemId, ...query })
-  ordinaryStatus.value = 'loading'
-
-  try {
-    const result = await repositories.projectFinance.itemDetails(projectId.value, cat.itemId, query)
-    if (!token.isCurrent()) return
-
-    ordinaryDetails.value = result
-    if (result.kind === 'ordinary') {
-      ordinaryStatus.value = result.details.rows.length === 0 ? 'empty' : 'ready'
-    }
-    else {
-      ordinaryStatus.value = 'ready'
-    }
-  }
-  catch (err: unknown) {
-    if (!token.isCurrent()) return
-    const mapped = mapCostsApiError(err, 'ledger')
-    if (mapped !== 'aborted') {
-      ordinaryStatus.value = 'error'
-    }
-  }
-}
-
 // Load subcontractors list
 async function loadSubcontractorData() {
   if (!projectId.value) return
@@ -188,7 +180,7 @@ async function loadSubcontractorData() {
     subcontractorsStatus.value = result.parties.length === 0 ? 'empty' : 'ready'
 
     if (selectedContractId.value || selectedPartyId.value) {
-      await loadContractorPayments()
+      await paymentsController.executeDispatch(true)
     }
   }
   catch (err: unknown) {
@@ -200,69 +192,8 @@ async function loadSubcontractorData() {
   }
 }
 
-// Load specific contractor/contract payments
-async function loadContractorPayments(queryOverride?: Partial<PaymentQuery>) {
-  if (!projectId.value || (!selectedPartyId.value && !selectedContractId.value)) return
-
-  if (queryOverride) {
-    if (queryOverride.page !== undefined) paymentPage.value = queryOverride.page
-    if (queryOverride.pageSize !== undefined) paymentPageSize.value = queryOverride.pageSize as 25 | 50 | 100
-    if (queryOverride.q !== undefined) paymentSearch.value = queryOverride.q
-    if (queryOverride.dateFrom !== undefined) paymentDateFrom.value = queryOverride.dateFrom
-    if (queryOverride.dateTo !== undefined) paymentDateTo.value = queryOverride.dateTo
-    if (queryOverride.retention !== undefined) paymentRetention.value = queryOverride.retention
-  }
-
-  const query: Partial<PaymentQuery> = {
-    page: paymentPage.value,
-    pageSize: paymentPageSize.value,
-    sort: 'newest',
-    retention: paymentRetention.value,
-  }
-  if (paymentSearch.value.trim()) query.q = paymentSearch.value.trim()
-  if (paymentDateFrom.value) query.dateFrom = paymentDateFrom.value
-  if (paymentDateTo.value) query.dateTo = paymentDateTo.value
-
-  const identity = {
-    projectId: projectId.value,
-    partyId: selectedPartyId.value,
-    contractId: selectedContractId.value,
-    ...query,
-  }
-
-  const token = paymentsTracker.start(identity)
-  contractorDetailStatus.value = 'loading'
-
-  try {
-    let result: FinanceSubcontractorDetail | FinanceSubcontractDetail
-    if (selectedContractId.value) {
-      result = await repositories.projectFinance.subcontract(projectId.value, selectedContractId.value, query)
-    }
-    else {
-      result = await repositories.projectFinance.subcontractor(projectId.value, selectedPartyId.value!, query)
-    }
-    if (!token.isCurrent()) return
-
-    contractorDetail.value = result
-    contractorDetailStatus.value = result.payments.rows.length === 0 ? 'empty' : 'ready'
-  }
-  catch (err: unknown) {
-    if (!token.isCurrent()) return
-    const mapped = mapCostsApiError(err, 'ledger')
-    if (mapped !== 'aborted') {
-      // Clear failed contractor data so old money is not shown as current (R03)
-      contractorDetail.value = null
-      contractorDetailStatus.value = 'error'
-    }
-  }
-}
-
 function viewPayments(row: SubcontractorTableRow) {
-  paymentPage.value = 1
-  paymentSearch.value = ''
-  paymentDateFrom.value = ''
-  paymentDateTo.value = ''
-  paymentRetention.value = 'all'
+  paymentsController.resetContext()
 
   if (row.contractId) {
     router.push({
@@ -284,6 +215,7 @@ function viewPayments(row: SubcontractorTableRow) {
 }
 
 function clearSelectedParty() {
+  paymentsController.resetContext()
   const query = { ...route.query }
   delete query.partyId
   delete query.contractId
@@ -301,25 +233,20 @@ watch(
 watch(
   [selectedPartyId, selectedContractId],
   ([newPartyId, newContractId]) => {
-    // Invalidate inflight requests immediately when selection changes (R02, R03)
-    paymentsTracker.invalidate()
-    contractorDetail.value = null
+    // Invalidate inflight requests immediately when selection changes (RR02, RR03)
+    paymentsController.resetContext()
 
     if ((newPartyId || newContractId) && currentCategory.value?.code === 'subcontract_labor') {
-      paymentPage.value = 1
-      loadContractorPayments()
-    }
-    else {
-      contractorDetailStatus.value = 'idle'
+      paymentsController.executeDispatch(true)
     }
   },
 )
 
 onUnmounted(() => {
   overviewTracker.invalidate()
-  ordinaryTracker.invalidate()
   subcontractorsTracker.invalidate()
-  paymentsTracker.invalidate()
+  ordinaryController.destroy()
+  paymentsController.destroy()
 })
 </script>
 
@@ -510,10 +437,18 @@ onUnmounted(() => {
               </span>
             </div>
 
-            <div v-if="currentCategory.warrantyRetention.amount != null" class="cat-metric-card">
+            <div class="cat-metric-card" data-testid="category-warranty-card">
               <span class="cat-metric-label">Bảo hành giữ lại</span>
               <span class="cat-metric-value font-mono" data-testid="category-warranty-value">
-                {{ formatFinanceMoney(currentCategory.warrantyRetention.amount, overview.project.currencyCode, overview.project.moneyScale) }}
+                <template v-if="currentCategory.warrantyRetention.state === 'recorded' && currentCategory.warrantyRetention.amount != null">
+                  {{ formatFinanceMoney(currentCategory.warrantyRetention.amount, overview.project.currencyCode, overview.project.moneyScale) }}
+                </template>
+                <template v-else-if="currentCategory.warrantyRetention.state === 'needs_reconciliation'">
+                  Chưa đối soát
+                </template>
+                <template v-else>
+                  Chưa ghi nhận
+                </template>
               </span>
             </div>
           </div>
@@ -536,30 +471,54 @@ onUnmounted(() => {
         <!-- Selected Contractor Payment Ledger View -->
         <ProjectCostSubcontractLedger
           v-else
-          :detail="contractorDetail"
-          :status="contractorDetailStatus"
+          :detail="paymentsController.data.value"
+          :status="paymentsController.status.value"
           :currency-code="overview.project.currencyCode"
           :money-scale="overview.project.moneyScale"
-          :initial-page="paymentPage"
-          :initial-page-size="paymentPageSize"
+          :search="paymentsController.draftQuery.search"
+          :date-from="paymentsController.draftQuery.dateFrom"
+          :date-to="paymentsController.draftQuery.dateTo"
+          :retention="paymentsController.draftQuery.retention"
+          :page="paymentsController.draftQuery.page"
+          :page-size="paymentsController.draftQuery.pageSize"
+          :is-pending-dispatch="paymentsController.isPendingDispatch.value"
+          :date-validation-error="paymentsController.dateValidationError.value"
           @back="clearSelectedParty"
-          @change-query="loadContractorPayments"
-          @retry="() => loadContractorPayments()"
+          @search-input="paymentsController.onSearchInput"
+          @update:date-from="(v) => paymentsController.onFilterChange('dateFrom', v)"
+          @update:date-to="(v) => paymentsController.onFilterChange('dateTo', v)"
+          @update:retention="(v) => paymentsController.onFilterChange('retention', v)"
+          @update:page-size="paymentsController.onPageSizeChange"
+          @change-page="paymentsController.goToPage"
+          @clear-filters="paymentsController.clearFilters"
+          @retry="paymentsController.retry"
         />
       </section>
 
       <!-- MODE 2: Ordinary Category Details -->
       <section v-else class="ordinary-category-section">
         <ProjectCostOrdinaryLedger
-          :details="ordinaryDetails"
-          :status="ordinaryStatus"
+          :details="ordinaryController.data.value"
+          :status="ordinaryController.status.value"
           :currency-code="overview.project.currencyCode"
           :money-scale="overview.project.moneyScale"
           :item-id="currentCategory.itemId"
-          :initial-page="ordinaryPage"
-          :initial-page-size="ordinaryPageSize"
-          @change-query="loadOrdinaryDetails"
-          @retry="() => loadOrdinaryDetails()"
+          :search="ordinaryController.draftQuery.search"
+          :date-from="ordinaryController.draftQuery.dateFrom"
+          :date-to="ordinaryController.draftQuery.dateTo"
+          :retention="ordinaryController.draftQuery.retention"
+          :page="ordinaryController.draftQuery.page"
+          :page-size="ordinaryController.draftQuery.pageSize"
+          :is-pending-dispatch="ordinaryController.isPendingDispatch.value"
+          :date-validation-error="ordinaryController.dateValidationError.value"
+          @search-input="ordinaryController.onSearchInput"
+          @update:date-from="(v) => ordinaryController.onFilterChange('dateFrom', v)"
+          @update:date-to="(v) => ordinaryController.onFilterChange('dateTo', v)"
+          @update:retention="(v) => ordinaryController.onFilterChange('retention', v)"
+          @update:page-size="ordinaryController.onPageSizeChange"
+          @change-page="ordinaryController.goToPage"
+          @clear-filters="ordinaryController.clearFilters"
+          @retry="ordinaryController.retry"
         />
       </section>
     </div>

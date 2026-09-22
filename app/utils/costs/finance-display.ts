@@ -1,12 +1,13 @@
 import Decimal from 'decimal.js'
 
 export function formatFinanceMoney(
-  value: string | null | undefined,
+  value: string | number | null | undefined,
   currencyCode?: string,
   moneyScale = 0,
 ): string | null {
   if (value == null) return null
-  const trimmed = value.trim()
+  const str = typeof value === 'number' ? String(value) : value
+  const trimmed = str.trim()
   if (!trimmed) return null
   const isNegative = trimmed.startsWith('-')
   const absValue = isNegative ? trimmed.slice(1) : trimmed
@@ -87,30 +88,20 @@ export function formatOperationalState(
 
 export interface ProvisionalProfitNamedInput {
   result: {
-    state: 'provisional' | 'unavailable' | string
+    state: 'provisional' | 'unavailable'
     amount: string | null
     basis?: string
     components?: { receipts?: string | null; cost?: string | null; independentlyHeldRetention?: string | null }
     reasons?: string[]
   } | null | undefined
-  costState?: string
+  costState?: 'recorded' | 'needs_reconciliation' | 'not_recorded' | null
   resultReasons?: string[] | null
   currencyCode?: string
   moneyScale?: number
 }
 
 export function formatProvisionalProfitDisplay(
-  resultOrInput: ProvisionalProfitNamedInput | {
-    state: 'provisional' | 'unavailable' | string
-    amount: string | null
-    basis?: string
-    components?: { receipts?: string | null; cost?: string | null; independentlyHeldRetention?: string | null }
-    reasons?: string[]
-  } | null | undefined,
-  arg2?: string,
-  arg3?: number | string[] | null,
-  arg4?: string | null,
-  arg5?: string[] | number | null,
+  input: ProvisionalProfitNamedInput,
 ): {
   label: string
   value: string
@@ -121,41 +112,11 @@ export function formatProvisionalProfitDisplay(
   colorScheme: 'provisional' | 'danger' | 'unavailable' | 'profit' | 'negative'
   isNegative: boolean
 } {
-  let result: {
-    state: 'provisional' | 'unavailable' | string
-    amount: string | null
-    basis?: string
-    components?: { receipts?: string | null; cost?: string | null; independentlyHeldRetention?: string | null }
-    reasons?: string[]
-  } | null | undefined
-  let currencyCode: string
-  let moneyScale: number
-  let costState: string | undefined
-  let resultReasons: string[] | null | undefined
-
-  if (resultOrInput && typeof resultOrInput === 'object' && 'result' in resultOrInput && !('state' in resultOrInput)) {
-    const named = resultOrInput as ProvisionalProfitNamedInput
-    result = named.result
-    costState = named.costState
-    resultReasons = named.resultReasons
-    currencyCode = named.currencyCode ?? 'VND'
-    moneyScale = named.moneyScale ?? 0
-  }
-  else {
-    result = resultOrInput as typeof result
-    if (arg2 === 'recorded' || arg2 === 'needs_reconciliation' || arg2 === 'not_recorded') {
-      costState = arg2
-      resultReasons = Array.isArray(arg3) ? arg3 : null
-      currencyCode = typeof arg4 === 'string' ? arg4 : 'VND'
-      moneyScale = typeof arg5 === 'number' ? arg5 : 0
-    }
-    else {
-      currencyCode = typeof arg2 === 'string' ? arg2 : 'VND'
-      moneyScale = typeof arg3 === 'number' ? arg3 : 0
-      costState = typeof arg4 === 'string' ? arg4 : undefined
-      resultReasons = Array.isArray(arg5) ? arg5 : null
-    }
-  }
+  const result = input.result
+  const costState = input.costState
+  const resultReasons = input.resultReasons
+  const currencyCode = input.currencyCode ?? 'VND'
+  const moneyScale = input.moneyScale ?? 0
 
   const label = 'Lợi nhuận tạm tính'
 
@@ -201,12 +162,12 @@ export function formatProvisionalProfitDisplay(
 
 export interface OwnerReceiptsInput {
   receipts: {
-    state: 'recorded' | 'not_recorded' | 'needs_reconciliation' | string
+    state: 'recorded' | 'not_recorded' | 'needs_reconciliation'
     amount: string | null
     recordedCount?: number
   } | null | undefined
   budget?: {
-    state: 'recorded' | 'not_recorded' | 'needs_reconciliation' | string
+    state: 'recorded' | 'not_recorded' | 'needs_reconciliation'
     amount: string | null
   } | null | undefined
   currencyCode?: string
@@ -224,26 +185,12 @@ export interface OwnerReceiptsInput {
  * 5. Distinct recorded zero ("0 VND") vs missing ("Chưa ghi nhận").
  */
 export function formatOwnerReceiptsDisplay(
-  input: OwnerReceiptsInput | { state: string; amount: string | null; recordedCount?: number } | null | undefined,
-  budgetArg?: { state: string; amount: string | null } | null | undefined,
-  currencyCodeArg?: string,
-  moneyScaleArg = 0,
+  input: OwnerReceiptsInput,
 ) {
-  let receipts: { state: string; amount: string | null; recordedCount?: number } | null | undefined
-  let budget: { state: string; amount: string | null } | null | undefined
-  let currencyCode = currencyCodeArg ?? 'VND'
-  let moneyScale = moneyScaleArg
-
-  if (input && typeof input === 'object' && 'receipts' in input) {
-    receipts = input.receipts
-    budget = input.budget
-    currencyCode = input.currencyCode ?? 'VND'
-    moneyScale = input.moneyScale ?? 0
-  }
-  else {
-    receipts = input as typeof receipts
-    budget = budgetArg
-  }
+  const receipts = input.receipts
+  const budget = input.budget
+  const currencyCode = input.currencyCode ?? 'VND'
+  const moneyScale = input.moneyScale ?? 0
 
   const label = 'Thu từ chủ đầu tư'
   let value: string
@@ -398,11 +345,23 @@ export function formatReferenceDisplay(
   }
 }
 
+export interface CostDisplayInput {
+  cost: {
+    state: 'recorded' | 'not_recorded' | 'needs_reconciliation'
+    amount: string | null
+    knownSubtotal?: string | null
+  } | null | undefined
+  currencyCode?: string
+  moneyScale?: number
+}
+
 export function formatCostDisplay(
-  cost: { state: 'recorded' | 'not_recorded' | 'needs_reconciliation'; amount: string | null; knownSubtotal?: string | null },
-  currencyCode?: string,
-  moneyScale = 0,
+  input: CostDisplayInput,
 ) {
+  const cost = input.cost ?? { state: 'not_recorded', amount: null }
+  const currencyCode = input.currencyCode ?? 'VND'
+  const moneyScale = input.moneyScale ?? 0
+
   const hasKnownSubtotal = cost.knownSubtotal != null && cost.knownSubtotal !== '0.0000' && cost.state !== 'recorded'
   const knownSubtotalText = hasKnownSubtotal ? formatFinanceMoney(cost.knownSubtotal, currencyCode, moneyScale) : null
 
@@ -433,11 +392,23 @@ export function formatCostDisplay(
   }
 }
 
+export interface WarrantyRetentionInput {
+  warranty: {
+    state: 'recorded' | 'not_recorded' | 'needs_reconciliation'
+    amount: string | null
+    recordedCount: number
+  } | null | undefined
+  currencyCode?: string
+  moneyScale?: number
+}
+
 export function formatWarrantyRetentionDisplay(
-  warranty: { state: 'recorded' | 'not_recorded' | 'needs_reconciliation'; amount: string | null; recordedCount: number },
-  currencyCode?: string,
-  moneyScale = 0,
+  input: WarrantyRetentionInput,
 ) {
+  const warranty = input.warranty ?? { state: 'not_recorded', amount: null, recordedCount: 0 }
+  const currencyCode = input.currencyCode ?? 'VND'
+  const moneyScale = input.moneyScale ?? 0
+
   let valueText: string
   if (warranty.state === 'recorded' && warranty.amount != null) {
     valueText = formatFinanceMoney(warranty.amount, currencyCode, moneyScale)!
@@ -556,12 +527,12 @@ export interface ProjectKpisViewModel {
  */
 export function computeProjectKpiCards(
   summary: {
-    budget?: { state: 'recorded' | 'not_recorded' | 'needs_reconciliation' | string; amount: string | null; recordedCount?: number }
+    budget?: { state: 'recorded' | 'not_recorded' | 'needs_reconciliation'; amount: string | null; recordedCount?: number }
     cost?: { state: 'recorded' | 'not_recorded' | 'needs_reconciliation'; amount: string | null; knownSubtotal?: string | null }
     warrantyRetention?: { state: 'recorded' | 'not_recorded' | 'needs_reconciliation'; amount: string | null; recordedCount: number }
     management?: {
-      receipts?: { state: 'recorded' | 'not_recorded' | 'needs_reconciliation' | string; amount: string | null; recordedCount?: number }
-      result?: { state: 'provisional' | 'unavailable' | string; amount: string | null; basis?: string; reasons?: string[] }
+      receipts?: { state: 'recorded' | 'not_recorded' | 'needs_reconciliation'; amount: string | null; recordedCount?: number }
+      result?: { state: 'provisional' | 'unavailable'; amount: string | null; basis?: string; reasons?: string[] }
     } | null
   } | null | undefined,
   project?: {
@@ -588,15 +559,15 @@ export function computeProjectKpiCards(
       currencyCode,
       moneyScale,
     }),
-    cost: formatCostDisplay(
-      safeSummary.cost ?? { state: 'not_recorded', amount: null },
+    cost: formatCostDisplay({
+      cost: safeSummary.cost ?? { state: 'not_recorded', amount: null },
       currencyCode,
       moneyScale,
-    ),
-    warranty: formatWarrantyRetentionDisplay(
-      safeSummary.warrantyRetention ?? { state: 'not_recorded', amount: null, recordedCount: 0 },
+    }),
+    warranty: formatWarrantyRetentionDisplay({
+      warranty: safeSummary.warrantyRetention ?? { state: 'not_recorded', amount: null, recordedCount: 0 },
       currencyCode,
       moneyScale,
-    ),
+    }),
   }
 }

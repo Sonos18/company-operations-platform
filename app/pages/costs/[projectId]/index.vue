@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { FinanceOverview } from '../../../../shared/schemas/costs/project-finance'
 import {
   computeProjectKpiCards,
@@ -8,6 +8,7 @@ import {
 import { mapCostsApiError } from '../../../utils/costs/costs-error-mapper'
 import { createAsyncRequestTracker } from '../../../utils/costs/async-request-tracker'
 import ProjectCostCategoryChart from '../../../components/costs/ProjectCostCategoryChart.client.vue'
+import ProjectCostInfoDisclosure from '../../../components/costs/ProjectCostInfoDisclosure.vue'
 
 definePageMeta({ requiredPermission: 'cost.read' })
 
@@ -22,76 +23,8 @@ const requestTracker = createAsyncRequestTracker()
 
 const kpis = computed(() => computeProjectKpiCards(overview.value?.summary, overview.value?.project))
 
-// Info tooltip popover state
-const isPinned = ref(false)
-const isHovered = ref(false)
-const isFocused = ref(false)
-const isDismissed = ref(false)
-
-const isInfoOpen = computed(() => {
-  if (isDismissed.value) return false
-  return isPinned.value || isHovered.value || isFocused.value
-})
-
-function toggleInfo() {
-  if (isPinned.value) {
-    isPinned.value = false
-    isHovered.value = false
-    isFocused.value = false
-  }
-  else {
-    isDismissed.value = false
-    isPinned.value = true
-  }
-}
-
-function dismissInfo() {
-  isDismissed.value = true
-  isPinned.value = false
-  isHovered.value = false
-  isFocused.value = false
-}
-
-function onInfoHover() {
-  isDismissed.value = false
-  isHovered.value = true
-}
-
-function onInfoLeave() {
-  isHovered.value = false
-}
-
-function onInfoFocus() {
-  isDismissed.value = false
-  isFocused.value = true
-}
-
-function onInfoBlur() {
-  isFocused.value = false
-}
-
-function handleGlobalKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    dismissInfo()
-  }
-}
-
-function handleOutsideClick(e: MouseEvent) {
-  const target = e.target as HTMLElement | null
-  if (!target?.closest('.info-disclosure-anchor')) {
-    dismissInfo()
-  }
-}
-
-onMounted(() => {
-  window.addEventListener('keydown', handleGlobalKeydown)
-  window.addEventListener('click', handleOutsideClick)
-})
-
 onBeforeUnmount(() => {
   requestTracker.invalidate()
-  window.removeEventListener('keydown', handleGlobalKeydown)
-  window.removeEventListener('click', handleOutsideClick)
 })
 
 function onSelectCategory(categoryId: string) {
@@ -107,7 +40,6 @@ async function loadOverview() {
   const token = requestTracker.start({ projectId: projectId.value, companyId: companyAccess.activeCompanyId })
   status.value = 'loading'
   overview.value = null
-  dismissInfo()
 
   try {
     const data = await repositories.projectFinance.overview(projectId.value)
@@ -287,38 +219,13 @@ watch(
               </span>
 
               <!-- Info disclosure for receipts / budget -->
-              <div
+              <ProjectCostInfoDisclosure
                 v-if="kpis.receipts.hasDisclosure"
-                class="info-disclosure-anchor"
-              >
-                <button
-                  type="button"
-                  class="info-trigger-btn"
-                  :aria-expanded="isInfoOpen ? 'true' : 'false'"
-                  aria-label="Thông tin nguồn thu từ chủ đầu tư"
-                  aria-describedby="detail-info-popover"
-                  data-testid="detail-info-disclosure-btn"
-                  @click.stop="toggleInfo"
-                  @mouseenter="onInfoHover"
-                  @mouseleave="onInfoLeave"
-                  @focus="onInfoFocus"
-                  @blur="onInfoBlur"
-                >
-                  <UIcon name="i-lucide-info" class="info-icon" aria-hidden="true" />
-                </button>
-                <div
-                  v-show="isInfoOpen"
-                  id="detail-info-popover"
-                  role="tooltip"
-                  class="info-tooltip-popover cockpit-card"
-                  data-testid="detail-info-tooltip-popover"
-                  @click.stop
-                >
-                  <p class="info-tooltip-text">
-                    {{ kpis.receipts.tooltipText }}
-                  </p>
-                </div>
-              </div>
+                id="detail"
+                :tooltip-text="kpis.receipts.tooltipText ?? ''"
+                button-test-id="detail-info-disclosure-btn"
+                popover-test-id="detail-info-tooltip-popover"
+              />
             </div>
 
             <span class="summary-number" data-testid="detail-accepted" data-testid-alt="detail-reference">
@@ -659,55 +566,7 @@ watch(
   margin-top: 2px;
 }
 
-.info-disclosure-anchor {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-}
 
-.info-trigger-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  padding: 2px;
-  cursor: pointer;
-  color: var(--color-text-secondary);
-  border-radius: var(--radius-sm);
-  transition: color 0.15s ease;
-}
-
-.info-trigger-btn:hover,
-.info-trigger-btn:focus-visible {
-  color: var(--color-text-primary);
-  outline: 2px solid var(--color-primary);
-  outline-offset: 1px;
-}
-
-.info-icon {
-  font-size: 0.875rem;
-}
-
-.info-tooltip-popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 50;
-  width: 280px;
-  padding: 10px 14px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.1));
-  border-radius: var(--radius-md);
-}
-
-.info-tooltip-text {
-  font-size: 0.8rem;
-  line-height: 1.4;
-  color: var(--color-text-secondary);
-  margin: 0;
-}
 
 .breakdown-section {
   display: flex;

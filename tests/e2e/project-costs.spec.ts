@@ -1707,17 +1707,57 @@ test.describe('Director Project Finance UI', () => {
     await expect(negProfitCard.getByTestId('detail-total-tracked')).toHaveClass(/is-negative-value/)
   })
 
-  test('donut chart renders and navigates to category detail on slice click', async ({ page }) => {
+  test('donut chart and bar chart render and navigate to category detail on datum click, with background click immunity', async ({ page }) => {
     await page.route(`**/api/companies/**/projects/${projectIdAlpha}/finance`, async (route) => {
       await route.fulfill({ json: mockOverviewAlpha })
     })
 
     await page.goto(`/costs/${projectIdAlpha}`)
     await expect(page.getByTestId('category-donut-canvas')).toBeVisible()
+    await expect(page.getByTestId('category-chart-canvas')).toBeVisible()
     await expect(page.getByText('Tỷ trọng số liệu hiển thị')).toBeVisible()
 
-    // Click on Materials donut slice (radius ~92px at center-right of 341x320 chart, center is 170.5, 160)
-    await page.locator('[data-testid="category-donut-canvas"] .echarts-wrapper').click({ position: { x: 260, y: 160 } })
+    // 1. Background click on donut container margin does NOT navigate
+    const donutWrapper = page.locator('[data-testid="category-donut-canvas"] .echarts-wrapper')
+    await donutWrapper.click({ position: { x: 5, y: 5 } })
+    await expect(page).toHaveURL(new RegExp(`/costs/${projectIdAlpha}$`))
+
+    // 2. Background click on bar chart canvas does NOT navigate
+    const barWrapper = page.locator('[data-testid="category-chart-canvas"] .echarts-wrapper')
+    await barWrapper.click({ position: { x: 5, y: 5 } })
+    await expect(page).toHaveURL(new RegExp(`/costs/${projectIdAlpha}$`))
+
+    // 3. Locate bar by rendered SVG geometry and perform real click
+    const barPath = page.locator('[data-testid="category-chart-canvas"] svg path[fill]:not([fill="none"])').first()
+    await expect(barPath).toBeVisible()
+    const barBox = await barPath.boundingBox()
+    const barWrapperBox = await barWrapper.boundingBox()
+    expect(barBox).not.toBeNull()
+    expect(barWrapperBox).not.toBeNull()
+
+    // Click bar using its rendered geometric center relative to wrapper
+    const barClickX = barBox!.x + barBox!.width / 2 - barWrapperBox!.x
+    const barClickY = barBox!.y + barBox!.height / 2 - barWrapperBox!.y
+    await barWrapper.click({ position: { x: barClickX, y: barClickY } })
+    await expect(page).toHaveURL(new RegExp(`/costs/${projectIdAlpha}/categories/${categoryIdMat}`))
+
+    // 4. Return to project overview and click donut slice using rendered layout geometry
+    await page.goto(`/costs/${projectIdAlpha}`)
+    await expect(page.getByTestId('category-donut-canvas')).toBeVisible()
+    const donutWrapperBox = await donutWrapper.boundingBox()
+    expect(donutWrapperBox).not.toBeNull()
+    const centerX = donutWrapperBox!.width / 2
+    const centerY = donutWrapperBox!.height / 2
+    const midRadius = (Math.min(donutWrapperBox!.width, donutWrapperBox!.height) / 2) * ((0.45 + 0.70) / 2)
+    // Materials slice spans across 3 o'clock (angle 0)
+    await donutWrapper.click({ position: { x: centerX + midRadius, y: centerY } })
+    await expect(page).toHaveURL(new RegExp(`/costs/${projectIdAlpha}/categories/${categoryIdMat}`))
+
+    // 5. Verify accessible category link coverage
+    await page.goto(`/costs/${projectIdAlpha}`)
+    const matLink = page.getByTestId(`category-link-${categoryIdMat}`)
+    await expect(matLink).toBeVisible()
+    await matLink.click()
     await expect(page).toHaveURL(new RegExp(`/costs/${projectIdAlpha}/categories/${categoryIdMat}`))
   })
 })

@@ -309,6 +309,7 @@ export function getDonutChartOption(
       itemWidth: 10,
       itemHeight: 10,
       itemGap: 12,
+      padding: [0, 8],
       textStyle: {
         fontFamily: 'var(--font-sans, system-ui)',
         fontSize: 11,
