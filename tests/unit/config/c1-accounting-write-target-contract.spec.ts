@@ -36,4 +36,35 @@ describe('C1 accounting write target', () => {
     expect(sql).not.toContain('grant execute on function public.c1_update_project_cost_item')
     expect(sql).not.toContain('grant execute on function public.c1_correct_project_cost_item')
   })
+
+  it('P2 adds guarded draft management, preparation, reads, and readiness', () => {
+    const sql = phaseMigration('_c1_accounting_write_draft_commands.sql')
+
+    for (const signature of [
+      'public.c1_create_project_cost_draft',
+      'public.c1_update_project_cost_draft',
+      'public.c1_prepare_project_cost_financials',
+      'public.c1_read_project_cost_draft',
+      'public.c1_list_project_cost_drafts',
+      'private.c1_project_cost_publish_readiness',
+    ]) expect(sql).toContain(`function ${signature}`)
+    expect(sql).toContain("'project_cost_draft.create'")
+    expect(sql).toContain("private.c1_master_context(target_company_id, 'cost.manage')")
+    expect(sql).toContain("private.c1_master_context(target_company_id, 'cost.prepare')")
+    expect(sql).toContain("set_config('taskovia.c1_cost_write.snapshot', '1', true)")
+    expect(sql).toMatch(/delete from public\.project_cost_item_details[\s\S]*insert into public\.project_cost_item_details/iu)
+    expect(sql).toMatch(/delete from public\.project_cost_item_sources[\s\S]*insert into public\.project_cost_item_sources/iu)
+    expect(sql).toContain("publication_state <> 'draft'")
+    expect(sql).toContain("message = 'COST_NOT_DRAFT'")
+    expect(sql).toContain("message = 'VERSION_CONFLICT'")
+    expect(sql).toContain("message = 'SUBCONTRACT_COST_MODEL_UNSUPPORTED'")
+    expect(sql).toContain('revoke all on function private.c1_project_cost_publish_readiness(uuid, uuid, uuid) from public, anon, authenticated')
+    for (const signature of [
+      'public.c1_create_project_cost_draft(uuid, jsonb, uuid, uuid)',
+      'public.c1_update_project_cost_draft(uuid, uuid, jsonb, uuid)',
+      'public.c1_prepare_project_cost_financials(uuid, uuid, jsonb, uuid)',
+      'public.c1_read_project_cost_draft(uuid, uuid)',
+      'public.c1_list_project_cost_drafts(uuid, uuid)',
+    ]) expect(sql).toContain(`grant execute on function ${signature} to authenticated`)
+  })
 })
