@@ -183,6 +183,23 @@ export const prepareProjectCostFinancialsResultSchema = z.object({
   replayed: z.boolean(),
 }).strict()
 
+const projectCostCorrectionOperationalChangesSchema = z.object({
+  description: text.optional(), costCategoryId: uuid.optional(), businessReference: text.nullable().optional(),
+  partyId: uuid.nullable().optional(), engagementId: uuid.nullable().optional(), componentId: uuid.nullable().optional(),
+  relevantDate: relevantDate.nullable().optional(), workStatus: projectCostWorkStatusSchema.optional(),
+}).strict().superRefine((value, context) => {
+  if (Object.keys(value).length === 0) context.addIssue({ code: 'custom', message: 'requires an operational change' })
+})
+const projectCostCorrectionFinancialChangesSchema = z.object({ currencyCode, details: z.array(prepareProjectCostFinancialDetailInputSchema).min(1), sourceFigureIds: uniqueSourceFigureIds }).strict()
+export const correctPublishedProjectCostInputSchema = z.object({
+  expectedVersion: version,
+  reason: text,
+  operationalChanges: projectCostCorrectionOperationalChangesSchema.optional(),
+  financialChanges: projectCostCorrectionFinancialChangesSchema.optional(),
+}).strict().superRefine((value, context) => {
+  if (value.operationalChanges === undefined && value.financialChanges === undefined) context.addIssue({ code: 'custom', message: 'requires correction changes' })
+})
+
 export const projectCostItemDetailSchema = z.object({
   id: uuid,
   projectCostItemId: uuid,
@@ -244,6 +261,7 @@ export type UpdateProjectCostDraftInput = z.infer<typeof updateProjectCostDraftI
 export type PrepareProjectCostFinancialDetailInput = z.infer<typeof prepareProjectCostFinancialDetailInputSchema>
 export type PrepareProjectCostFinancialsInput = z.infer<typeof prepareProjectCostFinancialsInputSchema>
 export type PrepareProjectCostFinancialsResult = z.infer<typeof prepareProjectCostFinancialsResultSchema>
+export type CorrectPublishedProjectCostInput = z.infer<typeof correctPublishedProjectCostInputSchema>
 export type ProjectCostDraft = z.infer<typeof projectCostDraftSchema>
 export type CreateProjectCostItemInput = z.infer<typeof createProjectCostItemInputSchema>
 export type UpdateProjectCostItemInput = z.infer<typeof updateProjectCostItemInputSchema>

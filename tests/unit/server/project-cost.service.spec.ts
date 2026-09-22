@@ -23,6 +23,19 @@ const listClient = (data: unknown, error: unknown = null) => {
 }
 
 describe('Project Cost service', () => {
+  it.each(['cost.manage', 'cost.prepare', 'cost.publish_import', 'cost.record_cash'] as const)('does not let %s substitute for cost.correct on published correction', async permission => {
+    const repository = { correctPublished: vi.fn() }
+    await expect(new ProjectCostService(repository as never).correctPublished(context([permission]), itemRow().id, { expectedVersion: 2, reason: 'Correct source', operationalChanges: { workStatus: 'accepted' } }, context([]).requestId)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    expect(repository.correctPublished).not.toHaveBeenCalled()
+  })
+
+  it('routes published correction only under cost.correct', async () => {
+    const input = { expectedVersion: 2, reason: 'Correct source', operationalChanges: { workStatus: 'accepted' } }
+    const repository = { correctPublished: vi.fn().mockResolvedValue({ id: itemRow().id, version: 3, publicationState: 'published', replayed: false }) }
+    await new ProjectCostService(repository as never).correctPublished(context(['cost.correct']), itemRow().id, input, context([]).requestId)
+    expect(repository.correctPublished).toHaveBeenCalledWith(expect.objectContaining({ companyId: context([]).companyId }), itemRow().id, expect.objectContaining(input), context([]).requestId)
+  })
+
   it.each(['cost.manage', 'cost.prepare', 'cost.correct', 'cost.record_cash'] as const)('does not let %s substitute for cost.publish_import', async permission => {
     const repository = { publish: vi.fn() }
     await expect(new ProjectCostService(repository as never).publish(context([permission]), itemRow().id, { expectedVersion: 1 }, context([]).requestId)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })

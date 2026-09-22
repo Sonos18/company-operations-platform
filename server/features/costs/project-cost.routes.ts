@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3'
 import { getHeader, getRouterParam, readBody } from 'h3'
 import { z } from 'zod'
-import { createProjectCostDraftInputSchema, prepareProjectCostFinancialsInputSchema, publishProjectCostInputSchema, updateProjectCostDraftInputSchema } from '../../../shared/schemas/costs/project-costs'
+import { correctPublishedProjectCostInputSchema, createProjectCostDraftInputSchema, prepareProjectCostFinancialsInputSchema, publishProjectCostInputSchema, updateProjectCostDraftInputSchema } from '../../../shared/schemas/costs/project-costs'
 import { AppApiError } from '../../utils/api-error'
 import { c1RequestContext } from '../c1-master-data/context'
 import { ProjectCostRepository } from './project-cost.repository'
@@ -51,6 +51,14 @@ export function createProjectCostRoutes(dependencies: ProjectCostRouteDependenci
       if (!idempotencyKey.success) invalid()
       return value.service.publish(value.context, itemId, input, idempotencyKey.data)
     },
+    async correction(event: H3Event) {
+      const value = await resolved(event)
+      const itemId = param(event, 'projectCostItemId')
+      const input = await body(event, correctPublishedProjectCostInputSchema)
+      const idempotencyKey = uuid.safeParse(getHeader(event, 'idempotency-key'))
+      if (!idempotencyKey.success) invalid()
+      return value.service.correctPublished(value.context, itemId, input, idempotencyKey.data)
+    },
     async details(event: H3Event) {
       const value = await resolved(event)
       return value.service.itemDetails(value.context, param(event, 'projectCostItemId'))
@@ -69,6 +77,7 @@ export function createSupabaseProjectCostRoutes(event: H3Event) {
     draft: () => routes.draft(event),
     drafts: () => routes.drafts(event),
     publish: () => routes.publish(event),
+    correction: () => routes.correction(event),
     details: () => routes.details(event),
   }
 }

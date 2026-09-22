@@ -59,6 +59,14 @@ describe('Project Cost routes', () => {
     expect(service.publish).toHaveBeenCalledOnce()
   })
 
+  it('accepts correction only on the explicit idempotent corrections route', async () => {
+    const input = { expectedVersion: 2, reason: 'Correct source', operationalChanges: { workStatus: 'accepted' } }
+    readBody.mockResolvedValue(input)
+    const service = { correctPublished: vi.fn().mockResolvedValue({ id: ids.itemId, version: 3, publicationState: 'published', replayed: false }) }
+    await route(service).routes.correction({} as never)
+    expect(service.correctPublished).toHaveBeenCalledWith(trustedContext, ids.itemId, input, ids.idempotencyKey)
+  })
+
   it('rejects a malformed company id before resolving trusted context', async () => {
     getRouterParam.mockImplementation((_event, name) => name === 'companyId' ? 'not-a-uuid' : ids.projectId)
     const service = { listSummaries: vi.fn() }
