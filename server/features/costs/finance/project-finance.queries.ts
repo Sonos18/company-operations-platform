@@ -46,12 +46,17 @@ const budgetLineAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, compa
 const ownerAdvanceAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, amount_text: money, currency_code: currency, status: z.string().min(1), source_reference: z.string().nullable(), version, updated_at: timestamp }).strict()
 const subcontractAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, subcontractor_party_id: uuid, code: z.string().min(1), contract_no: z.string().nullable(), contract_name: z.string().min(1), contract_date: date.nullable(), contract_value_text: money.nullable(), currency_code: currency, warranty_retention_rate_bps: z.number().int().min(0).max(10000).nullable(), is_active: z.boolean(), version, updated_at: timestamp }).strict()
 const paymentAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, project_subcontract_id: uuid, paid_amount_text: money, warranty_retention_amount_text: money.nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), currency_code: currency, status: z.string().min(1), payment_date: date.nullable(), created_at: timestamp, version, updated_at: timestamp }).strict()
+export const reconciliationResolutionRowSchema = z.object({
+  id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, cost_category_id: uuid,
+  resolution_code: z.literal('canonical_subcontract_payments_authoritative'), reason: z.string().min(1), version, updated_at: timestamp,
+}).strict()
 
 export type FinanceBudgetAggregateRow = z.infer<typeof budgetAggregateRowSchema>
 export type FinanceBudgetLineAggregateRow = z.infer<typeof budgetLineAggregateRowSchema>
 export type FinanceOwnerAdvanceAggregateRow = z.infer<typeof ownerAdvanceAggregateRowSchema>
 export type FinanceSubcontractAggregateRow = z.infer<typeof subcontractAggregateRowSchema>
 export type FinancePaymentAggregateRow = z.infer<typeof paymentAggregateRowSchema>
+export type FinanceReconciliationResolutionRow = z.infer<typeof reconciliationResolutionRowSchema>
 
 type QueryResult = { data: unknown, error: unknown }
 export type TableQuery = {
@@ -154,6 +159,7 @@ const columns = {
   advances: 'id,tenant_id,company_id,project_id,amount_text,currency_code,status,description,payer_name,receipt_no,received_date,reference,source_reference,note,version,created_at,updated_at',
   subcontracts: 'id,tenant_id,company_id,project_id,subcontractor_party_id,code,contract_no,contract_name,contract_date,contract_value_text,currency_code,warranty_retention_rate_bps,is_active,reference,source_reference,note,version,updated_at',
   payments: 'id,tenant_id,company_id,project_id,project_subcontract_id,paid_amount_text,warranty_retention_amount_text,retention_rate_bps,currency_code,status,description,payment_date,payment_reference,source_reference,note,created_at,version,updated_at',
+  resolutions: 'id,tenant_id,company_id,project_id,cost_category_id,resolution_code,reason,version,updated_at',
 } as const
 const aggregateColumns = {
   budgets: 'id,tenant_id,company_id,project_id,currency_code,detail_mode,total_amount_text,status,version,updated_at',
@@ -174,12 +180,13 @@ type RowByTable = {
   advances: z.infer<typeof ownerAdvanceRowSchema>
   subcontracts: z.infer<typeof subcontractRowSchema>
   payments: z.infer<typeof paymentRowSchema>
+  resolutions: z.infer<typeof reconciliationResolutionRowSchema>
 }
 const tableNames: Record<TableName, string> = {
-  categories: 'cost_categories', items: 'project_cost_items', details: 'project_cost_item_details', budgets: 'project_budget_versions', budgetLines: 'project_budget_lines', advances: 'project_owner_advances', subcontracts: 'project_subcontracts', payments: 'project_subcontract_payments',
+  categories: 'cost_categories', items: 'project_cost_items', details: 'project_cost_item_details', budgets: 'project_budget_versions', budgetLines: 'project_budget_lines', advances: 'project_owner_advances', subcontracts: 'project_subcontracts', payments: 'project_subcontract_payments', resolutions: 'project_cost_reconciliation_resolutions',
 }
 const schemas: { [K in TableName]: z.ZodType<RowByTable[K]> } = {
-  categories: costCategoryRowSchema, items: costItemRowSchema, details: detailRowSchema, budgets: budgetRowSchema, budgetLines: budgetLineRowSchema, advances: ownerAdvanceRowSchema, subcontracts: subcontractRowSchema, payments: paymentRowSchema,
+  categories: costCategoryRowSchema, items: costItemRowSchema, details: detailRowSchema, budgets: budgetRowSchema, budgetLines: budgetLineRowSchema, advances: ownerAdvanceRowSchema, subcontracts: subcontractRowSchema, payments: paymentRowSchema, resolutions: reconciliationResolutionRowSchema,
 }
 
 export class ProjectFinanceTableReader {
@@ -223,6 +230,8 @@ export class ProjectFinanceTableReader {
   subcontractsForProjects(tenantId: string, companyId: string, projectIds: readonly string[], full = true) { return full ? this.scan('subcontracts', tenantId, companyId, projectIds) : this.scanProjected('project_subcontracts', aggregateColumns.subcontracts, subcontractAggregateRowSchema, tenantId, companyId, projectIds) }
   payments(tenantId: string, companyId: string, projectId: string, full = true) { return this.paymentsForProjects(tenantId, companyId, [projectId], full) }
   paymentsForProjects(tenantId: string, companyId: string, projectIds: readonly string[], full = true) { return full ? this.scan('payments', tenantId, companyId, projectIds) : this.scanProjected('project_subcontract_payments', aggregateColumns.payments, paymentAggregateRowSchema, tenantId, companyId, projectIds) }
+  resolutions(tenantId: string, companyId: string, projectId: string) { return this.resolutionsForProjects(tenantId, companyId, [projectId]) }
+  resolutionsForProjects(tenantId: string, companyId: string, projectIds: readonly string[]) { return this.scan('resolutions', tenantId, companyId, projectIds) }
 
   private async detailScan<T extends { id: string, tenant_id: string, company_id: string, project_cost_item_id: string }>(tenantId: string, companyId: string, itemIds: readonly string[], columnsText: string, schema: z.ZodType<T>) {
     if (itemIds.length === 0) return [] as T[]
@@ -257,6 +266,7 @@ export type FinanceTableRows = {
   ownerAdvances: RowByTable['advances'][]
   subcontracts: RowByTable['subcontracts'][]
   payments: RowByTable['payments'][]
+  resolutions: RowByTable['resolutions'][]
 }
 export type FinanceSummaryTableRows = Omit<FinanceTableRows, 'budgets' | 'budgetLines' | 'ownerAdvances' | 'subcontracts' | 'payments'> & {
   budgets: FinanceBudgetAggregateRow[]

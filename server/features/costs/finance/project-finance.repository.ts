@@ -85,7 +85,7 @@ function paymentPage(rows: readonly ReturnType<typeof paymentView>[], query: Pay
 }
 
 function contractSummary(contract: FinanceTableRows['subcontracts'][number], payments: readonly FinanceTableRows['payments'][number][]) {
-  const total = paymentTotal(payments)
+  const total = paymentTotal(payments, contract.warranty_retention_rate_bps)
   return { id: contract.id, code: contract.code, contractNo: contract.contract_no, contractName: contract.contract_name, contractDate: contract.contract_date, contractValue: contract.contract_value_text === null ? null : sumFinanceMoney([contract.contract_value_text]), currencyCode: contract.currency_code, defaultRetentionRateBps: contract.warranty_retention_rate_bps, isActive: contract.is_active, version: contract.version, paidTotal: total.amount, paidCount: total.count, recordedRetentionTotal: total.retentionAmount, recordedRetentionRowCount: total.retentionCount }
 }
 
@@ -173,7 +173,7 @@ export class ConcreteProjectFinanceRepository implements FinanceReadRepository {
     const paymentRows = readSet.payments.filter(payment => payment.project_subcontract_id === contract.id).map(payment => paymentView(payment, contract, readSet.context.timeZone))
     return financeSubcontractDetailSchema.parse({
       schemaVersion: 1, project: overview.project, party,
-      contract: { ...contractSummary(contract, readSet.payments.filter(payment => payment.project_subcontract_id === contract.id)), reference: contract.reference, sourceReference: contract.source_reference, note: contract.note, referenceHeadroom: referenceHeadroom(contract.contract_value_text, readSet.payments.filter(payment => payment.project_subcontract_id === contract.id)).value, referenceHeadroomReason: referenceHeadroom(contract.contract_value_text, readSet.payments.filter(payment => payment.project_subcontract_id === contract.id)).reason },
+      contract: { ...contractSummary(contract, readSet.payments.filter(payment => payment.project_subcontract_id === contract.id)), reference: contract.reference, sourceReference: contract.source_reference, note: contract.note, referenceHeadroom: referenceHeadroom(contract.contract_value_text, readSet.payments.filter(payment => payment.project_subcontract_id === contract.id), contract.warranty_retention_rate_bps).value, referenceHeadroomReason: referenceHeadroom(contract.contract_value_text, readSet.payments.filter(payment => payment.project_subcontract_id === contract.id), contract.warranty_retention_rate_bps).reason },
       payments: paymentPage(paymentRows, query),
     })
   }
@@ -195,14 +195,14 @@ export class ConcreteProjectFinanceRepository implements FinanceReadRepository {
 
 async function readSet(metadata: ProjectFinanceMetadataReader, tables: ProjectFinanceTableReader, scope: FinanceScope, projectId: string, fullDetails = false): Promise<FinanceTableReadSet> {
   const context = await metadata.context(scope.companyId, projectId)
-  const [categories, costItems, budgets, budgetLines, ownerAdvances, subcontracts, payments] = await Promise.all([
-    tables.categories(scope.tenantId, scope.companyId), tables.costItems(scope.tenantId, scope.companyId, projectId), tables.budgets(scope.tenantId, scope.companyId, projectId, fullDetails), tables.budgetLines(scope.tenantId, scope.companyId, projectId, fullDetails), tables.ownerAdvances(scope.tenantId, scope.companyId, projectId, fullDetails), tables.subcontracts(scope.tenantId, scope.companyId, projectId, fullDetails), tables.payments(scope.tenantId, scope.companyId, projectId, fullDetails),
+  const [categories, costItems, budgets, budgetLines, ownerAdvances, subcontracts, payments, resolutions] = await Promise.all([
+    tables.categories(scope.tenantId, scope.companyId), tables.costItems(scope.tenantId, scope.companyId, projectId), tables.budgets(scope.tenantId, scope.companyId, projectId, fullDetails), tables.budgetLines(scope.tenantId, scope.companyId, projectId, fullDetails), tables.ownerAdvances(scope.tenantId, scope.companyId, projectId, fullDetails), tables.subcontracts(scope.tenantId, scope.companyId, projectId, fullDetails), tables.payments(scope.tenantId, scope.companyId, projectId, fullDetails), tables.resolutions(scope.tenantId, scope.companyId, projectId),
   ])
   const details = await (fullDetails ? tables.details(scope.tenantId, scope.companyId, costItems.map(item => item.id)) : tables.detailAggregates(scope.tenantId, scope.companyId, costItems.map(item => item.id)))
   const partyIds = [...new Set(subcontracts.map(contract => contract.subcontractor_party_id))]
   const parties: FinancePartyRow[] = []
   for (let index = 0; index < partyIds.length; index += 50) parties.push(...await metadata.parties(scope.companyId, projectId, partyIds.slice(index, index + 50)))
-  return { context, categories, costItems, details, budgets: budgets as FinanceTableRows['budgets'], budgetLines: budgetLines as FinanceTableRows['budgetLines'], ownerAdvances: ownerAdvances as FinanceTableRows['ownerAdvances'], subcontracts: subcontracts as FinanceTableRows['subcontracts'], payments: payments as FinanceTableRows['payments'], parties }
+  return { context, categories, costItems, details, budgets: budgets as FinanceTableRows['budgets'], budgetLines: budgetLines as FinanceTableRows['budgetLines'], ownerAdvances: ownerAdvances as FinanceTableRows['ownerAdvances'], subcontracts: subcontracts as FinanceTableRows['subcontracts'], payments: payments as FinanceTableRows['payments'], resolutions: resolutions as FinanceTableRows['resolutions'], parties }
 }
 
 function coherent(readSet: FinanceSummaryTableReadSet): boolean {
@@ -230,8 +230,8 @@ function groupByKey<T>(rows: readonly T[], key: (row: T) => string): Map<string,
 
 async function collectMany(metadata: ProjectFinanceMetadataReader, tables: ProjectFinanceTableReader, scope: FinanceScope, projectIds: readonly string[], directory: FinanceDirectory): Promise<Map<string, FinanceSummaryTableReadSet>> {
   if (projectIds.length === 0) return new Map()
-  const [categories, costItems, budgets, budgetLines, ownerAdvances, subcontracts, payments] = await Promise.all([
-    tables.categories(scope.tenantId, scope.companyId), tables.costItemsForProjects(scope.tenantId, scope.companyId, projectIds), tables.budgetsForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.budgetLinesForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.ownerAdvancesForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.subcontractsForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.paymentsForProjects(scope.tenantId, scope.companyId, projectIds, false),
+  const [categories, costItems, budgets, budgetLines, ownerAdvances, subcontracts, payments, resolutions] = await Promise.all([
+    tables.categories(scope.tenantId, scope.companyId), tables.costItemsForProjects(scope.tenantId, scope.companyId, projectIds), tables.budgetsForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.budgetLinesForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.ownerAdvancesForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.subcontractsForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.paymentsForProjects(scope.tenantId, scope.companyId, projectIds, false), tables.resolutionsForProjects(scope.tenantId, scope.companyId, projectIds),
   ])
   const details = await tables.detailAggregates(scope.tenantId, scope.companyId, costItems.map(item => item.id))
   const operationalStates = await metadata.operationalStates(scope.companyId, projectIds)
@@ -242,6 +242,7 @@ async function collectMany(metadata: ProjectFinanceMetadataReader, tables: Proje
   const ownerAdvancesByProject = groupByKey(ownerAdvances, row => row.project_id)
   const subcontractsByProject = groupByKey(subcontracts, row => row.project_id)
   const paymentsByProject = groupByKey(payments, row => row.project_id)
+  const resolutionsByProject = groupByKey(resolutions, row => row.project_id)
   const result = new Map<string, FinanceSummaryTableReadSet>()
   for (const project of directory.projects) {
     const scopedCostItems = costItemsByProject.get(project.projectId) ?? []
@@ -250,7 +251,7 @@ async function collectMany(metadata: ProjectFinanceMetadataReader, tables: Proje
     const partyIds = [...new Set(scopedContracts.map(contract => contract.subcontractor_party_id))]
     const parties: FinancePartyRow[] = []
     for (let index = 0; index < partyIds.length; index += 50) parties.push(...await metadata.parties(scope.companyId, project.projectId, partyIds.slice(index, index + 50)))
-    result.set(project.projectId, { context: { projectId: project.projectId, projectCode: project.projectCode, projectName: project.projectName, defaultCurrencyCode: directory.defaultCurrencyCode, moneyScale: directory.moneyScale, timeZone: directory.timeZone, operationalState: operationalStates.get(project.projectId)! }, categories, costItems: scopedCostItems, details: scopedDetails, budgets: budgetsByProject.get(project.projectId) ?? [], budgetLines: budgetLinesByProject.get(project.projectId) ?? [], ownerAdvances: ownerAdvancesByProject.get(project.projectId) ?? [], subcontracts: scopedContracts, payments: paymentsByProject.get(project.projectId) ?? [], parties })
+    result.set(project.projectId, { context: { projectId: project.projectId, projectCode: project.projectCode, projectName: project.projectName, defaultCurrencyCode: directory.defaultCurrencyCode, moneyScale: directory.moneyScale, timeZone: directory.timeZone, operationalState: operationalStates.get(project.projectId)! }, categories, costItems: scopedCostItems, details: scopedDetails, budgets: budgetsByProject.get(project.projectId) ?? [], budgetLines: budgetLinesByProject.get(project.projectId) ?? [], ownerAdvances: ownerAdvancesByProject.get(project.projectId) ?? [], subcontracts: scopedContracts, payments: paymentsByProject.get(project.projectId) ?? [], resolutions: resolutionsByProject.get(project.projectId) ?? [], parties })
   }
   return result
 }
