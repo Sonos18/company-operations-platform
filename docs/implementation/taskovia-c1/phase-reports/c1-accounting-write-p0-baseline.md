@@ -39,7 +39,7 @@ P0 — Baseline Lock & Target Contract Tests
 
 ## Migration
 
-None in P0.
+None in P0. The first implementation migration was subsequently created by the CLI at `supabase/migrations/20260922065444_c1_accounting_write_publication_rbac.sql`.
 
 ## RED evidence
 
