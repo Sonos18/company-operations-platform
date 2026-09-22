@@ -165,4 +165,9 @@ describe('C1 accounting write target', () => {
     expect(sql).toContain('jsonb_object_length')
     expect(sql).toContain('C1_FINALIZE_VALIDATION_FUNCTION_DRIFT')
   })
+  it('keeps raw evidence targets free of source metadata',()=>{
+    const sql=phaseMigration('_c1_accounting_write_raw_target_metadata_fix.sql')
+    expect(sql).toContain("jsonb_build_object('bucketId',v_file.bucket_id,'objectPath',v_file.object_path)")
+    expect(sql).not.toContain("'originalFilename'")
+  })
 })

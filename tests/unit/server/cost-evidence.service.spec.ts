@@ -21,7 +21,7 @@ describe('CostEvidenceService', () => {
     const query = (data: unknown) => { const result = { data, error: null }; const value = { select: () => value, eq: () => value, order: () => value, maybeSingle: async () => result, then: (resolve: (result: unknown) => unknown) => Promise.resolve(result).then(resolve) }; return value }
     const createSignedUrl = vi.fn().mockResolvedValue({ data: { signedUrl: 'https://example.test/evidence' }, error: null })
     const rpc = vi.fn().mockImplementation(async (name: string) => name === 'c1_get_cost_evidence_read_target'
-      ? { data: { bucketId: 'c1-accounting-evidence', objectPath: `${ids.tenant}/${ids.company}/${ids.project}/${ids.file}`, originalFilename: 'invoice.pdf' }, error: null }
+      ? { data: { bucketId: 'c1-accounting-evidence', objectPath: `${ids.tenant}/${ids.company}/${ids.project}/${ids.file}` }, error: null }
       : { data: { id: ids.file, status: 'finalized', originalFilename: 'invoice.pdf', mimeType: 'application/pdf', sizeBytes: 9, sha256: '0716f9264c9fe19f5d7455276107f3ddcc1d3497f63d60689a73558ae8a1bf5e', version: 1, finalizedAt: '2026-09-22T00:01:00.000Z', replayed: false }, error: null })
     const client = {
       rpc,
@@ -62,12 +62,13 @@ describe('CostEvidenceService', () => {
   it('uses one guarded raw-read target even when a file has multiple links', async () => {
     const createSignedUrl = vi.fn().mockResolvedValue({ data: { signedUrl: 'https://example.test/evidence' }, error: null })
     const client = {
-      rpc: vi.fn().mockResolvedValue({ data: { bucketId: 'c1-accounting-evidence', objectPath: `${ids.tenant}/${ids.company}/${ids.project}/${ids.file}`, originalFilename: 'invoice.pdf' }, error: null }),
+      rpc: vi.fn().mockResolvedValue({ data: { bucketId: 'c1-accounting-evidence', objectPath: `${ids.tenant}/${ids.company}/${ids.project}/${ids.file}` }, error: null }),
       from: vi.fn(() => { throw new Error('raw reads must not query metadata tables') }),
       storage: { from: vi.fn().mockReturnValue({ createSignedUrl }) },
     }
     await expect(new CostEvidenceRepository(client as never).createReadUrl(context([]), ids.file, { disposition: 'attachment' })).resolves.toMatchObject({ url: 'https://example.test/evidence' })
     expect(client.from).not.toHaveBeenCalled()
+    expect(createSignedUrl).toHaveBeenCalledWith(`${ids.tenant}/${ids.company}/${ids.project}/${ids.file}`, 60, { download: true })
   })
 
   it.each(['cost.manage', 'cost.publish_import', 'cost.correct', 'cost.record_cash'])("does not let %s substitute for cost.prepare", async permission => {

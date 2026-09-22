@@ -201,7 +201,7 @@ Linking does not increment the cost version and has no financial effect. It does
 - Body: `{ "disposition": "inline" }` or `attachment`; omission defaults to `inline`.
 - Response: `{ url, expiresAt }`; URL lifetime is exactly 60 seconds and must not be persisted.
 
-The raw-read command resolves one authorized object target by existence, so a file may have multiple immutable evidence links without making URL issuance ambiguous. `cost.file.read` does not grant registry or link metadata; listing finalized metadata requires `cost.source.read`.
+The raw-read command resolves one authorized object target by existence, so a file may have multiple immutable evidence links without making URL issuance ambiguous. Its internal target contains only bucket and object path—never `originalFilename` or other source metadata. Attachment mode therefore uses a generic download disposition; UI display names come only from the metadata endpoint under `cost.source.read`. `cost.file.read` does not grant registry or link metadata; listing finalized metadata requires `cost.source.read`.
 
 ## Subcontract cash APIs
 

@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
 
-select plan(38);
+select plan(39);
 
 select has_table('public', 'cost_evidence_files', 'evidence file registry exists');
 select has_table('public', 'cost_evidence_links', 'evidence link registry exists');
@@ -114,6 +114,7 @@ select is((select count(*) from public.cost_evidence_links where evidence_file_i
 select throws_ok($$select public.c1_get_cost_evidence_read_target('c1070000-0000-4000-8000-000000000020','c1070000-0000-4000-8000-000000000401')$$,'P0001','RESOURCE_NOT_FOUND','cost.file.read without linked-resource visibility cannot read bytes');
 select set_config('request.jwt.claims','{"sub":"c1070000-0000-4000-8000-000000000904","role":"authenticated"}',true);
 select is((public.c1_get_cost_evidence_read_target('c1070000-0000-4000-8000-000000000020','c1070000-0000-4000-8000-000000000401')->>'objectPath'),'c1070000-0000-4000-8000-000000000010/c1070000-0000-4000-8000-000000000020/c1070000-0000-4000-8000-000000000101/c1070000-0000-4000-8000-000000000401','cost.read plus cost.file.read obtains the guarded raw target');
+select ok(not (public.c1_get_cost_evidence_read_target('c1070000-0000-4000-8000-000000000020','c1070000-0000-4000-8000-000000000401') ? 'originalFilename'),'raw target does not disclose source-read metadata');
 
 reset role;
 select is((select version from public.project_cost_items where id='c1070000-0000-4000-8000-000000000201'),0::bigint,'evidence-only link does not change cost version');

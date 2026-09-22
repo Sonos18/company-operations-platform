@@ -14,7 +14,7 @@ interface Client { rpc(name: string, args: Record<string, unknown>): Promise<Res
 export interface CostEvidenceContext { tenantId: string; companyId: string; requestId: string }
 
 const pendingFileSchema = z.object({ bucket_id: z.string(), object_path: z.string(), declared_mime_type: z.string(), declared_size_bytes: z.number().int(), declared_sha256: z.string() }).passthrough()
-const readTargetSchema = z.object({ bucketId: z.string(), objectPath: z.string(), originalFilename: z.string() }).strict()
+const readTargetSchema = z.object({ bucketId: z.string(), objectPath: z.string() }).strict()
 const metadataRowSchema = z.object({ id: z.string().uuid(), evidence_file_id: z.string().uuid(), evidence_kind: z.string(), accounting_source_version_id: z.string().uuid().nullable(), cost_evidence_files: z.object({ original_filename: z.string(), verified_mime_type: z.string(), verified_size_bytes: z.number().int(), verified_sha256: z.string(), finalized_at: z.string() }).strict() }).strict()
 
 function fail(message: string): never { throw new AppApiError(500, 'INTERNAL_ERROR', message) }
@@ -83,7 +83,7 @@ export class CostEvidenceRepository {
     if (lookup.error) return rpcError(lookup.error)
     const file = readTargetSchema.safeParse(lookup.data)
     if (!file.success) return fail('Phản hồi đích đọc chứng từ không hợp lệ.')
-    const response = await this.client.storage.from(file.data.bucketId).createSignedUrl(file.data.objectPath, 60, { download: input.disposition === 'attachment' ? file.data.originalFilename : false })
+    const response = await this.client.storage.from(file.data.bucketId).createSignedUrl(file.data.objectPath, 60, { download: input.disposition === 'attachment' })
     if (response.error) return fail('Không thể tạo liên kết đọc chứng từ.')
     const signed = z.object({ signedUrl: z.string().url() }).passthrough().safeParse(response.data)
     if (!signed.success) return fail('Phản hồi liên kết đọc không hợp lệ.')

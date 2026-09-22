@@ -26,12 +26,13 @@ Cloud acceptance found an unqualified deferred-trigger lookup under hardened `se
 8. `20260922090028_c1_accounting_write_evidence_rls_initplan_fix.sql`
 9. `20260922092309_c1_accounting_write_evidence_kind_contract_fix.sql`
 
-The initial PR parity was 59 local / 59 remote through `20260922092309`. PR review hardening added two more forward-only migrations without editing the nine applied migrations:
+The initial PR parity was 59 local / 59 remote through `20260922092309`. PR review hardening added three more forward-only migrations without editing the nine applied migrations:
 
 10. `20260922100747_c1_accounting_write_review_security_hardening.sql`
 11. `20260922101400_c1_accounting_write_finalize_validation_fix.sql`
+12. `20260922102810_c1_accounting_write_raw_target_metadata_fix.sql`
 
-The second migration corrects a PostgreSQL compatibility error discovered by the hard-failing evidence suite after migration 10 was applied. Final parity is 61 local / 61 remote through `20260922101400`. Push commands completed; the CLI emitted a non-blocking Docker cache-export warning after successful application.
+Migration 11 corrects a PostgreSQL compatibility error discovered by the hard-failing evidence suite after migration 10 was applied. Migration 12 removes original-filename metadata from the raw-file target after independent review found that disclosure crossed the `cost.source.read` boundary. Final parity is 62 local / 62 remote through `20260922102810`. Push commands completed; the CLI emitted a non-blocking Docker cache-export warning after successful application.
 
 ## Cloud verification
 
@@ -42,12 +43,12 @@ The second migration corrects a PostgreSQL compatibility error discovered by the
 - `pnpm db:dev:c1:rehearse`: PASS, rollback-only.
 - `pnpm db:dev:push`: six migrations applied.
 - Corrective dry runs: each listed only its single pending forward migration.
-- Corrective pushes: the initial three and both PR-review migrations applied; no migration-history repair.
-- `pnpm db:dev:c1:test`: PASS for all 11 C1 suites. Final hard-failing pgTAP totals: lifecycle 55, evidence 38, cash 22. Existing Project Cost fixture was updated to the approved lifecycle instead of enabling a legacy capability bypass.
+- Corrective pushes: the initial three and all three PR-review migrations applied; no migration-history repair.
+- `pnpm db:dev:c1:test`: PASS for all 11 C1 suites. Final hard-failing pgTAP totals: lifecycle 55, evidence 39, cash 22. Existing Project Cost fixture was updated to the approved lifecycle instead of enabling a legacy capability bypass.
 - `pnpm db:dev:rls-smoke`: PASS.
 - Security advisor: WARN-only. New public SECURITY DEFINER RPC warnings are intentional authenticated wrappers with exact internal permission checks; the advisor also retains the pre-existing leaked-password warning.
 - Performance advisor: no C1 warning after the forward evidence-policy correction. One unrelated pre-existing `workflow_definition_snapshots` multiple-policy warning remains.
-- Final `pnpm db:dev:status`: 61/61.
+- Final `pnpm db:dev:status`: 62/62.
 
 ## Generated types
 
@@ -59,7 +60,7 @@ The second migration corrects a PostgreSQL compatibility error discovered by the
 - Evidence/security focused suite: PASS, 5 files / 38 tests.
 - P6 cash/source/finance suite: PASS, 6 files / 52 tests.
 - Corrective focused suite: PASS, 13 files / 236 tests.
-- `pnpm test:unit`: PASS, 150 files / 1,285 tests.
+- `pnpm test:unit`: PASS, 150 files / 1,286 tests.
 - `pnpm typecheck`: PASS.
 - `pnpm lint`: PASS after minimal caught-error/unused-argument lint corrections.
 - `pnpm build`: PASS; only existing chunk-size and Node dependency deprecation warnings were emitted.
@@ -85,10 +86,10 @@ Phase results were recorded in P1–P6 reports. Final model `jev-1.13.0` returne
 
 Disposition: no result identified a supported defect. Deterministic unit/database tests, RLS, migration constraints, and Cloud acceptance are authoritative.
 
-The PR-review pre-fix call returned capability leakage `0.45`, upload-expiry bypass `0.10`, and overstated MIME guarantee `0.58`; this reinforced the deterministic review findings and explicit verification wording. After all deterministic checks were green, the final corrective call returned manage→prepare bypass `0.13`, file→source metadata bypass `0.09`, expired upload write `0.10`, misleading MIME verification `0.33`, and cross-company evidence access `0.07`. The first two attempts at the identical final request failed at the network boundary; the third returned the typed result above. No credential or request file was committed.
+The PR-review pre-fix call returned capability leakage `0.45`, upload-expiry bypass `0.10`, and overstated MIME guarantee `0.58`; this reinforced the deterministic review findings and explicit verification wording. After all deterministic checks and the independent-review correction were green, the final corrective call returned manage→prepare bypass `0.12`, file→source metadata bypass `0.09`, expired upload write `0.09`, misleading MIME verification `0.34`, and cross-company evidence access `0.07`. Two earlier attempts at the same final request failed at the network boundary; later identical calls returned typed results. No credential or request file was committed.
 
 ## Mutation accounting and boundary
 
-Authorized Cloud DEV mutations consumed: eleven forward migrations (six planned plus five acceptance/review-driven corrective migrations). All database test fixtures and pgTAP extension creation were rollback-only. No reset, seed, migration repair, destructive operation, Production operation, UI change, or browser test was performed.
+Authorized Cloud DEV mutations consumed: twelve forward migrations (six planned plus six acceptance/review-driven corrective migrations). All database test fixtures and pgTAP extension creation were rollback-only. No reset, seed, migration repair, destructive operation, Production operation, UI change, or browser test was performed.
 
 Antigravity contract: `docs/superpowers/specs/2026-09-22-c1-accounting-write-ui-handoff.md`.
