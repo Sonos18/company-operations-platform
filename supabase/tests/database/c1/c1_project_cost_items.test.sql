@@ -2,275 +2,102 @@ begin;
 
 do $$
 declare
-  tenant_a constant uuid := 'c1010000-0000-4000-8000-000000000010';
-  company_a constant uuid := 'c1010000-0000-4000-8000-000000000020';
-  company_disabled constant uuid := 'c1010000-0000-4000-8000-000000000021';
-  tenant_b constant uuid := 'c1010000-0000-4000-8000-000000000011';
-  company_b constant uuid := 'c1010000-0000-4000-8000-000000000022';
-  reader constant uuid := 'c1010000-0000-4000-8000-000000000901';
-  manager constant uuid := 'c1010000-0000-4000-8000-000000000902';
-  corrector constant uuid := 'c1010000-0000-4000-8000-000000000903';
-  denied constant uuid := 'c1010000-0000-4000-8000-000000000904';
+  tenant_a constant uuid:='c1010000-0000-4000-8000-000000000010'; company_a constant uuid:='c1010000-0000-4000-8000-000000000020'; company_disabled constant uuid:='c1010000-0000-4000-8000-000000000021';
+  tenant_b constant uuid:='c1010000-0000-4000-8000-000000000011'; company_b constant uuid:='c1010000-0000-4000-8000-000000000022';
+  reader constant uuid:='c1010000-0000-4000-8000-000000000901'; manager constant uuid:='c1010000-0000-4000-8000-000000000902'; preparer constant uuid:='c1010000-0000-4000-8000-000000000903'; publisher constant uuid:='c1010000-0000-4000-8000-000000000904'; corrector constant uuid:='c1010000-0000-4000-8000-000000000905'; denied constant uuid:='c1010000-0000-4000-8000-000000000906';
 begin
-  insert into auth.users(id, email) values
-    (reader, 'c101-reader@taskovia.invalid'), (manager, 'c101-manager@taskovia.invalid'),
-    (corrector, 'c101-corrector@taskovia.invalid'), (denied, 'c101-denied@taskovia.invalid');
-  insert into public.tenants(id, code, name) values (tenant_a, 'C101-A', 'C101 synthetic tenant A'), (tenant_b, 'C101-B', 'C101 synthetic tenant B');
-  insert into public.companies(id, tenant_id, code, name) values
-    (company_a, tenant_a, 'C101-A1', 'C101 synthetic company A'),
-    (company_disabled, tenant_a, 'C101-A2', 'C101 synthetic company disabled'),
-    (company_b, tenant_b, 'C101-B1', 'C101 synthetic company B');
-  insert into public.tenant_memberships(user_id, tenant_id, roles) values
-    (reader, tenant_a, array['member']), (manager, tenant_a, array['member']),
-    (corrector, tenant_a, array['member']), (denied, tenant_a, array['member']);
-  insert into public.company_memberships(user_id, tenant_id, company_id, roles, is_active) values
-    (reader, tenant_a, company_a, array['member'], true), (manager, tenant_a, company_a, array['member'], true),
-    (corrector, tenant_a, company_a, array['member'], true), (denied, tenant_a, company_a, array['member'], true),
-    (manager, tenant_a, company_disabled, array['member'], true);
-  insert into public.roles(id, tenant_id, company_id, code, name, description, is_system) values
-    ('c1010000-0000-4000-8000-000000000911', tenant_a, company_a, 'c101_reader', 'C101 reader', 'Synthetic read role', false),
-    ('c1010000-0000-4000-8000-000000000912', tenant_a, company_a, 'c101_manager', 'C101 manager', 'Synthetic manage role', false),
-    ('c1010000-0000-4000-8000-000000000913', tenant_a, company_a, 'c101_corrector', 'C101 corrector', 'Synthetic correct role', false),
-    ('c1010000-0000-4000-8000-000000000914', tenant_a, company_a, 'c101_denied', 'C101 denied', 'Synthetic denied role', false),
-    ('c1010000-0000-4000-8000-000000000915', tenant_a, company_disabled, 'c101_disabled_manager', 'C101 disabled manager', 'Synthetic disabled role', false);
-  insert into public.role_permissions(role_id, permission_code) values
-    ('c1010000-0000-4000-8000-000000000911', 'cost.read'),
-    ('c1010000-0000-4000-8000-000000000912', 'cost.read'), ('c1010000-0000-4000-8000-000000000912', 'cost.manage'),
-    ('c1010000-0000-4000-8000-000000000913', 'cost.read'), ('c1010000-0000-4000-8000-000000000913', 'cost.correct'),
-    ('c1010000-0000-4000-8000-000000000915', 'cost.read'), ('c1010000-0000-4000-8000-000000000915', 'cost.manage');
-  insert into public.company_role_assignments(tenant_id, company_id, user_id, role_id, granted_by, grant_reason) values
-    (tenant_a, company_a, reader, 'c1010000-0000-4000-8000-000000000911', manager, 'C101 fixture'),
-    (tenant_a, company_a, manager, 'c1010000-0000-4000-8000-000000000912', manager, 'C101 fixture'),
-    (tenant_a, company_a, corrector, 'c1010000-0000-4000-8000-000000000913', manager, 'C101 fixture'),
-    (tenant_a, company_a, denied, 'c1010000-0000-4000-8000-000000000914', manager, 'C101 fixture'),
-    (tenant_a, company_disabled, manager, 'c1010000-0000-4000-8000-000000000915', manager, 'C101 fixture');
-  insert into public.company_cost_settings(company_id, tenant_id, enabled, created_by) values (company_a, tenant_a, true, manager), (company_disabled, tenant_a, false, manager);
-  insert into public.projects(id, tenant_id, company_id, code, name, origin, created_by) values
-    ('c1010000-0000-4000-8000-000000000101', tenant_a, company_a, 'C101-P1', 'C101 project one', 'manual', manager),
-    ('c1010000-0000-4000-8000-000000000102', tenant_a, company_a, 'C101-P2', 'C101 project two', 'manual', manager),
-    ('c1010000-0000-4000-8000-000000000105', tenant_a, company_a, 'C101-P5', 'C101 project without costs', 'manual', manager),
-    ('c1010000-0000-4000-8000-000000000104', tenant_a, company_disabled, 'C101-P4', 'C101 disabled project', 'manual', manager),
-    ('c1010000-0000-4000-8000-000000000103', tenant_b, company_b, 'C101-P3', 'C101 project foreign', 'manual', manager);
-  insert into public.business_parties(id, tenant_id, company_id, code, display_name, party_kind, created_by) values
-    ('c1010000-0000-4000-8000-000000000201', tenant_a, company_a, 'C101-PARTY', 'C101 party', 'organization', manager);
-  insert into public.project_engagements(id, tenant_id, company_id, project_id, party_id, code, name, currency_code, created_by) values
-    ('c1010000-0000-4000-8000-000000000301', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'c1010000-0000-4000-8000-000000000201', 'C101-ENG', 'C101 engagement', 'VND', manager);
-  insert into public.engagement_components(id, tenant_id, company_id, engagement_id, code, name, pricing_method, created_by) values
-    ('c1010000-0000-4000-8000-000000000401', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000301', 'C101-COMP', 'C101 component', 'fixed', manager);
-  insert into public.controlled_import_runs(id, tenant_id, company_id, run_id, actor_id, idempotency_key, payload_digest, manifest_digest, input_digests, workbook_family, adapter_id, adapter_version, manifest_snapshot, request_id) values
-    ('c1010000-0000-4000-8000-000000000501', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000502', manager, 'c1010000-0000-4000-8000-000000000503', repeat('a', 64), repeat('b', 64), array[repeat('c', 64)], 'c101-workbook', 'c101-adapter', '1', '{}'::jsonb, 'c1010000-0000-4000-8000-000000000504');
-  insert into public.accounting_sources(id, tenant_id, company_id, code, title, source_system, created_by) values ('c1010000-0000-4000-8000-000000000601', tenant_a, company_a, 'C101-SOURCE', 'C101 source', 'synthetic', manager);
-  insert into public.accounting_source_versions(id, tenant_id, company_id, source_id, import_run_id, version_no, input_file_identity, input_file_sha256, original_filename, created_by) values ('c1010000-0000-4000-8000-000000000602', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000601', 'c1010000-0000-4000-8000-000000000501', 1, 'c101.xlsx', repeat('d', 64), 'c101.xlsx', manager);
-  insert into public.source_selections(id, tenant_id, company_id, source_version_id, import_run_id, locator, locator_key, mapping_state, reviewed_mapping, observed_labels, raw_values, unresolved_issues, created_by) values ('c1010000-0000-4000-8000-000000000603', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000602', 'c1010000-0000-4000-8000-000000000501', '{"kind":"logical_section"}'::jsonb, 'c101-selection', 'pending', '{}'::jsonb, array['C101'], array['100'], array[]::text[], manager);
-  insert into public.source_reported_figures(id, tenant_id, company_id, source_selection_id, import_run_id, figure_identity, label, raw_value_text, value_state, amount_text, amount, metric_kind, basis, rounding_basis, period_basis, mapping_state, reviewed_mapping, scope_kind, scope_description, confirmation, created_by) values
-    ('c1010000-0000-4000-8000-000000000604', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000603', 'c1010000-0000-4000-8000-000000000501', repeat('e', 64), 'C101 figure one', '100', 'known', '100', 100, 'cost_total', 'net', 'exact', 'unknown', 'pending', '{}'::jsonb, 'whole_project', 'C101 evidence', 'unverified', manager),
-    ('c1010000-0000-4000-8000-000000000605', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000603', 'c1010000-0000-4000-8000-000000000501', repeat('f', 64), 'C101 figure two', '200', 'known', '200', 200, 'cost_total', 'net', 'exact', 'unknown', 'pending', '{}'::jsonb, 'whole_project', 'C101 evidence', 'unverified', manager);
-  insert into public.controlled_import_runs(id, tenant_id, company_id, run_id, actor_id, idempotency_key, payload_digest, manifest_digest, input_digests, workbook_family, adapter_id, adapter_version, manifest_snapshot, request_id) values
-    ('c1010000-0000-4000-8000-000000000606', tenant_a, company_disabled, 'c1010000-0000-4000-8000-000000000607', manager, 'c1010000-0000-4000-8000-000000000608', repeat('1', 64), repeat('2', 64), array[repeat('3', 64)], 'c101-workbook', 'c101-adapter', '1', '{}'::jsonb, 'c1010000-0000-4000-8000-000000000609');
-  insert into public.accounting_sources(id, tenant_id, company_id, code, title, source_system, created_by) values ('c1010000-0000-4000-8000-000000000610', tenant_a, company_disabled, 'C101-SOURCE-DISABLED', 'C101 disabled source', 'synthetic', manager);
-  insert into public.accounting_source_versions(id, tenant_id, company_id, source_id, import_run_id, version_no, input_file_identity, input_file_sha256, original_filename, created_by) values ('c1010000-0000-4000-8000-000000000611', tenant_a, company_disabled, 'c1010000-0000-4000-8000-000000000610', 'c1010000-0000-4000-8000-000000000606', 1, 'c101-disabled.xlsx', repeat('4', 64), 'c101-disabled.xlsx', manager);
-  insert into public.source_selections(id, tenant_id, company_id, source_version_id, import_run_id, locator, locator_key, mapping_state, reviewed_mapping, observed_labels, raw_values, unresolved_issues, created_by) values ('c1010000-0000-4000-8000-000000000612', tenant_a, company_disabled, 'c1010000-0000-4000-8000-000000000611', 'c1010000-0000-4000-8000-000000000606', '{"kind":"logical_section"}'::jsonb, 'c101-disabled-selection', 'pending', '{}'::jsonb, array['C101 disabled'], array['300'], array[]::text[], manager);
-  insert into public.source_reported_figures(id, tenant_id, company_id, source_selection_id, import_run_id, figure_identity, label, raw_value_text, value_state, amount_text, amount, metric_kind, basis, rounding_basis, period_basis, mapping_state, reviewed_mapping, scope_kind, scope_description, confirmation, created_by) values ('c1010000-0000-4000-8000-000000000613', tenant_a, company_disabled, 'c1010000-0000-4000-8000-000000000612', 'c1010000-0000-4000-8000-000000000606', repeat('5', 64), 'C101 disabled figure', '300', 'known', '300', 300, 'cost_total', 'net', 'exact', 'unknown', 'pending', '{}'::jsonb, 'whole_project', 'C101 evidence', 'unverified', manager);
-end;
-$$;
+  insert into auth.users(id,email) values(reader,'c101-reader@taskovia.invalid'),(manager,'c101-manager@taskovia.invalid'),(preparer,'c101-preparer@taskovia.invalid'),(publisher,'c101-publisher@taskovia.invalid'),(corrector,'c101-corrector@taskovia.invalid'),(denied,'c101-denied@taskovia.invalid');
+  insert into public.tenants(id,code,name) values(tenant_a,'C101-A','C101 tenant A'),(tenant_b,'C101-B','C101 tenant B');
+  insert into public.companies(id,tenant_id,code,name) values(company_a,tenant_a,'C101-A1','C101 company A'),(company_disabled,tenant_a,'C101-A2','C101 disabled'),(company_b,tenant_b,'C101-B1','C101 foreign');
+  insert into public.tenant_memberships(user_id,tenant_id,roles) values(reader,tenant_a,array['member']),(manager,tenant_a,array['member']),(preparer,tenant_a,array['member']),(publisher,tenant_a,array['member']),(corrector,tenant_a,array['member']),(denied,tenant_a,array['member']);
+  insert into public.company_memberships(user_id,tenant_id,company_id,roles,is_active) values(reader,tenant_a,company_a,array['member'],true),(manager,tenant_a,company_a,array['member'],true),(preparer,tenant_a,company_a,array['member'],true),(publisher,tenant_a,company_a,array['member'],true),(corrector,tenant_a,company_a,array['member'],true),(denied,tenant_a,company_a,array['member'],true),(manager,tenant_a,company_disabled,array['member'],true);
+  insert into public.roles(id,tenant_id,company_id,code,name,description,is_system) values
+    ('c1010000-0000-4000-8000-000000000911',tenant_a,company_a,'c101_reader','Reader','Synthetic',false),('c1010000-0000-4000-8000-000000000912',tenant_a,company_a,'c101_manager','Manager','Synthetic',false),('c1010000-0000-4000-8000-000000000913',tenant_a,company_a,'c101_preparer','Preparer','Synthetic',false),('c1010000-0000-4000-8000-000000000914',tenant_a,company_a,'c101_publisher','Publisher','Synthetic',false),('c1010000-0000-4000-8000-000000000915',tenant_a,company_a,'c101_corrector','Corrector','Synthetic',false),('c1010000-0000-4000-8000-000000000916',tenant_a,company_a,'c101_denied','Denied','Synthetic',false),('c1010000-0000-4000-8000-000000000917',tenant_a,company_disabled,'c101_disabled_manager','Disabled manager','Synthetic',false);
+  insert into public.role_permissions(role_id,permission_code) values('c1010000-0000-4000-8000-000000000911','cost.read'),('c1010000-0000-4000-8000-000000000912','cost.manage'),('c1010000-0000-4000-8000-000000000913','cost.prepare'),('c1010000-0000-4000-8000-000000000914','cost.publish_import'),('c1010000-0000-4000-8000-000000000915','cost.correct'),('c1010000-0000-4000-8000-000000000917','cost.manage');
+  insert into public.company_role_assignments(tenant_id,company_id,user_id,role_id,granted_by,grant_reason) values
+    (tenant_a,company_a,reader,'c1010000-0000-4000-8000-000000000911',manager,'fixture'),(tenant_a,company_a,manager,'c1010000-0000-4000-8000-000000000912',manager,'fixture'),(tenant_a,company_a,preparer,'c1010000-0000-4000-8000-000000000913',manager,'fixture'),(tenant_a,company_a,publisher,'c1010000-0000-4000-8000-000000000914',manager,'fixture'),(tenant_a,company_a,corrector,'c1010000-0000-4000-8000-000000000915',manager,'fixture'),(tenant_a,company_a,denied,'c1010000-0000-4000-8000-000000000916',manager,'fixture'),(tenant_a,company_disabled,manager,'c1010000-0000-4000-8000-000000000917',manager,'fixture');
+  insert into public.company_cost_settings(company_id,tenant_id,enabled,created_by) values(company_a,tenant_a,true,manager),(company_disabled,tenant_a,false,manager);
+  insert into public.projects(id,tenant_id,company_id,code,name,origin,created_by) values('c1010000-0000-4000-8000-000000000101',tenant_a,company_a,'C101-P1','Project one','manual',manager),('c1010000-0000-4000-8000-000000000103',tenant_b,company_b,'C101-P3','Foreign project','manual',manager),('c1010000-0000-4000-8000-000000000104',tenant_a,company_disabled,'C101-P4','Disabled project','manual',manager),('c1010000-0000-4000-8000-000000000105',tenant_a,company_a,'C101-P5','No-cost project','manual',manager);
+  perform set_config('taskovia.c1_finance.actor_id',manager::text,true); perform set_config('taskovia.c1_finance.request_id','c1010000-0000-4000-8000-000000000601',true); perform set_config('taskovia.c1_finance.change_reason','fixture',true);
+  insert into public.cost_categories(id,tenant_id,company_id,code,name,display_order,created_by,updated_by) values('c1010000-0000-4000-8000-000000000301',tenant_a,company_a,'materials','Materials',1,manager,manager);
+  insert into public.project_cost_items(id,tenant_id,company_id,project_id,description,amount,amount_text,currency_code,work_status,publication_state,publication_origin,published_at,created_by) values
+    ('c1010000-0000-4000-8000-000000000801',tenant_b,company_b,'c1010000-0000-4000-8000-000000000103','Foreign official',1,'1','VND','unknown','published','legacy_backfill',now(),manager),
+    ('c1010000-0000-4000-8000-000000000802',tenant_a,company_disabled,'c1010000-0000-4000-8000-000000000104','Disabled official',1,'1','VND','unknown','published','legacy_backfill',now(),manager),
+    ('c1010000-0000-4000-8000-000000000803',tenant_a,company_a,'c1010000-0000-4000-8000-000000000101','High precision official',9007199254740993.0000,'9007199254740993.0000','VND','unknown','published','legacy_backfill',now(),manager);
+end $$;
 
-do $$
-begin
-  if pg_catalog.has_table_privilege('authenticated', 'public.project_cost_items', 'insert') or pg_catalog.has_table_privilege('authenticated', 'public.project_cost_items', 'update') or pg_catalog.has_table_privilege('authenticated', 'public.project_cost_items', 'delete') then raise exception 'C1_PC_PERMISSION_BOUNDARY direct item writes granted'; end if;
-  if pg_catalog.has_table_privilege('authenticated', 'public.project_cost_item_sources', 'insert') or pg_catalog.has_table_privilege('authenticated', 'public.project_cost_item_sources', 'update') or pg_catalog.has_table_privilege('authenticated', 'public.project_cost_item_sources', 'delete') then raise exception 'C1_PC_SOURCE_DIRECT_ACL direct source writes granted'; end if;
-  if pg_catalog.has_table_privilege('authenticated', 'public.audit_events', 'update') or pg_catalog.has_table_privilege('authenticated', 'public.audit_events', 'delete') then raise exception 'C1_PC_AUDIT_ACL audit writes granted'; end if;
-  if pg_catalog.has_function_privilege('authenticated', 'private.c1_create_project_cost_item(uuid,jsonb,uuid,uuid)', 'execute') or pg_catalog.has_function_privilege('authenticated', 'private.c1_update_project_cost_item(uuid,uuid,jsonb,uuid)', 'execute') or pg_catalog.has_function_privilege('authenticated', 'private.c1_correct_project_cost_item(uuid,uuid,jsonb,uuid)', 'execute') or pg_catalog.has_function_privilege('authenticated', 'private.c1_read_project_cost_project_metadata(uuid,uuid[])', 'execute') then raise exception 'C1_PC_PERMISSION_BOUNDARY private command execute granted'; end if;
-end;
-$$;
+do $$ begin
+  if has_table_privilege('authenticated','public.project_cost_items','insert') or has_table_privilege('authenticated','public.project_cost_items','update') or has_table_privilege('authenticated','public.project_cost_items','delete') then raise exception 'C1_PC_PERMISSION_BOUNDARY'; end if;
+  if has_function_privilege('authenticated','private.c1_create_project_cost_draft(uuid,jsonb,uuid,uuid)','execute') or has_function_privilege('authenticated','private.c1_prepare_project_cost_financials(uuid,uuid,jsonb,uuid)','execute') then raise exception 'C1_PC_PRIVATE_BOUNDARY'; end if;
+  if not exists(select 1 from public.project_cost_items where id='c1010000-0000-4000-8000-000000000803' and amount=9007199254740993.0000 and amount_text='9007199254740993.0000') then raise exception 'C1_PC_DECIMAL_SAFE_AMOUNT'; end if;
+end $$;
 
 set local role anon;
+do $$ begin begin perform public.c1_read_project_cost_project_metadata('c1010000-0000-4000-8000-000000000020',array['c1010000-0000-4000-8000-000000000101'::uuid]);raise exception 'C1_PC_METADATA_ANON_RPC';exception when insufficient_privilege then null;end;end $$;
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1010000-0000-4000-8000-000000000902","role":"authenticated"}',true);
+create temp table c101_created as select public.c1_create_project_cost_draft('c1010000-0000-4000-8000-000000000020','{"projectId":"c1010000-0000-4000-8000-000000000101","description":"Tracked draft","costCategoryId":"c1010000-0000-4000-8000-000000000301","workStatus":"in_progress","businessReference":"C101-REF"}','c1010000-0000-4000-8000-000000000711','c1010000-0000-4000-8000-000000000712') result;
+do $$ declare replay jsonb; begin
+  if (select amount is not null or publication_state<>'draft' from public.project_cost_items where id=(select (result->>'id')::uuid from c101_created)) then raise exception 'C1_PC_DRAFT_SHAPE'; end if;
+  select public.c1_create_project_cost_draft('c1010000-0000-4000-8000-000000000020','{"projectId":"c1010000-0000-4000-8000-000000000101","description":"Tracked draft","costCategoryId":"c1010000-0000-4000-8000-000000000301","workStatus":"in_progress","businessReference":"C101-REF"}','c1010000-0000-4000-8000-000000000711','c1010000-0000-4000-8000-000000000713') into replay;
+  if not(replay->>'replayed')::boolean then raise exception 'C1_PC_IDEMPOTENCY'; end if;
+  begin perform public.c1_create_project_cost_draft('c1010000-0000-4000-8000-000000000020','{"projectId":"c1010000-0000-4000-8000-000000000101","description":"Changed","costCategoryId":"c1010000-0000-4000-8000-000000000301"}','c1010000-0000-4000-8000-000000000711','c1010000-0000-4000-8000-000000000714');raise exception 'missing conflict';exception when sqlstate 'P0001' then if sqlerrm<>'IDEMPOTENCY_CONFLICT' then raise;end if;end;
+  perform public.c1_update_project_cost_draft('c1010000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c101_created),'{"expectedVersion":0,"description":"Tracked item"}','c1010000-0000-4000-8000-000000000715');
+end $$;
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1010000-0000-4000-8000-000000000901","role":"authenticated"}',true);
+do $$ begin if exists(select 1 from public.project_cost_items where id=(select (result->>'id')::uuid from c101_created)) then raise exception 'C1_PC_DRAFT_LEAK'; end if; end $$;
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1010000-0000-4000-8000-000000000903","role":"authenticated"}',true);
+do $$ declare prepared jsonb; begin select public.c1_prepare_project_cost_financials('c1010000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c101_created),'{"expectedVersion":1,"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"line_item","description":"Canonical detail","amount":"100.0000"}],"sourceFigureIds":[]}','c1010000-0000-4000-8000-000000000716') into prepared;if prepared->>'amount'<>'100.0000' or (prepared->>'version')::bigint<>2 then raise exception 'C1_PC_PREPARE';end if;end $$;
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1010000-0000-4000-8000-000000000904","role":"authenticated"}',true);
+create temp table c101_published as select public.c1_publish_project_cost('c1010000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c101_created),2,'c1010000-0000-4000-8000-000000000717','c1010000-0000-4000-8000-000000000718') result;
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1010000-0000-4000-8000-000000000901","role":"authenticated"}',true);
+do $$ declare metadata jsonb; begin
+  if not exists(select 1 from public.project_cost_items where id=(select (result->>'id')::uuid from c101_created) and publication_state='published') then raise exception 'C1_PC_PUBLISH_VISIBILITY'; end if;
+  if exists(select 1 from public.project_cost_items where company_id in('c1010000-0000-4000-8000-000000000021','c1010000-0000-4000-8000-000000000022')) then raise exception 'C1_PC_SCOPE'; end if;
+  select public.c1_read_project_cost_project_metadata('c1010000-0000-4000-8000-000000000020',array['c1010000-0000-4000-8000-000000000101'::uuid,'c1010000-0000-4000-8000-000000000105'::uuid]) into metadata;
+  if jsonb_array_length(metadata)<>1 or metadata->0->>'projectId'<>'c1010000-0000-4000-8000-000000000101' then raise exception 'C1_PC_METADATA_SCOPE C1_PC_METADATA_NO_COST_PROJECT'; end if;
+  if (select array_agg(key order by key) from jsonb_object_keys(metadata->0) key)<>array['projectCode','projectId','projectName'] then raise exception 'C1_PC_METADATA_MINIMIZATION';end if;
+  if exists(select 1 from public.projects where company_id='c1010000-0000-4000-8000-000000000020') then raise exception 'C1_PC_METADATA_PROJECT_RLS';end if;
+end $$;
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1010000-0000-4000-8000-000000000906","role":"authenticated"}',true);
+do $$ begin begin perform public.c1_read_project_cost_project_metadata('c1010000-0000-4000-8000-000000000020',array['c1010000-0000-4000-8000-000000000101'::uuid]);raise exception 'C1_PC_METADATA_PERMISSION';exception when sqlstate 'P0001' then if sqlerrm<>'PERMISSION_DENIED' then raise;end if;end;end $$;
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1010000-0000-4000-8000-000000000905","role":"authenticated"}',true);
+do $$ declare corrected jsonb; begin
+  begin perform public.c1_correct_published_project_cost('c1010000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c101_created),'{"expectedVersion":3,"reason":" ","operationalChanges":{"workStatus":"accepted"}}','c1010000-0000-4000-8000-000000000719','c1010000-0000-4000-8000-000000000720');raise exception 'empty reason';exception when sqlstate 'P0001' then if sqlerrm<>'INPUT_INVALID' then raise;end if;end;
+  select public.c1_correct_published_project_cost('c1010000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c101_created),'{"expectedVersion":3,"reason":"Correct source","financialChanges":{"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"line_item","description":"Corrected detail","amount":"110.0000"}],"sourceFigureIds":[]}}','c1010000-0000-4000-8000-000000000721','c1010000-0000-4000-8000-000000000722') into corrected;
+  if (corrected->>'version')::bigint<>4 then raise exception 'C1_PC_CORRECTION_VERSION'; end if;
+end $$;
+reset role;
+
 do $$ begin
-  begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', '{}'::jsonb, 'c1010000-0000-4000-8000-000000000701', 'c1010000-0000-4000-8000-000000000702'); raise exception 'C1_PC_PERMISSION_BOUNDARY anonymous RPC succeeded'; exception when insufficient_privilege then null; end;
-  begin perform public.c1_update_project_cost_item('c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000101', '{}'::jsonb, 'c1010000-0000-4000-8000-000000000703'); raise exception 'C1_PC_ANON_UPDATE_RPC anonymous update succeeded'; exception when insufficient_privilege then null; end;
-  begin perform public.c1_correct_project_cost_item('c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000101', '{}'::jsonb, 'c1010000-0000-4000-8000-000000000704'); raise exception 'C1_PC_ANON_CORRECT_RPC anonymous correction succeeded'; exception when insufficient_privilege then null; end;
-  begin perform public.c1_read_project_cost_project_metadata('c1010000-0000-4000-8000-000000000020', array['c1010000-0000-4000-8000-000000000101'::uuid]); raise exception 'C1_PC_METADATA_ANON_RPC anonymous metadata read succeeded'; exception when insufficient_privilege then null; end;
+  if (select amount_text from public.project_cost_items where id=(select (result->>'id')::uuid from c101_created))<>'110.0000' or (select sum(amount_text::numeric) from public.project_cost_item_details where project_cost_item_id=(select (result->>'id')::uuid from c101_created))<>110 then raise exception 'C1_PC_DERIVED_AMOUNT'; end if;
+  if not exists(select 1 from public.audit_events where action='c1.project_cost_item.corrected' and resource_id=(select result->>'id' from c101_created) and before_summary?'details' and after_summary?'details') then raise exception 'C1_PC_AUDIT_HISTORY'; end if;
 end $$;
-reset role;
 
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"c1010000-0000-4000-8000-000000000902","role":"authenticated"}', true);
-do $$
-declare first_create jsonb; replay jsonb; item_id uuid; item_version bigint;
-begin
-  select public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 tracked item','amount','100.0000','currencyCode','VND','workStatus','in_progress','nonOverlapConfirmationReference','C101-confirmation'), 'c1010000-0000-4000-8000-000000000711', 'c1010000-0000-4000-8000-000000000712') into first_create;
-  item_id := (first_create->>'id')::uuid;
-  if item_id is null or (first_create->>'version')::bigint <> 0 or (first_create->>'replayed')::boolean then raise exception 'C1_PC_IDEMPOTENCY first create result invalid'; end if;
-  if (select amount from public.project_cost_items where id = item_id) <> 100 or (select amount_text from public.project_cost_items where id = item_id) <> '100.0000' then raise exception 'C1_PC_DECIMAL_SAFE_AMOUNT create text mismatch'; end if;
-  select public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 tracked item','amount','100.0000','currencyCode','VND','workStatus','in_progress','nonOverlapConfirmationReference','C101-confirmation'), 'c1010000-0000-4000-8000-000000000711', 'c1010000-0000-4000-8000-000000000713') into replay;
-  if (replay->>'id')::uuid is distinct from item_id or (replay->>'version')::bigint <> 0 or not (replay->>'replayed')::boolean or (select count(*) from public.project_cost_items where id = item_id) <> 1 then raise exception 'C1_PC_IDEMPOTENCY replay created another item'; end if;
-  begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 changed payload','amount','100.0000','currencyCode','VND','workStatus','in_progress','nonOverlapConfirmationReference','C101-confirmation'), 'c1010000-0000-4000-8000-000000000711', 'c1010000-0000-4000-8000-000000000714'); raise exception 'C1_PC_IDEMPOTENCY conflict missing'; exception when sqlstate 'P0001' then if sqlerrm <> 'IDEMPOTENCY_CONFLICT' then raise; end if; end;
-  perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 hierarchical item','amount','20','currencyCode','VND','workStatus','accepted','businessReference','C101-REF','partyId','c1010000-0000-4000-8000-000000000201','engagementId','c1010000-0000-4000-8000-000000000301','componentId','c1010000-0000-4000-8000-000000000401','relevantDate','2026-09-16','nonOverlapConfirmationReference','C101-confirmation-2'), 'c1010000-0000-4000-8000-000000000715', 'c1010000-0000-4000-8000-000000000716');
-  perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000102','description','C101 same reference other project','amount','10','currencyCode','VND','workStatus','unknown','businessReference','C101-REF','nonOverlapConfirmationReference','C101-confirmation-3'), 'c1010000-0000-4000-8000-000000000717', 'c1010000-0000-4000-8000-000000000718');
-  begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 duplicate reference','amount','10','currencyCode','VND','workStatus','unknown','businessReference','C101-REF','nonOverlapConfirmationReference','C101-confirmation-4'), 'c1010000-0000-4000-8000-000000000719', 'c1010000-0000-4000-8000-000000000720'); raise exception 'C1_PC_F05_REFERENCE duplicate accepted'; exception when unique_violation then null; end;
-  perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 null reference two','amount','2','currencyCode','VND','workStatus','unknown','nonOverlapConfirmationReference','C101-null-2'), 'c1010000-0000-4000-8000-000000000743', 'c1010000-0000-4000-8000-000000000744');
-  if (select count(*) from public.project_cost_items where project_id = 'c1010000-0000-4000-8000-000000000101' and business_reference is null) < 2 then raise exception 'C1_PC_F05_NULL_REFERENCE same project null references rejected'; end if;
-  begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 invalid amount','amount','-1','currencyCode','VND','workStatus','unknown','nonOverlapConfirmationReference','C101-x'), 'c1010000-0000-4000-8000-000000000721', 'c1010000-0000-4000-8000-000000000722'); raise exception 'C1_PC_MONEY negative accepted'; exception when sqlstate 'P0001' then if sqlerrm <> 'INPUT_INVALID' then raise; end if; end;
-  begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 precision','amount','1.00001','currencyCode','VND','workStatus','unknown','nonOverlapConfirmationReference','C101-x'), 'c1010000-0000-4000-8000-000000000732', 'c1010000-0000-4000-8000-000000000733'); raise exception 'C1_PC_MONEY precision accepted'; exception when sqlstate 'P0001' then if sqlerrm <> 'INPUT_INVALID' then raise; end if; end;
-  begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 status','amount','1','currencyCode','VND','workStatus','paid','nonOverlapConfirmationReference','C101-x'), 'c1010000-0000-4000-8000-000000000734', 'c1010000-0000-4000-8000-000000000735'); raise exception 'C1_PC_MONEY status accepted'; exception when sqlstate 'P0001' then if sqlerrm <> 'INPUT_INVALID' then raise; end if; end;
-  begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 invalid date','amount','1','currencyCode','VND','workStatus','unknown','relevantDate','2026-02-31','nonOverlapConfirmationReference','C101-x'), 'c1010000-0000-4000-8000-000000000723', 'c1010000-0000-4000-8000-000000000724'); raise exception 'C1_PC_MONEY calendar date accepted'; exception when sqlstate 'P0001' then if sqlerrm <> 'INPUT_INVALID' then raise; end if; end;
-  perform public.c1_update_project_cost_item('c1010000-0000-4000-8000-000000000020', item_id, jsonb_build_object('workStatus','accepted','expectedVersion',0), 'c1010000-0000-4000-8000-000000000725');
-  select version into item_version from public.project_cost_items where id = item_id;
-  if item_version <> 1 or (select work_status from public.project_cost_items where id = item_id) <> 'accepted' or (select count(*) from public.project_cost_items where description = 'C101 tracked item') <> 1 then raise exception 'C1_PC_F04_SAME_ROW transition created successor'; end if;
-  begin perform public.c1_update_project_cost_item('c1010000-0000-4000-8000-000000000020', item_id, jsonb_build_object('description','C101 stale','expectedVersion',0), 'c1010000-0000-4000-8000-000000000726'); raise exception 'C1_PC_VERSION_CONFLICT stale update accepted'; exception when sqlstate 'P0001' then if sqlerrm <> 'VERSION_CONFLICT' then raise; end if; end;
-  begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000102','description','C101 cross project engagement','amount','1','currencyCode','VND','workStatus','unknown','engagementId','c1010000-0000-4000-8000-000000000301','nonOverlapConfirmationReference','C101-x'), 'c1010000-0000-4000-8000-000000000727', 'c1010000-0000-4000-8000-000000000728'); raise exception 'C1_PC_HIERARCHY cross project engagement accepted'; exception when sqlstate 'P0001' then if sqlerrm <> 'RESOURCE_NOT_FOUND' then raise; end if; end;
-  begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000103','description','C101 foreign project command','amount','1','currencyCode','VND','workStatus','unknown','nonOverlapConfirmationReference','C101-x'), 'c1010000-0000-4000-8000-000000000745', 'c1010000-0000-4000-8000-000000000746'); raise exception 'C1_PC_PROJECT_SCOPE foreign project accepted'; exception when sqlstate 'P0001' then if sqlerrm <> 'RESOURCE_NOT_FOUND' then raise; end if; end;
-  begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 component no engagement','amount','1','currencyCode','VND','workStatus','unknown','componentId','c1010000-0000-4000-8000-000000000401','nonOverlapConfirmationReference','C101-x'), 'c1010000-0000-4000-8000-000000000736', 'c1010000-0000-4000-8000-000000000737'); raise exception 'C1_PC_HIERARCHY component without engagement accepted'; exception when sqlstate 'P0001' then if sqlerrm <> 'RESOURCE_NOT_FOUND' then raise; end if; end;
-  begin perform public.c1_correct_project_cost_item('c1010000-0000-4000-8000-000000000020', item_id, jsonb_build_object('expectedVersion',item_version,'reason','C101 forbidden','amount','101'), 'c1010000-0000-4000-8000-000000000738'); raise exception 'C1_PC_PERMISSION_BOUNDARY manager corrected'; exception when sqlstate 'P0001' then if sqlerrm <> 'PERMISSION_DENIED' then raise; end if; end;
-end;
-$$;
+select set_config('request.jwt.claims','{"sub":"c1010000-0000-4000-8000-000000000902","role":"authenticated"}',true);
+do $$ begin begin perform public.c1_create_project_cost_draft('c1010000-0000-4000-8000-000000000021','{"projectId":"c1010000-0000-4000-8000-000000000104","description":"Disabled","costCategoryId":"c1010000-0000-4000-8000-000000000301"}','c1010000-0000-4000-8000-000000000723','c1010000-0000-4000-8000-000000000724');raise exception 'disabled accepted';exception when sqlstate 'P0001' then if sqlerrm<>'MODULE_DISABLED' then raise;end if;end;end $$;
 reset role;
-
-set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"c1010000-0000-4000-8000-000000000902","role":"authenticated"}', true);
-do $$
-declare
-  no_source_create jsonb;
-  provenance_create jsonb;
-  provenance_replay jsonb;
-  no_source_item_id uuid;
-  provenance_item_id uuid;
-begin
-  select public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 provenance optional item','amount','3.0000','currencyCode','VND','workStatus','unknown','nonOverlapConfirmationReference','C101-provenance-optional'), 'c1010000-0000-4000-8000-000000000750', 'c1010000-0000-4000-8000-000000000751') into no_source_create;
-  no_source_item_id := (no_source_create->>'id')::uuid;
-  if no_source_item_id is null or exists (select 1 from public.project_cost_item_sources where project_cost_item_id = no_source_item_id) then raise exception 'C1_PC_PROVENANCE_COMMAND optional provenance create invalid'; end if;
-
-  select public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 provenance item','amount','4.0000','currencyCode','VND','workStatus','in_progress','nonOverlapConfirmationReference','C101-provenance','sourceFigureIds',jsonb_build_array('c1010000-0000-4000-8000-000000000604','c1010000-0000-4000-8000-000000000605')), 'c1010000-0000-4000-8000-000000000752', 'c1010000-0000-4000-8000-000000000753') into provenance_create;
-  provenance_item_id := (provenance_create->>'id')::uuid;
-  if provenance_item_id is null or (select count(*) from public.project_cost_item_sources where project_cost_item_id = provenance_item_id) <> 2 then raise exception 'C1_PC_PROVENANCE_COMMAND create links missing'; end if;
-  raise notice 'C1_PC_PROVENANCE_COMMAND';
-
-  begin
-    perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 provenance duplicate input','amount','5.0000','currencyCode','VND','workStatus','unknown','nonOverlapConfirmationReference','C101-provenance-duplicate','sourceFigureIds',jsonb_build_array('c1010000-0000-4000-8000-000000000604','c1010000-0000-4000-8000-000000000604')), 'c1010000-0000-4000-8000-000000000754', 'c1010000-0000-4000-8000-000000000755');
-    raise exception 'C1_PC_PROVENANCE_DUPLICATE_INPUT duplicate source IDs accepted';
-  exception when sqlstate 'P0001' then if sqlerrm <> 'INPUT_INVALID' then raise; end if;
-  end;
-  if exists (select 1 from public.project_cost_items where description = 'C101 provenance duplicate input') then raise exception 'C1_PC_PROVENANCE_DUPLICATE_INPUT failed create residue'; end if;
-  raise notice 'C1_PC_PROVENANCE_DUPLICATE_INPUT';
-
-  begin
-    perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 provenance invalid shape','amount','5.5000','currencyCode','VND','workStatus','unknown','nonOverlapConfirmationReference','C101-provenance-invalid-shape','sourceFigureIds','not-an-array'), 'c1010000-0000-4000-8000-000000000762', 'c1010000-0000-4000-8000-000000000763');
-    raise exception 'C1_PC_PROVENANCE_INVALID_SHAPE scalar source IDs accepted';
-  exception when sqlstate 'P0001' then if sqlerrm <> 'INPUT_INVALID' then raise; end if;
-  end;
-  if exists (select 1 from public.project_cost_items where description = 'C101 provenance invalid shape') or exists (select 1 from public.project_cost_item_sources link join public.project_cost_items item on item.id = link.project_cost_item_id where item.description = 'C101 provenance invalid shape') then raise exception 'C1_PC_PROVENANCE_INVALID_SHAPE failed create residue'; end if;
-  raise notice 'C1_PC_PROVENANCE_INVALID_SHAPE';
-
-  begin
-    perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 provenance invalid UUID','amount','5.6000','currencyCode','VND','workStatus','unknown','nonOverlapConfirmationReference','C101-provenance-invalid-uuid','sourceFigureIds',jsonb_build_array('not-a-uuid')), 'c1010000-0000-4000-8000-000000000764', 'c1010000-0000-4000-8000-000000000765');
-    raise exception 'C1_PC_PROVENANCE_INVALID_UUID malformed source ID accepted';
-  exception when sqlstate 'P0001' then if sqlerrm <> 'INPUT_INVALID' then raise; end if;
-  end;
-  if exists (select 1 from public.project_cost_items where description = 'C101 provenance invalid UUID') or exists (select 1 from public.project_cost_item_sources link join public.project_cost_items item on item.id = link.project_cost_item_id where item.description = 'C101 provenance invalid UUID') then raise exception 'C1_PC_PROVENANCE_INVALID_UUID failed create residue'; end if;
-  raise notice 'C1_PC_PROVENANCE_INVALID_UUID';
-
-  begin
-    perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 provenance foreign source','amount','6.0000','currencyCode','VND','workStatus','unknown','nonOverlapConfirmationReference','C101-provenance-foreign','sourceFigureIds',jsonb_build_array('c1010000-0000-4000-8000-000000000613')), 'c1010000-0000-4000-8000-000000000756', 'c1010000-0000-4000-8000-000000000757');
-    raise exception 'C1_PC_PROVENANCE_SCOPE foreign source accepted';
-  exception when sqlstate 'P0001' then if sqlerrm <> 'RESOURCE_NOT_FOUND' then raise; end if;
-  end;
-  if exists (select 1 from public.project_cost_items where description = 'C101 provenance foreign source') then raise exception 'C1_PC_PROVENANCE_SCOPE failed create residue'; end if;
-  raise notice 'C1_PC_PROVENANCE_SCOPE';
-
-  select public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 provenance item','amount','4.0000','currencyCode','VND','workStatus','in_progress','nonOverlapConfirmationReference','C101-provenance','sourceFigureIds',jsonb_build_array('c1010000-0000-4000-8000-000000000604','c1010000-0000-4000-8000-000000000605')), 'c1010000-0000-4000-8000-000000000752', 'c1010000-0000-4000-8000-000000000758') into provenance_replay;
-  if (provenance_replay->>'id')::uuid is distinct from provenance_item_id or not (provenance_replay->>'replayed')::boolean or (select count(*) from public.project_cost_item_sources where project_cost_item_id = provenance_item_id) <> 2 then raise exception 'C1_PC_PROVENANCE_IDEMPOTENT replay changed links'; end if;
-  begin
-    perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000101','description','C101 provenance item','amount','4.0000','currencyCode','VND','workStatus','in_progress','nonOverlapConfirmationReference','C101-provenance','sourceFigureIds',jsonb_build_array('c1010000-0000-4000-8000-000000000604')), 'c1010000-0000-4000-8000-000000000752', 'c1010000-0000-4000-8000-000000000759');
-    raise exception 'C1_PC_PROVENANCE_IDEMPOTENT changed provenance accepted';
-  exception when sqlstate 'P0001' then if sqlerrm <> 'IDEMPOTENCY_CONFLICT' then raise; end if;
-  end;
-  raise notice 'C1_PC_PROVENANCE_IDEMPOTENT';
-
-  perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000102','description','C101 provenance reuse item','amount','7.0000','currencyCode','VND','workStatus','unknown','nonOverlapConfirmationReference','C101-provenance-reuse','sourceFigureIds',jsonb_build_array('c1010000-0000-4000-8000-000000000605')), 'c1010000-0000-4000-8000-000000000760', 'c1010000-0000-4000-8000-000000000761');
-  if (select count(*) from public.project_cost_item_sources where source_reported_figure_id = 'c1010000-0000-4000-8000-000000000605') <> 2 then raise exception 'C1_PC_F07_SOURCE_REUSE guarded source reuse rejected'; end if;
-end;
-$$;
-reset role;
-
-do $$
-declare provenance_item_id uuid;
-begin
-  select id into provenance_item_id from public.project_cost_items where description = 'C101 provenance item';
-  if provenance_item_id is null or not exists (select 1 from public.audit_events where resource_type = 'project_cost_item' and action = 'c1.project_cost_item.created' and request_id = 'c1010000-0000-4000-8000-000000000753' and resource_id = provenance_item_id::text and after_summary->'sourceFigureIds' = jsonb_build_array('c1010000-0000-4000-8000-000000000604','c1010000-0000-4000-8000-000000000605')) then raise exception 'C1_PC_PROVENANCE_AUDIT missing provenance creation audit'; end if;
-  raise notice 'C1_PC_PROVENANCE_AUDIT';
-  if exists (select 1 from public.cost_command_receipts where company_id = 'c1010000-0000-4000-8000-000000000020' and actor_id = 'c1010000-0000-4000-8000-000000000902' and command_name = 'project_cost_item.create' and idempotency_key in ('c1010000-0000-4000-8000-000000000754','c1010000-0000-4000-8000-000000000762','c1010000-0000-4000-8000-000000000764','c1010000-0000-4000-8000-000000000756')) then raise exception 'C1_PC_PROVENANCE_FAILED_CREATE_RESIDUE receipt created'; end if;
-  raise notice 'C1_PC_PROVENANCE_FAILED_CREATE_RESIDUE';
-end;
-$$;
-
-insert into public.project_cost_items(id, tenant_id, company_id, project_id, description, amount, amount_text, currency_code, work_status, created_by)
-values ('c1010000-0000-4000-8000-000000000801', 'c1010000-0000-4000-8000-000000000011', 'c1010000-0000-4000-8000-000000000022', 'c1010000-0000-4000-8000-000000000103', 'C101 foreign item', 1, '1', 'VND', 'unknown', 'c1010000-0000-4000-8000-000000000902');
-insert into public.project_cost_items(id, tenant_id, company_id, project_id, description, amount, amount_text, currency_code, work_status, created_by)
-values ('c1010000-0000-4000-8000-000000000802', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000021', 'c1010000-0000-4000-8000-000000000104', 'C101 disabled item', 1, '1', 'VND', 'unknown', 'c1010000-0000-4000-8000-000000000902');
-insert into public.project_cost_items(id, tenant_id, company_id, project_id, description, amount, amount_text, currency_code, work_status, created_by)
-values ('c1010000-0000-4000-8000-000000000803', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000101', 'C101 high precision item', 9007199254740993.0000, '9007199254740993.0000', 'VND', 'unknown', 'c1010000-0000-4000-8000-000000000902');
-do $$ begin if not exists (select 1 from public.project_cost_items where id = 'c1010000-0000-4000-8000-000000000803' and amount = 9007199254740993.0000 and amount_text = '9007199254740993.0000') then raise exception 'C1_PC_DECIMAL_SAFE_AMOUNT high precision mismatch'; end if; end $$;
-
-set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"c1010000-0000-4000-8000-000000000902","role":"authenticated"}', true);
-do $$ begin
-  if (select count(*) from public.project_cost_items where company_id = 'c1010000-0000-4000-8000-000000000021') <> 0 then raise exception 'C1_PC_MODULE_DISABLED_READ disabled company visible'; end if;
-  begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000021', jsonb_build_object('projectId','c1010000-0000-4000-8000-000000000104','description','C101 disabled command','amount','1','currencyCode','VND','workStatus','unknown','nonOverlapConfirmationReference','C101-disabled'), 'c1010000-0000-4000-8000-000000000747', 'c1010000-0000-4000-8000-000000000748'); raise exception 'C1_PC_MODULE_DISABLED_COMMAND disabled command accepted'; exception when sqlstate 'P0001' then if sqlerrm <> 'MODULE_DISABLED' then raise; end if; end;
-end $$;
-reset role;
-
-set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"c1010000-0000-4000-8000-000000000901","role":"authenticated"}', true);
-do $$
-declare metadata jsonb;
-begin
-  if (select count(*) from public.project_cost_items where company_id = 'c1010000-0000-4000-8000-000000000020') < 2 then raise exception 'C1_PC_READ reader cannot read scoped items'; end if;
-  if (select count(*) from public.project_cost_items where company_id = 'c1010000-0000-4000-8000-000000000022') <> 0 then raise exception 'C1_PC_READ reader saw foreign company'; end if;
-  select public.c1_read_project_cost_project_metadata('c1010000-0000-4000-8000-000000000020', array['c1010000-0000-4000-8000-000000000101'::uuid, 'c1010000-0000-4000-8000-000000000105'::uuid, 'c1010000-0000-4000-8000-000000000104'::uuid, 'c1010000-0000-4000-8000-000000000103'::uuid]) into metadata;
-  if metadata <> jsonb_build_array(jsonb_build_object('projectId', 'c1010000-0000-4000-8000-000000000101'::uuid, 'projectCode', 'C101-P1', 'projectName', 'C101 project one')) then raise exception 'C1_PC_METADATA_SCOPE cost reader metadata result invalid'; end if;
-  if metadata @> jsonb_build_array(jsonb_build_object('projectId', 'c1010000-0000-4000-8000-000000000105'::uuid)) then raise exception 'C1_PC_METADATA_NO_COST_PROJECT cost reader saw Project without Project Cost'; end if;
-  if (select array_agg(key order by key) from jsonb_object_keys(metadata->0) key) <> array['projectCode','projectId','projectName'] then raise exception 'C1_PC_METADATA_MINIMIZATION metadata output fields widened'; end if;
-  if exists (select 1 from public.projects where company_id = 'c1010000-0000-4000-8000-000000000020') then raise exception 'C1_PC_METADATA_PROJECT_RLS cost reader gained direct Project Register read'; end if;
-  begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', '{}'::jsonb, 'c1010000-0000-4000-8000-000000000729', 'c1010000-0000-4000-8000-000000000730'); raise exception 'C1_PC_PERMISSION_BOUNDARY reader created'; exception when sqlstate 'P0001' then if sqlerrm <> 'PERMISSION_DENIED' then raise; end if; end;
-end $$;
-reset role;
-
-set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"c1010000-0000-4000-8000-000000000904","role":"authenticated"}', true);
-do $$ begin
-  if (select count(*) from public.project_cost_items where company_id = 'c1010000-0000-4000-8000-000000000020') <> 0 then raise exception 'C1_PC_PERMISSION_BOUNDARY denied actor read'; end if;
-  begin perform public.c1_read_project_cost_project_metadata('c1010000-0000-4000-8000-000000000020', array['c1010000-0000-4000-8000-000000000101'::uuid]); raise exception 'C1_PC_METADATA_PERMISSION denied metadata read succeeded'; exception when sqlstate 'P0001' then if sqlerrm <> 'PERMISSION_DENIED' then raise; end if; end;
-  begin perform public.c1_create_project_cost_item('c1010000-0000-4000-8000-000000000020', '{}'::jsonb, 'c1010000-0000-4000-8000-000000000739', 'c1010000-0000-4000-8000-000000000740'); raise exception 'C1_PC_PERMISSION_BOUNDARY denied actor created'; exception when sqlstate 'P0001' then if sqlerrm <> 'PERMISSION_DENIED' then raise; end if; end;
-end $$;
-reset role;
-
-set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"c1010000-0000-4000-8000-000000000903","role":"authenticated"}', true);
-do $$
-declare item_id uuid; item_version bigint;
-begin
-  select id, version into item_id, item_version from public.project_cost_items where description = 'C101 tracked item';
-  begin perform public.c1_update_project_cost_item('c1010000-0000-4000-8000-000000000020', item_id, jsonb_build_object('description','C101 forbidden update','expectedVersion',item_version), 'c1010000-0000-4000-8000-000000000741'); raise exception 'C1_PC_PERMISSION_BOUNDARY corrector updated'; exception when sqlstate 'P0001' then if sqlerrm <> 'PERMISSION_DENIED' then raise; end if; end;
-  begin perform public.c1_correct_project_cost_item('c1010000-0000-4000-8000-000000000020', item_id, jsonb_build_object('expectedVersion',item_version,'reason',' ' ,'amount','110.0000'), 'c1010000-0000-4000-8000-000000000742'); raise exception 'C1_PC_CORRECTION empty reason accepted'; exception when sqlstate 'P0001' then if sqlerrm <> 'INPUT_INVALID' then raise; end if; end;
-  perform public.c1_correct_project_cost_item('c1010000-0000-4000-8000-000000000020', item_id, jsonb_build_object('expectedVersion',item_version,'reason','C101 correction','amount','110.0000'), 'c1010000-0000-4000-8000-000000000731');
-  if (select amount from public.project_cost_items where id = item_id) <> 110 or (select amount_text from public.project_cost_items where id = item_id) <> '110.0000' or (select version from public.project_cost_items where id = item_id) <> item_version + 1 then raise exception 'C1_PC_DECIMAL_SAFE_AMOUNT correction failed'; end if;
-end $$;
-reset role;
-
-do $$
-declare item_a uuid; item_b uuid; figure_id uuid;
-begin
-  select id into item_a from public.project_cost_items where description = 'C101 tracked item';
-  select id into item_b from public.project_cost_items where description = 'C101 hierarchical item';
-  figure_id := 'c1010000-0000-4000-8000-000000000604';
-  insert into public.project_cost_item_sources(tenant_id, company_id, project_cost_item_id, source_reported_figure_id) values ('c1010000-0000-4000-8000-000000000010','c1010000-0000-4000-8000-000000000020',item_a,figure_id);
-  begin insert into public.project_cost_item_sources(tenant_id, company_id, project_cost_item_id, source_reported_figure_id) values ('c1010000-0000-4000-8000-000000000010','c1010000-0000-4000-8000-000000000020',item_a,figure_id); raise exception 'C1_PC_F07_SOURCE_REUSE duplicate pair accepted'; exception when unique_violation then null; end;
-  insert into public.project_cost_item_sources(tenant_id, company_id, project_cost_item_id, source_reported_figure_id) values ('c1010000-0000-4000-8000-000000000010','c1010000-0000-4000-8000-000000000020',item_b,figure_id);
-  if (select count(*) from public.project_cost_item_sources where source_reported_figure_id = figure_id and project_cost_item_id in (item_a, item_b)) <> 2 then raise exception 'C1_PC_F07_SOURCE_REUSE source reuse rejected'; end if;
-  raise notice 'C1_PC_F07_SOURCE_REUSE';
-  if not exists (select 1 from public.audit_events where resource_type = 'project_cost_item' and action = 'c1.project_cost_item.created' and after_summary ? 'nonOverlapConfirmationReference') or not exists (select 1 from public.audit_events where resource_type = 'project_cost_item' and action = 'c1.project_cost_item.updated' and before_summary is not null and after_summary is not null) or not exists (select 1 from public.audit_events where resource_type = 'project_cost_item' and action = 'c1.project_cost_item.corrected' and after_summary ? 'reason') then raise exception 'C1_PC_AUDIT_HISTORY missing command audit'; end if;
-end;
-$$;
 
 select 'C1_PROJECT_COST_ITEMS_COMPLETE' as c1_fixture_completion;
-
 rollback;

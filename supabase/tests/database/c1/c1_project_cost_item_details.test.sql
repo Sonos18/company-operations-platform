@@ -42,16 +42,16 @@ begin
   insert into public.projects(id, tenant_id, company_id, code, name, origin, created_by) values
     ('c1010000-0000-4000-8000-000000000101', tenant_a, company_a, 'C101-DETAIL-A', 'C101 detail project A', 'manual', manager),
     ('c1010000-0000-4000-8000-000000000102', tenant_b, company_b, 'C101-DETAIL-B', 'C101 detail project B', 'manual', manager);
-  insert into public.project_cost_items(id, tenant_id, company_id, project_id, description, amount, amount_text, currency_code, work_status, created_by) values
-    ('c1010000-0000-4000-8000-000000000301', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 detail reader parent', 0, '0', 'VND', 'unknown', manager),
-    ('c1010000-0000-4000-8000-000000000302', tenant_b, company_b, 'c1010000-0000-4000-8000-000000000102', 'C101 detail foreign parent', 0, '0', 'VND', 'unknown', manager),
-    ('c1010000-0000-4000-8000-000000000303', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 insert parent', 0, '0', 'VND', 'unknown', manager),
-    ('c1010000-0000-4000-8000-000000000304', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 sum parent', 0, '0', 'VND', 'unknown', manager),
-    ('c1010000-0000-4000-8000-000000000305', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 retention parent', 0, '0', 'VND', 'unknown', manager),
-    ('c1010000-0000-4000-8000-000000000306', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 move source parent', 0, '0', 'VND', 'unknown', manager),
-    ('c1010000-0000-4000-8000-000000000307', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 move destination parent', 0, '0', 'VND', 'unknown', manager),
-    ('c1010000-0000-4000-8000-000000000308', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 validation parent', 0, '0', 'VND', 'unknown', manager),
-    ('c1010000-0000-4000-8000-000000000309', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 equal-total parent', 100, '100', 'VND', 'unknown', manager);
+  insert into public.project_cost_items(id, tenant_id, company_id, project_id, description, amount, amount_text, currency_code, work_status, publication_state, publication_origin, published_at, created_by) values
+    ('c1010000-0000-4000-8000-000000000301', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 detail reader parent', 0, '0', 'VND', 'unknown', 'published', 'legacy_backfill', now(), manager),
+    ('c1010000-0000-4000-8000-000000000302', tenant_b, company_b, 'c1010000-0000-4000-8000-000000000102', 'C101 detail foreign parent', 0, '0', 'VND', 'unknown', 'published', 'legacy_backfill', now(), manager),
+    ('c1010000-0000-4000-8000-000000000303', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 insert parent', 0, '0', 'VND', 'unknown', 'published', 'legacy_backfill', now(), manager),
+    ('c1010000-0000-4000-8000-000000000304', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 sum parent', 0, '0', 'VND', 'unknown', 'published', 'legacy_backfill', now(), manager),
+    ('c1010000-0000-4000-8000-000000000305', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 retention parent', 0, '0', 'VND', 'unknown', 'published', 'legacy_backfill', now(), manager),
+    ('c1010000-0000-4000-8000-000000000306', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 move source parent', 0, '0', 'VND', 'unknown', 'published', 'legacy_backfill', now(), manager),
+    ('c1010000-0000-4000-8000-000000000307', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 move destination parent', 0, '0', 'VND', 'unknown', 'published', 'legacy_backfill', now(), manager),
+    ('c1010000-0000-4000-8000-000000000308', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 validation parent', 0, '0', 'VND', 'unknown', 'published', 'legacy_backfill', now(), manager),
+    ('c1010000-0000-4000-8000-000000000309', tenant_a, company_a, 'c1010000-0000-4000-8000-000000000101', 'C101 equal-total parent', 100, '100', 'VND', 'unknown', 'published', 'legacy_backfill', now(), manager);
 end;
 $$;
 

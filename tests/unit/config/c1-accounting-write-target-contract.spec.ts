@@ -139,4 +139,14 @@ describe('C1 accounting write target', () => {
     expect(sql).toContain('grant execute on function public.c1_record_subcontract_payment(uuid, uuid, uuid, jsonb, uuid, uuid) to authenticated')
     expect(sql).toContain('grant execute on function public.c1_void_subcontract_payment(uuid, uuid, uuid, uuid, bigint, text, uuid, uuid) to authenticated')
   })
+
+  it('keeps snapshot constraint resolution schema-qualified under an empty search path', () => {
+    const sql=phaseMigration('_c1_accounting_write_snapshot_constraint_scope_fix.sql')
+    expect(sql).toContain('private.c1_prepare_project_cost_financials(uuid,uuid,jsonb,uuid)')
+    expect(sql).toContain('private.c1_correct_published_project_cost(uuid,uuid,jsonb,uuid,uuid)')
+    expect(sql).toContain('set constraints public.c1_project_cost_item_details_sync immediate')
+    expect(sql).toContain('set constraints public.c1_project_cost_item_details_sync deferred')
+    expect(sql).toContain("'set\\s+constraints\\s+c1_project_cost_item_details_sync\\s+immediate'")
+  })
+  it('uses an initplan for evidence upload actor checks',()=>{const sql=phaseMigration('_c1_accounting_write_evidence_rls_initplan_fix.sql');expect(sql).toContain('created_by=(select auth.uid())');expect(sql).not.toMatch(/created_by\s*=\s*auth\.uid\(\)/iu)})
 })

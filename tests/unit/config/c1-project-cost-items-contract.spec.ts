@@ -65,48 +65,33 @@ describe('C1 Project Cost database foundation', () => {
     }
   })
 
-  it('requires synthetic provenance command fixture assertions while preserving source-reuse and direct-write denial', () => {
-    for (const assertion of ['C1_PC_PROVENANCE_COMMAND', 'C1_PC_PROVENANCE_DUPLICATE_INPUT', 'C1_PC_PROVENANCE_SCOPE', 'C1_PC_PROVENANCE_IDEMPOTENT', 'C1_PC_F07_SOURCE_REUSE', 'C1_PC_SOURCE_DIRECT_ACL']) expect(fixtureSql).toContain(assertion)
+  it('requires synthetic lifecycle command assertions and direct-write denial', () => {
+    for (const assertion of ['C1_PC_PERMISSION_BOUNDARY','C1_PC_PRIVATE_BOUNDARY','C1_PC_DRAFT_SHAPE','C1_PC_DRAFT_LEAK','C1_PC_IDEMPOTENCY','C1_PC_DERIVED_AMOUNT']) expect(fixtureSql).toContain(assertion)
+    for (const rpc of ['c1_create_project_cost_draft','c1_update_project_cost_draft','c1_prepare_project_cost_financials','c1_publish_project_cost','c1_correct_published_project_cost']) expect(fixtureSql).toContain(`public.${rpc}`)
   })
 
-  it('requires synthetic non-array and malformed source UUID rejection assertions', () => {
-    for (const assertion of ['C1_PC_PROVENANCE_INVALID_SHAPE', 'C1_PC_PROVENANCE_INVALID_UUID']) expect(fixtureSql).toContain(assertion)
+  it('keeps source preparation explicit and separate from draft creation', () => {
+    expect(fixtureSql).toContain('"sourceFigureIds":[]')
+    expect(fixtureSql).not.toMatch(/c1_create_project_cost_draft[\s\S]{0,500}sourceFigureIds/iu)
   })
 
-  it('uses only lowercase hexadecimal characters in synthetic 64-character digest generators', () => {
-    const digestCharacters = [...fixtureSql.matchAll(/repeat\('([^'])',\s*64\)/gu)].map(([, character]) => character)
-
-    expect(digestCharacters.length).toBeGreaterThan(0)
-    for (const character of digestCharacters) expect(character).toMatch(/^[a-f0-9]$/u)
+  it('uses only reserved lowercase synthetic UUIDs', () => {
+    for (const [id] of fixtureSql.matchAll(/\bc10[01][0-9a-f]{4}-[0-9a-f-]{27,}\b/gu)) expect(id).toBe(id.toLowerCase())
   })
 
-  it('scopes F07 source-reuse cardinality to its two intended Project Cost items', () => {
-    const start = fixtureSql.indexOf("figure_id := 'c1010000-0000-4000-8000-000000000604'")
-    const f07 = fixtureSql.slice(start, fixtureSql.indexOf('C1_PC_AUDIT_HISTORY', start))
-
-    expect(f07).not.toContain('where source_reported_figure_id = figure_id) <> 2')
-    expect(f07).toMatch(/source_reported_figure_id = figure_id[\s\S]*?project_cost_item_id in \(item_a, item_b\)[\s\S]*?<> 2/iu)
-    expect(f07).toContain('C1_PC_F07_SOURCE_REUSE')
+  it('keeps publish and correction on the same canonical Project Cost identity', () => {
+    expect(fixtureSql).toMatch(/c101_created[\s\S]*c1_publish_project_cost[\s\S]*c101_created[\s\S]*c1_correct_published_project_cost/iu)
+    expect(fixtureSql).not.toMatch(/create table public\.(?:project_cost_drafts|project_cost_corrections)/iu)
   })
 
-  it('verifies provenance audit only after the authenticated provenance command block resets role', () => {
-    const provenanceItemIndex = fixtureSql.indexOf("description','C101 provenance item'")
-    const authenticatedStart = fixtureSql.lastIndexOf('set local role authenticated;', provenanceItemIndex)
-    const authenticatedEnd = fixtureSql.indexOf('reset role;', provenanceItemIndex)
-    const authenticatedBlock = fixtureSql.slice(authenticatedStart, authenticatedEnd)
-    const privilegedAuditBlock = fixtureSql.slice(authenticatedEnd, fixtureSql.indexOf('insert into public.project_cost_items', authenticatedEnd))
-
-    expect(authenticatedStart).toBeGreaterThanOrEqual(0)
-    expect(authenticatedEnd).toBeGreaterThan(authenticatedStart)
-    for (const protectedTable of ['public.audit_events', 'public.cost_command_receipts']) {
-      expect(authenticatedBlock).not.toContain(protectedTable)
-      expect(privilegedAuditBlock).toContain(protectedTable)
-    }
-    expect(privilegedAuditBlock).toContain("request_id = 'c1010000-0000-4000-8000-000000000753'")
-    expect(privilegedAuditBlock).toContain("C1_PC_PROVENANCE_AUDIT")
-    expect(privilegedAuditBlock).toContain("C1_PC_PROVENANCE_FAILED_CREATE_RESIDUE")
-    expect(privilegedAuditBlock).toContain("'sourceFigureIds'")
-    for (const idempotencyKey of ['754', '762', '764', '756']) expect(privilegedAuditBlock).toContain(`c1010000-0000-4000-8000-000000000${idempotencyKey}`)
+  it('verifies correction audit only after the authenticated command block resets role', () => {
+    const correctionIndex=fixtureSql.indexOf('c1_correct_published_project_cost')
+    const resetIndex=fixtureSql.indexOf('reset role;',correctionIndex)
+    const auditIndex=fixtureSql.indexOf('public.audit_events',resetIndex)
+    expect(correctionIndex).toBeGreaterThanOrEqual(0)
+    expect(resetIndex).toBeGreaterThan(correctionIndex)
+    expect(auditIndex).toBeGreaterThan(resetIndex)
+    expect(fixtureSql.slice(auditIndex)).toContain('C1_PC_AUDIT_HISTORY')
   })
 
   it('adds cost.manage to the shared permission catalog', () => {
@@ -229,8 +214,8 @@ describe('C1 Project Cost database foundation', () => {
     for (const id of fixtureSql.matchAll(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu)) {
       expect(id[0]).toMatch(/^c10[01][0-9a-f]{4}-/iu)
     }
-    for (const rpc of ['c1_create_project_cost_item', 'c1_update_project_cost_item', 'c1_correct_project_cost_item']) expect(fixtureSql).toContain(`public.${rpc}`)
-    for (const assertion of ['C1_PC_PERMISSION_BOUNDARY', 'C1_PC_F04_SAME_ROW', 'C1_PC_F05_REFERENCE', 'C1_PC_F05_NULL_REFERENCE', 'C1_PC_F07_SOURCE_REUSE', 'C1_PC_IDEMPOTENCY', 'C1_PC_VERSION_CONFLICT', 'C1_PC_AUDIT_HISTORY', 'C1_PC_PROJECT_SCOPE', 'C1_PC_MODULE_DISABLED_READ', 'C1_PC_MODULE_DISABLED_COMMAND', 'C1_PC_AUDIT_ACL', 'C1_PC_ANON_UPDATE_RPC', 'C1_PC_ANON_CORRECT_RPC', 'C1_PC_SOURCE_DIRECT_ACL', 'C1_PC_DECIMAL_SAFE_AMOUNT']) expect(fixtureSql).toContain(assertion)
+    for (const rpc of ['c1_create_project_cost_draft','c1_update_project_cost_draft','c1_prepare_project_cost_financials','c1_publish_project_cost','c1_correct_published_project_cost']) expect(fixtureSql).toContain(`public.${rpc}`)
+    for (const assertion of ['C1_PC_PERMISSION_BOUNDARY','C1_PC_PRIVATE_BOUNDARY','C1_PC_DECIMAL_SAFE_AMOUNT','C1_PC_DRAFT_SHAPE','C1_PC_DRAFT_LEAK','C1_PC_IDEMPOTENCY','C1_PC_PUBLISH_VISIBILITY','C1_PC_METADATA_SCOPE','C1_PC_CORRECTION_VERSION','C1_PC_DERIVED_AMOUNT','C1_PC_AUDIT_HISTORY']) expect(fixtureSql).toContain(assertion)
     const decimal = fixtureSql.match(/(9007199254740993\.0000)/u)?.[1]
     expect(decimal).toBe('9007199254740993.0000')
     expect(BigInt(decimal!.split('.')[0]!)).not.toBe(BigInt(Number(decimal!.split('.')[0]!)))

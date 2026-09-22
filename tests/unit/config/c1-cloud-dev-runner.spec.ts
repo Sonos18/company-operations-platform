@@ -131,15 +131,13 @@ describe('C1 Cloud DEV runner', () => {
     expect(() => validateC1CloudDevSql(path, sql)).not.toThrow()
   })
 
-  it('uses PERFORM when Project Cost RPC results are discarded', () => {
+  it('captures Project Cost RPC results or explicitly discards them', () => {
     const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1/c1_project_cost_items.test.sql'), 'utf8')
-    const rpcSelects = [...sql.matchAll(/\bselect\s+public\.c1_(?:create|update|correct)_project_cost_item\s*\([^;]*;/giu)]
-      .map(([statement]) => statement)
-    const bareSelects = rpcSelects.filter(statement => !/\binto\b/iu.test(statement))
-
-    expect(rpcSelects.some(statement => /\binto\s+first_create\s*;/iu.test(statement))).toBe(true)
-    expect(rpcSelects.some(statement => /\binto\s+replay\s*;/iu.test(statement))).toBe(true)
-    expect(bareSelects, `${bareSelects.length} Project Cost RPC SELECT statements lack INTO`).toEqual([])
+    expect(sql).toContain('create temp table c101_created as select public.c1_create_project_cost_draft')
+    expect(sql).toMatch(/select public\.c1_create_project_cost_draft[\s\S]*?into replay/iu)
+    expect(sql).toMatch(/select public\.c1_prepare_project_cost_financials[\s\S]*?into prepared/iu)
+    expect(sql).toMatch(/select public\.c1_correct_published_project_cost[\s\S]*?into corrected/iu)
+    expect(sql).toContain('perform public.c1_update_project_cost_draft')
   })
 
   it.each([

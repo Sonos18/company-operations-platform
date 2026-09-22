@@ -870,6 +870,181 @@ export type Database = {
           },
         ]
       }
+      cost_evidence_files: {
+        Row: {
+          bucket_id: string
+          company_id: string
+          created_at: string
+          created_by: string
+          declared_mime_type: string
+          declared_sha256: string
+          declared_size_bytes: number
+          finalized_at: string | null
+          finalized_by: string | null
+          id: string
+          intent_expires_at: string
+          object_path: string
+          original_filename: string
+          project_id: string
+          status: string
+          tenant_id: string
+          verified_mime_type: string | null
+          verified_sha256: string | null
+          verified_size_bytes: number | null
+          version: number
+        }
+        Insert: {
+          bucket_id?: string
+          company_id: string
+          created_at?: string
+          created_by: string
+          declared_mime_type: string
+          declared_sha256: string
+          declared_size_bytes: number
+          finalized_at?: string | null
+          finalized_by?: string | null
+          id?: string
+          intent_expires_at: string
+          object_path: string
+          original_filename: string
+          project_id: string
+          status?: string
+          tenant_id: string
+          verified_mime_type?: string | null
+          verified_sha256?: string | null
+          verified_size_bytes?: number | null
+          version?: number
+        }
+        Update: {
+          bucket_id?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          declared_mime_type?: string
+          declared_sha256?: string
+          declared_size_bytes?: number
+          finalized_at?: string | null
+          finalized_by?: string | null
+          id?: string
+          intent_expires_at?: string
+          object_path?: string
+          original_filename?: string
+          project_id?: string
+          status?: string
+          tenant_id?: string
+          verified_mime_type?: string | null
+          verified_sha256?: string | null
+          verified_size_bytes?: number | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_evidence_files_company_id_tenant_id_fkey"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "cost_evidence_files_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      cost_evidence_links: {
+        Row: {
+          accounting_source_version_id: string | null
+          company_id: string
+          created_at: string
+          created_by: string
+          evidence_file_id: string
+          evidence_kind: string
+          id: string
+          project_cost_item_id: string | null
+          project_id: string
+          project_subcontract_payment_id: string | null
+          request_id: string
+          tenant_id: string
+        }
+        Insert: {
+          accounting_source_version_id?: string | null
+          company_id: string
+          created_at?: string
+          created_by: string
+          evidence_file_id: string
+          evidence_kind: string
+          id?: string
+          project_cost_item_id?: string | null
+          project_id: string
+          project_subcontract_payment_id?: string | null
+          request_id: string
+          tenant_id: string
+        }
+        Update: {
+          accounting_source_version_id?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          evidence_file_id?: string
+          evidence_kind?: string
+          id?: string
+          project_cost_item_id?: string | null
+          project_id?: string
+          project_subcontract_payment_id?: string | null
+          request_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_evidence_links_accounting_source_version_id_tenant_id_fkey"
+            columns: ["accounting_source_version_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "accounting_source_versions"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_evidence_links_company_id_tenant_id_fkey"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "cost_evidence_links_evidence_file_id_tenant_id_company_id__fkey"
+            columns: [
+              "evidence_file_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_evidence_files"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_evidence_links_project_cost_item_id_tenant_id_company_fkey"
+            columns: ["project_cost_item_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "project_cost_items"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_evidence_links_project_subcontract_payment_id_tenant__fkey"
+            columns: [
+              "project_subcontract_payment_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "project_subcontract_payments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
       departments: {
         Row: {
           code: string
@@ -2139,8 +2314,8 @@ export type Database = {
       }
       project_cost_items: {
         Row: {
-          amount: number
-          amount_text: string
+          amount: number | null
+          amount_text: string | null
           business_reference: string | null
           company_id: string
           component_id: string | null
@@ -2153,6 +2328,11 @@ export type Database = {
           id: string
           party_id: string | null
           project_id: string
+          publication_origin: string | null
+          publication_request_id: string | null
+          publication_state: string
+          published_at: string | null
+          published_by: string | null
           relevant_date: string | null
           tenant_id: string
           updated_at: string
@@ -2160,8 +2340,8 @@ export type Database = {
           work_status: string
         }
         Insert: {
-          amount: number
-          amount_text: string
+          amount?: number | null
+          amount_text?: string | null
           business_reference?: string | null
           company_id: string
           component_id?: string | null
@@ -2174,6 +2354,11 @@ export type Database = {
           id?: string
           party_id?: string | null
           project_id: string
+          publication_origin?: string | null
+          publication_request_id?: string | null
+          publication_state?: string
+          published_at?: string | null
+          published_by?: string | null
           relevant_date?: string | null
           tenant_id: string
           updated_at?: string
@@ -2181,8 +2366,8 @@ export type Database = {
           work_status: string
         }
         Update: {
-          amount?: number
-          amount_text?: string
+          amount?: number | null
+          amount_text?: string | null
           business_reference?: string | null
           company_id?: string
           component_id?: string | null
@@ -2195,6 +2380,11 @@ export type Database = {
           id?: string
           party_id?: string | null
           project_id?: string
+          publication_origin?: string | null
+          publication_request_id?: string | null
+          publication_state?: string
+          published_at?: string | null
+          published_by?: string | null
           relevant_date?: string | null
           tenant_id?: string
           updated_at?: string
@@ -2249,6 +2439,66 @@ export type Database = {
           },
           {
             foreignKeyName: "project_cost_items_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      project_cost_reconciliation_resolutions: {
+        Row: {
+          company_id: string
+          cost_category_id: string
+          created_at: string
+          created_by: string
+          id: string
+          project_id: string
+          reason: string
+          resolution_code: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string
+          version: number
+        }
+        Insert: {
+          company_id: string
+          cost_category_id: string
+          created_at?: string
+          created_by: string
+          id?: string
+          project_id: string
+          reason: string
+          resolution_code: string
+          tenant_id: string
+          updated_at?: string
+          updated_by: string
+          version?: number
+        }
+        Update: {
+          company_id?: string
+          cost_category_id?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          project_id?: string
+          reason?: string
+          resolution_code?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_cost_reconciliation_resolutions_category_fkey"
+            columns: ["cost_category_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "cost_categories"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "project_cost_reconciliation_resolutions_project_fkey"
             columns: ["project_id", "tenant_id", "company_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -2420,6 +2670,7 @@ export type Database = {
           payment_reference: string | null
           project_id: string
           project_subcontract_id: string
+          replaces_payment_id: string | null
           retention_rate_bps: number | null
           source_reference: string | null
           status: string
@@ -2445,6 +2696,7 @@ export type Database = {
           payment_reference?: string | null
           project_id: string
           project_subcontract_id: string
+          replaces_payment_id?: string | null
           retention_rate_bps?: number | null
           source_reference?: string | null
           status?: string
@@ -2470,6 +2722,7 @@ export type Database = {
           payment_reference?: string | null
           project_id?: string
           project_subcontract_id?: string
+          replaces_payment_id?: string | null
           retention_rate_bps?: number | null
           source_reference?: string | null
           status?: string
@@ -2482,6 +2735,18 @@ export type Database = {
           warranty_retention_amount_text?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "c1_payment_replacement_scope"
+            columns: [
+              "replaces_payment_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "project_subcontract_payments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
           {
             foreignKeyName: "c1fc_payment_contract"
             columns: [
@@ -4022,10 +4287,30 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_correct_published_project_cost: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_create_business_party: {
         Args: {
           target_company_id: string
           target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_create_cost_evidence_intent: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
           target_request_id: string
         }
         Returns: Json
@@ -4056,6 +4341,15 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_create_project_cost_draft: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_create_project_cost_item: {
         Args: {
           target_company_id: string
@@ -4065,8 +4359,32 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_finalize_cost_evidence: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_get_controlled_import_result: {
         Args: { target_company_id: string; target_run_id: string }
+        Returns: Json
+      }
+      c1_link_cost_evidence: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_cost_item_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_list_project_cost_drafts: {
+        Args: { target_company_id: string; target_project_id: string }
         Returns: Json
       }
       c1_persist_controlled_import: {
@@ -4078,8 +4396,27 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_prepare_project_cost_financials: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_probe_cost_source_read: {
         Args: { target_company_id: string }
+        Returns: Json
+      }
+      c1_publish_project_cost: {
+        Args: {
+          target_company_id: string
+          target_expected_version: number
+          target_id: string
+          target_idempotency_key: string
+          target_request_id: string
+        }
         Returns: Json
       }
       c1_read_cost_source_hierarchy: {
@@ -4096,6 +4433,10 @@ export type Database = {
           project_name: string
           source_selection_id: string
         }[]
+      }
+      c1_read_project_cost_draft: {
+        Args: { target_company_id: string; target_id: string }
+        Returns: Json
       }
       c1_read_project_cost_project_metadata: {
         Args: { target_company_id: string; target_project_ids: string[] }
@@ -4122,6 +4463,17 @@ export type Database = {
           target_company_id: string
           target_party_ids: string[]
           target_project_id: string
+        }
+        Returns: Json
+      }
+      c1_record_subcontract_payment: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+          target_subcontract_id: string
         }
         Returns: Json
       }
@@ -4161,12 +4513,34 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_update_project_cost_draft: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_update_project_cost_item: {
         Args: {
           target_company_id: string
           target_id: string
           target_input: Json
           target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_void_subcontract_payment: {
+        Args: {
+          target_company_id: string
+          target_expected_version: number
+          target_idempotency_key: string
+          target_payment_id: string
+          target_project_id: string
+          target_reason: string
+          target_request_id: string
+          target_subcontract_id: string
         }
         Returns: Json
       }

@@ -1,28 +1,26 @@
 begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path=public,extensions;
 
 select plan(47);
 
 select has_column('public', 'project_cost_items', 'publication_state', 'publication state exists');
-select col_default_is('public', 'project_cost_items', 'publication_state', '''draft''::text', 'new cost rows default to draft');
+select is((select column_default from information_schema.columns where table_schema='public' and table_name='project_cost_items' and column_name='publication_state'), '''draft''::text', 'new cost rows default to draft');
 select ok(not exists (
   select 1 from public.project_cost_items where publication_state <> 'published'
 ), 'all historical project costs were backfilled as published');
 
-select is(
-  (select array_agg(permission.permission_code order by permission.permission_code)
-   from public.role_permissions permission
-   join public.roles role on role.id = permission.role_id
-   where role.tenant_id = '10000000-0000-4000-8000-000000000010'::uuid
-     and role.company_id = '10000000-0000-4000-8000-000000000020'::uuid
-     and role.code = 'accountant'
-     and role.is_active),
-  array[
-    'accounting_document.read','accounting_document.update','cost.correct','cost.file.read',
-    'cost.manage','cost.prepare','cost.publish_import','cost.read','cost.record_cash',
-    'cost.source.read','inventory_value.read','supplier.read'
-  ]::text[],
-  'VQH Accountant has the exact approved permission set'
-);
+select ok(exists(
+  select 1 from public.roles role
+  where role.code = 'accountant' and role.is_active
+    and (select array_agg(permission.permission_code order by permission.permission_code)
+         from public.role_permissions permission where permission.role_id = role.id) = array[
+      'accounting_document.read','accounting_document.update','cost.correct','cost.file.read',
+      'cost.manage','cost.prepare','cost.publish_import','cost.read','cost.record_cash',
+      'cost.source.read','inventory_value.read','supplier.read'
+    ]::text[]
+), 'an active Accountant has the exact approved permission set');
+do $$declare v_default text;v_nonpublished bigint;v_accountant boolean;begin if extensions.num_failed()>0 then select column_default into v_default from information_schema.columns where table_schema='public' and table_name='project_cost_items' and column_name='publication_state';select count(*) into v_nonpublished from public.project_cost_items where publication_state<>'published';select exists(select 1 from public.roles role where role.code='accountant' and role.is_active and (select array_agg(permission_code order by permission_code) from public.role_permissions where role_id=role.id)=array['accounting_document.read','accounting_document.update','cost.correct','cost.file.read','cost.manage','cost.prepare','cost.publish_import','cost.read','cost.record_cash','cost.source.read','inventory_value.read','supplier.read']::text[]) into v_accountant;raise exception 'C1 lifecycle baseline assertion failed: default=%, nonpublished=%, accountant=%',v_default,v_nonpublished,v_accountant;end if;end$$;
 
 do $$
 declare
@@ -71,6 +69,7 @@ begin
   insert into public.company_cost_settings(company_id, tenant_id, enabled, created_by) values (company_id, tenant_id, true, preparer);
   insert into public.projects(id, tenant_id, company_id, code, name, origin, created_by) values
     ('c1060000-0000-4000-8000-000000000101', tenant_id, company_id, 'C106-P', 'C106 project', 'manual', preparer);
+  perform set_config('taskovia.c1_finance.actor_id', preparer::text, true); perform set_config('taskovia.c1_finance.request_id', 'c1060000-0000-4000-8000-000000000601', true); perform set_config('taskovia.c1_finance.change_reason', 'fixture', true);
   insert into public.cost_categories(id, tenant_id, company_id, code, name, display_order, created_by, updated_by) values
     ('c1060000-0000-4000-8000-000000000301', tenant_id, company_id, 'materials', 'Materials', 1, preparer, preparer),
     ('c1060000-0000-4000-8000-000000000302', tenant_id, company_id, 'subcontract_labor', 'Subcontract labor', 2, preparer, preparer);
@@ -99,6 +98,7 @@ select ok(pg_catalog.has_function_privilege('authenticated', 'public.c1_update_p
 select ok(pg_catalog.has_function_privilege('authenticated', 'public.c1_prepare_project_cost_financials(uuid,uuid,jsonb,uuid)', 'execute'), 'authenticated can execute prepare financials RPC');
 select ok(pg_catalog.has_function_privilege('authenticated', 'public.c1_read_project_cost_draft(uuid,uuid)', 'execute'), 'authenticated can execute read draft RPC');
 select ok(pg_catalog.has_function_privilege('authenticated', 'public.c1_list_project_cost_drafts(uuid,uuid)', 'execute'), 'authenticated can execute list drafts RPC');
+do $$begin if extensions.num_failed()>0 then raise exception 'C1 lifecycle RLS or grant assertion failed';end if;end$$;
 
 select throws_ok(
   $$select public.c1_create_project_cost_draft('c1060000-0000-4000-8000-000000000020', '{"projectId":"c1060000-0000-4000-8000-000000000101","description":"Denied","costCategoryId":"c1060000-0000-4000-8000-000000000301"}', 'c1060000-0000-4000-8000-000000000701', 'c1060000-0000-4000-8000-000000000702')$$,
@@ -167,6 +167,7 @@ select throws_ok(
   $$select public.c1_create_project_cost_draft('c1060000-0000-4000-8000-000000000020', '{"projectId":"c1060000-0000-4000-8000-000000000101","description":"Subcontract duplicate","costCategoryId":"c1060000-0000-4000-8000-000000000302"}', 'c1060000-0000-4000-8000-000000000721', 'c1060000-0000-4000-8000-000000000722')$$,
   'P0001', 'SUBCONTRACT_COST_MODEL_UNSUPPORTED', 'new subcontract cost drafts are blocked from duplicating the cash-ledger Actual model'
 );
+do $$begin if extensions.num_failed()>0 then raise exception 'C1 lifecycle draft or prepare assertion failed';end if;end$$;
 
 select ok(pg_catalog.has_function_privilege('authenticated','public.c1_publish_project_cost(uuid,uuid,bigint,uuid,uuid)','execute'),'authenticated can execute publish RPC');
 select set_config('request.jwt.claims','{"sub":"c1060000-0000-4000-8000-000000000904","role":"authenticated"}',true);
@@ -197,6 +198,7 @@ select throws_ok(
   'P0001','PERMISSION_DENIED','read-only actor cannot publish'
 );
 select ok(exists(select 1 from public.project_cost_items where id=(select (result->>'id')::uuid from c1_p2_result)),'cost.read sees the item after publish');
+do $$begin if extensions.num_failed()>0 then raise exception 'C1 lifecycle publish assertion failed';end if;end$$;
 
 select ok(pg_catalog.has_function_privilege('authenticated','public.c1_correct_published_project_cost(uuid,uuid,jsonb,uuid,uuid)','execute'),'authenticated can execute correction RPC');
 select set_config('request.jwt.claims','{"sub":"c1060000-0000-4000-8000-000000000903","role":"authenticated"}',true);
@@ -233,5 +235,5 @@ select throws_ok(
   'P0001','VERSION_CONFLICT','correction rejects stale expectedVersion'
 );
 
-select * from finish();
+select * from extensions.finish(true);
 rollback;

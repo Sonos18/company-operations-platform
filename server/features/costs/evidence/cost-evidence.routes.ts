@@ -25,4 +25,4 @@ export function createCostEvidenceRoutes(dependencies: CostEvidenceRouteDependen
   }
 }
 
-export function createSupabaseCostEvidenceRoutes(event: H3Event) { return createCostEvidenceRoutes({ resolveContext: c1RequestContext }) }
+export function createSupabaseCostEvidenceRoutes(_event: H3Event) { return createCostEvidenceRoutes({ resolveContext: c1RequestContext }) }

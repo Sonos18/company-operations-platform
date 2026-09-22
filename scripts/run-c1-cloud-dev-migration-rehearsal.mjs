@@ -12,6 +12,8 @@ const migrationSuffixes = [
   '_c1_accounting_write_publish_command.sql',
   '_c1_accounting_write_correction_command.sql',
   '_c1_accounting_write_cash_commands.sql',
+  '_c1_accounting_write_snapshot_constraint_scope_fix.sql',
+  '_c1_accounting_write_evidence_rls_initplan_fix.sql',
 ]
 
 export function buildC1MigrationRehearsalSql(migrationSql) {

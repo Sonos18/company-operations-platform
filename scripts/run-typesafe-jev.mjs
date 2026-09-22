@@ -24,14 +24,14 @@ async function main() {
   try {
     source = await readFile(args[0], 'utf8')
   } catch (error) {
-    throw new Error(`Cannot read TypeSafe request file: ${errorMessage(error)}`)
+    throw new Error(`Cannot read TypeSafe request file: ${errorMessage(error)}`, { cause: error })
   }
 
   let request
   try {
     request = JSON.parse(source)
   } catch (error) {
-    throw new Error(`Invalid TypeSafe request JSON: ${errorMessage(error)}`)
+    throw new Error(`Invalid TypeSafe request JSON: ${errorMessage(error)}`, { cause: error })
   }
   if (!request || Array.isArray(request) || typeof request !== 'object') {
     throw new Error('Invalid TypeSafe request JSON: top-level value must be an object')
@@ -53,7 +53,7 @@ async function main() {
       signal: AbortSignal.timeout(30_000),
     })
   } catch (error) {
-    throw new Error(`TypeSafe network request failed: ${errorMessage(error)}`)
+    throw new Error(`TypeSafe network request failed: ${errorMessage(error)}`, { cause: error })
   }
 
   const body = await response.text()
@@ -73,7 +73,7 @@ async function main() {
   try {
     result = JSON.parse(body)
   } catch (error) {
-    throw new Error(`TypeSafe returned invalid JSON: ${errorMessage(error)}`)
+    throw new Error(`TypeSafe returned invalid JSON: ${errorMessage(error)}`, { cause: error })
   }
   process.stdout.write(`${JSON.stringify(result)}\n`)
 }

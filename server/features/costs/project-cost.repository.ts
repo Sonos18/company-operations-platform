@@ -57,7 +57,7 @@ function rpcError(error: unknown): never {
   if (code === 'COST_NOT_DRAFT') throw new AppApiError(409, 'COST_NOT_DRAFT', 'Project Cost không còn ở trạng thái nháp.')
   if (code === 'COST_ALREADY_PUBLISHED') throw new AppApiError(409, 'COST_ALREADY_PUBLISHED', 'Project Cost đã được công bố.')
   if (code === 'COST_PUBLISH_NOT_READY') {
-    let blockingCodes: unknown = []
+    let blockingCodes: unknown
     try { blockingCodes = JSON.parse(parsed.success ? parsed.data.details ?? '[]' : '[]') } catch { blockingCodes = [] }
     throw new AppApiError(409, 'COST_PUBLISH_NOT_READY', 'Project Cost chưa sẵn sàng công bố.', { blockingCodes })
   }

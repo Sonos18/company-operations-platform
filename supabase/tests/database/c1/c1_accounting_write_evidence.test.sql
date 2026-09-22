@@ -1,4 +1,6 @@
 begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path=public,extensions;
 
 select plan(21);
 
@@ -39,6 +41,7 @@ begin
     (tenant_id,company_id,manager,'c1070000-0000-4000-8000-000000000912',preparer,'fixture');
   insert into public.company_cost_settings(company_id,tenant_id,enabled,created_by) values(company_id,tenant_id,true,preparer);
   insert into public.projects(id,tenant_id,company_id,code,name,origin,created_by) values('c1070000-0000-4000-8000-000000000101',tenant_id,company_id,'C107-P','C107 project','manual',preparer);
+  perform set_config('taskovia.c1_finance.actor_id',preparer::text,true); perform set_config('taskovia.c1_finance.request_id','c1070000-0000-4000-8000-000000000601',true); perform set_config('taskovia.c1_finance.change_reason','fixture',true);
   insert into public.cost_categories(id,tenant_id,company_id,code,name,display_order,created_by,updated_by) values('c1070000-0000-4000-8000-000000000301',tenant_id,company_id,'materials','Materials',1,preparer,preparer);
   insert into public.project_cost_items(id,tenant_id,company_id,project_id,cost_category_id,description,amount,amount_text,currency_code,work_status,publication_state,publication_origin,published_at,created_by)
   values('c1070000-0000-4000-8000-000000000201',tenant_id,company_id,'c1070000-0000-4000-8000-000000000101','c1070000-0000-4000-8000-000000000301','C107 published',1,'1','VND','unknown','published','legacy_backfill',now(),preparer);
@@ -86,5 +89,5 @@ select throws_ok(
   'P0001','HISTORY_IMMUTABLE','evidence links are immutable'
 );
 
-select * from finish();
+select * from extensions.finish(true);
 rollback;
