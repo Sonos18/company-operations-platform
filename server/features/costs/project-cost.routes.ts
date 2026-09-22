@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3'
 import { getHeader, getRouterParam, readBody } from 'h3'
 import { z } from 'zod'
-import { createProjectCostDraftInputSchema, prepareProjectCostFinancialsInputSchema, updateProjectCostDraftInputSchema } from '../../../shared/schemas/costs/project-costs'
+import { createProjectCostDraftInputSchema, prepareProjectCostFinancialsInputSchema, publishProjectCostInputSchema, updateProjectCostDraftInputSchema } from '../../../shared/schemas/costs/project-costs'
 import { AppApiError } from '../../utils/api-error'
 import { c1RequestContext } from '../c1-master-data/context'
 import { ProjectCostRepository } from './project-cost.repository'
@@ -43,6 +43,14 @@ export function createProjectCostRoutes(dependencies: ProjectCostRouteDependenci
     async financials(event: H3Event) { const value = await resolved(event); return value.service.prepareFinancials(value.context, param(event, 'projectCostItemId'), await body(event, prepareProjectCostFinancialsInputSchema)) },
     async draft(event: H3Event) { const value = await resolved(event); return value.service.draft(value.context, param(event, 'projectCostItemId')) },
     async drafts(event: H3Event) { const value = await resolved(event); return value.service.listDrafts(value.context, param(event, 'projectId')) },
+    async publish(event: H3Event) {
+      const value = await resolved(event)
+      const itemId = param(event, 'projectCostItemId')
+      const input = await body(event, publishProjectCostInputSchema)
+      const idempotencyKey = uuid.safeParse(getHeader(event, 'idempotency-key'))
+      if (!idempotencyKey.success) invalid()
+      return value.service.publish(value.context, itemId, input, idempotencyKey.data)
+    },
     async details(event: H3Event) {
       const value = await resolved(event)
       return value.service.itemDetails(value.context, param(event, 'projectCostItemId'))
@@ -60,6 +68,7 @@ export function createSupabaseProjectCostRoutes(event: H3Event) {
     financials: () => routes.financials(event),
     draft: () => routes.draft(event),
     drafts: () => routes.drafts(event),
+    publish: () => routes.publish(event),
     details: () => routes.details(event),
   }
 }

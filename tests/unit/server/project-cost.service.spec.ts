@@ -23,6 +23,18 @@ const listClient = (data: unknown, error: unknown = null) => {
 }
 
 describe('Project Cost service', () => {
+  it.each(['cost.manage', 'cost.prepare', 'cost.correct', 'cost.record_cash'] as const)('does not let %s substitute for cost.publish_import', async permission => {
+    const repository = { publish: vi.fn() }
+    await expect(new ProjectCostService(repository as never).publish(context([permission]), itemRow().id, { expectedVersion: 1 }, context([]).requestId)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    expect(repository.publish).not.toHaveBeenCalled()
+  })
+
+  it('publishes only with cost.publish_import', async () => {
+    const repository = { publish: vi.fn().mockResolvedValue({ id: itemRow().id, version: 2, publicationState: 'published', replayed: false }) }
+    await new ProjectCostService(repository as never).publish(context(['cost.publish_import']), itemRow().id, { expectedVersion: 1 }, context([]).requestId)
+    expect(repository.publish).toHaveBeenCalledWith(expect.objectContaining({ companyId: context([]).companyId }), itemRow().id, 1, context([]).requestId)
+  })
+
   it.each(['cost.prepare', 'cost.publish_import', 'cost.correct', 'cost.record_cash'] as const)('does not let %s substitute for cost.manage', async permission => {
     const repository = { createDraft: vi.fn() }
     await expect(new ProjectCostService(repository as never).createDraft(context([permission]), createDraftInput, context([]).requestId)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })

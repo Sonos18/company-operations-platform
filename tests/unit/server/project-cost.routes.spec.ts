@@ -49,6 +49,16 @@ describe('Project Cost routes', () => {
     expect(service.listDrafts).toHaveBeenCalledWith(trustedContext, ids.projectId)
   })
 
+  it('requires expectedVersion and a UUID idempotency key for publish', async () => {
+    readBody.mockResolvedValue({ expectedVersion: 1 })
+    const service = { publish: vi.fn().mockResolvedValue({ id: ids.itemId, version: 2, publicationState: 'published', replayed: false }) }
+    await route(service).routes.publish({} as never)
+    expect(service.publish).toHaveBeenCalledWith(trustedContext, ids.itemId, { expectedVersion: 1 }, ids.idempotencyKey)
+    getHeader.mockReturnValue(undefined)
+    await expect(route(service).routes.publish({} as never)).rejects.toMatchObject({ code: 'INPUT_INVALID' })
+    expect(service.publish).toHaveBeenCalledOnce()
+  })
+
   it('rejects a malformed company id before resolving trusted context', async () => {
     getRouterParam.mockImplementation((_event, name) => name === 'companyId' ? 'not-a-uuid' : ids.projectId)
     const service = { listSummaries: vi.fn() }

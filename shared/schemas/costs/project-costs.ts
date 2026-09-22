@@ -23,6 +23,7 @@ export const projectCostPublishBlockingCodeSchema = z.enum([
 ])
 export const projectCostPublishReadinessSchema = z.object({ ready: z.boolean(), blockingCodes: z.array(projectCostPublishBlockingCodeSchema) }).strict()
 export const costCommandAckSchema = z.object({ id: uuid, version, publicationState: projectCostPublicationStateSchema, replayed: z.boolean() }).strict()
+export const publishProjectCostInputSchema = z.object({ expectedVersion: version }).strict()
 
 export const createProjectCostDraftInputSchema = z.object({
   projectId: uuid,
@@ -237,6 +238,7 @@ export type ProjectCostPublicationState = z.infer<typeof projectCostPublicationS
 export type ProjectCostPublishBlockingCode = z.infer<typeof projectCostPublishBlockingCodeSchema>
 export type ProjectCostPublishReadiness = z.infer<typeof projectCostPublishReadinessSchema>
 export type CostCommandAck = z.infer<typeof costCommandAckSchema>
+export type PublishProjectCostInput = z.infer<typeof publishProjectCostInputSchema>
 export type CreateProjectCostDraftInput = z.infer<typeof createProjectCostDraftInputSchema>
 export type UpdateProjectCostDraftInput = z.infer<typeof updateProjectCostDraftInputSchema>
 export type PrepareProjectCostFinancialDetailInput = z.infer<typeof prepareProjectCostFinancialDetailInputSchema>
