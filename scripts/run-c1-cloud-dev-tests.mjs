@@ -13,7 +13,16 @@ const allowlist = [
   'c1_project_cost_item_details.test.sql',
   'c1_project_finance_metadata_read.test.sql',
   'c1_project_finance_operational_state_read.test.sql',
+  'c1_accounting_write_lifecycle.test.sql',
+  'c1_accounting_write_evidence.test.sql',
+  'c1_accounting_write_cash.test.sql',
 ]
+
+const accountingWriteSyntheticPrefixes = {
+  'c1_accounting_write_lifecycle.test.sql': 'c106',
+  'c1_accounting_write_evidence.test.sql': 'c107',
+  'c1_accounting_write_cash.test.sql': 'c108',
+}
 
 export function validateC1CloudDevSql(path, sql) {
   const normalized = sql.replace(/\r\n?/g, '\n').trim()
@@ -39,6 +48,11 @@ export function validateC1CloudDevSql(path, sql) {
   if (path === 'c1_project_finance_operational_state_read.test.sql') {
     const ids = normalized.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
     if (ids.some(id => !/^c105[0-9a-f]{4}-/iu.test(id))) throw new Error('Finance lifecycle SQL must use reserved c105 synthetic UUIDs')
+  }
+  const accountingWritePrefix = accountingWriteSyntheticPrefixes[path]
+  if (accountingWritePrefix) {
+    const ids = normalized.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
+    if (ids.some(id => !id.toLowerCase().startsWith(accountingWritePrefix))) throw new Error(`${path} must use reserved synthetic UUIDs`)
   }
 }
 
