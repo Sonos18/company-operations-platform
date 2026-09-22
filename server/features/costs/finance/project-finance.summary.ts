@@ -110,7 +110,7 @@ function context(row: FinanceProjectContextRow, currencyCode: string) {
   return { projectId: row.projectId, projectCode: row.projectCode, projectName: row.projectName, currencyCode, moneyScale: row.moneyScale, timeZone: row.timeZone, operationalState: row.operationalState }
 }
 
-function currencySet(rows: FinanceSummaryTableRows): Set<string> {
+function currencySet(rows: Pick<FinanceSummaryTableRows, 'costItems' | 'budgets' | 'ownerAdvances' | 'subcontracts' | 'payments'>): Set<string> {
   const result = new Set<string>(rows.costItems.map(row => row.currency_code))
   for (const value of rows.budgets.filter(row => row.status === 'approved').map(row => row.currency_code)) if (value) result.add(value)
   for (const value of rows.ownerAdvances.filter(row => row.status === 'recorded').map(row => row.currency_code)) if (value) result.add(value)
