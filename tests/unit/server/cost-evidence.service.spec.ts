@@ -48,6 +48,12 @@ describe('CostEvidenceService', () => {
     expect(repository.createReadUrl).not.toHaveBeenCalled()
   })
 
+  it('requires linked-resource read permission in addition to cost.file.read', async () => {
+    const repository = { createReadUrl: vi.fn() }
+    await expect(new CostEvidenceService(repository as never).createReadUrl(context(['cost.file.read']) as never, ids.file, { disposition: 'inline' })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    expect(repository.createReadUrl).not.toHaveBeenCalled()
+  })
+
   it('routes positive prepare, metadata, and raw-file capabilities independently', async () => {
     const repository = { createIntent: vi.fn(), finalize: vi.fn(), linkCost: vi.fn(), listCostEvidence: vi.fn(), createReadUrl: vi.fn() }
     const service = new CostEvidenceService(repository as never)
@@ -55,7 +61,7 @@ describe('CostEvidenceService', () => {
     await service.finalize(context(['cost.prepare']) as never, ids.file, finalize, ids.key)
     await service.linkCost(context(['cost.prepare']) as never, ids.cost, link, ids.key)
     await service.listCostEvidence(context(['cost.source.read']) as never, ids.cost)
-    await service.createReadUrl(context(['cost.file.read']) as never, ids.file, { disposition: 'attachment' })
+    await service.createReadUrl(context(['cost.read', 'cost.file.read']) as never, ids.file, { disposition: 'attachment' })
     expect(repository.createIntent).toHaveBeenCalledOnce(); expect(repository.finalize).toHaveBeenCalledOnce(); expect(repository.linkCost).toHaveBeenCalledOnce(); expect(repository.listCostEvidence).toHaveBeenCalledOnce(); expect(repository.createReadUrl).toHaveBeenCalledOnce()
   })
 })

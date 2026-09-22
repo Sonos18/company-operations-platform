@@ -20,6 +20,7 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
     '20260922090005_c1_accounting_write_cash_commands.sql',
     '20260922090006_c1_accounting_write_snapshot_constraint_scope_fix.sql',
     '20260922090007_c1_accounting_write_evidence_rls_initplan_fix.sql',
+    '20260922090008_c1_accounting_write_evidence_kind_contract_fix.sql',
   ]
 
   function migrationRoot(names = migrationNames) {
@@ -45,11 +46,11 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
   it('loads all accounting-write migrations once in timestamp order', () => {
     const sql = readC1MigrationSql(migrationRoot())
 
-    expect(sql).toBe('select 1;\n\nselect 2;\n\nselect 3;\n\nselect 4;\n\nselect 5;\n\nselect 6;\n\nselect 7;\n\nselect 8;\n')
+    expect(sql).toBe('select 1;\n\nselect 2;\n\nselect 3;\n\nselect 4;\n\nselect 5;\n\nselect 6;\n\nselect 7;\n\nselect 8;\n\nselect 9;\n')
   })
 
   it('rejects a missing accounting-write migration before Cloud access', () => {
-    expect(() => readC1MigrationSql(migrationRoot(migrationNames.slice(0, 7)))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_accounting_write_evidence_rls_initplan_fix.sql')
+    expect(() => readC1MigrationSql(migrationRoot(migrationNames.slice(0, 8)))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_accounting_write_evidence_kind_contract_fix.sql')
   })
 
   it('rejects duplicate migration suffixes before Cloud access', () => {

@@ -149,4 +149,5 @@ describe('C1 accounting write target', () => {
     expect(sql).toContain("'set\\s+constraints\\s+c1_project_cost_item_details_sync\\s+immediate'")
   })
   it('uses an initplan for evidence upload actor checks',()=>{const sql=phaseMigration('_c1_accounting_write_evidence_rls_initplan_fix.sql');expect(sql).toContain('created_by=(select auth.uid())');expect(sql).not.toMatch(/created_by\s*=\s*auth\.uid\(\)/iu)})
+  it('uses the approved source_workbook evidence kind',()=>{const sql=phaseMigration('_c1_accounting_write_evidence_kind_contract_fix.sql');expect(sql).toContain("'source_workbook'");expect(sql).toContain("evidence_kind='source_file'");expect(sql).toContain('C1_EVIDENCE_KIND_SOURCE_FILE_DATA_PRESENT')})
 })

@@ -20,12 +20,13 @@ The six approved feature migrations were rehearsed together in one rollback tran
 5. `20260922075933_c1_accounting_write_correction_command.sql`
 6. `20260922080759_c1_accounting_write_cash_commands.sql`
 
-Cloud acceptance found an unqualified deferred-trigger lookup under hardened `search_path=''` and one evidence RLS initplan advisor warning. Previously applied migrations were not edited. Two forward-only corrective migrations were created, dry-run reviewed, and applied:
+Cloud acceptance found an unqualified deferred-trigger lookup under hardened `search_path=''`, one evidence RLS initplan advisor warning, and final review found an evidence-kind name drift from the approved spec. Previously applied migrations were not edited. Three forward-only corrective migrations were created, dry-run reviewed, and applied:
 
 7. `20260922083315_c1_accounting_write_snapshot_constraint_scope_fix.sql`
 8. `20260922090028_c1_accounting_write_evidence_rls_initplan_fix.sql`
+9. `20260922092309_c1_accounting_write_evidence_kind_contract_fix.sql`
 
-Final parity is 58 local / 58 remote through `20260922090028`. Both push commands completed; the CLI emitted a non-blocking Docker cache-export warning after successful application.
+Final parity is 59 local / 59 remote through `20260922092309`. Corrective push commands completed; the CLI emitted a non-blocking Docker cache-export warning after successful application.
 
 ## Cloud verification
 
@@ -36,12 +37,12 @@ Final parity is 58 local / 58 remote through `20260922090028`. Both push command
 - `pnpm db:dev:c1:rehearse`: PASS, rollback-only.
 - `pnpm db:dev:push`: six migrations applied.
 - Corrective dry runs: each listed only its single pending forward migration.
-- Corrective pushes: both applied; no migration-history repair.
+- Corrective pushes: all three applied; no migration-history repair.
 - `pnpm db:dev:c1:test`: PASS for all 11 C1 suites. New hard-failing pgTAP totals: lifecycle 47, evidence 21, cash 22. Existing Project Cost fixture was updated to the approved lifecycle instead of enabling a legacy capability bypass.
 - `pnpm db:dev:rls-smoke`: PASS.
 - Security advisor: WARN-only. New public SECURITY DEFINER RPC warnings are intentional authenticated wrappers with exact internal permission checks; the advisor also retains the pre-existing leaked-password warning.
 - Performance advisor: no C1 warning after the forward evidence-policy correction. One unrelated pre-existing `workflow_definition_snapshots` multiple-policy warning remains.
-- Final `pnpm db:dev:status`: 58/58.
+- Final `pnpm db:dev:status`: 59/59.
 
 ## Generated types
 
@@ -52,7 +53,7 @@ Final parity is 58 local / 58 remote through `20260922090028`. Both push command
 - Pre-Cloud focused suite: PASS, 11 files / 194 tests.
 - Evidence/security focused suite: PASS, 5 files / 38 tests.
 - P6 cash/source/finance suite: PASS, 6 files / 52 tests.
-- `pnpm test:unit`: PASS, 150 files / 1,262 tests.
+- `pnpm test:unit`: PASS, 150 files / 1,264 tests.
 - `pnpm typecheck`: PASS.
 - `pnpm lint`: PASS after minimal caught-error/unused-argument lint corrections.
 - `pnpm build`: PASS; only existing chunk-size and Node dependency deprecation warnings were emitted.
@@ -78,6 +79,6 @@ Disposition: no result identified a supported defect. Deterministic unit/databas
 
 ## Mutation accounting and boundary
 
-Authorized Cloud DEV mutations consumed: eight forward migrations (six planned plus two acceptance-driven corrective migrations). All database test fixtures and pgTAP extension creation were rollback-only. No reset, seed, migration repair, destructive operation, Production operation, UI change, or browser test was performed.
+Authorized Cloud DEV mutations consumed: nine forward migrations (six planned plus three acceptance/review-driven corrective migrations). All database test fixtures and pgTAP extension creation were rollback-only. No reset, seed, migration repair, destructive operation, Production operation, UI change, or browser test was performed.
 
 Antigravity contract: `docs/superpowers/specs/2026-09-22-c1-accounting-write-ui-handoff.md`.

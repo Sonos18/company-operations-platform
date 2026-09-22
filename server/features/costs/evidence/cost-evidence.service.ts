@@ -13,5 +13,5 @@ export class CostEvidenceService {
   async finalize(context: CostEvidenceServiceContext, evidenceFileId: string, value: unknown, idempotencyKey: string) { requirePermission(context, 'cost.prepare'); return this.repository.finalize(context, evidenceFileId, parse(costEvidenceFinalizeInputSchema, value), idempotencyKey) }
   async linkCost(context: CostEvidenceServiceContext, projectCostItemId: string, value: unknown, idempotencyKey: string) { requirePermission(context, 'cost.prepare'); return this.repository.linkCost(context, projectCostItemId, parse(costEvidenceLinkInputSchema, value), idempotencyKey) }
   async listCostEvidence(context: CostEvidenceServiceContext, projectCostItemId: string) { requirePermission(context, 'cost.source.read'); return this.repository.listCostEvidence(context, projectCostItemId) }
-  async createReadUrl(context: CostEvidenceServiceContext, evidenceFileId: string, value: unknown) { requirePermission(context, 'cost.file.read'); return this.repository.createReadUrl(context, evidenceFileId, parse(costEvidenceReadUrlInputSchema, value)) }
+  async createReadUrl(context: CostEvidenceServiceContext, evidenceFileId: string, value: unknown) { requirePermission(context, 'cost.read'); requirePermission(context, 'cost.file.read'); return this.repository.createReadUrl(context, evidenceFileId, parse(costEvidenceReadUrlInputSchema, value)) }
 }

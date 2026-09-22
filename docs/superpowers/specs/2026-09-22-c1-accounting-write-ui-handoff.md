@@ -17,7 +17,7 @@ All request bodies are strict. Money is a nonnegative decimal string with at mos
 | `cost.record_cash` | Record or void actual subcontract payments in `project_subcontract_payments`. |
 | `cost.read` | Read published Project Cost and Director finance data only. |
 | `cost.source.read` | List finalized evidence metadata and immutable links. |
-| `cost.file.read` | Obtain a 60-second signed URL for linked finalized evidence bytes. |
+| `cost.file.read` | With resource `cost.read`, obtain a 60-second signed URL for linked finalized evidence bytes. |
 
 No sibling mutation permission substitutes for another. The VQH Accountant has all five mutation permissions plus `cost.read`, `cost.source.read`, and `cost.file.read`.
 
@@ -177,7 +177,7 @@ The server downloads through the authenticated client, streams size/SHA verifica
 ### Link and metadata
 
 - Link: `POST /api/companies/:companyId/project-costs/:projectCostItemId/evidence`, permission `cost.prepare`, required idempotency header, body `{ evidenceFileId, evidenceKind, accountingSourceVersionId? }`.
-- Evidence kinds: `contract`, `acceptance_record`, `invoice`, `accounting_support`, `payment_proof`, `source_file`, `other`.
+- Evidence kinds: `contract`, `acceptance_record`, `invoice`, `accounting_support`, `payment_proof`, `source_workbook`, `other`.
 - Link response: `{ linkId, costId, evidenceFileId, evidenceKind, replayed }`.
 - List metadata: `GET /api/companies/:companyId/project-costs/:projectCostItemId/evidence`, permission `cost.source.read`.
 
@@ -187,7 +187,7 @@ Linking does not increment the cost version and has no financial effect. It does
 
 `POST /api/companies/:companyId/evidence-files/:evidenceFileId/read-url`
 
-- Permission: `cost.file.read` plus a linked accessible resource.
+- Permission: `cost.read` and `cost.file.read`, plus a linked accessible resource.
 - Body: `{ "disposition": "inline" }` or `attachment`; omission defaults to `inline`.
 - Response: `{ url, expiresAt }`; URL lifetime is exactly 60 seconds and must not be persisted.
 
