@@ -6,6 +6,7 @@ import { AppApiError } from '../../../server/utils/api-error'
 import { ProjectFinanceMetadataReader, ProjectFinanceTableReader, type FinanceProjectContextRow, type FinanceTableRows } from '../../../server/features/costs/finance/project-finance.queries'
 import { ConcreteProjectFinanceRepository, createSupabaseProjectFinanceRepository } from '../../../server/features/costs/finance/project-finance.repository'
 import { ProjectFinanceService } from '../../../server/features/costs/finance/project-finance.service'
+import { paymentTotal } from '../../../server/features/costs/finance/project-finance.summary'
 
 const ids = {
   tenant: 'c1070000-0000-4000-8000-000000000010', company: 'c1070000-0000-4000-8000-000000000020', project: 'c1070000-0000-4000-8000-000000000030', otherProject: 'c1070000-0000-4000-8000-000000000031',
@@ -198,6 +199,13 @@ function fakeSupabaseMulti(projectRows: readonly ReturnType<typeof multiSnapshot
 }
 
 describe('C1 finance review regressions on concrete production readers', () => {
+  it('counts a void-and-replacement cash correction exactly once', () => {
+    expect(paymentTotal([
+      { paid_amount_text: '100.0000', warranty_retention_amount_text: null, status: 'voided' },
+      { paid_amount_text: '90.0000', warranty_retention_amount_text: null, status: 'recorded' },
+    ])).toMatchObject({ amount: '90.0000', count: 1 })
+  })
+
   it('keeps draft cost parents out of official finance totals', async () => {
     const rows = readSet()
     rows.costItems = [
