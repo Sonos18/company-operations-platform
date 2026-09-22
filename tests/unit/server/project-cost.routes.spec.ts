@@ -49,6 +49,15 @@ describe('Project Cost routes', () => {
     expect(service.listDrafts).toHaveBeenCalledWith(trustedContext, ids.projectId)
   })
 
+  it('routes operational draft reads separately from financial draft reads', async () => {
+    const service = { operationalDraft: vi.fn().mockResolvedValue({ id: ids.itemId }), listOperationalDrafts: vi.fn().mockResolvedValue([]) }
+    const routes = route(service).routes
+    await routes.operationalDraft({} as never)
+    await routes.operationalDrafts({} as never)
+    expect(service.operationalDraft).toHaveBeenCalledWith(trustedContext, ids.itemId)
+    expect(service.listOperationalDrafts).toHaveBeenCalledWith(trustedContext, ids.projectId)
+  })
+
   it('requires expectedVersion and a UUID idempotency key for publish', async () => {
     readBody.mockResolvedValue({ expectedVersion: 1 })
     const service = { publish: vi.fn().mockResolvedValue({ id: ids.itemId, version: 2, publicationState: 'published', replayed: false }) }

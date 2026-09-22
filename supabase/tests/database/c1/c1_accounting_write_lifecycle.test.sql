@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
 
-select plan(47);
+select plan(55);
 
 select has_column('public', 'project_cost_items', 'publication_state', 'publication state exists');
 select is((select column_default from information_schema.columns where table_schema='public' and table_name='project_cost_items' and column_name='publication_state'), '''draft''::text', 'new cost rows default to draft');
@@ -20,6 +20,7 @@ select ok(exists(
       'cost.source.read','inventory_value.read','supplier.read'
     ]::text[]
 ), 'an active Accountant has the exact approved permission set');
+select is((select array_agg(permission_code order by permission_code) from public.role_permissions where role_id=(select id from public.roles where code='c1_vqh_cost_operator' and is_active)),array['cost.correct','cost.manage']::text[],'the transitional cost operator remains manage-only for draft access');
 do $$declare v_default text;v_nonpublished bigint;v_accountant boolean;begin if extensions.num_failed()>0 then select column_default into v_default from information_schema.columns where table_schema='public' and table_name='project_cost_items' and column_name='publication_state';select count(*) into v_nonpublished from public.project_cost_items where publication_state<>'published';select exists(select 1 from public.roles role where role.code='accountant' and role.is_active and (select array_agg(permission_code order by permission_code) from public.role_permissions where role_id=role.id)=array['accounting_document.read','accounting_document.update','cost.correct','cost.file.read','cost.manage','cost.prepare','cost.publish_import','cost.read','cost.record_cash','cost.source.read','inventory_value.read','supplier.read']::text[]) into v_accountant;raise exception 'C1 lifecycle baseline assertion failed: default=%, nonpublished=%, accountant=%',v_default,v_nonpublished,v_accountant;end if;end$$;
 
 do $$
@@ -73,6 +74,16 @@ begin
   insert into public.cost_categories(id, tenant_id, company_id, code, name, display_order, created_by, updated_by) values
     ('c1060000-0000-4000-8000-000000000301', tenant_id, company_id, 'materials', 'Materials', 1, preparer, preparer),
     ('c1060000-0000-4000-8000-000000000302', tenant_id, company_id, 'subcontract_labor', 'Subcontract labor', 2, preparer, preparer);
+  insert into public.controlled_import_runs(id,tenant_id,company_id,run_id,actor_id,idempotency_key,payload_digest,manifest_digest,input_digests,workbook_family,adapter_id,adapter_version,manifest_snapshot,request_id)
+  values('c1060000-0000-4000-8000-000000000501',tenant_id,company_id,'c1060000-0000-4000-8000-000000000502',preparer,'c1060000-0000-4000-8000-000000000503',repeat('a',64),repeat('b',64),array[repeat('c',64)],'c106','c106','1.0.0','{}','c1060000-0000-4000-8000-000000000504');
+  insert into public.accounting_sources(id,tenant_id,company_id,code,title,source_system,created_by)
+  values('c1060000-0000-4000-8000-000000000505',tenant_id,company_id,'C106-SOURCE','C106 source','synthetic',preparer);
+  insert into public.accounting_source_versions(id,tenant_id,company_id,source_id,import_run_id,version_no,input_file_identity,input_file_sha256,original_filename,created_by)
+  values('c1060000-0000-4000-8000-000000000506',tenant_id,company_id,'c1060000-0000-4000-8000-000000000505','c1060000-0000-4000-8000-000000000501',1,'c106.xlsx',repeat('d',64),'c106.xlsx',preparer);
+  insert into public.source_selections(id,tenant_id,company_id,source_version_id,import_run_id,locator,locator_key,mapping_state,reviewed_mapping,mapped_project_id,observed_labels,raw_values,unresolved_issues,created_by)
+  values('c1060000-0000-4000-8000-000000000507',tenant_id,company_id,'c1060000-0000-4000-8000-000000000506','c1060000-0000-4000-8000-000000000501','{"kind":"logical_section"}','c106-selection','confirmed','{}','c1060000-0000-4000-8000-000000000101',array['C106'],array['0'],array[]::text[],preparer);
+  insert into public.source_reported_figures(id,tenant_id,company_id,source_selection_id,import_run_id,figure_identity,label,raw_value_text,value_state,amount_text,amount,currency_code,metric_kind,basis,rounding_basis,period_basis,mapping_state,reviewed_mapping,project_id,scope_kind,scope_description,confirmation,status,created_by,shared_by,shared_at)
+  values('c1060000-0000-4000-8000-000000000508',tenant_id,company_id,'c1060000-0000-4000-8000-000000000507','c1060000-0000-4000-8000-000000000501',repeat('e',64),'C106 figure','0','known','0',0,'VND','cost_total','net','exact','unknown','confirmed','{}','c1060000-0000-4000-8000-000000000101','whole_project','C106 fixture','unverified','shared',preparer,preparer,now());
   insert into public.project_cost_items(id, tenant_id, company_id, project_id, description, amount, amount_text, currency_code, work_status, publication_state, publication_origin, published_at, created_by) values
     ('c1060000-0000-4000-8000-000000000201', tenant_id, company_id, 'c1060000-0000-4000-8000-000000000101', 'C106 published', 1, '1', 'VND', 'unknown', 'published', 'legacy_backfill', now(), preparer),
     ('c1060000-0000-4000-8000-000000000202', tenant_id, company_id, 'c1060000-0000-4000-8000-000000000101', 'C106 draft', null, null, 'VND', 'unknown', 'draft', null, null, preparer);
@@ -114,6 +125,9 @@ select public.c1_create_project_cost_draft(
   'c1060000-0000-4000-8000-000000000712'
 ) result;
 select is((select result->>'publicationState' from c1_p2_result), 'draft', 'cost.manage creates a draft');
+select is((select count(*) from public.project_cost_items where id=(select (result->>'id')::uuid from c1_p2_result)),0::bigint,'cost.manage cannot directly select the financial draft parent');
+select ok(not (public.c1_read_project_cost_draft_operational('c1060000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1_p2_result)) ? 'amount'),'cost.manage operational projection omits amount');
+select is(jsonb_array_length(public.c1_list_project_cost_drafts_operational('c1060000-0000-4000-8000-000000000020','c1060000-0000-4000-8000-000000000101')),2,'cost.manage can list operational draft projections');
 select is((public.c1_create_project_cost_draft(
   'c1060000-0000-4000-8000-000000000020',
   '{"projectId":"c1060000-0000-4000-8000-000000000101","description":"C106 managed draft","costCategoryId":"c1060000-0000-4000-8000-000000000301"}',
@@ -153,16 +167,20 @@ select set_config('request.jwt.claims', '{"sub":"c1060000-0000-4000-8000-0000000
 select is((public.c1_prepare_project_cost_financials(
   'c1060000-0000-4000-8000-000000000020',
   (select (result->>'id')::uuid from c1_p2_result),
-  '{"expectedVersion":0,"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"line_item","description":"Explicit zero","amount":"0.0000"}],"sourceFigureIds":[]}',
+  '{"expectedVersion":0,"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"line_item","description":"Explicit zero","amount":"0.0000"}],"sourceFigureIds":["c1060000-0000-4000-8000-000000000508"]}',
   'c1060000-0000-4000-8000-000000000719'
 )->>'amount'), '0.0000', 'cost.prepare accepts an explicit zero detail snapshot');
 select is((public.c1_read_project_cost_draft('c1060000-0000-4000-8000-000000000020', (select (result->>'id')::uuid from c1_p2_result))->'publishReadiness'->>'ready')::boolean, true, 'prepared ordinary draft is publish-ready');
 select is((public.c1_read_project_cost_draft('c1060000-0000-4000-8000-000000000020','c1060000-0000-4000-8000-000000000202')->'publishReadiness'->'blockingCodes'->>0), 'FINANCIAL_DETAILS_REQUIRED', 'unprepared draft reports the financial-details blocker');
+select is((select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)),1::bigint,'cost.prepare can directly read draft financial details');
+select is((select count(*) from public.project_cost_item_sources where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)),1::bigint,'cost.prepare can directly read draft source links');
 select throws_ok(
   $$select public.c1_prepare_project_cost_financials('c1060000-0000-4000-8000-000000000020', 'c1060000-0000-4000-8000-000000000201', '{"expectedVersion":0,"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"line_item","description":"Published","amount":"1.0000"}],"sourceFigureIds":[]}', 'c1060000-0000-4000-8000-000000000720')$$,
   'P0001', 'COST_NOT_DRAFT', 'financial preparation rejects a published item'
 );
 select set_config('request.jwt.claims', '{"sub":"c1060000-0000-4000-8000-000000000903","role":"authenticated"}', true);
+select is((select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)),0::bigint,'cost.manage cannot directly read draft financial details');
+select is((select count(*) from public.project_cost_item_sources where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)),0::bigint,'cost.manage cannot directly read draft source links');
 select throws_ok(
   $$select public.c1_create_project_cost_draft('c1060000-0000-4000-8000-000000000020', '{"projectId":"c1060000-0000-4000-8000-000000000101","description":"Subcontract duplicate","costCategoryId":"c1060000-0000-4000-8000-000000000302"}', 'c1060000-0000-4000-8000-000000000721', 'c1060000-0000-4000-8000-000000000722')$$,
   'P0001', 'SUBCONTRACT_COST_MODEL_UNSUPPORTED', 'new subcontract cost drafts are blocked from duplicating the cash-ledger Actual model'

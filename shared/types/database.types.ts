@@ -4373,6 +4373,10 @@ export type Database = {
         Args: { target_company_id: string; target_run_id: string }
         Returns: Json
       }
+      c1_get_cost_evidence_read_target: {
+        Args: { target_company_id: string; target_id: string }
+        Returns: Json
+      }
       c1_link_cost_evidence: {
         Args: {
           target_company_id: string
@@ -4384,6 +4388,10 @@ export type Database = {
         Returns: Json
       }
       c1_list_project_cost_drafts: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
+      c1_list_project_cost_drafts_operational: {
         Args: { target_company_id: string; target_project_id: string }
         Returns: Json
       }
@@ -4435,6 +4443,10 @@ export type Database = {
         }[]
       }
       c1_read_project_cost_draft: {
+        Args: { target_company_id: string; target_id: string }
+        Returns: Json
+      }
+      c1_read_project_cost_draft_operational: {
         Args: { target_company_id: string; target_id: string }
         Returns: Json
       }

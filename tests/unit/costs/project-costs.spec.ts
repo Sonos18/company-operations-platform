@@ -7,6 +7,7 @@ import {
   prepareProjectCostFinancialsInputSchema,
   projectCostBreakdownSchema,
   projectCostDraftSchema,
+  projectCostOperationalDraftSchema,
   projectCostDetailKindSchema,
   projectCostDetailsResponseSchema,
   projectCostItemDetailSchema,
@@ -72,6 +73,19 @@ describe('project cost contracts', () => {
       details: [], sourceFigureIds: [], publishReadiness: { ready: false, blockingCodes: ['FINANCIAL_DETAILS_REQUIRED'] },
       createdAt: '2026-09-22T00:00:00.000Z', updatedAt: '2026-09-22T00:00:00.000Z',
     }).amount).toBeNull()
+  })
+
+  it('keeps the cost.manage draft projection operational-only', () => {
+    const operational = {
+      id: ids.item, projectId: ids.project, description: 'Draft', costCategoryId: ids.component,
+      businessReference: null, partyId: null, engagementId: null, componentId: null, relevantDate: null,
+      workStatus: 'unknown', publicationState: 'draft', version: 0,
+      createdAt: '2026-09-22T00:00:00.000Z', updatedAt: '2026-09-22T00:00:00.000Z',
+    }
+    expect(projectCostOperationalDraftSchema.parse(operational)).toEqual(operational)
+    for (const financial of [{ amount: '1.0000' }, { currencyCode: 'VND' }, { details: [] }, { sourceFigureIds: [] }, { publishReadiness: { ready: true, blockingCodes: [] } }]) {
+      expect(projectCostOperationalDraftSchema.safeParse({ ...operational, ...financial }).success).toBe(false)
+    }
   })
 
   it('pins the common lifecycle command acknowledgement', () => {

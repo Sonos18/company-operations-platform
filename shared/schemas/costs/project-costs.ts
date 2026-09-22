@@ -249,6 +249,11 @@ export const projectCostDraftSchema = z.object({
   createdAt: timestamp,
   updatedAt: timestamp,
 }).strict()
+export const projectCostOperationalDraftSchema = projectCostDraftSchema.pick({
+  id: true, projectId: true, description: true, costCategoryId: true, businessReference: true,
+  partyId: true, engagementId: true, componentId: true, relevantDate: true, workStatus: true,
+  publicationState: true, version: true, createdAt: true, updatedAt: true,
+})
 
 export type ProjectCostWorkStatus = z.infer<typeof projectCostWorkStatusSchema>
 export type ProjectCostPublicationState = z.infer<typeof projectCostPublicationStateSchema>
@@ -263,6 +268,7 @@ export type PrepareProjectCostFinancialsInput = z.infer<typeof prepareProjectCos
 export type PrepareProjectCostFinancialsResult = z.infer<typeof prepareProjectCostFinancialsResultSchema>
 export type CorrectPublishedProjectCostInput = z.infer<typeof correctPublishedProjectCostInputSchema>
 export type ProjectCostDraft = z.infer<typeof projectCostDraftSchema>
+export type ProjectCostOperationalDraft = z.infer<typeof projectCostOperationalDraftSchema>
 export type CreateProjectCostItemInput = z.infer<typeof createProjectCostItemInputSchema>
 export type UpdateProjectCostItemInput = z.infer<typeof updateProjectCostItemInputSchema>
 export type CorrectProjectCostItemInput = z.infer<typeof correctProjectCostItemInputSchema>

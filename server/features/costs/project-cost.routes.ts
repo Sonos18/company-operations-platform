@@ -43,6 +43,8 @@ export function createProjectCostRoutes(dependencies: ProjectCostRouteDependenci
     async financials(event: H3Event) { const value = await resolved(event); return value.service.prepareFinancials(value.context, param(event, 'projectCostItemId'), await body(event, prepareProjectCostFinancialsInputSchema)) },
     async draft(event: H3Event) { const value = await resolved(event); return value.service.draft(value.context, param(event, 'projectCostItemId')) },
     async drafts(event: H3Event) { const value = await resolved(event); return value.service.listDrafts(value.context, param(event, 'projectId')) },
+    async operationalDraft(event: H3Event) { const value = await resolved(event); return value.service.operationalDraft(value.context, param(event, 'projectCostItemId')) },
+    async operationalDrafts(event: H3Event) { const value = await resolved(event); return value.service.listOperationalDrafts(value.context, param(event, 'projectId')) },
     async publish(event: H3Event) {
       const value = await resolved(event)
       const itemId = param(event, 'projectCostItemId')
@@ -76,6 +78,8 @@ export function createSupabaseProjectCostRoutes(event: H3Event) {
     financials: () => routes.financials(event),
     draft: () => routes.draft(event),
     drafts: () => routes.drafts(event),
+    operationalDraft: () => routes.operationalDraft(event),
+    operationalDrafts: () => routes.operationalDrafts(event),
     publish: () => routes.publish(event),
     correction: () => routes.correction(event),
     details: () => routes.details(event),
