@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js'
 import { z } from 'zod'
-import { projectCostBreakdownSchema, projectCostDetailsResponseSchema, projectCostItemDetailSchema, projectCostItemSchema, projectCostProjectMetadataSchema, projectCostSummaryEntrySchema, projectCostSummarySchema, type CreateProjectCostItemInput, type CorrectProjectCostItemInput, type ProjectCostBreakdown, type ProjectCostDetailsResponse, type ProjectCostItem, type ProjectCostItemDetail, type ProjectCostSummary, type ProjectCostSummaryEntry, type UpdateProjectCostItemInput } from '../../../shared/schemas/costs/project-costs'
+import { costCommandAckSchema, prepareProjectCostFinancialsResultSchema, projectCostBreakdownSchema, projectCostDetailsResponseSchema, projectCostDraftSchema, projectCostItemDetailSchema, projectCostItemSchema, projectCostProjectMetadataSchema, projectCostSummaryEntrySchema, projectCostSummarySchema, type CostCommandAck, type CreateProjectCostDraftInput, type CreateProjectCostItemInput, type CorrectProjectCostItemInput, type PrepareProjectCostFinancialsInput, type PrepareProjectCostFinancialsResult, type ProjectCostBreakdown, type ProjectCostDetailsResponse, type ProjectCostDraft, type ProjectCostItem, type ProjectCostItemDetail, type ProjectCostSummary, type ProjectCostSummaryEntry, type UpdateProjectCostDraftInput, type UpdateProjectCostItemInput } from '../../../shared/schemas/costs/project-costs'
 import { AppApiError } from '../../utils/api-error'
 import type { UserSupabaseClient } from '../../utils/supabase-client'
 
@@ -24,9 +24,9 @@ type Acknowledgement = z.infer<typeof acknowledgementSchema>
 type CreateAcknowledgement = z.infer<typeof createAcknowledgementSchema>
 type QueryResult = { data: unknown; error: unknown }
 interface Query extends PromiseLike<QueryResult> { select(columns: string): Query; eq(column: string, value: string): Query; order(column: string): Query }
-interface Client { from(table: 'project_cost_items' | 'project_cost_item_details'): Query; rpc(name: 'c1_create_project_cost_item' | 'c1_update_project_cost_item' | 'c1_correct_project_cost_item' | 'c1_read_project_cost_project_metadata', args: Record<string, unknown>): Promise<QueryResult> }
+interface Client { from(table: 'project_cost_items' | 'project_cost_item_details'): Query; rpc(name: 'c1_create_project_cost_item' | 'c1_update_project_cost_item' | 'c1_correct_project_cost_item' | 'c1_read_project_cost_project_metadata' | 'c1_create_project_cost_draft' | 'c1_update_project_cost_draft' | 'c1_prepare_project_cost_financials' | 'c1_read_project_cost_draft' | 'c1_list_project_cost_drafts', args: Record<string, unknown>): Promise<QueryResult> }
 export interface ProjectCostRequestContext { companyId: string; requestId: string }
-export interface ProjectCostDataRepository { listSummaries(tenantId: string, companyId: string): Promise<ProjectCostSummaryEntry[]>; projectSummary(tenantId: string, companyId: string, projectId: string): Promise<ProjectCostBreakdown>; itemDetails(tenantId: string, companyId: string, projectCostItemId: string): Promise<ProjectCostDetailsResponse>; create(context: ProjectCostRequestContext, input: CreateProjectCostItemInput, idempotencyKey: string): Promise<CreateAcknowledgement>; update(context: ProjectCostRequestContext, id: string, mutation: { kind: 'update'; input: UpdateProjectCostItemInput } | { kind: 'correction'; input: CorrectProjectCostItemInput }): Promise<Acknowledgement> }
+export interface ProjectCostDataRepository { listSummaries(tenantId: string, companyId: string): Promise<ProjectCostSummaryEntry[]>; projectSummary(tenantId: string, companyId: string, projectId: string): Promise<ProjectCostBreakdown>; itemDetails(tenantId: string, companyId: string, projectCostItemId: string): Promise<ProjectCostDetailsResponse>; createDraft(context: ProjectCostRequestContext, input: CreateProjectCostDraftInput, idempotencyKey: string): Promise<CostCommandAck>; updateDraft(context: ProjectCostRequestContext, id: string, input: UpdateProjectCostDraftInput): Promise<CostCommandAck>; prepareFinancials(context: ProjectCostRequestContext, id: string, input: PrepareProjectCostFinancialsInput): Promise<PrepareProjectCostFinancialsResult>; draft(context: ProjectCostRequestContext, id: string): Promise<ProjectCostDraft>; listDrafts(context: ProjectCostRequestContext, projectId: string): Promise<ProjectCostDraft[]>; create(context: ProjectCostRequestContext, input: CreateProjectCostItemInput, idempotencyKey: string): Promise<CreateAcknowledgement>; update(context: ProjectCostRequestContext, id: string, mutation: { kind: 'update'; input: UpdateProjectCostItemInput } | { kind: 'correction'; input: CorrectProjectCostItemInput }): Promise<Acknowledgement> }
 
 function fail(message: string): never { throw new AppApiError(500, 'INTERNAL_ERROR', message) }
 function rows(value: unknown): ProjectCostRow[] { const parsed = z.array(rowSchema).safeParse(value); return parsed.success ? parsed.data : fail('Không thể đọc Project Cost.') }
@@ -48,12 +48,15 @@ export function summarizeProjectCosts(rows: readonly ProjectCostRow[]): ProjectC
 
 function rpcError(error: unknown): never {
   const parsed = z.object({ code: z.string().optional(), message: z.string().optional() }).safeParse(error)
-  const code = parsed.success ? [parsed.data.message, parsed.data.code].find(value => ['MODULE_DISABLED', 'PERMISSION_DENIED', 'RESOURCE_NOT_FOUND', 'IDEMPOTENCY_CONFLICT', 'VERSION_CONFLICT', 'INPUT_INVALID'].includes(value ?? '')) : undefined
+  const code = parsed.success ? [parsed.data.message, parsed.data.code].find(value => ['MODULE_DISABLED', 'PERMISSION_DENIED', 'RESOURCE_NOT_FOUND', 'IDEMPOTENCY_CONFLICT', 'VERSION_CONFLICT', 'INPUT_INVALID', 'COST_NOT_DRAFT', 'SOURCE_VERSION_NOT_SHARED', 'SOURCE_REVIEW_REQUIRED', 'SUBCONTRACT_COST_MODEL_UNSUPPORTED'].includes(value ?? '')) : undefined
   if (code === 'MODULE_DISABLED') throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', { reason: 'MODULE_DISABLED' })
   if (code === 'PERMISSION_DENIED') throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.')
   if (code === 'RESOURCE_NOT_FOUND') throw new AppApiError(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy Project Cost.')
   if (code === 'IDEMPOTENCY_CONFLICT') throw new AppApiError(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency key không khớp.')
   if (code === 'VERSION_CONFLICT') throw new AppApiError(409, 'VERSION_CONFLICT', 'Dữ liệu đã thay đổi.')
+  if (code === 'COST_NOT_DRAFT') throw new AppApiError(409, 'COST_NOT_DRAFT', 'Project Cost không còn ở trạng thái nháp.')
+  if (code === 'SUBCONTRACT_COST_MODEL_UNSUPPORTED') throw new AppApiError(409, 'SUBCONTRACT_COST_MODEL_UNSUPPORTED', 'Chi phí thầu phụ sử dụng sổ thanh toán chuẩn.')
+  if (code === 'SOURCE_VERSION_NOT_SHARED' || code === 'SOURCE_REVIEW_REQUIRED') throw new AppApiError(409, 'COST_PUBLISH_NOT_READY', 'Nguồn kế toán chưa sẵn sàng.', { reason: code })
   if (code === 'INPUT_INVALID') throw new AppApiError(400, 'INPUT_INVALID', 'Dữ liệu không hợp lệ.')
   return fail('Không thể cập nhật Project Cost.')
 }
@@ -100,6 +103,42 @@ export class ProjectCostRepository implements ProjectCostDataRepository {
     if (result.length === 0) throw new AppApiError(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy Project Cost.')
     const projectMetadata = await this.projectMetadata(companyId, [projectId])
     return projectCostBreakdownSchema.parse({ ...projectMetadata.get(projectId)!, projectId, summary: summarizeProjectCosts(result), items: result.map(item) })
+  }
+
+  private async command(rpc: 'c1_create_project_cost_draft' | 'c1_update_project_cost_draft', context: ProjectCostRequestContext, args: Record<string, unknown>) {
+    const { data, error } = await this.client.rpc(rpc, { target_company_id: context.companyId, ...args, target_request_id: context.requestId })
+    if (error) return rpcError(error)
+    const result = costCommandAckSchema.safeParse(data)
+    return result.success ? result.data : fail('Không thể cập nhật bản nháp Project Cost.')
+  }
+
+  createDraft(context: ProjectCostRequestContext, input: CreateProjectCostDraftInput, idempotencyKey: string) {
+    return this.command('c1_create_project_cost_draft', context, { target_input: input, target_idempotency_key: idempotencyKey })
+  }
+
+  updateDraft(context: ProjectCostRequestContext, id: string, input: UpdateProjectCostDraftInput) {
+    return this.command('c1_update_project_cost_draft', context, { target_id: id, target_input: input })
+  }
+
+  async prepareFinancials(context: ProjectCostRequestContext, id: string, input: PrepareProjectCostFinancialsInput) {
+    const { data, error } = await this.client.rpc('c1_prepare_project_cost_financials', { target_company_id: context.companyId, target_id: id, target_input: input, target_request_id: context.requestId })
+    if (error) return rpcError(error)
+    const result = prepareProjectCostFinancialsResultSchema.safeParse(data)
+    return result.success ? result.data : fail('Không thể chuẩn bị tài chính Project Cost.')
+  }
+
+  async draft(context: ProjectCostRequestContext, id: string) {
+    const { data, error } = await this.client.rpc('c1_read_project_cost_draft', { target_company_id: context.companyId, target_id: id })
+    if (error) return rpcError(error)
+    const result = projectCostDraftSchema.safeParse(data)
+    return result.success ? result.data : fail('Không thể đọc bản nháp Project Cost.')
+  }
+
+  async listDrafts(context: ProjectCostRequestContext, projectId: string) {
+    const { data, error } = await this.client.rpc('c1_list_project_cost_drafts', { target_company_id: context.companyId, target_project_id: projectId })
+    if (error) return rpcError(error)
+    const result = z.array(projectCostDraftSchema).safeParse(data)
+    return result.success ? result.data : fail('Không thể đọc danh sách bản nháp Project Cost.')
   }
 
   async create(context: ProjectCostRequestContext, input: CreateProjectCostItemInput, idempotencyKey: string) {

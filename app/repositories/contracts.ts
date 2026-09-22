@@ -34,7 +34,7 @@ import type {
 } from '../../shared/schemas/stage01-config'
 import type { BusinessParty, CompanyCostSettings, CreateBusinessPartyInput, CreateEngagementComponentInput, CreateEngagementInput, CreateProjectRegisterInput, Engagement, EngagementComponent, ProjectRegister, UpdateBusinessPartyInput, UpdateEngagementComponentInput, UpdateEngagementInput, UpdateProjectRegisterInput } from '../../shared/schemas/costs/master-data'
 import type { CostSourceFiguresQuery, CostSourceOverview, CostSourceProjectDetail, CostSourceProvenance, CostSourceFigure } from '../../shared/schemas/costs/source-read-model'
-import type { CorrectProjectCostItemInput, CreateProjectCostItemInput, ProjectCostBreakdown, ProjectCostDetailsResponse, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, UpdateProjectCostItemInput } from '../../shared/schemas/costs/project-costs'
+import type { CostCommandAck, CreateProjectCostDraftInput, PrepareProjectCostFinancialsInput, PrepareProjectCostFinancialsResult, ProjectCostBreakdown, ProjectCostDetailsResponse, ProjectCostDraft, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, UpdateProjectCostDraftInput } from '../../shared/schemas/costs/project-costs'
 import type { FinanceBudget, FinanceItemDetails, FinanceListQuery, FinanceOwnerAdvances, FinanceOverview, FinanceProjectList, FinanceSubcontractDetail, FinanceSubcontractorDetail, FinanceSubcontractorList, ItemDetailQuery, PaymentQuery, ProjectDirectoryQuery } from '../../shared/schemas/costs/project-finance'
 
 export interface CompanyRepository {
@@ -135,17 +135,20 @@ export interface BusinessPartyRepository { list(): Promise<BusinessParty[]>; get
 export interface EngagementRepository { list(projectId: string): Promise<Engagement[]>; getById(projectId: string, id: string): Promise<Engagement | null>; create(projectId: string, input: CreateEngagementInput): Promise<Engagement>; update(projectId: string, id: string, input: UpdateEngagementInput): Promise<Engagement>; listComponents(engagementId: string): Promise<EngagementComponent[]>; getComponentById(engagementId: string, id: string): Promise<EngagementComponent | null>; addComponent(engagementId: string, input: CreateEngagementComponentInput): Promise<EngagementComponent>; updateComponent(engagementId: string, id: string, input: UpdateEngagementComponentInput): Promise<EngagementComponent> }
 export interface CostSettingsRepository { get(): Promise<CompanyCostSettings> }
 export interface CostSourceReadRepository { overview(): Promise<CostSourceOverview>; project(projectId: string): Promise<CostSourceProjectDetail>; figures(projectId: string, query?: Partial<CostSourceFiguresQuery>): Promise<{ items: CostSourceFigure[]; nextCursor: string | null }>; provenance(figureId: string): Promise<CostSourceProvenance> }
-export type ProjectCostCreateDraft = Omit<CreateProjectCostItemInput, 'projectId'>
-export type ProjectCostPatchInput = UpdateProjectCostItemInput | CorrectProjectCostItemInput
+export type ProjectCostCreateDraft = Omit<CreateProjectCostDraftInput, 'projectId'>
+export type ProjectCostPatchInput = UpdateProjectCostDraftInput
 export type ProjectCostSummaryEntry = SharedProjectCostSummaryEntry
-export interface ProjectCostCreateResult { id: string; version: number; replayed: boolean }
-export interface ProjectCostMutationResult { id: string; version: number }
+export type ProjectCostCreateResult = CostCommandAck
+export type ProjectCostMutationResult = CostCommandAck
 export interface ProjectCostRepository {
   summaries(): Promise<ProjectCostSummaryEntry[]>
   project(projectId: string): Promise<ProjectCostBreakdown>
   details(projectCostItemId: string): Promise<ProjectCostDetailsResponse>
   create(projectId: string, input: ProjectCostCreateDraft): Promise<ProjectCostCreateResult>
   update(projectCostItemId: string, input: ProjectCostPatchInput): Promise<ProjectCostMutationResult>
+  prepareFinancials(projectCostItemId: string, input: PrepareProjectCostFinancialsInput): Promise<PrepareProjectCostFinancialsResult>
+  draft(projectCostItemId: string): Promise<ProjectCostDraft>
+  listDrafts(projectId: string): Promise<ProjectCostDraft[]>
 }
 export interface ProjectFinanceRepository {
   listProjects(query?: Partial<ProjectDirectoryQuery>): Promise<FinanceProjectList>

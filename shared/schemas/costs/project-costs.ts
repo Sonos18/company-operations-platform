@@ -172,6 +172,15 @@ export const prepareProjectCostFinancialsInputSchema = z.object({
   details: z.array(prepareProjectCostFinancialDetailInputSchema).min(1),
   sourceFigureIds: uniqueSourceFigureIds,
 }).strict()
+export const prepareProjectCostFinancialsResultSchema = z.object({
+  id: uuid,
+  version,
+  publicationState: z.literal('draft'),
+  amount: decimalStringSchema,
+  detailCount: z.number().int().positive(),
+  publishReadiness: projectCostPublishReadinessSchema,
+  replayed: z.boolean(),
+}).strict()
 
 export const projectCostItemDetailSchema = z.object({
   id: uuid,
@@ -232,6 +241,7 @@ export type CreateProjectCostDraftInput = z.infer<typeof createProjectCostDraftI
 export type UpdateProjectCostDraftInput = z.infer<typeof updateProjectCostDraftInputSchema>
 export type PrepareProjectCostFinancialDetailInput = z.infer<typeof prepareProjectCostFinancialDetailInputSchema>
 export type PrepareProjectCostFinancialsInput = z.infer<typeof prepareProjectCostFinancialsInputSchema>
+export type PrepareProjectCostFinancialsResult = z.infer<typeof prepareProjectCostFinancialsResultSchema>
 export type ProjectCostDraft = z.infer<typeof projectCostDraftSchema>
 export type CreateProjectCostItemInput = z.infer<typeof createProjectCostItemInputSchema>
 export type UpdateProjectCostItemInput = z.infer<typeof updateProjectCostItemInputSchema>
