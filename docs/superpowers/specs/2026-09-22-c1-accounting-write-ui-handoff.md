@@ -10,7 +10,7 @@ All request bodies are strict. Money is a nonnegative decimal string with at mos
 
 | Capability | Backend responsibility |
 | --- | --- |
-| `cost.manage` | Create a cost draft and update its operational metadata while draft. |
+| `cost.manage` | Create a cost draft, update operational metadata, and read only the operational draft projection. |
 | `cost.prepare` | Replace draft financial details/source links; create, finalize, and link evidence; read draft state. |
 | `cost.publish_import` | Explicitly activate one ready draft as published official C1 data. |
 | `cost.correct` | Correct a published ordinary cost through a reasoned, versioned, audited command. |
@@ -74,6 +74,14 @@ Response: `{ "id": "uuid", "version": 0, "publicationState": "draft", "replayed"
 
 Response is `{ id, version, publicationState: "draft", replayed: false }`.
 
+### Read draft operations
+
+- `GET /api/companies/:companyId/project-costs/:projectCostItemId/draft/operations`
+- `GET /api/companies/:companyId/projects/:projectId/project-cost-drafts/operations`
+- Permission: `cost.manage`.
+
+The strict response contains only `id`, `projectId`, description, category/reference/hierarchy/date/work-status fields, `publicationState: "draft"`, `version`, and timestamps. It never contains amount, currency, financial details, source IDs, or publish readiness. Direct table SELECT of a draft parent or its details/source links does not use `cost.manage`.
+
 ### Prepare complete financial snapshot
 
 `PUT /api/companies/:companyId/project-costs/:projectCostItemId/financials`
@@ -115,6 +123,8 @@ Response: `{ id, version, publicationState: "draft", amount, detailCount, publis
 - Permission: `cost.prepare`.
 
 Each strict draft object contains operational fields, nullable derived `amount`, company currency, `version`, complete detail rows, `sourceFigureIds`, timestamps, and `publishReadiness`. Evidence is read separately. A published ID on the draft route returns `RESOURCE_NOT_FOUND`.
+
+These financial draft endpoints are distinct from the `cost.manage` operational projection above. A manager-only actor cannot use them or directly select draft financial rows.
 
 ### Publish
 
@@ -160,9 +170,9 @@ Allowed MIME values are PDF, XLS, XLSX, PNG, and JPEG. Maximum size is 26,214,40
 
 - Permission: `cost.prepare`; required `Idempotency-Key`.
 - Body: `{ originalFilename, mimeType, sizeBytes, sha256 }`.
-- Response: `{ evidenceFileId, version, bucketId: "c1-accounting-evidence", objectPath, signedUploadToken, expiresAt, replayed }`.
+- Response: `{ evidenceFileId, version, bucketId: "c1-accounting-evidence", objectPath, expiresAt, replayed }`.
 
-Upload to the exact returned private object path with the signed token. Replacement/upsert is disabled. The path contains only tenant/company/project/file UUID segments, never the filename.
+Upload with the authenticated user's Supabase session directly to the exact returned private bucket/object path, with upsert disabled. Do not use a signed-upload-token flow and do not use a service-role key. Storage INSERT RLS rechecks the current actor, `cost.prepare`, exact pending registry path, and `intent_expires_at > now()` at write time. An expired intent therefore cannot upload even if the client retained the path. No Storage UPDATE or DELETE policy exists, and a second upload to the immutable path fails. The path contains only tenant/company/project/file UUID segments, never the filename.
 
 ### Finalize
 
@@ -172,7 +182,7 @@ Upload to the exact returned private object path with the signed token. Replacem
 - Body: `{ "expectedVersion": 0 }`.
 - Response: `{ id, status: "finalized", originalFilename, mimeType, sizeBytes, sha256, version, finalizedAt, replayed }`.
 
-The server downloads through the authenticated client, streams size/SHA verification, compares MIME/size/hash, then finalizes. A mismatch returns `EVIDENCE_UPLOAD_MISMATCH` and creates no link.
+The server downloads through the authenticated client and finalizes only when stored Content-Type, size, SHA-256, and byte-format identity all match the declaration. PDF, PNG, JPEG, and legacy XLS use their required file signatures. XLSX must be a valid ZIP containing `[Content_Types].xml`, `xl/workbook.xml`, and the spreadsheet workbook content type; an arbitrary ZIP is rejected. This verifies the declared file-format identity, not document safety, business meaning, or workbook financial contents. A mismatch returns `EVIDENCE_UPLOAD_MISMATCH` and creates no link. An exact finalize retry reaches its receipt even though `cost.prepare` alone cannot read finalized metadata.
 
 ### Link and metadata
 
@@ -190,6 +200,8 @@ Linking does not increment the cost version and has no financial effect. It does
 - Permission: `cost.read` and `cost.file.read`, plus a linked accessible resource.
 - Body: `{ "disposition": "inline" }` or `attachment`; omission defaults to `inline`.
 - Response: `{ url, expiresAt }`; URL lifetime is exactly 60 seconds and must not be persisted.
+
+The raw-read command resolves one authorized object target by existence, so a file may have multiple immutable evidence links without making URL issuance ambiguous. `cost.file.read` does not grant registry or link metadata; listing finalized metadata requires `cost.source.read`.
 
 ## Subcontract cash APIs
 
@@ -252,4 +264,4 @@ Void preserves all monetary fields. A corrected amount is a new record request w
 
 ## Antigravity boundary
 
-Antigravity owns all later pages, components, forms, dialogs, drawers, upload controls, states, layout, styling, accessibility, and browser tests. The backend implementation added no Accountant UI. UI code must consume these contracts without calling Supabase tables directly, exposing object paths as public URLs, auto-publishing on save, or treating `workStatus` as publication state.
+Antigravity owns all later pages, components, forms, dialogs, drawers, upload controls, states, layout, styling, accessibility, and browser tests. The backend implementation added no Accountant UI. UI code must consume these contracts without calling business tables directly, exposing object paths as public URLs, auto-publishing on save, or treating `workStatus` as publication state. The sole direct platform operation is the authenticated private-bucket upload to the exact intent path described above; all intent, finalize, link, metadata, and read-URL operations remain Taskovia APIs.
