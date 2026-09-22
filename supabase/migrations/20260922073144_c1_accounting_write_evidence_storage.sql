@@ -96,6 +96,7 @@ create policy c1_cost_evidence_files_select on public.cost_evidence_files for se
 );
 create policy c1_cost_evidence_links_select on public.cost_evidence_links for select to authenticated using (
   private.has_company_permission(tenant_id, company_id, 'cost.source.read')
+  or private.has_company_permission(tenant_id, company_id, 'cost.file.read')
 );
 
 create function private.c1_guard_evidence_history()
@@ -138,7 +139,19 @@ as $$
     where file.bucket_id = target_bucket_id and file.object_path = target_object_path
       and (
         (file.status = 'pending_upload' and file.created_by = auth.uid() and file.intent_expires_at > now() and private.has_company_permission(file.tenant_id, file.company_id, 'cost.prepare'))
-        or (file.status = 'finalized' and private.has_company_permission(file.tenant_id, file.company_id, 'cost.file.read'))
+        or (file.status = 'finalized'
+          and private.has_company_permission(file.tenant_id, file.company_id, 'cost.file.read')
+          and exists (
+            select 1 from public.cost_evidence_links link
+            where link.evidence_file_id = file.id
+              and link.tenant_id = file.tenant_id
+              and link.company_id = file.company_id
+              and (
+                (link.project_cost_item_id is not null and private.c1_can_read_project_cost_child(link.tenant_id, link.company_id, link.project_cost_item_id))
+                or
+                (link.project_subcontract_payment_id is not null and private.has_company_permission(link.tenant_id, link.company_id, 'cost.read'))
+              )
+          ))
       )
   );
 $$;

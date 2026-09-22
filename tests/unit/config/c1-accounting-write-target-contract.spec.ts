@@ -80,6 +80,7 @@ describe('C1 accounting write target', () => {
     expect(sql).not.toMatch(/create policy [^\n]+[\s\S]{0,100} on storage\.objects for (update|delete)/iu)
     expect(sql).toContain("private.c1_master_context(target_company_id, 'cost.prepare')")
     expect(sql).toContain("private.has_company_permission(file.tenant_id, file.company_id, 'cost.file.read')")
+    expect(sql).toContain('private.c1_can_read_project_cost_child(link.tenant_id, link.company_id, link.project_cost_item_id)')
     expect(sql).toContain("private.has_company_permission(tenant_id, company_id, 'cost.source.read')")
     expect(sql).toContain('check (num_nonnulls(project_cost_item_id, project_subcontract_payment_id) = 1)')
     expect(sql).toContain('foreign key (accounting_source_version_id, tenant_id, company_id)')
