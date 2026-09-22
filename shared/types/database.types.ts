@@ -4105,6 +4105,26 @@ export type Database = {
         Args: { target_company_id: string; target_project_id: string }
         Returns: Json
       }
+      c1_read_project_finance_directory: {
+        Args: {
+          target_after_id: string
+          target_company_id: string
+          target_limit: number
+        }
+        Returns: Json
+      }
+      c1_read_project_finance_operational_states: {
+        Args: { target_company_id: string; target_project_ids: string[] }
+        Returns: Json
+      }
+      c1_read_project_finance_parties: {
+        Args: {
+          target_company_id: string
+          target_party_ids: string[]
+          target_project_id: string
+        }
+        Returns: Json
+      }
       c1_update_business_party: {
         Args: {
           target_company_id: string

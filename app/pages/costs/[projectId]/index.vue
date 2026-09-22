@@ -1,0 +1,594 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import type { FinanceOverview } from '../../../../shared/schemas/costs/project-finance'
+import {
+  computeProjectKpiCards,
+  formatOperationalState,
+} from '../../../utils/costs/finance-display'
+import { mapCostsApiError } from '../../../utils/costs/costs-error-mapper'
+import { createAsyncRequestTracker } from '../../../utils/costs/async-request-tracker'
+import ProjectCostCategoryChart from '../../../components/costs/ProjectCostCategoryChart.client.vue'
+import ProjectCostInfoDisclosure from '../../../components/costs/ProjectCostInfoDisclosure.vue'
+
+definePageMeta({ requiredPermission: 'cost.read' })
+
+const route = useRoute()
+const repositories = useRepositories()
+const companyAccess = useNuxtApp().$companyAccessStore
+
+const projectId = computed(() => String(route.params.projectId ?? ''))
+const overview = ref<FinanceOverview | null>(null)
+const status = ref<'loading' | 'ready' | 'module' | 'permission' | 'empty' | 'not_found' | 'error'>('loading')
+const requestTracker = createAsyncRequestTracker()
+
+const kpis = computed(() => computeProjectKpiCards(overview.value?.summary, overview.value?.project))
+
+onBeforeUnmount(() => {
+  requestTracker.invalidate()
+})
+
+function onSelectCategory(categoryId: string) {
+  navigateTo(`/costs/${projectId.value}/categories/${categoryId}`)
+}
+
+async function loadOverview() {
+  if (!projectId.value) {
+    status.value = 'not_found'
+    return
+  }
+
+  const token = requestTracker.start({ projectId: projectId.value, companyId: companyAccess.activeCompanyId })
+  status.value = 'loading'
+  overview.value = null
+
+  try {
+    const data = await repositories.projectFinance.overview(projectId.value)
+    if (!token.isCurrent()) return
+
+    overview.value = data
+    status.value = data.categories.length === 0 ? 'empty' : 'ready'
+  }
+  catch (err: unknown) {
+    if (!token.isCurrent()) return
+
+    const mapped = mapCostsApiError(err, 'project')
+    if (mapped === 'module') {
+      status.value = 'module'
+      return
+    }
+    if (mapped === 'permission') {
+      status.value = 'permission'
+      return
+    }
+    if (mapped === 'not_found') {
+      status.value = 'not_found'
+      return
+    }
+    status.value = 'error'
+  }
+}
+
+watch(
+  [projectId, () => companyAccess.activeCompanyId],
+  () => {
+    loadOverview()
+  },
+  { immediate: true },
+)
+</script>
+
+<template>
+  <div class="project-cost-detail-page" data-testid="project-cost-detail">
+    <div class="page-top-nav">
+      <NuxtLink to="/costs" class="back-link">
+        <UIcon name="i-lucide-arrow-left" aria-hidden="true" />
+        <span>Quay lại danh sách chi phí dự án</span>
+      </NuxtLink>
+    </div>
+
+    <!-- Loading State -->
+    <div v-if="status === 'loading'" class="state-panel cockpit-card" aria-live="polite">
+      <UIcon name="i-lucide-loader-2" class="spin" aria-hidden="true" />
+      <p>Đang tải chi tiết chi phí dự án…</p>
+    </div>
+
+    <!-- Error State -->
+    <div v-else-if="status === 'error'" class="state-panel cockpit-card state-panel--error" role="alert">
+      <UIcon name="i-lucide-circle-alert" aria-hidden="true" />
+      <h2>Không thể tải chi tiết chi phí dự án</h2>
+      <p>Đã xảy ra lỗi khi tải dữ liệu từ máy chủ. Vui lòng thử lại sau.</p>
+      <button type="button" class="cockpit-btn cockpit-btn--secondary" @click="loadOverview">
+        <UIcon name="i-lucide-refresh-cw" aria-hidden="true" />
+        <span>Thử lại</span>
+      </button>
+    </div>
+
+    <!-- Not Found State -->
+    <div v-else-if="status === 'not_found'" class="state-panel cockpit-card">
+      <UIcon name="i-lucide-file-question" aria-hidden="true" />
+      <h2>Không tìm thấy dữ liệu chi phí dự án</h2>
+      <p>Dự án này không tồn tại hoặc bạn không có quyền truy cập thông tin tài chính.</p>
+      <NuxtLink to="/costs" class="cockpit-btn cockpit-btn--secondary">
+        Quay lại danh sách chi phí
+      </NuxtLink>
+    </div>
+
+    <!-- Permission State -->
+    <div v-else-if="status === 'permission'" class="state-panel cockpit-card">
+      <UIcon name="i-lucide-shield-alert" aria-hidden="true" />
+      <h2>Không có quyền truy cập</h2>
+      <p>Bạn không có quyền xem chi phí dự án của công ty này.</p>
+      <NuxtLink to="/costs" class="cockpit-btn cockpit-btn--secondary">
+        Quay lại danh sách chi phí
+      </NuxtLink>
+    </div>
+
+    <!-- Module Disabled State -->
+    <div v-else-if="status === 'module'" class="state-panel cockpit-card">
+      <UIcon name="i-lucide-lock" aria-hidden="true" />
+      <h2>Tính năng chưa kích hoạt</h2>
+      <p>Mô-đun quản lý chi phí dự án chưa được kích hoạt cho công ty này.</p>
+      <NuxtLink to="/costs" class="cockpit-btn cockpit-btn--secondary">
+        Quay lại danh sách chi phí
+      </NuxtLink>
+    </div>
+
+    <!-- Ready / Empty Content -->
+    <div v-else-if="overview" class="project-content">
+      <header class="project-header cockpit-card">
+        <div class="header-main">
+          <div class="meta-row">
+            <span class="project-code font-mono">{{ overview.project.projectCode }}</span>
+            <span
+              class="cockpit-badge"
+              :class="formatOperationalState(overview.project.operationalState).badgeVariant"
+              data-testid="detail-operational-state"
+            >
+              {{ formatOperationalState(overview.project.operationalState).label }}
+            </span>
+          </div>
+          <h1 class="project-title">
+            {{ overview.project.projectName }}
+          </h1>
+          <p class="subtitle">
+            Chi tiết các hạng mục chi phí công việc đang theo dõi.
+          </p>
+        </div>
+
+        <div class="summary-cards" data-testid="detail-summary-cards">
+          <!-- Position 1: Lợi nhuận tạm tính -->
+          <div
+            class="summary-card"
+            :class="`headline-theme--${kpis.provisionalProfit.colorScheme}`"
+            data-testid="detail-provisional-profit-card"
+          >
+            <div class="summary-tag">
+              <span class="summary-label">
+                {{ kpis.provisionalProfit.label }}
+              </span>
+              <span
+                v-if="kpis.provisionalProfit.caption"
+                class="headline-caption"
+                data-testid="detail-headline-caption"
+              >
+                {{ kpis.provisionalProfit.caption }}
+              </span>
+            </div>
+            <div class="summary-value-row">
+              <span
+                class="summary-number"
+                :class="{
+                  'is-negative-value': kpis.provisionalProfit.isNegative,
+                  'is-unavailable-value': !kpis.provisionalProfit.isAvailable
+                }"
+                data-testid="detail-total-tracked"
+                data-testid-alt="detail-expected-profit"
+              >
+                {{ kpis.provisionalProfit.value }}
+              </span>
+              <span
+                v-if="!kpis.provisionalProfit.isAvailable"
+                class="unavailable-info-icon"
+                role="img"
+                :title="kpis.provisionalProfit.reasons ?? 'Chưa đủ dữ liệu tài chính để tính lợi nhuận'"
+                aria-label="Thông tin thiếu dữ liệu"
+              >
+                <UIcon name="i-lucide-info" class="compact-info-icon" aria-hidden="true" />
+              </span>
+            </div>
+            <span
+              v-if="kpis.provisionalProfit.reasons"
+              class="summary-subtext"
+              data-testid="detail-margin-reasons"
+            >
+              {{ kpis.provisionalProfit.reasons }}
+            </span>
+          </div>
+
+          <!-- Position 2: Thu từ chủ đầu tư (R06) -->
+          <div
+            class="summary-card"
+            data-testid="detail-receipts-card"
+          >
+            <div class="summary-tag">
+              <span
+                class="cockpit-badge"
+                :class="kpis.receipts.badgeVariant"
+              >
+                {{ kpis.receipts.label }}
+              </span>
+
+              <!-- Info disclosure for receipts / budget -->
+              <ProjectCostInfoDisclosure
+                v-if="kpis.receipts.hasDisclosure"
+                id="detail"
+                :tooltip-text="kpis.receipts.tooltipText ?? ''"
+                button-test-id="detail-info-disclosure-btn"
+                popover-test-id="detail-info-tooltip-popover"
+              />
+            </div>
+
+            <span class="summary-number" data-testid="detail-accepted" data-testid-alt="detail-reference">
+              {{ kpis.receipts.value }}
+            </span>
+            <span
+              v-if="kpis.receipts.budgetSecondaryText"
+              class="summary-subline"
+              data-testid="detail-budget-subline"
+            >
+              {{ kpis.receipts.budgetSecondaryText }}
+            </span>
+          </div>
+
+          <!-- Position 3: Chi phí (recorded / not_recorded / needs_reconciliation) -->
+          <div class="summary-card" data-testid="detail-cost-card">
+            <div class="summary-tag">
+              <span class="cockpit-badge metric-badge--cost">
+                Chi phí
+              </span>
+              <span
+                v-if="kpis.cost.stateLabel"
+                class="cockpit-badge cockpit-badge--warning"
+                data-testid="detail-cost-reconciliation-badge"
+              >
+                {{ kpis.cost.stateLabel }}
+              </span>
+            </div>
+            <span class="summary-number" data-testid="detail-in-progress" data-testid-alt="detail-cost">
+              {{ kpis.cost.value }}
+            </span>
+            <!-- Render knownSubtotal ONLY if it differs from value to avoid duplicate amount display -->
+            <span
+              v-if="kpis.cost.knownSubtotal
+                && kpis.cost.state !== 'recorded'
+                && kpis.cost.knownSubtotal !== kpis.cost.value"
+              class="summary-subline"
+              data-testid="detail-known-subtotal"
+            >
+              {{ kpis.cost.knownSubtotal }}
+            </span>
+          </div>
+
+          <!-- Position 4: Bảo hành đã ghi nhận -->
+          <div class="summary-card summary-card--secondary" data-testid="detail-warranty-card">
+            <div class="summary-tag">
+              <span class="cockpit-badge metric-badge--warranty">Bảo hành đã ghi nhận</span>
+              <span class="count" data-testid="detail-warranty-count">
+                {{ kpis.warranty.countText }}
+              </span>
+            </div>
+            <span class="summary-number" data-testid="detail-unknown" data-testid-alt="detail-warranty-retention">
+              {{ kpis.warranty.value }}
+            </span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Category Chart & Accessible Table Section (Replaces Accordion) -->
+      <section class="breakdown-section" aria-label="Biểu đồ và danh sách danh mục chi phí">
+        <div v-if="overview.categories.length === 0" class="state-panel cockpit-card">
+          <UIcon name="i-lucide-inbox" aria-hidden="true" />
+          <h2>Chưa có hạng mục chi phí</h2>
+          <p>Không có hạng mục công việc nào được ghi nhận cho dự án này.</p>
+        </div>
+
+        <ProjectCostCategoryChart
+          v-else
+          :project-id="projectId"
+          :categories="overview.categories"
+          :currency-code="overview.project.currencyCode"
+          :money-scale="overview.project.moneyScale"
+          @select-category="onSelectCategory"
+        />
+      </section>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.project-cost-detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 1360px;
+  margin: 0 auto;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.page-top-nav {
+  display: flex;
+  align-items: center;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease;
+}
+
+.back-link:hover {
+  background: var(--color-bg-secondary);
+}
+
+.state-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px 24px;
+  gap: 12px;
+}
+
+.state-panel--error {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.project-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+  width: 100%;
+}
+
+.project-header {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px 24px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.meta-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.project-code {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  background: var(--color-bg-secondary);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.project-title {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--color-text-primary);
+  margin: 0 0 6px;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  padding-top: 18px;
+  border-top: 1px solid var(--color-border-light);
+  min-width: 0;
+}
+
+.summary-cards.summary-cards--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-md);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.summary-card--secondary {
+  opacity: 0.92;
+}
+
+.headline-theme--receipts {
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.22);
+}
+
+.headline-theme--profit {
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.headline-theme--profit .summary-label {
+  color: #059669;
+}
+
+.headline-theme--negative {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.headline-theme--negative .summary-label {
+  color: #dc2626;
+}
+
+.headline-theme--receipts {
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.22);
+}
+
+.headline-theme--receipts .summary-label {
+  color: #15803d;
+}
+
+.headline-theme--provisional {
+  background: rgba(14, 165, 165, 0.08);
+  border: 1px solid rgba(14, 165, 165, 0.25);
+}
+
+.headline-theme--provisional .summary-label {
+  color: #0d8282;
+}
+
+.headline-theme--budget {
+  background: rgba(29, 78, 216, 0.08);
+  border: 1px solid rgba(29, 78, 216, 0.22);
+}
+
+.headline-theme--budget .summary-label {
+  color: #1d4ed8;
+}
+
+.headline-theme--unavailable {
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-light);
+}
+
+.is-negative-value {
+  color: var(--color-danger) !important;
+}
+
+.metric-badge--cost {
+  background: rgba(249, 115, 22, 0.12);
+  color: #9a3412;
+  font-weight: 700;
+}
+
+.metric-badge--warranty {
+  background: rgba(139, 92, 246, 0.12);
+  color: #6d28d9;
+  font-weight: 700;
+}
+
+.summary-label {
+  font-size: 0.76rem;
+  font-weight: 650;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.summary-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.summary-tag .count {
+  font-size: 0.74rem;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.summary-value-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.unavailable-info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+}
+
+.compact-info-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.is-unavailable-value {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.summary-number {
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  font-weight: 750;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-subtext {
+  font-size: 0.74rem;
+  color: var(--color-text-secondary);
+  line-height: 1.35;
+  margin-top: 2px;
+}
+
+.summary-subline {
+  font-size: 0.74rem;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+}
+
+
+
+.breakdown-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+@media (max-width: 1024px) {
+  .summary-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .project-header {
+    padding: 16px;
+  }
+  .summary-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .project-title {
+    font-size: 1.4rem;
+  }
+}
+</style>
