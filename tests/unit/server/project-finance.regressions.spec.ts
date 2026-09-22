@@ -34,7 +34,7 @@ function category(id: string, code: string, displayOrder: number) {
   return { id, tenant_id: ids.tenant, company_id: ids.company, code, name: code, display_order: displayOrder, is_active: true, version: 0 }
 }
 function item(id: string, categoryId: string, amount: string, relevantDate: string | null = '2026-01-10') {
-  return { id, tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, cost_category_id: categoryId, description: id, business_reference: null, amount_text: amount, currency_code: 'VND', relevant_date: relevantDate, version: 0, created_at: createdAt, updated_at: createdAt }
+  return { id, tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, cost_category_id: categoryId, description: id, business_reference: null, amount_text: amount, currency_code: 'VND', relevant_date: relevantDate, publication_state: 'published' as const, version: 0, created_at: createdAt, updated_at: createdAt }
 }
 function detail(id: string, itemId: string, lineNo: number, amount: string, retentionKind: 'warranty' | 'other' | null, retentionAmount: string | null, relevantDate: string | null) {
   return { id, tenant_id: ids.tenant, company_id: ids.company, project_cost_item_id: itemId, line_no: lineNo, detail_kind: 'line_item' as const, description: id, quantity_text: null, unit_code: null, unit_price_text: null, amount_text: amount, retention_kind: retentionKind, retention_rate_bps: retentionKind === null ? null : 500, retention_amount_text: retentionAmount, relevant_date: relevantDate, reference: null, note: null, version: 0, created_at: createdAt, updated_at: createdAt }
@@ -198,6 +198,19 @@ function fakeSupabaseMulti(projectRows: readonly ReturnType<typeof multiSnapshot
 }
 
 describe('C1 finance review regressions on concrete production readers', () => {
+  it('keeps draft cost parents out of official finance totals', async () => {
+    const rows = readSet()
+    rows.costItems = [
+      { ...rows.costItems[0]!, publication_state: 'published' },
+      { ...rows.costItems[0]!, id: multiIds.itemB, amount_text: '999.0000', publication_state: 'draft' },
+    ] as never
+    rows.details = []
+
+    const overview = await concrete(rows).overview(scope, ids.project)
+
+    expect(overview.categories.find(category => category.code === 'materials')?.cost.amount).toBe('100.0000')
+  })
+
   it('F01 includes no-retention, zero-retention, warranty and other rows in default and filtered pages', async () => {
     const repository = concrete(readSet())
     const item = await repository.itemDetails(scope, ids.project, ids.materialsItem, itemQuery)

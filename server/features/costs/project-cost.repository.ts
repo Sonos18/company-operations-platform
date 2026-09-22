@@ -4,9 +4,9 @@ import { projectCostBreakdownSchema, projectCostDetailsResponseSchema, projectCo
 import { AppApiError } from '../../utils/api-error'
 import type { UserSupabaseClient } from '../../utils/supabase-client'
 
-const columns = 'id,tenant_id,company_id,project_id,description,amount_text,currency_code,work_status,business_reference,party_id,engagement_id,component_id,relevant_date,version,created_by,created_at,updated_at'
+const columns = 'id,tenant_id,company_id,project_id,description,amount_text,currency_code,work_status,business_reference,party_id,engagement_id,component_id,relevant_date,publication_state,version,created_by,created_at,updated_at'
 const rowSchema = z.object({
-  id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), project_id: z.string().uuid(), description: z.string(), amount_text: z.string(), currency_code: z.string().length(3), work_status: z.enum(['unknown', 'in_progress', 'accepted']), business_reference: z.string().nullable(), party_id: z.string().uuid().nullable(), engagement_id: z.string().uuid().nullable(), component_id: z.string().uuid().nullable(), relevant_date: z.string().date().nullable(), version: z.number().int().nonnegative(), created_by: z.string().uuid(), created_at: z.string().datetime({ offset: true }), updated_at: z.string().datetime({ offset: true }),
+  id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), project_id: z.string().uuid(), description: z.string(), amount_text: z.string(), currency_code: z.string().length(3), work_status: z.enum(['unknown', 'in_progress', 'accepted']), business_reference: z.string().nullable(), party_id: z.string().uuid().nullable(), engagement_id: z.string().uuid().nullable(), component_id: z.string().uuid().nullable(), relevant_date: z.string().date().nullable(), publication_state: z.enum(['draft', 'published']).optional(), version: z.number().int().nonnegative(), created_by: z.string().uuid(), created_at: z.string().datetime({ offset: true }), updated_at: z.string().datetime({ offset: true }),
 }).strict()
 const parentRowSchema = z.object({
   id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), amount_text: z.string(), currency_code: z.string().length(3),
@@ -82,7 +82,7 @@ export class ProjectCostRepository implements ProjectCostDataRepository {
   }
 
   async listSummaries(tenantId: string, companyId: string) {
-    const { data, error } = await this.client.from('project_cost_items').select(columns).eq('tenant_id', tenantId).eq('company_id', companyId)
+    const { data, error } = await this.client.from('project_cost_items').select(columns).eq('tenant_id', tenantId).eq('company_id', companyId).eq('publication_state', 'published')
     if (error) return rpcError(error)
     const result = rows(data)
     const grouped = new Map<string, ProjectCostRow[]>()
@@ -94,7 +94,7 @@ export class ProjectCostRepository implements ProjectCostDataRepository {
   }
 
   async projectSummary(tenantId: string, companyId: string, projectId: string) {
-    const { data, error } = await this.client.from('project_cost_items').select(columns).eq('tenant_id', tenantId).eq('company_id', companyId).eq('project_id', projectId).order('created_at').order('id')
+    const { data, error } = await this.client.from('project_cost_items').select(columns).eq('tenant_id', tenantId).eq('company_id', companyId).eq('project_id', projectId).eq('publication_state', 'published').order('created_at').order('id')
     if (error) return rpcError(error)
     const result = rows(data)
     if (result.length === 0) throw new AppApiError(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy Project Cost.')
@@ -118,7 +118,7 @@ export class ProjectCostRepository implements ProjectCostDataRepository {
   }
 
   async itemDetails(tenantId: string, companyId: string, projectCostItemId: string): Promise<ProjectCostDetailsResponse> {
-    const parentRes = await this.client.from('project_cost_items').select('id,tenant_id,company_id,amount_text,currency_code').eq('tenant_id', tenantId).eq('company_id', companyId).eq('id', projectCostItemId)
+    const parentRes = await this.client.from('project_cost_items').select('id,tenant_id,company_id,amount_text,currency_code').eq('tenant_id', tenantId).eq('company_id', companyId).eq('id', projectCostItemId).eq('publication_state', 'published')
     if (parentRes.error) return rpcError(parentRes.error)
     const parsedParents = z.array(parentRowSchema).safeParse(parentRes.data)
     if (!parsedParents.success || parsedParents.data.length === 0) {

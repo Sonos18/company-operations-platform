@@ -29,7 +29,9 @@ describe('Project Cost service', () => {
           eq: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
-                order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [{ id: 'c1010000-0000-4000-8000-000000000001', tenant_id: 'c1010000-0000-4000-8000-000000000010', company_id: 'c1010000-0000-4000-8000-000000000020', project_id: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount_text: '9007199254740993.0000', currency_code: 'VND', work_status: 'accepted', business_reference: null, party_id: null, engagement_id: null, component_id: null, relevant_date: null, version: 2, created_by: 'c1010000-0000-4000-8000-000000000902', created_at: '2026-09-16T00:00:00.000Z', updated_at: '2026-09-16T00:00:00.000Z' }], error: null }) }),
+                eq: vi.fn().mockReturnValue({
+                  order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [{ id: 'c1010000-0000-4000-8000-000000000001', tenant_id: 'c1010000-0000-4000-8000-000000000010', company_id: 'c1010000-0000-4000-8000-000000000020', project_id: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount_text: '9007199254740993.0000', currency_code: 'VND', work_status: 'accepted', business_reference: null, party_id: null, engagement_id: null, component_id: null, relevant_date: null, version: 2, created_by: 'c1010000-0000-4000-8000-000000000902', created_at: '2026-09-16T00:00:00.000Z', updated_at: '2026-09-16T00:00:00.000Z' }], error: null }) }),
+                }),
               }),
             }),
           }),
@@ -68,6 +70,7 @@ describe('Project Cost service', () => {
     expect(client.query.eq).toHaveBeenCalledWith('tenant_id', context([]).tenantId)
     expect(client.query.eq).toHaveBeenCalledWith('company_id', context([]).companyId)
     expect(client.query.eq).toHaveBeenCalledWith('project_id', createInput.projectId)
+    expect(client.query.eq).toHaveBeenCalledWith('publication_state', 'published')
   })
 
   it('aggregates accepted and in-progress values, excludes unknown from total, and counts zero values', async () => {
@@ -427,6 +430,7 @@ describe('Project Cost service', () => {
       await repository.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)
 
       expect(client.from).toHaveBeenCalledWith('project_cost_item_details')
+      expect(client.parentQuery.eq).toHaveBeenCalledWith('publication_state', 'published')
       expect(client.detailsQuery.eq).toHaveBeenCalledWith('tenant_id', context([]).tenantId)
       expect(client.detailsQuery.eq).toHaveBeenCalledWith('company_id', context([]).companyId)
       expect(client.detailsQuery.eq).toHaveBeenCalledWith('project_cost_item_id', parentRow.id)

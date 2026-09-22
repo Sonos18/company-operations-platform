@@ -120,29 +120,32 @@ function currencySet(rows: Pick<FinanceSummaryTableRows, 'costItems' | 'budgets'
 }
 
 export function summarizeFinanceRows(input: { context: FinanceProjectContextRow, rows: Omit<FinanceSummaryTableRows, 'resolutions'> & { resolutions?: FinanceSummaryTableRows['resolutions'] } }): FinanceOverview {
-  const currencies = currencySet(input.rows)
+  const publishedCostItems = input.rows.costItems.filter(item => item.publication_state !== 'draft')
+  const publishedCostItemIds = new Set(publishedCostItems.map(item => item.id))
+  const rows = { ...input.rows, costItems: publishedCostItems, details: input.rows.details.filter(detail => publishedCostItemIds.has(detail.project_cost_item_id)) }
+  const currencies = currencySet(rows)
   if (currencies.size > 1) throw new AppApiError(500, 'INTERNAL_ERROR', 'Dữ liệu tài chính có nhiều loại tiền tệ.', { reason: 'MIXED_CURRENCY' })
   const currencyCode = [...currencies][0] ?? input.context.defaultCurrencyCode
   const project = context(input.context, currencyCode)
-  const resolutions = input.rows.resolutions ?? []
-  const categoryById = new Map(input.rows.categories.map(category => [category.id, category]))
-  const categories = [...input.rows.categories].sort((left, right) => left.display_order - right.display_order || left.id.localeCompare(right.id)).map(category => categoryRow(category, input.rows.costItems, input.rows.details, input.rows.subcontracts, input.rows.payments, resolutions, input.context.timeZone))
-  const unmapped = input.rows.costItems.filter(item => item.cost_category_id === null || !categoryById.has(item.cost_category_id))
-  const missingCodes = expectedCategoryCodes.filter(code => !input.rows.categories.some(category => category.code === code))
-  const approvedBudgets = input.rows.budgets.filter(budget => budget.status === 'approved')
+  const resolutions = rows.resolutions ?? []
+  const categoryById = new Map(rows.categories.map(category => [category.id, category]))
+  const categories = [...rows.categories].sort((left, right) => left.display_order - right.display_order || left.id.localeCompare(right.id)).map(category => categoryRow(category, rows.costItems, rows.details, rows.subcontracts, rows.payments, resolutions, input.context.timeZone))
+  const unmapped = rows.costItems.filter(item => item.cost_category_id === null || !categoryById.has(item.cost_category_id))
+  const missingCodes = expectedCategoryCodes.filter(code => !rows.categories.some(category => category.code === code))
+  const approvedBudgets = rows.budgets.filter(budget => budget.status === 'approved')
   if (approvedBudgets.length > 1) throw new AppApiError(500, 'INTERNAL_ERROR', 'Dữ liệu ngân sách được duyệt không nhất quán.', { reason: 'DATA_CONSISTENCY_ERROR' })
   const approvedBudget = approvedBudgets[0] ?? null
-  const advances = input.rows.ownerAdvances.filter(advance => advance.status === 'recorded')
+  const advances = rows.ownerAdvances.filter(advance => advance.status === 'recorded')
   const categoryCost = categories.map(category => category.cost)
   const costComplete = unmapped.length === 0 && missingCodes.length === 0 && categoryCost.length > 0 && categoryCost.every(value => value.state === 'recorded')
   const knownSubtotal = sumFinanceMoney(categoryCost.filter(value => value.state === 'recorded').flatMap(value => value.amount === null ? [] : [value.amount]))
   const cost = { state: costComplete ? 'recorded' as const : unmapped.length > 0 || categories.some(category => category.legacyReconciliationRequired) ? 'needs_reconciliation' as const : 'not_recorded' as const, amount: costComplete ? knownSubtotal : null, recordedCount: categoryCost.filter(value => value.state === 'recorded').reduce((total, value) => total + value.recordedCount, 0), knownSubtotal }
   const budget = approvedBudget ? observation([approvedBudget.total_amount_text]) : observation([])
   const ownerAdvances = observation(advances.map(advance => advance.amount_text))
-  const ordinaryItemIds = new Set(input.rows.costItems.filter(item => item.cost_category_id === null || categoryById.get(item.cost_category_id)?.code !== 'subcontract_labor').map(item => item.id))
-  const recordedPayments = input.rows.payments.filter(payment => payment.status === 'recorded')
-  const warrantyRetention = projectWarrantyObservation(input.rows.details, recordedPayments, input.rows.subcontracts, ordinaryItemIds)
-  const hasWarrantyRelevantRows = input.rows.details.some(detail => ordinaryItemIds.has(detail.project_cost_item_id) && detail.retention_kind === 'warranty') || recordedPayments.length > 0
+  const ordinaryItemIds = new Set(rows.costItems.filter(item => item.cost_category_id === null || categoryById.get(item.cost_category_id)?.code !== 'subcontract_labor').map(item => item.id))
+  const recordedPayments = rows.payments.filter(payment => payment.status === 'recorded')
+  const warrantyRetention = projectWarrantyObservation(rows.details, recordedPayments, rows.subcontracts, ordinaryItemIds)
+  const hasWarrantyRelevantRows = rows.details.some(detail => ordinaryItemIds.has(detail.project_cost_item_id) && detail.retention_kind === 'warranty') || recordedPayments.length > 0
   const legacyCategory = categories.find(category => category.code === 'subcontract_labor')
   const issues = [
     ...missingCodes.map(() => ({ code: 'CATEGORY_CONFIGURATION_INCOMPLETE' as const, categoryId: null })),
@@ -170,7 +173,7 @@ export function summarizeFinanceRows(input: { context: FinanceProjectContextRow,
     : advances.length > 0
       ? { kind: 'owner_receipts' as const, amount: ownerAdvances.amount, basis: 'recorded_owner_receipts' as const }
       : { kind: 'none' as const, amount: null, basis: 'none' as const }
-  const heldRetention = effectiveHeldRetention(recordedPayments, input.rows.subcontracts)
+  const heldRetention = effectiveHeldRetention(recordedPayments, rows.subcontracts)
   const recordedCost = cost.amount
   const resultReasons = [
     ...(advances.length === 0 ? ['NO_REFERENCE' as const] : []),
