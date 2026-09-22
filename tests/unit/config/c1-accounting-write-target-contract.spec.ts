@@ -91,4 +91,18 @@ describe('C1 accounting write target', () => {
     expect(sql).toMatch(/revoke all on table public\.cost_evidence_files, public\.cost_evidence_links from public, anon, authenticated/iu)
     expect(sql).toMatch(/grant select on table public\.cost_evidence_files, public\.cost_evidence_links to authenticated/iu)
   })
+
+  it('P4 adds one explicit idempotent publication command', () => {
+    const sql = phaseMigration('_c1_accounting_write_publish_command.sql')
+    expect(sql).toContain('function public.c1_publish_project_cost')
+    expect(sql).toContain("private.c1_master_context(target_company_id, 'cost.publish_import')")
+    expect(sql).toContain('private.c1_project_cost_publish_readiness')
+    expect(sql).toContain("'project_cost.publish'")
+    expect(sql).toContain("publication_state = 'published'")
+    expect(sql).toContain("publication_origin = 'command'")
+    expect(sql).toContain("'c1.project_cost_item.published'")
+    for (const error of ['VERSION_CONFLICT', 'COST_ALREADY_PUBLISHED', 'COST_PUBLISH_NOT_READY', 'SUBCONTRACT_COST_MODEL_UNSUPPORTED', 'IDEMPOTENCY_CONFLICT']) expect(sql).toMatch(new RegExp(`message\\s*=\\s*'${error}'`, 'iu'))
+    expect(sql).toContain('grant execute on function public.c1_publish_project_cost(uuid, uuid, bigint, uuid, uuid) to authenticated')
+    expect(sql).toContain('revoke all on function private.c1_publish_project_cost(uuid, uuid, bigint, uuid, uuid) from public, anon, authenticated')
+  })
 })

@@ -1,6 +1,6 @@
 begin;
 
-select plan(28);
+select plan(37);
 
 select has_column('public', 'project_cost_items', 'publication_state', 'publication state exists');
 select col_default_is('public', 'project_cost_items', 'publication_state', '''draft''::text', 'new cost rows default to draft');
@@ -31,31 +31,37 @@ declare
   reader constant uuid := 'c1060000-0000-4000-8000-000000000901';
   preparer constant uuid := 'c1060000-0000-4000-8000-000000000902';
   manager constant uuid := 'c1060000-0000-4000-8000-000000000903';
+  publisher constant uuid := 'c1060000-0000-4000-8000-000000000904';
 begin
   insert into auth.users(id, email) values
     (reader, 'c106-reader@taskovia.invalid'),
     (preparer, 'c106-preparer@taskovia.invalid'),
-    (manager, 'c106-manager@taskovia.invalid');
+    (manager, 'c106-manager@taskovia.invalid'),
+    (publisher, 'c106-publisher@taskovia.invalid');
   insert into public.tenants(id, code, name) values (tenant_id, 'c106', 'C106 synthetic tenant');
   insert into public.companies(id, tenant_id, code, name) values (company_id, tenant_id, 'C106', 'C106 synthetic company');
   insert into public.tenant_memberships(user_id, tenant_id, roles) values
-    (reader, tenant_id, array['member']), (preparer, tenant_id, array['member']), (manager, tenant_id, array['member']);
+    (reader, tenant_id, array['member']), (preparer, tenant_id, array['member']), (manager, tenant_id, array['member']), (publisher, tenant_id, array['member']);
   insert into public.company_memberships(user_id, tenant_id, company_id, roles, is_active) values
     (reader, tenant_id, company_id, array['member'], true),
     (preparer, tenant_id, company_id, array['member'], true),
-    (manager, tenant_id, company_id, array['member'], true);
+    (manager, tenant_id, company_id, array['member'], true),
+    (publisher, tenant_id, company_id, array['member'], true);
   insert into public.roles(id, tenant_id, company_id, code, name, description, is_system) values
     ('c1060000-0000-4000-8000-000000000911', tenant_id, company_id, 'c106_reader', 'C106 reader', 'Synthetic read role', false),
     ('c1060000-0000-4000-8000-000000000912', tenant_id, company_id, 'c106_preparer', 'C106 preparer', 'Synthetic prepare role', false),
-    ('c1060000-0000-4000-8000-000000000913', tenant_id, company_id, 'c106_manager', 'C106 manager', 'Synthetic manage role', false);
+    ('c1060000-0000-4000-8000-000000000913', tenant_id, company_id, 'c106_manager', 'C106 manager', 'Synthetic manage role', false),
+    ('c1060000-0000-4000-8000-000000000914', tenant_id, company_id, 'c106_publisher', 'C106 publisher', 'Synthetic publish role', false);
   insert into public.role_permissions(role_id, permission_code) values
     ('c1060000-0000-4000-8000-000000000911', 'cost.read'),
     ('c1060000-0000-4000-8000-000000000912', 'cost.prepare'),
-    ('c1060000-0000-4000-8000-000000000913', 'cost.manage');
+    ('c1060000-0000-4000-8000-000000000913', 'cost.manage'),
+    ('c1060000-0000-4000-8000-000000000914', 'cost.publish_import');
   insert into public.company_role_assignments(tenant_id, company_id, user_id, role_id, granted_by, grant_reason) values
     (tenant_id, company_id, reader, 'c1060000-0000-4000-8000-000000000911', preparer, 'C106 fixture'),
     (tenant_id, company_id, preparer, 'c1060000-0000-4000-8000-000000000912', preparer, 'C106 fixture'),
-    (tenant_id, company_id, manager, 'c1060000-0000-4000-8000-000000000913', preparer, 'C106 fixture');
+    (tenant_id, company_id, manager, 'c1060000-0000-4000-8000-000000000913', preparer, 'C106 fixture'),
+    (tenant_id, company_id, publisher, 'c1060000-0000-4000-8000-000000000914', preparer, 'C106 fixture');
   insert into public.company_cost_settings(company_id, tenant_id, enabled, created_by) values (company_id, tenant_id, true, preparer);
   insert into public.projects(id, tenant_id, company_id, code, name, origin, created_by) values
     ('c1060000-0000-4000-8000-000000000101', tenant_id, company_id, 'C106-P', 'C106 project', 'manual', preparer);
@@ -155,6 +161,36 @@ select throws_ok(
   $$select public.c1_create_project_cost_draft('c1060000-0000-4000-8000-000000000020', '{"projectId":"c1060000-0000-4000-8000-000000000101","description":"Subcontract duplicate","costCategoryId":"c1060000-0000-4000-8000-000000000302"}', 'c1060000-0000-4000-8000-000000000721', 'c1060000-0000-4000-8000-000000000722')$$,
   'P0001', 'SUBCONTRACT_COST_MODEL_UNSUPPORTED', 'new subcontract cost drafts are blocked from duplicating the cash-ledger Actual model'
 );
+
+select ok(pg_catalog.has_function_privilege('authenticated','public.c1_publish_project_cost(uuid,uuid,bigint,uuid,uuid)','execute'),'authenticated can execute publish RPC');
+select set_config('request.jwt.claims','{"sub":"c1060000-0000-4000-8000-000000000904","role":"authenticated"}',true);
+create temp table c1_publish_result as select public.c1_publish_project_cost(
+  'c1060000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1_p2_result),1,
+  'c1060000-0000-4000-8000-000000000731','c1060000-0000-4000-8000-000000000732') result;
+select is((select result->>'publicationState' from c1_publish_result),'published','ready draft publishes explicitly');
+reset role;
+select is((select publication_state from public.project_cost_items where id=(select (result->>'id')::uuid from c1_p2_result)),'published','publish changes canonical state exactly once');
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1060000-0000-4000-8000-000000000904","role":"authenticated"}',true);
+select is((public.c1_publish_project_cost('c1060000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1_p2_result),1,'c1060000-0000-4000-8000-000000000731','c1060000-0000-4000-8000-000000000733')->>'replayed')::boolean,true,'exact publish replay is idempotent');
+select throws_ok(
+  $$select public.c1_publish_project_cost('c1060000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1_p2_result),1,'c1060000-0000-4000-8000-000000000734','c1060000-0000-4000-8000-000000000735')$$,
+  'P0001','COST_ALREADY_PUBLISHED','different-key double publish is rejected'
+);
+select throws_ok(
+  $$select public.c1_publish_project_cost('c1060000-0000-4000-8000-000000000020','c1060000-0000-4000-8000-000000000202',99,'c1060000-0000-4000-8000-000000000736','c1060000-0000-4000-8000-000000000737')$$,
+  'P0001','VERSION_CONFLICT','publish rejects stale expectedVersion'
+);
+select throws_ok(
+  $$select public.c1_publish_project_cost('c1060000-0000-4000-8000-000000000020','c1060000-0000-4000-8000-000000000202',0,'c1060000-0000-4000-8000-000000000738','c1060000-0000-4000-8000-000000000739')$$,
+  'P0001','COST_PUBLISH_NOT_READY','publish rejects a draft without financial details'
+);
+select set_config('request.jwt.claims','{"sub":"c1060000-0000-4000-8000-000000000901","role":"authenticated"}',true);
+select throws_ok(
+  $$select public.c1_publish_project_cost('c1060000-0000-4000-8000-000000000020','c1060000-0000-4000-8000-000000000202',0,'c1060000-0000-4000-8000-000000000740','c1060000-0000-4000-8000-000000000741')$$,
+  'P0001','PERMISSION_DENIED','read-only actor cannot publish'
+);
+select ok(exists(select 1 from public.project_cost_items where id=(select (result->>'id')::uuid from c1_p2_result)),'cost.read sees the item after publish');
 
 select * from finish();
 rollback;
