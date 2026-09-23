@@ -58,30 +58,95 @@ const emit = defineEmits<{
 const companyAccess = useNuxtApp().$companyAccessStore
 const canRecordCash = computed(() => companyAccess.hasPermission('cost.record_cash'))
 
+interface ContractItem {
+  id: string
+  version: number
+  code: string
+  contractName: string
+  currencyCode?: string
+}
+
+interface PaymentToVoidWithContract {
+  id: string
+  contractId: string
+  version: number
+  description: string
+  paidAmount: string
+  currencyCode?: string
+}
+
 const isRecordModalOpen = ref(false)
 const isVoidModalOpen = ref(false)
-const selectedPaymentToVoid = ref<{ id: string; version: number; description: string; paidAmount: string; currencyCode?: string } | null>(null)
+const isSelectContractModalOpen = ref(false)
+const chosenContractId = ref<string>('')
+
+const selectedPaymentToVoid = ref<PaymentToVoidWithContract | null>(null)
+const selectedContractForRecord = ref<ContractItem | null>(null)
 const replacesPaymentId = ref<string | null>(null)
 
-const activeContract = computed(() => {
-  if (!props.detail) return null
-  if ('contract' in props.detail) return props.detail.contract
-  return props.detail.contracts?.[0] ?? null
+const availableContracts = computed<ContractItem[]>(() => {
+  if (!props.detail) return []
+  if ('contract' in props.detail && props.detail.contract) {
+    return [props.detail.contract]
+  }
+  if ('contracts' in props.detail && Array.isArray(props.detail.contracts)) {
+    return props.detail.contracts
+  }
+  return []
+})
+
+const contractsById = computed(() => {
+  const map = new Map<string, ContractItem>()
+  for (const c of availableContracts.value) {
+    map.set(c.id, c)
+  }
+  return map
 })
 
 const projectId = computed(() => props.detail?.project.projectId ?? '')
 
 function openRecordPaymentModal() {
   replacesPaymentId.value = null
+  const contracts = availableContracts.value
+
+  if (contracts.length === 0) {
+    return
+  }
+
+  // Contract-level view or single-contract party view: proceed directly
+  if (contracts.length === 1) {
+    selectedContractForRecord.value = contracts[0]!
+    isRecordModalOpen.value = true
+    return
+  }
+
+  // Multi-contract party view: prompt user to explicitly select contract
+  chosenContractId.value = ''
+  isSelectContractModalOpen.value = true
+}
+
+function confirmContractSelection() {
+  if (!chosenContractId.value) return
+  const contract = contractsById.value.get(chosenContractId.value)
+  if (!contract) return
+
+  selectedContractForRecord.value = contract
+  isSelectContractModalOpen.value = false
   isRecordModalOpen.value = true
 }
 
-function openVoidModal(payment: { id: string; version: number; description: string; paidAmount: string }) {
+function openVoidModal(payment: { id: string; contractId: string; version: number; description: string; paidAmount: string }) {
   selectedPaymentToVoid.value = { ...payment, currencyCode: props.currencyCode }
   isVoidModalOpen.value = true
 }
 
-function openReplacementModal(paymentId: string) {
+function openReplacementModal(paymentId: string, contractId?: string) {
+  const targetContractId = contractId || selectedPaymentToVoid.value?.contractId
+  if (!targetContractId) return
+  const contract = contractsById.value.get(targetContractId)
+  if (!contract) return
+
+  selectedContractForRecord.value = contract
   replacesPaymentId.value = paymentId
   isRecordModalOpen.value = true
 }
@@ -168,10 +233,11 @@ function onPageSizeChange(event: Event) {
           </div>
 
           <UButton
-            v-if="canRecordCash && activeContract"
+            v-if="canRecordCash"
             size="sm"
             color="primary"
             icon="i-lucide-plus"
+            :disabled="availableContracts.length === 0"
             data-testid="open-record-payment-btn"
             @click="openRecordPaymentModal"
           >
@@ -444,7 +510,7 @@ function onPageSizeChange(event: Event) {
                     variant="outline"
                     icon="i-lucide-replace"
                     :data-testid="`replace-payment-btn-${p.id}`"
-                    @click="openReplacementModal(p.id)"
+                    @click="openReplacementModal(p.id, p.contractId)"
                   >
                     Thay thế
                   </UButton>
@@ -511,26 +577,76 @@ function onPageSizeChange(event: Event) {
       </div>
     </template>
 
+    <!-- Contract Selection Modal for Multi-Contract Party View -->
+    <UModal
+      v-model:open="isSelectContractModalOpen"
+      title="Chọn hợp đồng để ghi nhận thanh toán"
+      description="Nhà thầu này có nhiều hợp đồng. Vui lòng chọn hợp đồng cụ thể để ghi nhận khoản thanh toán."
+    >
+      <template #body>
+        <div class="space-y-4 py-2">
+          <div class="space-y-1.5">
+            <label class="block text-xs font-bold text-gray-700 dark:text-gray-300" for="select-contract-dropdown">
+              Hợp đồng thầu phụ *
+            </label>
+            <select
+              id="select-contract-dropdown"
+              v-model="chosenContractId"
+              class="cockpit-select w-full"
+              data-testid="select-contract-dropdown"
+            >
+              <option value="" disabled>-- Chọn hợp đồng --</option>
+              <option
+                v-for="c in availableContracts"
+                :key="c.id"
+                :value="c.id"
+              >
+                {{ c.code }} — {{ c.contractName }} (v{{ c.version }})
+              </option>
+            </select>
+          </div>
+
+          <div class="flex justify-end gap-2 pt-3 border-t border-gray-200 dark:border-gray-800">
+            <UButton
+              color="neutral"
+              variant="outline"
+              @click="() => { isSelectContractModalOpen = false }"
+            >
+              Hủy
+            </UButton>
+            <UButton
+              color="primary"
+              :disabled="!chosenContractId"
+              data-testid="confirm-select-contract-btn"
+              @click="confirmContractSelection"
+            >
+              Tiếp tục
+            </UButton>
+          </div>
+        </div>
+      </template>
+    </UModal>
+
     <!-- Subcontract Payment Modals -->
     <SubcontractPaymentRecordModal
-      v-if="activeContract"
+      v-if="selectedContractForRecord"
       v-model:open="isRecordModalOpen"
       :project-id="projectId"
-      :subcontract-id="activeContract.id"
-      :expected-subcontract-version="activeContract.version"
-      :currency-code="currencyCode"
+      :subcontract-id="selectedContractForRecord.id"
+      :expected-subcontract-version="selectedContractForRecord.version"
+      :currency-code="selectedContractForRecord.currencyCode || currencyCode"
       :replaces-payment-id="replacesPaymentId"
       @recorded="onPaymentMutated"
     />
 
     <SubcontractPaymentVoidModal
-      v-if="activeContract && selectedPaymentToVoid"
+      v-if="selectedPaymentToVoid"
       v-model:open="isVoidModalOpen"
       :project-id="projectId"
-      :subcontract-id="activeContract.id"
+      :subcontract-id="selectedPaymentToVoid.contractId"
       :payment="selectedPaymentToVoid"
       @voided="onPaymentMutated"
-      @start-replacement="openReplacementModal"
+      @start-replacement="(id) => openReplacementModal(id, selectedPaymentToVoid?.contractId)"
     />
   </div>
 </template>
