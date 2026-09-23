@@ -569,5 +569,11 @@ describe('C1 Accounting Write UI contracts and workflows', () => {
       expect(evidencePanelSource).toContain('(Cần cost.read + cost.file.read)')
       expect(evidencePanelSource).not.toContain('(Thiếu cost.file.read)')
     })
+
+    it('preserves exact canonical availability without coercing undefined to null', () => {
+      expect(correctionModalSource).not.toMatch(/currentOperational\.businessReference\s*\?\?\s*null/)
+      expect(correctionModalSource).not.toMatch(/currentOperational\.relevantDate\s*\?\?\s*null/)
+      expect(correctionModalSource).not.toMatch(/currentOperational\.workStatus\s*\?\?\s*null/)
+    })
   })
 })

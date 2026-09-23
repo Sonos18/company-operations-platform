@@ -103,8 +103,8 @@ async function initializeOperationalBaseline() {
     snapshot = {
       description: props.currentOperational.description,
       workStatus: props.currentOperational.workStatus,
-      businessReference: props.currentOperational.businessReference ?? null,
-      relevantDate: props.currentOperational.relevantDate ?? null,
+      businessReference: props.currentOperational.businessReference,
+      relevantDate: props.currentOperational.relevantDate,
     }
   }
   else if (props.projectId && props.projectCostItemId) {
@@ -116,8 +116,8 @@ async function initializeOperationalBaseline() {
         snapshot = {
           description: found.description,
           workStatus: found.workStatus,
-          businessReference: found.businessReference ?? null,
-          relevantDate: found.relevantDate ?? null,
+          businessReference: found.businessReference,
+          relevantDate: found.relevantDate,
         }
       }
     }

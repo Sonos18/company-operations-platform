@@ -198,4 +198,91 @@ describe('Operational Correction Diffing (PATCH Semantics)', () => {
     expect(changes.workStatus).toBeUndefined()
     expect(changes.relevantDate).toBeUndefined()
   })
+
+  it('Case H — canonical parent unavailable: fallback preserves undefined and disables unavailable fields', () => {
+    const fallbackSnapshot: CanonicalOperationalSnapshot = {
+      description: 'Vật tư thi công phần thô',
+      businessReference: 'REF-VT-01',
+      workStatus: undefined,
+      relevantDate: undefined,
+    }
+
+    // Availability semantics
+    expect(fallbackSnapshot.description !== undefined).toBe(true)
+    expect(fallbackSnapshot.businessReference !== undefined).toBe(true)
+    expect(fallbackSnapshot.workStatus !== undefined).toBe(false)
+    expect(fallbackSnapshot.relevantDate !== undefined).toBe(false)
+
+    // Form editing description only
+    const form: FormOperationalState = {
+      description: 'Vật tư thi công phần thô (Đã bổ sung phụ lục)',
+      workStatus: 'accepted', // UI might default internally
+      businessReference: 'REF-VT-01',
+      relevantDate: '2026-09-23', // UI might set a date
+    }
+
+    const changes = diffOperationalCorrection(fallbackSnapshot, form)
+    expect(changes).toEqual({
+      description: 'Vật tư thi công phần thô (Đã bổ sung phụ lục)',
+    })
+    expect(changes.workStatus).toBeUndefined()
+    expect(changes.businessReference).toBeUndefined()
+    expect(changes.relevantDate).toBeUndefined()
+  })
+
+  it('Case I — known null remains editable: distinguishes known empty from unknown', () => {
+    const snapshotWithKnownNulls: CanonicalOperationalSnapshot = {
+      description: 'Cát xây tô',
+      businessReference: null,
+      relevantDate: null,
+    }
+
+    // Both are canonical / known empty (null !== undefined)
+    expect(snapshotWithKnownNulls.businessReference !== undefined).toBe(true)
+    expect(snapshotWithKnownNulls.relevantDate !== undefined).toBe(true)
+
+    // Untouched form produces no changes
+    const untouchedForm: FormOperationalState = {
+      description: 'Cát xây tô',
+      businessReference: '',
+      relevantDate: '',
+    }
+    const noChanges = diffOperationalCorrection(snapshotWithKnownNulls, untouchedForm)
+    expect(noChanges).toEqual({})
+
+    // Intentionally filled produces new values
+    const filledForm: FormOperationalState = {
+      description: 'Cát xây tô',
+      businessReference: 'REF-CAT-01',
+      relevantDate: '2026-09-20',
+    }
+    const withValues = diffOperationalCorrection(snapshotWithKnownNulls, filledForm)
+    expect(withValues).toEqual({
+      businessReference: 'REF-CAT-01',
+      relevantDate: '2026-09-20',
+    })
+  })
+
+  it('Case J — unknown field never emitted: fields with undefined baseline are never submitted', () => {
+    const snapshotWithoutDate: CanonicalOperationalSnapshot = {
+      description: 'A',
+      relevantDate: undefined,
+      workStatus: undefined,
+    }
+
+    const form: FormOperationalState = {
+      description: 'A (đã sửa)',
+      businessReference: 'REF-ANY',
+      relevantDate: '2026-09-18', // user or UI populated
+      workStatus: 'accepted',
+    }
+
+    const changes = diffOperationalCorrection(snapshotWithoutDate, form)
+    expect(changes).toEqual({
+      description: 'A (đã sửa)',
+    })
+    expect(changes.relevantDate).toBeUndefined()
+    expect(changes.workStatus).toBeUndefined()
+    expect(changes.businessReference).toBeUndefined()
+  })
 })

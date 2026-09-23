@@ -704,7 +704,7 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     })
 
     // Mock ordinary item details
-    await page.route(`**/api/companies/**/projects/${projectId}/finance/items/${publishedItemId}*`, route => {
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/items/${publishedItemId}/**`, route => {
       route.fulfill({
         json: financeItemDetailsSchema.parse({
           schemaVersion: 1 as const,
@@ -806,5 +806,124 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     expect(op?.businessReference).toBeUndefined()
     expect(op?.relevantDate).toBeUndefined()
     expect((lastCorrectionPayload as Record<string, unknown>)?.financialChanges).toBeUndefined()
+  })
+
+  test('Flow D — Fallback operational correction: when canonical parent request fails, falls back to finance item and hides unavailable workStatus/relevantDate', async ({ page }) => {
+    let fallbackCorrectionPayload: Record<string, unknown> | null = null
+
+    // Mock finance overview
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => {
+      route.fulfill({ json: mockProjectOverview })
+    })
+
+    // Mock canonical parent request to fail (404) to trigger safe fallback to finance item details
+    await page.route(`**/api/companies/**/projects/${projectId}/project-costs`, route => {
+      route.fulfill({
+        status: 404,
+        json: { code: 'RESOURCE_NOT_FOUND', message: 'Không tìm thấy Project Cost.' },
+      })
+    })
+
+    // Mock ordinary item details (provides description and businessReference, but NOT workStatus or relevantDate)
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/items/${publishedItemId}/**`, route => {
+      route.fulfill({
+        json: financeItemDetailsSchema.parse({
+          schemaVersion: 1 as const,
+          kind: 'ordinary' as const,
+          project: mockProjectOverview.project,
+          category: mockProjectOverview.categories[0]!,
+          item: {
+            id: publishedItemId,
+            description: 'Vật tư thi công phần thô',
+            businessReference: 'REF-VT-01',
+            parentAmount: '750000000.0000',
+            currencyCode: 'VND',
+            version: 3,
+          },
+          details: {
+            rows: [],
+            pagination: {
+              page: 1,
+              pageSize: 25,
+              totalPages: 1,
+              filteredCount: 0,
+              fullCount: 0,
+              filteredAmount: '0.0000',
+              fullAmount: '0.0000',
+            },
+          },
+        }),
+      })
+    })
+
+    // Mock project cost details
+    await page.route(`**/api/companies/**/project-costs/${publishedItemId}/details`, route => {
+      route.fulfill({
+        json: {
+          projectCostItemId: publishedItemId,
+          totalAmount: '750000000.0000',
+          currencyCode: 'VND',
+          details: [],
+        },
+      })
+    })
+
+    // Intercept correction request
+    await page.route(`**/api/companies/**/project-costs/${publishedItemId}/corrections`, async route => {
+      fallbackCorrectionPayload = route.request().postDataJSON()
+      route.fulfill({
+        json: costCommandAckSchema.parse({
+          id: publishedItemId,
+          version: 4,
+          publicationState: 'published',
+          replayed: false,
+        }),
+      })
+    })
+
+    // 1. Navigate to category page
+    await page.goto(`/costs/${projectId}/categories/${materialCategoryId}`)
+    await expect(page.getByTestId('category-detail-page')).toBeVisible()
+    await expect(page.getByTestId('category-heading')).toBeVisible()
+    await expect(page.getByTestId('ordinary-category-actions')).toBeVisible()
+
+    // 2. Open correction modal
+    await page.getByTestId('open-correction-btn').click()
+    await expect(page.getByTestId('correction-modal')).toBeVisible()
+
+    // 3. Enable operational changes
+    await page.getByTestId('toggle-op-changes').check()
+
+    // 4. Assert field availability: description and businessReference are visible; workStatus and relevantDate are ABSENT
+    await expect(page.getByTestId('corr-op-description')).toBeVisible()
+    await expect(page.getByTestId('corr-op-ref')).toBeVisible()
+    await expect(page.getByTestId('corr-op-work-status')).toHaveCount(0)
+    await expect(page.getByTestId('corr-op-date')).toHaveCount(0)
+
+    // 5. Change description only
+    await page.getByTestId('corr-op-description').fill('Vật tư thi công phần thô (Fallback chỉnh sửa)')
+
+    // 6. Enter reason
+    await page.getByTestId('correction-reason-input').fill('Hiệu chỉnh mô tả trong chế độ fallback an toàn')
+
+    // 7. Submit correction
+    await page.getByTestId('confirm-correction-btn').click()
+
+    // 8. Modal closes
+    await expect(page.getByTestId('correction-modal')).toHaveCount(0)
+
+    // 9. Assert payload strictly contains only description, and omits unavailable fields
+    expect(fallbackCorrectionPayload).toEqual({
+      expectedVersion: 3,
+      reason: 'Hiệu chỉnh mô tả trong chế độ fallback an toàn',
+      operationalChanges: {
+        description: 'Vật tư thi công phần thô (Fallback chỉnh sửa)',
+      },
+    })
+    const op = (fallbackCorrectionPayload as { operationalChanges?: Record<string, unknown> })?.operationalChanges
+    expect(op?.workStatus).toBeUndefined()
+    expect(op?.relevantDate).toBeUndefined()
+    expect(op?.businessReference).toBeUndefined()
+    expect((fallbackCorrectionPayload as Record<string, unknown>)?.financialChanges).toBeUndefined()
   })
 })

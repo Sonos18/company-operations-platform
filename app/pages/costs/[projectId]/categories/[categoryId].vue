@@ -91,6 +91,9 @@ const currentItemVersion = computed(() => {
 async function openCorrectionModal() {
   if (projectId.value && currentCategory.value?.itemId) {
     await loadCanonicalCostItem()
+    if (!canonicalCostItem.value && !ordinaryController.data.value) {
+      await ordinaryController.executeDispatch(false)
+    }
   }
   isCorrectionModalOpen.value = true
 }
@@ -219,11 +222,11 @@ async function loadOverview() {
       pageStatus.value = 'empty'
     }
     else {
-      pageStatus.value = 'ready'
       await Promise.all([
         ordinaryController.executeDispatch(true),
         canCorrect.value ? loadCanonicalCostItem() : Promise.resolve(),
       ])
+      pageStatus.value = 'ready'
     }
   }
   catch (err: unknown) {
