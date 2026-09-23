@@ -368,7 +368,7 @@ defineExpose({
                 Mở tệp
               </UButton>
               <span v-else class="text-[11px] text-gray-400 italic">
-                (Thiếu cost.file.read)
+                (Cần cost.read + cost.file.read)
               </span>
             </td>
           </tr>

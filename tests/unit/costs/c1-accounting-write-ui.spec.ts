@@ -546,5 +546,28 @@ describe('C1 Accounting Write UI contracts and workflows', () => {
         expect(parsed.data.operationalChanges?.description).toBe('Mô tả đã được sửa đúng quy chuẩn')
       }
     })
+
+    it('uses canonical operational snapshot and does not bind currentDescription', () => {
+      expect(correctionModalSource).toContain('currentOperational')
+      expect(correctionModalSource).not.toContain('currentDescription')
+    })
+
+    it('ensures category page does not use categoryDisplayName as cost description for correction', () => {
+      const categoryPageSource = readFileSync(
+        new URL('../../../app/pages/costs/[projectId]/categories/[categoryId].vue', import.meta.url),
+        'utf8',
+      )
+      expect(categoryPageSource).toContain(':current-operational="canonicalOperational"')
+      expect(categoryPageSource).not.toContain(':current-description=')
+    })
+
+    it('displays (Cần cost.read + cost.file.read) when file reading capability is missing', () => {
+      const evidencePanelSource = readFileSync(
+        new URL('../../../app/components/costs/ProjectCostEvidencePanel.vue', import.meta.url),
+        'utf8',
+      )
+      expect(evidencePanelSource).toContain('(Cần cost.read + cost.file.read)')
+      expect(evidencePanelSource).not.toContain('(Thiếu cost.file.read)')
+    })
   })
 })

@@ -1,8 +1,23 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import type { ProjectCostDetailKind } from '../../../shared/schemas/costs/project-costs'
+import type {
+  CorrectPublishedProjectCostInput,
+  ProjectCostDetailKind,
+} from '../../../shared/schemas/costs/project-costs'
 import type { FinanceCategoryRow } from '../../../shared/schemas/costs/project-finance'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
+import {
+  diffOperationalCorrection,
+  type CanonicalOperationalSnapshot,
+  type FormOperationalState,
+} from '../../utils/costs/operational-correction-diff'
+
+export interface ProjectCostCanonicalOperational {
+  description: string
+  workStatus?: 'unknown' | 'in_progress' | 'accepted'
+  businessReference?: string | null
+  relevantDate?: string | null
+}
 
 interface EditableCorrectionLine {
   lineNo: number
@@ -24,10 +39,13 @@ const props = withDefaults(defineProps<{
   open: boolean
   projectCostItemId: string
   currentVersion: number
-  currentDescription: string
+  currentOperational?: ProjectCostCanonicalOperational | null
+  projectId?: string
   currencyCode?: string
   categories?: FinanceCategoryRow[]
 }>(), {
+  currentOperational: null,
+  projectId: undefined,
   currencyCode: 'VND',
   categories: () => [],
 })
@@ -48,6 +66,7 @@ const isOpen = computed({
 
 const submitting = ref(false)
 const loadingDetails = ref(false)
+const loadingParent = ref(false)
 const errorMessage = ref<string | null>(null)
 const financialCorrectionDisabledReason = 'Chưa thể hiệu chỉnh tài chính an toàn vì API hiện tại chưa cung cấp đầy đủ liên kết số liệu nguồn của bản ghi đã phát hành.'
 
@@ -55,14 +74,76 @@ const reason = ref('')
 const includeOperational = ref(false)
 const includeFinancial = ref(false)
 
-const operational = reactive({
-  description: props.currentDescription,
-  workStatus: 'accepted' as 'unknown' | 'in_progress' | 'accepted',
+const originalSnapshot = ref<CanonicalOperationalSnapshot | null>(null)
+
+const operational = reactive<FormOperationalState>({
+  description: '',
+  workStatus: undefined,
   businessReference: '',
   relevantDate: '',
 })
 
 const financialLines = ref<EditableCorrectionLine[]>([])
+
+const hasCanonicalDescription = computed(() => originalSnapshot.value?.description !== undefined)
+const hasCanonicalWorkStatus = computed(() => originalSnapshot.value?.workStatus !== undefined)
+const hasCanonicalBusinessReference = computed(() => originalSnapshot.value?.businessReference !== undefined)
+const hasCanonicalRelevantDate = computed(() => originalSnapshot.value?.relevantDate !== undefined)
+const hasAnyCanonicalField = computed(() =>
+  hasCanonicalDescription.value ||
+  hasCanonicalWorkStatus.value ||
+  hasCanonicalBusinessReference.value ||
+  hasCanonicalRelevantDate.value,
+)
+
+async function initializeOperationalBaseline() {
+  let snapshot: CanonicalOperationalSnapshot | null = null
+
+  if (props.currentOperational) {
+    snapshot = {
+      description: props.currentOperational.description,
+      workStatus: props.currentOperational.workStatus,
+      businessReference: props.currentOperational.businessReference ?? null,
+      relevantDate: props.currentOperational.relevantDate ?? null,
+    }
+  }
+  else if (props.projectId && props.projectCostItemId) {
+    loadingParent.value = true
+    try {
+      const breakdown = await repositories.projectCosts.project(props.projectId)
+      const found = breakdown.items.find(i => i.id === props.projectCostItemId)
+      if (found) {
+        snapshot = {
+          description: found.description,
+          workStatus: found.workStatus,
+          businessReference: found.businessReference ?? null,
+          relevantDate: found.relevantDate ?? null,
+        }
+      }
+    }
+    catch {
+      snapshot = null
+    }
+    finally {
+      loadingParent.value = false
+    }
+  }
+
+  originalSnapshot.value = snapshot ? Object.freeze({ ...snapshot }) : null
+
+  if (snapshot) {
+    operational.description = snapshot.description ?? ''
+    operational.workStatus = snapshot.workStatus
+    operational.businessReference = snapshot.businessReference ?? ''
+    operational.relevantDate = snapshot.relevantDate ?? ''
+  }
+  else {
+    operational.description = ''
+    operational.workStatus = undefined
+    operational.businessReference = ''
+    operational.relevantDate = ''
+  }
+}
 
 async function loadExistingDetails() {
   if (!props.projectCostItemId) return
@@ -90,7 +171,7 @@ async function loadExistingDetails() {
     financialLines.value = [{
       lineNo: 1,
       detailKind: 'line_item',
-      description: props.currentDescription,
+      description: props.currentOperational?.description ?? '',
       quantity: '',
       unitCode: '',
       unitPrice: '',
@@ -113,14 +194,17 @@ watch(() => props.open, (open) => {
     reason.value = ''
     includeOperational.value = false
     includeFinancial.value = false
-    operational.description = props.currentDescription
-    operational.workStatus = 'accepted'
-    operational.businessReference = ''
-    operational.relevantDate = ''
     errorMessage.value = null
+    initializeOperationalBaseline()
     loadExistingDetails()
   }
 })
+
+watch(() => props.currentOperational, () => {
+  if (props.open) {
+    initializeOperationalBaseline()
+  }
+}, { deep: true })
 
 function addFinancialLine() {
   financialLines.value.push({
@@ -168,31 +252,26 @@ async function handleCorrect() {
     return
   }
 
+  if (!hasAnyCanonicalField.value) {
+    errorMessage.value = 'Không có dữ liệu vận hành gốc để điều chỉnh an toàn.'
+    return
+  }
+
+  const opChanges = diffOperationalCorrection(originalSnapshot.value, operational)
+
+  if (Object.keys(opChanges).length === 0) {
+    errorMessage.value = 'Không có nội dung thay đổi để hiệu chỉnh.'
+    return
+  }
+
   submitting.value = true
   errorMessage.value = null
 
   try {
-    const payload: {
-      expectedVersion: number
-      reason: string
-      operationalChanges?: {
-        description?: string
-        workStatus?: 'unknown' | 'in_progress' | 'accepted'
-        businessReference?: string | null
-        relevantDate?: string | null
-      }
-    } = {
+    const payload: CorrectPublishedProjectCostInput = {
       expectedVersion: props.currentVersion,
       reason: reason.value.trim(),
-    }
-
-    if (includeOperational.value) {
-      payload.operationalChanges = {
-        description: operational.description.trim() || undefined,
-        workStatus: operational.workStatus,
-        businessReference: operational.businessReference.trim() || null,
-        relevantDate: operational.relevantDate || null,
-      }
+      operationalChanges: opChanges,
     }
 
     const result = await repositories.projectCosts.correct(props.projectCostItemId, payload)
@@ -291,58 +370,76 @@ async function handleCorrect() {
 
         <!-- Operational Changes Section -->
         <div v-if="includeOperational" class="border border-gray-200 dark:border-gray-800 rounded-lg p-3 space-y-3">
-          <h4 class="text-xs font-bold text-gray-900 dark:text-gray-100">
-            Thay đổi thông tin vận hành
-          </h4>
-          <div class="space-y-1">
-            <label class="block text-xs font-bold text-gray-700 dark:text-gray-300" for="corr-description">
-              Mô tả chi phí mới
-            </label>
-            <input
-              id="corr-description"
-              v-model="operational.description"
-              type="text"
-              class="cockpit-input w-full"
-              data-testid="corr-op-description"
-            >
+          <div class="flex items-center justify-between">
+            <h4 class="text-xs font-bold text-gray-900 dark:text-gray-100">
+              Thay đổi thông tin vận hành
+            </h4>
+            <span v-if="loadingParent" class="text-[11px] text-gray-500 flex items-center gap-1">
+              <UIcon name="i-lucide-loader-2" class="spin" /> Đang tải thông tin gốc…
+            </span>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <div class="space-y-1">
-              <label class="block text-xs font-bold text-gray-700 dark:text-gray-300" for="corr-work-status">
-                Trạng thái công việc
-              </label>
-              <select
-                id="corr-work-status"
-                v-model="operational.workStatus"
-                class="cockpit-select w-full"
-                data-testid="corr-op-work-status"
-              >
-                <option value="unknown">Chưa xác định</option>
-                <option value="in_progress">Đang triển khai</option>
-                <option value="accepted">Đã nghiệm thu</option>
-              </select>
-            </div>
-            <div class="space-y-1">
-              <label class="block text-xs font-bold text-gray-700 dark:text-gray-300" for="corr-ref">
-                Số tham chiếu
+
+          <div v-if="!hasAnyCanonicalField && !loadingParent" class="text-xs text-amber-600 dark:text-amber-400">
+            Không tìm thấy thông tin vận hành gốc của chi phí này để điều chỉnh an toàn.
+          </div>
+
+          <div v-else class="space-y-3">
+            <div v-if="hasCanonicalDescription" class="space-y-1">
+              <label class="block text-xs font-bold text-gray-700 dark:text-gray-300" for="corr-description">
+                Mô tả chi phí mới
               </label>
               <input
-                id="corr-ref"
-                v-model="operational.businessReference"
+                id="corr-description"
+                v-model="operational.description"
                 type="text"
                 class="cockpit-input w-full"
+                data-testid="corr-op-description"
               >
             </div>
-            <div class="space-y-1">
-              <label class="block text-xs font-bold text-gray-700 dark:text-gray-300" for="corr-date">
-                Ngày phát sinh
-              </label>
-              <input
-                id="corr-date"
-                v-model="operational.relevantDate"
-                type="date"
-                class="cockpit-input w-full"
-              >
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div v-if="hasCanonicalWorkStatus" class="space-y-1">
+                <label class="block text-xs font-bold text-gray-700 dark:text-gray-300" for="corr-work-status">
+                  Trạng thái công việc
+                </label>
+                <select
+                  id="corr-work-status"
+                  v-model="operational.workStatus"
+                  class="cockpit-select w-full"
+                  data-testid="corr-op-work-status"
+                >
+                  <option value="unknown">Chưa xác định</option>
+                  <option value="in_progress">Đang triển khai</option>
+                  <option value="accepted">Đã nghiệm thu</option>
+                </select>
+              </div>
+
+              <div v-if="hasCanonicalBusinessReference" class="space-y-1">
+                <label class="block text-xs font-bold text-gray-700 dark:text-gray-300" for="corr-ref">
+                  Số tham chiếu
+                </label>
+                <input
+                  id="corr-ref"
+                  v-model="operational.businessReference"
+                  type="text"
+                  placeholder="Để trống để xóa"
+                  class="cockpit-input w-full"
+                  data-testid="corr-op-ref"
+                >
+              </div>
+
+              <div v-if="hasCanonicalRelevantDate" class="space-y-1">
+                <label class="block text-xs font-bold text-gray-700 dark:text-gray-300" for="corr-date">
+                  Ngày phát sinh
+                </label>
+                <input
+                  id="corr-date"
+                  v-model="operational.relevantDate"
+                  type="date"
+                  class="cockpit-input w-full"
+                  data-testid="corr-op-date"
+                >
+              </div>
             </div>
           </div>
         </div>

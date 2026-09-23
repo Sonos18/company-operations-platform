@@ -1,6 +1,7 @@
 import { expect, test } from './fixtures/authenticated'
 import { createCompany } from './fixtures/auth-routes'
 import {
+  financeItemDetailsSchema,
   financeOverviewSchema,
   financeSubcontractDetailSchema,
   financeSubcontractorListSchema,
@@ -10,6 +11,8 @@ import {
   voidSubcontractPaymentResultSchema,
 } from '../../shared/schemas/costs/project-finance-writes'
 import {
+  costCommandAckSchema,
+  projectCostBreakdownSchema,
   projectCostDraftSchema,
 } from '../../shared/schemas/costs/project-costs'
 import {
@@ -24,6 +27,7 @@ const companyId = '10000000-0000-4000-8000-000000000002'
 const projectId = '10000000-0000-4000-8000-000000000050'
 const materialCategoryId = '20000000-0000-4000-8000-000000000051'
 const subcontractCategoryId = '20000000-0000-4000-8000-000000000099'
+const publishedItemId = '90000000-0000-4000-8000-000000000001'
 const draftId = '30000000-0000-4000-8000-000000000052'
 const partyId = '40000000-0000-4000-8000-000000000053'
 const subcontractId = '50000000-0000-4000-8000-000000000054'
@@ -647,6 +651,160 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
 
     // Raw download button MUST NOT be present because actor lacks cost.read
     await expect(page.getByTestId('evidence-download-btn')).toHaveCount(0)
-    await expect(page.getByText('(Thiếu cost.file.read)')).toBeVisible()
+    await expect(page.getByText('(Cần cost.read + cost.file.read)')).toBeVisible()
+  })
+
+  test('Flow C — Operational correction: safely diffs published cost operational changes omitting untouched fields and category label fallback', async ({ page }) => {
+    let lastCorrectionPayload: Record<string, unknown> | null = null
+
+    // Mock finance overview
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => {
+      route.fulfill({ json: mockProjectOverview })
+    })
+
+    // Mock project cost items (canonical published parent state)
+    await page.route(`**/api/companies/**/projects/${projectId}/project-costs`, route => {
+      route.fulfill({
+        json: projectCostBreakdownSchema.parse({
+          projectId,
+          projectCode: 'DA-C1-01',
+          projectName: 'Dự án Thi công Trung tâm Thương mại',
+          summary: {
+            currencyCode: 'VND',
+            acceptedValue: '750000000.0000',
+            acceptedCount: 1,
+            inProgressValue: '0.0000',
+            inProgressCount: 0,
+            unknownStatusValue: '0.0000',
+            unknownCount: 0,
+            totalTrackedWorkValue: '750000000.0000',
+          },
+          items: [
+            {
+              id: publishedItemId,
+              tenantId,
+              companyId,
+              projectId,
+              description: 'Vật tư thi công phần thô',
+              amount: '750000000.0000',
+              currencyCode: 'VND',
+              workStatus: 'accepted',
+              businessReference: 'REF-VT-01',
+              partyId: null,
+              engagementId: null,
+              componentId: null,
+              relevantDate: '2026-09-18',
+              version: 3,
+              createdAt: '2026-09-18T08:00:00.000Z',
+              updatedAt: '2026-09-18T08:00:00.000Z',
+            },
+          ],
+        }),
+      })
+    })
+
+    // Mock ordinary item details
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/items/${publishedItemId}*`, route => {
+      route.fulfill({
+        json: financeItemDetailsSchema.parse({
+          schemaVersion: 1 as const,
+          kind: 'ordinary' as const,
+          project: mockProjectOverview.project,
+          category: mockProjectOverview.categories[0]!,
+          item: {
+            id: publishedItemId,
+            description: 'Vật tư thi công phần thô',
+            businessReference: 'REF-VT-01',
+            parentAmount: '750000000.0000',
+            currencyCode: 'VND',
+            version: 3,
+          },
+          details: {
+            rows: [],
+            pagination: {
+              page: 1,
+              pageSize: 25,
+              totalPages: 1,
+              filteredCount: 0,
+              fullCount: 0,
+              filteredAmount: '0.0000',
+              fullAmount: '0.0000',
+            },
+          },
+        }),
+      })
+    })
+
+    // Mock project cost item details (financial line items)
+    await page.route(`**/api/companies/**/project-costs/${publishedItemId}/details`, route => {
+      route.fulfill({
+        json: {
+          projectCostItemId: publishedItemId,
+          totalAmount: '750000000.0000',
+          currencyCode: 'VND',
+          details: [],
+        },
+      })
+    })
+
+    // Intercept correction request
+    await page.route(`**/api/companies/**/project-costs/${publishedItemId}/corrections`, async route => {
+      lastCorrectionPayload = route.request().postDataJSON()
+      route.fulfill({
+        json: costCommandAckSchema.parse({
+          id: publishedItemId,
+          version: 4,
+          publicationState: 'published',
+          replayed: false,
+        }),
+      })
+    })
+
+    // 1. Navigate to category page
+    await page.goto(`/costs/${projectId}/categories/${materialCategoryId}`)
+    await expect(page.getByTestId('category-detail-page')).toBeVisible()
+    await expect(page.getByTestId('category-heading')).toBeVisible()
+
+    // 2. Open correction modal
+    await page.getByTestId('open-correction-btn').click()
+    await expect(page.getByTestId('correction-modal')).toBeVisible()
+
+    // Verify financial correction is safely disabled
+    await expect(page.getByTestId('financial-correction-disabled-notice')).toBeVisible()
+    await expect(page.getByTestId('toggle-fin-changes')).toBeDisabled()
+
+    // 3. Enable operational changes
+    await page.getByTestId('toggle-op-changes').check()
+    await expect(page.getByTestId('corr-op-description')).toBeVisible()
+
+    // Verify current description in form is canonical description, NOT categoryDisplayName!
+    await expect(page.getByTestId('corr-op-description')).toHaveValue('Vật tư thi công phần thô')
+    expect(await page.getByTestId('corr-op-description').inputValue()).not.toContain('[vat_tu]')
+
+    // 4. Change description only
+    await page.getByTestId('corr-op-description').fill('Vật tư thi công phần thô (Đã bổ sung phụ lục)')
+
+    // 5. Enter reason
+    await page.getByTestId('correction-reason-input').fill('Điều chỉnh diễn giải chi phí theo phụ lục hợp đồng')
+
+    // 6. Submit correction
+    await page.getByTestId('confirm-correction-btn').click()
+
+    // 7. Modal closes
+    await expect(page.getByTestId('correction-modal')).toHaveCount(0)
+
+    // 8. Assert correction payload matches PATCH invariant: only description, untouched fields omitted
+    expect(lastCorrectionPayload).toEqual({
+      expectedVersion: 3,
+      reason: 'Điều chỉnh diễn giải chi phí theo phụ lục hợp đồng',
+      operationalChanges: {
+        description: 'Vật tư thi công phần thô (Đã bổ sung phụ lục)',
+      },
+    })
+    const op = (lastCorrectionPayload as { operationalChanges?: Record<string, unknown> })?.operationalChanges
+    expect(op?.workStatus).toBeUndefined()
+    expect(op?.businessReference).toBeUndefined()
+    expect(op?.relevantDate).toBeUndefined()
+    expect((lastCorrectionPayload as Record<string, unknown>)?.financialChanges).toBeUndefined()
   })
 })

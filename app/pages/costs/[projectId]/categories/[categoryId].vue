@@ -20,8 +20,11 @@ import ProjectCostSubcontractorTable, { type SubcontractorTableRow } from '../..
 import ProjectCostSubcontractLedger from '../../../../components/costs/ProjectCostSubcontractLedger.vue'
 import ProjectCostOrdinaryLedger from '../../../../components/costs/ProjectCostOrdinaryLedger.vue'
 import ProjectCostAttachEvidenceModal from '../../../../components/costs/ProjectCostAttachEvidenceModal.vue'
-import ProjectCostCorrectionModal from '../../../../components/costs/ProjectCostCorrectionModal.vue'
+import ProjectCostCorrectionModal, {
+  type ProjectCostCanonicalOperational,
+} from '../../../../components/costs/ProjectCostCorrectionModal.vue'
 import ProjectCostEvidencePanel from '../../../../components/costs/ProjectCostEvidencePanel.vue'
+import type { ProjectCostItem } from '../../../../../shared/schemas/costs/project-costs'
 
 definePageMeta({ requiredPermission: 'cost.read' })
 
@@ -38,13 +41,66 @@ const isCorrectionModalOpen = ref(false)
 const isAttachEvidenceOpen = ref(false)
 const isEvidenceModalOpen = ref(false)
 
+const canonicalCostItem = ref<ProjectCostItem | null>(null)
+const loadingCanonicalItem = ref(false)
+
+async function loadCanonicalCostItem() {
+  if (!projectId.value || !currentCategory.value?.itemId) {
+    canonicalCostItem.value = null
+    return
+  }
+  loadingCanonicalItem.value = true
+  try {
+    const data = await repositories.projectCosts.project(projectId.value)
+    canonicalCostItem.value = data.items.find(i => i.id === currentCategory.value?.itemId) ?? null
+  }
+  catch {
+    canonicalCostItem.value = null
+  }
+  finally {
+    loadingCanonicalItem.value = false
+  }
+}
+
+const canonicalOperational = computed<ProjectCostCanonicalOperational | null>(() => {
+  if (canonicalCostItem.value) {
+    return {
+      description: canonicalCostItem.value.description,
+      workStatus: canonicalCostItem.value.workStatus,
+      businessReference: canonicalCostItem.value.businessReference,
+      relevantDate: canonicalCostItem.value.relevantDate,
+    }
+  }
+  if (ordinaryController.data.value?.kind === 'ordinary') {
+    const item = ordinaryController.data.value.item
+    return {
+      description: item.description,
+      businessReference: item.businessReference,
+    }
+  }
+  return null
+})
+
 const currentItemVersion = computed(() => {
+  if (canonicalCostItem.value) {
+    return canonicalCostItem.value.version
+  }
   return ordinaryController.data.value?.kind === 'ordinary' ? ordinaryController.data.value.item.version : 0
 })
 
-function onItemMutated() {
-  loadOverview()
-  ordinaryController.executeDispatch(true)
+async function openCorrectionModal() {
+  if (projectId.value && currentCategory.value?.itemId) {
+    await loadCanonicalCostItem()
+  }
+  isCorrectionModalOpen.value = true
+}
+
+async function onItemMutated() {
+  await loadOverview()
+  await Promise.all([
+    ordinaryController.executeDispatch(true),
+    loadCanonicalCostItem(),
+  ])
 }
 
 const projectId = computed(() => String(route.params.projectId ?? ''))
@@ -164,7 +220,10 @@ async function loadOverview() {
     }
     else {
       pageStatus.value = 'ready'
-      await ordinaryController.executeDispatch(true)
+      await Promise.all([
+        ordinaryController.executeDispatch(true),
+        canCorrect.value ? loadCanonicalCostItem() : Promise.resolve(),
+      ])
     }
   }
   catch (err: unknown) {
@@ -471,8 +530,9 @@ onUnmounted(() => {
                 color="primary"
                 variant="outline"
                 icon="i-lucide-file-pen"
+                :loading="loadingCanonicalItem"
                 data-testid="open-correction-btn"
-                @click="() => { isCorrectionModalOpen = true }"
+                @click="openCorrectionModal"
               >
                 Điều chỉnh chi phí (Kiểm toán)
               </UButton>
@@ -591,16 +651,17 @@ onUnmounted(() => {
         v-model:open="isAttachEvidenceOpen"
         :project-id="projectId"
         :project-cost-item-id="currentCategory.itemId"
-        :item-description="categoryDisplayName(currentCategory.code, currentCategory.name)"
+        :item-description="canonicalOperational?.description ?? categoryDisplayName(currentCategory.code, currentCategory.name)"
         @attached="onItemMutated"
       />
 
       <ProjectCostCorrectionModal
-        v-if="canCorrect"
+        v-if="canCorrect && currentCategory?.itemId"
         v-model:open="isCorrectionModalOpen"
+        :project-id="projectId"
         :project-cost-item-id="currentCategory.itemId"
         :current-version="currentItemVersion"
-        :current-description="categoryDisplayName(currentCategory.code, currentCategory.name)"
+        :current-operational="canonicalOperational"
         :currency-code="overview?.project.currencyCode"
         :categories="overview?.categories ?? []"
         @corrected="onItemMutated"
@@ -609,7 +670,7 @@ onUnmounted(() => {
       <UModal
         v-model:open="isEvidenceModalOpen"
         title="Hồ sơ chứng từ đính kèm"
-        :description="categoryDisplayName(currentCategory.code, currentCategory.name)"
+        :description="canonicalOperational?.description ?? categoryDisplayName(currentCategory.code, currentCategory.name)"
         class="max-w-4xl"
       >
         <template #body>
