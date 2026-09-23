@@ -41,6 +41,30 @@ const linkId1 = '80000000-0000-4000-8000-000000000058'
 const mockSha256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
 const mockObjectPath = `${tenantId}/${companyId}/${projectId}/${evidenceId}`
 
+function draftFixture(id: string, targetProjectId: string, description: string) {
+  return projectCostDraftSchema.parse({
+    id,
+    projectId: targetProjectId,
+    description,
+    costCategoryId: materialCategoryId,
+    businessReference: null,
+    partyId: null,
+    engagementId: null,
+    componentId: null,
+    relevantDate: '2026-09-22',
+    workStatus: 'in_progress',
+    amount: '10000000.0000',
+    currencyCode: 'VND',
+    publicationState: 'draft',
+    version: 1,
+    details: [],
+    sourceFigureIds: [],
+    publishReadiness: { ready: false, blockingCodes: ['FINANCIAL_DETAILS_REQUIRED'] },
+    createdAt: '2026-09-22T08:00:00.000Z',
+    updatedAt: '2026-09-22T08:00:00.000Z',
+  })
+}
+
 const mockProjectOverview = financeOverviewSchema.parse({
   schemaVersion: 1 as const,
   project: {
@@ -696,34 +720,13 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
       createCompany(),
       createCompany({ companyId: companyB, companyCode: 'VQH-B', companyName: 'Công ty B' }),
     ]
-    const draft = (description: string) => projectCostDraftSchema.parse({
-      id: draftId,
-      projectId,
-      description,
-      costCategoryId: materialCategoryId,
-      businessReference: null,
-      partyId: null,
-      engagementId: null,
-      componentId: null,
-      relevantDate: '2026-09-22',
-      workStatus: 'in_progress',
-      amount: '10000000.0000',
-      currencyCode: 'VND',
-      publicationState: 'draft',
-      version: 1,
-      details: [],
-      sourceFigureIds: [],
-      publishReadiness: { ready: false, blockingCodes: ['FINANCIAL_DETAILS_REQUIRED'] },
-      createdAt: '2026-09-22T08:00:00.000Z',
-      updatedAt: '2026-09-22T08:00:00.000Z',
-    })
     let releaseDraftA!: () => void
     const draftAGate = new Promise<void>(resolve => { releaseDraftA = resolve })
     await page.route(`**/api/companies/${companyId}/project-costs/${draftId}/draft`, async route => {
       await draftAGate
-      await route.fulfill({ json: draft('Draft A stale') })
+      await route.fulfill({ json: draftFixture(draftId, projectId, 'Draft A stale') })
     })
-    await page.route(`**/api/companies/${companyB}/project-costs/${draftId}/draft`, route => route.fulfill({ json: draft('Draft B current') }))
+    await page.route(`**/api/companies/${companyB}/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Draft B current') }))
     await page.route(`**/api/companies/${companyId}/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
     await page.route(`**/api/companies/${companyB}/projects/${projectId}/finance`, route => route.fulfill({ json: { ...mockProjectOverview, project: { ...mockProjectOverview.project, projectCode: 'DA-C1-02', projectName: 'Dự án B' } } }))
     await page.route('**/api/companies/**/project-costs/*/evidence', route => route.fulfill({ json: [] }))
@@ -745,6 +748,46 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     await expect(page.getByTestId('draft-title')).toHaveText('Draft B current')
     await expect(page.getByText('DA-C1-02')).toBeVisible()
     await expect(page.getByLabel('Chuyển công ty')).toHaveValue(companyB)
+  })
+
+  test('Flow J — Draft A resolving last cannot cross Draft B route and evidence context', async ({ page }) => {
+    const projectB = '10000000-0000-4000-8000-000000000070'
+    const draftB = '30000000-0000-4000-8000-000000000071'
+    let releaseDraftA!: () => void
+    const draftAGate = new Promise<void>(resolve => { releaseDraftA = resolve })
+    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, async route => {
+      await draftAGate
+      await route.fulfill({ json: draftFixture(draftId, projectId, 'Draft A stale route') })
+    })
+    await page.route(`**/api/companies/**/project-costs/${draftB}/draft`, route => route.fulfill({ json: draftFixture(draftB, projectB, 'Draft B current route') }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/projects/${projectB}/finance`, route => route.fulfill({ json: { ...mockProjectOverview, project: { ...mockProjectOverview.project, projectId: projectB, projectCode: 'DA-C1-B', projectName: 'Dự án Route B' } } }))
+    const evidenceDraftIds: string[] = []
+    await page.route('**/api/companies/**/project-costs/*/evidence', (route) => {
+      evidenceDraftIds.push(new URL(route.request().url()).pathname.split('/').at(-2)!)
+      route.fulfill({ json: [] })
+    })
+
+    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
+    await expect(page.getByText('Đang tải dữ liệu bản nháp…')).toBeVisible()
+    await page.evaluate(async (path) => {
+      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $router?: { push(target: string): Promise<unknown> } } } } }
+      const router = root.__vue_app__?.config.globalProperties.$router
+      if (!router) throw new Error('Unable to resolve router in test')
+      await router.push(path)
+    }, `/costs/${projectB}/drafts/${draftB}`)
+    await expect(page).toHaveURL(new RegExp(`/costs/${projectB}/drafts/${draftB}$`))
+    await expect(page.getByTestId('draft-title')).toHaveText('Draft B current route')
+    await expect.poll(() => evidenceDraftIds).toContain(draftB)
+
+    const staleResponse = page.waitForResponse(response => response.url().includes(`/project-costs/${draftId}/draft`))
+    releaseDraftA()
+    await staleResponse
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+
+    await expect(page.getByTestId('draft-title')).toHaveText('Draft B current route')
+    await expect(page.getByText('DA-C1-B')).toBeVisible()
+    expect(evidenceDraftIds).toEqual([draftB])
   })
 
   test('Flow K — removing retention clears local dependents and sends canonical nulls', async ({ page }) => {
