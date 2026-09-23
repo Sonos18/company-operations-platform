@@ -24,6 +24,7 @@ export const canonicalNavigationLinks: readonly NavigationLink[] = [
   },
   { to: '/opportunities', label: 'Cơ hội', icon: 'i-lucide-target', requiredPermission: 'opportunity.read' },
   { to: '/costs', label: 'Chi phí dự án', icon: 'i-lucide-receipt', requiredPermission: 'cost.read' },
+  { to: '/cost-drafts', label: 'Bản nháp chi phí', icon: 'i-lucide-file-pen-line', requiredAnyPermissions: ['cost.manage', 'cost.prepare'] },
   { to: '/costs/sources', label: 'Nguồn chi phí', icon: 'i-lucide-database-zap', requiredPermission: 'cost.source.read' },
 ]
 

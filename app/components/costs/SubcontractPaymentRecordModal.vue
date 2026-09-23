@@ -5,6 +5,7 @@ import {
   ALLOWED_FILE_EXTENSIONS,
   uploadAndFinalizeEvidence,
   validateEvidenceFile,
+  type EvidenceUploadSession,
 } from '../../utils/costs/cost-evidence-uploader'
 import { localDateInputValue } from '../../utils/costs/local-date'
 
@@ -42,7 +43,7 @@ const errorMessage = ref<string | null>(null)
 const evidenceFileInput = ref<HTMLInputElement | null>(null)
 const selectedEvidenceFile = ref<File | null>(null)
 const evidenceFileError = ref<string | null>(null)
-const finalizedEvidence = ref<{ file: File; evidenceFileId: string } | null>(null)
+const evidenceUploadSession = ref<EvidenceUploadSession | null>(null)
 const pendingCommand = ref<{ fingerprint: string; idempotencyKey: string } | null>(null)
 
 const form = reactive({
@@ -67,7 +68,7 @@ watch([() => props.open, () => props.replacesPaymentId, () => props.projectId, (
     form.sourceReference = ''
     form.note = ''
     selectedEvidenceFile.value = null
-    finalizedEvidence.value = null
+    evidenceUploadSession.value = null
     pendingCommand.value = null
     evidenceFileError.value = null
     errorMessage.value = null
@@ -81,7 +82,7 @@ function onEvidenceFileSelected(event: Event) {
 
   if (!file) {
     selectedEvidenceFile.value = null
-    finalizedEvidence.value = null
+    evidenceUploadSession.value = null
     pendingCommand.value = null
     return
   }
@@ -90,18 +91,19 @@ function onEvidenceFileSelected(event: Event) {
   if (!validation.valid) {
     evidenceFileError.value = validation.error || 'Tệp không hợp lệ.'
     selectedEvidenceFile.value = null
+    evidenceUploadSession.value = null
     if (evidenceFileInput.value) evidenceFileInput.value.value = ''
     return
   }
 
   selectedEvidenceFile.value = file
-  finalizedEvidence.value = null
+  evidenceUploadSession.value = null
   pendingCommand.value = null
 }
 
 function removeEvidenceFile() {
   selectedEvidenceFile.value = null
-  finalizedEvidence.value = null
+  evidenceUploadSession.value = null
   pendingCommand.value = null
   evidenceFileError.value = null
   if (evidenceFileInput.value) evidenceFileInput.value.value = ''
@@ -131,17 +133,17 @@ async function submit() {
 
     // Atomic payment evidence flow: upload & finalize only if canPrepareEvidence and file selected
     if (canPrepareEvidence.value && selectedEvidenceFile.value) {
-      if (finalizedEvidence.value?.file !== selectedEvidenceFile.value) {
-        const uploadResult = await uploadAndFinalizeEvidence({
-          projectId: props.projectId,
-          file: selectedEvidenceFile.value,
-          evidenceKind: 'payment_proof',
-          evidenceRepo: repositories.costEvidence,
-          supabaseClient: supabase,
-        })
-        finalizedEvidence.value = { file: selectedEvidenceFile.value, evidenceFileId: uploadResult.evidenceFileId }
-      }
-      evidenceFileIds.push(finalizedEvidence.value.evidenceFileId)
+      const uploadResult = await uploadAndFinalizeEvidence({
+        companyId: companyAccess.activeCompanyId ?? '',
+        projectId: props.projectId,
+        file: selectedEvidenceFile.value,
+        evidenceKind: 'payment_proof',
+        evidenceRepo: repositories.costEvidence,
+        supabaseClient: supabase,
+        session: evidenceUploadSession.value,
+        onSessionChange: session => { evidenceUploadSession.value = session },
+      })
+      evidenceFileIds.push(uploadResult.evidenceFileId)
     }
 
     const input = {
@@ -169,7 +171,7 @@ async function submit() {
     )
 
     pendingCommand.value = null
-    finalizedEvidence.value = null
+    evidenceUploadSession.value = null
     isOpen.value = false
     emit('recorded', { paymentId: result.paymentId, version: result.version })
   }

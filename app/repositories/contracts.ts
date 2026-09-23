@@ -34,7 +34,7 @@ import type {
 } from '../../shared/schemas/stage01-config'
 import type { BusinessParty, CompanyCostSettings, CreateBusinessPartyInput, CreateEngagementComponentInput, CreateEngagementInput, CreateProjectRegisterInput, Engagement, EngagementComponent, ProjectRegister, UpdateBusinessPartyInput, UpdateEngagementComponentInput, UpdateEngagementInput, UpdateProjectRegisterInput } from '../../shared/schemas/costs/master-data'
 import type { CostSourceFiguresQuery, CostSourceOverview, CostSourceProjectDetail, CostSourceProvenance, CostSourceFigure } from '../../shared/schemas/costs/source-read-model'
-import type { CostCommandAck, CorrectPublishedProjectCostInput, CreateProjectCostDraftInput, PrepareProjectCostFinancialsInput, PrepareProjectCostFinancialsResult, ProjectCostBreakdown, ProjectCostDetailsResponse, ProjectCostDraft, ProjectCostOperationalDraft, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, PublishProjectCostInput, UpdateProjectCostDraftInput } from '../../shared/schemas/costs/project-costs'
+import type { CostCommandAck, CorrectPublishedProjectCostInput, CreateProjectCostDraftInput, PrepareProjectCostFinancialsInput, PrepareProjectCostFinancialsResult, ProjectCostBreakdown, ProjectCostDetailsResponse, ProjectCostDraft, ProjectCostDraftManagementMetadata, ProjectCostOperationalDraft, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, PublishProjectCostInput, UpdateProjectCostDraftInput } from '../../shared/schemas/costs/project-costs'
 import type { CostEvidenceCreateIntentInput, CostEvidenceFinalizeInput, CostEvidenceFinalized, CostEvidenceLinkInput, CostEvidenceLinkResult, CostEvidenceMetadata, CostEvidenceReadUrl, CostEvidenceReadUrlInput, CostEvidenceUploadIntent } from '../../shared/schemas/costs/cost-evidence'
 import type {
   RecordSubcontractPaymentInput,
@@ -152,24 +152,26 @@ export type ProjectCostPatchInput = UpdateProjectCostDraftInput
 export type ProjectCostSummaryEntry = SharedProjectCostSummaryEntry
 export type ProjectCostCreateResult = CostCommandAck
 export type ProjectCostMutationResult = CostCommandAck
+export interface IdempotentCommandOptions { idempotencyKey: string }
 export interface ProjectCostRepository {
   summaries(): Promise<ProjectCostSummaryEntry[]>
   project(projectId: string): Promise<ProjectCostBreakdown>
+  draftManagementMetadata(): Promise<ProjectCostDraftManagementMetadata>
   details(projectCostItemId: string): Promise<ProjectCostDetailsResponse>
-  create(projectId: string, input: ProjectCostCreateDraft, options: { idempotencyKey: string }): Promise<ProjectCostCreateResult>
+  create(projectId: string, input: ProjectCostCreateDraft, options: IdempotentCommandOptions): Promise<ProjectCostCreateResult>
   update(projectCostItemId: string, input: ProjectCostPatchInput): Promise<ProjectCostMutationResult>
   prepareFinancials(projectCostItemId: string, input: PrepareProjectCostFinancialsInput): Promise<PrepareProjectCostFinancialsResult>
   draft(projectCostItemId: string): Promise<ProjectCostDraft>
   listDrafts(projectId: string): Promise<ProjectCostDraft[]>
   operationalDraft(projectCostItemId: string): Promise<ProjectCostOperationalDraft>
   listOperationalDrafts(projectId: string): Promise<ProjectCostOperationalDraft[]>
-  publish(projectCostItemId: string, input: PublishProjectCostInput, options: { idempotencyKey: string }): Promise<CostCommandAck>
-  correct(projectCostItemId: string, input: CorrectPublishedProjectCostInput): Promise<CostCommandAck>
+  publish(projectCostItemId: string, input: PublishProjectCostInput, options: IdempotentCommandOptions): Promise<CostCommandAck>
+  correct(projectCostItemId: string, input: CorrectPublishedProjectCostInput, options: IdempotentCommandOptions): Promise<CostCommandAck>
 }
 export interface CostEvidenceRepository {
-  createUploadIntent(projectId: string, input: CostEvidenceCreateIntentInput): Promise<CostEvidenceUploadIntent>
-  finalize(evidenceFileId: string, input: CostEvidenceFinalizeInput): Promise<CostEvidenceFinalized>
-  link(projectCostItemId: string, input: CostEvidenceLinkInput): Promise<CostEvidenceLinkResult>
+  createUploadIntent(projectId: string, input: CostEvidenceCreateIntentInput, options: IdempotentCommandOptions): Promise<CostEvidenceUploadIntent>
+  finalize(evidenceFileId: string, input: CostEvidenceFinalizeInput, options: IdempotentCommandOptions): Promise<CostEvidenceFinalized>
+  link(projectCostItemId: string, input: CostEvidenceLinkInput, options: IdempotentCommandOptions): Promise<CostEvidenceLinkResult>
   listMetadata(projectCostItemId: string): Promise<CostEvidenceMetadata[]>
   getReadUrl(evidenceFileId: string, input?: CostEvidenceReadUrlInput): Promise<CostEvidenceReadUrl>
 }
@@ -182,8 +184,8 @@ export interface ProjectFinanceRepository {
   subcontractor(projectId: string, partyId: string, query?: Partial<PaymentQuery>): Promise<FinanceSubcontractorDetail>
   subcontract(projectId: string, subcontractId: string, query?: Partial<PaymentQuery>): Promise<FinanceSubcontractDetail>
   itemDetails(projectId: string, itemId: string, query?: Partial<ItemDetailQuery>): Promise<FinanceItemDetails>
-  recordSubcontractPayment(projectId: string, subcontractId: string, input: RecordSubcontractPaymentInput, options: { idempotencyKey: string }): Promise<RecordSubcontractPaymentResult>
-  voidSubcontractPayment(projectId: string, subcontractId: string, paymentId: string, input: VoidSubcontractPaymentInput): Promise<VoidSubcontractPaymentResult>
+  recordSubcontractPayment(projectId: string, subcontractId: string, input: RecordSubcontractPaymentInput, options: IdempotentCommandOptions): Promise<RecordSubcontractPaymentResult>
+  voidSubcontractPayment(projectId: string, subcontractId: string, paymentId: string, input: VoidSubcontractPaymentInput, options: IdempotentCommandOptions): Promise<VoidSubcontractPaymentResult>
 }
 export type { FinanceBudget, FinanceItemDetails, FinanceOwnerAdvances, FinanceOverview, FinanceProjectList, FinanceSubcontractDetail, FinanceSubcontractorDetail, FinanceSubcontractorList }
 

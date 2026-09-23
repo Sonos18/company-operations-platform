@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import type { FinanceCategoryRow } from '../../../shared/schemas/costs/project-finance'
+import type { ProjectCostDraftCategoryOption } from '../../../shared/schemas/costs/project-costs'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
 
 const props = withDefaults(defineProps<{
   open: boolean
   projectId: string
-  categories?: FinanceCategoryRow[]
+  categories?: ProjectCostDraftCategoryOption[]
 }>(), {
   categories: () => [],
 })
@@ -43,7 +43,7 @@ const pendingCommand = ref<{ fingerprint: string; idempotencyKey: string } | nul
 
 // Filter out subcontract_labor category or warn if selected
 const eligibleCategories = computed(() => {
-  return props.categories.filter(c => c.code !== 'subcontract_labor')
+  return props.categories.filter(c => c.isActive && (c.draftEligible ?? c.code !== 'subcontract_labor'))
 })
 
 const isSubcontractSelected = computed(() => {

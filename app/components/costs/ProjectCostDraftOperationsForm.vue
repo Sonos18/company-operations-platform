@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import type { FinanceCategoryRow } from '../../../shared/schemas/costs/project-finance'
+import type { ProjectCostDraftCategoryOption } from '../../../shared/schemas/costs/project-costs'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
 
 interface DraftModel {
@@ -19,7 +19,7 @@ interface DraftModel {
 
 const props = withDefaults(defineProps<{
   draft: DraftModel
-  categories?: FinanceCategoryRow[]
+  categories?: ProjectCostDraftCategoryOption[]
   disabled?: boolean
 }>(), {
   categories: () => [],
@@ -66,7 +66,7 @@ watch(() => props.draft, (newDraft) => {
 }, { deep: true })
 
 const eligibleCategories = computed(() => {
-  return props.categories.filter(c => c.code !== 'subcontract_labor')
+  return props.categories.filter(c => c.isActive && (c.draftEligible ?? c.code !== 'subcontract_labor'))
 })
 
 const isPublished = computed(() => props.draft.publicationState === 'published')

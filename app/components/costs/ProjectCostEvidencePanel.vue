@@ -6,6 +6,7 @@ import {
   uploadAndFinalizeEvidence,
   validateEvidenceFile,
   type CostEvidenceKind,
+  type EvidenceUploadSession,
 } from '../../utils/costs/cost-evidence-uploader'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
 
@@ -40,6 +41,7 @@ const uploading = ref(false)
 const uploadProgressStage = ref<string | null>(null)
 const uploadError = ref<string | null>(null)
 const uploadSuccess = ref<string | null>(null)
+const uploadSession = ref<EvidenceUploadSession | null>(null)
 
 // Raw URL opening state
 const openingFileId = ref<string | null>(null)
@@ -87,6 +89,7 @@ function onFileSelected(event: Event) {
 
   if (!file) {
     selectedFile.value = null
+    uploadSession.value = null
     return
   }
 
@@ -94,11 +97,13 @@ function onFileSelected(event: Event) {
   if (!validation.valid) {
     uploadError.value = validation.error || 'Tệp không hợp lệ.'
     selectedFile.value = null
+    uploadSession.value = null
     if (fileInput.value) fileInput.value.value = ''
     return
   }
 
   selectedFile.value = file
+  uploadSession.value = null
 }
 
 async function handleUpload() {
@@ -119,18 +124,22 @@ async function handleUpload() {
     }
 
     await uploadAndFinalizeEvidence({
+      companyId: companyAccess.activeCompanyId ?? '',
       projectId: props.projectId,
       file: selectedFile.value,
       evidenceKind: selectedKind.value,
       projectCostItemId: props.projectCostItemId,
       evidenceRepo: repositories.costEvidence,
       supabaseClient: supabase,
+      session: uploadSession.value,
+      onSessionChange: session => { uploadSession.value = session },
       onProgress: (stage: 'hashing' | 'intent' | 'uploading' | 'finalizing' | 'linking') => {
         uploadProgressStage.value = stageMap[stage] || stage
       },
     })
 
     uploadSuccess.value = `Đã tải lên và liên kết chứng từ "${selectedFile.value.name}" thành công.`
+    uploadSession.value = null
     selectedFile.value = null
     if (fileInput.value) fileInput.value.value = ''
     emit('evidence-linked')

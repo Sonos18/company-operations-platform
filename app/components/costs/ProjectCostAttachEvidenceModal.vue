@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   ALLOWED_FILE_EXTENSIONS,
   uploadAndFinalizeEvidence,
   validateEvidenceFile,
   type CostEvidenceKind,
+  type EvidenceUploadSession,
 } from '../../utils/costs/cost-evidence-uploader'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
 
@@ -38,6 +39,7 @@ const selectedKind = ref<CostEvidenceKind>('invoice')
 const uploading = ref(false)
 const uploadProgressStage = ref<string | null>(null)
 const errorMessage = ref<string | null>(null)
+const uploadSession = ref<EvidenceUploadSession | null>(null)
 
 const evidenceKindLabels: Record<CostEvidenceKind, string> = {
   contract: 'Hợp đồng (contract)',
@@ -56,6 +58,7 @@ function onFileSelected(event: Event) {
 
   if (!file) {
     selectedFile.value = null
+    uploadSession.value = null
     return
   }
 
@@ -63,12 +66,16 @@ function onFileSelected(event: Event) {
   if (!validation.valid) {
     errorMessage.value = validation.error || 'Tệp không hợp lệ.'
     selectedFile.value = null
+    uploadSession.value = null
     if (fileInput.value) fileInput.value.value = ''
     return
   }
 
   selectedFile.value = file
+  uploadSession.value = null
 }
+
+watch([() => props.projectId, () => props.projectCostItemId], () => { uploadSession.value = null })
 
 async function handleUploadAndLink() {
   if (!selectedFile.value || !canPrepare.value) return
@@ -87,17 +94,21 @@ async function handleUploadAndLink() {
     }
 
     await uploadAndFinalizeEvidence({
+      companyId: companyAccess.activeCompanyId ?? '',
       projectId: props.projectId,
       file: selectedFile.value,
       evidenceKind: selectedKind.value,
       projectCostItemId: props.projectCostItemId,
       evidenceRepo: repositories.costEvidence,
       supabaseClient: supabase,
+      session: uploadSession.value,
+      onSessionChange: session => { uploadSession.value = session },
       onProgress: (stage: 'hashing' | 'intent' | 'uploading' | 'finalizing' | 'linking') => {
         uploadProgressStage.value = stageMap[stage] || stage
       },
     })
 
+    uploadSession.value = null
     isOpen.value = false
     emit('attached')
   }

@@ -26,7 +26,6 @@ describe('HTTP Cost Evidence repository', () => {
     const repo = createHttpCostEvidenceRepository({
       companyId,
       client: client as never,
-      createIdempotencyKey: () => idempotencyKey,
     })
 
     const input = {
@@ -36,7 +35,7 @@ describe('HTTP Cost Evidence repository', () => {
       sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
     }
 
-    const result = await repo.createUploadIntent(projectId, input)
+    const result = await repo.createUploadIntent(projectId, input, { idempotencyKey })
     expect(result).toEqual(uploadIntentResponse)
     expect(client.request).toHaveBeenCalledWith(expect.objectContaining({
       url: `/api/companies/${companyId}/projects/${projectId}/evidence/upload-intents`,
@@ -62,10 +61,9 @@ describe('HTTP Cost Evidence repository', () => {
     const repo = createHttpCostEvidenceRepository({
       companyId,
       client: client as never,
-      createIdempotencyKey: () => idempotencyKey,
     })
 
-    const result = await repo.finalize(evidenceFileId, { expectedVersion: 0 })
+    const result = await repo.finalize(evidenceFileId, { expectedVersion: 0 }, { idempotencyKey })
     expect(result).toEqual(finalizeResponse)
     expect(client.request).toHaveBeenCalledWith(expect.objectContaining({
       url: `/api/companies/${companyId}/evidence-files/${evidenceFileId}/finalize`,
@@ -87,10 +85,9 @@ describe('HTTP Cost Evidence repository', () => {
     const repo = createHttpCostEvidenceRepository({
       companyId,
       client: client as never,
-      createIdempotencyKey: () => idempotencyKey,
     })
 
-    const result = await repo.link(costItemId, { evidenceFileId, evidenceKind: 'invoice' })
+    const result = await repo.link(costItemId, { evidenceFileId, evidenceKind: 'invoice' }, { idempotencyKey })
     expect(result).toEqual(linkResponse)
     expect(client.request).toHaveBeenCalledWith(expect.objectContaining({
       url: `/api/companies/${companyId}/project-costs/${costItemId}/evidence`,

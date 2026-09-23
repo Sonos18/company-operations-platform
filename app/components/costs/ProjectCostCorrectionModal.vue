@@ -73,6 +73,7 @@ const financialCorrectionDisabledReason = 'Chưa thể hiệu chỉnh tài chín
 const reason = ref('')
 const includeOperational = ref(false)
 const includeFinancial = ref(false)
+const pendingCommand = ref<{ fingerprint: string; idempotencyKey: string } | null>(null)
 
 const originalSnapshot = ref<CanonicalOperationalSnapshot | null>(null)
 
@@ -189,12 +190,13 @@ async function loadExistingDetails() {
   }
 }
 
-watch(() => props.open, (open) => {
+watch([() => props.open, () => props.projectCostItemId, () => props.currentVersion], ([open]) => {
   if (open) {
     reason.value = ''
     includeOperational.value = false
     includeFinancial.value = false
     errorMessage.value = null
+    pendingCommand.value = null
     initializeOperationalBaseline()
     loadExistingDetails()
   }
@@ -273,8 +275,11 @@ async function handleCorrect() {
       reason: reason.value.trim(),
       operationalChanges: opChanges,
     }
+    const fingerprint = JSON.stringify({ projectCostItemId: props.projectCostItemId, payload })
+    if (pendingCommand.value?.fingerprint !== fingerprint) pendingCommand.value = { fingerprint, idempotencyKey: globalThis.crypto.randomUUID() }
 
-    const result = await repositories.projectCosts.correct(props.projectCostItemId, payload)
+    const result = await repositories.projectCosts.correct(props.projectCostItemId, payload, { idempotencyKey: pendingCommand.value.idempotencyKey })
+    pendingCommand.value = null
     isOpen.value = false
     emit('corrected', { version: result.version })
   }

@@ -38,13 +38,15 @@ const submitting = ref(false)
 const errorMessage = ref<string | null>(null)
 const voidSucceeded = ref(false)
 const voidedPaymentId = ref<string | null>(null)
+const pendingCommand = ref<{ fingerprint: string; idempotencyKey: string } | null>(null)
 
-watch(() => props.open, (open) => {
+watch([() => props.open, () => props.projectId, () => props.subcontractId, () => props.payment?.id, () => props.payment?.version], ([open]) => {
   if (open) {
     reason.value = ''
     errorMessage.value = null
     voidSucceeded.value = false
     voidedPaymentId.value = null
+    pendingCommand.value = null
   }
 })
 
@@ -60,16 +62,21 @@ async function handleVoid() {
   errorMessage.value = null
 
   try {
+    const input = {
+      expectedVersion: props.payment.version,
+      reason: reason.value.trim(),
+    }
+    const fingerprint = JSON.stringify({ projectId: props.projectId, subcontractId: props.subcontractId, paymentId: props.payment.id, input })
+    if (pendingCommand.value?.fingerprint !== fingerprint) pendingCommand.value = { fingerprint, idempotencyKey: globalThis.crypto.randomUUID() }
     const result = await repositories.projectFinance.voidSubcontractPayment(
       props.projectId,
       props.subcontractId,
       props.payment.id,
-      {
-        expectedVersion: props.payment.version,
-        reason: reason.value.trim(),
-      },
+      input,
+      { idempotencyKey: pendingCommand.value.idempotencyKey },
     )
 
+    pendingCommand.value = null
     voidSucceeded.value = true
     voidedPaymentId.value = result.paymentId
     emit('voided', { paymentId: result.paymentId, version: result.version })

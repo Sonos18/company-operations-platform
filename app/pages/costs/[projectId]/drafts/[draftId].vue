@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-import type { ProjectCostDraft, ProjectCostOperationalDraft } from '../../../../../shared/schemas/costs/project-costs'
+import type { ProjectCostDraft, ProjectCostDraftManagementMetadata, ProjectCostOperationalDraft } from '../../../../../shared/schemas/costs/project-costs'
 import type { FinanceOverview } from '../../../../../shared/schemas/costs/project-finance'
 import { extractErrorMessage } from '../../../../utils/costs/accounting-error-mapper'
 import { mapCostsApiError } from '../../../../utils/costs/costs-error-mapper'
@@ -30,6 +30,7 @@ const status = ref<'loading' | 'ready' | 'not_found' | 'permission' | 'error'>('
 const errorMessage = ref<string | null>(null)
 
 const overview = ref<FinanceOverview | null>(null)
+const draftMetadata = ref<ProjectCostDraftManagementMetadata | null>(null)
 const financialDraft = ref<ProjectCostDraft | null>(null)
 const operationalDraft = ref<ProjectCostOperationalDraft | null>(null)
 
@@ -69,12 +70,15 @@ const currentDraftData = computed(() => {
   }
   return null
 })
+const projectMetadata = computed(() => draftMetadata.value?.projects.find(project => project.id === projectId.value) ?? null)
+const draftCategories = computed(() => draftMetadata.value?.categories ?? overview.value?.categories ?? [])
 
 async function loadData() {
   const request = requestTracker.start({ companyId: companyAccess.activeCompanyId ?? '', projectId: projectId.value, draftId: draftId.value })
   financialDraft.value = null
   operationalDraft.value = null
   overview.value = null
+  draftMetadata.value = null
   status.value = 'loading'
   loading.value = true
   errorMessage.value = null
@@ -95,6 +99,7 @@ async function loadData() {
     let nextFinancialDraft: ProjectCostDraft | null = null
     let nextOperationalDraft: ProjectCostOperationalDraft | null = null
     let nextOverview: FinanceOverview | null = null
+    let nextDraftMetadata: ProjectCostDraftManagementMetadata | null = null
 
     if (canPrepare.value) {
       nextFinancialDraft = await repositories.projectCosts.draft(request.identity.draftId)
@@ -112,11 +117,20 @@ async function loadData() {
         nextOverview = null
       }
     }
+    else {
+      try {
+        nextDraftMetadata = await repositories.projectCosts.draftManagementMetadata()
+      }
+      catch {
+        nextDraftMetadata = null
+      }
+    }
     if (!request.isCurrent()) return
 
     financialDraft.value = nextFinancialDraft
     operationalDraft.value = nextOperationalDraft
     overview.value = nextOverview
+    draftMetadata.value = nextDraftMetadata
     status.value = 'ready'
   }
   catch (err: unknown) {
@@ -156,7 +170,7 @@ function onFinancialSaved(res: { version: number }) {
 }
 
 function onPublished() {
-  router.push(`/costs/${projectId.value}`)
+  router.push(companyAccess.hasPermission('cost.read') ? `/costs/${projectId.value}` : `/cost-drafts?projectId=${projectId.value}`)
 }
 
 watch(
@@ -174,11 +188,9 @@ onUnmounted(() => requestTracker.invalidate())
   <div class="draft-workbench-page max-w-7xl mx-auto space-y-6 pb-12" data-testid="draft-workbench-page">
     <!-- Breadcrumb Nav -->
     <nav class="breadcrumb-nav flex items-center gap-2 text-xs text-gray-500" aria-label="Đường dẫn">
-      <NuxtLink to="/costs" class="hover:text-primary">Chi phí</NuxtLink>
+      <NuxtLink :to="`/cost-drafts?projectId=${projectId}`" class="hover:text-primary">Bản nháp chi phí</NuxtLink>
       <span>/</span>
-      <NuxtLink :to="`/costs/${projectId}`" class="hover:text-primary">
-        {{ overview?.project.projectName || 'Dự án' }}
-      </NuxtLink>
+      <span>{{ overview?.project.projectName || projectMetadata?.name || 'Dự án' }}</span>
       <span>/</span>
       <span class="text-gray-900 dark:text-gray-100 font-semibold">Bản nháp chi phí</span>
     </nav>
@@ -206,7 +218,7 @@ onUnmounted(() => requestTracker.invalidate())
       <p class="text-xs text-gray-500 max-w-md mx-auto">
         Bản nháp này không tồn tại hoặc đã được phát hành chính thức thành chi phí dự án.
       </p>
-      <NuxtLink :to="`/costs/${projectId}`" class="inline-block">
+      <NuxtLink :to="`/cost-drafts?projectId=${projectId}`" class="inline-block">
         <UButton color="neutral" variant="outline" size="sm">
           Quay lại dự án
         </UButton>
@@ -220,7 +232,7 @@ onUnmounted(() => requestTracker.invalidate())
       <p class="text-xs text-gray-500 max-w-md mx-auto">
         Bạn cần quyền cost.manage hoặc cost.prepare để xem và xử lý bản nháp chi phí này.
       </p>
-      <NuxtLink :to="`/costs/${projectId}`" class="inline-block">
+      <NuxtLink :to="`/cost-drafts?projectId=${projectId}`" class="inline-block">
         <UButton color="neutral" variant="outline" size="sm">
           Quay lại dự án
         </UButton>
@@ -244,6 +256,9 @@ onUnmounted(() => requestTracker.invalidate())
               Mã dự án: <span class="font-mono">{{ overview.project.projectCode }}</span> ·
               {{ overview.project.projectName }}
             </template>
+            <template v-else-if="projectMetadata">
+              Mã dự án: <span class="font-mono">{{ projectMetadata.code }}</span> · {{ projectMetadata.name }}
+            </template>
             <template v-else>
               Dự án: <span class="font-mono">{{ projectId }}</span>
             </template>
@@ -256,7 +271,7 @@ onUnmounted(() => requestTracker.invalidate())
             variant="outline"
             size="sm"
             icon="i-lucide-arrow-left"
-            @click="() => { router.push(`/costs/${projectId}`) }"
+            @click="() => { router.push(`/cost-drafts?projectId=${projectId}`) }"
           >
             Quay lại dự án
           </UButton>
@@ -279,7 +294,7 @@ onUnmounted(() => requestTracker.invalidate())
       <section aria-labelledby="section-operations-title">
         <ProjectCostDraftOperationsForm
           :draft="currentDraftData"
-          :categories="overview?.categories || []"
+          :categories="draftCategories"
           @saved="onOperationalSaved"
           @refresh-requested="loadData"
         />

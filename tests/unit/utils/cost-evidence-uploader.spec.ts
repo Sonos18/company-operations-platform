@@ -3,6 +3,7 @@ import {
   computeFileSha256Hex,
   uploadAndFinalizeEvidence,
   validateEvidenceFile,
+  type EvidenceUploadSession,
 } from '../../../app/utils/costs/cost-evidence-uploader'
 
 describe('Cost Evidence Uploader utility', () => {
@@ -71,6 +72,7 @@ describe('Cost Evidence Uploader utility', () => {
 
     const progressTracker: string[] = []
     const result = await uploadAndFinalizeEvidence({
+      companyId: 'c1010000-0000-4000-8000-000000000020',
       projectId: 'c1010000-0000-4000-8000-000000000101',
       file,
       evidenceKind: 'invoice',
@@ -87,13 +89,123 @@ describe('Cost Evidence Uploader utility', () => {
       upsert: false,
       contentType: 'application/pdf',
     })
-    expect(mockEvidenceRepo.finalize).toHaveBeenCalledWith('c1010000-0000-4000-8000-000000000701', { expectedVersion: 0 })
+    expect(mockEvidenceRepo.finalize).toHaveBeenCalledWith('c1010000-0000-4000-8000-000000000701', { expectedVersion: 0 }, { idempotencyKey: expect.any(String) })
     expect(mockEvidenceRepo.link).toHaveBeenCalledWith('c1010000-0000-4000-8000-000000000001', {
       evidenceFileId: 'c1010000-0000-4000-8000-000000000701',
       evidenceKind: 'invoice',
       accountingSourceVersionId: undefined,
-    })
+    }, { idempotencyKey: expect.any(String) })
     expect(progressTracker).toEqual(['hashing', 'intent', 'uploading', 'finalizing', 'linking'])
+  })
+
+  describe('resumable evidence session', () => {
+    const companyId = 'c1010000-0000-4000-8000-000000000020'
+    const projectId = 'c1010000-0000-4000-8000-000000000101'
+    const costId = 'c1010000-0000-4000-8000-000000000201'
+    const evidenceFileId = 'c1010000-0000-4000-8000-000000000701'
+
+    function intent() {
+      return {
+        evidenceFileId,
+        version: 0,
+        bucketId: 'c1-accounting-evidence',
+        objectPath: `c1010000-0000-4000-8000-000000000010/${companyId}/${projectId}/${evidenceFileId}`,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        replayed: false,
+      }
+    }
+
+    function finalized(file: File) {
+      return { id: evidenceFileId, status: 'finalized', originalFilename: file.name, mimeType: 'application/pdf', sizeBytes: file.size, sha256: '0'.repeat(64), version: 1, finalizedAt: '2026-09-23T12:00:00.000Z', replayed: false }
+    }
+
+    it('replays an unknown intent outcome with the same stage key', async () => {
+      const file = new File(['pdf'], 'intent.pdf', { type: 'application/pdf' })
+      const intentKeys: string[] = []
+      const createUploadIntent = vi.fn(async (_projectId, _input, command) => {
+        intentKeys.push(command.idempotencyKey)
+        if (intentKeys.length === 1) throw new Error('response lost')
+        return intent()
+      })
+      const upload = vi.fn().mockResolvedValue({ error: null })
+      const repo = { createUploadIntent, finalize: vi.fn().mockResolvedValue(finalized(file)), link: vi.fn() }
+      let session: EvidenceUploadSession | null = null
+      const options = { companyId, projectId, file, evidenceKind: 'invoice' as const, evidenceRepo: repo as never, supabaseClient: { storage: { from: vi.fn(() => ({ upload })) } } as never, get session() { return session }, onSessionChange: (value: EvidenceUploadSession) => { session = value } }
+
+      await expect(uploadAndFinalizeEvidence(options)).rejects.toThrow('response lost')
+      await expect(uploadAndFinalizeEvidence(options)).resolves.toMatchObject({ evidenceFileId })
+
+      expect(intentKeys).toHaveLength(2)
+      expect(intentKeys[1]).toBe(intentKeys[0])
+      expect(upload).toHaveBeenCalledTimes(1)
+    })
+
+    it('skips intent and upload after an unknown finalize outcome and reuses the finalize key', async () => {
+      const file = new File(['pdf'], 'finalize.pdf', { type: 'application/pdf' })
+      const finalizeKeys: string[] = []
+      const upload = vi.fn().mockResolvedValue({ error: null })
+      const repo = {
+        createUploadIntent: vi.fn().mockResolvedValue(intent()),
+        finalize: vi.fn(async (_id, _input, command) => {
+          finalizeKeys.push(command.idempotencyKey)
+          if (finalizeKeys.length === 1) throw new Error('finalize response lost')
+          return finalized(file)
+        }),
+        link: vi.fn(),
+      }
+      let session: EvidenceUploadSession | null = null
+      const options = { companyId, projectId, file, evidenceKind: 'invoice' as const, evidenceRepo: repo as never, supabaseClient: { storage: { from: vi.fn(() => ({ upload })) } } as never, get session() { return session }, onSessionChange: (value: EvidenceUploadSession) => { session = value } }
+
+      await expect(uploadAndFinalizeEvidence(options)).rejects.toThrow('finalize response lost')
+      await expect(uploadAndFinalizeEvidence(options)).resolves.toMatchObject({ evidenceFileId })
+
+      expect(repo.createUploadIntent).toHaveBeenCalledTimes(1)
+      expect(upload).toHaveBeenCalledTimes(1)
+      expect(finalizeKeys[1]).toBe(finalizeKeys[0])
+    })
+
+    it('replays only the link stage after an unknown link outcome', async () => {
+      const file = new File(['pdf'], 'link.pdf', { type: 'application/pdf' })
+      const linkKeys: string[] = []
+      const upload = vi.fn().mockResolvedValue({ error: null })
+      const repo = {
+        createUploadIntent: vi.fn().mockResolvedValue(intent()),
+        finalize: vi.fn().mockResolvedValue(finalized(file)),
+        link: vi.fn(async (_id, _input, command) => {
+          linkKeys.push(command.idempotencyKey)
+          if (linkKeys.length === 1) throw new Error('link response lost')
+          return { linkId: 'c1010000-0000-4000-8000-000000000801', costId, evidenceFileId, evidenceKind: 'invoice', replayed: true }
+        }),
+      }
+      let session: EvidenceUploadSession | null = null
+      const options = { companyId, projectId, projectCostItemId: costId, file, evidenceKind: 'invoice' as const, evidenceRepo: repo as never, supabaseClient: { storage: { from: vi.fn(() => ({ upload })) } } as never, get session() { return session }, onSessionChange: (value: EvidenceUploadSession) => { session = value } }
+
+      await expect(uploadAndFinalizeEvidence(options)).rejects.toThrow('link response lost')
+      await expect(uploadAndFinalizeEvidence(options)).resolves.toMatchObject({ evidenceFileId, linkId: 'c1010000-0000-4000-8000-000000000801' })
+
+      expect(repo.createUploadIntent).toHaveBeenCalledTimes(1)
+      expect(upload).toHaveBeenCalledTimes(1)
+      expect(repo.finalize).toHaveBeenCalledTimes(1)
+      expect(linkKeys[1]).toBe(linkKeys[0])
+    })
+
+    it('starts a new logical session when the selected file changes', async () => {
+      const keys: string[] = []
+      const repo = {
+        createUploadIntent: vi.fn(async (_projectId, _input, command) => {
+          keys.push(command.idempotencyKey)
+          throw new Error('intent response lost')
+        }),
+      }
+      let session: EvidenceUploadSession | null = null
+      const common = { companyId, projectId, evidenceKind: 'invoice' as const, evidenceRepo: repo as never, supabaseClient: { storage: { from: vi.fn() } } as never, get session() { return session }, onSessionChange: (value: EvidenceUploadSession) => { session = value } }
+
+      await expect(uploadAndFinalizeEvidence({ ...common, file: new File(['one'], 'one.pdf', { type: 'application/pdf' }) })).rejects.toThrow('intent response lost')
+      await expect(uploadAndFinalizeEvidence({ ...common, file: new File(['two'], 'two.pdf', { type: 'application/pdf' }) })).rejects.toThrow('intent response lost')
+
+      expect(keys).toHaveLength(2)
+      expect(keys[1]).not.toBe(keys[0])
+    })
   })
 
   describe('Bounded upload retry on intent expiry (F-UI4)', () => {
@@ -141,6 +253,7 @@ describe('Cost Evidence Uploader utility', () => {
       }
 
       const result = await uploadAndFinalizeEvidence({
+        companyId: 'c1010000-0000-4000-8000-000000000020',
         projectId: 'proj-1',
         file,
         evidenceKind: 'invoice',
@@ -155,7 +268,7 @@ describe('Cost Evidence Uploader utility', () => {
         upsert: false,
         contentType: 'application/pdf',
       })
-      expect(mockEvidenceRepo.finalize).toHaveBeenCalledWith('file-2', { expectedVersion: 0 })
+      expect(mockEvidenceRepo.finalize).toHaveBeenCalledWith('file-2', { expectedVersion: 0 }, { idempotencyKey: expect.any(String) })
       expect(result.evidenceFileId).toBe('file-2')
     })
 
@@ -211,6 +324,7 @@ describe('Cost Evidence Uploader utility', () => {
       }
 
       const result = await uploadAndFinalizeEvidence({
+        companyId: 'c1010000-0000-4000-8000-000000000020',
         projectId: 'proj-1',
         file,
         evidenceKind: 'invoice',
@@ -220,6 +334,7 @@ describe('Cost Evidence Uploader utility', () => {
       })
 
       expect(createUploadIntent).toHaveBeenCalledTimes(2)
+      expect(createUploadIntent.mock.calls[1]![2].idempotencyKey).not.toBe(createUploadIntent.mock.calls[0]![2].idempotencyKey)
       expect(uploadSpy).toHaveBeenCalledTimes(2)
       expect(uploadSpy).toHaveBeenNthCalledWith(1, 'c1/p1/path-1', file, {
         upsert: false,
@@ -232,7 +347,49 @@ describe('Cost Evidence Uploader utility', () => {
       expect(result.evidenceFileId).toBe('file-2')
     })
 
-    it('propagates error without retry when upload fails while intent is still valid', async () => {
+    it('rotates to one fresh intent if the upload succeeds after the original intent expires', async () => {
+      const file = new File(['data'], 'receipt.pdf', { type: 'application/pdf' })
+      let currentTime = 1000
+      const uploadSpy = vi.fn()
+        .mockImplementationOnce(async () => {
+          currentTime = 2500
+          return { error: null }
+        })
+        .mockResolvedValueOnce({ error: null })
+      const createUploadIntent = vi.fn()
+        .mockResolvedValueOnce({ evidenceFileId: 'file-1', version: 0, bucketId: 'c1-accounting-evidence', objectPath: 'c1/p1/path-1', expiresAt: new Date(2000).toISOString(), replayed: false })
+        .mockResolvedValueOnce({ evidenceFileId: 'file-2', version: 0, bucketId: 'c1-accounting-evidence', objectPath: 'c1/p1/path-2', expiresAt: new Date(60000).toISOString(), replayed: false })
+      const finalize = vi.fn(async (id: string) => {
+        if (id !== 'file-2') throw new Error('expired intent must not finalize')
+        return { id, status: 'finalized', originalFilename: file.name, mimeType: 'application/pdf', sizeBytes: file.size, sha256: 'abc', version: 1, finalizedAt: '2026-09-23T12:00:00.000Z', replayed: false }
+      })
+
+      await expect(uploadAndFinalizeEvidence({
+        companyId: 'c1010000-0000-4000-8000-000000000020', projectId: 'proj-1', file, evidenceKind: 'invoice',
+        evidenceRepo: { createUploadIntent, finalize } as never,
+        supabaseClient: { storage: { from: vi.fn(() => ({ upload: uploadSpy })) } } as never,
+        nowProvider: () => currentTime,
+      })).resolves.toMatchObject({ evidenceFileId: 'file-2' })
+
+      expect(uploadSpy).toHaveBeenCalledTimes(2)
+      expect(finalize).toHaveBeenCalledOnce()
+    })
+
+    it('does not probe finalization after a deterministic Storage permission failure', async () => {
+      const file = new File(['data'], 'receipt.pdf', { type: 'application/pdf' })
+      const finalize = vi.fn()
+      await expect(uploadAndFinalizeEvidence({
+        companyId: 'c1010000-0000-4000-8000-000000000020', projectId: 'proj-1', file, evidenceKind: 'invoice',
+        evidenceRepo: {
+          createUploadIntent: vi.fn().mockResolvedValue({ evidenceFileId: 'file-1', version: 0, bucketId: 'c1-accounting-evidence', objectPath: 'c1/p1/path-1', expiresAt: new Date(Date.now() + 60_000).toISOString(), replayed: false }),
+          finalize,
+        } as never,
+        supabaseClient: { storage: { from: vi.fn(() => ({ upload: vi.fn().mockResolvedValue({ error: { statusCode: 403, message: 'RLS denied' } }) })) } } as never,
+      })).rejects.toThrow('RLS denied')
+      expect(finalize).not.toHaveBeenCalled()
+    })
+
+    it('uses finalize as the authoritative probe after an ambiguous upload outcome', async () => {
       const file = new File(['data'], 'receipt.pdf', { type: 'application/pdf' })
       const uploadSpy = vi.fn().mockResolvedValue({ error: { message: 'Network connection aborted' } })
       const mockSupabase = {
@@ -250,21 +407,31 @@ describe('Cost Evidence Uploader utility', () => {
 
       const mockEvidenceRepo = {
         createUploadIntent,
-        finalize: vi.fn(),
+        finalize: vi.fn().mockResolvedValue({
+          id: 'file-1',
+          status: 'finalized',
+          originalFilename: 'receipt.pdf',
+          mimeType: 'application/pdf',
+          sizeBytes: file.size,
+          sha256: 'abc',
+          version: 1,
+          finalizedAt: '2026-09-23T12:00:00.000Z',
+          replayed: false,
+        }),
       }
 
       await expect(uploadAndFinalizeEvidence({
+        companyId: 'c1010000-0000-4000-8000-000000000020',
         projectId: 'proj-1',
         file,
         evidenceKind: 'invoice',
         evidenceRepo: mockEvidenceRepo as never,
         supabaseClient: mockSupabase as never,
-      })).rejects.toThrow('Lỗi tải tệp lên kho lưu trữ: Network connection aborted')
+      })).resolves.toMatchObject({ evidenceFileId: 'file-1' })
 
-      // Exactly 1 intent, no retry because intent has not expired
       expect(createUploadIntent).toHaveBeenCalledTimes(1)
       expect(uploadSpy).toHaveBeenCalledTimes(1)
-      expect(mockEvidenceRepo.finalize).not.toHaveBeenCalled()
+      expect(mockEvidenceRepo.finalize).toHaveBeenCalledTimes(1)
     })
 
     it('propagates second failure without a third intent', async () => {
@@ -310,6 +477,7 @@ describe('Cost Evidence Uploader utility', () => {
       }
 
       await expect(uploadAndFinalizeEvidence({
+        companyId: 'c1010000-0000-4000-8000-000000000020',
         projectId: 'proj-1',
         file,
         evidenceKind: 'invoice',

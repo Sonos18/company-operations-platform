@@ -6,6 +6,7 @@ import type { ProjectCostDataRepository, ProjectCostRequestContext } from './pro
 export interface ProjectCostServiceContext extends ProjectCostRequestContext { actorId: string; tenantId: string; permissions: readonly PermissionCode[] }
 
 function requirePermission(context: ProjectCostServiceContext, permission: PermissionCode) { if (!context.permissions.includes(permission)) throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.') }
+function requireDraftPermission(context: ProjectCostServiceContext) { if (!context.permissions.includes('cost.manage') && !context.permissions.includes('cost.prepare')) throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.') }
 function input<T>(schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } }, value: unknown): T { const parsed = schema.safeParse(value); if (!parsed.success) throw new AppApiError(400, 'INPUT_INVALID', 'Dữ liệu không hợp lệ.'); return parsed.data }
 
 export class ProjectCostService {
@@ -13,6 +14,7 @@ export class ProjectCostService {
 
   async listSummaries(context: ProjectCostServiceContext) { requirePermission(context, 'cost.read'); return this.repository.listSummaries(context.tenantId, context.companyId) }
   async projectSummary(context: ProjectCostServiceContext, projectId: string) { requirePermission(context, 'cost.read'); return this.repository.projectSummary(context.tenantId, context.companyId, projectId) }
+  async draftManagementMetadata(context: ProjectCostServiceContext) { requireDraftPermission(context); return this.repository.draftManagementMetadata(context) }
   async createDraft(context: ProjectCostServiceContext, value: unknown, idempotencyKey: string) { requirePermission(context, 'cost.manage'); return this.repository.createDraft(context, input(createProjectCostDraftInputSchema, value), idempotencyKey) }
   async updateDraft(context: ProjectCostServiceContext, id: string, value: unknown) { requirePermission(context, 'cost.manage'); return this.repository.updateDraft(context, id, input(updateProjectCostDraftInputSchema, value)) }
   async prepareFinancials(context: ProjectCostServiceContext, id: string, value: unknown) { requirePermission(context, 'cost.prepare'); return this.repository.prepareFinancials(context, id, input(prepareProjectCostFinancialsInputSchema, value)) }

@@ -25,41 +25,39 @@ import type { AuthenticatedHttpClient } from './authenticated-http-client'
 export function createHttpCostEvidenceRepository(options: {
   companyId: string | (() => string)
   client: AuthenticatedHttpClient
-  createIdempotencyKey?: () => string
 }): CostEvidenceRepository {
   const company = () => encodeURIComponent(typeof options.companyId === 'function' ? options.companyId() : options.companyId)
   const id = (value: string) => encodeURIComponent(value)
   const base = () => `/api/companies/${company()}`
-  const nextIdempotencyKey = () => (options.createIdempotencyKey ?? (() => globalThis.crypto.randomUUID()))()
 
   return {
-    createUploadIntent: (projectId: string, input: CostEvidenceCreateIntentInput): Promise<CostEvidenceUploadIntent> => {
+    createUploadIntent: (projectId: string, input: CostEvidenceCreateIntentInput, command: { idempotencyKey: string }): Promise<CostEvidenceUploadIntent> => {
       const body = costEvidenceCreateIntentInputSchema.parse(input)
       return options.client.request({
         url: `${base()}/projects/${id(projectId)}/evidence/upload-intents`,
         method: 'POST',
         body,
-        idempotencyKey: nextIdempotencyKey(),
+        idempotencyKey: command.idempotencyKey,
         schema: costEvidenceUploadIntentSchema,
       })
     },
-    finalize: (evidenceFileId: string, input: CostEvidenceFinalizeInput): Promise<CostEvidenceFinalized> => {
+    finalize: (evidenceFileId: string, input: CostEvidenceFinalizeInput, command: { idempotencyKey: string }): Promise<CostEvidenceFinalized> => {
       const body = costEvidenceFinalizeInputSchema.parse(input)
       return options.client.request({
         url: `${base()}/evidence-files/${id(evidenceFileId)}/finalize`,
         method: 'POST',
         body,
-        idempotencyKey: nextIdempotencyKey(),
+        idempotencyKey: command.idempotencyKey,
         schema: costEvidenceFinalizedSchema,
       })
     },
-    link: (projectCostItemId: string, input: CostEvidenceLinkInput): Promise<CostEvidenceLinkResult> => {
+    link: (projectCostItemId: string, input: CostEvidenceLinkInput, command: { idempotencyKey: string }): Promise<CostEvidenceLinkResult> => {
       const body = costEvidenceLinkInputSchema.parse(input)
       return options.client.request({
         url: `${base()}/project-costs/${id(projectCostItemId)}/evidence`,
         method: 'POST',
         body,
-        idempotencyKey: nextIdempotencyKey(),
+        idempotencyKey: command.idempotencyKey,
         schema: costEvidenceLinkResultSchema,
       })
     },

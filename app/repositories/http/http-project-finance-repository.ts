@@ -24,10 +24,9 @@ function search<T extends Record<string, unknown>>(schema: { parse(value: unknow
   return encoded ? `?${encoded}` : ''
 }
 
-export function createHttpProjectFinanceRepository(options: { companyId: string | (() => string), client: AuthenticatedHttpClient, createIdempotencyKey?: () => string }): ProjectFinanceRepository {
+export function createHttpProjectFinanceRepository(options: { companyId: string | (() => string), client: AuthenticatedHttpClient }): ProjectFinanceRepository {
   const base = () => `/api/companies/${activeCompany(options.companyId)}`
   const id = (value: string) => encodeURIComponent(value)
-  const nextIdempotencyKey = () => (options.createIdempotencyKey ?? (() => globalThis.crypto.randomUUID()))()
 
   return {
     listProjects: (query?: Partial<ProjectDirectoryQuery>): Promise<FinanceProjectList> => options.client.request({ url: `${base()}/project-finances${search(projectDirectoryQuerySchema, query)}`, method: 'GET', schema: financeProjectListSchema }),
@@ -48,13 +47,13 @@ export function createHttpProjectFinanceRepository(options: { companyId: string 
         schema: recordSubcontractPaymentResultSchema,
       })
     },
-    voidSubcontractPayment: (projectId: string, subcontractId: string, paymentId: string, input: VoidSubcontractPaymentInput): Promise<VoidSubcontractPaymentResult> => {
+    voidSubcontractPayment: (projectId: string, subcontractId: string, paymentId: string, input: VoidSubcontractPaymentInput, command: { idempotencyKey: string }): Promise<VoidSubcontractPaymentResult> => {
       const body = voidSubcontractPaymentInputSchema.parse(input)
       return options.client.request({
         url: `${base()}/projects/${id(projectId)}/subcontracts/${id(subcontractId)}/payments/${id(paymentId)}/void`,
         method: 'POST',
         body,
-        idempotencyKey: nextIdempotencyKey(),
+        idempotencyKey: command.idempotencyKey,
         schema: voidSubcontractPaymentResultSchema,
       })
     },

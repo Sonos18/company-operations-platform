@@ -254,6 +254,10 @@ export const projectCostOperationalDraftSchema = projectCostDraftSchema.pick({
   partyId: true, engagementId: true, componentId: true, relevantDate: true, workStatus: true,
   publicationState: true, version: true, createdAt: true, updatedAt: true,
 })
+export const projectCostDraftManagementMetadataSchema = z.object({
+  projects: z.array(z.object({ id: uuid, code: text, name: text }).strict()),
+  categories: z.array(z.object({ categoryId: uuid, code: text, name: text, isActive: z.boolean(), draftEligible: z.boolean() }).strict()),
+}).strict()
 
 export type ProjectCostWorkStatus = z.infer<typeof projectCostWorkStatusSchema>
 export type ProjectCostPublicationState = z.infer<typeof projectCostPublicationStateSchema>
@@ -269,6 +273,8 @@ export type PrepareProjectCostFinancialsResult = z.infer<typeof prepareProjectCo
 export type CorrectPublishedProjectCostInput = z.infer<typeof correctPublishedProjectCostInputSchema>
 export type ProjectCostDraft = z.infer<typeof projectCostDraftSchema>
 export type ProjectCostOperationalDraft = z.infer<typeof projectCostOperationalDraftSchema>
+export type ProjectCostDraftManagementMetadata = z.infer<typeof projectCostDraftManagementMetadataSchema>
+export type ProjectCostDraftCategoryOption = { categoryId: string; code: string; name: string; isActive: boolean; draftEligible?: boolean }
 export type CreateProjectCostItemInput = z.infer<typeof createProjectCostItemInputSchema>
 export type UpdateProjectCostItemInput = z.infer<typeof updateProjectCostItemInputSchema>
 export type CorrectProjectCostItemInput = z.infer<typeof correctProjectCostItemInputSchema>

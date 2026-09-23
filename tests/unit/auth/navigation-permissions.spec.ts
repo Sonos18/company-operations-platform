@@ -37,6 +37,12 @@ describe('navigation permissions', () => {
     expect(filterNavigationLinks(canonicalNavigationLinks, accessFor(['cost.source.read'])).map(link => link.to))
       .toEqual(['/costs/sources'])
 
+    expect(filterNavigationLinks(canonicalNavigationLinks, accessFor(['cost.manage'])).map(link => link.to))
+      .toEqual(['/cost-drafts'])
+
+    expect(filterNavigationLinks(canonicalNavigationLinks, accessFor(['cost.prepare'])).map(link => link.to))
+      .toEqual(['/cost-drafts'])
+
     expect(filterNavigationLinks(canonicalNavigationLinks, accessFor(['cost.read', 'cost.source.read'])).map(link => link.to))
       .toEqual(['/costs', '/costs/sources'])
   })
@@ -58,6 +64,7 @@ describe('navigation permissions', () => {
       { to: '/employees', label: 'Nhân sự', icon: 'i-lucide-users-round', requiredAnyPermissions: ['employee.read_directory', 'employee.read_all'] },
       { to: '/opportunities', label: 'Cơ hội', icon: 'i-lucide-target', requiredPermission: 'opportunity.read' },
       { to: '/costs', label: 'Chi phí dự án', icon: 'i-lucide-receipt', requiredPermission: 'cost.read' },
+      { to: '/cost-drafts', label: 'Bản nháp chi phí', icon: 'i-lucide-file-pen-line', requiredAnyPermissions: ['cost.manage', 'cost.prepare'] },
       { to: '/costs/sources', label: 'Nguồn chi phí', icon: 'i-lucide-database-zap', requiredPermission: 'cost.source.read' },
     ])
   })

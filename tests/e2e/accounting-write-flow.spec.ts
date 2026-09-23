@@ -169,6 +169,10 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
   test('Flow A — Draft / publish: creates draft, edits operational data, prepares financials, uploads evidence and publishes', async ({ page }) => {
     let currentDraftVersion = 1
     let currentDescription = 'Cung cấp thép móng D20'
+    let intentCount = 0
+    let storageUploadCount = 0
+    let finalizeCount = 0
+    const linkKeys: Array<string | null> = []
 
     // Mock project finance overview
     await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => {
@@ -289,11 +293,16 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
 
     // Mock evidence list: GET /project-costs/:draftId/evidence
     const evidenceList: ReturnType<typeof costEvidenceMetadataSchema.parse>[] = []
-    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, route => {
+    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, async route => {
       if (route.request().method() === 'GET') {
         route.fulfill({ json: evidenceList })
       }
       else if (route.request().method() === 'POST') {
+        linkKeys.push(await route.request().headerValue('idempotency-key'))
+        if (linkKeys.length === 1) {
+          await route.abort('connectionfailed')
+          return
+        }
         // Link evidence
         const newEvidence = costEvidenceMetadataSchema.parse({
           linkId: linkId1,
@@ -324,6 +333,7 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
 
     // Mock upload intent: POST /projects/:projectId/evidence/upload-intents
     await page.route(`**/api/companies/**/projects/${projectId}/evidence/upload-intents`, route => {
+      intentCount += 1
       route.fulfill({
         status: 201,
         json: costEvidenceUploadIntentSchema.parse({
@@ -339,11 +349,13 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
 
     // Mock Supabase storage upload
     await page.route('**/storage/v1/object/**', route => {
+      storageUploadCount += 1
       route.fulfill({ status: 200, json: { Key: `c1-accounting-evidence/${mockObjectPath}` } })
     })
 
     // Mock finalize evidence: POST /evidence-files/:evidenceFileId/finalize
     await page.route(`**/api/companies/**/evidence-files/${evidenceId}/finalize`, route => {
+      finalizeCount += 1
       route.fulfill({
         json: costEvidenceFinalizedSchema.parse({
           id: evidenceId,
@@ -413,8 +425,16 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
       buffer: Buffer.from('mock pdf content'),
     })
     await page.getByTestId('evidence-upload-btn').click()
+    await expect.poll(() => linkKeys.length).toBe(1)
+    await expect(page.getByTestId('upload-error-alert')).toBeVisible()
+    await page.getByTestId('evidence-upload-btn').click()
+    await expect.poll(() => linkKeys.length).toBe(2)
     await expect(page.getByTestId('evidence-table')).toBeVisible()
     await expect(page.getByTestId('evidence-filename')).toContainText('hoa_don_vat_tu.pdf')
+    expect(intentCount).toBe(1)
+    expect(storageUploadCount).toBe(1)
+    expect(finalizeCount).toBe(1)
+    expect(linkKeys[1]).toBe(linkKeys[0])
 
     // 8. Publish: open modal and confirm
     const openPublishBtn = page.getByTestId('open-publish-modal-btn')
@@ -690,8 +710,14 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
       }
     })
 
-    // Mock void payment
-    await page.route(`**/api/companies/**/projects/${projectId}/subcontracts/${subcontractId}/payments/${paymentId1}/void`, route => {
+    const voidRequests: Array<{ body: unknown; idempotencyKey: string | null }> = []
+    // Mock void payment, including two unknown outcomes before canonical success.
+    await page.route(`**/api/companies/**/projects/${projectId}/subcontracts/${subcontractId}/payments/${paymentId1}/void`, async route => {
+      voidRequests.push({ body: route.request().postDataJSON(), idempotencyKey: await route.request().headerValue('idempotency-key') })
+      if (voidRequests.length <= 2) {
+        await route.abort('connectionfailed')
+        return
+      }
       const p = paymentRows.find(r => r.id === paymentId1)
       if (p) {
         p.recordStatus = 'voided'
@@ -719,6 +745,18 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
 
     await page.getByTestId('void-reason-input').fill('Chuyển nhầm tài khoản, cần xuất lại ủy nhiệm chi')
     await page.getByTestId('confirm-void-payment-btn').click()
+    await expect.poll(() => voidRequests.length).toBe(1)
+    await expect(page.getByTestId('void-payment-error')).toBeVisible()
+    await page.getByTestId('confirm-void-payment-btn').click()
+    await expect.poll(() => voidRequests.length).toBe(2)
+    await expect(page.getByTestId('void-payment-error')).toBeVisible()
+    await page.getByTestId('void-reason-input').fill('Chuyển nhầm tài khoản, đã xác minh lại')
+    await page.getByTestId('confirm-void-payment-btn').click()
+    await expect.poll(() => voidRequests.length).toBe(3)
+
+    expect(voidRequests[1]).toEqual(voidRequests[0])
+    expect(voidRequests[2]?.body).toEqual({ expectedVersion: 1, reason: 'Chuyển nhầm tài khoản, đã xác minh lại' })
+    expect(voidRequests[2]?.idempotencyKey).not.toBe(voidRequests[0]?.idempotencyKey)
 
     // 3. Status updates to voided in the ledger
     await expect(page.getByTestId(`payment-status-${paymentId1}`)).toHaveText('Đã hủy')
@@ -1043,6 +1081,7 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
 
   test('Flow C — Operational correction: safely diffs published cost operational changes omitting untouched fields and category label fallback', async ({ page }) => {
     let lastCorrectionPayload: Record<string, unknown> | null = null
+    const correctionRequests: Array<{ body: Record<string, unknown>; idempotencyKey: string | null }> = []
 
     // Mock finance overview
     await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => {
@@ -1137,6 +1176,11 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     // Intercept correction request
     await page.route(`**/api/companies/**/project-costs/${publishedItemId}/corrections`, async route => {
       lastCorrectionPayload = route.request().postDataJSON()
+      correctionRequests.push({ body: lastCorrectionPayload!, idempotencyKey: await route.request().headerValue('idempotency-key') })
+      if (correctionRequests.length <= 2) {
+        await route.abort('connectionfailed')
+        return
+      }
       route.fulfill({
         json: costCommandAckSchema.parse({
           id: publishedItemId,
@@ -1176,14 +1220,24 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
 
     // 6. Submit correction
     await page.getByTestId('confirm-correction-btn').click()
+    await expect.poll(() => correctionRequests.length).toBe(1)
+    await expect(page.getByTestId('correction-error-alert')).toBeVisible()
+    await page.getByTestId('confirm-correction-btn').click()
+    await expect.poll(() => correctionRequests.length).toBe(2)
+    await expect(page.getByTestId('correction-error-alert')).toBeVisible()
+    await page.getByTestId('correction-reason-input').fill('Điều chỉnh diễn giải đã xác minh lại')
+    await page.getByTestId('confirm-correction-btn').click()
+    await expect.poll(() => correctionRequests.length).toBe(3)
 
     // 7. Modal closes
     await expect(page.getByTestId('correction-modal')).toHaveCount(0)
 
     // 8. Assert correction payload matches PATCH invariant: only description, untouched fields omitted
+    expect(correctionRequests[1]).toEqual(correctionRequests[0])
+    expect(correctionRequests[2]?.idempotencyKey).not.toBe(correctionRequests[0]?.idempotencyKey)
     expect(lastCorrectionPayload).toEqual({
       expectedVersion: 3,
-      reason: 'Điều chỉnh diễn giải chi phí theo phụ lục hợp đồng',
+      reason: 'Điều chỉnh diễn giải đã xác minh lại',
       operationalChanges: {
         description: 'Vật tư thi công phần thô (Đã bổ sung phụ lục)',
       },
@@ -1193,6 +1247,15 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     expect(op?.businessReference).toBeUndefined()
     expect(op?.relevantDate).toBeUndefined()
     expect((lastCorrectionPayload as Record<string, unknown>)?.financialChanges).toBeUndefined()
+
+    await page.getByTestId('open-correction-btn').click()
+    await page.getByTestId('toggle-op-changes').check()
+    await page.getByTestId('corr-op-description').fill('Vật tư thi công phần thô (Đã bổ sung phụ lục)')
+    await page.getByTestId('correction-reason-input').fill('Điều chỉnh diễn giải đã xác minh lại')
+    await page.getByTestId('confirm-correction-btn').click()
+    await expect.poll(() => correctionRequests.length).toBe(4)
+    expect(correctionRequests[3]?.body).toEqual(correctionRequests[2]?.body)
+    expect(correctionRequests[3]?.idempotencyKey).not.toBe(correctionRequests[2]?.idempotencyKey)
   })
 
   test('Flow D — Fallback operational correction: when canonical parent request fails, falls back to finance item and hides unavailable workStatus/relevantDate', async ({ page }) => {

@@ -58,6 +58,12 @@ describe('Project Cost routes', () => {
     expect(service.listOperationalDrafts).toHaveBeenCalledWith(trustedContext, ids.projectId)
   })
 
+  it('routes the narrow draft-management metadata read through trusted company context', async () => {
+    const service = { draftManagementMetadata: vi.fn().mockResolvedValue({ projects: [], categories: [] }) }
+    await expect(route(service).routes.draftManagementMetadata({} as never)).resolves.toEqual({ projects: [], categories: [] })
+    expect(service.draftManagementMetadata).toHaveBeenCalledWith(trustedContext)
+  })
+
   it('requires expectedVersion and a UUID idempotency key for publish', async () => {
     readBody.mockResolvedValue({ expectedVersion: 1 })
     const service = { publish: vi.fn().mockResolvedValue({ id: ids.itemId, version: 2, publicationState: 'published', replayed: false }) }
