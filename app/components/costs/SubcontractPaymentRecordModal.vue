@@ -6,6 +6,7 @@ import {
   uploadAndFinalizeEvidence,
   validateEvidenceFile,
 } from '../../utils/costs/cost-evidence-uploader'
+import { localDateInputValue } from '../../utils/costs/local-date'
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -29,6 +30,7 @@ const nuxtApp = useNuxtApp()
 const companyAccess = nuxtApp.$companyAccessStore
 const supabase = nuxtApp.$supabaseClient
 const canRecordCash = computed(() => companyAccess.hasPermission('cost.record_cash'))
+const canPrepareEvidence = computed(() => companyAccess.hasPermission('cost.prepare'))
 
 const isOpen = computed({
   get: () => props.open,
@@ -44,7 +46,7 @@ const evidenceFileError = ref<string | null>(null)
 const form = reactive({
   description: '',
   paidAmount: '',
-  paymentDate: new Date().toISOString().substring(0, 10),
+  paymentDate: localDateInputValue(),
   warrantyRetentionAmount: '',
   retentionRateBps: null as number | null,
   paymentReference: '',
@@ -52,11 +54,11 @@ const form = reactive({
   note: '',
 })
 
-watch(() => props.open, (open) => {
+watch([() => props.open, () => props.replacesPaymentId], ([open]) => {
   if (open) {
     form.description = props.replacesPaymentId ? 'Thanh toán thay thế' : ''
     form.paidAmount = ''
-    form.paymentDate = new Date().toISOString().substring(0, 10)
+    form.paymentDate = localDateInputValue()
     form.warrantyRetentionAmount = ''
     form.retentionRateBps = null
     form.paymentReference = ''
@@ -66,7 +68,7 @@ watch(() => props.open, (open) => {
     evidenceFileError.value = null
     errorMessage.value = null
   }
-})
+}, { immediate: true })
 
 function onEvidenceFileSelected(event: Event) {
   const target = event.target as HTMLInputElement
@@ -117,8 +119,8 @@ async function submit() {
   try {
     const evidenceFileIds: string[] = []
 
-    // Atomic payment evidence flow: upload & finalize, then pass evidenceFileIds in recordSubcontractPayment
-    if (selectedEvidenceFile.value) {
+    // Atomic payment evidence flow: upload & finalize only if canPrepareEvidence and file selected
+    if (canPrepareEvidence.value && selectedEvidenceFile.value) {
       const uploadResult = await uploadAndFinalizeEvidence({
         projectId: props.projectId,
         file: selectedEvidenceFile.value,
@@ -141,7 +143,7 @@ async function submit() {
       sourceReference: form.sourceReference.trim() || undefined,
       note: form.note.trim() || undefined,
       replacesPaymentId: props.replacesPaymentId || undefined,
-      evidenceFileIds,
+      evidenceFileIds: evidenceFileIds.length > 0 ? evidenceFileIds : undefined,
     }
 
     const result = await repositories.projectFinance.recordSubcontractPayment(
@@ -323,7 +325,7 @@ async function submit() {
         </div>
 
         <!-- Evidence Attachment for Subcontract Payment (Atomic Linkage) -->
-        <div class="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+        <div class="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-800" data-testid="pay-evidence-section">
           <div class="flex items-center justify-between">
             <label class="block text-xs font-bold text-gray-700 dark:text-gray-300" for="pay-evidence-file">
               Chứng từ thanh toán / Ủy nhiệm chi (Không bắt buộc)
@@ -331,40 +333,49 @@ async function submit() {
             <span class="text-[11px] text-gray-400">PDF, XLS, XLSX, PNG, JPEG (tối đa 25 MiB)</span>
           </div>
 
-          <div v-if="!selectedEvidenceFile" class="flex items-center gap-2">
-            <input
-              id="pay-evidence-file"
-              ref="evidenceFileInput"
-              type="file"
-              :accept="ALLOWED_FILE_EXTENSIONS.join(',')"
-              :disabled="submitting"
-              class="cockpit-input text-xs w-full file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-gray-100 dark:file:bg-gray-800 file:text-gray-700 dark:file:text-gray-300"
-              data-testid="pay-evidence-file-input"
-              @change="onEvidenceFileSelected"
-            >
-          </div>
-
-          <div v-else class="flex items-center justify-between p-2.5 rounded bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 text-xs">
-            <div class="flex items-center gap-2 truncate">
-              <UIcon name="i-lucide-paperclip" class="text-primary shrink-0" />
-              <span class="font-medium text-gray-800 dark:text-gray-200 truncate">{{ selectedEvidenceFile.name }}</span>
-              <span class="text-gray-400 text-[11px] shrink-0">({{ (selectedEvidenceFile.size / 1024).toFixed(1) }} KB)</span>
+          <div v-if="!canPrepareEvidence" class="p-2.5 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-300" data-testid="pay-evidence-permission-notice">
+            <div class="flex items-center gap-1.5 font-medium">
+              <UIcon name="i-lucide-info" class="shrink-0" />
+              <span>Cần quyền cost.prepare để tải lên chứng từ thanh toán.</span>
             </div>
-            <UButton
-              size="xs"
-              color="error"
-              variant="ghost"
-              icon="i-lucide-x"
-              :disabled="submitting"
-              @click="removeEvidenceFile"
-            >
-              Gỡ
-            </UButton>
           </div>
 
-          <p v-if="evidenceFileError" class="text-xs text-red-600 dark:text-red-400" role="alert">
-            {{ evidenceFileError }}
-          </p>
+          <template v-else>
+            <div v-if="!selectedEvidenceFile" class="flex items-center gap-2">
+              <input
+                id="pay-evidence-file"
+                ref="evidenceFileInput"
+                type="file"
+                :accept="ALLOWED_FILE_EXTENSIONS.join(',')"
+                :disabled="submitting"
+                class="cockpit-input text-xs w-full file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-gray-100 dark:file:bg-gray-800 file:text-gray-700 dark:file:text-gray-300"
+                data-testid="pay-evidence-file-input"
+                @change="onEvidenceFileSelected"
+              >
+            </div>
+
+            <div v-else class="flex items-center justify-between p-2.5 rounded bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 text-xs">
+              <div class="flex items-center gap-2 truncate">
+                <UIcon name="i-lucide-paperclip" class="text-primary shrink-0" />
+                <span class="font-medium text-gray-800 dark:text-gray-200 truncate">{{ selectedEvidenceFile.name }}</span>
+                <span class="text-gray-400 text-[11px] shrink-0">({{ (selectedEvidenceFile.size / 1024).toFixed(1) }} KB)</span>
+              </div>
+              <UButton
+                size="xs"
+                color="error"
+                variant="ghost"
+                icon="i-lucide-x"
+                :disabled="submitting"
+                @click="removeEvidenceFile"
+              >
+                Gỡ
+              </UButton>
+            </div>
+
+            <p v-if="evidenceFileError" class="text-xs text-red-600 dark:text-red-400" role="alert">
+              {{ evidenceFileError }}
+            </p>
+          </template>
         </div>
 
         <div class="flex justify-end gap-2 pt-3 border-t border-gray-200 dark:border-gray-800">
