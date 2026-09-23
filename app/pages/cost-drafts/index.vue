@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import type { ProjectCostDraft, ProjectCostDraftManagementMetadata, ProjectCostOperationalDraft } from '../../../shared/schemas/costs/project-costs'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
+import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 import ProjectCostDraftCreateModal from '../../components/costs/ProjectCostDraftCreateModal.vue'
 
 definePageMeta({ requiredAnyPermissions: ['cost.manage', 'cost.prepare'] })
@@ -18,6 +19,8 @@ const drafts = ref<Array<ProjectCostDraft | ProjectCostOperationalDraft>>([])
 const loading = ref(true)
 const errorMessage = ref<string | null>(null)
 const createOpen = ref(false)
+const metadataRequests = createAsyncRequestTracker<{ companyId: string }>()
+const draftRequests = createAsyncRequestTracker<{ companyId: string; projectId: string }>()
 
 const selectedProject = computed(() => metadata.value.projects.find(project => project.id === selectedProjectId.value) ?? null)
 const categoryNames = computed(() => new Map(metadata.value.categories.map(category => [category.categoryId, category.name])))
@@ -25,29 +28,38 @@ const categoryNames = computed(() => new Map(metadata.value.categories.map(categ
 async function loadDrafts() {
   if (!selectedProjectId.value) {
     drafts.value = []
+    loading.value = false
     return
   }
+  const request = draftRequests.start({ companyId: companyAccess.activeCompanyId ?? '', projectId: selectedProjectId.value })
   loading.value = true
   errorMessage.value = null
   try {
-    drafts.value = canPrepare.value
+    const nextDrafts = canPrepare.value
       ? await repositories.projectCosts.listDrafts(selectedProjectId.value)
       : await repositories.projectCosts.listOperationalDrafts(selectedProjectId.value)
+    if (!request.isCurrent()) return
+    drafts.value = nextDrafts
   }
   catch (error: unknown) {
+    if (!request.isCurrent()) return
     drafts.value = []
     errorMessage.value = extractErrorMessage(error, 'Không thể tải danh sách bản nháp chi phí.')
   }
   finally {
-    loading.value = false
+    if (request.isCurrent()) loading.value = false
   }
 }
 
 async function load() {
+  const request = metadataRequests.start({ companyId: companyAccess.activeCompanyId ?? '' })
+  draftRequests.invalidate()
   loading.value = true
   errorMessage.value = null
   try {
-    metadata.value = await repositories.projectCosts.draftManagementMetadata()
+    const nextMetadata = await repositories.projectCosts.draftManagementMetadata()
+    if (!request.isCurrent()) return
+    metadata.value = nextMetadata
     const requested = typeof route.query.projectId === 'string' ? route.query.projectId : ''
     selectedProjectId.value = metadata.value.projects.some(project => project.id === requested)
       ? requested
@@ -55,6 +67,7 @@ async function load() {
     await loadDrafts()
   }
   catch (error: unknown) {
+    if (!request.isCurrent()) return
     metadata.value = { projects: [], categories: [] }
     drafts.value = []
     errorMessage.value = extractErrorMessage(error, 'Không thể tải dữ liệu quản lý bản nháp.')
@@ -72,6 +85,10 @@ function onCreated(result: { id: string }) {
 }
 
 watch(() => companyAccess.activeCompanyId, load, { immediate: true })
+onUnmounted(() => {
+  metadataRequests.invalidate()
+  draftRequests.invalidate()
+})
 </script>
 
 <template>

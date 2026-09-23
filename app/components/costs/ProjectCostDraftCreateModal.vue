@@ -61,10 +61,10 @@ watch([() => props.open, () => props.projectId], ([open]) => {
     form.componentId = ''
     form.relevantDate = ''
     form.workStatus = 'unknown'
-    pendingCommand.value = null
     errorMessage.value = null
   }
 })
+watch(() => props.projectId, () => { pendingCommand.value = null })
 
 async function submit() {
   if (!canManage.value) {

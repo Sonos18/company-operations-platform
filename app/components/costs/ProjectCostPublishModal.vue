@@ -31,11 +31,11 @@ const submitting = ref(false)
 const errorMessage = ref<string | null>(null)
 const pendingCommand = ref<{ fingerprint: string; idempotencyKey: string } | null>(null)
 
-watch([() => props.open, () => props.projectCostItemId, () => props.version], ([open]) => {
+watch(() => props.open, (open) => {
   if (!open) return
-  pendingCommand.value = null
   errorMessage.value = null
 })
+watch([() => props.projectCostItemId, () => props.version], () => { pendingCommand.value = null })
 
 async function handlePublish() {
   if (!canPublish.value) {

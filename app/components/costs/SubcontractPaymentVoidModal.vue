@@ -46,9 +46,9 @@ watch([() => props.open, () => props.projectId, () => props.subcontractId, () =>
     errorMessage.value = null
     voidSucceeded.value = false
     voidedPaymentId.value = null
-    pendingCommand.value = null
   }
 })
+watch([() => props.projectId, () => props.subcontractId, () => props.payment?.id, () => props.payment?.version], () => { pendingCommand.value = null })
 
 async function handleVoid() {
   if (!canRecordCash.value || !props.payment) return

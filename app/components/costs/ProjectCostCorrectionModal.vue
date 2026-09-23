@@ -196,11 +196,11 @@ watch([() => props.open, () => props.projectCostItemId, () => props.currentVersi
     includeOperational.value = false
     includeFinancial.value = false
     errorMessage.value = null
-    pendingCommand.value = null
     initializeOperationalBaseline()
     loadExistingDetails()
   }
 })
+watch([() => props.projectCostItemId, () => props.currentVersion], () => { pendingCommand.value = null })
 
 watch(() => props.currentOperational, () => {
   if (props.open) {

@@ -146,6 +146,10 @@ function isAmbiguousUploadError(error: unknown): boolean {
   return /network|fetch|timeout|connection|aborted|storage error/iu.test(message)
 }
 
+function isEvidenceUploadMismatch(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'EVIDENCE_UPLOAD_MISMATCH'
+}
+
 export interface UploadEvidenceOptions {
   companyId: string
   projectId: string
@@ -208,7 +212,7 @@ export async function uploadAndFinalizeEvidence(options: UploadEvidenceOptions):
     const currentIntent = session.intent
     if (!currentIntent) throw new Error('Không thể khởi tạo upload intent.')
 
-    if (isIntentExpired(currentIntent, nowProvider())) {
+    if (session.storageState === 'not_started' && isIntentExpired(currentIntent, nowProvider())) {
       if (session.intentRefreshCount >= 1) throw new Error('Upload intent đã hết hạn ngay khi tạo lại.')
       save({
         fingerprint,
@@ -248,8 +252,13 @@ export async function uploadAndFinalizeEvidence(options: UploadEvidenceOptions):
       }
     }
 
-    if (isIntentExpired(currentIntent, nowProvider())) {
-      if (session.intentRefreshCount >= 1) throw new Error('Upload intent đã hết hạn trước khi hoàn tất.')
+    onProgress?.('finalizing')
+    try {
+      const finalized = await evidenceRepo.finalize(currentIntent.evidenceFileId, { expectedVersion: currentIntent.version }, { idempotencyKey: session.finalizeKey })
+      save({ ...session, finalized })
+    }
+    catch (error: unknown) {
+      if (!isEvidenceUploadMismatch(error) || !isIntentExpired(currentIntent, nowProvider()) || session.intentRefreshCount >= 1) throw error
       save({
         fingerprint,
         intentKey: globalThis.crypto.randomUUID(),
@@ -258,12 +267,7 @@ export async function uploadAndFinalizeEvidence(options: UploadEvidenceOptions):
         intentRefreshCount: session.intentRefreshCount + 1,
         storageState: 'not_started',
       })
-      continue
     }
-
-    onProgress?.('finalizing')
-    const finalized = await evidenceRepo.finalize(currentIntent.evidenceFileId, { expectedVersion: currentIntent.version }, { idempotencyKey: session.finalizeKey })
-    save({ ...session, finalized })
   }
 
   if (options.projectCostItemId && !session.linkResult) {

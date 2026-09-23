@@ -68,12 +68,14 @@ watch([() => props.open, () => props.replacesPaymentId, () => props.projectId, (
     form.sourceReference = ''
     form.note = ''
     selectedEvidenceFile.value = null
-    evidenceUploadSession.value = null
-    pendingCommand.value = null
     evidenceFileError.value = null
     errorMessage.value = null
   }
 }, { immediate: true })
+watch([() => props.replacesPaymentId, () => props.projectId, () => props.subcontractId], () => {
+  evidenceUploadSession.value = null
+  pendingCommand.value = null
+})
 
 function onEvidenceFileSelected(event: Event) {
   const target = event.target as HTMLInputElement
@@ -82,8 +84,6 @@ function onEvidenceFileSelected(event: Event) {
 
   if (!file) {
     selectedEvidenceFile.value = null
-    evidenceUploadSession.value = null
-    pendingCommand.value = null
     return
   }
 
@@ -91,20 +91,15 @@ function onEvidenceFileSelected(event: Event) {
   if (!validation.valid) {
     evidenceFileError.value = validation.error || 'Tệp không hợp lệ.'
     selectedEvidenceFile.value = null
-    evidenceUploadSession.value = null
     if (evidenceFileInput.value) evidenceFileInput.value.value = ''
     return
   }
 
   selectedEvidenceFile.value = file
-  evidenceUploadSession.value = null
-  pendingCommand.value = null
 }
 
 function removeEvidenceFile() {
   selectedEvidenceFile.value = null
-  evidenceUploadSession.value = null
-  pendingCommand.value = null
   evidenceFileError.value = null
   if (evidenceFileInput.value) evidenceFileInput.value.value = ''
 }

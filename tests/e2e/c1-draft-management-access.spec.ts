@@ -89,3 +89,28 @@ test('actor without manage or prepare cannot navigate to draft management', asyn
   await expect(page).toHaveURL(/\/forbidden$/)
   await expect(page.getByRole('link', { name: 'Bản nháp chi phí' })).toHaveCount(0)
 })
+
+test('late draft response from project A cannot overwrite the selected project B', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['cost.manage'] })]
+  const projectB = '10000000-0000-4000-8000-000000000060'
+  const draftB = '30000000-0000-4000-8000-000000000062'
+  let releaseProjectA!: () => void
+  const projectAGate = new Promise<void>(resolve => { releaseProjectA = resolve })
+  await page.route('**/api/companies/**/project-cost-drafts/metadata', route => route.fulfill({ json: { ...metadata, projects: [...metadata.projects, { id: projectB, code: 'DA-C1-02', name: 'Dự án B' }] } }))
+  await page.route(`**/api/companies/**/projects/${projectId}/project-cost-drafts/operations`, async (route) => {
+    await projectAGate
+    await route.fulfill({ json: [operationalDraft] })
+  })
+  await page.route(`**/api/companies/**/projects/${projectB}/project-cost-drafts/operations`, route => route.fulfill({ json: [{ ...operationalDraft, id: draftB, projectId: projectB, description: 'Draft project B' }] }))
+
+  await page.goto('/cost-drafts')
+  await expect(page.getByTestId('draft-project-select')).toHaveValue(projectId)
+  await page.getByTestId('draft-project-select').selectOption(projectB)
+  await expect(page.getByTestId(`draft-management-row-${draftB}`)).toContainText('Draft project B')
+  releaseProjectA()
+  await page.waitForTimeout(100)
+
+  await expect(page.getByTestId(`draft-management-row-${draftB}`)).toContainText('Draft project B')
+  await expect(page.getByTestId(`draft-management-row-${draftId}`)).toHaveCount(0)
+  await expect(page.getByTestId(`draft-management-open-${draftB}`)).toHaveAttribute('href', `/costs/${projectB}/drafts/${draftB}`)
+})

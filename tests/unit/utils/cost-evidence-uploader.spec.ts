@@ -164,6 +164,35 @@ describe('Cost Evidence Uploader utility', () => {
       expect(finalizeKeys[1]).toBe(finalizeKeys[0])
     })
 
+    it('replays finalize with the original key after its response is lost even if the intent later expires', async () => {
+      const file = new File(['pdf'], 'finalize-expired.pdf', { type: 'application/pdf' })
+      let currentTime = 1000
+      const finalizeKeys: string[] = []
+      const upload = vi.fn().mockResolvedValue({ error: null })
+      const repo = {
+        createUploadIntent: vi.fn().mockResolvedValue({ ...intent(), expiresAt: new Date(2000).toISOString() }),
+        finalize: vi.fn(async (_id, _input, command) => {
+          finalizeKeys.push(command.idempotencyKey)
+          if (finalizeKeys.length === 1) {
+            currentTime = 2500
+            throw new Error('finalize response lost')
+          }
+          return finalized(file)
+        }),
+        link: vi.fn(),
+      }
+      let session: EvidenceUploadSession | null = null
+      const options = { companyId, projectId, file, evidenceKind: 'invoice' as const, evidenceRepo: repo as never, supabaseClient: { storage: { from: vi.fn(() => ({ upload })) } } as never, get session() { return session }, onSessionChange: (value: EvidenceUploadSession) => { session = value }, nowProvider: () => currentTime }
+
+      await expect(uploadAndFinalizeEvidence(options)).rejects.toThrow('finalize response lost')
+      await expect(uploadAndFinalizeEvidence(options)).resolves.toMatchObject({ evidenceFileId })
+
+      expect(repo.createUploadIntent).toHaveBeenCalledTimes(1)
+      expect(upload).toHaveBeenCalledTimes(1)
+      expect(finalizeKeys).toHaveLength(2)
+      expect(finalizeKeys[1]).toBe(finalizeKeys[0])
+    })
+
     it('replays only the link stage after an unknown link outcome', async () => {
       const file = new File(['pdf'], 'link.pdf', { type: 'application/pdf' })
       const linkKeys: string[] = []
@@ -360,7 +389,7 @@ describe('Cost Evidence Uploader utility', () => {
         .mockResolvedValueOnce({ evidenceFileId: 'file-1', version: 0, bucketId: 'c1-accounting-evidence', objectPath: 'c1/p1/path-1', expiresAt: new Date(2000).toISOString(), replayed: false })
         .mockResolvedValueOnce({ evidenceFileId: 'file-2', version: 0, bucketId: 'c1-accounting-evidence', objectPath: 'c1/p1/path-2', expiresAt: new Date(60000).toISOString(), replayed: false })
       const finalize = vi.fn(async (id: string) => {
-        if (id !== 'file-2') throw new Error('expired intent must not finalize')
+        if (id !== 'file-2') throw Object.assign(new Error('expired intent'), { code: 'EVIDENCE_UPLOAD_MISMATCH' })
         return { id, status: 'finalized', originalFilename: file.name, mimeType: 'application/pdf', sizeBytes: file.size, sha256: 'abc', version: 1, finalizedAt: '2026-09-23T12:00:00.000Z', replayed: false }
       })
 
@@ -372,7 +401,7 @@ describe('Cost Evidence Uploader utility', () => {
       })).resolves.toMatchObject({ evidenceFileId: 'file-2' })
 
       expect(uploadSpy).toHaveBeenCalledTimes(2)
-      expect(finalize).toHaveBeenCalledOnce()
+      expect(finalize).toHaveBeenCalledTimes(2)
     })
 
     it('does not probe finalization after a deterministic Storage permission failure', async () => {
