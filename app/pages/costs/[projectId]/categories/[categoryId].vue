@@ -19,6 +19,9 @@ import { createLedgerQueryController } from '../../../../composables/costs/useLe
 import ProjectCostSubcontractorTable, { type SubcontractorTableRow } from '../../../../components/costs/ProjectCostSubcontractorTable.vue'
 import ProjectCostSubcontractLedger from '../../../../components/costs/ProjectCostSubcontractLedger.vue'
 import ProjectCostOrdinaryLedger from '../../../../components/costs/ProjectCostOrdinaryLedger.vue'
+import ProjectCostAttachEvidenceModal from '../../../../components/costs/ProjectCostAttachEvidenceModal.vue'
+import ProjectCostCorrectionModal from '../../../../components/costs/ProjectCostCorrectionModal.vue'
+import ProjectCostEvidencePanel from '../../../../components/costs/ProjectCostEvidencePanel.vue'
 
 definePageMeta({ requiredPermission: 'cost.read' })
 
@@ -26,6 +29,23 @@ const route = useRoute()
 const router = useRouter()
 const repositories = useRepositories()
 const companyAccess = useNuxtApp().$companyAccessStore
+
+const canCorrect = computed(() => companyAccess.hasPermission('cost.correct'))
+const canPrepare = computed(() => companyAccess.hasPermission('cost.prepare'))
+const canSourceRead = computed(() => companyAccess.hasPermission('cost.source.read'))
+
+const isCorrectionModalOpen = ref(false)
+const isAttachEvidenceOpen = ref(false)
+const isEvidenceModalOpen = ref(false)
+
+const currentItemVersion = computed(() => {
+  return ordinaryController.data.value?.kind === 'ordinary' ? ordinaryController.data.value.item.version : 0
+})
+
+function onItemMutated() {
+  loadOverview()
+  ordinaryController.executeDispatch(true)
+}
 
 const projectId = computed(() => String(route.params.projectId ?? ''))
 const categoryId = computed(() => String(route.params.categoryId ?? ''))
@@ -416,6 +436,47 @@ onUnmounted(() => {
             <p v-if="currentCategory.description" class="category-desc">
               {{ currentCategory.description }}
             </p>
+
+            <!-- Actions for published ordinary cost items -->
+            <div
+              v-if="currentCategory.code !== 'subcontract_labor' && currentCategory.itemId"
+              class="category-actions-bar flex flex-wrap items-center gap-2 pt-2"
+              data-testid="ordinary-category-actions"
+            >
+              <UButton
+                v-if="canSourceRead"
+                size="xs"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-paperclip"
+                data-testid="view-evidence-btn"
+                @click="() => { isEvidenceModalOpen = true }"
+              >
+                Hồ sơ chứng từ
+              </UButton>
+              <UButton
+                v-if="canPrepare"
+                size="xs"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-upload"
+                data-testid="attach-evidence-btn"
+                @click="() => { isAttachEvidenceOpen = true }"
+              >
+                Đính kèm chứng từ
+              </UButton>
+              <UButton
+                v-if="canCorrect"
+                size="xs"
+                color="primary"
+                variant="outline"
+                icon="i-lucide-file-pen"
+                data-testid="open-correction-btn"
+                @click="() => { isCorrectionModalOpen = true }"
+              >
+                Điều chỉnh chi phí (Kiểm toán)
+              </UButton>
+            </div>
           </div>
 
           <!-- Category Key Metrics -->
@@ -492,6 +553,7 @@ onUnmounted(() => {
           @change-page="paymentsController.goToPage"
           @clear-filters="paymentsController.clearFilters"
           @retry="paymentsController.retry"
+          @payment-mutated="onItemMutated"
         />
       </section>
 
@@ -522,6 +584,43 @@ onUnmounted(() => {
         />
       </section>
     </div>
+
+    <!-- Ordinary Cost Action Modals -->
+    <template v-if="currentCategory?.itemId">
+      <ProjectCostAttachEvidenceModal
+        v-model:open="isAttachEvidenceOpen"
+        :project-id="projectId"
+        :project-cost-item-id="currentCategory.itemId"
+        :item-description="categoryDisplayName(currentCategory.code, currentCategory.name)"
+        @attached="onItemMutated"
+      />
+
+      <ProjectCostCorrectionModal
+        v-if="canCorrect"
+        v-model:open="isCorrectionModalOpen"
+        :project-cost-item-id="currentCategory.itemId"
+        :current-version="currentItemVersion"
+        :current-description="categoryDisplayName(currentCategory.code, currentCategory.name)"
+        :currency-code="overview?.project.currencyCode"
+        :categories="overview?.categories ?? []"
+        @corrected="onItemMutated"
+      />
+
+      <UModal
+        v-model:open="isEvidenceModalOpen"
+        title="Hồ sơ chứng từ đính kèm"
+        :description="categoryDisplayName(currentCategory.code, currentCategory.name)"
+        class="max-w-4xl"
+      >
+        <template #body>
+          <ProjectCostEvidencePanel
+            :project-id="projectId"
+            :project-cost-item-id="currentCategory.itemId"
+            @evidence-linked="onItemMutated"
+          />
+        </template>
+      </UModal>
+    </template>
   </div>
 </template>
 
