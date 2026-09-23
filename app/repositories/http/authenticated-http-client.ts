@@ -136,6 +136,14 @@ function isInternalApiUrl(value: string): boolean {
     && url.pathname.startsWith('/api/')
 }
 
+function extractSafeDetails(code: ApiErrorCode, details?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!details) return undefined
+  if (code === 'COST_PUBLISH_NOT_READY' && Array.isArray(details.blockingCodes)) {
+    return { blockingCodes: details.blockingCodes }
+  }
+  return undefined
+}
+
 function apiFailure(status: number, code: ApiErrorCode, requestId: string, reason?: ClientErrorReason, details?: Record<string, unknown>): ClientError {
   if (status === 429) {
     return clientError(
@@ -144,36 +152,34 @@ function apiFailure(status: number, code: ApiErrorCode, requestId: string, reaso
       'Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau.',
       true,
       requestId,
-      undefined,
-      details,
     )
   }
 
   if (status >= 500) {
-    return clientError('api', 'INTERNAL_ERROR', 'Hệ thống không thể xử lý yêu cầu. Vui lòng thử lại sau.', true, requestId, undefined, details)
+    return clientError('api', 'INTERNAL_ERROR', 'Hệ thống không thể xử lý yêu cầu. Vui lòng thử lại sau.', true, requestId)
   }
 
   if (code === 'AUTH_REQUIRED') {
-    return clientError('authentication', 'AUTH_REQUIRED', 'Bạn cần đăng nhập để tiếp tục.', false, requestId, undefined, details)
+    return clientError('authentication', 'AUTH_REQUIRED', 'Bạn cần đăng nhập để tiếp tục.', false, requestId)
   }
   if (code === 'AUTH_INVALID') {
-    return clientError('authentication', 'AUTH_INVALID', 'Phiên đăng nhập không còn hợp lệ.', true, requestId, undefined, details)
+    return clientError('authentication', 'AUTH_INVALID', 'Phiên đăng nhập không còn hợp lệ.', true, requestId)
   }
   if (code === 'COMPANY_FORBIDDEN') {
-    return clientError('authorization', 'COMPANY_FORBIDDEN', 'Bạn không có quyền truy cập công ty này.', false, requestId, undefined, details)
+    return clientError('authorization', 'COMPANY_FORBIDDEN', 'Bạn không có quyền truy cập công ty này.', false, requestId)
   }
   if (code === 'PERMISSION_DENIED') {
-    return clientError('authorization', 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', false, requestId, reason, details)
+    return clientError('authorization', 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', false, requestId, reason)
   }
 
   if (status === 401) {
-    return clientError('authentication', 'AUTH_REQUIRED', 'Bạn cần đăng nhập để tiếp tục.', false, requestId, undefined, details)
+    return clientError('authentication', 'AUTH_REQUIRED', 'Bạn cần đăng nhập để tiếp tục.', false, requestId)
   }
   if (status === 403) {
-    return clientError('authorization', 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', false, requestId, undefined, details)
+    return clientError('authorization', 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', false, requestId)
   }
 
-  return clientError('api', code, 'Yêu cầu không thể hoàn tất ở trạng thái hiện tại.', false, requestId, undefined, details)
+  return clientError('api', code, 'Yêu cầu không thể hoàn tất ở trạng thái hiện tại.', false, requestId, undefined, extractSafeDetails(code, details))
 }
 
 export function createAuthenticatedHttpClient(options: AuthenticatedHttpClientOptions): AuthenticatedHttpClient {
