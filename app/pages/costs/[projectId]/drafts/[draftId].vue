@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { ProjectCostDraft, ProjectCostOperationalDraft } from '../../../../../shared/schemas/costs/project-costs'
 import type { FinanceOverview } from '../../../../../shared/schemas/costs/project-finance'
 import { extractErrorMessage } from '../../../../utils/costs/accounting-error-mapper'

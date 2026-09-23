@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type {
   FinanceSubcontractDetail,
   FinanceSubcontractorDetail,
@@ -9,6 +9,8 @@ import {
   formatFinanceMoney,
 } from '../../utils/costs/finance-display'
 import type { LedgerUiStatus } from '../../composables/costs/useLedgerQueryController'
+import SubcontractPaymentRecordModal from './SubcontractPaymentRecordModal.vue'
+import SubcontractPaymentVoidModal from './SubcontractPaymentVoidModal.vue'
 
 interface Props {
   detail: FinanceSubcontractorDetail | FinanceSubcontractDetail | null
@@ -52,9 +54,6 @@ const emit = defineEmits<{
   'clear-filters': []
   'payment-mutated': []
 }>()
-
-import SubcontractPaymentRecordModal from './SubcontractPaymentRecordModal.vue'
-import SubcontractPaymentVoidModal from './SubcontractPaymentVoidModal.vue'
 
 const companyAccess = useNuxtApp().$companyAccessStore
 const canRecordCash = computed(() => companyAccess.hasPermission('cost.record_cash'))

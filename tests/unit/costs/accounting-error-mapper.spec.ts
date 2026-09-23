@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ClientError } from '../../../app/errors/client-error'
+import { ClientError, type ClientErrorCode } from '../../../app/errors/client-error'
 import {
   isVersionConflictError,
   mapAccountingErrorMessage,
@@ -28,7 +28,7 @@ describe('accounting-error-mapper', () => {
     for (const [code, snippet] of cases) {
       const error = new ClientError({
         kind: 'api',
-        code: code as any,
+        code: code as unknown as ClientErrorCode,
         message: code === 'INPUT_INVALID' ? 'Dữ liệu nhập vào không hợp lệ' : 'Original message',
         retryable: false,
       })
@@ -39,7 +39,7 @@ describe('accounting-error-mapper', () => {
   it('translates COST_PUBLISH_NOT_READY with blocker codes', () => {
     const errorWithBlockers = new ClientError({
       kind: 'api',
-      code: 'COST_PUBLISH_NOT_READY' as any,
+      code: 'COST_PUBLISH_NOT_READY' as unknown as ClientErrorCode,
       message: 'Not ready',
       retryable: false,
       details: {
@@ -53,7 +53,7 @@ describe('accounting-error-mapper', () => {
 
     const errorWithoutBlockers = new ClientError({
       kind: 'api',
-      code: 'COST_PUBLISH_NOT_READY' as any,
+      code: 'COST_PUBLISH_NOT_READY' as unknown as ClientErrorCode,
       message: 'Not ready',
       retryable: false,
     })

@@ -39,10 +39,11 @@ describe('C1 Accounting Write UI contracts and workflows', () => {
       expect(parsed.success).toBe(true)
 
       // Operational projection does not contain financial amount, details, or publishReadiness
-      expect((parsed as any).data.amount).toBeUndefined()
-      expect((parsed as any).data.currencyCode).toBeUndefined()
-      expect((parsed as any).data.details).toBeUndefined()
-      expect((parsed as any).data.publishReadiness).toBeUndefined()
+      const data = (parsed as { data: Record<string, unknown> }).data
+      expect(data.amount).toBeUndefined()
+      expect(data.currencyCode).toBeUndefined()
+      expect(data.details).toBeUndefined()
+      expect(data.publishReadiness).toBeUndefined()
     })
 
     it('enforces full financial draft schema (cost.prepare) with derived amount and publishReadiness', () => {

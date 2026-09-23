@@ -74,7 +74,7 @@ export function extractErrorMessage(err: unknown, fallbackMessage = 'Đã xảy 
 
 export function isVersionConflictError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
-  return (err as any).code === 'VERSION_CONFLICT'
+  return (err as { code?: string }).code === 'VERSION_CONFLICT'
 }
 
 export const mapAccountingErrorMessage = extractErrorMessage

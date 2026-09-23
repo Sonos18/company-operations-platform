@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { CostEvidenceMetadata } from '../../../shared/schemas/costs/cost-evidence'
 import {
-  ALLOWED_EVIDENCE_MIME_TYPES,
   ALLOWED_FILE_EXTENSIONS,
   uploadAndFinalizeEvidence,
   validateEvidenceFile,

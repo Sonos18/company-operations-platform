@@ -19,7 +19,7 @@ interface DraftModel {
 
 const props = withDefaults(defineProps<{
   draft: DraftModel
-  categories: FinanceCategoryRow[]
+  categories?: FinanceCategoryRow[]
   disabled?: boolean
 }>(), {
   categories: () => [],

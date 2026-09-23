@@ -6,7 +6,7 @@ import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
 const props = withDefaults(defineProps<{
   open: boolean
   projectId: string
-  categories: FinanceCategoryRow[]
+  categories?: FinanceCategoryRow[]
 }>(), {
   categories: () => [],
 })

@@ -8,7 +8,7 @@ import { formatFinanceMoney } from '../../utils/costs/finance-display'
 const props = withDefaults(defineProps<{
   open: boolean
   projectId: string
-  categories: FinanceCategoryRow[]
+  categories?: FinanceCategoryRow[]
 }>(), {
   categories: () => [],
 })
