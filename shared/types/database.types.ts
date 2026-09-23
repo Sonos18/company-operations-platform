@@ -4369,6 +4369,17 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_finalize_cost_evidence_server: {
+        Args: {
+          target_actor_id: string
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_get_controlled_import_result: {
         Args: { target_company_id: string; target_run_id: string }
         Returns: Json

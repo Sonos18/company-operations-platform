@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
 
-select plan(39);
+select plan(42);
 
 select has_table('public', 'cost_evidence_files', 'evidence file registry exists');
 select has_table('public', 'cost_evidence_links', 'evidence link registry exists');
@@ -13,7 +13,10 @@ select is((select count(*) from pg_policies where schemaname = 'storage' and tab
 select ok(not has_table_privilege('authenticated', 'public.cost_evidence_files', 'insert'), 'authenticated cannot insert evidence registry rows directly');
 select ok(not has_table_privilege('authenticated', 'public.cost_evidence_files', 'update'), 'authenticated cannot mutate evidence registry rows directly');
 select ok(has_function_privilege('authenticated', 'public.c1_create_cost_evidence_intent(uuid,uuid,jsonb,uuid,uuid)', 'execute'), 'authenticated can call intent RPC');
-select ok(has_function_privilege('authenticated', 'public.c1_finalize_cost_evidence(uuid,uuid,jsonb,uuid,uuid)', 'execute'), 'authenticated can call finalize RPC');
+select ok(not has_function_privilege('authenticated', 'public.c1_finalize_cost_evidence(uuid,uuid,jsonb,uuid,uuid)', 'execute'), 'authenticated cannot call the legacy finalize transition');
+select ok(to_regprocedure('public.c1_finalize_cost_evidence_server(uuid,uuid,uuid,jsonb,uuid,uuid)') is not null, 'server-only finalize RPC exists');
+select ok(has_function_privilege('service_role', 'public.c1_finalize_cost_evidence_server(uuid,uuid,uuid,jsonb,uuid,uuid)', 'execute'), 'service role can call the trusted finalize transition');
+select ok(not has_function_privilege('authenticated', 'public.c1_finalize_cost_evidence_server(uuid,uuid,uuid,jsonb,uuid,uuid)', 'execute'), 'authenticated cannot call the trusted finalize transition');
 select ok(has_function_privilege('authenticated', 'public.c1_link_cost_evidence(uuid,uuid,jsonb,uuid,uuid)', 'execute'), 'authenticated can call link RPC');
 select ok(has_function_privilege('authenticated', 'public.c1_get_cost_evidence_read_target(uuid,uuid)', 'execute'), 'authenticated can call guarded raw-read target RPC');
 
@@ -60,6 +63,8 @@ begin
   values('c1070000-0000-4000-8000-000000000201',tenant_id,company_id,'c1070000-0000-4000-8000-000000000101','c1070000-0000-4000-8000-000000000301','C107 published',1,'1','VND','unknown','published','legacy_backfill',now(),preparer);
   insert into public.cost_evidence_files(id,tenant_id,company_id,project_id,object_path,original_filename,declared_mime_type,declared_size_bytes,declared_sha256,verified_mime_type,verified_size_bytes,verified_sha256,status,intent_expires_at,created_by,finalized_by,finalized_at,version)
   values('c1070000-0000-4000-8000-000000000401',tenant_id,company_id,'c1070000-0000-4000-8000-000000000101',tenant_id::text||'/'||company_id::text||'/c1070000-0000-4000-8000-000000000101/c1070000-0000-4000-8000-000000000401','contract.pdf','application/pdf',8,repeat('a',64),'application/pdf',8,repeat('a',64),'finalized',now()+interval '15 minutes',preparer,preparer,now(),1);
+  insert into public.cost_command_receipts(tenant_id,company_id,actor_id,command_name,idempotency_key,request_hash,result_resource_id,result_version)
+  values(tenant_id,company_id,preparer,'cost_evidence.finalize','c1070000-0000-4000-8000-000000000718',repeat('e',64),'c1070000-0000-4000-8000-000000000401',1);
   insert into public.cost_evidence_files(id,tenant_id,company_id,project_id,object_path,original_filename,declared_mime_type,declared_size_bytes,declared_sha256,status,intent_expires_at,created_by) values
     ('c1070000-0000-4000-8000-000000000402','c1070000-0000-4000-8000-000000000011','c1070000-0000-4000-8000-000000000021','c1070000-0000-4000-8000-000000000102','c1070000-0000-4000-8000-000000000011/c1070000-0000-4000-8000-000000000021/c1070000-0000-4000-8000-000000000102/c1070000-0000-4000-8000-000000000402','foreign.pdf','application/pdf',8,repeat('f',64),'pending_upload',now()+interval '15 minutes',preparer),
     ('c1070000-0000-4000-8000-000000000403',tenant_id,company_id,'c1070000-0000-4000-8000-000000000101',tenant_id::text||'/'||company_id::text||'/c1070000-0000-4000-8000-000000000101/c1070000-0000-4000-8000-000000000403','live.pdf','application/pdf',8,repeat('c',64),'pending_upload',now()+interval '15 minutes',preparer),
@@ -91,11 +96,17 @@ select is((public.c1_create_cost_evidence_intent(
 select is((select count(*) from public.cost_evidence_files where id=(select (result->>'evidenceFileId')::uuid from c1_evidence_intent_result)),1::bigint,'pending-upload creator retains metadata visibility under cost.prepare');
 select throws_ok(
   $$select public.c1_finalize_cost_evidence('c1070000-0000-4000-8000-000000000020',(select (result->>'evidenceFileId')::uuid from c1_evidence_intent_result),'{"expectedVersion":0,"mimeType":"application/pdf","sizeBytes":9,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}','c1070000-0000-4000-8000-000000000714','c1070000-0000-4000-8000-000000000715')$$,
-  'P0001','EVIDENCE_UPLOAD_MISMATCH','finalize rejects mismatched verified identity'
+  '42501',null,'authenticated caller cannot bypass byte verification through the legacy finalize RPC'
 );
-select is((public.c1_finalize_cost_evidence('c1070000-0000-4000-8000-000000000020','c1070000-0000-4000-8000-000000000403','{"expectedVersion":0,"mimeType":"application/pdf","sizeBytes":8,"sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}','c1070000-0000-4000-8000-000000000718','c1070000-0000-4000-8000-000000000719')->>'status'),'finalized','finalize records a matching verified identity');
-select is((public.c1_finalize_cost_evidence('c1070000-0000-4000-8000-000000000020','c1070000-0000-4000-8000-000000000403','{"expectedVersion":0}','c1070000-0000-4000-8000-000000000718','c1070000-0000-4000-8000-000000000720')->>'replayed')::boolean,true,'finalize retry reaches the receipt without metadata read capability');
-select is((select count(*) from public.cost_evidence_files where id='c1070000-0000-4000-8000-000000000403'),0::bigint,'cost.prepare creator cannot read finalized metadata without cost.source.read');
+select is((select status from public.cost_evidence_files where id='c1070000-0000-4000-8000-000000000403'),'pending_upload','direct authenticated finalize leaves the unverified object pending');
+reset role;
+set local role service_role;
+select set_config('request.jwt.claims','{"role":"service_role"}',true);
+select is((public.c1_finalize_cost_evidence_server('c1070000-0000-4000-8000-000000000901','c1070000-0000-4000-8000-000000000020','c1070000-0000-4000-8000-000000000401','{"expectedVersion":0}','c1070000-0000-4000-8000-000000000718','c1070000-0000-4000-8000-000000000720')->>'replayed')::boolean,true,'trusted finalize wrapper preserves exact receipt replay');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1070000-0000-4000-8000-000000000901","role":"authenticated"}',true);
+select is((select count(*) from public.cost_evidence_files where id='c1070000-0000-4000-8000-000000000403'),1::bigint,'pending creator retains access after the blocked direct finalize');
 select is((public.c1_link_cost_evidence(
   'c1070000-0000-4000-8000-000000000020','c1070000-0000-4000-8000-000000000201',
   '{"evidenceFileId":"c1070000-0000-4000-8000-000000000401","evidenceKind":"contract"}',

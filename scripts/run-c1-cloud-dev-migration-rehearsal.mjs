@@ -18,6 +18,7 @@ const migrationSuffixes = [
   '_c1_accounting_write_review_security_hardening.sql',
   '_c1_accounting_write_finalize_validation_fix.sql',
   '_c1_accounting_write_raw_target_metadata_fix.sql',
+  '_c1_accounting_write_finalize_server_boundary.sql',
 ]
 
 export function buildC1MigrationRehearsalSql(migrationSql) {
