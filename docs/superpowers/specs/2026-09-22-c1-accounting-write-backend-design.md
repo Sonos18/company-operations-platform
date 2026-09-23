@@ -1,8 +1,8 @@
 # C1 Accounting Write Backend Design
 
-**Status:** Proposed canonical backend design; implementation is not authorized by this document.
+**Status:** Canonical implemented backend design reflected by PR #17 at reviewed HEAD `94ea9a18fbe91de36b05b5f35532d0ef24ccfea5`.
 **Repository:** `Sonos18/company-operations-platform`
-**Baseline:** `origin/main` at `eb4074306b9b27b4b573a874949ef60b8b991b50`
+**Design baseline:** `origin/main` at `eb4074306b9b27b4b573a874949ef60b8b991b50`
 **Design owner split:** CodeX owns database, Storage, backend APIs, shared non-visual contracts, and backend/database tests. Antigravity owns all UI.
 
 ## 1. Purpose
@@ -32,9 +32,11 @@ This slice does not implement:
 - publication state encoded in `work_status`;
 - a generic evidence requirement/routing engine;
 - new budget, owner-advance, revenue, margin, or retention-release write flows;
-- an implementation plan. That begins only after human approval of this spec.
+- an implementation plan or acceptance report; those remain separate documents.
 
-## 3. Verified baseline
+## 3. Verified pre-implementation baseline
+
+This section records the historical baseline used to make the design decisions. It is not a description of the final PR #17 schema or runtime; the final architecture is authoritative in sections 5–23, and execution evidence remains in the acceptance report.
 
 ### 3.1 Repository
 
@@ -42,7 +44,7 @@ The current branch was created cleanly from `origin/main` at `eb4074306b9b27b4b5
 
 The permission catalog already contains all five mutation permissions and all three relevant read permissions. The existing server resolves actor, tenant, company, permissions, request identity, and the user-scoped Supabase client through `c1RequestContext`; request bodies do not choose tenant identity.
 
-Current project-cost behavior:
+Pre-implementation project-cost behavior:
 
 - `POST /api/companies/:companyId/projects/:projectId/project-costs` calls `c1_create_project_cost_item` under `cost.manage`.
 - Creation currently requires amount, currency, `workStatus`, and a non-overlap reference, and immediately inserts a row visible to `cost.read`.
@@ -52,7 +54,7 @@ Current project-cost behavior:
 - The current correction RPC changes the parent amount directly. Because existing rows have details and the derived-amount trigger rejects independent parent-amount changes, the exposed amount-correction contract is not a complete working correction path for the reconciled schema.
 - Current project-cost and finance repositories do not filter publication state because none exists.
 
-Current source behavior:
+Pre-implementation source behavior:
 
 - `accounting_sources`, `accounting_source_versions`, `source_selections`, `source_reported_figures`, review issues, controlled-import runs, and descriptor maps implement immutable controlled-import provenance.
 - `cost.prepare` currently authorizes controlled source import together with `cost.source.read`.
@@ -60,7 +62,7 @@ Current source behavior:
 - `accounting_source_versions.raw_file_reference` is only an optional text reference. It is not a verified Storage object registry.
 - Evidence-only files cannot be represented honestly without a source figure under the current schema; creating a fake figure would corrupt the provenance model.
 
-Current finance behavior:
+Pre-implementation finance behavior:
 
 - All finance endpoints are GET-only and require `cost.read`.
 - `project_subcontract_payments` is the canonical company-to-subcontractor cash ledger. Recorded rows contribute to subcontract Actual; voided rows do not.
@@ -68,7 +70,7 @@ Current finance behavior:
 - `project_cost_reconciliation_resolutions` records when canonical subcontract payments supersede legacy cost rows for read aggregation without deleting history.
 - No guarded write RPC exists yet for subcontracts or payments.
 
-### 3.2 Cloud DEV read-only verification
+### 3.2 Pre-implementation Cloud DEV read-only verification
 
 Read-only checks used the repository target guard, auth check, migration status, and `supabase db query --linked` with metadata/count SELECT statements only.
 
@@ -117,14 +119,15 @@ An event-first ledger would make reconstruction natural but would replace the cu
 | --- | --- | --- | --- |
 | Create cost draft | `cost.manage` | Create ordinary draft identity and operational metadata | Supplying official amount, publishing, source/evidence mutation, cash |
 | Update draft operations | `cost.manage` | Description, business reference, category, party, engagement, component, relevant date, work status while draft | Any mutation after publish; financial lines; evidence; cash |
-| Prepare draft financials | `cost.prepare` | Currency, complete detail snapshot, source-figure links | Official activation; published rewrite |
+| Read draft operations | `cost.manage` | Guarded operational-only RPC/API projection with identity, editable operational fields, state, version, and timestamps | Direct draft-table reads; amount, currency, details, source IDs, publish readiness |
+| Prepare/read draft financials | `cost.prepare` | Draft parent financial state, currency, complete detail snapshot, source-figure links, and publish readiness | Official activation; published rewrite |
 | Create/finalize/link evidence | `cost.prepare` | Immutable file intent, verification, cost/payment link, optional source-version link | Upsert/overwrite; fake source figure; financial activation |
 | Publish | `cost.publish_import` | One transactional `draft -> published` transition | Automatic save/publish; repeated activation |
 | Correct published cost | `cost.correct` | Full financial/detail replacement and material metadata correction with reason and immutable before/after audit | Silent PATCH through manage/prepare; delete history |
 | Record/void subcontract payment | `cost.record_cash` | Insert recorded cash, void it, and optionally replace a voided row | Updating paid amount; using cost amount as payment; second ledger |
 | Read official costs/finance | `cost.read` | Published canonical projection and recorded cash | Draft financials; raw file bytes |
-| Read source/evidence metadata | `cost.source.read` | Provenance and finalized evidence metadata | Raw bytes without `cost.file.read` |
-| Read raw evidence | `cost.file.read` | Short-lived authenticated/signed access to finalized private objects | Public URL, bucket listing outside scope |
+| Read source/evidence metadata | `cost.source.read` | Provenance, finalized evidence metadata, and immutable links | Raw bytes; this permission does not imply `cost.file.read` or `cost.read` |
+| Read raw evidence | `cost.file.read` plus `cost.read` | 60-second signed read URL after linked-resource visibility succeeds | Evidence metadata, original filename, public URL, bucket listing outside scope |
 
 No capability implies another. Server services and database commands check the exact permission named above.
 
@@ -133,7 +136,7 @@ No capability implies another. Server services and database commands check the e
 | VQH role | Final C1 permissions in this slice | Notes |
 | --- | --- | --- |
 | `accountant` | Existing unrelated permissions plus `cost.read`, `cost.source.read`, `cost.file.read`, `cost.manage`, `cost.prepare`, `cost.publish_import`, `cost.correct`, `cost.record_cash` | Company-specific assignment; no global grant or role cross-join. |
-| Director/read-only roles | Existing `cost.read` and any already-approved source read only | No mutation capability. Raw bytes still require `cost.file.read`. |
+| Director/read-only roles | Existing `cost.read` and any already-approved source read only | No mutation capability. Raw bytes require both `cost.read` and `cost.file.read`. |
 | `c1_vqh_cost_operator` | Preserve its current `cost.manage` and `cost.correct` assignments | This design does not broaden or remove the transitional operator role. |
 | Other company roles | Unchanged | Future companies assign the generic catalog explicitly per company. |
 
@@ -147,8 +150,8 @@ The RBAC migration must locate the exact active VQH Accountant role by tenant, c
 create via cost.manage
         |
         v
-      draft  -- cost.manage: operational fields
-        |    -- cost.prepare: financial lines, sources, evidence
+      draft  -- cost.manage: operational fields and guarded operational-only reads
+        |    -- cost.prepare: full financial/source draft reads and preparation, evidence
         |    -- publish readiness computed on read/command
         |
         +---- explicit cost.publish_import command ----> published
@@ -226,7 +229,9 @@ Reuse `project_cost_item_sources` for real source-figure provenance. Prepare com
 RLS and server queries distinguish parent state:
 
 - `cost.read` can select only published parents and their child details/source links;
-- draft reads require the relevant draft capability (`cost.manage` for operational fields; `cost.prepare` for financial/source fields);
+- direct raw-table SELECT of draft parents, details, and source links requires `cost.prepare`;
+- `cost.manage` reads drafts only through guarded operational RPC/API projections containing `id`, `projectId`, description, category/reference/hierarchy/date/work-status fields, `publicationState`, `version`, and timestamps;
+- that operational projection never contains amount, currency, detail lines, source figure IDs, publish readiness, or other financial/source state;
 - official repositories also include an explicit `publication_state = 'published'` predicate as defense in depth.
 
 ### 8.3 `cost_evidence_files`
@@ -241,18 +246,18 @@ Create an immutable object registry:
 | `bucket_id` | Fixed to private bucket `c1-accounting-evidence`. |
 | `object_path` | Server-generated, unique, immutable path. |
 | `original_filename` | Display metadata only; never used in the object path. |
-| `declared_mime_type`, `verified_mime_type` | Allowed MIME declaration and finalized Storage metadata. |
+| `declared_mime_type`, `verified_mime_type` | Allowed MIME declaration and finalized server-verified format identity after Content-Type and byte/package checks. |
 | `declared_size_bytes`, `verified_size_bytes` | Non-negative, maximum 25 MiB. |
 | `declared_sha256`, `verified_sha256` | Lowercase 64-hex; equality required to finalize. |
 | `status` | `pending_upload | finalized`. |
-| `intent_expires_at` | Signed upload-intent expiry. |
+| `intent_expires_at` | Authenticated upload-intent expiry enforced by Storage INSERT RLS. |
 | `created_by`, `created_at`, `finalized_by`, `finalized_at` | Actor/time attribution. |
 | `version` | Optimistic version; pending→finalized increments once. |
 
 Object path format is server-generated and contains no filename:
 
 ```text
-tenants/{tenantId}/companies/{companyId}/projects/{projectId}/evidence/{evidenceFileId}/object
+{tenantId}/{companyId}/{projectId}/{evidenceFileId}
 ```
 
 Allowed MIME types are exactly:
@@ -263,7 +268,7 @@ Allowed MIME types are exactly:
 - `image/png`
 - `image/jpeg`
 
-Extensions are advisory only; MIME, size, and SHA-256 are verified at finalize. Finalization streams the bounded private object server-side to compute SHA-256. A mismatch leaves the registry pending and returns `EVIDENCE_UPLOAD_MISMATCH`; the object is not linkable. Cleanup of expired unmatched objects is operational maintenance outside this slice and cannot delete finalized evidence.
+Extensions are advisory only. Finalization verifies stored Content-Type against the declared allowed MIME, byte size, SHA-256, and byte/package format. PDF, PNG, JPEG, and XLS require their respective PDF, PNG, JPEG, and OLE Compound File signatures. XLSX must be a valid ZIP containing `[Content_Types].xml` and `xl/workbook.xml`, with the SpreadsheetML workbook content type declared. These checks establish bounded file-format identity; they do not prove malware safety, document authenticity, business correctness, financial correctness, or semantic validity of workbook content. A mismatch leaves the registry pending and returns `EVIDENCE_UPLOAD_MISMATCH`; the object is not linkable. Cleanup of expired unmatched objects is operational maintenance outside this slice and cannot delete finalized evidence.
 
 ### 8.4 `cost_evidence_links`
 
@@ -299,22 +304,24 @@ Create the private bucket `c1-accounting-evidence` with `public = false`, 25 MiB
 The upload flow is:
 
 1. `cost.prepare` calls the project-scoped upload-intent API with name, MIME, size, and SHA-256.
-2. The server resolves company/tenant, inserts a pending registry row, generates the immutable path, and returns a short-lived signed upload token with upsert disabled.
-3. The client uploads to that exact path. Existing-path upload fails; no update policy exists.
-4. `cost.prepare` calls finalize. The server checks registry ownership/scope/expiry, Storage object existence, MIME, size, and streamed SHA-256.
-5. One RPC changes pending→finalized, records verified metadata/actor/time, and emits an audit event.
-6. A separate idempotent link command attaches the finalized file to a cost or a payment. Linkage does not change financial state.
-7. Metadata reads require `cost.source.read`. Raw byte access requires `cost.file.read` and returns an authenticated download or a server-generated signed URL valid for at most 60 seconds.
+2. The server resolves company/tenant, inserts a pending registry row, generates the immutable UUID-only path, and returns `{ evidenceFileId, version, bucketId, objectPath, expiresAt, replayed }` without an upload token.
+3. The client uses its authenticated Supabase session to upload directly to that exact private bucket/path with upsert disabled.
+4. Storage INSERT RLS authorizes the write only when the authenticated actor created the matching pending intent, has `cost.prepare`, the bucket/path match exactly, and `intent_expires_at > now()`.
+5. Existing-path upload fails; no Storage UPDATE or DELETE policy exists.
+6. `cost.prepare` calls finalize. The server checks registry ownership/scope/expiry, Storage object existence, stored Content-Type, size, SHA-256, and byte/package format.
+7. One RPC changes pending→finalized, records verified metadata/actor/time, and emits an audit event.
+8. A separate idempotent link command attaches the finalized file to a cost or a payment. Linkage does not change financial state.
+9. Metadata reads require `cost.source.read`. Raw byte access requires server-level `cost.read` plus `cost.file.read`, linked-resource visibility, and returns a signed URL valid for 60 seconds.
 
-Storage RLS does not trust folder segments alone. Private helper predicates parse the fixed path and join `cost_evidence_files` to verify exact bucket/path, actor, company, status, expiry, and permission.
+Storage RLS does not trust path segments alone. Private helper predicates join `cost_evidence_files` to verify the exact registered bucket/path, actor, company, status, expiry, and permission.
 
 - INSERT: only the actor's live pending intent under `cost.prepare`.
 - SELECT for upload/finalize verification: pending object for its creating actor with `cost.prepare`.
-- SELECT for final read: finalized object and company-scoped `cost.file.read`.
+- SELECT for final read: finalized object, company-scoped `cost.file.read`, and visibility of at least one linked business resource.
 - UPDATE: no policy.
 - DELETE: no policy.
 
-Signed URLs are treated as bearer credentials and are never stored in audit rows or returned by metadata list APIs. Supabase recommends a new path rather than overwrite; this design makes overwrite structurally impossible.
+No signed upload URL or token is minted. The 60-second finalized-object read URL is treated as a bearer credential and is never stored in audit rows or returned by metadata list APIs. Supabase recommends a new path rather than overwrite; this design makes overwrite structurally impossible.
 
 ## 10. Command/RPC model
 
@@ -343,6 +350,8 @@ Required command names:
 - `c1_correct_published_project_cost`
 - `c1_record_subcontract_payment`
 - `c1_void_subcontract_payment`
+
+Guarded read resolvers additionally include `c1_read_project_cost_draft_operational`, `c1_list_project_cost_drafts_operational`, and `c1_get_cost_evidence_read_target`. The raw evidence target returns only `bucketId` and `objectPath`.
 
 The old `c1_create_project_cost_item`, `c1_update_project_cost_item`, and `c1_correct_project_cost_item` public contracts must not remain as lifecycle bypasses. A forward migration replaces their definitions with compatibility wrappers that enforce the new lifecycle/permissions or revokes them after server routes move. There is never a window where an authenticated caller can invoke an old official-write path.
 
@@ -393,7 +402,20 @@ interface CostCommandAck {
 - **Method/path:** `POST /api/companies/:companyId/projects/:projectId/evidence/upload-intents`
 - **Permission:** `cost.prepare`
 - **Input:** `{ originalFilename, mimeType, sizeBytes, sha256 }`.
-- **Response:** `{ evidenceFileId, version, bucketId, objectPath, signedUploadToken, expiresAt, replayed }`.
+- **Response:**
+
+```json
+{
+  "evidenceFileId": "uuid",
+  "version": 0,
+  "bucketId": "c1-accounting-evidence",
+  "objectPath": "tenantUuid/companyUuid/projectUuid/evidenceUuid",
+  "expiresAt": "2026-09-22T10:15:00.000Z",
+  "replayed": false
+}
+```
+
+- **Upload:** authenticated Supabase Storage upload to the exact returned private bucket/path with upsert disabled; live-intent INSERT RLS is the write-time authority.
 - **Idempotency:** required header. Replay returns the same live intent/result; changed payload conflicts.
 - **Preconditions:** project exists in scope, allowed type, size ≤25 MiB, hash format valid.
 
@@ -403,8 +425,8 @@ interface CostCommandAck {
 - **Permission:** `cost.prepare`
 - **Input:** `{ expectedVersion }`.
 - **Response:** finalized metadata without URL: `{ id, status: 'finalized', originalFilename, mimeType, sizeBytes, sha256, version, finalizedAt, replayed }`.
-- **Idempotency:** required header. Exact replay returns the finalized record.
-- **Preconditions:** pending intent, same creator/company, unexpired intent, exact Storage object, verified type/size/hash.
+- **Idempotency:** required header. First finalize verifies the pending object. An exact retry may return the existing finalized result through the command receipt without requiring broad finalized-metadata read access; changed replay identity returns `IDEMPOTENCY_CONFLICT`.
+- **Preconditions:** pending intent, same creator/company, unexpired intent, exact Storage object, matching stored Content-Type, size, SHA-256, and byte/package format.
 
 ### 11.6 Link evidence to cost
 
@@ -456,20 +478,23 @@ The RPC locks the item, records immutable before/after parent and detail/source 
 
 ### 11.11 Read draft state
 
-- **Methods/paths:**
+- **Operational methods/paths:**
+  - `GET /api/companies/:companyId/projects/:projectId/project-cost-drafts/operations`
+  - `GET /api/companies/:companyId/project-costs/:projectCostItemId/draft/operations`
+- **Operational permission/response:** `cost.manage`; returns exactly `{ id, projectId, description, costCategoryId, businessReference, partyId, engagementId, componentId, relevantDate, workStatus, publicationState, version, createdAt, updatedAt }`. It excludes amount, currency, detail lines, source figure IDs, publish readiness, and every other financial/source field.
+- **Financial methods/paths:**
   - `GET /api/companies/:companyId/projects/:projectId/project-cost-drafts`
   - `GET /api/companies/:companyId/project-costs/:projectCostItemId/draft`
-- **Permission:** `cost.prepare`; the response includes operational fields because the target Accountant also has `cost.manage`.
-- **Response:** strict draft DTO with nullable derived amount, full details, source links, evidence metadata, version, and `{ ready, blockingCodes }` publish readiness.
+- **Financial permission/response:** `cost.prepare`; returns the strict draft DTO with nullable derived amount, currency, full details, source figure IDs, version, and `{ ready, blockingCodes }` publish readiness.
 - **Idempotency/expectedVersion:** read-only; not applicable.
 - **Preconditions:** draft only; a published ID on the draft-detail route returns `RESOURCE_NOT_FOUND`.
 
 ### 11.12 Evidence metadata and raw read access
 
-- **Metadata:** `GET /api/companies/:companyId/project-costs/:projectCostItemId/evidence`, permission `cost.source.read`, returns finalized metadata and immutable links without object path token or signed URL.
-- **Read URL:** `POST /api/companies/:companyId/evidence-files/:evidenceFileId/read-url`, permission `cost.file.read`, input `{ disposition?: 'inline' | 'attachment' }`, returns `{ url, expiresAt }` with maximum 60-second TTL.
+- **Metadata:** `GET /api/companies/:companyId/project-costs/:projectCostItemId/evidence`, permission `cost.source.read`, returns finalized filename, verified MIME, size, SHA-256, evidence kind, optional source-version linkage, and immutable link identity without object path or signed URL.
+- **Read URL:** `POST /api/companies/:companyId/evidence-files/:evidenceFileId/read-url`, server permissions `cost.read` and `cost.file.read`, input `{ disposition?: 'inline' | 'attachment' }`, returns `{ url, expiresAt }` with exactly 60-second TTL.
 - **Idempotency/expectedVersion:** read-only generation; not applicable. Every call reauthorizes current access.
-- **Preconditions:** finalized same-scope file linked to an accessible resource.
+- **Preconditions:** finalized same-scope file linked to an accessible resource. The internal resolver returns only `bucketId` and `objectPath`; it never returns original filename, evidence kind, SHA-256, source metadata, or other registry metadata. Attachment mode therefore uses generic disposition; filenames come from the metadata endpoint under `cost.source.read`.
 
 ## 12. RBAC, RLS, and security boundaries
 
@@ -479,11 +504,13 @@ The RPC locks the item, records immutable before/after parent and detail/source 
 - All business tables enable and force RLS.
 - Authenticated table grants remain SELECT-only where required; no authenticated business-table DML is added.
 - Draft/published RLS predicates join through parent state for children.
+- Direct draft parent/detail/source SELECT requires `cost.prepare`; `cost.manage` uses only the metadata-free operational projection RPCs.
 - Storage is private and has no UPDATE/DELETE policy.
 - Composite scope FKs exist for every cost, detail, evidence, source, subcontract, payment, and link relation.
 - Security-definer helpers are private, have empty search paths, perform explicit actor/permission checks, and have execute revoked from application roles unless they are intentionally used by RLS.
-- Evidence metadata is `cost.source.read`; raw bytes are `cost.file.read`.
-- Signed URLs/tokens, file bytes, raw descriptions, and credentials are excluded from broad audit payloads.
+- Finalized evidence metadata and immutable links require `cost.source.read`; `cost.file.read` does not imply metadata access.
+- Raw bytes require server-level `cost.read` and `cost.file.read` plus linked-resource visibility; the internal target resolver is limited to bucket/path.
+- Signed read URLs, file bytes, raw descriptions, and credentials are excluded from broad audit payloads.
 - Director/read-only actors fail mutation at both service and RPC layers with `PERMISSION_DENIED`.
 
 ## 13. Idempotency, concurrency, and versioning
@@ -507,6 +534,8 @@ For every receipt-backed command:
 4. equal hash returns the recorded canonical result with `replayed: true`;
 5. unequal hash returns `IDEMPOTENCY_CONFLICT`;
 6. otherwise lock target rows, validate expected versions, mutate, audit, and insert the receipt in one transaction.
+
+Evidence finalization has one additional replay boundary: the first request requires the pending object and verified Content-Type/size/SHA-256/format identity, while an exact retry can return the receipt-backed finalized result even though `cost.prepare` alone cannot SELECT finalized metadata. A changed target/version/idempotency identity conflicts and never re-finalizes the object.
 
 Draft operational and financial replacement updates use `expectedVersion` without receipts. They are non-activating and callers must refetch after an unknown outcome.
 
@@ -548,9 +577,9 @@ This slice does not add owner-advance writes, retention release/refund, accounts
 
 ## 16. Migration and backfill strategy
 
-One or more new forward-only migrations may implement this approved design later; no prior migration is edited.
+The design is implemented through forward-only migrations; no previously applied migration is edited. The lifecycle migration and later focused corrective migrations use lock/statement timeouts, scoped advisory locks, prerequisite checks, exact grants/revokes, and PostgREST schema reloads.
 
-The lifecycle migration must be one transaction with lock/statement timeouts and a scoped advisory lock:
+The implemented lifecycle sequence:
 
 1. verify exact expected schema, functions, policies, and migration prerequisites;
 2. add nullable publication metadata;
@@ -558,10 +587,11 @@ The lifecycle migration must be one transaction with lock/statement timeouts and
 4. assert all existing 10 Cloud DEV parents remain published and every existing read count/aggregate is unchanged;
 5. make lifecycle columns constrained/not-null as applicable and set new-row default to `draft`;
 6. relax amount nullability only under the conditional draft/published checks;
-7. add indexes, RLS policies, evidence tables/bucket policies, guarded RPCs, and exact grants;
+7. add indexes, RLS policies, evidence tables/bucket policies, guarded write commands and read projections, and exact grants;
 8. replace or revoke old write RPC definitions so they cannot bypass publication;
 9. assign VQH Accountant permissions with pre/post-state assertions;
-10. reload PostgREST schema.
+10. harden draft RLS, evidence metadata/raw-file separation, authenticated upload expiry enforcement, finalize validation portability, and metadata-free raw-target resolution through new corrective migrations;
+11. reload PostgREST schema.
 
 Storage bucket creation and policies are migration-controlled. No existing file backfill is attempted because Cloud DEV has no buckets or objects. Existing source-version `raw_file_reference` values remain provenance text and are not silently converted into evidence objects.
 
@@ -600,9 +630,10 @@ Existing envelope and codes remain authoritative where applicable. Add narrowly 
 | Subcontract category through cost-item publish | 409 `SUBCONTRACT_COST_MODEL_UNSUPPORTED` | Use current subcontract/payment model; no competing fact. |
 | Unsupported file | 415 `FILE_TYPE_UNSUPPORTED` | No intent/object link. |
 | Oversized file | 413 `FILE_TOO_LARGE` | No intent/object link. |
-| Missing object or finalize type/size/hash mismatch | 409 `EVIDENCE_UPLOAD_MISMATCH` | Registry remains pending; never link. |
+| Missing object or finalize Content-Type/size/hash/format mismatch | 409 `EVIDENCE_UPLOAD_MISMATCH` | Registry remains pending; never link. |
 | Attempted overwrite/replacement of a finalized path | 409 `HISTORY_IMMUTABLE` | New evidence intent/path required. |
-| Raw evidence without `cost.file.read` | 403 `PERMISSION_DENIED` | Metadata permission is insufficient. |
+| Raw evidence without server-level `cost.read` and `cost.file.read` | 403 `PERMISSION_DENIED` | Metadata permission is insufficient. |
+| Raw evidence with no visible linked resource | 404 `RESOURCE_NOT_FOUND` | Do not reveal inaccessible link or registry metadata. |
 | Attempt to alter recorded cash fields | 409 `HISTORY_IMMUTABLE` | Void and replace instead. |
 | Double void with a new key | 409 `PAYMENT_ALREADY_VOIDED` | Existing void remains final. |
 
@@ -617,6 +648,8 @@ Existing envelope and codes remain authoritative where applicable. Add narrowly 
 - Cross-company IDs fail through scoped lookup.
 - Published record rejects manage update.
 - Create replay has one row/effect; conflicting replay fails.
+- Operational read projection contains only approved metadata/state/version/timestamps and excludes every financial/source field.
+- Manager-only direct SELECT sees no draft parent, detail, or source-link rows.
 
 ### 19.2 `cost.prepare`
 
@@ -625,6 +658,7 @@ Existing envelope and codes remain authoritative where applicable. Add narrowly 
 - Parent amount equals detail sum.
 - Draft remains absent from legacy and finance official GET totals.
 - Source links require same-scope valid source figures.
+- Preparer can read the full draft financial parent, details, source links, and publish readiness.
 
 ### 19.3 `cost.publish_import`
 
@@ -658,12 +692,15 @@ Existing envelope and codes remain authoritative where applicable. Add narrowly 
 ### 19.6 Evidence
 
 - Authorized intent/upload/finalize/link/metadata/read-url succeeds.
-- Unsupported MIME, oversize, missing object, MIME/size/hash mismatch fail deterministically.
+- Unsupported MIME, oversize, missing object, Content-Type/size/hash/signature/package mismatch fail deterministically.
+- Authenticated upload succeeds only for the creating actor's exact live intent path; expired, wrong-actor, and wrong-path writes fail at Storage RLS.
 - Unauthorized and cross-company upload/finalize/link/read fail.
 - Finalized object cannot be overwritten, updated, or deleted.
 - Replacement uses a new ID/path and leaves prior evidence readable/auditable.
 - Evidence-only link creates no source figure and changes no cost/payment amount.
-- `cost.source.read` can read metadata but cannot read bytes without `cost.file.read`.
+- `cost.source.read` can read finalized metadata/links but cannot read bytes without `cost.read` plus `cost.file.read`.
+- `cost.file.read` alone cannot SELECT metadata, and the raw-target resolver returns only bucket/path.
+- Exact finalize replay returns the receipt-backed result without granting finalized metadata access.
 
 ### 19.7 Regression and Cloud acceptance
 
@@ -676,7 +713,7 @@ Existing envelope and codes remain authoritative where applicable. Add narrowly 
 
 ## 20. CodeX / Antigravity boundary
 
-CodeX implementation scope after approval:
+Implemented CodeX scope:
 
 - forward-only database migrations;
 - RBAC, RLS, triggers, guarded RPCs, audit, Storage bucket/policies;
@@ -718,8 +755,8 @@ CodeX must not modify `app/pages/**`, `app/components/**`, visual assets, themes
 | A read path omits the published predicate. | RLS parent-state predicate plus explicit repository filter plus published-vs-draft regression matrix. |
 | Existing create/correct RPC bypasses lifecycle. | Replace/revoke definitions in the same forward migration before granting new commands. |
 | Detail triggers increment version more than once in a command. | Command-local guarded synchronization and one externally visible final version assertion. |
-| Evidence hash verification is expensive. | 25 MiB hard cap and streaming SHA-256; larger files are out of scope. |
-| Signed URL remains usable after issue. | 60-second maximum TTL, reauthorization per issuance, never audit/store URL. Supabase signed URLs cannot be individually revoked before expiry. |
+| Evidence integrity/format verification is expensive. | 25 MiB hard cap, streamed SHA-256, and bounded signature/package inspection; larger files are out of scope. |
+| Signed read URL remains usable after issue. | Exactly 60-second TTL, reauthorization per issuance, never audit/store URL. Supabase signed URLs cannot be individually revoked before expiry. |
 | Storage path policy trusts attacker-controlled text. | Registry-backed exact bucket/path predicate and server-generated paths. |
 | Broad audit payload leaks evidence or signed access. | Store IDs and bounded business snapshots only; no bytes, URLs, or raw credentials. |
 | Subcontract obligation and cash semantics diverge. | Block new subcontract cost-item publication and preserve current payment Actual until a separate approved model exists. |
@@ -729,14 +766,14 @@ CodeX must not modify `app/pages/**`, `app/components/**`, visual assets, themes
 
 ## 23. Capability-boundary self-review
 
-- `cost.manage` cannot write amount/details, source/evidence, publication, correction, or cash.
-- `cost.prepare` cannot activate official reads or mutate published financial facts; after publish it can only append evidence.
+- `cost.manage` cannot write amount/details, source/evidence, publication, correction, or cash; its draft read projection is operational-only and direct draft-table reads are denied.
+- `cost.prepare` owns full draft financial/source reads and preparation, cannot activate official reads or mutate published financial facts, and after publish can only append evidence.
 - `cost.publish_import` performs one transition and cannot prepare or correct data.
 - `cost.correct` applies only to published facts and always records reason plus immutable before/after history.
 - `cost.record_cash` touches only canonical payment rows and their evidence links; it never changes cost amount.
 - `cost.read` sees published financial projections only.
-- `cost.source.read` reads provenance/evidence metadata but not raw bytes.
-- `cost.file.read` authorizes raw finalized bytes but grants no mutation.
+- `cost.source.read` reads finalized provenance/evidence metadata and links but not raw bytes.
+- `cost.file.read` authorizes raw finalized bytes only with `cost.read` and linked-resource visibility; it grants neither evidence metadata nor mutation.
 - There is no endpoint, RPC, grant, RLS policy, or Storage policy that collapses these boundaries.
 
 TypeSafe Playground advisory review used `jev-latest` with structured JSON state and batched Noul questions. The architecture review returned `0.89` for preserving the official read model and `0.85` for preserving tenant/company isolation. The post-spec review returned `0.13` for any semantic overlap, with definition probabilities of `0.91` (`cost.manage`), `0.93` (`cost.prepare`), `0.83` (`cost.publish_import`), `0.80` (`cost.correct`), and `0.94` (`cost.record_cash`). These results support the boundaries but do not replace repository, RLS, constraint, or test evidence. The publish and correction sections retain explicit preconditions because their narrower transition responsibilities produced the lowest definition probabilities.
