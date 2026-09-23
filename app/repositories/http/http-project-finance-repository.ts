@@ -1,6 +1,14 @@
 import type { AuthenticatedHttpClient } from './authenticated-http-client'
 import { financeBudgetSchema, financeItemDetailsSchema, financeListQuerySchema, financeOwnerAdvancesSchema, financeOverviewSchema, financeProjectListSchema, financeSubcontractDetailSchema, financeSubcontractorDetailSchema, financeSubcontractorListSchema, itemDetailQuerySchema, paymentQuerySchema, projectDirectoryQuerySchema, type FinanceListQuery, type ItemDetailQuery, type PaymentQuery, type ProjectDirectoryQuery } from '../../../shared/schemas/costs/project-finance'
-import type { FinanceBudget, FinanceItemDetails, FinanceOwnerAdvances, FinanceOverview, FinanceProjectList, FinanceSubcontractDetail, FinanceSubcontractorDetail, FinanceSubcontractorList, ProjectFinanceRepository } from '../contracts'
+import {
+  recordSubcontractPaymentInputSchema,
+  recordSubcontractPaymentResultSchema,
+  voidSubcontractPaymentInputSchema,
+  voidSubcontractPaymentResultSchema,
+  type RecordSubcontractPaymentInput,
+  type VoidSubcontractPaymentInput,
+} from '../../../shared/schemas/costs/project-finance-writes'
+import type { FinanceBudget, FinanceItemDetails, FinanceOwnerAdvances, FinanceOverview, FinanceProjectList, FinanceSubcontractDetail, FinanceSubcontractorDetail, FinanceSubcontractorList, ProjectFinanceRepository, RecordSubcontractPaymentResult, VoidSubcontractPaymentResult } from '../contracts'
 
 function activeCompany(value: string | (() => string)): string {
   const companyId = typeof value === 'function' ? value() : value
@@ -16,9 +24,11 @@ function search<T extends Record<string, unknown>>(schema: { parse(value: unknow
   return encoded ? `?${encoded}` : ''
 }
 
-export function createHttpProjectFinanceRepository(options: { companyId: string | (() => string), client: AuthenticatedHttpClient }): ProjectFinanceRepository {
+export function createHttpProjectFinanceRepository(options: { companyId: string | (() => string), client: AuthenticatedHttpClient, createIdempotencyKey?: () => string }): ProjectFinanceRepository {
   const base = () => `/api/companies/${activeCompany(options.companyId)}`
   const id = (value: string) => encodeURIComponent(value)
+  const nextIdempotencyKey = () => (options.createIdempotencyKey ?? (() => globalThis.crypto.randomUUID()))()
+
   return {
     listProjects: (query?: Partial<ProjectDirectoryQuery>): Promise<FinanceProjectList> => options.client.request({ url: `${base()}/project-finances${search(projectDirectoryQuerySchema, query)}`, method: 'GET', schema: financeProjectListSchema }),
     overview: (projectId: string): Promise<FinanceOverview> => options.client.request({ url: `${base()}/projects/${id(projectId)}/finance`, method: 'GET', schema: financeOverviewSchema }),
@@ -28,5 +38,25 @@ export function createHttpProjectFinanceRepository(options: { companyId: string 
     subcontractor: (projectId: string, partyId: string, query?: Partial<PaymentQuery>): Promise<FinanceSubcontractorDetail> => options.client.request({ url: `${base()}/projects/${id(projectId)}/finance/subcontractors/${id(partyId)}${search(paymentQuerySchema, query)}`, method: 'GET', schema: financeSubcontractorDetailSchema }),
     subcontract: (projectId: string, subcontractId: string, query?: Partial<PaymentQuery>): Promise<FinanceSubcontractDetail> => options.client.request({ url: `${base()}/projects/${id(projectId)}/finance/subcontracts/${id(subcontractId)}${search(paymentQuerySchema, query)}`, method: 'GET', schema: financeSubcontractDetailSchema }),
     itemDetails: (projectId: string, itemId: string, query?: Partial<ItemDetailQuery>): Promise<FinanceItemDetails> => options.client.request({ url: `${base()}/projects/${id(projectId)}/finance/items/${id(itemId)}/details${search(itemDetailQuerySchema, query)}`, method: 'GET', schema: financeItemDetailsSchema }),
+    recordSubcontractPayment: (projectId: string, subcontractId: string, input: RecordSubcontractPaymentInput): Promise<RecordSubcontractPaymentResult> => {
+      const body = recordSubcontractPaymentInputSchema.parse(input)
+      return options.client.request({
+        url: `${base()}/projects/${id(projectId)}/subcontracts/${id(subcontractId)}/payments`,
+        method: 'POST',
+        body,
+        idempotencyKey: nextIdempotencyKey(),
+        schema: recordSubcontractPaymentResultSchema,
+      })
+    },
+    voidSubcontractPayment: (projectId: string, subcontractId: string, paymentId: string, input: VoidSubcontractPaymentInput): Promise<VoidSubcontractPaymentResult> => {
+      const body = voidSubcontractPaymentInputSchema.parse(input)
+      return options.client.request({
+        url: `${base()}/projects/${id(projectId)}/subcontracts/${id(subcontractId)}/payments/${id(paymentId)}/void`,
+        method: 'POST',
+        body,
+        idempotencyKey: nextIdempotencyKey(),
+        schema: voidSubcontractPaymentResultSchema,
+      })
+    },
   }
 }

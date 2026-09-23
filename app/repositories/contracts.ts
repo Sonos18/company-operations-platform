@@ -34,7 +34,19 @@ import type {
 } from '../../shared/schemas/stage01-config'
 import type { BusinessParty, CompanyCostSettings, CreateBusinessPartyInput, CreateEngagementComponentInput, CreateEngagementInput, CreateProjectRegisterInput, Engagement, EngagementComponent, ProjectRegister, UpdateBusinessPartyInput, UpdateEngagementComponentInput, UpdateEngagementInput, UpdateProjectRegisterInput } from '../../shared/schemas/costs/master-data'
 import type { CostSourceFiguresQuery, CostSourceOverview, CostSourceProjectDetail, CostSourceProvenance, CostSourceFigure } from '../../shared/schemas/costs/source-read-model'
-import type { CostCommandAck, CreateProjectCostDraftInput, PrepareProjectCostFinancialsInput, PrepareProjectCostFinancialsResult, ProjectCostBreakdown, ProjectCostDetailsResponse, ProjectCostDraft, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, UpdateProjectCostDraftInput } from '../../shared/schemas/costs/project-costs'
+import type { CostCommandAck, CorrectPublishedProjectCostInput, CreateProjectCostDraftInput, PrepareProjectCostFinancialsInput, PrepareProjectCostFinancialsResult, ProjectCostBreakdown, ProjectCostDetailsResponse, ProjectCostDraft, ProjectCostOperationalDraft, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, PublishProjectCostInput, UpdateProjectCostDraftInput } from '../../shared/schemas/costs/project-costs'
+import type { CostEvidenceCreateIntentInput, CostEvidenceFinalizeInput, CostEvidenceFinalized, CostEvidenceLinkInput, CostEvidenceLinkResult, CostEvidenceMetadata, CostEvidenceReadUrl, CostEvidenceReadUrlInput, CostEvidenceUploadIntent } from '../../shared/schemas/costs/cost-evidence'
+import type { z } from 'zod'
+import {
+  type RecordSubcontractPaymentInput,
+  type VoidSubcontractPaymentInput,
+  recordSubcontractPaymentResultSchema,
+  voidSubcontractPaymentResultSchema,
+} from '../../shared/schemas/costs/project-finance-writes'
+
+export type RecordSubcontractPaymentResult = z.infer<typeof recordSubcontractPaymentResultSchema>
+export type VoidSubcontractPaymentResult = z.infer<typeof voidSubcontractPaymentResultSchema>
+export type { CorrectPublishedProjectCostInput, PublishProjectCostInput }
 import type { FinanceBudget, FinanceItemDetails, FinanceListQuery, FinanceOwnerAdvances, FinanceOverview, FinanceProjectList, FinanceSubcontractDetail, FinanceSubcontractorDetail, FinanceSubcontractorList, ItemDetailQuery, PaymentQuery, ProjectDirectoryQuery } from '../../shared/schemas/costs/project-finance'
 
 export interface CompanyRepository {
@@ -149,6 +161,17 @@ export interface ProjectCostRepository {
   prepareFinancials(projectCostItemId: string, input: PrepareProjectCostFinancialsInput): Promise<PrepareProjectCostFinancialsResult>
   draft(projectCostItemId: string): Promise<ProjectCostDraft>
   listDrafts(projectId: string): Promise<ProjectCostDraft[]>
+  operationalDraft(projectCostItemId: string): Promise<ProjectCostOperationalDraft>
+  listOperationalDrafts(projectId: string): Promise<ProjectCostOperationalDraft[]>
+  publish(projectCostItemId: string, input: PublishProjectCostInput): Promise<CostCommandAck>
+  correct(projectCostItemId: string, input: CorrectPublishedProjectCostInput): Promise<CostCommandAck>
+}
+export interface CostEvidenceRepository {
+  createUploadIntent(projectId: string, input: CostEvidenceCreateIntentInput): Promise<CostEvidenceUploadIntent>
+  finalize(evidenceFileId: string, input: CostEvidenceFinalizeInput): Promise<CostEvidenceFinalized>
+  link(projectCostItemId: string, input: CostEvidenceLinkInput): Promise<CostEvidenceLinkResult>
+  listMetadata(projectCostItemId: string): Promise<CostEvidenceMetadata[]>
+  getReadUrl(evidenceFileId: string, input?: CostEvidenceReadUrlInput): Promise<CostEvidenceReadUrl>
 }
 export interface ProjectFinanceRepository {
   listProjects(query?: Partial<ProjectDirectoryQuery>): Promise<FinanceProjectList>
@@ -159,6 +182,8 @@ export interface ProjectFinanceRepository {
   subcontractor(projectId: string, partyId: string, query?: Partial<PaymentQuery>): Promise<FinanceSubcontractorDetail>
   subcontract(projectId: string, subcontractId: string, query?: Partial<PaymentQuery>): Promise<FinanceSubcontractDetail>
   itemDetails(projectId: string, itemId: string, query?: Partial<ItemDetailQuery>): Promise<FinanceItemDetails>
+  recordSubcontractPayment(projectId: string, subcontractId: string, input: RecordSubcontractPaymentInput): Promise<RecordSubcontractPaymentResult>
+  voidSubcontractPayment(projectId: string, subcontractId: string, paymentId: string, input: VoidSubcontractPaymentInput): Promise<VoidSubcontractPaymentResult>
 }
 export type { FinanceBudget, FinanceItemDetails, FinanceOwnerAdvances, FinanceOverview, FinanceProjectList, FinanceSubcontractDetail, FinanceSubcontractorDetail, FinanceSubcontractorList }
 
@@ -180,8 +205,9 @@ export interface RepositoryRegistry {
   costSettings: CostSettingsRepository
   costSourceRead: CostSourceReadRepository
   projectCosts: ProjectCostRepository
+  costEvidence: CostEvidenceRepository
   projectFinance: ProjectFinanceRepository
   prototype: PrototypeRepository
 }
 
-export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01' | 'stage01Config' | 'projectRegister' | 'businessParties' | 'engagements' | 'costSettings' | 'costSourceRead' | 'projectCosts' | 'projectFinance'>
+export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01' | 'stage01Config' | 'projectRegister' | 'businessParties' | 'engagements' | 'costSettings' | 'costSourceRead' | 'projectCosts' | 'costEvidence' | 'projectFinance'>

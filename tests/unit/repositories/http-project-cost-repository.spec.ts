@@ -30,6 +30,76 @@ describe('HTTP Project Cost repository', () => {
     const listRepository = createHttpProjectCostRepository({ companyId: 'company/id', client: listClient as never })
     await listRepository.listDrafts('project/id')
     expect(listClient.request).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/companies/company%2Fid/projects/project%2Fid/project-cost-drafts', method: 'GET' }))
+
+    const opClient = responseClient({
+      id: ids.item,
+      projectId: ids.project,
+      description: 'Operational only',
+      costCategoryId: draft.costCategoryId,
+      businessReference: null,
+      partyId: null,
+      engagementId: null,
+      componentId: null,
+      relevantDate: null,
+      workStatus: 'in_progress',
+      publicationState: 'draft',
+      version: 1,
+      createdAt: '2026-09-22T00:00:00.000Z',
+      updatedAt: '2026-09-22T00:00:00.000Z',
+    })
+    const opRepo = createHttpProjectCostRepository({ companyId: 'company/id', client: opClient as never })
+    await opRepo.operationalDraft('item/id')
+    expect(opClient.request).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/companies/company%2Fid/project-costs/item%2Fid/draft/operations', method: 'GET' }))
+
+    const opListClient = responseClient([{
+      id: ids.item,
+      projectId: ids.project,
+      description: 'Operational list',
+      costCategoryId: draft.costCategoryId,
+      businessReference: null,
+      partyId: null,
+      engagementId: null,
+      componentId: null,
+      relevantDate: null,
+      workStatus: 'in_progress',
+      publicationState: 'draft',
+      version: 1,
+      createdAt: '2026-09-22T00:00:00.000Z',
+      updatedAt: '2026-09-22T00:00:00.000Z',
+    }])
+    const opListRepo = createHttpProjectCostRepository({ companyId: 'company/id', client: opListClient as never })
+    await opListRepo.listOperationalDrafts('project/id')
+    expect(opListClient.request).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/companies/company%2Fid/projects/project%2Fid/project-cost-drafts/operations', method: 'GET' }))
+
+    const pubClient = responseClient({ id: ids.item, version: 2, publicationState: 'published', replayed: false })
+    const pubRepo = createHttpProjectCostRepository({ companyId: 'company/id', client: pubClient as never, createIdempotencyKey: () => ids.key })
+    await pubRepo.publish('item/id', { expectedVersion: 1 })
+    expect(pubClient.request).toHaveBeenCalledWith(expect.objectContaining({
+      url: '/api/companies/company%2Fid/project-costs/item%2Fid/publish',
+      method: 'POST',
+      body: { expectedVersion: 1 },
+      idempotencyKey: ids.key,
+    }))
+
+    const corrClient = responseClient({ id: ids.item, version: 3, publicationState: 'published', replayed: false })
+    const corrRepo = createHttpProjectCostRepository({ companyId: 'company/id', client: corrClient as never, createIdempotencyKey: () => ids.key })
+    await corrRepo.correct('item/id', {
+      expectedVersion: 2,
+      reason: 'Audit correction',
+      operationalChanges: {
+        description: 'Updated description',
+      },
+    })
+    expect(corrClient.request).toHaveBeenCalledWith(expect.objectContaining({
+      url: '/api/companies/company%2Fid/project-costs/item%2Fid/corrections',
+      method: 'POST',
+      body: expect.objectContaining({
+        expectedVersion: 2,
+        reason: 'Audit correction',
+        operationalChanges: { description: 'Updated description' },
+      }),
+      idempotencyKey: ids.key,
+    }))
   })
   it('gets strict company summaries from the current encoded company URL', async () => {
     const companyId = vi.fn().mockReturnValue('company/id')

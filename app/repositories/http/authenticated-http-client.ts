@@ -46,8 +46,9 @@ function clientError(
   retryable: boolean,
   requestId?: string,
   reason?: ClientErrorReason,
+  details?: Record<string, unknown>,
 ): ClientError {
-  return new ClientError({ kind, code, message, retryable, requestId, reason })
+  return new ClientError({ kind, code, message, retryable, requestId, reason, details })
 }
 
 function malformedResponse(): ClientError {
@@ -135,7 +136,7 @@ function isInternalApiUrl(value: string): boolean {
     && url.pathname.startsWith('/api/')
 }
 
-function apiFailure(status: number, code: ApiErrorCode, requestId: string, reason?: ClientErrorReason): ClientError {
+function apiFailure(status: number, code: ApiErrorCode, requestId: string, reason?: ClientErrorReason, details?: Record<string, unknown>): ClientError {
   if (status === 429) {
     return clientError(
       'rate_limit',
@@ -143,34 +144,36 @@ function apiFailure(status: number, code: ApiErrorCode, requestId: string, reaso
       'Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau.',
       true,
       requestId,
+      undefined,
+      details,
     )
   }
 
   if (status >= 500) {
-    return clientError('api', 'INTERNAL_ERROR', 'Hệ thống không thể xử lý yêu cầu. Vui lòng thử lại sau.', true, requestId)
+    return clientError('api', 'INTERNAL_ERROR', 'Hệ thống không thể xử lý yêu cầu. Vui lòng thử lại sau.', true, requestId, undefined, details)
   }
 
   if (code === 'AUTH_REQUIRED') {
-    return clientError('authentication', 'AUTH_REQUIRED', 'Bạn cần đăng nhập để tiếp tục.', false, requestId)
+    return clientError('authentication', 'AUTH_REQUIRED', 'Bạn cần đăng nhập để tiếp tục.', false, requestId, undefined, details)
   }
   if (code === 'AUTH_INVALID') {
-    return clientError('authentication', 'AUTH_INVALID', 'Phiên đăng nhập không còn hợp lệ.', true, requestId)
+    return clientError('authentication', 'AUTH_INVALID', 'Phiên đăng nhập không còn hợp lệ.', true, requestId, undefined, details)
   }
   if (code === 'COMPANY_FORBIDDEN') {
-    return clientError('authorization', 'COMPANY_FORBIDDEN', 'Bạn không có quyền truy cập công ty này.', false, requestId)
+    return clientError('authorization', 'COMPANY_FORBIDDEN', 'Bạn không có quyền truy cập công ty này.', false, requestId, undefined, details)
   }
   if (code === 'PERMISSION_DENIED') {
-    return clientError('authorization', 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', false, requestId, reason)
+    return clientError('authorization', 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', false, requestId, reason, details)
   }
 
   if (status === 401) {
-    return clientError('authentication', 'AUTH_REQUIRED', 'Bạn cần đăng nhập để tiếp tục.', false, requestId)
+    return clientError('authentication', 'AUTH_REQUIRED', 'Bạn cần đăng nhập để tiếp tục.', false, requestId, undefined, details)
   }
   if (status === 403) {
-    return clientError('authorization', 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', false, requestId)
+    return clientError('authorization', 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', false, requestId, undefined, details)
   }
 
-  return clientError('api', code, 'Yêu cầu không thể hoàn tất ở trạng thái hiện tại.', false, requestId)
+  return clientError('api', code, 'Yêu cầu không thể hoàn tất ở trạng thái hiện tại.', false, requestId, undefined, details)
 }
 
 export function createAuthenticatedHttpClient(options: AuthenticatedHttpClientOptions): AuthenticatedHttpClient {
@@ -231,7 +234,7 @@ export function createAuthenticatedHttpClient(options: AuthenticatedHttpClientOp
         const parsedError = strictApiErrorBodySchema.safeParse(responseBody.value)
         if (!parsedError.success) throw malformedResponse()
         const reason = parsedError.data.error.details.reason === 'MODULE_DISABLED' ? 'MODULE_DISABLED' : undefined
-        const failure = apiFailure(response.status, parsedError.data.error.code, parsedError.data.error.requestId, reason)
+        const failure = apiFailure(response.status, parsedError.data.error.code, parsedError.data.error.requestId, reason, parsedError.data.error.details)
         const shouldRevalidate = input.url.split(/[?#]/u, 1)[0] !== '/api/auth/session'
           && (failure.code === 'COMPANY_FORBIDDEN' || failure.code === 'PERMISSION_DENIED')
 

@@ -41,6 +41,6 @@ export default defineNuxtPlugin(() => {
   )
 
   return {
-    provide: { authRepository },
+    provide: { authRepository, supabaseClient: client },
   }
 })
