@@ -99,6 +99,7 @@ describe('C1 finance read contracts', () => {
           item('00000000-0000-4000-8000-000000000053', categoryIds.direct, '30.0000'),
           item('00000000-0000-4000-8000-000000000054', categoryIds.subcontract, '100.0000'),
           item('00000000-0000-4000-8000-000000000055', categoryIds.other, '40.0000'),
+          { ...item('00000000-0000-4000-8000-000000000056', categoryIds.materials, '999.0000'), publication_state: 'draft' as const },
         ],
         details: [{
           id: '00000000-0000-4000-8000-000000000061', tenant_id: tenant, company_id: company,
@@ -139,6 +140,7 @@ describe('C1 finance read contracts', () => {
       warrantyRetention: { state: 'recorded', amount: '0.0000', recordedCount: 0 },
       legacyReconciliationRequired: false,
     })
+    expect(result.categories.find(value => value.code === 'materials')?.cost.amount).toBe('10.0000')
     expect(result.summary.cost).toMatchObject({ state: 'recorded', amount: '150.0000', knownSubtotal: '150.0000' })
     expect(result.summary.warrantyRetention).toEqual({ state: 'recorded', amount: '0.0000', recordedCount: 0 })
     expect(result.summary.issues.map(value => value.code)).not.toContain('LEGACY_SUBCONTRACT_RECONCILIATION_REQUIRED')

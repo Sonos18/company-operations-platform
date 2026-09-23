@@ -4,6 +4,7 @@ import { basename, resolve } from 'node:path'
 import ExcelJS from 'exceljs'
 import JSZip, { type JSZipObject } from 'jszip'
 import type { ControlledImportManifest } from '../../../../shared/schemas/costs/imports'
+import { inspectZipCentralDirectory, ZipArchiveMetadataError } from '../../../utils/zip-archive-metadata'
 import { canonicalizeManifest } from './import-manifest'
 
 export const VQH_WORKBOOK_FAMILY = 'taskovia-vqh-project-cost-workbooks-v1'
@@ -18,10 +19,7 @@ const maximumWorkbookBytes = 50 * 1024 * 1024
 const maximumArchiveEntries = 512
 const maximumXmlBytes = 32 * 1024 * 1024
 const maximumArchiveExpansionBytes = 64 * 1024 * 1024
-const endOfCentralDirectorySignature = 0x06054b50
-const centralDirectorySignature = 0x02014b50
 interface RawCell { hasFormula: boolean; rawValue: string | null; rawInlineText: string | null; type: string | null; style: string | null }
-interface ArchiveMetadata { entries: number; declaredExpansion: number }
 
 function boundedRead(path: string, fileIdentity: string) {
   let descriptor: number
@@ -44,36 +42,19 @@ function boundedRead(path: string, fileIdentity: string) {
   } finally { closeSync(descriptor) }
 }
 
-function archiveMetadata(bytes: Buffer): ArchiveMetadata {
-  const start = Math.max(0, bytes.length - 65557)
-  let end = -1
-  for (let offset = bytes.length - 22; offset >= start; offset--) {
-    if (bytes.readUInt32LE(offset) === endOfCentralDirectorySignature && offset + 22 + bytes.readUInt16LE(offset + 20) === bytes.length) { end = offset; break }
+function archiveMetadata(bytes: Buffer) {
+  try {
+    const metadata = inspectZipCentralDirectory(bytes, {
+      maximumEntries: maximumArchiveEntries,
+      maximumEntryBytes: maximumXmlBytes,
+      maximumExpansionBytes: maximumArchiveExpansionBytes,
+    })
+    return { entries: metadata.entries.length, declaredExpansion: metadata.declaredExpansion }
+  } catch (error) {
+    if (!(error instanceof ZipArchiveMetadataError)) throw error
+    const code = error.code.replace('ZIP_', 'WORKBOOK_')
+    return fail(code)
   }
-  if (end < 0) return fail('WORKBOOK_ARCHIVE_INVALID')
-  const disk = bytes.readUInt16LE(end + 4); const centralDisk = bytes.readUInt16LE(end + 6)
-  const entriesOnDisk = bytes.readUInt16LE(end + 8); const entries = bytes.readUInt16LE(end + 10)
-  const size = bytes.readUInt32LE(end + 12); const offset = bytes.readUInt32LE(end + 16)
-  if (disk !== 0 || centralDisk !== 0 || entriesOnDisk !== entries || entries === 0xffff || size === 0xffffffff || offset === 0xffffffff) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
-  if (entries > maximumArchiveEntries) return fail('WORKBOOK_ARCHIVE_ENTRY_LIMIT_EXCEEDED')
-  const centralEnd = offset + size
-  if (!Number.isSafeInteger(centralEnd) || offset > end || centralEnd > end) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
-  let cursor = offset; let declaredExpansion = 0
-  for (let index = 0; index < entries; index++) {
-    if (cursor + 46 > centralEnd || bytes.readUInt32LE(cursor) !== centralDirectorySignature) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
-    const flags = bytes.readUInt16LE(cursor + 8); const method = bytes.readUInt16LE(cursor + 10)
-    const compressed = bytes.readUInt32LE(cursor + 20); const uncompressed = bytes.readUInt32LE(cursor + 24)
-    const nameLength = bytes.readUInt16LE(cursor + 28); const extraLength = bytes.readUInt16LE(cursor + 30); const commentLength = bytes.readUInt16LE(cursor + 32); const localOffset = bytes.readUInt32LE(cursor + 42)
-    if ((flags & 0x09) !== 0 || (method !== 0 && method !== 8) || compressed === 0xffffffff || uncompressed === 0xffffffff || localOffset === 0xffffffff || localOffset >= offset) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
-    const next = cursor + 46 + nameLength + extraLength + commentLength
-    if (!Number.isSafeInteger(next) || next > centralEnd) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
-    if (uncompressed > maximumXmlBytes) return fail('WORKBOOK_ARCHIVE_ENTRY_SIZE_LIMIT_EXCEEDED')
-    declaredExpansion += uncompressed
-    if (!Number.isSafeInteger(declaredExpansion) || declaredExpansion > maximumArchiveExpansionBytes) return fail('WORKBOOK_ARCHIVE_EXPANSION_LIMIT_EXCEEDED')
-    cursor = next
-  }
-  if (cursor !== centralEnd) return fail('WORKBOOK_ARCHIVE_METADATA_UNSUPPORTED')
-  return { entries, declaredExpansion }
 }
 
 function declaredSize(entry: JSZipObject): number {

@@ -5,7 +5,21 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
 
-const migrationPattern = /^20260918102344_c1_project_cost_detail_schema_reconciliation\.sql$/u
+const migrationSuffixes = [
+  '_c1_accounting_write_publication_rbac.sql',
+  '_c1_accounting_write_draft_commands.sql',
+  '_c1_accounting_write_evidence_storage.sql',
+  '_c1_accounting_write_publish_command.sql',
+  '_c1_accounting_write_correction_command.sql',
+  '_c1_accounting_write_cash_commands.sql',
+  '_c1_accounting_write_snapshot_constraint_scope_fix.sql',
+  '_c1_accounting_write_evidence_rls_initplan_fix.sql',
+  '_c1_accounting_write_evidence_kind_contract_fix.sql',
+  '_c1_accounting_write_review_security_hardening.sql',
+  '_c1_accounting_write_finalize_validation_fix.sql',
+  '_c1_accounting_write_raw_target_metadata_fix.sql',
+  '_c1_accounting_write_finalize_server_boundary.sql',
+]
 
 export function buildC1MigrationRehearsalSql(migrationSql) {
   const normalized = migrationSql.replace(/\r\n?/g, '\n').trim()
@@ -21,9 +35,14 @@ export function validateC1MigrationRehearsalSql(sql) {
 }
 
 export function readC1MigrationSql(cwd = process.cwd()) {
-  const migrations = readdirSync(resolve(cwd, 'supabase/migrations')).filter(name => migrationPattern.test(name))
-  if (migrations.length !== 1) throw new Error('C1 migration rehearsal requires exactly one reconciliation migration')
-  return readFileSync(resolve(cwd, 'supabase/migrations', migrations[0]), 'utf8')
+  const directory = resolve(cwd, 'supabase/migrations')
+  const names = readdirSync(directory)
+  const migrations = migrationSuffixes.map(suffix => {
+    const matches = names.filter(name => name.endsWith(suffix))
+    if (matches.length !== 1) throw new Error(`C1 migration rehearsal requires exactly one migration for ${suffix}`)
+    return matches[0]
+  }).sort()
+  return migrations.map(name => readFileSync(resolve(directory, name), 'utf8')).join('\n')
 }
 
 export function runC1MigrationRehearsal({

@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  costCommandAckSchema,
   correctProjectCostItemInputSchema,
+  createProjectCostDraftInputSchema,
   createProjectCostItemInputSchema,
+  prepareProjectCostFinancialsInputSchema,
   projectCostBreakdownSchema,
+  projectCostDraftSchema,
+  projectCostOperationalDraftSchema,
   projectCostDetailKindSchema,
   projectCostDetailsResponseSchema,
   projectCostItemDetailSchema,
@@ -45,6 +50,49 @@ const summary = {
 }
 
 describe('project cost contracts', () => {
+  it('keeps draft creation operational and rejects financial or publication fields', () => {
+    const draft = { projectId: ids.project, description: 'Draft', costCategoryId: ids.component, workStatus: 'unknown' }
+    expect(createProjectCostDraftInputSchema.safeParse(draft).success).toBe(true)
+    for (const extra of [{ amount: '1.0000' }, { currencyCode: 'VND' }, { publicationState: 'published' }]) {
+      expect(createProjectCostDraftInputSchema.safeParse({ ...draft, ...extra }).success).toBe(false)
+    }
+  })
+
+  it('requires a complete nonempty financial detail snapshot and accepts explicit zero', () => {
+    const detail = { lineNo: 1, detailKind: 'line_item', description: 'Prepared line', amount: '0.0000' }
+    expect(prepareProjectCostFinancialsInputSchema.safeParse({ expectedVersion: 0, currencyCode: 'VND', details: [detail], sourceFigureIds: [] }).success).toBe(true)
+    expect(prepareProjectCostFinancialsInputSchema.safeParse({ expectedVersion: 0, currencyCode: 'VND', details: [], sourceFigureIds: [] }).success).toBe(false)
+    expect(prepareProjectCostFinancialsInputSchema.safeParse({ expectedVersion: 0, currencyCode: 'VND', details: [{ ...detail, amount: undefined }], sourceFigureIds: [] }).success).toBe(false)
+  })
+
+  it('represents an unprepared draft with a null amount and deterministic readiness', () => {
+    expect(projectCostDraftSchema.parse({
+      id: ids.item, projectId: ids.project, description: 'Draft', costCategoryId: ids.component,
+      businessReference: null, partyId: null, engagementId: null, componentId: null, relevantDate: null,
+      workStatus: 'unknown', amount: null, currencyCode: 'VND', publicationState: 'draft', version: 0,
+      details: [], sourceFigureIds: [], publishReadiness: { ready: false, blockingCodes: ['FINANCIAL_DETAILS_REQUIRED'] },
+      createdAt: '2026-09-22T00:00:00.000Z', updatedAt: '2026-09-22T00:00:00.000Z',
+    }).amount).toBeNull()
+  })
+
+  it('keeps the cost.manage draft projection operational-only', () => {
+    const operational = {
+      id: ids.item, projectId: ids.project, description: 'Draft', costCategoryId: ids.component,
+      businessReference: null, partyId: null, engagementId: null, componentId: null, relevantDate: null,
+      workStatus: 'unknown', publicationState: 'draft', version: 0,
+      createdAt: '2026-09-22T00:00:00.000Z', updatedAt: '2026-09-22T00:00:00.000Z',
+    }
+    expect(projectCostOperationalDraftSchema.parse(operational)).toEqual(operational)
+    for (const financial of [{ amount: '1.0000' }, { currencyCode: 'VND' }, { details: [] }, { sourceFigureIds: [] }, { publishReadiness: { ready: true, blockingCodes: [] } }]) {
+      expect(projectCostOperationalDraftSchema.safeParse({ ...operational, ...financial }).success).toBe(false)
+    }
+  })
+
+  it('pins the common lifecycle command acknowledgement', () => {
+    expect(costCommandAckSchema.parse({ id: ids.item, version: 1, publicationState: 'draft', replayed: false })).toEqual({ id: ids.item, version: 1, publicationState: 'draft', replayed: false })
+    expect(costCommandAckSchema.safeParse({ id: ids.item, version: 1, publicationState: 'draft' }).success).toBe(false)
+  })
+
   it('accepts only the approved work statuses', () => {
     for (const status of ['unknown', 'in_progress', 'accepted']) {
       expect(projectCostWorkStatusSchema.safeParse(status).success).toBe(true)

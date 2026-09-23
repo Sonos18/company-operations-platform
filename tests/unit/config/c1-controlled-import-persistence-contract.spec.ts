@@ -115,6 +115,22 @@ describe('C1 controlled-import pre-Cloud SQL contract', () => {
     expect(() => validateC1CloudDevSql(name, sql)).not.toThrow()
   })
 
+  it.each([
+    ['c1_accounting_write_lifecycle.test.sql', 'c1060000-0000-4000-8000-000000000001'],
+    ['c1_accounting_write_evidence.test.sql', 'c1070000-0000-4000-8000-000000000001'],
+    ['c1_accounting_write_cash.test.sql', 'c1080000-0000-4000-8000-000000000001'],
+  ])('runner accepts reserved synthetic scope for %s', (name, id) => {
+    expect(() => validateC1CloudDevSql(name, `begin;\nselect '${id}';\nrollback;`)).not.toThrow()
+  })
+
+  it.each([
+    ['c1_accounting_write_lifecycle.test.sql', 'c1070000-0000-4000-8000-000000000001'],
+    ['c1_accounting_write_evidence.test.sql', 'c1080000-0000-4000-8000-000000000001'],
+    ['c1_accounting_write_cash.test.sql', 'c1060000-0000-4000-8000-000000000001'],
+  ])('runner rejects a foreign synthetic scope for %s', (name, id) => {
+    expect(() => validateC1CloudDevSql(name, `begin;\nselect '${id}';\nrollback;`)).toThrow('reserved synthetic UUIDs')
+  })
+
   it('groups locator JSON extraction before concatenation and prepares every occurrence-key regression', () => {
     const name = readdirSync(resolve(root, 'supabase/migrations')).find(value => migrationName.test(value))!
     const migration = readFileSync(resolve(root, 'supabase/migrations', name), 'utf8')

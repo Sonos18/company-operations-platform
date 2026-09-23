@@ -1,0 +1,11 @@
+import { beforeEach,describe,expect,it,vi } from 'vitest'
+import { createProjectFinanceWriteRoutes } from '../../../server/features/costs/finance/project-finance-write.routes'
+const {getHeader,getRouterParam,readBody}=vi.hoisted(()=>({getHeader:vi.fn(),getRouterParam:vi.fn(),readBody:vi.fn()}))
+vi.mock('h3',async importOriginal=>({...await importOriginal<typeof import('h3')>(),getHeader,getRouterParam,readBody}))
+const ids={companyId:'c1080000-0000-4000-8000-000000000020',projectId:'c1080000-0000-4000-8000-000000000101',subcontractId:'c1080000-0000-4000-8000-000000000301',paymentId:'c1080000-0000-4000-8000-000000000401',key:'c1080000-0000-4000-8000-000000000701'}
+const context={actorId:'c1080000-0000-4000-8000-000000000901',tenantId:'c1080000-0000-4000-8000-000000000010',companyId:ids.companyId,permissions:['cost.record_cash'],requestId:'c1080000-0000-4000-8000-000000000702'}
+describe('project finance write routes',()=>{
+  beforeEach(()=>{vi.clearAllMocks();getHeader.mockReturnValue(ids.key);getRouterParam.mockImplementation((_event,name)=>ids[name as keyof typeof ids])})
+  it('binds record and void to exact path IDs and idempotency key',async()=>{const service={recordPayment:vi.fn(),voidPayment:vi.fn()};const routes=createProjectFinanceWriteRoutes({resolveContext:vi.fn().mockResolvedValue(context),service:service as never});const record={expectedSubcontractVersion:0,description:'Voucher',paidAmount:'100.0000',currencyCode:'VND'};const voidInput={expectedVersion:0,reason:'Wrong voucher'};readBody.mockResolvedValueOnce(record).mockResolvedValueOnce(voidInput);await routes.recordPayment({} as never);await routes.voidPayment({} as never);expect(service.recordPayment).toHaveBeenCalledWith(context,ids.projectId,ids.subcontractId,record,ids.key);expect(service.voidPayment).toHaveBeenCalledWith(context,ids.projectId,ids.subcontractId,ids.paymentId,voidInput,ids.key)})
+  it('rejects missing idempotency before service mutation',async()=>{getHeader.mockReturnValue(undefined);readBody.mockResolvedValue({expectedVersion:0,reason:'Wrong'});const service={voidPayment:vi.fn()};await expect(createProjectFinanceWriteRoutes({resolveContext:vi.fn().mockResolvedValue(context),service:service as never}).voidPayment({} as never)).rejects.toMatchObject({code:'INPUT_INVALID'});expect(service.voidPayment).not.toHaveBeenCalled()})
+})

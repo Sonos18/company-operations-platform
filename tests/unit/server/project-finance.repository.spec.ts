@@ -82,6 +82,7 @@ describe('C1 finance bounded reads', () => {
     expect(await reader.costItems('00000000-0000-4000-8000-000000000010', '00000000-0000-4000-8000-000000000020', '00000000-0000-4000-8000-000000000030')).toHaveLength(2)
     expect(calls).toContainEqual(['eq', 'tenant_id', '00000000-0000-4000-8000-000000000010'])
     expect(calls).toContainEqual(['eq', 'company_id', '00000000-0000-4000-8000-000000000020'])
+    expect(calls).toContainEqual(['eq', 'publication_state', 'published'])
   })
 
   it('retries the whole collection once when the read signature changes', async () => {

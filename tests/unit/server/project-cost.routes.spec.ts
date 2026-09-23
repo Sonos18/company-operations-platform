@@ -6,7 +6,8 @@ vi.mock('h3', async importOriginal => ({ ...await importOriginal<typeof import('
 
 const ids = { companyId: 'c1010000-0000-4000-8000-000000000020', projectId: 'c1010000-0000-4000-8000-000000000101', itemId: 'c1010000-0000-4000-8000-000000000001', actorId: 'c1010000-0000-4000-8000-000000000902', tenantId: 'c1010000-0000-4000-8000-000000000010', requestId: 'c1010000-0000-4000-8000-000000000999', idempotencyKey: 'c1010000-0000-4000-8000-000000000998', sourceFigure1: 'c1010000-0000-4000-8000-000000000604', sourceFigure2: 'c1010000-0000-4000-8000-000000000605' }
 const trustedContext = { actorId: ids.actorId, tenantId: ids.tenantId, companyId: ids.companyId, permissions: ['cost.read', 'cost.manage', 'cost.correct'], requestId: ids.requestId }
-const createInput = { projectId: ids.projectId, description: 'Synthetic', amount: '1.00', currencyCode: 'VND', workStatus: 'unknown', nonOverlapConfirmationReference: 'confirmed' }
+const createInput = { projectId: ids.projectId, description: 'Synthetic draft', costCategoryId: 'c1010000-0000-4000-8000-000000000301', workStatus: 'unknown' }
+const financialInput = { expectedVersion: 0, currencyCode: 'VND', details: [{ lineNo: 1, detailKind: 'line_item', description: 'Zero', amount: '0.0000' }], sourceFigureIds: [] }
 
 function route(service: Record<string, ReturnType<typeof vi.fn>>) {
   const resolveContext = vi.fn().mockResolvedValue(trustedContext)
@@ -27,6 +28,52 @@ describe('Project Cost routes', () => {
     await expect(value.routes.summaries({} as never)).resolves.toEqual([])
     expect(value.resolveContext).toHaveBeenCalledWith(expect.anything(), ids.companyId)
     expect(service.listSummaries).toHaveBeenCalledWith(trustedContext)
+  })
+
+  it('routes financial preparation without an idempotency header', async () => {
+    readBody.mockResolvedValue(financialInput)
+    getHeader.mockReturnValue(undefined)
+    const service = { prepareFinancials: vi.fn().mockResolvedValue({ id: ids.itemId }) }
+
+    await route(service).routes.financials({} as never)
+
+    expect(service.prepareFinancials).toHaveBeenCalledWith(trustedContext, ids.itemId, expect.objectContaining({ ...financialInput, details: [expect.objectContaining(financialInput.details[0]!)] }))
+  })
+
+  it('routes draft detail and project draft list reads', async () => {
+    const service = { draft: vi.fn().mockResolvedValue({ id: ids.itemId }), listDrafts: vi.fn().mockResolvedValue([]) }
+    const routes = route(service).routes
+    await routes.draft({} as never)
+    await routes.drafts({} as never)
+    expect(service.draft).toHaveBeenCalledWith(trustedContext, ids.itemId)
+    expect(service.listDrafts).toHaveBeenCalledWith(trustedContext, ids.projectId)
+  })
+
+  it('routes operational draft reads separately from financial draft reads', async () => {
+    const service = { operationalDraft: vi.fn().mockResolvedValue({ id: ids.itemId }), listOperationalDrafts: vi.fn().mockResolvedValue([]) }
+    const routes = route(service).routes
+    await routes.operationalDraft({} as never)
+    await routes.operationalDrafts({} as never)
+    expect(service.operationalDraft).toHaveBeenCalledWith(trustedContext, ids.itemId)
+    expect(service.listOperationalDrafts).toHaveBeenCalledWith(trustedContext, ids.projectId)
+  })
+
+  it('requires expectedVersion and a UUID idempotency key for publish', async () => {
+    readBody.mockResolvedValue({ expectedVersion: 1 })
+    const service = { publish: vi.fn().mockResolvedValue({ id: ids.itemId, version: 2, publicationState: 'published', replayed: false }) }
+    await route(service).routes.publish({} as never)
+    expect(service.publish).toHaveBeenCalledWith(trustedContext, ids.itemId, { expectedVersion: 1 }, ids.idempotencyKey)
+    getHeader.mockReturnValue(undefined)
+    await expect(route(service).routes.publish({} as never)).rejects.toMatchObject({ code: 'INPUT_INVALID' })
+    expect(service.publish).toHaveBeenCalledOnce()
+  })
+
+  it('accepts correction only on the explicit idempotent corrections route', async () => {
+    const input = { expectedVersion: 2, reason: 'Correct source', operationalChanges: { workStatus: 'accepted' } }
+    readBody.mockResolvedValue(input)
+    const service = { correctPublished: vi.fn().mockResolvedValue({ id: ids.itemId, version: 3, publicationState: 'published', replayed: false }) }
+    await route(service).routes.correction({} as never)
+    expect(service.correctPublished).toHaveBeenCalledWith(trustedContext, ids.itemId, input, ids.idempotencyKey)
   })
 
   it('rejects a malformed company id before resolving trusted context', async () => {
@@ -53,75 +100,73 @@ describe('Project Cost routes', () => {
 
   it('creates only when path project, strict body, and UUID idempotency key are valid', async () => {
     readBody.mockResolvedValue(createInput)
-    const service = { create: vi.fn().mockResolvedValue({ id: ids.itemId, version: 0, replayed: false }) }
+    const service = { createDraft: vi.fn().mockResolvedValue({ id: ids.itemId, version: 0, publicationState: 'draft', replayed: false }) }
     const value = route(service)
 
     await expect(value.routes.create({} as never)).resolves.toMatchObject({ id: ids.itemId })
-    expect(service.create).toHaveBeenCalledWith(trustedContext, createInput, ids.idempotencyKey)
+    expect(service.createDraft).toHaveBeenCalledWith(trustedContext, createInput, ids.idempotencyKey)
   })
 
-  it('preserves valid source figure provenance IDs through strict POST parsing', async () => {
+  it('rejects source provenance from cost.manage create', async () => {
     const input = { ...createInput, sourceFigureIds: [ids.sourceFigure1, ids.sourceFigure2] }
     readBody.mockResolvedValue(input)
-    const service = { create: vi.fn().mockResolvedValue({ id: ids.itemId, version: 0, replayed: false }) }
+    const service = { createDraft: vi.fn() }
 
-    await route(service).routes.create({} as never)
-    expect(service.create).toHaveBeenCalledWith(trustedContext, input, ids.idempotencyKey)
+    await expect(route(service).routes.create({} as never)).rejects.toMatchObject({ code: 'INPUT_INVALID' })
+    expect(service.createDraft).not.toHaveBeenCalled()
   })
 
   it.each([{ sourceFigureIds: [] }, { sourceFigureIds: [ids.sourceFigure1, ids.sourceFigure1] }])('rejects invalid source figure provenance arrays without creating', ({ sourceFigureIds }) => {
     readBody.mockResolvedValue({ ...createInput, sourceFigureIds })
-    const service = { create: vi.fn() }
+    const service = { createDraft: vi.fn() }
 
-    return expect(route(service).routes.create({} as never)).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' }).then(() => expect(service.create).not.toHaveBeenCalled())
+    return expect(route(service).routes.create({} as never)).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' }).then(() => expect(service.createDraft).not.toHaveBeenCalled())
   })
 
   it.each([undefined, 'not-a-uuid'])('rejects invalid idempotency key %s without creating', async key => {
     getHeader.mockReturnValue(key)
     readBody.mockResolvedValue(createInput)
-    const service = { create: vi.fn() }
+    const service = { createDraft: vi.fn() }
 
     await expect(route(service).routes.create({} as never)).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' })
-    expect(service.create).not.toHaveBeenCalled()
+    expect(service.createDraft).not.toHaveBeenCalled()
   })
 
   it('rejects a create body whose project differs from the route', async () => {
     readBody.mockResolvedValue({ ...createInput, projectId: 'c1010000-0000-4000-8000-000000000102' })
-    const service = { create: vi.fn() }
+    const service = { createDraft: vi.fn() }
 
     await expect(route(service).routes.create({} as never)).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' })
-    expect(service.create).not.toHaveBeenCalled()
+    expect(service.createDraft).not.toHaveBeenCalled()
   })
 
   it.each(['actorId', 'tenantId', 'companyId', 'permissions', 'requestId', 'kind', 'mode'])('rejects caller-owned create field %s', async field => {
     readBody.mockResolvedValue({ ...createInput, [field]: field === 'permissions' ? [] : 'forged' })
-    const service = { create: vi.fn() }
+    const service = { createDraft: vi.fn() }
 
     await expect(route(service).routes.create({} as never)).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' })
-    expect(service.create).not.toHaveBeenCalled()
+    expect(service.createDraft).not.toHaveBeenCalled()
   })
 
-  it('classifies an ordinary patch internally and reads its body once', async () => {
+  it('routes an ordinary draft patch and reads its body once', async () => {
     readBody.mockResolvedValue({ description: 'Renamed', workStatus: 'in_progress', expectedVersion: 2 })
-    const service = { update: vi.fn().mockResolvedValue({ id: ids.itemId, version: 3 }), correct: vi.fn() }
+    const service = { updateDraft: vi.fn().mockResolvedValue({ id: ids.itemId, version: 3, publicationState: 'draft', replayed: false }) }
     const value = route(service)
 
     await value.routes.patch({} as never)
     expect(readBody).toHaveBeenCalledOnce()
-    expect(service.update).toHaveBeenCalledWith(trustedContext, ids.itemId, { description: 'Renamed', workStatus: 'in_progress', expectedVersion: 2 })
-    expect(service.correct).not.toHaveBeenCalled()
+    expect(service.updateDraft).toHaveBeenCalledWith(trustedContext, ids.itemId, { description: 'Renamed', workStatus: 'in_progress', expectedVersion: 2 })
   })
 
   it.each([
     { amount: '2.00', reason: 'Correction', expectedVersion: 2 },
     { workStatus: 'accepted', reason: 'Correction', expectedVersion: 2 },
-  ])('classifies correction patches internally', async body => {
+  ])('rejects correction semantics from ordinary PATCH', async body => {
     readBody.mockResolvedValue(body)
-    const service = { update: vi.fn(), correct: vi.fn().mockResolvedValue({ id: ids.itemId, version: 3 }) }
+    const service = { updateDraft: vi.fn() }
 
-    await route(service).routes.patch({} as never)
-    expect(service.correct).toHaveBeenCalledWith(trustedContext, ids.itemId, body)
-    expect(service.update).not.toHaveBeenCalled()
+    await expect(route(service).routes.patch({} as never)).rejects.toMatchObject({ code: 'INPUT_INVALID' })
+    expect(service.updateDraft).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -130,29 +175,26 @@ describe('Project Cost routes', () => {
     { description: 'Renamed', amount: '2.00', reason: 'Correction', expectedVersion: 2 },
   ])('rejects caller-controlled or malformed patch bodies', async body => {
     readBody.mockResolvedValue(body)
-    const service = { update: vi.fn(), correct: vi.fn() }
+    const service = { updateDraft: vi.fn() }
 
     await expect(route(service).routes.patch({} as never)).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' })
-    expect(service.update).not.toHaveBeenCalled()
-    expect(service.correct).not.toHaveBeenCalled()
+    expect(service.updateDraft).not.toHaveBeenCalled()
   })
 
   it.each(['actorId', 'tenantId', 'companyId', 'permissions', 'requestId'])('rejects caller-owned patch field %s', async field => {
     readBody.mockResolvedValue({ description: 'Renamed', expectedVersion: 2, [field]: field === 'permissions' ? [] : 'forged' })
-    const service = { update: vi.fn(), correct: vi.fn() }
+    const service = { updateDraft: vi.fn() }
 
     await expect(route(service).routes.patch({} as never)).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' })
-    expect(service.update).not.toHaveBeenCalled()
-    expect(service.correct).not.toHaveBeenCalled()
+    expect(service.updateDraft).not.toHaveBeenCalled()
   })
 
   it('rejects a malformed item id before reading or invoking the patch service', async () => {
     getRouterParam.mockImplementation((_event, name) => name === 'projectCostItemId' ? 'not-a-uuid' : ids.companyId)
-    const service = { update: vi.fn(), correct: vi.fn() }
+    const service = { updateDraft: vi.fn() }
 
     await expect(route(service).routes.patch({} as never)).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' })
     expect(readBody).not.toHaveBeenCalled()
-    expect(service.update).not.toHaveBeenCalled()
-    expect(service.correct).not.toHaveBeenCalled()
+    expect(service.updateDraft).not.toHaveBeenCalled()
   })
 })

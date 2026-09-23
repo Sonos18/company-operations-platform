@@ -5,6 +5,8 @@ import { ProjectCostService } from '../../../server/features/costs/project-cost.
 
 const context = (permissions: string[]) => ({ actorId: 'c1010000-0000-4000-8000-000000000902', tenantId: 'c1010000-0000-4000-8000-000000000010', companyId: 'c1010000-0000-4000-8000-000000000020', permissions, requestId: 'c1010000-0000-4000-8000-000000000999' })
 const createInput = { projectId: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount: '1.00', currencyCode: 'VND', workStatus: 'unknown' as const, nonOverlapConfirmationReference: 'confirmed' }
+const createDraftInput = { projectId: createInput.projectId, description: 'Synthetic draft', costCategoryId: 'c1010000-0000-4000-8000-000000000301', workStatus: 'unknown' as const }
+const financialInput = { expectedVersion: 0, currencyCode: 'VND', details: [{ lineNo: 1, detailKind: 'line_item' as const, description: 'Zero', amount: '0.0000' }], sourceFigureIds: [] }
 const itemRow = (overrides: Record<string, unknown> = {}) => ({ id: 'c1010000-0000-4000-8000-000000000001', tenant_id: 'c1010000-0000-4000-8000-000000000010', company_id: 'c1010000-0000-4000-8000-000000000020', project_id: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount_text: '1.0000', currency_code: 'VND', work_status: 'unknown', business_reference: null, party_id: null, engagement_id: null, component_id: null, relevant_date: null, version: 0, created_by: 'c1010000-0000-4000-8000-000000000902', created_at: '2026-09-16T00:00:00.000Z', updated_at: '2026-09-16T00:00:00.000Z', ...overrides })
 const metadata = (projectId: string) => ({ projectId, projectCode: projectId.endsWith('102') ? 'C101-P2' : 'C101-P1', projectName: projectId.endsWith('102') ? 'C101 project two' : 'C101 project one' })
 const listClient = (data: unknown, error: unknown = null) => {
@@ -21,6 +23,101 @@ const listClient = (data: unknown, error: unknown = null) => {
 }
 
 describe('Project Cost service', () => {
+  it.each(['cost.manage', 'cost.prepare', 'cost.publish_import', 'cost.record_cash'] as const)('does not let %s substitute for cost.correct on published correction', async permission => {
+    const repository = { correctPublished: vi.fn() }
+    await expect(new ProjectCostService(repository as never).correctPublished(context([permission]), itemRow().id, { expectedVersion: 2, reason: 'Correct source', operationalChanges: { workStatus: 'accepted' } }, context([]).requestId)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    expect(repository.correctPublished).not.toHaveBeenCalled()
+  })
+
+  it('routes published correction only under cost.correct', async () => {
+    const input = { expectedVersion: 2, reason: 'Correct source', operationalChanges: { workStatus: 'accepted' } }
+    const repository = { correctPublished: vi.fn().mockResolvedValue({ id: itemRow().id, version: 3, publicationState: 'published', replayed: false }) }
+    await new ProjectCostService(repository as never).correctPublished(context(['cost.correct']), itemRow().id, input, context([]).requestId)
+    expect(repository.correctPublished).toHaveBeenCalledWith(expect.objectContaining({ companyId: context([]).companyId }), itemRow().id, expect.objectContaining(input), context([]).requestId)
+  })
+
+  it.each(['cost.manage', 'cost.prepare', 'cost.correct', 'cost.record_cash'] as const)('does not let %s substitute for cost.publish_import', async permission => {
+    const repository = { publish: vi.fn() }
+    await expect(new ProjectCostService(repository as never).publish(context([permission]), itemRow().id, { expectedVersion: 1 }, context([]).requestId)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    expect(repository.publish).not.toHaveBeenCalled()
+  })
+
+  it('publishes only with cost.publish_import', async () => {
+    const repository = { publish: vi.fn().mockResolvedValue({ id: itemRow().id, version: 2, publicationState: 'published', replayed: false }) }
+    await new ProjectCostService(repository as never).publish(context(['cost.publish_import']), itemRow().id, { expectedVersion: 1 }, context([]).requestId)
+    expect(repository.publish).toHaveBeenCalledWith(expect.objectContaining({ companyId: context([]).companyId }), itemRow().id, 1, context([]).requestId)
+  })
+
+  it.each(['cost.prepare', 'cost.publish_import', 'cost.correct', 'cost.record_cash'] as const)('does not let %s substitute for cost.manage', async permission => {
+    const repository = { createDraft: vi.fn() }
+    await expect(new ProjectCostService(repository as never).createDraft(context([permission]), createDraftInput, context([]).requestId)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    expect(repository.createDraft).not.toHaveBeenCalled()
+  })
+
+  it.each(['cost.manage', 'cost.publish_import', 'cost.correct', 'cost.record_cash'] as const)('does not let %s substitute for cost.prepare', async permission => {
+    const repository = { prepareFinancials: vi.fn() }
+    await expect(new ProjectCostService(repository as never).prepareFinancials(context([permission]), itemRow().id, financialInput)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    expect(repository.prepareFinancials).not.toHaveBeenCalled()
+  })
+
+  it('owns draft identity with cost.manage and financial preparation with cost.prepare', async () => {
+    const repository = { createDraft: vi.fn().mockResolvedValue({ id: itemRow().id }), prepareFinancials: vi.fn().mockResolvedValue({ id: itemRow().id }) }
+    const service = new ProjectCostService(repository as never)
+    await service.createDraft(context(['cost.manage']), createDraftInput, context([]).requestId)
+    await service.prepareFinancials(context(['cost.prepare']), itemRow().id, financialInput)
+    expect(repository.createDraft).toHaveBeenCalledOnce()
+    expect(repository.prepareFinancials).toHaveBeenCalledOnce()
+  })
+
+  it('lets cost.manage read only the operational draft projection', async () => {
+    const repository = { operationalDraft: vi.fn().mockResolvedValue({ id: itemRow().id }), listOperationalDrafts: vi.fn().mockResolvedValue([]) }
+    const service = new ProjectCostService(repository as never)
+    await service.operationalDraft(context(['cost.manage']), itemRow().id)
+    await service.listOperationalDrafts(context(['cost.manage']), createDraftInput.projectId)
+    expect(repository.operationalDraft).toHaveBeenCalledOnce()
+    expect(repository.listOperationalDrafts).toHaveBeenCalledOnce()
+  })
+
+  it.each(['cost.prepare', 'cost.read', 'cost.publish_import', 'cost.correct', 'cost.record_cash'] as const)('does not let %s substitute for cost.manage on operational draft reads', async permission => {
+    const repository = { operationalDraft: vi.fn(), listOperationalDrafts: vi.fn() }
+    const service = new ProjectCostService(repository as never)
+    await expect(service.operationalDraft(context([permission]), itemRow().id)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    await expect(service.listOperationalDrafts(context([permission]), createDraftInput.projectId)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    expect(repository.operationalDraft).not.toHaveBeenCalled()
+    expect(repository.listOperationalDrafts).not.toHaveBeenCalled()
+  })
+
+  it('maps the financial and operational draft reads to distinct RPCs', async () => {
+    const draft = {
+      id: itemRow().id, projectId: createDraftInput.projectId, description: createDraftInput.description, costCategoryId: createDraftInput.costCategoryId,
+      businessReference: null, partyId: null, engagementId: null, componentId: null, relevantDate: null, workStatus: 'unknown', amount: null,
+      currencyCode: 'VND', publicationState: 'draft', version: 0, details: [], sourceFigureIds: [],
+      publishReadiness: { ready: false, blockingCodes: ['FINANCIAL_DETAILS_REQUIRED'] }, createdAt: itemRow().created_at, updatedAt: itemRow().updated_at,
+    }
+    const rpc = vi.fn().mockImplementation(async (name: string) => ({
+      data: name === 'c1_prepare_project_cost_financials'
+        ? { id: draft.id, version: 1, publicationState: 'draft', amount: '0', detailCount: 1, publishReadiness: { ready: true, blockingCodes: [] }, replayed: false }
+        : name === 'c1_read_project_cost_draft' ? draft
+          : name === 'c1_list_project_cost_drafts' ? [draft]
+            : name === 'c1_read_project_cost_draft_operational' ? { id: draft.id, projectId: draft.projectId, description: draft.description, costCategoryId: draft.costCategoryId, businessReference: null, partyId: null, engagementId: null, componentId: null, relevantDate: null, workStatus: 'unknown', publicationState: 'draft', version: 0, createdAt: draft.createdAt, updatedAt: draft.updatedAt }
+              : name === 'c1_list_project_cost_drafts_operational' ? []
+            : { id: draft.id, version: name === 'c1_update_project_cost_draft' ? 1 : 0, publicationState: 'draft', replayed: false },
+      error: null,
+    }))
+    const repository = new ProjectCostRepository({ rpc } as never)
+    const requestContext = { companyId: context([]).companyId, requestId: context([]).requestId }
+
+    await repository.createDraft(requestContext, createDraftInput, context([]).requestId)
+    await repository.updateDraft(requestContext, draft.id, { expectedVersion: 0, description: 'Updated' })
+    await repository.prepareFinancials(requestContext, draft.id, financialInput)
+    await repository.draft(requestContext, draft.id)
+    await repository.listDrafts(requestContext, draft.projectId)
+    await repository.operationalDraft(requestContext, draft.id)
+    await repository.listOperationalDrafts(requestContext, draft.projectId)
+
+    expect(rpc.mock.calls.map(call => call[0])).toEqual(['c1_create_project_cost_draft', 'c1_update_project_cost_draft', 'c1_prepare_project_cost_financials', 'c1_read_project_cost_draft', 'c1_list_project_cost_drafts', 'c1_read_project_cost_draft_operational', 'c1_list_project_cost_drafts_operational'])
+  })
+
   it('maps a snake_case database row to the public project cost item without losing decimal text', async () => {
     const client = {
       rpc: vi.fn().mockResolvedValue({ data: [metadata('c1010000-0000-4000-8000-000000000101')], error: null }),
@@ -29,7 +126,9 @@ describe('Project Cost service', () => {
           eq: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
-                order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [{ id: 'c1010000-0000-4000-8000-000000000001', tenant_id: 'c1010000-0000-4000-8000-000000000010', company_id: 'c1010000-0000-4000-8000-000000000020', project_id: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount_text: '9007199254740993.0000', currency_code: 'VND', work_status: 'accepted', business_reference: null, party_id: null, engagement_id: null, component_id: null, relevant_date: null, version: 2, created_by: 'c1010000-0000-4000-8000-000000000902', created_at: '2026-09-16T00:00:00.000Z', updated_at: '2026-09-16T00:00:00.000Z' }], error: null }) }),
+                eq: vi.fn().mockReturnValue({
+                  order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [{ id: 'c1010000-0000-4000-8000-000000000001', tenant_id: 'c1010000-0000-4000-8000-000000000010', company_id: 'c1010000-0000-4000-8000-000000000020', project_id: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount_text: '9007199254740993.0000', currency_code: 'VND', work_status: 'accepted', business_reference: null, party_id: null, engagement_id: null, component_id: null, relevant_date: null, version: 2, created_by: 'c1010000-0000-4000-8000-000000000902', created_at: '2026-09-16T00:00:00.000Z', updated_at: '2026-09-16T00:00:00.000Z' }], error: null }) }),
+                }),
               }),
             }),
           }),
@@ -68,6 +167,7 @@ describe('Project Cost service', () => {
     expect(client.query.eq).toHaveBeenCalledWith('tenant_id', context([]).tenantId)
     expect(client.query.eq).toHaveBeenCalledWith('company_id', context([]).companyId)
     expect(client.query.eq).toHaveBeenCalledWith('project_id', createInput.projectId)
+    expect(client.query.eq).toHaveBeenCalledWith('publication_state', 'published')
   })
 
   it('aggregates accepted and in-progress values, excludes unknown from total, and counts zero values', async () => {
@@ -427,6 +527,7 @@ describe('Project Cost service', () => {
       await repository.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)
 
       expect(client.from).toHaveBeenCalledWith('project_cost_item_details')
+      expect(client.parentQuery.eq).toHaveBeenCalledWith('publication_state', 'published')
       expect(client.detailsQuery.eq).toHaveBeenCalledWith('tenant_id', context([]).tenantId)
       expect(client.detailsQuery.eq).toHaveBeenCalledWith('company_id', context([]).companyId)
       expect(client.detailsQuery.eq).toHaveBeenCalledWith('project_cost_item_id', parentRow.id)

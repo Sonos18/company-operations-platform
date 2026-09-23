@@ -6,10 +6,31 @@ const summary = { currencyCode: 'VND', acceptedValue: '0.0000', acceptedCount: 0
 const item = { id: ids.item, tenantId: 'c1010000-0000-4000-8000-000000000010', companyId: ids.company, projectId: ids.project, description: 'Synthetic', amount: '1.0000', currencyCode: 'VND', workStatus: 'unknown', businessReference: null, partyId: null, engagementId: null, componentId: null, relevantDate: null, version: 0, createdAt: '2026-09-16T00:00:00.000Z', updatedAt: '2026-09-16T00:00:00.000Z' }
 const metadata = { projectId: ids.project, projectCode: 'C101-P1', projectName: 'C101 project one' }
 const breakdown = { ...metadata, summary, items: [item] }
-const draft = { description: 'Synthetic', amount: '1.0000', currencyCode: 'VND', workStatus: 'unknown', nonOverlapConfirmationReference: 'confirmed' }
+const draft = { description: 'Synthetic', costCategoryId: 'c1010000-0000-4000-8000-000000000301', workStatus: 'unknown' }
+const draftResponse = { id: ids.item, projectId: ids.project, description: 'Synthetic', costCategoryId: draft.costCategoryId, businessReference: null, partyId: null, engagementId: null, componentId: null, relevantDate: null, workStatus: 'unknown', amount: null, currencyCode: 'VND', publicationState: 'draft', version: 0, details: [], sourceFigureIds: [], publishReadiness: { ready: false, blockingCodes: ['FINANCIAL_DETAILS_REQUIRED'] }, createdAt: '2026-09-22T00:00:00.000Z', updatedAt: '2026-09-22T00:00:00.000Z' }
 const responseClient = (response: unknown) => ({ request: vi.fn().mockImplementation(async input => input.schema.parse(response)) })
 
 describe('HTTP Project Cost repository', () => {
+  it('uses the draft, financial preparation, and draft-read endpoints', async () => {
+    const client = responseClient({ id: ids.item, version: 1, publicationState: 'draft', amount: '0', detailCount: 1, publishReadiness: { ready: true, blockingCodes: [] }, replayed: false })
+    const repository = createHttpProjectCostRepository({ companyId: 'company/id', client: client as never }) as never as {
+      prepareFinancials(id: string, input: unknown): Promise<unknown>
+      draft(id: string): Promise<unknown>
+      listDrafts(projectId: string): Promise<unknown>
+    }
+    await repository.prepareFinancials('item/id', { expectedVersion: 0, currencyCode: 'VND', details: [{ lineNo: 1, detailKind: 'line_item', description: 'Zero', amount: '0.0000' }], sourceFigureIds: [] })
+    expect(client.request).toHaveBeenLastCalledWith(expect.objectContaining({ url: '/api/companies/company%2Fid/project-costs/item%2Fid/financials', method: 'PUT' }))
+
+    const draftClient = responseClient(draftResponse)
+    const draftRepository = createHttpProjectCostRepository({ companyId: 'company/id', client: draftClient as never })
+    await draftRepository.draft('item/id')
+    expect(draftClient.request).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/companies/company%2Fid/project-costs/item%2Fid/draft', method: 'GET' }))
+
+    const listClient = responseClient([draftResponse])
+    const listRepository = createHttpProjectCostRepository({ companyId: 'company/id', client: listClient as never })
+    await listRepository.listDrafts('project/id')
+    expect(listClient.request).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/companies/company%2Fid/projects/project%2Fid/project-cost-drafts', method: 'GET' }))
+  })
   it('gets strict company summaries from the current encoded company URL', async () => {
     const companyId = vi.fn().mockReturnValue('company/id')
     const client = responseClient([{ ...metadata, summary }])
@@ -30,48 +51,46 @@ describe('HTTP Project Cost repository', () => {
 
   it('binds the create body to its project path and generates exactly one idempotency UUID', async () => {
     const createIdempotencyKey = vi.fn().mockReturnValue(ids.key)
-    const client = responseClient({ id: ids.item, version: 0, replayed: false })
+    const client = responseClient({ id: ids.item, version: 0, publicationState: 'draft', replayed: false })
     const repository = createHttpProjectCostRepository({ companyId: ids.company, client: client as never, createIdempotencyKey })
 
-    await expect(repository.create(ids.project, draft)).resolves.toEqual({ id: ids.item, version: 0, replayed: false })
+    await expect(repository.create(ids.project, draft)).resolves.toEqual({ id: ids.item, version: 0, publicationState: 'draft', replayed: false })
     expect(createIdempotencyKey).toHaveBeenCalledOnce()
     expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ url: `/api/companies/${ids.company}/projects/${ids.project}/project-costs`, method: 'POST', body: { ...draft, projectId: ids.project }, idempotencyKey: ids.key }))
   })
 
-  it('sends source figure provenance IDs unchanged in the guarded create body', async () => {
+  it('rejects source provenance from the cost.manage create body', async () => {
     const createIdempotencyKey = vi.fn().mockReturnValue(ids.key)
-    const client = responseClient({ id: ids.item, version: 0, replayed: false })
+    const client = responseClient({ id: ids.item, version: 0, publicationState: 'draft', replayed: false })
     const repository = createHttpProjectCostRepository({ companyId: ids.company, client: client as never, createIdempotencyKey })
     const input = { ...draft, sourceFigureIds: [ids.sourceFigure1, ids.sourceFigure2] }
 
-    await repository.create(ids.project, input)
-    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ method: 'POST', body: { ...input, projectId: ids.project } }))
+    expect(() => repository.create(ids.project, input as never)).toThrow()
+    expect(client.request).not.toHaveBeenCalled()
   })
 
   it('sends ordinary update bodies unchanged without caller discriminators', async () => {
     const input = { description: 'Renamed', workStatus: 'in_progress', expectedVersion: 2 }
-    const client = responseClient({ id: ids.item, version: 3 })
+    const client = responseClient({ id: ids.item, version: 3, publicationState: 'draft', replayed: false })
     const repository = createHttpProjectCostRepository({ companyId: 'company/id', client: client as never })
 
-    await expect(repository.update('item/id', input)).resolves.toEqual({ id: ids.item, version: 3 })
+    await expect(repository.update('item/id', input)).resolves.toEqual({ id: ids.item, version: 3, publicationState: 'draft', replayed: false })
     expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/companies/company%2Fid/project-costs/item%2Fid', method: 'PATCH', body: input }))
     expect(client.request.mock.calls[0][0].body).not.toHaveProperty('kind')
     expect(client.request.mock.calls[0][0].body).not.toHaveProperty('mode')
   })
 
-  it('sends correction bodies unchanged without a caller discriminator', async () => {
+  it('rejects correction bodies from ordinary PATCH', async () => {
     const input = { amount: '2.0000', reason: 'Correction', expectedVersion: 2 }
-    const client = responseClient({ id: ids.item, version: 3 })
+    const client = responseClient({ id: ids.item, version: 3, publicationState: 'draft', replayed: false })
     const repository = createHttpProjectCostRepository({ companyId: ids.company, client: client as never })
 
-    await expect(repository.update(ids.item, input)).resolves.toEqual({ id: ids.item, version: 3 })
-    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ method: 'PATCH', body: input }))
-    expect(client.request.mock.calls[0][0].body).not.toHaveProperty('kind')
-    expect(client.request.mock.calls[0][0].body).not.toHaveProperty('mode')
+    expect(() => repository.update(ids.item, input as never)).toThrow()
+    expect(client.request).not.toHaveBeenCalled()
   })
 
   it('rejects an invalid patch body before requesting HTTP', async () => {
-    const client = responseClient({ id: ids.item, version: 3 })
+    const client = responseClient({ id: ids.item, version: 3, publicationState: 'draft', replayed: false })
     const repository = createHttpProjectCostRepository({ companyId: ids.company, client: client as never })
 
     expect(() => repository.update(ids.item, { expectedVersion: 2 } as never)).toThrow()
@@ -116,8 +135,8 @@ describe('HTTP Project Cost repository', () => {
   })
 
   it('rejects extra fields in create and mutation acknowledgements', async () => {
-    const createClient = responseClient({ id: ids.item, version: 0, replayed: false, workbook: 'forbidden' })
-    const mutationClient = responseClient({ id: ids.item, version: 3, sheet: 'forbidden' })
+    const createClient = responseClient({ id: ids.item, version: 0, publicationState: 'draft', replayed: false, workbook: 'forbidden' })
+    const mutationClient = responseClient({ id: ids.item, version: 3, publicationState: 'draft', replayed: false, sheet: 'forbidden' })
 
     await expect(createHttpProjectCostRepository({ companyId: ids.company, client: createClient as never, createIdempotencyKey: () => ids.key }).create(ids.project, draft)).rejects.toThrow()
     await expect(createHttpProjectCostRepository({ companyId: ids.company, client: mutationClient as never }).update(ids.item, { description: 'Renamed', expectedVersion: 2 })).rejects.toThrow()

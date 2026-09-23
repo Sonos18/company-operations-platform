@@ -1,8 +1,20 @@
 import { createApp, defineEventHandler, setResponseHeader, toWebHandler } from 'h3'
 import { describe, expect, it } from 'vitest'
 import { AppApiError, runApiRoute, toApiErrorBody } from '../../../server/utils/api-error'
+import { apiErrorCodeSchema } from '../../../shared/schemas/api-error'
 
 describe('toApiErrorBody', () => {
+  it.each([
+    'COST_NOT_DRAFT',
+    'COST_ALREADY_PUBLISHED',
+    'COST_PUBLISH_NOT_READY',
+    'SUBCONTRACT_COST_MODEL_UNSUPPORTED',
+    'EVIDENCE_UPLOAD_MISMATCH',
+    'PAYMENT_ALREADY_VOIDED',
+  ])('accepts the accounting write error code %s', code => {
+    expect(apiErrorCodeSchema.safeParse(code).success).toBe(true)
+  })
+
   it('maps an expected error', () => {
     const error = new AppApiError(
       403,
