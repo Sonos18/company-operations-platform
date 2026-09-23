@@ -72,14 +72,16 @@ describe('HTTP Project Cost repository', () => {
     expect(opListClient.request).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/companies/company%2Fid/projects/project%2Fid/project-cost-drafts/operations', method: 'GET' }))
 
     const pubClient = responseClient({ id: ids.item, version: 2, publicationState: 'published', replayed: false })
-    const pubRepo = createHttpProjectCostRepository({ companyId: 'company/id', client: pubClient as never, createIdempotencyKey: () => ids.key })
-    await pubRepo.publish('item/id', { expectedVersion: 1 })
+    const generatedPublishKey = vi.fn(() => 'generated-publish-key')
+    const pubRepo = createHttpProjectCostRepository({ companyId: 'company/id', client: pubClient as never, createIdempotencyKey: generatedPublishKey })
+    await pubRepo.publish('item/id', { expectedVersion: 1 }, { idempotencyKey: ids.key })
     expect(pubClient.request).toHaveBeenCalledWith(expect.objectContaining({
       url: '/api/companies/company%2Fid/project-costs/item%2Fid/publish',
       method: 'POST',
       body: { expectedVersion: 1 },
       idempotencyKey: ids.key,
     }))
+    expect(generatedPublishKey).not.toHaveBeenCalled()
 
     const corrClient = responseClient({ id: ids.item, version: 3, publicationState: 'published', replayed: false })
     const corrRepo = createHttpProjectCostRepository({ companyId: 'company/id', client: corrClient as never, createIdempotencyKey: () => ids.key })
@@ -119,14 +121,16 @@ describe('HTTP Project Cost repository', () => {
     expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/companies/company%2Fid/projects/project%2Fid/project-costs', method: 'GET' }))
   })
 
-  it('binds the create body to its project path and generates exactly one idempotency UUID', async () => {
-    const createIdempotencyKey = vi.fn().mockReturnValue(ids.key)
+  it('binds the create body and forwards one caller-owned key across retries', async () => {
+    const createIdempotencyKey = vi.fn().mockReturnValue('generated-create-key')
     const client = responseClient({ id: ids.item, version: 0, publicationState: 'draft', replayed: false })
     const repository = createHttpProjectCostRepository({ companyId: ids.company, client: client as never, createIdempotencyKey })
 
-    await expect(repository.create(ids.project, draft)).resolves.toEqual({ id: ids.item, version: 0, publicationState: 'draft', replayed: false })
-    expect(createIdempotencyKey).toHaveBeenCalledOnce()
-    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ url: `/api/companies/${ids.company}/projects/${ids.project}/project-costs`, method: 'POST', body: { ...draft, projectId: ids.project }, idempotencyKey: ids.key }))
+    await expect(repository.create(ids.project, draft, { idempotencyKey: ids.key })).resolves.toEqual({ id: ids.item, version: 0, publicationState: 'draft', replayed: false })
+    await repository.create(ids.project, draft, { idempotencyKey: ids.key })
+    expect(createIdempotencyKey).not.toHaveBeenCalled()
+    expect(client.request).toHaveBeenNthCalledWith(1, expect.objectContaining({ url: `/api/companies/${ids.company}/projects/${ids.project}/project-costs`, method: 'POST', body: { ...draft, projectId: ids.project }, idempotencyKey: ids.key }))
+    expect(client.request).toHaveBeenNthCalledWith(2, expect.objectContaining({ body: { ...draft, projectId: ids.project }, idempotencyKey: ids.key }))
   })
 
   it('rejects source provenance from the cost.manage create body', async () => {
@@ -135,7 +139,7 @@ describe('HTTP Project Cost repository', () => {
     const repository = createHttpProjectCostRepository({ companyId: ids.company, client: client as never, createIdempotencyKey })
     const input = { ...draft, sourceFigureIds: [ids.sourceFigure1, ids.sourceFigure2] }
 
-    expect(() => repository.create(ids.project, input as never)).toThrow()
+    expect(() => repository.create(ids.project, input as never, { idempotencyKey: ids.key })).toThrow()
     expect(client.request).not.toHaveBeenCalled()
   })
 
@@ -208,7 +212,7 @@ describe('HTTP Project Cost repository', () => {
     const createClient = responseClient({ id: ids.item, version: 0, publicationState: 'draft', replayed: false, workbook: 'forbidden' })
     const mutationClient = responseClient({ id: ids.item, version: 3, publicationState: 'draft', replayed: false, sheet: 'forbidden' })
 
-    await expect(createHttpProjectCostRepository({ companyId: ids.company, client: createClient as never, createIdempotencyKey: () => ids.key }).create(ids.project, draft)).rejects.toThrow()
+    await expect(createHttpProjectCostRepository({ companyId: ids.company, client: createClient as never }).create(ids.project, draft, { idempotencyKey: ids.key })).rejects.toThrow()
     await expect(createHttpProjectCostRepository({ companyId: ids.company, client: mutationClient as never }).update(ids.item, { description: 'Renamed', expectedVersion: 2 })).rejects.toThrow()
   })
 

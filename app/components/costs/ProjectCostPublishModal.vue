@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { ClientError } from '../../errors/client-error'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
 import { formatFinanceMoney } from '../../utils/costs/finance-display'
 
@@ -14,7 +15,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
-  'published': [result: { id: string; version: number }]
+  'published': [result?: { id: string; version: number }]
 }>()
 
 const repositories = useRepositories()
@@ -28,6 +29,13 @@ const isOpen = computed({
 
 const submitting = ref(false)
 const errorMessage = ref<string | null>(null)
+const pendingCommand = ref<{ fingerprint: string; idempotencyKey: string } | null>(null)
+
+watch([() => props.open, () => props.projectCostItemId, () => props.version], ([open]) => {
+  if (!open) return
+  pendingCommand.value = null
+  errorMessage.value = null
+})
 
 async function handlePublish() {
   if (!canPublish.value) {
@@ -39,14 +47,22 @@ async function handlePublish() {
   errorMessage.value = null
 
   try {
-    const result = await repositories.projectCosts.publish(props.projectCostItemId, {
-      expectedVersion: props.version,
-    })
+    const input = { expectedVersion: props.version }
+    const fingerprint = JSON.stringify({ projectCostItemId: props.projectCostItemId, input })
+    if (pendingCommand.value?.fingerprint !== fingerprint) pendingCommand.value = { fingerprint, idempotencyKey: globalThis.crypto.randomUUID() }
+    const result = await repositories.projectCosts.publish(props.projectCostItemId, input, { idempotencyKey: pendingCommand.value.idempotencyKey })
 
+    pendingCommand.value = null
     isOpen.value = false
     emit('published', { id: result.id, version: result.version })
   }
   catch (err: unknown) {
+    if (err instanceof ClientError && err.code === 'COST_ALREADY_PUBLISHED') {
+      pendingCommand.value = null
+      isOpen.value = false
+      emit('published')
+      return
+    }
     errorMessage.value = extractErrorMessage(err, 'Lỗi trong quá trình phát hành chi phí.')
   }
   finally {

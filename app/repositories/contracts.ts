@@ -156,14 +156,14 @@ export interface ProjectCostRepository {
   summaries(): Promise<ProjectCostSummaryEntry[]>
   project(projectId: string): Promise<ProjectCostBreakdown>
   details(projectCostItemId: string): Promise<ProjectCostDetailsResponse>
-  create(projectId: string, input: ProjectCostCreateDraft): Promise<ProjectCostCreateResult>
+  create(projectId: string, input: ProjectCostCreateDraft, options: { idempotencyKey: string }): Promise<ProjectCostCreateResult>
   update(projectCostItemId: string, input: ProjectCostPatchInput): Promise<ProjectCostMutationResult>
   prepareFinancials(projectCostItemId: string, input: PrepareProjectCostFinancialsInput): Promise<PrepareProjectCostFinancialsResult>
   draft(projectCostItemId: string): Promise<ProjectCostDraft>
   listDrafts(projectId: string): Promise<ProjectCostDraft[]>
   operationalDraft(projectCostItemId: string): Promise<ProjectCostOperationalDraft>
   listOperationalDrafts(projectId: string): Promise<ProjectCostOperationalDraft[]>
-  publish(projectCostItemId: string, input: PublishProjectCostInput): Promise<CostCommandAck>
+  publish(projectCostItemId: string, input: PublishProjectCostInput, options: { idempotencyKey: string }): Promise<CostCommandAck>
   correct(projectCostItemId: string, input: CorrectPublishedProjectCostInput): Promise<CostCommandAck>
 }
 export interface CostEvidenceRepository {

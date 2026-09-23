@@ -426,6 +426,114 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     await expect(page).toHaveURL(new RegExp(`/costs/${projectId}$`))
   })
 
+  test('Flow L — draft create retries preserve the logical key and rotate after change or success', async ({ page }) => {
+    const nextDraftId = '30000000-0000-4000-8000-000000000072'
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/projects/${projectId}/project-cost-drafts`, route => route.fulfill({ json: [] }))
+    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Draft changed payload') }))
+    await page.route(`**/api/companies/**/project-costs/${nextDraftId}/draft`, route => route.fulfill({ json: draftFixture(nextDraftId, projectId, 'Draft after success') }))
+    await page.route('**/api/companies/**/project-costs/*/evidence', route => route.fulfill({ json: [] }))
+
+    const requests: Array<{ body: Record<string, unknown>; idempotencyKey: string | undefined }> = []
+    await page.route(`**/api/companies/**/projects/${projectId}/project-costs`, route => {
+      const request = route.request()
+      if (request.method() !== 'POST') return route.continue()
+      requests.push({ body: request.postDataJSON(), idempotencyKey: request.headers()['idempotency-key'] })
+      if (requests.length <= 2) return route.abort('connectionfailed')
+      const id = requests.length === 3 ? draftId : nextDraftId
+      return route.fulfill({ status: 201, json: costCommandAckSchema.parse({ id, version: 0, publicationState: 'draft', replayed: false }) })
+    })
+
+    await page.goto(`/costs/${projectId}`)
+    await page.getByTestId('header-create-draft-btn').click()
+    await page.getByTestId('draft-create-description').fill('Draft retry payload')
+    await page.getByTestId('draft-create-category').selectOption(materialCategoryId)
+    await page.getByTestId('draft-create-submit').click()
+    await expect(page.getByTestId('draft-create-error')).toBeVisible()
+    await page.getByTestId('draft-create-submit').click()
+    await expect.poll(() => requests.length).toBe(2)
+    expect(requests[1]).toEqual(requests[0])
+
+    await page.getByTestId('draft-create-description').fill('Draft changed payload')
+    await page.getByTestId('draft-create-submit').click()
+    await expect(page).toHaveURL(new RegExp(`/costs/${projectId}/drafts/${draftId}$`))
+    expect(requests[2]?.idempotencyKey).not.toBe(requests[1]?.idempotencyKey)
+
+    await page.goto(`/costs/${projectId}`)
+    await page.getByTestId('header-create-draft-btn').click()
+    await page.getByTestId('draft-create-description').fill('Draft after success')
+    await page.getByTestId('draft-create-category').selectOption(materialCategoryId)
+    await page.getByTestId('draft-create-submit').click()
+    await expect(page).toHaveURL(new RegExp(`/costs/${projectId}/drafts/${nextDraftId}$`))
+    expect(requests[3]?.idempotencyKey).not.toBe(requests[2]?.idempotencyKey)
+  })
+
+  test('Flow M — publish retry reuses its key and recovers COST_ALREADY_PUBLISHED', async ({ page }) => {
+    const readyDraft = projectCostDraftSchema.parse({
+      ...draftFixture(draftId, projectId, 'Ready publish retry'),
+      amount: '10000000.0000',
+      details: [{
+        id: '80000000-0000-4000-8000-000000000020', projectCostItemId: draftId, lineNo: 1, detailKind: 'line_item', description: 'Ready line', quantity: null, unitCode: null, unitPrice: null, amount: '10000000.0000', retentionKind: null, retentionRateBps: null, retentionAmount: null, relevantDate: null, reference: null, note: null, version: 1, createdAt: '2026-09-22T08:00:00.000Z', updatedAt: '2026-09-22T08:00:00.000Z',
+      }],
+      publishReadiness: { ready: true, blockingCodes: [] },
+    })
+    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: readyDraft }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, route => route.fulfill({ json: [] }))
+    const requests: Array<{ body: Record<string, unknown>; idempotencyKey: string | undefined }> = []
+    await page.route(`**/api/companies/**/project-costs/${draftId}/publish`, route => {
+      const request = route.request()
+      requests.push({ body: request.postDataJSON(), idempotencyKey: request.headers()['idempotency-key'] })
+      if (requests.length === 1) return route.abort('connectionfailed')
+      return route.fulfill({ status: 409, json: { error: { code: 'COST_ALREADY_PUBLISHED', message: 'Project Cost đã được công bố.', requestId: 'req-published', details: {} } } })
+    })
+
+    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
+    await page.getByTestId('open-publish-modal-btn').click()
+    await page.getByTestId('confirm-publish-btn').click()
+    await expect(page.getByTestId('publish-error-alert')).toBeVisible()
+    await page.getByTestId('confirm-publish-btn').click()
+    await expect(page).toHaveURL(new RegExp(`/costs/${projectId}$`))
+    expect(requests[1]).toEqual(requests[0])
+  })
+
+  test('Flow M — a genuinely changed publish version uses a new key', async ({ page }) => {
+    let version = 1
+    const readyDraft = () => projectCostDraftSchema.parse({
+      ...draftFixture(draftId, projectId, 'Ready publish version'),
+      version,
+      amount: '10000000.0000',
+      details: [{
+        id: '80000000-0000-4000-8000-000000000021', projectCostItemId: draftId, lineNo: 1, detailKind: 'line_item', description: 'Ready line', quantity: null, unitCode: null, unitPrice: null, amount: '10000000.0000', retentionKind: null, retentionRateBps: null, retentionAmount: null, relevantDate: null, reference: null, note: null, version, createdAt: '2026-09-22T08:00:00.000Z', updatedAt: '2026-09-22T08:00:00.000Z',
+      }],
+      publishReadiness: { ready: true, blockingCodes: [] },
+    })
+    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: readyDraft() }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, route => route.fulfill({ json: [] }))
+    const requests: Array<{ body: Record<string, unknown>; idempotencyKey: string | undefined }> = []
+    await page.route(`**/api/companies/**/project-costs/${draftId}/publish`, route => {
+      const request = route.request()
+      requests.push({ body: request.postDataJSON(), idempotencyKey: request.headers()['idempotency-key'] })
+      if (requests.length === 1) return route.abort('connectionfailed')
+      return route.fulfill({ json: costCommandAckSchema.parse({ id: draftId, version: 3, publicationState: 'published', replayed: false }) })
+    })
+
+    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
+    await page.getByTestId('open-publish-modal-btn').click()
+    await page.getByTestId('confirm-publish-btn').click()
+    await expect(page.getByTestId('publish-error-alert')).toBeVisible()
+    await page.getByRole('button', { name: 'Hủy' }).click()
+    version = 2
+    await page.reload()
+    await page.getByTestId('open-publish-modal-btn').click()
+    await page.getByTestId('confirm-publish-btn').click()
+    await expect(page).toHaveURL(new RegExp(`/costs/${projectId}$`))
+    expect(requests[0]?.body).toEqual({ expectedVersion: 1 })
+    expect(requests[1]?.body).toEqual({ expectedVersion: 2 })
+    expect(requests[1]?.idempotencyKey).not.toBe(requests[0]?.idempotencyKey)
+  })
+
   test('Flow B / Flow I — void survives refresh and replacement uses the same payment and contract', async ({ page }) => {
     const paymentRows: Array<{
       id: string
@@ -440,6 +548,7 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
       effectiveDate: string
       dateSource: 'payment_date' | 'created_at'
       recordStatus: 'recorded' | 'voided'
+      replacementPaymentId: string | null
       reference: string | null
       sourceReference: string | null
       note: string | null
@@ -459,6 +568,7 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
         effectiveDate: '2026-09-10',
         dateSource: 'payment_date',
         recordStatus: 'recorded',
+        replacementPaymentId: null,
         reference: 'UNC-001',
         sourceReference: null,
         note: null,
@@ -554,12 +664,17 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
           effectiveDate: payload.paymentDate || '2026-09-10',
           dateSource: 'payment_date',
           recordStatus: 'recorded',
+          replacementPaymentId: null,
           reference: payload.paymentReference || null,
           sourceReference: null,
           note: null,
           createdAt: new Date().toISOString(),
           version: 1,
         })
+        if (payload.replacesPaymentId) {
+          const original = paymentRows.find(row => row.id === payload.replacesPaymentId)
+          if (original) original.replacementPaymentId = newPaymentId
+        }
         route.fulfill({
           status: 201,
           json: recordSubcontractPaymentResultSchema.parse({
@@ -630,6 +745,10 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
       replacesPaymentId: paymentId1,
       paidAmount: '50000000.0000',
     })
+    await expect(page.getByTestId(`payment-row-${paymentId1}`)).toBeVisible()
+    await expect(page.getByTestId(`replace-payment-btn-${paymentId1}`)).toHaveCount(0)
+    await expect(page.getByTestId(`payment-replaced-hint-${paymentId1}`)).toBeVisible()
+    await expect(page.getByTestId(`payment-row-${paymentId2}`)).toBeVisible()
   })
 
   test('Flow H — payment unknown-outcome retry preserves body, evidence identity, and idempotency key', async ({ page }) => {
@@ -1342,6 +1461,7 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
         effectiveDate: '2026-08-10',
         dateSource: 'payment_date' as const,
         recordStatus: 'recorded' as const,
+        replacementPaymentId: null,
         reference: 'PC-01',
         sourceReference: null,
         note: null,
@@ -1361,6 +1481,7 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
         effectiveDate: '2026-08-20',
         dateSource: 'payment_date' as const,
         recordStatus: 'recorded' as const,
+        replacementPaymentId: null,
         reference: 'PC-02',
         sourceReference: null,
         note: null,

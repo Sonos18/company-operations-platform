@@ -148,7 +148,7 @@ export const financeSubcontractorListSchema = z.object({
 const paymentRowSchema = z.object({
   id: uuid, contractId: uuid, contractCode: text, contractNo: z.string().nullable(), description: text, paidAmount: aggregateMoney, warrantyRetentionAmount: aggregateMoney.nullable(),
   retentionRateBps: z.number().int().min(0).max(10000).nullable(), paymentDate: date.nullable(), effectiveDate: date, dateSource: z.enum(['payment_date', 'created_at']),
-  recordStatus: z.enum(['recorded', 'voided']), reference: z.string().nullable(), sourceReference: z.string().nullable(), note: z.string().nullable(), createdAt: timestamp, version,
+  recordStatus: z.enum(['recorded', 'voided']), replacementPaymentId: uuid.nullable(), reference: z.string().nullable(), sourceReference: z.string().nullable(), note: z.string().nullable(), createdAt: timestamp, version,
 }).strict()
 const paymentsPageSchema = z.object({
   rows: z.array(paymentRowSchema), pagination: pageEnvelopeSchema, recordedTotal: aggregateMoney, recordedCount: z.number().int().nonnegative(), recordedRetentionTotal: aggregateMoney.nullable(), recordedRetentionRowCount: z.number().int().nonnegative(),

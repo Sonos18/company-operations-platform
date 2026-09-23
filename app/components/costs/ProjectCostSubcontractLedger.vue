@@ -504,7 +504,7 @@ function onPageSizeChange(event: Event) {
                   </UButton>
 
                   <UButton
-                    v-if="p.recordStatus === 'voided' && canRecordCash"
+                    v-if="p.recordStatus === 'voided' && p.replacementPaymentId == null && canRecordCash"
                     size="xs"
                     color="primary"
                     variant="outline"
@@ -514,6 +514,14 @@ function onPageSizeChange(event: Event) {
                   >
                     Thay thế
                   </UButton>
+
+                  <span
+                    v-if="p.recordStatus === 'voided' && p.replacementPaymentId != null"
+                    class="cockpit-badge cockpit-badge--neutral text-[11px]"
+                    :data-testid="`payment-replaced-hint-${p.id}`"
+                  >
+                    Đã có thanh toán thay thế
+                  </span>
                 </div>
               </td>
             </tr>

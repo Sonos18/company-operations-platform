@@ -39,6 +39,7 @@ const form = reactive({
 
 const submitting = ref(false)
 const errorMessage = ref<string | null>(null)
+const pendingCommand = ref<{ fingerprint: string; idempotencyKey: string } | null>(null)
 
 // Filter out subcontract_labor category or warn if selected
 const eligibleCategories = computed(() => {
@@ -50,7 +51,7 @@ const isSubcontractSelected = computed(() => {
   return cat?.code === 'subcontract_labor'
 })
 
-watch(() => props.open, (open) => {
+watch([() => props.open, () => props.projectId], ([open]) => {
   if (open) {
     form.description = ''
     form.costCategoryId = eligibleCategories.value[0]?.categoryId ?? ''
@@ -60,6 +61,7 @@ watch(() => props.open, (open) => {
     form.componentId = ''
     form.relevantDate = ''
     form.workStatus = 'unknown'
+    pendingCommand.value = null
     errorMessage.value = null
   }
 })
@@ -99,8 +101,11 @@ async function submit() {
       relevantDate: form.relevantDate || undefined,
       workStatus: form.workStatus,
     }
+    const fingerprint = JSON.stringify({ projectId: props.projectId, input })
+    if (pendingCommand.value?.fingerprint !== fingerprint) pendingCommand.value = { fingerprint, idempotencyKey: globalThis.crypto.randomUUID() }
 
-    const result = await repositories.projectCosts.create(props.projectId, input)
+    const result = await repositories.projectCosts.create(props.projectId, input, { idempotencyKey: pendingCommand.value.idempotencyKey })
+    pendingCommand.value = null
     isOpen.value = false
     emit('created', { id: result.id, version: result.version })
   }

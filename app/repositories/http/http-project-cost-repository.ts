@@ -42,9 +42,9 @@ export function createHttpProjectCostRepository(options: { companyId: string | (
     summaries: (): Promise<ProjectCostSummaryEntry[]> => options.client.request({ url: `${base()}/project-costs`, method: 'GET', schema: z.array(projectCostSummaryEntrySchema) }),
     project: projectId => options.client.request({ url: `${base()}/projects/${id(projectId)}/project-costs`, method: 'GET', schema: projectCostBreakdownSchema }),
     details: (projectCostItemId: string): Promise<ProjectCostDetailsResponse> => options.client.request({ url: `${base()}/project-costs/${id(projectCostItemId)}/details`, method: 'GET', schema: projectCostDetailsResponseSchema }),
-    create: (projectId: string, input: ProjectCostCreateDraft): Promise<ProjectCostCreateResult> => {
+    create: (projectId: string, input: ProjectCostCreateDraft, command: { idempotencyKey: string }): Promise<ProjectCostCreateResult> => {
       const body = createProjectCostDraftInputSchema.parse({ ...input, projectId })
-      return options.client.request({ url: `${base()}/projects/${id(projectId)}/project-costs`, method: 'POST', body, idempotencyKey: nextIdempotencyKey(), schema: costCommandAckSchema })
+      return options.client.request({ url: `${base()}/projects/${id(projectId)}/project-costs`, method: 'POST', body, idempotencyKey: command.idempotencyKey, schema: costCommandAckSchema })
     },
     update: (projectCostItemId: string, input: ProjectCostPatchInput): Promise<ProjectCostMutationResult> => options.client.request({ url: `${base()}/project-costs/${id(projectCostItemId)}`, method: 'PATCH', body: parsePatch(input), schema: costCommandAckSchema }),
     prepareFinancials: (projectCostItemId, input) => options.client.request({ url: `${base()}/project-costs/${id(projectCostItemId)}/financials`, method: 'PUT', body: prepareProjectCostFinancialsInputSchema.parse(input), schema: prepareProjectCostFinancialsResultSchema }),
@@ -52,9 +52,9 @@ export function createHttpProjectCostRepository(options: { companyId: string | (
     listDrafts: (projectId: string): Promise<ProjectCostDraft[]> => options.client.request({ url: `${base()}/projects/${id(projectId)}/project-cost-drafts`, method: 'GET', schema: z.array(projectCostDraftSchema) }),
     operationalDraft: (projectCostItemId: string): Promise<ProjectCostOperationalDraft> => options.client.request({ url: `${base()}/project-costs/${id(projectCostItemId)}/draft/operations`, method: 'GET', schema: projectCostOperationalDraftSchema }),
     listOperationalDrafts: (projectId: string): Promise<ProjectCostOperationalDraft[]> => options.client.request({ url: `${base()}/projects/${id(projectId)}/project-cost-drafts/operations`, method: 'GET', schema: z.array(projectCostOperationalDraftSchema) }),
-    publish: (projectCostItemId: string, input: PublishProjectCostInput): Promise<CostCommandAck> => {
+    publish: (projectCostItemId: string, input: PublishProjectCostInput, command: { idempotencyKey: string }): Promise<CostCommandAck> => {
       const body = publishProjectCostInputSchema.parse(input)
-      return options.client.request({ url: `${base()}/project-costs/${id(projectCostItemId)}/publish`, method: 'POST', body, idempotencyKey: nextIdempotencyKey(), schema: costCommandAckSchema })
+      return options.client.request({ url: `${base()}/project-costs/${id(projectCostItemId)}/publish`, method: 'POST', body, idempotencyKey: command.idempotencyKey, schema: costCommandAckSchema })
     },
     correct: (projectCostItemId: string, input: CorrectPublishedProjectCostInput): Promise<CostCommandAck> => {
       const body = correctPublishedProjectCostInputSchema.parse(input)

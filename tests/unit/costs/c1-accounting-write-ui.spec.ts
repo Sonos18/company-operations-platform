@@ -695,6 +695,7 @@ describe('C1 Accounting Write UI contracts and workflows', () => {
                 effectiveDate: '2026-08-10',
                 dateSource: 'payment_date',
                 recordStatus: 'recorded',
+                replacementPaymentId: null,
                 reference: 'PC-01',
                 sourceReference: null,
                 note: null,
