@@ -77,11 +77,11 @@ function paymentView(payment: FinanceTableRows['payments'][number], contract: Fi
 }
 
 function paymentPage(rows: readonly ReturnType<typeof paymentView>[], query: PaymentQuery) {
-  const visible = rows.filter(row => row.recordStatus === 'recorded').filter(row => paymentRetentionMatches(row, query.retention)).filter(row => textMatch(query, [row.description, row.reference, row.contractCode, row.contractNo, row.note])).filter(row => dateMatch(query, row.effectiveDate))
-  const full = rows.filter(row => row.recordStatus === 'recorded')
-  const selected = page(full, query, row => visible.includes(row), rowOrder(query), values => values.length === 0 ? '0.0000' : sumFinanceMoney(values.map(row => row.paidAmount)))
-  const total = paymentTotal(full.map(row => ({ paid_amount_text: row.paidAmount, warranty_retention_amount_text: row.warrantyRetentionAmount, status: row.recordStatus })))
-  return { rows: selected.rows, pagination: { ...selected.pagination, fullCount: full.length, fullAmount: total.amount }, recordedTotal: total.amount, recordedCount: total.count, recordedRetentionTotal: total.retentionAmount, recordedRetentionRowCount: total.retentionCount }
+  const visible = rows.filter(row => paymentRetentionMatches(row, query.retention)).filter(row => textMatch(query, [row.description, row.reference, row.contractCode, row.contractNo, row.note])).filter(row => dateMatch(query, row.effectiveDate))
+  const recordedAmount = (values: readonly ReturnType<typeof paymentView>[]) => sumFinanceMoney(values.filter(row => row.recordStatus === 'recorded').map(row => row.paidAmount))
+  const selected = page(rows, query, row => visible.includes(row), rowOrder(query), recordedAmount)
+  const total = paymentTotal(rows.map(row => ({ paid_amount_text: row.paidAmount, warranty_retention_amount_text: row.warrantyRetentionAmount, status: row.recordStatus })))
+  return { rows: selected.rows, pagination: { ...selected.pagination, fullAmount: total.amount }, recordedTotal: total.amount, recordedCount: total.count, recordedRetentionTotal: total.retentionAmount, recordedRetentionRowCount: total.retentionCount }
 }
 
 function contractSummary(contract: FinanceTableRows['subcontracts'][number], payments: readonly FinanceTableRows['payments'][number][]) {

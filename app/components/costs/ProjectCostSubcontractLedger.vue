@@ -333,11 +333,11 @@ function onPageSizeChange(event: Event) {
       <!-- Scope & Totals Display (RR01) -->
       <div v-if="pagination && (status === 'ready' || status === 'empty')" class="totals-status-bar" data-testid="payment-totals-bar">
         <div class="full-total-info">
-          <span>Toàn bộ: <strong>{{ pagination.fullCount }} khoản</strong> ({{ formatFinanceMoney(pagination.fullAmount, currencyCode, moneyScale) ?? '0 VND' }})</span>
+          <span>Lịch sử: <strong>{{ pagination.fullCount }} khoản</strong> · Đã ghi nhận: {{ formatFinanceMoney(pagination.fullAmount, currencyCode, moneyScale) ?? '0 VND' }}</span>
         </div>
         <div v-if="isFiltered" class="filtered-total-info" data-testid="payment-filtered-totals">
           <span class="cockpit-badge cockpit-badge--primary">
-            Kết quả lọc: <strong>{{ pagination.filteredCount }} khoản</strong> ({{ formatFinanceMoney(pagination.filteredAmount, currencyCode, moneyScale) ?? '0 VND' }})
+            Kết quả lọc: <strong>{{ pagination.filteredCount }} khoản</strong> · Đã ghi nhận: {{ formatFinanceMoney(pagination.filteredAmount, currencyCode, moneyScale) ?? '0 VND' }}
           </span>
         </div>
       </div>

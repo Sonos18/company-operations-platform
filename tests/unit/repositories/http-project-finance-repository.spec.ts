@@ -37,25 +37,27 @@ describe('HTTP Project Finance repository', () => {
     const subcontractId = 'c1020000-0000-4000-8000-000000000002'
     const paymentId = 'c1030000-0000-4000-8000-000000000003'
     const client = responseClient({ paymentId, version: 0, status: 'recorded', replayed: false })
+    const createIdempotencyKey = vi.fn(() => 'generated-key-must-not-replace-caller-key')
     const repository = createHttpProjectFinanceRepository({
       companyId,
       client: client as never,
-      createIdempotencyKey: () => 'test-idemp-key',
+      createIdempotencyKey,
     })
 
-    const result = await repository.recordSubcontractPayment(projectId, subcontractId, {
-      expectedSubcontractVersion: 0,
-      description: 'Payment voucher #1',
-      paidAmount: '1000000.0000',
-      currencyCode: 'VND',
-    })
+    const input = { expectedSubcontractVersion: 0, description: 'Payment voucher #1', paidAmount: '1000000.0000', currencyCode: 'VND' }
+    const idempotencyKey = 'c1040000-0000-4000-8000-000000000701'
+    const result = await repository.recordSubcontractPayment(projectId, subcontractId, input, { idempotencyKey })
+    await repository.recordSubcontractPayment(projectId, subcontractId, input, { idempotencyKey })
 
     expect(result).toEqual({ paymentId, version: 0, status: 'recorded', replayed: false })
-    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({
+    expect(client.request).toHaveBeenNthCalledWith(1, expect.objectContaining({
       url: `/api/companies/${companyId}/projects/${projectId}/subcontracts/${subcontractId}/payments`,
       method: 'POST',
-      idempotencyKey: 'test-idemp-key',
+      body: input,
+      idempotencyKey,
     }))
+    expect(client.request).toHaveBeenNthCalledWith(2, expect.objectContaining({ body: input, idempotencyKey }))
+    expect(createIdempotencyKey).not.toHaveBeenCalled()
   })
 
   it('voids subcontract payment with reason and version', async () => {

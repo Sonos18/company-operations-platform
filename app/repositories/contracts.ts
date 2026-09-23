@@ -182,7 +182,7 @@ export interface ProjectFinanceRepository {
   subcontractor(projectId: string, partyId: string, query?: Partial<PaymentQuery>): Promise<FinanceSubcontractorDetail>
   subcontract(projectId: string, subcontractId: string, query?: Partial<PaymentQuery>): Promise<FinanceSubcontractDetail>
   itemDetails(projectId: string, itemId: string, query?: Partial<ItemDetailQuery>): Promise<FinanceItemDetails>
-  recordSubcontractPayment(projectId: string, subcontractId: string, input: RecordSubcontractPaymentInput): Promise<RecordSubcontractPaymentResult>
+  recordSubcontractPayment(projectId: string, subcontractId: string, input: RecordSubcontractPaymentInput, options: { idempotencyKey: string }): Promise<RecordSubcontractPaymentResult>
   voidSubcontractPayment(projectId: string, subcontractId: string, paymentId: string, input: VoidSubcontractPaymentInput): Promise<VoidSubcontractPaymentResult>
 }
 export type { FinanceBudget, FinanceItemDetails, FinanceOwnerAdvances, FinanceOverview, FinanceProjectList, FinanceSubcontractDetail, FinanceSubcontractorDetail, FinanceSubcontractorList }

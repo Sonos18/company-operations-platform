@@ -13,6 +13,7 @@ import {
 } from '../../shared/schemas/costs/project-finance-writes'
 import {
   costCommandAckSchema,
+  prepareProjectCostFinancialsInputSchema,
   projectCostBreakdownSchema,
   projectCostDraftSchema,
 } from '../../shared/schemas/costs/project-costs'
@@ -22,6 +23,7 @@ import {
   costEvidenceMetadataSchema,
   costEvidenceUploadIntentSchema,
 } from '../../shared/schemas/costs/cost-evidence'
+import { sumFinanceMoney } from '../../shared/utils/project-finance-money'
 
 const tenantId = '10000000-0000-4000-8000-000000000001'
 const companyId = '10000000-0000-4000-8000-000000000002'
@@ -366,14 +368,18 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
 
     // 5. Operational edit
     await page.getByTestId('draft-op-description').fill('Cung cấp thép móng D20 đã hiệu chỉnh vận hành')
+    const operationalSave = page.waitForResponse(response => response.request().method() === 'PATCH' && response.url().includes(`/project-costs/${draftId}`))
     await page.getByTestId('draft-op-save-btn').click()
-    await expect(page.getByTestId('draft-operations-success')).toBeVisible()
+    await operationalSave
+    await expect(page.getByTestId('draft-title')).toHaveText('Cung cấp thép móng D20 đã hiệu chỉnh vận hành')
 
     // 6. Financial preparation: save financials
     const saveFinancialsBtn = page.getByTestId('save-financials-btn')
     await expect(saveFinancialsBtn).toBeVisible()
+    const financialSave = page.waitForResponse(response => response.request().method() === 'PUT' && response.url().includes(`/project-costs/${draftId}/financials`))
     await saveFinancialsBtn.click()
-    await expect(page.getByTestId('financial-editor-success')).toBeVisible()
+    await financialSave
+    await expect(page.getByTestId('draft-title')).toHaveText('Cung cấp thép móng D20 đã hiệu chỉnh vận hành')
 
     // 7. Evidence upload: select file and upload
     const fileInput = page.getByTestId('evidence-file-input')
@@ -396,7 +402,7 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     await expect(page).toHaveURL(new RegExp(`/costs/${projectId}$`))
   })
 
-  test('Flow B — Subcontract cash: records payment, voids payment, and submits replacement using replacesPaymentId', async ({ page }) => {
+  test('Flow B / Flow I — void survives refresh and replacement uses the same payment and contract', async ({ page }) => {
     const paymentRows: Array<{
       id: string
       contractId: string
@@ -437,7 +443,11 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
       },
     ]
 
-    const getSubcontractDetail = () => financeSubcontractDetailSchema.parse({
+    const getSubcontractDetail = () => {
+      const recordedRows = paymentRows.filter(row => row.recordStatus === 'recorded')
+      const recordedTotal = sumFinanceMoney(recordedRows.map(row => row.paidAmount))
+      const recordedRetentionValues = recordedRows.flatMap(row => row.warrantyRetentionAmount === null ? [] : [row.warrantyRetentionAmount])
+      return financeSubcontractDetailSchema.parse({
       schemaVersion: 1 as const,
       project: mockProjectOverview.project,
       party: {
@@ -460,10 +470,10 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
         reference: null,
         sourceReference: null,
         note: null,
-        paidTotal: '50000000.0000',
-        paidCount: paymentRows.length,
-        recordedRetentionTotal: '2500000.0000',
-        recordedRetentionRowCount: 1,
+        paidTotal: recordedTotal,
+        paidCount: recordedRows.length,
+        recordedRetentionTotal: recordedRetentionValues.length === 0 ? null : sumFinanceMoney(recordedRetentionValues),
+        recordedRetentionRowCount: recordedRetentionValues.length,
         referenceHeadroom: '450000000.0000',
         referenceHeadroomReason: null,
       },
@@ -475,15 +485,16 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
           totalPages: 1,
           filteredCount: paymentRows.length,
           fullCount: paymentRows.length,
-          filteredAmount: '50000000.0000',
-          fullAmount: '50000000.0000',
+          filteredAmount: recordedTotal,
+          fullAmount: recordedTotal,
         },
-        recordedTotal: '50000000.0000',
-        recordedCount: paymentRows.length,
-        recordedRetentionTotal: '2500000.0000',
-        recordedRetentionRowCount: 1,
+        recordedTotal,
+        recordedCount: recordedRows.length,
+        recordedRetentionTotal: recordedRetentionValues.length === 0 ? null : sumFinanceMoney(recordedRetentionValues),
+        recordedRetentionRowCount: recordedRetentionValues.length,
       },
     })
+    }
 
     // Mock project overview & categories
     await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => {
@@ -573,6 +584,13 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     // 3. Status updates to voided in the ledger
     await expect(page.getByTestId(`payment-status-${paymentId1}`)).toHaveText('Đã hủy')
 
+    // Flow I: the server projection keeps immutable voided history visible after a full reload.
+    await page.reload()
+    await expect(page.getByTestId(`payment-row-${paymentId1}`)).toBeVisible()
+    await expect(page.getByTestId(`payment-status-${paymentId1}`)).toHaveText('Đã hủy')
+    await expect(page.getByTestId('payment-totals-bar')).toContainText('Lịch sử: 1 khoản · Đã ghi nhận: 0 VND')
+    await expect(page.getByTestId('ledger-full-total')).toHaveText('0 VND')
+
     // 4. Start replacement directly from the voided payment row
     const replaceBtn = page.getByTestId(`replace-payment-btn-${paymentId1}`)
     await expect(replaceBtn).toBeVisible()
@@ -581,12 +599,218 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     // 5. Record replacement modal opens with replacesPaymentId set
     await page.getByTestId('pay-amount-input').fill('50000000.0000')
     await page.getByTestId('confirm-record-payment-btn').click()
+    await expect(page.getByTestId('record-payment-form')).toHaveCount(0)
 
     // 6. Verify payload submitted replacesPaymentId
     expect(lastRecordPaymentPayload).toMatchObject({
       replacesPaymentId: paymentId1,
       paidAmount: '50000000.0000',
     })
+  })
+
+  test('Flow H — payment unknown-outcome retry preserves body, evidence identity, and idempotency key', async ({ page }) => {
+    const detail = financeSubcontractDetailSchema.parse({
+      schemaVersion: 1,
+      project: mockProjectOverview.project,
+      party: mockSubcontractorList.parties[0]!.party,
+      contract: {
+        ...mockSubcontractorList.parties[0]!.contracts[0]!,
+        reference: null,
+        sourceReference: null,
+        note: null,
+        referenceHeadroom: '450000000.0000',
+        referenceHeadroomReason: null,
+      },
+      payments: {
+        rows: [],
+        pagination: { page: 1, pageSize: 25, totalPages: 1, filteredCount: 0, fullCount: 0, filteredAmount: '0.0000', fullAmount: '0.0000' },
+        recordedTotal: '0.0000',
+        recordedCount: 0,
+        recordedRetentionTotal: null,
+        recordedRetentionRowCount: 0,
+      },
+    })
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/subcontractors`, route => route.fulfill({ json: mockSubcontractorList }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/subcontracts/${subcontractId}*`, route => route.fulfill({ json: detail }))
+
+    let uploadIntentCount = 0
+    let storageUploadCount = 0
+    let finalizeCount = 0
+    await page.route(`**/api/companies/**/projects/${projectId}/evidence/upload-intents`, route => {
+      uploadIntentCount += 1
+      route.fulfill({ status: 201, json: costEvidenceUploadIntentSchema.parse({ evidenceFileId: evidenceId, version: 0, bucketId: 'c1-accounting-evidence', objectPath: mockObjectPath, expiresAt: new Date(Date.now() + 120000).toISOString(), replayed: false }) })
+    })
+    await page.route('**/storage/v1/object/**', route => {
+      storageUploadCount += 1
+      route.fulfill({ status: 200, json: { Key: `c1-accounting-evidence/${mockObjectPath}` } })
+    })
+    await page.route(`**/api/companies/**/evidence-files/${evidenceId}/finalize`, route => {
+      finalizeCount += 1
+      route.fulfill({ json: costEvidenceFinalizedSchema.parse({ id: evidenceId, status: 'finalized', originalFilename: 'payment.pdf', mimeType: 'application/pdf', sizeBytes: 16, sha256: mockSha256, version: 1, finalizedAt: new Date().toISOString(), replayed: false }) })
+    })
+
+    const requests: Array<{ body: Record<string, unknown>; idempotencyKey: string | undefined }> = []
+    await page.route(`**/api/companies/**/projects/${projectId}/subcontracts/${subcontractId}/payments`, route => {
+      const request = route.request()
+      requests.push({ body: request.postDataJSON(), idempotencyKey: request.headers()['idempotency-key'] })
+      if (requests.length <= 2) return route.abort('connectionfailed')
+      return route.fulfill({ status: 201, json: recordSubcontractPaymentResultSchema.parse({ paymentId: paymentId2, version: 1, status: 'recorded', replayed: requests.length > 3 }) })
+    })
+
+    await page.goto(`/costs/${projectId}/categories/${subcontractCategoryId}?contractId=${subcontractId}&partyId=${partyId}`)
+    await page.getByTestId('open-record-payment-btn').click()
+    await page.getByTestId('pay-description-input').fill('Thanh toán retry an toàn')
+    await page.getByTestId('pay-amount-input').fill('10000000.0000')
+    await page.getByTestId('pay-evidence-file-input').setInputFiles({ name: 'payment.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7 payment') })
+
+    await page.getByTestId('confirm-record-payment-btn').click()
+    await expect(page.getByTestId('record-payment-error')).toBeVisible()
+    await page.getByTestId('confirm-record-payment-btn').click()
+    await expect.poll(() => requests.length).toBe(2)
+
+    expect(requests[1]).toEqual(requests[0])
+    expect(requests[0]?.body.evidenceFileIds).toEqual([evidenceId])
+    expect(uploadIntentCount).toBe(1)
+    expect(storageUploadCount).toBe(1)
+    expect(finalizeCount).toBe(1)
+
+    await page.getByTestId('pay-amount-input').fill('11000000.0000')
+    await page.getByTestId('confirm-record-payment-btn').click()
+    await expect(page.getByTestId('record-payment-form')).toHaveCount(0)
+    expect(requests[2]?.body).toMatchObject({ paidAmount: '11000000.0000', evidenceFileIds: [evidenceId] })
+    expect(requests[2]?.idempotencyKey).not.toBe(requests[1]?.idempotencyKey)
+    expect(uploadIntentCount).toBe(1)
+
+    await page.getByTestId('open-record-payment-btn').click()
+    await page.getByTestId('pay-description-input').fill('Thanh toán mới sau thành công')
+    await page.getByTestId('pay-amount-input').fill('12000000.0000')
+    await page.getByTestId('confirm-record-payment-btn').click()
+    await expect(page.getByTestId('record-payment-form')).toHaveCount(0)
+    expect(requests[3]?.idempotencyKey).not.toBe(requests[2]?.idempotencyKey)
+  })
+
+  test('Flow J — stale draft response cannot overwrite a newer company context', async ({ page, authState }) => {
+    const companyB = '10000000-0000-4000-8000-000000000060'
+    authState.sessionCompanies = [
+      createCompany(),
+      createCompany({ companyId: companyB, companyCode: 'VQH-B', companyName: 'Công ty B' }),
+    ]
+    const draft = (description: string) => projectCostDraftSchema.parse({
+      id: draftId,
+      projectId,
+      description,
+      costCategoryId: materialCategoryId,
+      businessReference: null,
+      partyId: null,
+      engagementId: null,
+      componentId: null,
+      relevantDate: '2026-09-22',
+      workStatus: 'in_progress',
+      amount: '10000000.0000',
+      currencyCode: 'VND',
+      publicationState: 'draft',
+      version: 1,
+      details: [],
+      sourceFigureIds: [],
+      publishReadiness: { ready: false, blockingCodes: ['FINANCIAL_DETAILS_REQUIRED'] },
+      createdAt: '2026-09-22T08:00:00.000Z',
+      updatedAt: '2026-09-22T08:00:00.000Z',
+    })
+    let releaseDraftA!: () => void
+    const draftAGate = new Promise<void>(resolve => { releaseDraftA = resolve })
+    await page.route(`**/api/companies/${companyId}/project-costs/${draftId}/draft`, async route => {
+      await draftAGate
+      await route.fulfill({ json: draft('Draft A stale') })
+    })
+    await page.route(`**/api/companies/${companyB}/project-costs/${draftId}/draft`, route => route.fulfill({ json: draft('Draft B current') }))
+    await page.route(`**/api/companies/${companyId}/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/${companyB}/projects/${projectId}/finance`, route => route.fulfill({ json: { ...mockProjectOverview, project: { ...mockProjectOverview.project, projectCode: 'DA-C1-02', projectName: 'Dự án B' } } }))
+    await page.route('**/api/companies/**/project-costs/*/evidence', route => route.fulfill({ json: [] }))
+
+    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
+    await expect(page.getByText('Đang tải dữ liệu bản nháp…')).toBeVisible()
+    await page.evaluate((targetCompanyId) => {
+      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { selectCompany(companyId: string): boolean } } } } } }
+      const store = root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore
+      if (!store?.selectCompany(targetCompanyId)) throw new Error('Unable to switch company in test')
+    }, companyB)
+    await expect(page.getByTestId('draft-title')).toHaveText('Draft B current')
+
+    const staleResponse = page.waitForResponse(response => response.url().includes(`/project-costs/${draftId}/draft`))
+    releaseDraftA()
+    await staleResponse
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+
+    await expect(page.getByTestId('draft-title')).toHaveText('Draft B current')
+    await expect(page.getByText('DA-C1-02')).toBeVisible()
+    await expect(page.getByLabel('Chuyển công ty')).toHaveValue(companyB)
+  })
+
+  test('Flow K — removing retention clears local dependents and sends canonical nulls', async ({ page }) => {
+    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: projectCostDraftSchema.parse({
+      id: draftId,
+      projectId,
+      description: 'Draft with retained line',
+      costCategoryId: materialCategoryId,
+      businessReference: null,
+      partyId: null,
+      engagementId: null,
+      componentId: null,
+      relevantDate: '2026-09-22',
+      workStatus: 'in_progress',
+      amount: '20000.0000',
+      currencyCode: 'VND',
+      publicationState: 'draft',
+      version: 1,
+      details: [{
+        id: '80000000-0000-4000-8000-000000000010',
+        projectCostItemId: draftId,
+        lineNo: 1,
+        detailKind: 'line_item',
+        description: 'Retained line',
+        quantity: null,
+        unitCode: null,
+        unitPrice: null,
+        amount: '20000.0000',
+        retentionKind: 'warranty',
+        retentionRateBps: 500,
+        retentionAmount: '1000.0000',
+        relevantDate: null,
+        reference: null,
+        note: null,
+        version: 1,
+        createdAt: '2026-09-22T08:00:00.000Z',
+        updatedAt: '2026-09-22T08:00:00.000Z',
+      }],
+      sourceFigureIds: [],
+      publishReadiness: { ready: true, blockingCodes: [] },
+      createdAt: '2026-09-22T08:00:00.000Z',
+      updatedAt: '2026-09-22T08:00:00.000Z',
+    }) }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, route => route.fulfill({ json: [] }))
+    let savedPayload: unknown = null
+    await page.route(`**/api/companies/**/project-costs/${draftId}/financials`, route => {
+      savedPayload = route.request().postDataJSON()
+      route.fulfill({ json: { id: draftId, version: 2, publicationState: 'draft', amount: '20000.0000', detailCount: 1, publishReadiness: { ready: true, blockingCodes: [] }, replayed: false } })
+    })
+
+    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
+    const retention = page.getByTestId('line-retention-select')
+    await expect(retention).toHaveValue('warranty')
+    await expect(page.getByTestId('line-retention-amount-input')).toHaveValue('1000.0000')
+    await retention.selectOption('')
+    await expect(page.getByTestId('line-retention-amount-input')).toHaveCount(0)
+    await retention.selectOption('warranty')
+    await expect(page.getByTestId('line-retention-amount-input')).toHaveValue('')
+    await retention.selectOption('')
+    await expect(retention).toHaveValue('')
+    await page.getByTestId('save-financials-btn').click()
+    await expect.poll(() => savedPayload).not.toBeNull()
+
+    const parsed = prepareProjectCostFinancialsInputSchema.parse(savedPayload)
+    expect(parsed.details[0]).toMatchObject({ retentionKind: null, retentionRateBps: null, retentionAmount: null })
   })
 
   test('Permission case: cost.file.read without cost.read does NOT show raw evidence download/open button', async ({ page, authState }) => {

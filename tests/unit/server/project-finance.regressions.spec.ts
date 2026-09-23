@@ -206,6 +206,20 @@ describe('C1 finance review regressions on concrete production readers', () => {
     ])).toMatchObject({ amount: '90.0000', count: 1 })
   })
 
+  it('keeps voided payment history visible while every economic total remains recorded-only', async () => {
+    const repository = concrete(readSet())
+    const contract = await repository.subcontract(scope, ids.project, ids.contract, paymentQuery)
+    const party = await repository.subcontractor(scope, ids.project, ids.party, paymentQuery)
+    const voidedId = 'c1070000-0000-4000-8000-000000000093'
+
+    expect(contract.payments.rows.map(row => row.id)).toEqual([voidedId, ids.paymentNoRetention, ids.paymentZeroRetention, ids.paymentWarranty])
+    expect(contract.payments.rows[0]).toMatchObject({ id: voidedId, contractId: ids.contract, recordStatus: 'voided' })
+    expect(contract.payments.pagination).toMatchObject({ filteredCount: 4, fullCount: 4, filteredAmount: '60.0000', fullAmount: '60.0000' })
+    expect(contract.payments).toMatchObject({ recordedTotal: '60.0000', recordedCount: 3, recordedRetentionTotal: '5.0000', recordedRetentionRowCount: 2 })
+    expect(party.payments).toEqual(contract.payments)
+    expect(contract.contract).toMatchObject({ paidTotal: '60.0000', paidCount: 3, recordedRetentionTotal: '5.0000', recordedRetentionRowCount: 2 })
+  })
+
   it('keeps draft cost parents out of official finance totals', async () => {
     const rows = readSet()
     rows.costItems = [
@@ -226,10 +240,10 @@ describe('C1 finance review regressions on concrete production readers', () => {
     const contract = await repository.subcontract(scope, ids.project, ids.contract, paymentQuery)
     expect(item.kind).toBe('ordinary')
     if (item.kind === 'ordinary') expect(item.details.pagination).toMatchObject({ filteredCount: 4, filteredAmount: '100.0000', fullCount: 4, fullAmount: '100.0000' })
-    expect(party.payments.pagination).toMatchObject({ filteredCount: 3, filteredAmount: '60.0000', fullCount: 3, fullAmount: '60.0000' })
-    expect(contract.payments.pagination).toMatchObject({ filteredCount: 3, filteredAmount: '60.0000', fullCount: 3, fullAmount: '60.0000' })
+    expect(party.payments.pagination).toMatchObject({ filteredCount: 4, filteredAmount: '60.0000', fullCount: 4, fullAmount: '60.0000' })
+    expect(contract.payments.pagination).toMatchObject({ filteredCount: 4, filteredAmount: '60.0000', fullCount: 4, fullAmount: '60.0000' })
     const warranty = await repository.subcontract(scope, ids.project, ids.contract, paymentQuerySchema.parse({ page: 1, pageSize: 100, sort: 'newest', retention: 'warranty' }))
-    expect(warranty.payments.pagination.filteredCount).toBe(2)
+    expect(warranty.payments.pagination).toMatchObject({ filteredCount: 3, filteredAmount: '50.0000' })
     const noRecordedRetention = await repository.subcontract(scope, ids.project, ids.contract, paymentQuerySchema.parse({ page: 1, pageSize: 100, sort: 'newest', retention: 'no_recorded_retention' }))
     expect(noRecordedRetention.payments.rows.map(row => row.id)).toEqual([ids.paymentNoRetention])
     const other = await repository.itemDetails(scope, ids.project, ids.materialsItem, itemDetailQuerySchema.parse({ page: 1, pageSize: 100, sort: 'newest', retention: 'other' }))

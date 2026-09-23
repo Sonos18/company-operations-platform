@@ -38,13 +38,13 @@ export function createHttpProjectFinanceRepository(options: { companyId: string 
     subcontractor: (projectId: string, partyId: string, query?: Partial<PaymentQuery>): Promise<FinanceSubcontractorDetail> => options.client.request({ url: `${base()}/projects/${id(projectId)}/finance/subcontractors/${id(partyId)}${search(paymentQuerySchema, query)}`, method: 'GET', schema: financeSubcontractorDetailSchema }),
     subcontract: (projectId: string, subcontractId: string, query?: Partial<PaymentQuery>): Promise<FinanceSubcontractDetail> => options.client.request({ url: `${base()}/projects/${id(projectId)}/finance/subcontracts/${id(subcontractId)}${search(paymentQuerySchema, query)}`, method: 'GET', schema: financeSubcontractDetailSchema }),
     itemDetails: (projectId: string, itemId: string, query?: Partial<ItemDetailQuery>): Promise<FinanceItemDetails> => options.client.request({ url: `${base()}/projects/${id(projectId)}/finance/items/${id(itemId)}/details${search(itemDetailQuerySchema, query)}`, method: 'GET', schema: financeItemDetailsSchema }),
-    recordSubcontractPayment: (projectId: string, subcontractId: string, input: RecordSubcontractPaymentInput): Promise<RecordSubcontractPaymentResult> => {
+    recordSubcontractPayment: (projectId: string, subcontractId: string, input: RecordSubcontractPaymentInput, command: { idempotencyKey: string }): Promise<RecordSubcontractPaymentResult> => {
       const body = recordSubcontractPaymentInputSchema.parse(input)
       return options.client.request({
         url: `${base()}/projects/${id(projectId)}/subcontracts/${id(subcontractId)}/payments`,
         method: 'POST',
         body,
-        idempotencyKey: nextIdempotencyKey(),
+        idempotencyKey: command.idempotencyKey,
         schema: recordSubcontractPaymentResultSchema,
       })
     },

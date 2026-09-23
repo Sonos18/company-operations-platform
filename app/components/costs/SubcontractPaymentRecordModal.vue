@@ -42,6 +42,8 @@ const errorMessage = ref<string | null>(null)
 const evidenceFileInput = ref<HTMLInputElement | null>(null)
 const selectedEvidenceFile = ref<File | null>(null)
 const evidenceFileError = ref<string | null>(null)
+const finalizedEvidence = ref<{ file: File; evidenceFileId: string } | null>(null)
+const pendingCommand = ref<{ fingerprint: string; idempotencyKey: string } | null>(null)
 
 const form = reactive({
   description: '',
@@ -54,7 +56,7 @@ const form = reactive({
   note: '',
 })
 
-watch([() => props.open, () => props.replacesPaymentId], ([open]) => {
+watch([() => props.open, () => props.replacesPaymentId, () => props.projectId, () => props.subcontractId], ([open]) => {
   if (open) {
     form.description = props.replacesPaymentId ? 'Thanh toán thay thế' : ''
     form.paidAmount = ''
@@ -65,6 +67,8 @@ watch([() => props.open, () => props.replacesPaymentId], ([open]) => {
     form.sourceReference = ''
     form.note = ''
     selectedEvidenceFile.value = null
+    finalizedEvidence.value = null
+    pendingCommand.value = null
     evidenceFileError.value = null
     errorMessage.value = null
   }
@@ -77,6 +81,8 @@ function onEvidenceFileSelected(event: Event) {
 
   if (!file) {
     selectedEvidenceFile.value = null
+    finalizedEvidence.value = null
+    pendingCommand.value = null
     return
   }
 
@@ -89,10 +95,14 @@ function onEvidenceFileSelected(event: Event) {
   }
 
   selectedEvidenceFile.value = file
+  finalizedEvidence.value = null
+  pendingCommand.value = null
 }
 
 function removeEvidenceFile() {
   selectedEvidenceFile.value = null
+  finalizedEvidence.value = null
+  pendingCommand.value = null
   evidenceFileError.value = null
   if (evidenceFileInput.value) evidenceFileInput.value.value = ''
 }
@@ -121,14 +131,17 @@ async function submit() {
 
     // Atomic payment evidence flow: upload & finalize only if canPrepareEvidence and file selected
     if (canPrepareEvidence.value && selectedEvidenceFile.value) {
-      const uploadResult = await uploadAndFinalizeEvidence({
-        projectId: props.projectId,
-        file: selectedEvidenceFile.value,
-        evidenceKind: 'payment_proof',
-        evidenceRepo: repositories.costEvidence,
-        supabaseClient: supabase,
-      })
-      evidenceFileIds.push(uploadResult.evidenceFileId)
+      if (finalizedEvidence.value?.file !== selectedEvidenceFile.value) {
+        const uploadResult = await uploadAndFinalizeEvidence({
+          projectId: props.projectId,
+          file: selectedEvidenceFile.value,
+          evidenceKind: 'payment_proof',
+          evidenceRepo: repositories.costEvidence,
+          supabaseClient: supabase,
+        })
+        finalizedEvidence.value = { file: selectedEvidenceFile.value, evidenceFileId: uploadResult.evidenceFileId }
+      }
+      evidenceFileIds.push(finalizedEvidence.value.evidenceFileId)
     }
 
     const input = {
@@ -145,13 +158,18 @@ async function submit() {
       replacesPaymentId: props.replacesPaymentId || undefined,
       evidenceFileIds: evidenceFileIds.length > 0 ? evidenceFileIds : undefined,
     }
+    const fingerprint = JSON.stringify({ projectId: props.projectId, subcontractId: props.subcontractId, input })
+    if (pendingCommand.value?.fingerprint !== fingerprint) pendingCommand.value = { fingerprint, idempotencyKey: globalThis.crypto.randomUUID() }
 
     const result = await repositories.projectFinance.recordSubcontractPayment(
       props.projectId,
       props.subcontractId,
       input,
+      { idempotencyKey: pendingCommand.value.idempotencyKey },
     )
 
+    pendingCommand.value = null
+    finalizedEvidence.value = null
     isOpen.value = false
     emit('recorded', { paymentId: result.paymentId, version: result.version })
   }

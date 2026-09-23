@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import type { ProjectCostDraft, ProjectCostOperationalDraft } from '../../../../../shared/schemas/costs/project-costs'
 import type { FinanceOverview } from '../../../../../shared/schemas/costs/project-finance'
 import { extractErrorMessage } from '../../../../utils/costs/accounting-error-mapper'
 import { mapCostsApiError } from '../../../../utils/costs/costs-error-mapper'
+import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
 import ProjectCostDraftOperationsForm from '../../../../components/costs/ProjectCostDraftOperationsForm.vue'
 import ProjectCostFinancialDetailEditor from '../../../../components/costs/ProjectCostFinancialDetailEditor.vue'
 import ProjectCostPublishReadinessPanel from '../../../../components/costs/ProjectCostPublishReadinessPanel.vue'
@@ -33,6 +34,7 @@ const financialDraft = ref<ProjectCostDraft | null>(null)
 const operationalDraft = ref<ProjectCostOperationalDraft | null>(null)
 
 const isPublishModalOpen = ref(false)
+const requestTracker = createAsyncRequestTracker<{ companyId: string; projectId: string; draftId: string }>()
 
 const currentDraftData = computed(() => {
   if (canPrepare.value && financialDraft.value) {
@@ -69,46 +71,56 @@ const currentDraftData = computed(() => {
 })
 
 async function loadData() {
-  if (!projectId.value || !draftId.value) {
+  const request = requestTracker.start({ companyId: companyAccess.activeCompanyId ?? '', projectId: projectId.value, draftId: draftId.value })
+  financialDraft.value = null
+  operationalDraft.value = null
+  overview.value = null
+  status.value = 'loading'
+  loading.value = true
+  errorMessage.value = null
+
+  if (!request.identity.projectId || !request.identity.draftId) {
     status.value = 'not_found'
+    loading.value = false
     return
   }
 
   if (!canManage.value && !canPrepare.value) {
     status.value = 'permission'
+    loading.value = false
     return
   }
 
-  loading.value = true
-  errorMessage.value = null
-
   try {
-    // 1. Fetch draft depending on capability first
+    let nextFinancialDraft: ProjectCostDraft | null = null
+    let nextOperationalDraft: ProjectCostOperationalDraft | null = null
+    let nextOverview: FinanceOverview | null = null
+
     if (canPrepare.value) {
-      financialDraft.value = await repositories.projectCosts.draft(draftId.value)
-      operationalDraft.value = null
+      nextFinancialDraft = await repositories.projectCosts.draft(request.identity.draftId)
     }
     else if (canManage.value) {
-      operationalDraft.value = await repositories.projectCosts.operationalDraft(draftId.value)
-      financialDraft.value = null
+      nextOperationalDraft = await repositories.projectCosts.operationalDraft(request.identity.draftId)
     }
+    if (!request.isCurrent()) return
 
-    // 2. Fetch overview for category enrichment only if actor has cost.read, gracefully falling back
     if (companyAccess.hasPermission('cost.read')) {
       try {
-        overview.value = await repositories.projectFinance.overview(projectId.value)
+        nextOverview = await repositories.projectFinance.overview(request.identity.projectId)
       }
       catch {
-        overview.value = null
+        nextOverview = null
       }
     }
-    else {
-      overview.value = null
-    }
+    if (!request.isCurrent()) return
 
+    financialDraft.value = nextFinancialDraft
+    operationalDraft.value = nextOperationalDraft
+    overview.value = nextOverview
     status.value = 'ready'
   }
   catch (err: unknown) {
+    if (!request.isCurrent()) return
     const mapped = mapCostsApiError(err)
     if (mapped === 'not_found') {
       status.value = 'not_found'
@@ -122,7 +134,7 @@ async function loadData() {
     }
   }
   finally {
-    loading.value = false
+    if (request.isCurrent()) loading.value = false
   }
 }
 
@@ -152,8 +164,10 @@ watch(
   () => {
     loadData()
   },
-  { immediate: true },
+  { immediate: true, flush: 'sync' },
 )
+
+onUnmounted(() => requestTracker.invalidate())
 </script>
 
 <template>

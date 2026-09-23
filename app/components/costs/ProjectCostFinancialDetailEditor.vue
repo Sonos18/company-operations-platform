@@ -136,6 +136,12 @@ function moveLine(index: number, direction: 'up' | 'down') {
   renumberLines()
 }
 
+function onRetentionKindChanged(line: EditableLine) {
+  if (line.retentionKind) return
+  line.retentionRateBps = null
+  line.retentionAmount = ''
+}
+
 async function saveFinancials() {
   if (!canPrepare.value) {
     errorMessage.value = 'Bạn không có quyền cost.prepare để lưu chi tiết tài chính.'
@@ -165,21 +171,24 @@ async function saveFinancials() {
   isVersionConflict.value = false
 
   try {
-    const preparedDetails: PrepareProjectCostFinancialDetailInput[] = lines.value.map(l => ({
-      lineNo: l.lineNo,
-      detailKind: l.detailKind,
-      description: l.description.trim(),
-      quantity: l.quantity.trim() ? l.quantity.trim() : null,
-      unitCode: l.unitCode.trim() ? l.unitCode.trim() : null,
-      unitPrice: l.unitPrice.trim() ? l.unitPrice.trim() : null,
-      amount: l.amount.trim(),
-      retentionKind: (l.retentionKind || null) as ProjectCostRetentionKind | null,
-      retentionRateBps: l.retentionRateBps != null && l.retentionRateBps !== ('' as unknown as number) ? Number(l.retentionRateBps) : null,
-      retentionAmount: l.retentionAmount.trim() ? l.retentionAmount.trim() : null,
-      relevantDate: l.relevantDate || null,
-      reference: l.reference.trim() ? l.reference.trim() : null,
-      note: l.note.trim() ? l.note.trim() : null,
-    }))
+    const preparedDetails: PrepareProjectCostFinancialDetailInput[] = lines.value.map((l) => {
+      const retentionKind = (l.retentionKind || null) as ProjectCostRetentionKind | null
+      return {
+        lineNo: l.lineNo,
+        detailKind: l.detailKind,
+        description: l.description.trim(),
+        quantity: l.quantity.trim() ? l.quantity.trim() : null,
+        unitCode: l.unitCode.trim() ? l.unitCode.trim() : null,
+        unitPrice: l.unitPrice.trim() ? l.unitPrice.trim() : null,
+        amount: l.amount.trim(),
+        retentionKind,
+        retentionRateBps: retentionKind === null ? null : l.retentionRateBps != null && l.retentionRateBps !== ('' as unknown as number) ? Number(l.retentionRateBps) : null,
+        retentionAmount: retentionKind === null ? null : l.retentionAmount.trim() ? l.retentionAmount.trim() : null,
+        relevantDate: l.relevantDate || null,
+        reference: l.reference.trim() ? l.reference.trim() : null,
+        note: l.note.trim() ? l.note.trim() : null,
+      }
+    })
 
     const input = {
       expectedVersion: props.currentVersion,
@@ -393,6 +402,7 @@ async function saveFinancials() {
                   :disabled="props.disabled || submitting"
                   class="cockpit-select w-full text-[11px]"
                   data-testid="line-retention-select"
+                  @change="onRetentionKindChanged(line)"
                 >
                   <option value="">Không</option>
                   <option value="warranty">Bảo hành</option>
