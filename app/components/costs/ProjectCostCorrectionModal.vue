@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import type {
   CorrectPublishedProjectCostInput,
   ProjectCostDetailKind,
 } from '../../../shared/schemas/costs/project-costs'
 import type { FinanceCategoryRow } from '../../../shared/schemas/costs/project-finance'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
+import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 import {
   diffOperationalCorrection,
   type CanonicalOperationalSnapshot,
@@ -85,6 +86,17 @@ const operational = reactive<FormOperationalState>({
 })
 
 const financialLines = ref<EditableCorrectionLine[]>([])
+const baselineRequests = createAsyncRequestTracker<{
+  companyId: string | null
+  projectId: string
+  projectCostItemId: string
+  version: number
+}>()
+const detailsRequests = createAsyncRequestTracker<{
+  companyId: string | null
+  projectCostItemId: string
+  version: number
+}>()
 
 const hasCanonicalDescription = computed(() => originalSnapshot.value?.description !== undefined)
 const hasCanonicalWorkStatus = computed(() => originalSnapshot.value?.workStatus !== undefined)
@@ -98,21 +110,30 @@ const hasAnyCanonicalField = computed(() =>
 )
 
 async function initializeOperationalBaseline() {
+  const request = baselineRequests.start({
+    companyId: companyAccess.activeCompanyId,
+    projectId: props.projectId ?? '',
+    projectCostItemId: props.projectCostItemId,
+    version: props.currentVersion,
+  })
+  const currentOperational = props.currentOperational ? { ...props.currentOperational } : null
   let snapshot: CanonicalOperationalSnapshot | null = null
+  loadingParent.value = false
 
-  if (props.currentOperational) {
+  if (currentOperational) {
     snapshot = {
-      description: props.currentOperational.description,
-      workStatus: props.currentOperational.workStatus,
-      businessReference: props.currentOperational.businessReference,
-      relevantDate: props.currentOperational.relevantDate,
+      description: currentOperational.description,
+      workStatus: currentOperational.workStatus,
+      businessReference: currentOperational.businessReference,
+      relevantDate: currentOperational.relevantDate,
     }
   }
-  else if (props.projectId && props.projectCostItemId) {
+  else if (request.identity.projectId && request.identity.projectCostItemId) {
     loadingParent.value = true
     try {
-      const breakdown = await repositories.projectCosts.project(props.projectId)
-      const found = breakdown.items.find(i => i.id === props.projectCostItemId)
+      const breakdown = await repositories.projectCosts.project(request.identity.projectId)
+      if (!request.isCurrent()) return
+      const found = breakdown.items.find(i => i.id === request.identity.projectCostItemId)
       if (found) {
         snapshot = {
           description: found.description,
@@ -123,13 +144,15 @@ async function initializeOperationalBaseline() {
       }
     }
     catch {
+      if (!request.isCurrent()) return
       snapshot = null
     }
     finally {
-      loadingParent.value = false
+      if (request.isCurrent()) loadingParent.value = false
     }
   }
 
+  if (!request.isCurrent()) return
   originalSnapshot.value = snapshot ? Object.freeze({ ...snapshot }) : null
 
   if (snapshot) {
@@ -147,10 +170,20 @@ async function initializeOperationalBaseline() {
 }
 
 async function loadExistingDetails() {
-  if (!props.projectCostItemId) return
+  const request = detailsRequests.start({
+    companyId: companyAccess.activeCompanyId,
+    projectCostItemId: props.projectCostItemId,
+    version: props.currentVersion,
+  })
+  const fallbackDescription = props.currentOperational?.description ?? ''
+  financialLines.value = []
+  loadingDetails.value = false
+  if (!request.identity.projectCostItemId) return
+
   loadingDetails.value = true
   try {
-    const data = await repositories.projectCosts.details(props.projectCostItemId)
+    const data = await repositories.projectCosts.details(request.identity.projectCostItemId)
+    if (!request.isCurrent()) return
     financialLines.value = data.details.map(d => ({
       lineNo: d.lineNo,
       detailKind: d.detailKind,
@@ -168,11 +201,12 @@ async function loadExistingDetails() {
     }))
   }
   catch {
+    if (!request.isCurrent()) return
     // If not found or empty, start with one line
     financialLines.value = [{
       lineNo: 1,
       detailKind: 'line_item',
-      description: props.currentOperational?.description ?? '',
+      description: fallbackDescription,
       quantity: '',
       unitCode: '',
       unitPrice: '',
@@ -186,11 +220,17 @@ async function loadExistingDetails() {
     }]
   }
   finally {
-    loadingDetails.value = false
+    if (request.isCurrent()) loadingDetails.value = false
   }
 }
 
-watch([() => props.open, () => props.projectCostItemId, () => props.currentVersion], ([open]) => {
+watch([
+  () => props.open,
+  () => companyAccess.activeCompanyId,
+  () => props.projectId,
+  () => props.projectCostItemId,
+  () => props.currentVersion,
+], ([open]) => {
   if (open) {
     reason.value = ''
     includeOperational.value = false
@@ -198,6 +238,12 @@ watch([() => props.open, () => props.projectCostItemId, () => props.currentVersi
     errorMessage.value = null
     initializeOperationalBaseline()
     loadExistingDetails()
+  }
+  else {
+    baselineRequests.invalidate()
+    detailsRequests.invalidate()
+    loadingParent.value = false
+    loadingDetails.value = false
   }
 })
 watch([() => props.projectCostItemId, () => props.currentVersion], () => { pendingCommand.value = null })
@@ -207,6 +253,11 @@ watch(() => props.currentOperational, () => {
     initializeOperationalBaseline()
   }
 }, { deep: true })
+
+onUnmounted(() => {
+  baselineRequests.invalidate()
+  detailsRequests.invalidate()
+})
 
 function addFinancialLine() {
   financialLines.value.push({

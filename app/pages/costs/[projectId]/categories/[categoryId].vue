@@ -43,22 +43,36 @@ const isEvidenceModalOpen = ref(false)
 
 const canonicalCostItem = ref<ProjectCostItem | null>(null)
 const loadingCanonicalItem = ref(false)
+const canonicalItemRequests = createAsyncRequestTracker<{
+  companyId: string | null
+  projectId: string
+  itemId: string
+}>()
 
-async function loadCanonicalCostItem() {
-  if (!projectId.value || !currentCategory.value?.itemId) {
-    canonicalCostItem.value = null
-    return
-  }
+async function loadCanonicalCostItem(): Promise<boolean> {
+  const request = canonicalItemRequests.start({
+    companyId: companyAccess.activeCompanyId,
+    projectId: projectId.value,
+    itemId: currentCategory.value?.itemId ?? '',
+  })
+  canonicalCostItem.value = null
+  loadingCanonicalItem.value = false
+  if (!request.identity.projectId || !request.identity.itemId) return false
+
   loadingCanonicalItem.value = true
   try {
-    const data = await repositories.projectCosts.project(projectId.value)
-    canonicalCostItem.value = data.items.find(i => i.id === currentCategory.value?.itemId) ?? null
+    const data = await repositories.projectCosts.project(request.identity.projectId)
+    if (!request.isCurrent()) return false
+    canonicalCostItem.value = data.items.find(i => i.id === request.identity.itemId) ?? null
+    return true
   }
   catch {
+    if (!request.isCurrent()) return false
     canonicalCostItem.value = null
+    return true
   }
   finally {
-    loadingCanonicalItem.value = false
+    if (request.isCurrent()) loadingCanonicalItem.value = false
   }
 }
 
@@ -89,12 +103,14 @@ const currentItemVersion = computed(() => {
 })
 
 async function openCorrectionModal() {
-  if (projectId.value && currentCategory.value?.itemId) {
-    await loadCanonicalCostItem()
+  const context = { projectId: projectId.value, itemId: currentCategory.value?.itemId ?? '' }
+  if (context.projectId && context.itemId) {
+    if (!await loadCanonicalCostItem()) return
     if (!canonicalCostItem.value && !ordinaryController.data.value) {
       await ordinaryController.executeDispatch(false)
     }
   }
+  if (projectId.value !== context.projectId || currentCategory.value?.itemId !== context.itemId) return
   isCorrectionModalOpen.value = true
 }
 
@@ -196,9 +212,11 @@ async function loadOverview() {
   // Invalidate subordinate streams immediately when overview reloads (RR02)
   overviewTracker.invalidate()
   subcontractorsTracker.invalidate()
+  canonicalItemRequests.invalidate()
   ordinaryController.resetContext()
   paymentsController.resetContext()
   subcontractorList.value = null
+  canonicalCostItem.value = null
 
   const token = overviewTracker.start({ projectId: projectId.value, categoryId: categoryId.value })
   pageStatus.value = 'loading'
@@ -226,6 +244,7 @@ async function loadOverview() {
         ordinaryController.executeDispatch(true),
         canCorrect.value ? loadCanonicalCostItem() : Promise.resolve(),
       ])
+      if (!token.isCurrent()) return
       pageStatus.value = 'ready'
     }
   }
@@ -327,6 +346,7 @@ watch(
 onUnmounted(() => {
   overviewTracker.invalidate()
   subcontractorsTracker.invalidate()
+  canonicalItemRequests.invalidate()
   ordinaryController.destroy()
   paymentsController.destroy()
 })

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import type { ProjectCostDraft, ProjectCostOperationalDraft } from '../../../shared/schemas/costs/project-costs'
 import type { FinanceCategoryRow } from '../../../shared/schemas/costs/project-finance'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
+import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 import { formatFinanceMoney } from '../../utils/costs/finance-display'
 
 const props = withDefaults(defineProps<{
@@ -34,6 +35,12 @@ const loading = ref(false)
 const errorMessage = ref<string | null>(null)
 const financialDrafts = ref<ProjectCostDraft[]>([])
 const operationalDrafts = ref<ProjectCostOperationalDraft[]>([])
+const draftRequests = createAsyncRequestTracker<{
+  companyId: string
+  projectId: string
+  canPrepare: boolean
+  canManage: boolean
+}>()
 
 const categoryMap = computed(() => {
   const map = new Map<string, FinanceCategoryRow>()
@@ -44,36 +51,61 @@ const categoryMap = computed(() => {
 })
 
 async function fetchDrafts() {
-  if (!props.projectId || (!canPrepare.value && !canManage.value)) {
+  const request = draftRequests.start({
+    companyId: companyAccess.activeCompanyId ?? '',
+    projectId: props.projectId,
+    canPrepare: canPrepare.value,
+    canManage: canManage.value,
+  })
+
+  financialDrafts.value = []
+  operationalDrafts.value = []
+  errorMessage.value = null
+  if (!request.identity.projectId || (!request.identity.canPrepare && !request.identity.canManage)) {
+    loading.value = false
     return
   }
 
   loading.value = true
-  errorMessage.value = null
 
   try {
-    if (canPrepare.value) {
-      financialDrafts.value = await repositories.projectCosts.listDrafts(props.projectId)
-      operationalDrafts.value = []
+    if (request.identity.canPrepare) {
+      const nextDrafts = await repositories.projectCosts.listDrafts(request.identity.projectId)
+      if (!request.isCurrent()) return
+      financialDrafts.value = nextDrafts
     }
-    else if (canManage.value) {
-      operationalDrafts.value = await repositories.projectCosts.listOperationalDrafts(props.projectId)
-      financialDrafts.value = []
+    else if (request.identity.canManage) {
+      const nextDrafts = await repositories.projectCosts.listOperationalDrafts(request.identity.projectId)
+      if (!request.isCurrent()) return
+      operationalDrafts.value = nextDrafts
     }
   }
   catch (err: unknown) {
+    if (!request.isCurrent()) return
     errorMessage.value = extractErrorMessage(err, 'Không thể tải danh sách bản nháp.')
   }
   finally {
-    loading.value = false
+    if (request.isCurrent()) loading.value = false
   }
 }
 
-watch(() => props.open, (open) => {
+watch([
+  () => props.open,
+  () => props.projectId,
+  () => companyAccess.activeCompanyId,
+  () => canPrepare.value,
+  () => canManage.value,
+], ([open]) => {
   if (open) {
     fetchDrafts()
   }
+  else {
+    draftRequests.invalidate()
+    loading.value = false
+  }
 })
+
+onUnmounted(() => draftRequests.invalidate())
 
 function getCategoryName(categoryId: string | null): string {
   if (!categoryId) return 'Chưa phân loại'

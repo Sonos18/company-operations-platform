@@ -109,6 +109,12 @@ async function loadData() {
     }
     if (!request.isCurrent()) return
 
+    const nextDraft = nextFinancialDraft ?? nextOperationalDraft
+    if (!nextDraft || nextDraft.projectId !== request.identity.projectId) {
+      status.value = 'not_found'
+      return
+    }
+
     if (companyAccess.hasPermission('cost.read')) {
       try {
         nextOverview = await repositories.projectFinance.overview(request.identity.projectId)

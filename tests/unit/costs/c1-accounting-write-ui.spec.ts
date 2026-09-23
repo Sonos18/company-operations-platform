@@ -47,6 +47,10 @@ const subcontractLedgerSource = readFileSync(
   new URL('../../../app/components/costs/ProjectCostSubcontractLedger.vue', import.meta.url),
   'utf8',
 )
+const categoryPageSource = readFileSync(
+  new URL('../../../app/pages/costs/[projectId]/categories/[categoryId].vue', import.meta.url),
+  'utf8',
+)
 
 describe('C1 Accounting Write UI contracts and workflows', () => {
   const sampleUuid = (n: number) => `c1070000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -589,6 +593,23 @@ describe('C1 Accounting Write UI contracts and workflows', () => {
   })
 
   describe('C18 Findings Regression Suite', () => {
+    describe('R5 sibling async context binding', () => {
+      it('guards canonical item reads by company, project, and cost item identity', () => {
+        expect(categoryPageSource).toContain('canonicalItemRequests')
+        expect(categoryPageSource).toContain('companyId: companyAccess.activeCompanyId')
+        expect(categoryPageSource).toContain('itemId: currentCategory.value?.itemId')
+        expect(categoryPageSource).toContain('if (!request.isCurrent()) return false')
+      })
+
+      it('guards correction baseline and detail reads across context changes and unmount', () => {
+        expect(correctionModalSource).toContain('baselineRequests')
+        expect(correctionModalSource).toContain('detailsRequests')
+        expect(correctionModalSource).toContain('companyId: companyAccess.activeCompanyId')
+        expect(correctionModalSource).toContain('onUnmounted(() =>')
+        expect(correctionModalSource).toContain('if (!request.isCurrent()) return')
+      })
+    })
+
     describe('C18-F1 — Gate payment evidence on cost.prepare', () => {
       it('SubcontractPaymentRecordModal gates evidence capability on cost.prepare', () => {
         expect(paymentRecordModalSource).toContain("hasPermission('cost.prepare')")

@@ -16,6 +16,7 @@ import {
   prepareProjectCostFinancialsInputSchema,
   projectCostBreakdownSchema,
   projectCostDraftSchema,
+  projectCostOperationalDraftSchema,
 } from '../../shared/schemas/costs/project-costs'
 import {
   costEvidenceFinalizedSchema,
@@ -959,6 +960,166 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     await expect(page.getByTestId('draft-title')).toHaveText('Draft B current route')
     await expect(page.getByText('DA-C1-B')).toBeVisible()
     expect(evidenceDraftIds).toEqual([draftB])
+  })
+
+  test('R5-F1 — financial draft must belong to the routed project before dependent reads', async ({ page }) => {
+    const projectB = '10000000-0000-4000-8000-000000000070'
+    let overviewRequests = 0
+    let evidenceRequests = 0
+    let intentRequests = 0
+    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Draft owned by project A') }))
+    await page.route(`**/api/companies/**/projects/${projectB}/finance`, (route) => { overviewRequests += 1; route.fulfill({ json: mockProjectOverview }) })
+    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, (route) => { evidenceRequests += 1; route.fulfill({ json: [] }) })
+    await page.route(`**/api/companies/**/projects/${projectB}/evidence/upload-intents`, (route) => { intentRequests += 1; route.fulfill({ json: {} }) })
+
+    await page.goto(`/costs/${projectB}/drafts/${draftId}`)
+    await expect(page.getByTestId('draft-not-found')).toBeVisible()
+    await expect(page.getByTestId('draft-title')).toHaveCount(0)
+    expect(overviewRequests).toBe(0)
+    expect(evidenceRequests).toBe(0)
+    expect(intentRequests).toBe(0)
+  })
+
+  test('R5-F1 — operational draft must belong to the routed project before metadata or mutation UI', async ({ page, authState }) => {
+    const projectB = '10000000-0000-4000-8000-000000000070'
+    authState.sessionCompanies = [createCompany({ permissions: ['cost.manage'] })]
+    let metadataRequests = 0
+    const operational = projectCostOperationalDraftSchema.parse({
+      id: draftId, projectId, description: 'Operational draft owned by A', costCategoryId: materialCategoryId,
+      businessReference: null, partyId: null, engagementId: null, componentId: null, relevantDate: '2026-09-22',
+      workStatus: 'in_progress', publicationState: 'draft', version: 1,
+      createdAt: '2026-09-22T08:00:00.000Z', updatedAt: '2026-09-22T08:00:00.000Z',
+    })
+    await page.route(`**/api/companies/**/project-costs/${draftId}/draft/operations`, route => route.fulfill({ json: operational }))
+    await page.route('**/api/companies/**/project-cost-drafts/metadata', (route) => { metadataRequests += 1; route.fulfill({ json: { projects: [], categories: [] } }) })
+
+    await page.goto(`/costs/${projectB}/drafts/${draftId}`)
+    await expect(page.getByTestId('draft-not-found')).toBeVisible()
+    await expect(page.getByTestId('draft-operations-form')).toHaveCount(0)
+    expect(metadataRequests).toBe(0)
+  })
+
+  test('R5-F2 — stale evidence response for item A cannot overwrite item B', async ({ page }) => {
+    const draftB = '30000000-0000-4000-8000-000000000071'
+    let releaseEvidenceA!: () => void
+    let evidenceAStarted!: () => void
+    const evidenceAGate = new Promise<void>(resolve => { releaseEvidenceA = resolve })
+    const evidenceARequest = new Promise<void>(resolve => { evidenceAStarted = resolve })
+    const evidence = (id: string, filename: string) => [costEvidenceMetadataSchema.parse({ linkId: id, evidenceFileId: evidenceId, evidenceKind: 'invoice', accountingSourceVersionId: null, originalFilename: filename, sizeBytes: 10, mimeType: 'application/pdf', sha256: mockSha256, finalizedAt: '2026-09-23T00:00:00.000Z' })]
+    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Draft A') }))
+    await page.route(`**/api/companies/**/project-costs/${draftB}/draft`, route => route.fulfill({ json: draftFixture(draftB, projectId, 'Draft B') }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, async (route) => { evidenceAStarted(); await evidenceAGate; await route.fulfill({ json: evidence(linkId1, 'evidence-a.pdf') }) })
+    await page.route(`**/api/companies/**/project-costs/${draftB}/evidence`, route => route.fulfill({ json: evidence('80000000-0000-4000-8000-000000000078', 'evidence-b.pdf') }))
+
+    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
+    await evidenceARequest
+    await page.evaluate(async (path) => {
+      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $router?: { push(target: string): Promise<unknown> } } } } }
+      await root.__vue_app__?.config.globalProperties.$router?.push(path)
+    }, `/costs/${projectId}/drafts/${draftB}`)
+    await expect(page.getByTestId('evidence-filename')).toHaveText('evidence-b.pdf')
+    releaseEvidenceA()
+    await page.waitForTimeout(100)
+    await expect(page.getByTestId('evidence-filename')).toHaveText('evidence-b.pdf')
+    await expect(page.getByText('evidence-a.pdf')).toHaveCount(0)
+  })
+
+  test('R5-F2 — company change rejects old evidence metadata for the same item', async ({ page, authState }) => {
+    const companyB = '10000000-0000-4000-8000-000000000060'
+    authState.sessionCompanies = [createCompany(), createCompany({ companyId: companyB, companyCode: 'VQH-B', companyName: 'Công ty B' })]
+    let releaseEvidenceA!: () => void
+    let evidenceAStarted!: () => void
+    const evidenceAGate = new Promise<void>(resolve => { releaseEvidenceA = resolve })
+    const evidenceARequest = new Promise<void>(resolve => { evidenceAStarted = resolve })
+    const metadata = (id: string, filename: string) => [costEvidenceMetadataSchema.parse({ linkId: id, evidenceFileId: evidenceId, evidenceKind: 'invoice', accountingSourceVersionId: null, originalFilename: filename, sizeBytes: 10, mimeType: 'application/pdf', sha256: mockSha256, finalizedAt: '2026-09-23T00:00:00.000Z' })]
+    await page.route(`**/api/companies/${companyId}/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Company A draft') }))
+    await page.route(`**/api/companies/${companyB}/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Company B draft') }))
+    await page.route(`**/api/companies/*/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/${companyId}/project-costs/${draftId}/evidence`, async (route) => { evidenceAStarted(); await evidenceAGate; await route.fulfill({ json: metadata(linkId1, 'company-a.pdf') }) })
+    await page.route(`**/api/companies/${companyB}/project-costs/${draftId}/evidence`, route => route.fulfill({ json: metadata('80000000-0000-4000-8000-000000000079', 'company-b.pdf') }))
+
+    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
+    await evidenceARequest
+    await page.evaluate((targetCompanyId) => {
+      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { selectCompany(companyId: string): boolean } } } } } }
+      if (!root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore?.selectCompany(targetCompanyId)) throw new Error('Unable to switch company')
+    }, companyB)
+    await expect(page.getByTestId('evidence-filename')).toHaveText('company-b.pdf')
+    releaseEvidenceA()
+    await page.waitForTimeout(100)
+    await expect(page.getByTestId('evidence-filename')).toHaveText('company-b.pdf')
+  })
+
+  test('R5-F2 — revoking source-read clears visible evidence without another request', async ({ page }) => {
+    let evidenceRequests = 0
+    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Permission draft') }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, (route) => {
+      evidenceRequests += 1
+      route.fulfill({ json: [costEvidenceMetadataSchema.parse({ linkId: linkId1, evidenceFileId: evidenceId, evidenceKind: 'invoice', accountingSourceVersionId: null, originalFilename: 'visible-before-revoke.pdf', sizeBytes: 10, mimeType: 'application/pdf', sha256: mockSha256, finalizedAt: '2026-09-23T00:00:00.000Z' })] })
+    })
+    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
+    await expect(page.getByTestId('evidence-filename')).toHaveText('visible-before-revoke.pdf')
+    await page.evaluate(() => {
+      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { companies: Array<{ companyId: string; permissions: string[] }>; activeCompanyId: string } } } } } }
+      const store = root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore
+      const company = store?.companies.find(item => item.companyId === store.activeCompanyId)
+      if (!company) throw new Error('Unable to resolve active company')
+      company.permissions = company.permissions.filter(permission => permission !== 'cost.source.read')
+    })
+    await expect(page.getByTestId('evidence-filename')).toHaveCount(0)
+    await expect(page.getByText('Cần quyền cost.source.read để xem danh sách chứng từ đính kèm.')).toBeVisible()
+    expect(evidenceRequests).toBe(1)
+  })
+
+  test('R5-F2 — unmount invalidates an outstanding evidence metadata request', async ({ page }) => {
+    let releaseEvidence!: () => void
+    let evidenceStarted!: () => void
+    const evidenceGate = new Promise<void>(resolve => { releaseEvidence = resolve })
+    const evidenceRequest = new Promise<void>(resolve => { evidenceStarted = resolve })
+    const pageErrors: Error[] = []
+    page.on('pageerror', error => pageErrors.push(error))
+    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Unmount draft') }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, async (route) => { evidenceStarted(); await evidenceGate; await route.fulfill({ json: [] }) })
+    await page.route('**/api/companies/**/project-cost-drafts/metadata', route => route.fulfill({ json: { projects: [], categories: [] } }))
+
+    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
+    await evidenceRequest
+    await page.goto('/cost-drafts')
+    releaseEvidence()
+    await page.waitForTimeout(100)
+
+    await expect(page).toHaveURL(/\/cost-drafts$/)
+    expect(pageErrors).toEqual([])
+  })
+
+  test('Sibling race — stale draft-list response cannot cross project routes', async ({ page }) => {
+    const projectB = '10000000-0000-4000-8000-000000000070'
+    const draftB = '30000000-0000-4000-8000-000000000071'
+    let releaseDraftListA!: () => void
+    let draftListAStarted!: () => void
+    const draftListAGate = new Promise<void>(resolve => { releaseDraftListA = resolve })
+    const draftListARequest = new Promise<void>(resolve => { draftListAStarted = resolve })
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/projects/${projectB}/finance`, route => route.fulfill({ json: { ...mockProjectOverview, project: { ...mockProjectOverview.project, projectId: projectB, projectCode: 'DA-B', projectName: 'Project B' } } }))
+    await page.route(`**/api/companies/**/projects/${projectId}/project-cost-drafts`, async (route) => { draftListAStarted(); await draftListAGate; await route.fulfill({ json: [draftFixture(draftId, projectId, 'Draft list A')] }) })
+    await page.route(`**/api/companies/**/projects/${projectB}/project-cost-drafts`, route => route.fulfill({ json: [draftFixture(draftB, projectB, 'Draft list B')] }))
+
+    await page.goto(`/costs/${projectId}`)
+    await page.getByTestId('open-drafts-list-btn').click()
+    await draftListARequest
+    await page.evaluate(async (path) => {
+      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $router?: { push(target: string): Promise<unknown> } } } } }
+      await root.__vue_app__?.config.globalProperties.$router?.push(path)
+    }, `/costs/${projectB}`)
+    await page.getByTestId('open-drafts-list-btn').click()
+    await expect(page.getByText('Draft list B')).toBeVisible()
+    releaseDraftListA()
+    await page.waitForTimeout(100)
+    await expect(page.getByText('Draft list B')).toBeVisible()
+    await expect(page.getByText('Draft list A')).toHaveCount(0)
   })
 
   test('Flow K — removing retention clears local dependents and sends canonical nulls', async ({ page }) => {

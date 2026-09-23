@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import type { CostEvidenceMetadata } from '../../../shared/schemas/costs/cost-evidence'
 import {
   ALLOWED_FILE_EXTENSIONS,
@@ -9,6 +9,7 @@ import {
   type EvidenceUploadSession,
 } from '../../utils/costs/cost-evidence-uploader'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
+import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 
 const props = defineProps<{
   projectId: string
@@ -32,6 +33,12 @@ const canPrepare = computed(() => companyAccess.hasPermission('cost.prepare'))
 const loading = ref(false)
 const errorMessage = ref<string | null>(null)
 const evidenceList = ref<CostEvidenceMetadata[]>([])
+const evidenceRequests = createAsyncRequestTracker<{
+  companyId: string
+  projectId: string
+  projectCostItemId: string
+  canSourceRead: boolean
+}>()
 
 // Upload State
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -57,29 +64,50 @@ const evidenceKindLabels: Record<CostEvidenceKind, string> = {
 }
 
 async function fetchEvidenceList() {
-  if (!props.projectCostItemId || !canSourceRead.value) return
+  const request = evidenceRequests.start({
+    companyId: companyAccess.activeCompanyId ?? '',
+    projectId: props.projectId,
+    projectCostItemId: props.projectCostItemId,
+    canSourceRead: canSourceRead.value,
+  })
+
+  evidenceList.value = []
+  errorMessage.value = null
+  if (!request.identity.projectCostItemId || !request.identity.canSourceRead) {
+    loading.value = false
+    return
+  }
 
   loading.value = true
-  errorMessage.value = null
 
   try {
-    evidenceList.value = await repositories.costEvidence.listMetadata(props.projectCostItemId)
+    const nextEvidenceList = await repositories.costEvidence.listMetadata(request.identity.projectCostItemId)
+    if (!request.isCurrent()) return
+    evidenceList.value = nextEvidenceList
   }
   catch (err: unknown) {
+    if (!request.isCurrent()) return
     errorMessage.value = extractErrorMessage(err, 'Không thể tải danh sách chứng từ.')
   }
   finally {
-    loading.value = false
+    if (request.isCurrent()) loading.value = false
   }
 }
 
 watch(
-  [() => props.projectCostItemId, () => canSourceRead.value],
+  [
+    () => companyAccess.activeCompanyId,
+    () => props.projectId,
+    () => props.projectCostItemId,
+    () => canSourceRead.value,
+  ],
   () => {
     fetchEvidenceList()
   },
   { immediate: true },
 )
+
+onUnmounted(() => evidenceRequests.invalidate())
 
 function onFileSelected(event: Event) {
   const target = event.target as HTMLInputElement
