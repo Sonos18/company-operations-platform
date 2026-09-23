@@ -95,4 +95,233 @@ describe('Cost Evidence Uploader utility', () => {
     })
     expect(progressTracker).toEqual(['hashing', 'intent', 'uploading', 'finalizing', 'linking'])
   })
+
+  describe('Bounded upload retry on intent expiry (F-UI4)', () => {
+    it('retries with a fresh intent when intent is expired before upload', async () => {
+      const file = new File(['data'], 'receipt.pdf', { type: 'application/pdf' })
+      const uploadSpy = vi.fn().mockResolvedValue({ error: null })
+      const mockSupabase = {
+        storage: { from: vi.fn().mockReturnValue({ upload: uploadSpy }) },
+      }
+
+      const createUploadIntent = vi.fn()
+        // First intent already expired
+        .mockResolvedValueOnce({
+          evidenceFileId: 'file-1',
+          version: 0,
+          bucketId: 'c1-accounting-evidence',
+          objectPath: 'c1/p1/expired-path',
+          expiresAt: new Date(Date.now() - 5000).toISOString(),
+          replayed: false,
+        })
+        // Second intent valid
+        .mockResolvedValueOnce({
+          evidenceFileId: 'file-2',
+          version: 0,
+          bucketId: 'c1-accounting-evidence',
+          objectPath: 'c1/p1/fresh-path',
+          expiresAt: new Date(Date.now() + 60000).toISOString(),
+          replayed: false,
+        })
+
+      const mockEvidenceRepo = {
+        createUploadIntent,
+        finalize: vi.fn().mockResolvedValue({
+          id: 'file-2',
+          status: 'finalized',
+          originalFilename: 'receipt.pdf',
+          mimeType: 'application/pdf',
+          sizeBytes: file.size,
+          sha256: 'abc',
+          version: 1,
+          finalizedAt: '2026-09-23T12:00:00.000Z',
+          replayed: false,
+        }),
+        link: vi.fn().mockResolvedValue({ linkId: 'link-1' }),
+      }
+
+      const result = await uploadAndFinalizeEvidence({
+        projectId: 'proj-1',
+        file,
+        evidenceKind: 'invoice',
+        evidenceRepo: mockEvidenceRepo as never,
+        supabaseClient: mockSupabase as never,
+      })
+
+      expect(createUploadIntent).toHaveBeenCalledTimes(2)
+      // New intent uses new returned objectPath
+      expect(uploadSpy).toHaveBeenCalledTimes(1)
+      expect(uploadSpy).toHaveBeenCalledWith('c1/p1/fresh-path', file, {
+        upsert: false,
+        contentType: 'application/pdf',
+      })
+      expect(mockEvidenceRepo.finalize).toHaveBeenCalledWith('file-2', { expectedVersion: 0 })
+      expect(result.evidenceFileId).toBe('file-2')
+    })
+
+    it('retries once with a fresh intent when upload fails and intent is beyond expiresAt', async () => {
+      const file = new File(['data'], 'receipt.pdf', { type: 'application/pdf' })
+      let currentTime = 1000
+      const nowProvider = () => currentTime
+
+      const uploadSpy = vi.fn()
+        .mockImplementationOnce(async () => {
+          currentTime = 2500 // now beyond expiresAt (2000)
+          return { error: { message: 'Storage error' } }
+        })
+        .mockResolvedValueOnce({ error: null })
+
+      const mockSupabase = {
+        storage: { from: vi.fn().mockReturnValue({ upload: uploadSpy }) },
+      }
+
+      const createUploadIntent = vi.fn()
+        // First intent expires at 2000
+        .mockResolvedValueOnce({
+          evidenceFileId: 'file-1',
+          version: 0,
+          bucketId: 'c1-accounting-evidence',
+          objectPath: 'c1/p1/path-1',
+          expiresAt: new Date(2000).toISOString(),
+          replayed: false,
+        })
+        // Second intent expires at 60000
+        .mockResolvedValueOnce({
+          evidenceFileId: 'file-2',
+          version: 0,
+          bucketId: 'c1-accounting-evidence',
+          objectPath: 'c1/p1/path-2',
+          expiresAt: new Date(60000).toISOString(),
+          replayed: false,
+        })
+
+      const mockEvidenceRepo = {
+        createUploadIntent,
+        finalize: vi.fn().mockResolvedValue({
+          id: 'file-2',
+          status: 'finalized',
+          originalFilename: 'receipt.pdf',
+          mimeType: 'application/pdf',
+          sizeBytes: file.size,
+          sha256: 'abc',
+          version: 1,
+          finalizedAt: '2026-09-23T12:00:00.000Z',
+          replayed: false,
+        }),
+      }
+
+      const result = await uploadAndFinalizeEvidence({
+        projectId: 'proj-1',
+        file,
+        evidenceKind: 'invoice',
+        evidenceRepo: mockEvidenceRepo as never,
+        supabaseClient: mockSupabase as never,
+        nowProvider,
+      })
+
+      expect(createUploadIntent).toHaveBeenCalledTimes(2)
+      expect(uploadSpy).toHaveBeenCalledTimes(2)
+      expect(uploadSpy).toHaveBeenNthCalledWith(1, 'c1/p1/path-1', file, {
+        upsert: false,
+        contentType: 'application/pdf',
+      })
+      expect(uploadSpy).toHaveBeenNthCalledWith(2, 'c1/p1/path-2', file, {
+        upsert: false,
+        contentType: 'application/pdf',
+      })
+      expect(result.evidenceFileId).toBe('file-2')
+    })
+
+    it('propagates error without retry when upload fails while intent is still valid', async () => {
+      const file = new File(['data'], 'receipt.pdf', { type: 'application/pdf' })
+      const uploadSpy = vi.fn().mockResolvedValue({ error: { message: 'Network connection aborted' } })
+      const mockSupabase = {
+        storage: { from: vi.fn().mockReturnValue({ upload: uploadSpy }) },
+      }
+
+      const createUploadIntent = vi.fn().mockResolvedValue({
+        evidenceFileId: 'file-1',
+        version: 0,
+        bucketId: 'c1-accounting-evidence',
+        objectPath: 'c1/p1/path-1',
+        expiresAt: new Date(Date.now() + 60000).toISOString(), // valid for 60s
+        replayed: false,
+      })
+
+      const mockEvidenceRepo = {
+        createUploadIntent,
+        finalize: vi.fn(),
+      }
+
+      await expect(uploadAndFinalizeEvidence({
+        projectId: 'proj-1',
+        file,
+        evidenceKind: 'invoice',
+        evidenceRepo: mockEvidenceRepo as never,
+        supabaseClient: mockSupabase as never,
+      })).rejects.toThrow('Lỗi tải tệp lên kho lưu trữ: Network connection aborted')
+
+      // Exactly 1 intent, no retry because intent has not expired
+      expect(createUploadIntent).toHaveBeenCalledTimes(1)
+      expect(uploadSpy).toHaveBeenCalledTimes(1)
+      expect(mockEvidenceRepo.finalize).not.toHaveBeenCalled()
+    })
+
+    it('propagates second failure without a third intent', async () => {
+      const file = new File(['data'], 'receipt.pdf', { type: 'application/pdf' })
+      let currentTime = 1000
+      const nowProvider = () => currentTime
+
+      const uploadSpy = vi.fn()
+        .mockImplementationOnce(async () => {
+          currentTime = 2000 // now beyond first expiry (1500)
+          return { error: { message: 'First failure' } }
+        })
+        .mockImplementationOnce(async () => {
+          currentTime = 3000 // now beyond second expiry (2500)
+          return { error: { message: 'Second failure' } }
+        })
+
+      const mockSupabase = {
+        storage: { from: vi.fn().mockReturnValue({ upload: uploadSpy }) },
+      }
+
+      const createUploadIntent = vi.fn()
+        .mockResolvedValueOnce({
+          evidenceFileId: 'file-1',
+          version: 0,
+          bucketId: 'c1-accounting-evidence',
+          objectPath: 'c1/p1/path-1',
+          expiresAt: new Date(1500).toISOString(),
+          replayed: false,
+        })
+        .mockResolvedValueOnce({
+          evidenceFileId: 'file-2',
+          version: 0,
+          bucketId: 'c1-accounting-evidence',
+          objectPath: 'c1/p1/path-2',
+          expiresAt: new Date(2500).toISOString(),
+          replayed: false,
+        })
+
+      const mockEvidenceRepo = {
+        createUploadIntent,
+        finalize: vi.fn(),
+      }
+
+      await expect(uploadAndFinalizeEvidence({
+        projectId: 'proj-1',
+        file,
+        evidenceKind: 'invoice',
+        evidenceRepo: mockEvidenceRepo as never,
+        supabaseClient: mockSupabase as never,
+        nowProvider,
+      })).rejects.toThrow('Lỗi tải tệp lên kho lưu trữ: Second failure')
+
+      // Maximum 1 retry (2 intents total), never a 3rd intent
+      expect(createUploadIntent).toHaveBeenCalledTimes(2)
+      expect(uploadSpy).toHaveBeenCalledTimes(2)
+      expect(mockEvidenceRepo.finalize).not.toHaveBeenCalled()
+    })
+  })
 })

@@ -237,10 +237,19 @@ async function save() {
             data-testid="draft-op-category"
           >
             <option value="">Chưa chọn danh mục</option>
+            <option
+              v-if="form.costCategoryId && !eligibleCategories.some(cat => cat.categoryId === form.costCategoryId)"
+              :value="form.costCategoryId"
+            >
+              Mã danh mục: {{ form.costCategoryId }}
+            </option>
             <option v-for="cat in eligibleCategories" :key="cat.categoryId" :value="cat.categoryId">
               {{ cat.name }} ({{ cat.code }})
             </option>
           </select>
+          <p v-if="eligibleCategories.length === 0" class="text-[11px] text-gray-500 italic mt-0.5" data-testid="no-categories-notice">
+            Danh sách tên danh mục không khả dụng (yêu cầu quyền cost.read).
+          </p>
         </div>
 
         <div class="space-y-1">

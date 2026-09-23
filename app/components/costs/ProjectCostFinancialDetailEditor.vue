@@ -330,11 +330,8 @@ async function saveFinancials() {
                 class="cockpit-select w-full text-xs"
                 data-testid="line-kind-select"
               >
-                <option value="line_item">Hạng mục (line_item)</option>
-                <option value="milestone">Mốc hoàn thành (milestone)</option>
-                <option value="adjustment">Điều chỉnh (adjustment)</option>
-                <option value="tax">Thuế (tax)</option>
-                <option value="other">Khác (other)</option>
+                <option value="line_item">Dòng chi tiết (line_item)</option>
+                <option value="opening_balance">Số dư / giá trị mở đầu (opening_balance)</option>
               </select>
             </td>
             <td class="p-2">

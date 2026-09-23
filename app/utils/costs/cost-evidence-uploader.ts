@@ -6,6 +6,7 @@ import {
 import type {
   costEvidenceKindSchema,
   costEvidenceMimeTypeSchema,
+  CostEvidenceUploadIntent,
 } from '../../../shared/schemas/costs/cost-evidence'
 import type { CostEvidenceRepository } from '../../repositories/contracts'
 
@@ -64,6 +65,94 @@ export async function computeFileSha256Hex(file: File): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
+export function isIntentExpired(intent: { expiresAt: string }, now = Date.now()): boolean {
+  return now >= new Date(intent.expiresAt).getTime()
+}
+
+export async function createEvidenceIntent(
+  evidenceRepo: CostEvidenceRepository,
+  projectId: string,
+  file: File,
+  mimeType: string,
+  sha256: string,
+): Promise<CostEvidenceUploadIntent> {
+  return evidenceRepo.createUploadIntent(projectId, {
+    originalFilename: file.name,
+    mimeType: mimeType as CostEvidenceMimeType,
+    sizeBytes: file.size,
+    sha256,
+  })
+}
+
+export async function uploadToStorageWithIntent(
+  supabaseClient: SupabaseClient,
+  intent: CostEvidenceUploadIntent,
+  file: File,
+  mimeType: string,
+): Promise<{ error: Error | null }> {
+  const { error } = await supabaseClient.storage
+    .from(intent.bucketId)
+    .upload(intent.objectPath, file, {
+      upsert: false,
+      contentType: mimeType,
+    })
+  return { error: error ? new Error(`Lỗi tải tệp lên kho lưu trữ: ${error.message}`) : null }
+}
+
+export interface UploadWithBoundedRetryParams {
+  projectId: string
+  file: File
+  mimeType: string
+  sha256: string
+  evidenceRepo: CostEvidenceRepository
+  supabaseClient: SupabaseClient
+  onProgress?: (stage: 'hashing' | 'intent' | 'uploading' | 'finalizing' | 'linking') => void
+  nowProvider?: () => number
+}
+
+export async function uploadWithBoundedRetry(params: UploadWithBoundedRetryParams): Promise<CostEvidenceUploadIntent> {
+  const { projectId, file, mimeType, sha256, evidenceRepo, supabaseClient, onProgress, nowProvider = () => Date.now() } = params
+
+  let hasRetried = false
+  onProgress?.('intent')
+  let currentIntent = await createEvidenceIntent(evidenceRepo, projectId, file, mimeType, sha256)
+
+  // Handle intent expired before upload
+  if (isIntentExpired(currentIntent, nowProvider())) {
+    hasRetried = true
+    onProgress?.('intent')
+    currentIntent = await createEvidenceIntent(evidenceRepo, projectId, file, mimeType, sha256)
+    if (isIntentExpired(currentIntent, nowProvider())) {
+      throw new Error('Upload intent đã hết hạn ngay khi tạo lại.')
+    }
+  }
+
+  onProgress?.('uploading')
+  let uploadResult = await uploadToStorageWithIntent(supabaseClient, currentIntent, file, mimeType)
+
+  if (uploadResult.error) {
+    // If upload failed and current time is now beyond expiresAt and we haven't retried yet:
+    if (!hasRetried && isIntentExpired(currentIntent, nowProvider())) {
+      onProgress?.('intent')
+      currentIntent = await createEvidenceIntent(evidenceRepo, projectId, file, mimeType, sha256)
+      if (isIntentExpired(currentIntent, nowProvider())) {
+        throw new Error('Upload intent đã hết hạn ngay khi tạo lại.')
+      }
+      onProgress?.('uploading')
+      uploadResult = await uploadToStorageWithIntent(supabaseClient, currentIntent, file, mimeType)
+      if (uploadResult.error) {
+        throw uploadResult.error
+      }
+    }
+    else {
+      // Propagate original error (intent was not expired, or retry already exhausted)
+      throw uploadResult.error
+    }
+  }
+
+  return currentIntent
+}
+
 export interface UploadEvidenceOptions {
   projectId: string
   file: File
@@ -73,6 +162,7 @@ export interface UploadEvidenceOptions {
   evidenceRepo: CostEvidenceRepository
   supabaseClient: SupabaseClient
   onProgress?: (stage: 'hashing' | 'intent' | 'uploading' | 'finalizing' | 'linking') => void
+  nowProvider?: () => number
 }
 
 export interface UploadEvidenceResult {
@@ -84,7 +174,7 @@ export interface UploadEvidenceResult {
 }
 
 export async function uploadAndFinalizeEvidence(options: UploadEvidenceOptions): Promise<UploadEvidenceResult> {
-  const { projectId, file, evidenceRepo, supabaseClient, onProgress } = options
+  const { projectId, file, evidenceRepo, supabaseClient, onProgress, nowProvider } = options
 
   const validation = validateEvidenceFile(file)
   if (!validation.valid) {
@@ -104,53 +194,20 @@ export async function uploadAndFinalizeEvidence(options: UploadEvidenceOptions):
   onProgress?.('hashing')
   const sha256 = await computeFileSha256Hex(file)
 
-  async function executeUpload(): Promise<{ evidenceFileId: string; version: number }> {
-    onProgress?.('intent')
-    const intent = await evidenceRepo.createUploadIntent(projectId, {
-      originalFilename: file.name,
-      mimeType,
-      sizeBytes: file.size,
-      sha256,
-    })
-
-    // Check if intent expired before upload
-    if (new Date(intent.expiresAt).getTime() <= Date.now()) {
-      throw new Error('Upload intent expired immediately')
-    }
-
-    onProgress?.('uploading')
-    const { error: storageError } = await supabaseClient.storage
-      .from(intent.bucketId)
-      .upload(intent.objectPath, file, {
-        upsert: false,
-        contentType: mimeType,
-      })
-
-    if (storageError) {
-      throw new Error(`Lỗi tải tệp lên kho lưu trữ: ${storageError.message}`)
-    }
-
-    return { evidenceFileId: intent.evidenceFileId, version: intent.version }
-  }
-
-  let uploadResult: { evidenceFileId: string; version: number }
-  try {
-    uploadResult = await executeUpload()
-  }
-  catch (err: unknown) {
-    // Retry once with a new intent if intent expired
-    const msg = err instanceof Error ? err.message : String(err)
-    if (msg.includes('expired') || msg.includes('Expired')) {
-      uploadResult = await executeUpload()
-    }
-    else {
-      throw err
-    }
-  }
+  const currentIntent = await uploadWithBoundedRetry({
+    projectId,
+    file,
+    mimeType,
+    sha256,
+    evidenceRepo,
+    supabaseClient,
+    onProgress,
+    nowProvider,
+  })
 
   onProgress?.('finalizing')
-  const finalized = await evidenceRepo.finalize(uploadResult.evidenceFileId, {
-    expectedVersion: uploadResult.version,
+  const finalized = await evidenceRepo.finalize(currentIntent.evidenceFileId, {
+    expectedVersion: currentIntent.version,
   })
 
   let linkId: string | undefined

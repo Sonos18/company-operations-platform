@@ -9,7 +9,7 @@ import ProjectCostPublishReadinessPanel from '../../../../components/costs/Proje
 import ProjectCostEvidencePanel from '../../../../components/costs/ProjectCostEvidencePanel.vue'
 import ProjectCostPublishModal from '../../../../components/costs/ProjectCostPublishModal.vue'
 
-definePageMeta({ requiredPermission: 'cost.read' })
+definePageMeta({ requiredAnyPermissions: ['cost.manage', 'cost.prepare'] })
 
 const route = useRoute()
 const router = useRouter()
@@ -82,10 +82,7 @@ async function loadData() {
   errorMessage.value = null
 
   try {
-    // 1. Fetch overview for category list
-    overview.value = await repositories.projectFinance.overview(projectId.value)
-
-    // 2. Fetch draft depending on permission
+    // 1. Fetch draft depending on capability first
     if (canPrepare.value) {
       financialDraft.value = await repositories.projectCosts.draft(draftId.value)
       operationalDraft.value = null
@@ -93,6 +90,19 @@ async function loadData() {
     else if (canManage.value) {
       operationalDraft.value = await repositories.projectCosts.operationalDraft(draftId.value)
       financialDraft.value = null
+    }
+
+    // 2. Fetch overview for category enrichment only if actor has cost.read, gracefully falling back
+    if (companyAccess.hasPermission('cost.read')) {
+      try {
+        overview.value = await repositories.projectFinance.overview(projectId.value)
+      }
+      catch {
+        overview.value = null
+      }
+    }
+    else {
+      overview.value = null
     }
 
     status.value = 'ready'
@@ -203,7 +213,7 @@ watch(
     </div>
 
     <!-- Content Ready -->
-    <div v-else-if="currentDraftData && overview" class="space-y-6">
+    <div v-else-if="currentDraftData" class="space-y-6">
       <!-- Workbench Header -->
       <header class="cockpit-card p-5 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div class="space-y-1">
@@ -215,8 +225,13 @@ watch(
             {{ currentDraftData.description }}
           </h1>
           <p class="text-xs text-gray-500">
-            Mã dự án: <span class="font-mono">{{ overview.project.projectCode }}</span> ·
-            {{ overview.project.projectName }}
+            <template v-if="overview">
+              Mã dự án: <span class="font-mono">{{ overview.project.projectCode }}</span> ·
+              {{ overview.project.projectName }}
+            </template>
+            <template v-else>
+              Dự án: <span class="font-mono">{{ projectId }}</span>
+            </template>
           </p>
         </div>
 
@@ -249,7 +264,7 @@ watch(
       <section aria-labelledby="section-operations-title">
         <ProjectCostDraftOperationsForm
           :draft="currentDraftData"
-          :categories="overview.categories"
+          :categories="overview?.categories || []"
           @saved="onOperationalSaved"
           @refresh-requested="loadData"
         />
