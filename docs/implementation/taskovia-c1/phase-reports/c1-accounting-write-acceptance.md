@@ -34,6 +34,12 @@ The initial PR parity was 59 local / 59 remote through `20260922092309`. PR revi
 
 Migration 11 corrects a PostgreSQL compatibility error discovered by the hard-failing evidence suite after migration 10 was applied. Migration 12 removes original-filename metadata from the raw-file target after independent review found that disclosure crossed the `cost.source.read` boundary. Final parity is 62 local / 62 remote through `20260922102810`. Push commands completed; the CLI emitted a non-blocking Docker cache-export warning after successful application.
 
+The final GitHub Codex Security review found that authenticated callers could bypass Nitro byte verification through the database finalize wrapper. A thirteenth forward-only migration closes that boundary without editing applied migrations:
+
+13. `20260923043432_c1_accounting_write_finalize_server_boundary.sql`
+
+Migration 13 revokes the legacy finalize wrapper from all application roles and grants a new narrow wrapper only to `service_role`. Nitro alone calls that wrapper after byte verification; the wrapper restores the initiating actor context and delegates to the existing private command, so company/tenant, `cost.prepare`, creator, expiry, version, receipt, and audit checks remain authoritative. Final parity is 63 local / 63 remote through `20260923043432`.
+
 ## Cloud verification
 
 - `pnpm db:dev:target`: PASS.
@@ -44,11 +50,11 @@ Migration 11 corrects a PostgreSQL compatibility error discovered by the hard-fa
 - `pnpm db:dev:push`: six migrations applied.
 - Corrective dry runs: each listed only its single pending forward migration.
 - Corrective pushes: the initial three and all three PR-review migrations applied; no migration-history repair.
-- `pnpm db:dev:c1:test`: PASS for all 11 C1 suites. Final hard-failing pgTAP totals: lifecycle 55, evidence 39, cash 22. Existing Project Cost fixture was updated to the approved lifecycle instead of enabling a legacy capability bypass.
+- `pnpm db:dev:c1:test`: PASS for all 11 C1 suites. Final hard-failing pgTAP totals: lifecycle 55, evidence 42, cash 22. The evidence suite proves authenticated callers cannot execute either finalize transition and that exact trusted replay remains idempotent.
 - `pnpm db:dev:rls-smoke`: PASS.
 - Security advisor: WARN-only. New public SECURITY DEFINER RPC warnings are intentional authenticated wrappers with exact internal permission checks; the advisor also retains the pre-existing leaked-password warning.
 - Performance advisor: no C1 warning after the forward evidence-policy correction. One unrelated pre-existing `workflow_definition_snapshots` multiple-policy warning remains.
-- Final `pnpm db:dev:status`: 62/62.
+- Final `pnpm db:dev:status`: 63/63.
 
 ## Generated types
 
@@ -60,7 +66,7 @@ Migration 11 corrects a PostgreSQL compatibility error discovered by the hard-fa
 - Evidence/security focused suite: PASS, 5 files / 38 tests.
 - P6 cash/source/finance suite: PASS, 6 files / 52 tests.
 - Corrective focused suite: PASS, 13 files / 236 tests.
-- `pnpm test:unit`: PASS, 150 files / 1,286 tests.
+- `pnpm test:unit`: PASS, 150 files / 1,296 tests.
 - `pnpm typecheck`: PASS.
 - `pnpm lint`: PASS after minimal caught-error/unused-argument lint corrections.
 - `pnpm build`: PASS; only existing chunk-size and Node dependency deprecation warnings were emitted.
@@ -75,6 +81,8 @@ Migration 11 corrects a PostgreSQL compatibility error discovered by the hard-fa
 - The active Accountant permission set is exactly: `accounting_document.read`, `accounting_document.update`, `cost.correct`, `cost.file.read`, `cost.manage`, `cost.prepare`, `cost.publish_import`, `cost.read`, `cost.record_cash`, `cost.source.read`, `inventory_value.read`, `supplier.read`.
 - Draft raw-table RLS requires `cost.prepare`; manager-only operational reads use a guarded projection without financial/source fields.
 - Evidence is private, immutable, format/size/hash verified, linked-resource authorized, and financially neutral. Authenticated direct upload is enforced by live-intent Storage INSERT RLS; no signed upload token is minted.
+- Finalization is a Nitro-only trusted transition after byte verification. The public HTTP request/response contract is unchanged, and an ordinary authenticated actor cannot call either database finalize transition.
+- XLSX identity validation bounds central-directory entry count, declared entry/aggregate expansion, required metadata size/ratio, and actual streamed metadata output before string construction. It never expands worksheets, shared strings, media, or workbook content.
 - Finalized evidence metadata requires `cost.source.read`; `cost.file.read` grants only guarded raw access when linked-resource visibility also passes.
 - Published correction is reasoned, version-safe, and reconstructable from immutable before/after snapshots.
 - `project_subcontract_payments` remains the sole canonical subcontract cash ledger; recorded money is immutable and correction is void plus one replacement.
@@ -88,8 +96,10 @@ Disposition: no result identified a supported defect. Deterministic unit/databas
 
 The PR-review pre-fix call returned capability leakage `0.45`, upload-expiry bypass `0.10`, and overstated MIME guarantee `0.58`; this reinforced the deterministic review findings and explicit verification wording. After all deterministic checks and the independent-review correction were green, the final corrective call returned manage→prepare bypass `0.12`, file→source metadata bypass `0.09`, expired upload write `0.09`, misleading MIME verification `0.34`, and cross-company evidence access `0.07`. Two earlier attempts at the same final request failed at the network boundary; later identical calls returned typed results. No credential or request file was committed.
 
+The final F5/F6 Jev call used `jev-1.13.0` and returned direct byte-verification bypass `0.08`, trusted-path authorization regression `0.18`, forgeable attestation/replay `0.05`, and XLSX resource exhaustion `0.14`. These advisory results were accepted after deterministic pgTAP and unit tests proved the database ACL boundary, actor reauthorization, exact replay, forged central-directory-size rejection, and bounded actual metadata expansion.
+
 ## Mutation accounting and boundary
 
-Authorized Cloud DEV mutations consumed: twelve forward migrations (six planned plus six acceptance/review-driven corrective migrations). All database test fixtures and pgTAP extension creation were rollback-only. No reset, seed, migration repair, destructive operation, Production operation, UI change, or browser test was performed.
+Authorized Cloud DEV mutations consumed: thirteen forward migrations (six planned plus seven acceptance/review-driven corrective migrations). All database test fixtures and pgTAP extension creation were rollback-only. No reset, seed, migration repair, destructive operation, Production operation, UI change, or browser test was performed.
 
 Antigravity contract: `docs/superpowers/specs/2026-09-22-c1-accounting-write-ui-handoff.md`.
