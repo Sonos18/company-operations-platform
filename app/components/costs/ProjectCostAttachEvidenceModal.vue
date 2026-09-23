@@ -75,7 +75,11 @@ function onFileSelected(event: Event) {
   uploadSession.value = null
 }
 
-watch([() => props.projectId, () => props.projectCostItemId], () => { uploadSession.value = null })
+watch([() => props.projectId, () => props.projectCostItemId], () => {
+  uploadSession.value = null
+  selectedFile.value = null
+  if (fileInput.value) fileInput.value.value = ''
+})
 
 async function handleUploadAndLink() {
   if (!selectedFile.value || !canPrepare.value) return
@@ -109,6 +113,8 @@ async function handleUploadAndLink() {
     })
 
     uploadSession.value = null
+    selectedFile.value = null
+    if (fileInput.value) fileInput.value.value = ''
     isOpen.value = false
     emit('attached')
   }

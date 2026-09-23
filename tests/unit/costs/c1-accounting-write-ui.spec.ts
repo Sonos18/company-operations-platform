@@ -51,6 +51,10 @@ const categoryPageSource = readFileSync(
   new URL('../../../app/pages/costs/[projectId]/categories/[categoryId].vue', import.meta.url),
   'utf8',
 )
+const attachEvidenceModalSource = readFileSync(
+  new URL('../../../app/components/costs/ProjectCostAttachEvidenceModal.vue', import.meta.url),
+  'utf8',
+)
 
 describe('C1 Accounting Write UI contracts and workflows', () => {
   const sampleUuid = (n: number) => `c1070000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -607,6 +611,14 @@ describe('C1 Accounting Write UI contracts and workflows', () => {
         expect(correctionModalSource).toContain('companyId: companyAccess.activeCompanyId')
         expect(correctionModalSource).toContain('onUnmounted(() =>')
         expect(correctionModalSource).toContain('if (!request.isCurrent()) return')
+      })
+    })
+
+    describe('Fresh review regressions', () => {
+      it('clears the selected evidence file and native input after a successful attachment', () => {
+        const successPath = attachEvidenceModalSource.slice(attachEvidenceModalSource.indexOf('await uploadAndFinalizeEvidence'))
+        expect(successPath).toContain('selectedFile.value = null')
+        expect(successPath).toContain("fileInput.value.value = ''")
       })
     })
 

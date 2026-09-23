@@ -22,16 +22,19 @@ const createOpen = ref(false)
 const metadataRequests = createAsyncRequestTracker<{ companyId: string }>()
 const draftRequests = createAsyncRequestTracker<{ companyId: string; projectId: string }>()
 
+const requestedProjectId = computed(() => typeof route.query.projectId === 'string' ? route.query.projectId : '')
 const selectedProject = computed(() => metadata.value.projects.find(project => project.id === selectedProjectId.value) ?? null)
 const categoryNames = computed(() => new Map(metadata.value.categories.map(category => [category.categoryId, category.name])))
 
 async function loadDrafts() {
   if (!selectedProjectId.value) {
+    draftRequests.invalidate()
     drafts.value = []
     loading.value = false
     return
   }
   const request = draftRequests.start({ companyId: companyAccess.activeCompanyId ?? '', projectId: selectedProjectId.value })
+  drafts.value = []
   loading.value = true
   errorMessage.value = null
   try {
@@ -60,7 +63,7 @@ async function load() {
     const nextMetadata = await repositories.projectCosts.draftManagementMetadata()
     if (!request.isCurrent()) return
     metadata.value = nextMetadata
-    const requested = typeof route.query.projectId === 'string' ? route.query.projectId : ''
+    const requested = requestedProjectId.value
     selectedProjectId.value = metadata.value.projects.some(project => project.id === requested)
       ? requested
       : metadata.value.projects[0]?.id ?? ''
@@ -85,6 +88,14 @@ function onCreated(result: { id: string }) {
 }
 
 watch(() => companyAccess.activeCompanyId, load, { immediate: true })
+watch(requestedProjectId, (requested) => {
+  const nextProjectId = metadata.value.projects.some(project => project.id === requested)
+    ? requested
+    : metadata.value.projects[0]?.id ?? ''
+  if (selectedProjectId.value === nextProjectId) return
+  selectedProjectId.value = nextProjectId
+  loadDrafts()
+})
 onUnmounted(() => {
   metadataRequests.invalidate()
   draftRequests.invalidate()

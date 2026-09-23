@@ -114,3 +114,23 @@ test('late draft response from project A cannot overwrite the selected project B
   await expect(page.getByTestId(`draft-management-row-${draftId}`)).toHaveCount(0)
   await expect(page.getByTestId(`draft-management-open-${draftB}`)).toHaveAttribute('href', `/costs/${projectB}/drafts/${draftB}`)
 })
+
+test('query-only project navigation resynchronizes the draft selection and rows', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['cost.manage'] })]
+  const projectB = '10000000-0000-4000-8000-000000000060'
+  const draftB = '30000000-0000-4000-8000-000000000062'
+  await page.route('**/api/companies/**/project-cost-drafts/metadata', route => route.fulfill({ json: { ...metadata, projects: [...metadata.projects, { id: projectB, code: 'DA-C1-02', name: 'Dự án B' }] } }))
+  await page.route(`**/api/companies/**/projects/${projectId}/project-cost-drafts/operations`, route => route.fulfill({ json: [operationalDraft] }))
+  await page.route(`**/api/companies/**/projects/${projectB}/project-cost-drafts/operations`, route => route.fulfill({ json: [{ ...operationalDraft, id: draftB, projectId: projectB, description: 'Draft project B' }] }))
+
+  await page.goto(`/cost-drafts?projectId=${projectId}`)
+  await expect(page.getByTestId(`draft-management-row-${draftId}`)).toBeVisible()
+  await page.evaluate(async (path) => {
+    const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $router?: { push(target: string): Promise<unknown> } } } } }
+    await root.__vue_app__?.config.globalProperties.$router?.push(path)
+  }, `/cost-drafts?projectId=${projectB}`)
+
+  await expect(page.getByTestId('draft-project-select')).toHaveValue(projectB)
+  await expect(page.getByTestId(`draft-management-row-${draftB}`)).toContainText('Draft project B')
+  await expect(page.getByTestId(`draft-management-row-${draftId}`)).toHaveCount(0)
+})
