@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { describe, expect, it, vi } from 'vitest'
 import {
   createProjectCostDraftInputSchema,
   updateProjectCostDraftInputSchema,
   prepareProjectCostFinancialsInputSchema,
+  prepareProjectCostFinancialDetailInputSchema,
   publishProjectCostInputSchema,
   correctPublishedProjectCostInputSchema,
   projectCostDraftSchema,
@@ -12,6 +14,28 @@ import {
   recordSubcontractPaymentInputSchema,
   voidSubcontractPaymentInputSchema,
 } from '../../../shared/schemas/costs/project-finance-writes'
+import { resolveAccessMiddlewareDecision } from '../../../app/middleware/access.global'
+
+vi.hoisted(() => {
+  vi.stubGlobal('defineNuxtRouteMiddleware', <T>(middleware: T) => middleware)
+})
+
+const draftPageSource = readFileSync(
+  new URL('../../../app/pages/costs/[projectId]/drafts/[draftId].vue', import.meta.url),
+  'utf8',
+)
+const publishedOverviewPageSource = readFileSync(
+  new URL('../../../app/pages/costs/[projectId]/index.vue', import.meta.url),
+  'utf8',
+)
+const financialDetailEditorSource = readFileSync(
+  new URL('../../../app/components/costs/ProjectCostFinancialDetailEditor.vue', import.meta.url),
+  'utf8',
+)
+const correctionModalSource = readFileSync(
+  new URL('../../../app/components/costs/ProjectCostCorrectionModal.vue', import.meta.url),
+  'utf8',
+)
 
 describe('C1 Accounting Write UI contracts and workflows', () => {
   const sampleUuid = (n: number) => `c1070000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -358,6 +382,169 @@ describe('C1 Accounting Write UI contracts and workflows', () => {
       expect(canRecordCash(cashier)).toBe(true)
       expect(canMutateOperationalDraft(cashier)).toBe(false)
       expect(canPublish(cashier)).toBe(false)
+    })
+  })
+
+  describe('F-UI1 — Independent Draft UI Capabilities & Decoupled Access', () => {
+    it('declares requiredAnyPermissions on draft workbench and does not couple cost.read', () => {
+      expect(draftPageSource).toMatch(/definePageMeta\(\{\s*requiredAnyPermissions:\s*\['cost\.manage',\s*'cost\.prepare'\]\s*\}\)/)
+      expect(draftPageSource).not.toMatch(/definePageMeta\(\{\s*requiredPermission:\s*'cost\.read'/)
+    })
+
+    it('preserves cost.read on the published project costs overview page', () => {
+      expect(publishedOverviewPageSource).toMatch(/definePageMeta\(\{\s*requiredPermission:\s*'cost\.read'\s*\}\)/)
+    })
+
+    function evaluateRouteAccess(path: string, permissions: string[], meta: Record<string, unknown>) {
+      return resolveAccessMiddlewareDecision(
+        { path, fullPath: path, query: {}, meta },
+        {
+          lifecycle: 'authenticated',
+          companies: [{ companyId: 'company-1' }],
+          activeCompanyId: 'company-1',
+          permissions,
+        },
+      )
+    }
+
+    it('allows actor with cost.manage without cost.read to access draft workbench route', () => {
+      const decision = evaluateRouteAccess(
+        '/costs/p1/drafts/d1',
+        ['cost.manage'],
+        { requiredAnyPermissions: ['cost.manage', 'cost.prepare'] },
+      )
+      expect(decision).toEqual({ type: 'allow' })
+    })
+
+    it('allows actor with cost.prepare without cost.read to access draft workbench route', () => {
+      const decision = evaluateRouteAccess(
+        '/costs/p1/drafts/d1',
+        ['cost.prepare'],
+        { requiredAnyPermissions: ['cost.manage', 'cost.prepare'] },
+      )
+      expect(decision).toEqual({ type: 'allow' })
+    })
+
+    it('denies actor with neither cost.manage nor cost.prepare from draft workbench route', () => {
+      const decision = evaluateRouteAccess(
+        '/costs/p1/drafts/d1',
+        ['cost.source.read'],
+        { requiredAnyPermissions: ['cost.manage', 'cost.prepare'] },
+      )
+      expect(decision).toEqual({ type: 'redirect', to: '/forbidden' })
+    })
+
+    it('denies actor with only cost.manage from published overview page requiring cost.read', () => {
+      const decision = evaluateRouteAccess(
+        '/costs/p1',
+        ['cost.manage'],
+        { requiredPermission: 'cost.read' },
+      )
+      expect(decision).toEqual({ type: 'redirect', to: '/forbidden' })
+    })
+
+    it('allows actor with cost.read to open published overview page', () => {
+      const decision = evaluateRouteAccess(
+        '/costs/p1',
+        ['cost.read'],
+        { requiredPermission: 'cost.read' },
+      )
+      expect(decision).toEqual({ type: 'allow' })
+    })
+  })
+
+  describe('F-UI2 — Canonical detailKind Options', () => {
+    it('renders only opening_balance and line_item options in FinancialDetailEditor', () => {
+      const selectBlock = financialDetailEditorSource.match(/data-testid="line-kind-select"[\s\S]*?<\/select>/)?.[0] ?? ''
+      expect(selectBlock).toContain('<option value="line_item">Dòng chi tiết (line_item)</option>')
+      expect(selectBlock).toContain('<option value="opening_balance">Số dư / giá trị mở đầu (opening_balance)</option>')
+
+      expect(selectBlock).not.toContain('value="milestone"')
+      expect(selectBlock).not.toContain('value="adjustment"')
+      expect(selectBlock).not.toContain('value="tax"')
+      expect(selectBlock).not.toContain('value="other"')
+    })
+
+    it('renders only opening_balance and line_item options in ProjectCostCorrectionModal', () => {
+      const selectBlock = correctionModalSource.match(/<select v-model="line\.detailKind"[\s\S]*?<\/select>/)?.[0] ?? ''
+      expect(selectBlock).toContain('<option value="line_item">Dòng chi tiết (line_item)</option>')
+      expect(selectBlock).toContain('<option value="opening_balance">Số dư / giá trị mở đầu (opening_balance)</option>')
+
+      expect(selectBlock).not.toContain('value="milestone"')
+      expect(selectBlock).not.toContain('value="adjustment"')
+      expect(selectBlock).not.toContain('value="tax"')
+      expect(selectBlock).not.toContain('value="other"')
+    })
+
+    it('validates opening_balance through shared Zod schema', () => {
+      const openingBalanceLine = {
+        lineNo: 1,
+        detailKind: 'opening_balance' as const,
+        description: 'Số dư chuyển giao kỳ trước',
+        amount: '12000000.0000',
+        retentionKind: null,
+        retentionRateBps: null,
+        retentionAmount: null,
+      }
+      const parsed = prepareProjectCostFinancialDetailInputSchema.safeParse(openingBalanceLine)
+      expect(parsed.success).toBe(true)
+    })
+
+    it('validates line_item through shared Zod schema', () => {
+      const lineItem = {
+        lineNo: 1,
+        detailKind: 'line_item' as const,
+        description: 'Cát đầm móng',
+        amount: '5000000.0000',
+        retentionKind: null,
+        retentionRateBps: null,
+        retentionAmount: null,
+      }
+      const parsed = prepareProjectCostFinancialDetailInputSchema.safeParse(lineItem)
+      expect(parsed.success).toBe(true)
+    })
+
+    it('rejects unsupported detailKind literals in shared Zod schema', () => {
+      const unsupportedLine = {
+        lineNo: 1,
+        detailKind: 'milestone',
+        description: 'Mốc 1',
+        amount: '5000000.0000',
+        retentionKind: null,
+        retentionRateBps: null,
+        retentionAmount: null,
+      }
+      expect(prepareProjectCostFinancialDetailInputSchema.safeParse(unsupportedLine).success).toBe(false)
+    })
+  })
+
+  describe('F-UI3 — Never Erase Published Source Provenance', () => {
+    it('disables financial correction in modal due to missing backend source provenance API', () => {
+      expect(correctionModalSource).toContain('disabled')
+      expect(correctionModalSource).toContain('toggle-fin-changes')
+      expect(correctionModalSource).toContain('financialCorrectionDisabledReason')
+      expect(correctionModalSource).toContain('Chưa thể hiệu chỉnh tài chính an toàn vì API hiện tại chưa cung cấp đầy đủ liên kết số liệu nguồn của bản ghi đã phát hành.')
+    })
+
+    it('does NOT construct or submit sourceFigureIds: [] in correction payload', () => {
+      expect(correctionModalSource).not.toContain('sourceFigureIds: []')
+    })
+
+    it('preserves operational-only correction capability on published costs', () => {
+      const operationalCorrection = {
+        expectedVersion: 2,
+        reason: 'Sửa lỗi chính tả mô tả hạng mục thanh toán',
+        operationalChanges: {
+          description: 'Mô tả đã được sửa đúng quy chuẩn',
+          workStatus: 'accepted' as const,
+        },
+      }
+      const parsed = correctPublishedProjectCostInputSchema.safeParse(operationalCorrection)
+      expect(parsed.success).toBe(true)
+      if (parsed.success) {
+        expect(parsed.data.financialChanges).toBeUndefined()
+        expect(parsed.data.operationalChanges?.description).toBe('Mô tả đã được sửa đúng quy chuẩn')
+      }
     })
   })
 })

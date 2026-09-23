@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import type {
-  PrepareProjectCostFinancialDetailInput,
-  ProjectCostDetailKind,
-  ProjectCostRetentionKind,
-} from '../../../shared/schemas/costs/project-costs'
+import type { ProjectCostDetailKind } from '../../../shared/schemas/costs/project-costs'
 import type { FinanceCategoryRow } from '../../../shared/schemas/costs/project-finance'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
 
@@ -53,6 +49,7 @@ const isOpen = computed({
 const submitting = ref(false)
 const loadingDetails = ref(false)
 const errorMessage = ref<string | null>(null)
+const financialCorrectionDisabledReason = 'Chưa thể hiệu chỉnh tài chính an toàn vì API hiện tại chưa cung cấp đầy đủ liên kết số liệu nguồn của bản ghi đã phát hành.'
 
 const reason = ref('')
 const includeOperational = ref(false)
@@ -145,7 +142,7 @@ function addFinancialLine() {
 
 function removeFinancialLine(index: number) {
   financialLines.value.splice(index, 1)
-  financialLines.value.forEach((l, i) => {
+  financialLines.value.forEach((l: EditableCorrectionLine, i: number) => {
     l.lineNo = i + 1
   })
 }
@@ -161,27 +158,14 @@ async function handleCorrect() {
     return
   }
 
-  if (!includeOperational.value && !includeFinancial.value) {
-    errorMessage.value = 'Vui lòng chọn ít nhất một nội dung điều chỉnh (vận hành hoặc tài chính).'
-    return
-  }
-
-  if (includeFinancial.value && financialLines.value.length === 0) {
-    errorMessage.value = 'Điều chỉnh tài chính cần có ít nhất một dòng chi tiết.'
-    return
-  }
-
   if (includeFinancial.value) {
-    for (const l of financialLines.value) {
-      if (!l.description.trim()) {
-        errorMessage.value = `Dòng #${l.lineNo}: Mô tả không được để trống.`
-        return
-      }
-      if (!l.amount || !/^\d+(\.\d{1,4})?$/u.test(l.amount)) {
-        errorMessage.value = `Dòng #${l.lineNo}: Số tiền không hợp lệ.`
-        return
-      }
-    }
+    errorMessage.value = financialCorrectionDisabledReason
+    return
+  }
+
+  if (!includeOperational.value) {
+    errorMessage.value = 'Vui lòng chọn nội dung điều chỉnh vận hành.'
+    return
   }
 
   submitting.value = true
@@ -197,11 +181,6 @@ async function handleCorrect() {
         businessReference?: string | null
         relevantDate?: string | null
       }
-      financialChanges?: {
-        currencyCode: string
-        details: PrepareProjectCostFinancialDetailInput[]
-        sourceFigureIds: string[]
-      }
     } = {
       expectedVersion: props.currentVersion,
       reason: reason.value.trim(),
@@ -213,28 +192,6 @@ async function handleCorrect() {
         workStatus: operational.workStatus,
         businessReference: operational.businessReference.trim() || null,
         relevantDate: operational.relevantDate || null,
-      }
-    }
-
-    if (includeFinancial.value) {
-      payload.financialChanges = {
-        currencyCode: props.currencyCode,
-        details: financialLines.value.map(l => ({
-          lineNo: l.lineNo,
-          detailKind: l.detailKind,
-          description: l.description.trim(),
-          quantity: l.quantity.trim() || null,
-          unitCode: l.unitCode.trim() || null,
-          unitPrice: l.unitPrice.trim() || null,
-          amount: l.amount.trim(),
-          retentionKind: (l.retentionKind || null) as ProjectCostRetentionKind | null,
-          retentionRateBps: l.retentionRateBps != null && l.retentionRateBps !== ('' as unknown as number) ? Number(l.retentionRateBps) : null,
-          retentionAmount: l.retentionAmount.trim() || null,
-          relevantDate: l.relevantDate || null,
-          reference: l.reference.trim() || null,
-          note: l.note.trim() || null,
-        })),
-        sourceFigureIds: [],
       }
     }
 
@@ -311,15 +268,25 @@ async function handleCorrect() {
         </div>
 
         <!-- Checkbox Options -->
-        <div class="flex items-center gap-6 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+        <div class="space-y-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
           <label class="flex items-center gap-2 text-xs font-semibold cursor-pointer">
             <input v-model="includeOperational" type="checkbox" data-testid="toggle-op-changes">
             <span>Điều chỉnh thông tin vận hành</span>
           </label>
-          <label class="flex items-center gap-2 text-xs font-semibold cursor-pointer">
-            <input v-model="includeFinancial" type="checkbox" data-testid="toggle-fin-changes">
-            <span>Điều chỉnh chi tiết tài chính</span>
-          </label>
+          <div class="space-y-1">
+            <label class="flex items-center gap-2 text-xs font-semibold cursor-not-allowed opacity-60">
+              <input
+                v-model="includeFinancial"
+                type="checkbox"
+                disabled
+                data-testid="toggle-fin-changes"
+              >
+              <span>Điều chỉnh chi tiết tài chính</span>
+            </label>
+            <p class="text-[11px] text-amber-600 dark:text-amber-400 pl-5" data-testid="financial-correction-disabled-notice">
+              {{ financialCorrectionDisabledReason }}
+            </p>
+          </div>
         </div>
 
         <!-- Operational Changes Section -->
@@ -417,11 +384,8 @@ async function handleCorrect() {
                 <div>
                   <label class="text-[11px] text-gray-500">Loại dòng</label>
                   <select v-model="line.detailKind" class="cockpit-select w-full">
-                    <option value="line_item">Hạng mục (line_item)</option>
-                    <option value="milestone">Mốc (milestone)</option>
-                    <option value="adjustment">Điều chỉnh (adjustment)</option>
-                    <option value="tax">Thuế (tax)</option>
-                    <option value="other">Khác (other)</option>
+                    <option value="line_item">Dòng chi tiết (line_item)</option>
+                    <option value="opening_balance">Số dư / giá trị mở đầu (opening_balance)</option>
                   </select>
                 </div>
               </div>
@@ -442,7 +406,7 @@ async function handleCorrect() {
             color="primary"
             icon="i-lucide-file-pen"
             :loading="submitting"
-            :disabled="!reason.trim() || (!includeOperational && !includeFinancial)"
+            :disabled="!reason.trim() || !includeOperational"
             data-testid="confirm-correction-btn"
             @click="handleCorrect"
           >
