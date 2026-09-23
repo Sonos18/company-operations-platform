@@ -50,7 +50,46 @@ const emit = defineEmits<{
   'update:pageSize': [value: 25 | 50 | 100]
   'change-page': [newPage: number]
   'clear-filters': []
+  'payment-mutated': []
 }>()
+
+import SubcontractPaymentRecordModal from './SubcontractPaymentRecordModal.vue'
+import SubcontractPaymentVoidModal from './SubcontractPaymentVoidModal.vue'
+
+const companyAccess = useNuxtApp().$companyAccessStore
+const canRecordCash = computed(() => companyAccess.hasPermission('cost.record_cash'))
+
+const isRecordModalOpen = ref(false)
+const isVoidModalOpen = ref(false)
+const selectedPaymentToVoid = ref<{ id: string; version: number; description: string; paidAmount: string; currencyCode?: string } | null>(null)
+const replacesPaymentId = ref<string | null>(null)
+
+const activeContract = computed(() => {
+  if (!props.detail) return null
+  if ('contract' in props.detail) return props.detail.contract
+  return props.detail.contracts?.[0] ?? null
+})
+
+const projectId = computed(() => props.detail?.project.projectId ?? '')
+
+function openRecordPaymentModal() {
+  replacesPaymentId.value = null
+  isRecordModalOpen.value = true
+}
+
+function openVoidModal(payment: { id: string; version: number; description: string; paidAmount: string }) {
+  selectedPaymentToVoid.value = { ...payment, currencyCode: props.currencyCode }
+  isVoidModalOpen.value = true
+}
+
+function openReplacementModal(paymentId: string) {
+  replacesPaymentId.value = paymentId
+  isRecordModalOpen.value = true
+}
+
+function onPaymentMutated() {
+  emit('payment-mutated')
+}
 
 const pagination = computed(() => props.detail?.payments.pagination ?? null)
 
@@ -121,11 +160,24 @@ function onPageSizeChange(event: Event) {
             {{ detail.contract.contractName }}
           </div>
         </div>
-        <div class="contractor-total-badge">
-          <span class="label">Tổng chi/ứng đã ghi nhận:</span>
-          <span class="value font-mono font-bold" data-testid="ledger-full-total">
-            {{ formatFinanceMoney(pagination?.fullAmount ?? detail.payments.recordedTotal, currencyCode, moneyScale) }}
-          </span>
+        <div class="flex items-center gap-2">
+          <div class="contractor-total-badge">
+            <span class="label">Tổng chi/ứng đã ghi nhận:</span>
+            <span class="value font-mono font-bold" data-testid="ledger-full-total">
+              {{ formatFinanceMoney(pagination?.fullAmount ?? detail.payments.recordedTotal, currencyCode, moneyScale) }}
+            </span>
+          </div>
+
+          <UButton
+            v-if="canRecordCash && activeContract"
+            size="sm"
+            color="primary"
+            icon="i-lucide-plus"
+            data-testid="open-record-payment-btn"
+            @click="openRecordPaymentModal"
+          >
+            Ghi nhận thanh toán
+          </UButton>
         </div>
       </div>
 
@@ -319,6 +371,9 @@ function onPageSizeChange(event: Event) {
               <th scope="col" class="col-ref">
                 Tham chiếu & Ghi chú
               </th>
+              <th scope="col" class="col-actions text-center">
+                Trạng thái & Thao tác
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -359,6 +414,41 @@ function onPageSizeChange(event: Event) {
                   <span v-if="p.reference" class="font-mono text-xs ref-badge">{{ p.reference }}</span>
                   <p v-if="p.note" class="row-note text-xs text-muted">{{ p.note }}</p>
                   <span v-if="!p.reference && !p.note" class="text-muted">—</span>
+                </div>
+              </td>
+              <td class="col-actions text-center">
+                <div class="flex items-center justify-center gap-1.5 flex-wrap">
+                  <span
+                    class="cockpit-badge text-[11px]"
+                    :class="p.recordStatus === 'voided' ? 'cockpit-badge--error' : 'cockpit-badge--success'"
+                    :data-testid="`payment-status-${p.id}`"
+                  >
+                    {{ p.recordStatus === 'voided' ? 'Đã hủy' : 'Đã ghi nhận' }}
+                  </span>
+
+                  <UButton
+                    v-if="p.recordStatus === 'recorded' && canRecordCash"
+                    size="xs"
+                    color="error"
+                    variant="ghost"
+                    icon="i-lucide-ban"
+                    :data-testid="`void-payment-btn-${p.id}`"
+                    @click="openVoidModal(p)"
+                  >
+                    Hủy
+                  </UButton>
+
+                  <UButton
+                    v-if="p.recordStatus === 'voided' && canRecordCash"
+                    size="xs"
+                    color="primary"
+                    variant="outline"
+                    icon="i-lucide-replace"
+                    :data-testid="`replace-payment-btn-${p.id}`"
+                    @click="openReplacementModal(p.id)"
+                  >
+                    Thay thế
+                  </UButton>
                 </div>
               </td>
             </tr>
@@ -421,6 +511,28 @@ function onPageSizeChange(event: Event) {
         </div>
       </div>
     </template>
+
+    <!-- Subcontract Payment Modals -->
+    <SubcontractPaymentRecordModal
+      v-if="activeContract"
+      v-model:open="isRecordModalOpen"
+      :project-id="projectId"
+      :subcontract-id="activeContract.id"
+      :expected-subcontract-version="activeContract.version"
+      :currency-code="currencyCode"
+      :replaces-payment-id="replacesPaymentId"
+      @recorded="onPaymentMutated"
+    />
+
+    <SubcontractPaymentVoidModal
+      v-if="activeContract && selectedPaymentToVoid"
+      v-model:open="isVoidModalOpen"
+      :project-id="projectId"
+      :subcontract-id="activeContract.id"
+      :payment="selectedPaymentToVoid"
+      @voided="onPaymentMutated"
+      @start-replacement="openReplacementModal"
+    />
   </div>
 </template>
 
