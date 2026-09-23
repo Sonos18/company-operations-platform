@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { ProjectCostDraft, ProjectCostOperationalDraft } from '../../../../../shared/schemas/costs/project-costs'
 import type { FinanceOverview } from '../../../../../shared/schemas/costs/project-finance'
 import { extractErrorMessage } from '../../../../utils/costs/accounting-error-mapper'
+import { mapCostsApiError } from '../../../../utils/costs/costs-error-mapper'
 import ProjectCostDraftOperationsForm from '../../../../components/costs/ProjectCostDraftOperationsForm.vue'
 import ProjectCostFinancialDetailEditor from '../../../../components/costs/ProjectCostFinancialDetailEditor.vue'
 import ProjectCostPublishReadinessPanel from '../../../../components/costs/ProjectCostPublishReadinessPanel.vue'
@@ -108,16 +109,16 @@ async function loadData() {
     status.value = 'ready'
   }
   catch (err: unknown) {
-    const msg = extractErrorMessage(err)
-    if (typeof err === 'object' && err !== null && 'statusCode' in err && (err as { statusCode: number }).statusCode === 404) {
+    const mapped = mapCostsApiError(err)
+    if (mapped === 'not_found') {
       status.value = 'not_found'
     }
-    else if (typeof err === 'object' && err !== null && 'statusCode' in err && (err as { statusCode: number }).statusCode === 403) {
+    else if (mapped === 'permission') {
       status.value = 'permission'
     }
     else {
       status.value = 'error'
-      errorMessage.value = msg
+      errorMessage.value = extractErrorMessage(err)
     }
   }
   finally {
@@ -175,7 +176,7 @@ watch(
     </div>
 
     <!-- Error State -->
-    <div v-else-if="status === 'error'" class="state-panel cockpit-card p-8 text-center space-y-3" role="alert">
+    <div v-else-if="status === 'error'" class="state-panel cockpit-card p-8 text-center space-y-3" role="alert" data-testid="draft-generic-error">
       <UIcon name="i-lucide-circle-alert" class="text-3xl text-red-500 mx-auto" />
       <h2 class="text-base font-semibold">Không thể tải bản nháp chi phí</h2>
       <p class="text-xs text-gray-500 max-w-md mx-auto">{{ errorMessage || 'Đã xảy ra lỗi khi tải từ máy chủ.' }}</p>
@@ -185,7 +186,7 @@ watch(
     </div>
 
     <!-- Not Found State -->
-    <div v-else-if="status === 'not_found'" class="state-panel cockpit-card p-8 text-center space-y-3">
+    <div v-else-if="status === 'not_found'" class="state-panel cockpit-card p-8 text-center space-y-3" data-testid="draft-not-found">
       <UIcon name="i-lucide-file-question" class="text-3xl text-amber-500 mx-auto" />
       <h2 class="text-base font-semibold">Bản nháp không tồn tại</h2>
       <p class="text-xs text-gray-500 max-w-md mx-auto">
@@ -199,7 +200,7 @@ watch(
     </div>
 
     <!-- Permission State -->
-    <div v-else-if="status === 'permission'" class="state-panel cockpit-card p-8 text-center space-y-3">
+    <div v-else-if="status === 'permission'" class="state-panel cockpit-card p-8 text-center space-y-3" data-testid="draft-permission-denied">
       <UIcon name="i-lucide-shield-alert" class="text-3xl text-red-500 mx-auto" />
       <h2 class="text-base font-semibold">Không có quyền truy cập bản nháp</h2>
       <p class="text-xs text-gray-500 max-w-md mx-auto">

@@ -14,7 +14,10 @@ import {
   recordSubcontractPaymentInputSchema,
   voidSubcontractPaymentInputSchema,
 } from '../../../shared/schemas/costs/project-finance-writes'
+import { financeSubcontractorDetailSchema } from '../../../shared/schemas/costs/project-finance'
 import { resolveAccessMiddlewareDecision } from '../../../app/middleware/access.global'
+import { ClientError } from '../../../app/errors/client-error'
+import { mapCostsApiError } from '../../../app/utils/costs/costs-error-mapper'
 
 vi.hoisted(() => {
   vi.stubGlobal('defineNuxtRouteMiddleware', <T>(middleware: T) => middleware)
@@ -34,6 +37,14 @@ const financialDetailEditorSource = readFileSync(
 )
 const correctionModalSource = readFileSync(
   new URL('../../../app/components/costs/ProjectCostCorrectionModal.vue', import.meta.url),
+  'utf8',
+)
+const paymentRecordModalSource = readFileSync(
+  new URL('../../../app/components/costs/SubcontractPaymentRecordModal.vue', import.meta.url),
+  'utf8',
+)
+const subcontractLedgerSource = readFileSync(
+  new URL('../../../app/components/costs/ProjectCostSubcontractLedger.vue', import.meta.url),
   'utf8',
 )
 
@@ -574,6 +585,183 @@ describe('C1 Accounting Write UI contracts and workflows', () => {
       expect(correctionModalSource).not.toMatch(/currentOperational\.businessReference\s*\?\?\s*null/)
       expect(correctionModalSource).not.toMatch(/currentOperational\.relevantDate\s*\?\?\s*null/)
       expect(correctionModalSource).not.toMatch(/currentOperational\.workStatus\s*\?\?\s*null/)
+    })
+  })
+
+  describe('C18 Findings Regression Suite', () => {
+    describe('C18-F1 — Gate payment evidence on cost.prepare', () => {
+      it('SubcontractPaymentRecordModal gates evidence capability on cost.prepare', () => {
+        expect(paymentRecordModalSource).toContain("hasPermission('cost.prepare')")
+        expect(paymentRecordModalSource).toContain('canPrepareEvidence')
+        expect(paymentRecordModalSource).toContain('Cần quyền cost.prepare để tải lên chứng từ thanh toán.')
+        expect(paymentRecordModalSource).toContain('data-testid="pay-evidence-permission-notice"')
+      })
+
+      it('does not upload evidence when canPrepareEvidence is false', () => {
+        expect(paymentRecordModalSource).toContain('if (canPrepareEvidence.value && selectedEvidenceFile.value)')
+        expect(paymentRecordModalSource).toContain('evidenceFileIds: evidenceFileIds.length > 0 ? evidenceFileIds : undefined')
+      })
+    })
+
+    describe('C18-F2 — Default payment date uses browser local date', () => {
+      it('SubcontractPaymentRecordModal uses localDateInputValue instead of toISOString', () => {
+        expect(paymentRecordModalSource).toContain('localDateInputValue()')
+        expect(paymentRecordModalSource).not.toContain('toISOString().substring(0, 10)')
+      })
+    })
+
+    describe('C18-F3 — Route subcontract actions to correct contracts', () => {
+      it('ProjectCostSubcontractLedger routes void actions using payment.contractId', () => {
+        expect(subcontractLedgerSource).toContain(':subcontract-id="selectedPaymentToVoid.contractId"')
+        expect(subcontractLedgerSource).toContain('openVoidModal(payment: { id: string; contractId: string')
+      })
+
+      it('ProjectCostSubcontractLedger routes replacement actions using payment.contractId', () => {
+        expect(subcontractLedgerSource).toContain('@click="openReplacementModal(p.id, p.contractId)"')
+        expect(subcontractLedgerSource).toContain('openReplacementModal(paymentId: string, contractId?: string)')
+      })
+
+      it('ProjectCostSubcontractLedger requires explicit contract selection for multi-contract party view', () => {
+        expect(subcontractLedgerSource).toContain('isSelectContractModalOpen')
+        expect(subcontractLedgerSource).toContain('select-contract-dropdown')
+        expect(subcontractLedgerSource).toContain('confirm-select-contract-btn')
+        expect(subcontractLedgerSource).toContain(':disabled="availableContracts.length === 0"')
+      })
+
+      it('validates multi-contract party detail schema parsing', () => {
+        const subcontractId2 = '50000000-0000-4000-8000-000000000088'
+        const c1 = {
+          id: sampleUuid(1),
+          code: 'HD-KC-01',
+          contractNo: 'KC-2026-01',
+          contractName: 'Hợp đồng kết cấu thép',
+          contractDate: '2026-08-01',
+          contractValue: '500000000.0000',
+          currencyCode: 'VND',
+          defaultRetentionRateBps: 500,
+          isActive: true,
+          version: 1,
+          paidTotal: '50000000.0000',
+          paidCount: 1,
+          recordedRetentionTotal: '2500000.0000',
+          recordedRetentionRowCount: 1,
+        }
+        const c2 = {
+          id: subcontractId2,
+          code: 'HD-KC-02',
+          contractNo: 'KC-2026-02',
+          contractName: 'Hợp đồng kết cấu thép đợt 2',
+          contractDate: '2026-08-15',
+          contractValue: '300000000.0000',
+          currencyCode: 'VND',
+          defaultRetentionRateBps: 500,
+          isActive: true,
+          version: 2,
+          paidTotal: '30000000.0000',
+          paidCount: 1,
+          recordedRetentionTotal: '1500000.0000',
+          recordedRetentionRowCount: 1,
+        }
+        const parsed = financeSubcontractorDetailSchema.safeParse({
+          schemaVersion: 1,
+          project: {
+            projectId: sampleUuid(2),
+            projectCode: 'DA-C1-01',
+            projectName: 'Dự án Thi công Trung tâm Thương mại',
+            currencyCode: 'VND',
+            moneyScale: 0,
+            timeZone: 'Asia/Ho_Chi_Minh',
+            operationalState: 'active',
+          },
+          party: {
+            partyId: sampleUuid(3),
+            code: 'CT-THEP',
+            displayName: 'Nhà thầu Kết cấu thép',
+            partyKind: 'organization',
+          },
+          contracts: [c1, c2],
+          payments: {
+            rows: [
+              {
+                id: sampleUuid(4),
+                contractId: sampleUuid(1),
+                contractCode: c1.code,
+                contractNo: c1.contractNo,
+                description: 'Thanh toán đợt 1 hợp đồng 1',
+                paidAmount: '50000000.0000',
+                warrantyRetentionAmount: '2500000.0000',
+                retentionRateBps: 500,
+                paymentDate: '2026-08-10',
+                effectiveDate: '2026-08-10',
+                dateSource: 'payment_date',
+                recordStatus: 'recorded',
+                reference: 'PC-01',
+                sourceReference: null,
+                note: null,
+                createdAt: '2026-08-10T08:00:00.000Z',
+                version: 1,
+              },
+            ],
+            pagination: {
+              page: 1,
+              pageSize: 25,
+              totalPages: 1,
+              filteredCount: 1,
+              fullCount: 1,
+              filteredAmount: '50000000.0000',
+              fullAmount: '50000000.0000',
+            },
+            recordedTotal: '50000000.0000',
+            recordedCount: 1,
+            recordedRetentionTotal: '2500000.0000',
+            recordedRetentionRowCount: 1,
+          },
+        })
+        expect(parsed.success).toBe(true)
+      })
+    })
+
+    describe('C18-F4 — Map draft API failures from ClientError.code', () => {
+      it('drafts/[draftId].vue uses mapCostsApiError instead of err.statusCode', () => {
+        expect(draftPageSource).toContain('mapCostsApiError(err)')
+        expect(draftPageSource).not.toContain('statusCode')
+        expect(draftPageSource).toContain('data-testid="draft-not-found"')
+        expect(draftPageSource).toContain('data-testid="draft-permission-denied"')
+      })
+
+      it('mapCostsApiError correctly maps canonical ClientError codes for drafts', () => {
+        const notFoundErr = new ClientError({
+          code: 'RESOURCE_NOT_FOUND',
+          kind: 'api',
+          message: 'Draft not found',
+          retryable: false,
+        })
+        expect(mapCostsApiError(notFoundErr)).toBe('not_found')
+
+        const permissionErr = new ClientError({
+          code: 'PERMISSION_DENIED',
+          kind: 'authorization',
+          message: 'Permission denied',
+          retryable: false,
+        })
+        expect(mapCostsApiError(permissionErr)).toBe('permission')
+
+        const forbiddenErr = new ClientError({
+          code: 'COMPANY_FORBIDDEN',
+          kind: 'authorization',
+          message: 'Company forbidden',
+          retryable: false,
+        })
+        expect(mapCostsApiError(forbiddenErr)).toBe('permission')
+
+        const networkErr = new ClientError({
+          code: 'NETWORK_ERROR',
+          kind: 'network',
+          message: 'Network failed',
+          retryable: true,
+        })
+        expect(mapCostsApiError(networkErr)).toBe('error')
+      })
     })
   })
 })

@@ -51,6 +51,7 @@ export function mapCostsApiError(
     // 2. Missing permissions / wrong company
     if (
       candidate.code === 'PERMISSION_DENIED'
+      || candidate.code === 'COMPANY_FORBIDDEN'
       || candidate.kind === 'authorization'
       || candidate.statusCode === 403
       || candidate.status === 403

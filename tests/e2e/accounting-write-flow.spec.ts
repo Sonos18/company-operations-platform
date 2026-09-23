@@ -4,6 +4,7 @@ import {
   financeItemDetailsSchema,
   financeOverviewSchema,
   financeSubcontractDetailSchema,
+  financeSubcontractorDetailSchema,
   financeSubcontractorListSchema,
 } from '../../shared/schemas/costs/project-finance'
 import {
@@ -925,5 +926,354 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     expect(op?.relevantDate).toBeUndefined()
     expect(op?.businessReference).toBeUndefined()
     expect((fallbackCorrectionPayload as Record<string, unknown>)?.financialChanges).toBeUndefined()
+  })
+
+  test('Flow E — Cash-only without prepare: can record payment, but evidence upload is disabled and omitted', async ({ page, authState }) => {
+    // Setup cash-only permission (cost.record_cash + cost.read, WITHOUT cost.prepare)
+    authState.sessionCompanies = [
+      createCompany({
+        permissions: ['cost.read', 'cost.record_cash'],
+      }),
+    ]
+
+    let recordedPayload: Record<string, unknown> | null = null
+    let uploadIntentCalled = false
+
+    // Mock overview
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => {
+      route.fulfill({ json: mockProjectOverview })
+    })
+
+    // Mock subcontractors list
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/subcontractors`, route => {
+      route.fulfill({ json: mockSubcontractorList })
+    })
+
+    // Mock contract detail
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/subcontracts/${subcontractId}*`, route => {
+      route.fulfill({
+        json: financeSubcontractDetailSchema.parse({
+          schemaVersion: 1 as const,
+          project: mockProjectOverview.project,
+          party: mockSubcontractorList.parties[0]!.party,
+          contract: {
+            ...mockSubcontractorList.parties[0]!.contracts[0]!,
+            reference: 'REF-01',
+            sourceReference: null,
+            note: null,
+            referenceHeadroom: '450000000.0000',
+            referenceHeadroomReason: null,
+          },
+          payments: {
+            rows: [],
+            pagination: {
+              page: 1,
+              pageSize: 25,
+              totalPages: 1,
+              filteredCount: 0,
+              fullCount: 0,
+              filteredAmount: '0.0000',
+              fullAmount: '0.0000',
+            },
+            recordedTotal: '0.0000',
+            recordedCount: 0,
+            recordedRetentionTotal: '0.0000',
+            recordedRetentionRowCount: 0,
+          },
+        }),
+      })
+    })
+
+    // Fail if upload-intent is invoked
+    await page.route(`**/api/companies/**/projects/${projectId}/evidence/upload-intents`, route => {
+      uploadIntentCalled = true
+      route.fulfill({ status: 500, json: { code: 'UNEXPECTED', message: 'Upload intent should not be called' } })
+    })
+
+    // Intercept payment record
+    await page.route(`**/api/companies/**/projects/${projectId}/subcontracts/${subcontractId}/payments`, async route => {
+      recordedPayload = route.request().postDataJSON()
+      route.fulfill({
+        status: 201,
+        json: recordSubcontractPaymentResultSchema.parse({
+          paymentId: paymentId1,
+          version: 2,
+          status: 'recorded',
+          replayed: false,
+        }),
+      })
+    })
+
+    // Navigate to subcontract ledger
+    await page.goto(`/costs/${projectId}/categories/${subcontractCategoryId}?contractId=${subcontractId}`)
+    await expect(page.getByTestId('contractor-ledger-area')).toBeVisible()
+
+    // Open record payment modal
+    await page.getByTestId('open-record-payment-btn').click()
+    await expect(page.getByTestId('record-payment-form')).toBeVisible()
+
+    // Assert evidence permission notice is visible and file input is hidden
+    await expect(page.getByTestId('pay-evidence-permission-notice')).toBeVisible()
+    await expect(page.getByTestId('pay-evidence-file-input')).toHaveCount(0)
+
+    // Fill payment fields
+    await page.getByTestId('pay-description-input').fill('Tạm ứng tiền mặt nhân công')
+    await page.getByTestId('pay-amount-input').fill('20000000')
+
+    // Submit
+    await page.getByTestId('confirm-record-payment-btn').click()
+
+    // Modal closes
+    await expect(page.getByTestId('record-payment-form')).toHaveCount(0)
+
+    // Assert payload does NOT contain evidenceFileIds and no upload intent occurred
+    expect(uploadIntentCalled).toBe(false)
+    expect(recordedPayload).toMatchObject({
+      expectedSubcontractVersion: 1,
+      description: 'Tạm ứng tiền mặt nhân công',
+      paidAmount: '20000000',
+    })
+    expect((recordedPayload as Record<string, unknown>)?.evidenceFileIds).toBeUndefined()
+  })
+
+  test('Flow F — Multi-contract party ledger: routes void and replacement to correct contracts, and requires explicit contract selection for new payment', async ({ page }) => {
+    const subcontractId2 = '50000000-0000-4000-8000-000000000088'
+    let voidEndpointHit = ''
+    let replacementEndpointHit = ''
+    let newPaymentEndpointHit = ''
+    let replacementPayload: Record<string, unknown> | null = null
+
+    const contract1 = mockSubcontractorList.parties[0]!.contracts[0]!
+    const contract2 = {
+      id: subcontractId2,
+      code: 'HD-KC-02',
+      contractNo: 'KC-2026-02',
+      contractName: 'Hợp đồng kết cấu thép đợt 2',
+      contractDate: '2026-08-15',
+      contractValue: '300000000.0000',
+      currencyCode: 'VND',
+      defaultRetentionRateBps: 500,
+      isActive: true,
+      version: 2,
+      paidTotal: '30000000.0000',
+      paidCount: 1,
+      recordedRetentionTotal: '1500000.0000',
+      recordedRetentionRowCount: 1,
+    }
+
+    const paymentRows = [
+      {
+        id: paymentId1,
+        contractId: subcontractId,
+        contractCode: contract1.code,
+        contractNo: contract1.contractNo,
+        description: 'Thanh toán đợt 1 hợp đồng 1',
+        paidAmount: '50000000.0000',
+        warrantyRetentionAmount: '2500000.0000',
+        retentionRateBps: 500,
+        paymentDate: '2026-08-10',
+        effectiveDate: '2026-08-10',
+        dateSource: 'payment_date' as const,
+        recordStatus: 'recorded' as const,
+        reference: 'PC-01',
+        sourceReference: null,
+        note: null,
+        createdAt: '2026-08-10T08:00:00.000Z',
+        version: 1,
+      },
+      {
+        id: paymentId2,
+        contractId: subcontractId2,
+        contractCode: contract2.code,
+        contractNo: contract2.contractNo,
+        description: 'Thanh toán đợt 1 hợp đồng 2',
+        paidAmount: '30000000.0000',
+        warrantyRetentionAmount: '1500000.0000',
+        retentionRateBps: 500,
+        paymentDate: '2026-08-20',
+        effectiveDate: '2026-08-20',
+        dateSource: 'payment_date' as const,
+        recordStatus: 'recorded' as const,
+        reference: 'PC-02',
+        sourceReference: null,
+        note: null,
+        createdAt: '2026-08-20T08:00:00.000Z',
+        version: 1,
+      },
+    ]
+
+    // Mock overview
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => {
+      route.fulfill({ json: mockProjectOverview })
+    })
+
+    // Mock subcontractors list and party ledger details
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/subcontractors**`, route => {
+      const url = route.request().url()
+      if (url.includes(`/subcontractors/${partyId}`)) {
+        route.fulfill({
+          json: financeSubcontractorDetailSchema.parse({
+            schemaVersion: 1 as const,
+            project: mockProjectOverview.project,
+            party: mockSubcontractorList.parties[0]!.party,
+            contracts: [contract1, contract2],
+            payments: {
+              rows: paymentRows,
+              pagination: {
+                page: 1,
+                pageSize: 25,
+                totalPages: 1,
+                filteredCount: 2,
+                fullCount: 2,
+                filteredAmount: '80000000.0000',
+                fullAmount: '80000000.0000',
+              },
+              recordedTotal: '80000000.0000',
+              recordedCount: 2,
+              recordedRetentionTotal: '4000000.0000',
+              recordedRetentionRowCount: 2,
+            },
+          }),
+        })
+      }
+      else {
+        route.fulfill({ json: mockSubcontractorList })
+      }
+    })
+
+    // Intercept void endpoint for Contract 2
+    await page.route(`**/api/companies/**/projects/${projectId}/subcontracts/${subcontractId2}/payments/${paymentId2}/void`, async route => {
+      voidEndpointHit = route.request().url()
+      const p = paymentRows.find(r => r.id === paymentId2)
+      if (p) {
+        p.recordStatus = 'voided'
+        p.version = 2
+      }
+      route.fulfill({
+        status: 200,
+        json: voidSubcontractPaymentResultSchema.parse({
+          paymentId: paymentId2,
+          version: 2,
+          status: 'voided',
+          replayed: false,
+        }),
+      })
+    })
+
+    // Intercept payment record on Contract 2
+    await page.route(`**/api/companies/**/projects/${projectId}/subcontracts/${subcontractId2}/payments`, async route => {
+      const body = route.request().postDataJSON()
+      if (body?.replacesPaymentId) {
+        replacementEndpointHit = route.request().url()
+        replacementPayload = body
+      }
+      else {
+        newPaymentEndpointHit = route.request().url()
+      }
+      route.fulfill({
+        status: 201,
+        json: recordSubcontractPaymentResultSchema.parse({
+          paymentId: '60000000-0000-4000-8000-000000000099',
+          version: 3,
+          status: 'recorded',
+          replayed: false,
+        }),
+      })
+    })
+
+    // 1. Navigate to party-level ledger
+    await page.goto(`/costs/${projectId}/categories/${subcontractCategoryId}?partyId=${partyId}`)
+    await expect(page.getByTestId('contractor-ledger-area')).toBeVisible()
+
+    // 2. Void Payment 2 (which belongs to Contract 2)
+    await page.getByTestId(`void-payment-btn-${paymentId2}`).click()
+    await expect(page.getByTestId('void-reason-input')).toBeVisible()
+    await page.getByTestId('void-reason-input').fill('Hủy do sai thông tin hợp đồng 2')
+    await page.getByTestId('confirm-void-payment-btn').click()
+
+    // 3. Status updates to voided in the ledger, proving void completed
+    await expect(page.getByTestId(`payment-status-${paymentId2}`)).toHaveText('Đã hủy')
+
+    // Assert void endpoint was called on Contract 2 (NOT Contract 1)
+    expect(voidEndpointHit).toContain(`/subcontracts/${subcontractId2}/payments/${paymentId2}/void`)
+    expect(voidEndpointHit).not.toContain(`/subcontracts/${subcontractId}/`)
+
+    // Start replacement for Payment 2
+    const replaceBtn = page.getByTestId(`replace-payment-btn-${paymentId2}`)
+    await expect(replaceBtn).toBeVisible()
+    await replaceBtn.click()
+    await expect(page.getByTestId('record-payment-form')).toBeVisible()
+
+    // Fill replacement payment
+    await page.getByTestId('pay-description-input').fill('Thanh toán thay thế hợp đồng 2')
+    await page.getByTestId('pay-amount-input').fill('28000000')
+    await page.getByTestId('confirm-record-payment-btn').click()
+    await expect(page.getByTestId('record-payment-form')).toHaveCount(0)
+
+    // Assert replacement was recorded against Contract 2 with replacesPaymentId
+    expect(replacementEndpointHit).toContain(`/subcontracts/${subcontractId2}/payments`)
+    expect(replacementPayload).toMatchObject({
+      expectedSubcontractVersion: 2,
+      replacesPaymentId: paymentId2,
+      paidAmount: '28000000',
+    })
+
+    // 4. Record NEW payment in party-level view: must prompt explicit contract selection
+    await page.getByTestId('open-record-payment-btn').click()
+    await expect(page.getByTestId('select-contract-dropdown')).toBeVisible()
+
+    // Select Contract 2 explicitly
+    await page.getByTestId('select-contract-dropdown').selectOption(subcontractId2)
+    await page.getByTestId('confirm-select-contract-btn').click()
+
+    // Record modal opens
+    await expect(page.getByTestId('record-payment-form')).toBeVisible()
+    await page.getByTestId('pay-description-input').fill('Thanh toán mới theo hợp đồng 2')
+    await page.getByTestId('pay-amount-input').fill('15000000')
+    await page.getByTestId('confirm-record-payment-btn').click()
+    await expect(page.getByTestId('record-payment-form')).toHaveCount(0)
+
+    // Assert new payment went to Contract 2
+    expect(newPaymentEndpointHit).toContain(`/subcontracts/${subcontractId2}/payments`)
+  })
+
+  test('Flow G — Draft canonical error states: displays not-found and permission-denied views based on ClientError.code', async ({ page }) => {
+    // 1. Mock 404 with RESOURCE_NOT_FOUND
+    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => {
+      route.fulfill({
+        status: 404,
+        json: {
+          error: {
+            code: 'RESOURCE_NOT_FOUND',
+            message: 'Bản nháp không tồn tại.',
+            requestId: 'req-404',
+            details: {},
+          },
+        },
+      })
+    })
+
+    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
+    await expect(page.getByTestId('draft-not-found')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Bản nháp không tồn tại' })).toBeVisible()
+
+    // 2. Mock 403 with PERMISSION_DENIED
+    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => {
+      route.fulfill({
+        status: 403,
+        json: {
+          error: {
+            code: 'PERMISSION_DENIED',
+            message: 'Không có quyền truy cập bản nháp.',
+            requestId: 'req-403',
+            details: {},
+          },
+        },
+      })
+    })
+
+    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
+    await expect(page.getByTestId('draft-permission-denied')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Không có quyền truy cập bản nháp' })).toBeVisible()
   })
 })
