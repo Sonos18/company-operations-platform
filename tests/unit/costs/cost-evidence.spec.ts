@@ -1,9 +1,11 @@
 import JSZip from 'jszip'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COST_EVIDENCE_MAX_BYTES, costEvidenceCreateIntentInputSchema, costEvidenceMimeTypeSchema, costEvidenceUploadIntentSchema } from '../../../shared/schemas/costs/cost-evidence'
 import { verifyEvidenceBlob } from '../../../server/features/costs/evidence/evidence-file-integrity'
 
 describe('cost evidence contracts', () => {
+  afterEach(() => vi.restoreAllMocks())
+
   it('pins the exact MIME allow-list and 25 MiB boundary', () => {
     expect(costEvidenceMimeTypeSchema.options).toEqual(['application/pdf', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'image/png', 'image/jpeg'])
     const input = { originalFilename: 'invoice.pdf', mimeType: 'application/pdf', sizeBytes: COST_EVIDENCE_MAX_BYTES, sha256: 'a'.repeat(64) }
@@ -55,5 +57,75 @@ describe('cost evidence contracts', () => {
     arbitrary.file('notes.txt', 'not a workbook')
     const invalidBytes = await arbitrary.generateAsync({ type: 'uint8array' })
     await expect(verifyEvidenceBlob(new Blob([invalidBytes], { type: mimeType }), 1024 * 1024, mimeType)).rejects.toMatchObject({ code: 'EVIDENCE_UPLOAD_MISMATCH' })
+  })
+
+  async function xlsx(contentTypes: string, workbookXml: string, extraEntries = 0) {
+    const archive = new JSZip()
+    archive.file('[Content_Types].xml', contentTypes)
+    archive.file('xl/workbook.xml', workbookXml)
+    for (let index = 0; index < extraEntries; index += 1) archive.file(`extra/${index}.txt`, '')
+    return await archive.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 9 } })
+  }
+
+  function forgeCentralDirectorySize(bytes: Uint8Array, targetName: string, uncompressedSize: number) {
+    const forged = bytes.slice()
+    const view = new DataView(forged.buffer, forged.byteOffset, forged.byteLength)
+    const decoder = new TextDecoder()
+    for (let offset = 0; offset + 46 <= forged.byteLength; offset += 1) {
+      if (view.getUint32(offset, true) !== 0x02014b50) continue
+      const nameLength = view.getUint16(offset + 28, true)
+      const extraLength = view.getUint16(offset + 30, true)
+      const commentLength = view.getUint16(offset + 32, true)
+      const name = decoder.decode(forged.subarray(offset + 46, offset + 46 + nameLength))
+      if (name === targetName) {
+        view.setUint32(offset + 24, uncompressedSize, true)
+        return forged
+      }
+      offset += 45 + nameLength + extraLength + commentLength
+    }
+    throw new Error(`ZIP entry not found: ${targetName}`)
+  }
+
+  const xlsxMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  const contentType = '<Types><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>'
+
+  it.each([
+    ['[Content_Types].xml', () => xlsx(`${contentType}${' '.repeat((256 * 1024) + 1)}`, '<workbook/>')],
+    ['xl/workbook.xml', () => xlsx(contentType, `<workbook>${' '.repeat((256 * 1024) + 1)}</workbook>`)],
+  ])('rejects oversized %s before JSZip loads attacker-controlled entries', async (_name, fixture) => {
+    const bytes = await fixture()
+    const load = vi.spyOn(JSZip, 'loadAsync')
+    await expect(verifyEvidenceBlob(new Blob([bytes], { type: xlsxMime }), 1024 * 1024, xlsxMime)).rejects.toMatchObject({ code: 'EVIDENCE_UPLOAD_MISMATCH' })
+    expect(load).not.toHaveBeenCalled()
+  })
+
+  it('rejects excessive archive entries before JSZip metadata allocation', async () => {
+    const bytes = await xlsx(contentType, '<workbook/>', 1024)
+    const load = vi.spyOn(JSZip, 'loadAsync')
+    await expect(verifyEvidenceBlob(new Blob([bytes], { type: xlsxMime }), 1024 * 1024, xlsxMime)).rejects.toMatchObject({ code: 'EVIDENCE_UPLOAD_MISMATCH' })
+    expect(load).not.toHaveBeenCalled()
+  })
+
+  it('rejects a highly compressed metadata entry before inflation', async () => {
+    const bytes = await xlsx(`${contentType}${' '.repeat(128 * 1024)}`, '<workbook/>')
+    expect(bytes.byteLength).toBeLessThan(8 * 1024)
+    const load = vi.spyOn(JSZip, 'loadAsync')
+    await expect(verifyEvidenceBlob(new Blob([bytes], { type: xlsxMime }), 1024 * 1024, xlsxMime)).rejects.toMatchObject({ code: 'EVIDENCE_UPLOAD_MISMATCH' })
+    expect(load).not.toHaveBeenCalled()
+  })
+
+  it('caps actual metadata expansion when the central directory understates the size', async () => {
+    const bytes = await xlsx(`${contentType}${' '.repeat(512 * 1024)}`, '<workbook/>')
+    const forged = forgeCentralDirectorySize(bytes, '[Content_Types].xml', 1024)
+    const load = JSZip.loadAsync.bind(JSZip)
+    let fullInflation: ReturnType<typeof vi.spyOn> | undefined
+    vi.spyOn(JSZip, 'loadAsync').mockImplementation(async (input, options) => {
+      const archive = await load(input, options)
+      fullInflation = vi.spyOn(archive.file('[Content_Types].xml')!, 'async')
+      return archive
+    })
+    await expect(verifyEvidenceBlob(new Blob([forged], { type: xlsxMime }), 1024 * 1024, xlsxMime)).rejects.toMatchObject({ code: 'EVIDENCE_UPLOAD_MISMATCH' })
+    expect(fullInflation).toBeDefined()
+    expect(fullInflation).not.toHaveBeenCalled()
   })
 })

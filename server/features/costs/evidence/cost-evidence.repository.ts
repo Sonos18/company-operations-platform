@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { COST_EVIDENCE_MAX_BYTES, costEvidenceFinalizedSchema, costEvidenceIntentAckSchema, costEvidenceLinkResultSchema, costEvidenceMetadataSchema, costEvidenceReadUrlSchema, costEvidenceUploadIntentSchema, type CostEvidenceCreateIntentInput, type CostEvidenceFinalizeInput, type CostEvidenceLinkInput, type CostEvidenceReadUrlInput } from '../../../../shared/schemas/costs/cost-evidence'
 import { AppApiError } from '../../../utils/api-error'
-import type { UserSupabaseClient } from '../../../utils/supabase-client'
+import type { SupabaseEvidenceFinalizer, UserSupabaseClient } from '../../../utils/supabase-client'
 import { verifyEvidenceBlob } from './evidence-file-integrity'
 
 type Result = { data: unknown; error: unknown }
@@ -11,7 +11,7 @@ interface Bucket {
   createSignedUrl(path: string, expiresIn: number, options?: { download?: string | boolean }): Promise<Result>
 }
 interface Client { rpc(name: string, args: Record<string, unknown>): Promise<Result>; from(table: string): Query; storage: { from(bucket: string): Bucket } }
-export interface CostEvidenceContext { tenantId: string; companyId: string; requestId: string }
+export interface CostEvidenceContext { actorId: string; tenantId: string; companyId: string; requestId: string }
 
 const pendingFileSchema = z.object({ bucket_id: z.string(), object_path: z.string(), declared_mime_type: z.string(), declared_size_bytes: z.number().int(), declared_sha256: z.string() }).passthrough()
 const readTargetSchema = z.object({ bucketId: z.string(), objectPath: z.string() }).strict()
@@ -33,7 +33,12 @@ function rpcError(error: unknown): never {
 
 export class CostEvidenceRepository {
   private readonly client: Client
-  constructor(client: UserSupabaseClient) { this.client = client as unknown as Client }
+  constructor(client: UserSupabaseClient, private readonly finalizer?: SupabaseEvidenceFinalizer) { this.client = client as unknown as Client }
+
+  private finalizeEvidence(context: CostEvidenceContext, evidenceFileId: string, input: Record<string, unknown>, idempotencyKey: string) {
+    if (!this.finalizer) return fail('Dịch vụ hoàn tất chứng từ chưa được cấu hình.')
+    return this.finalizer.finalize({ target_actor_id: context.actorId, target_company_id: context.companyId, target_id: evidenceFileId, target_input: input, target_idempotency_key: idempotencyKey, target_request_id: context.requestId })
+  }
 
   async createIntent(context: CostEvidenceContext, projectId: string, input: CostEvidenceCreateIntentInput, idempotencyKey: string) {
     const response = await this.client.rpc('c1_create_cost_evidence_intent', { target_company_id: context.companyId, target_project_id: projectId, target_input: input, target_idempotency_key: idempotencyKey, target_request_id: context.requestId })
@@ -48,7 +53,7 @@ export class CostEvidenceRepository {
     if (lookup.error) return rpcError(lookup.error)
     const file = pendingFileSchema.safeParse(lookup.data)
     if (!file.success) {
-      const replay = await this.client.rpc('c1_finalize_cost_evidence', { target_company_id: context.companyId, target_id: evidenceFileId, target_input: input, target_idempotency_key: idempotencyKey, target_request_id: context.requestId })
+      const replay = await this.finalizeEvidence(context, evidenceFileId, input, idempotencyKey)
       if (replay.error) return rpcError(replay.error)
       const result = costEvidenceFinalizedSchema.safeParse(replay.data)
       return result.success ? result.data : fail('Phản hồi hoàn tất chứng từ không hợp lệ.')
@@ -57,7 +62,7 @@ export class CostEvidenceRepository {
     if (downloaded.error || !(downloaded.data instanceof Blob)) throw new AppApiError(409, 'EVIDENCE_UPLOAD_MISMATCH', 'Không thể xác minh tệp tải lên.')
     const identity = await verifyEvidenceBlob(downloaded.data, COST_EVIDENCE_MAX_BYTES, file.data.declared_mime_type)
     if (downloaded.data.type !== file.data.declared_mime_type || identity.sizeBytes !== file.data.declared_size_bytes || identity.sha256 !== file.data.declared_sha256) throw new AppApiError(409, 'EVIDENCE_UPLOAD_MISMATCH', 'Tệp tải lên không khớp với khai báo.')
-    const response = await this.client.rpc('c1_finalize_cost_evidence', { target_company_id: context.companyId, target_id: evidenceFileId, target_input: { expectedVersion: input.expectedVersion, ...identity }, target_idempotency_key: idempotencyKey, target_request_id: context.requestId })
+    const response = await this.finalizeEvidence(context, evidenceFileId, { expectedVersion: input.expectedVersion, ...identity }, idempotencyKey)
     if (response.error) return rpcError(response.error)
     const result = costEvidenceFinalizedSchema.safeParse(response.data)
     return result.success ? result.data : fail('Phản hồi hoàn tất chứng từ không hợp lệ.')

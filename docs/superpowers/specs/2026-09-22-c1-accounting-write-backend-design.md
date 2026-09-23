@@ -268,7 +268,7 @@ Allowed MIME types are exactly:
 - `image/png`
 - `image/jpeg`
 
-Extensions are advisory only. Finalization verifies stored Content-Type against the declared allowed MIME, byte size, SHA-256, and byte/package format. PDF, PNG, JPEG, and XLS require their respective PDF, PNG, JPEG, and OLE Compound File signatures. XLSX must be a valid ZIP containing `[Content_Types].xml` and `xl/workbook.xml`, with the SpreadsheetML workbook content type declared. These checks establish bounded file-format identity; they do not prove malware safety, document authenticity, business correctness, financial correctness, or semantic validity of workbook content. A mismatch leaves the registry pending and returns `EVIDENCE_UPLOAD_MISMATCH`; the object is not linkable. Cleanup of expired unmatched objects is operational maintenance outside this slice and cannot delete finalized evidence.
+Extensions are advisory only. Finalization verifies stored Content-Type against the declared allowed MIME, byte size, SHA-256, and byte/package format. PDF, PNG, JPEG, and XLS require their respective PDF, PNG, JPEG, and OLE Compound File signatures. XLSX must be a valid ZIP containing `[Content_Types].xml` and `xl/workbook.xml`, with the SpreadsheetML workbook content type declared. Before JSZip parses the archive, the server inspects the central directory and caps the archive at 1,024 entries, 25 MiB per declared entry, and 256 MiB declared aggregate expansion. Each of the two required metadata entries is capped at 256 KiB, their combined expansion at 512 KiB, and their individual compression ratio at 100:1. Only `[Content_Types].xml` is expanded to validate the content type, through a stream that aborts when actual output exceeds either its declaration or 256 KiB and requires exact actual/declaration equality before constructing the string; worksheet, shared-string, media, and workbook content are not expanded. These checks establish bounded file-format identity; they do not prove malware safety, document authenticity, business correctness, financial correctness, or semantic validity of workbook content. A mismatch leaves the registry pending and returns `EVIDENCE_UPLOAD_MISMATCH`; the object is not linkable. Cleanup of expired unmatched objects is operational maintenance outside this slice and cannot delete finalized evidence.
 
 ### 8.4 `cost_evidence_links`
 
@@ -309,7 +309,7 @@ The upload flow is:
 4. Storage INSERT RLS authorizes the write only when the authenticated actor created the matching pending intent, has `cost.prepare`, the bucket/path match exactly, and `intent_expires_at > now()`.
 5. Existing-path upload fails; no Storage UPDATE or DELETE policy exists.
 6. `cost.prepare` calls finalize. The server checks registry ownership/scope/expiry, Storage object existence, stored Content-Type, size, SHA-256, and byte/package format.
-7. One RPC changes pending→finalized, records verified metadata/actor/time, and emits an audit event.
+7. Nitro invokes a narrowly scoped server-only RPC with the initiating actor identity and verified file identity. The RPC is executable only by `service_role`, reconstructs the actor context, and delegates to the existing guarded private command, which revalidates `cost.prepare`, company/tenant scope, creator, expiry, version, idempotency, and audit identity before changing pending→finalized. Ordinary `authenticated` callers have no executable finalize transition.
 8. A separate idempotent link command attaches the finalized file to a cost or a payment. Linkage does not change financial state.
 9. Metadata reads require `cost.source.read`. Raw byte access requires server-level `cost.read` plus `cost.file.read`, linked-resource visibility, and returns a signed URL valid for 60 seconds.
 
@@ -325,9 +325,10 @@ No signed upload URL or token is minted. The 60-second finalized-object read URL
 
 ## 10. Command/RPC model
 
-Every write is a guarded public RPC wrapper over a private `SECURITY DEFINER` function, following current Taskovia conventions:
+Every write is a guarded public RPC wrapper over a private `SECURITY DEFINER` function, following current Taskovia conventions. Evidence finalization is the deliberate exception to the normal caller role: its public wrapper is server-only because byte verification occurs in Nitro.
 
-- public wrapper execute is revoked from `PUBLIC`/`anon` and granted only to `authenticated`;
+- ordinary public wrapper execute is revoked from `PUBLIC`/`anon` and granted only to `authenticated`;
+- legacy `c1_finalize_cost_evidence` execution is revoked from `PUBLIC`, `anon`, `authenticated`, and `service_role`; `c1_finalize_cost_evidence_server` is granted only to `service_role` and is exposed solely through a narrow server facade that cannot query tables or Storage;
 - private functions are not executable by application roles;
 - `search_path = ''` and all identifiers are schema-qualified;
 - each function starts with `auth.uid()` and `private.c1_master_context(companyId, exactPermission)`;
@@ -344,7 +345,7 @@ Required command names:
 - `c1_update_project_cost_draft`
 - `c1_prepare_project_cost_financials`
 - `c1_create_cost_evidence_intent`
-- `c1_finalize_cost_evidence`
+- `c1_finalize_cost_evidence_server` (server-only; the legacy authenticated wrapper remains non-executable)
 - `c1_link_cost_evidence`
 - `c1_publish_project_cost`
 - `c1_correct_published_project_cost`
@@ -427,6 +428,7 @@ interface CostCommandAck {
 - **Response:** finalized metadata without URL: `{ id, status: 'finalized', originalFilename, mimeType, sizeBytes, sha256, version, finalizedAt, replayed }`.
 - **Idempotency:** required header. First finalize verifies the pending object. An exact retry may return the existing finalized result through the command receipt without requiring broad finalized-metadata read access; changed replay identity returns `IDEMPOTENCY_CONFLICT`.
 - **Preconditions:** pending intent, same creator/company, unexpired intent, exact Storage object, matching stored Content-Type, size, SHA-256, and byte/package format.
+- **Security boundary:** the HTTP request/response contract is unchanged. The initiating user cannot call the final DB transition through the Data API; only Nitro can invoke the service-role-only transition after verification, and the DB command reauthorizes the original actor rather than inheriting service-role authority.
 
 ### 11.6 Link evidence to cost
 
@@ -591,7 +593,8 @@ The implemented lifecycle sequence:
 8. replace or revoke old write RPC definitions so they cannot bypass publication;
 9. assign VQH Accountant permissions with pre/post-state assertions;
 10. harden draft RLS, evidence metadata/raw-file separation, authenticated upload expiry enforcement, finalize validation portability, and metadata-free raw-target resolution through new corrective migrations;
-11. reload PostgREST schema.
+11. revoke the authenticated evidence-finalize transition and add the narrowly scoped service-role-only wrapper without changing existing evidence rows or receipts;
+12. reload PostgREST schema.
 
 Storage bucket creation and policies are migration-controlled. No existing file backfill is attempted because Cloud DEV has no buckets or objects. Existing source-version `raw_file_reference` values remain provenance text and are not silently converted into evidence objects.
 
@@ -695,6 +698,8 @@ Existing envelope and codes remain authoritative where applicable. Add narrowly 
 - Unsupported MIME, oversize, missing object, Content-Type/size/hash/signature/package mismatch fail deterministically.
 - Authenticated upload succeeds only for the creating actor's exact live intent path; expired, wrong-actor, and wrong-path writes fail at Storage RLS.
 - Unauthorized and cross-company upload/finalize/link/read fail.
+- A `cost.prepare` actor cannot execute either finalize transition through the Data API; missing, mismatched, or invalid bytes never reach the trusted transition through Nitro.
+- XLSX identity checks reject excessive entries, oversized required metadata, excessive declared expansion, and high-compression metadata before JSZip loads or expands the archive.
 - Finalized object cannot be overwritten, updated, or deleted.
 - Replacement uses a new ID/path and leaves prior evidence readable/auditable.
 - Evidence-only link creates no source figure and changes no cost/payment amount.

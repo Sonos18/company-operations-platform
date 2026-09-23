@@ -20,17 +20,17 @@ describe('CostEvidenceService', () => {
     const blob = new Blob([new TextEncoder().encode('%PDF-1.7\n')], { type: 'application/pdf' })
     const query = (data: unknown) => { const result = { data, error: null }; const value = { select: () => value, eq: () => value, order: () => value, maybeSingle: async () => result, then: (resolve: (result: unknown) => unknown) => Promise.resolve(result).then(resolve) }; return value }
     const createSignedUrl = vi.fn().mockResolvedValue({ data: { signedUrl: 'https://example.test/evidence' }, error: null })
-    const rpc = vi.fn().mockImplementation(async (name: string) => name === 'c1_get_cost_evidence_read_target'
-      ? { data: { bucketId: 'c1-accounting-evidence', objectPath: `${ids.tenant}/${ids.company}/${ids.project}/${ids.file}` }, error: null }
-      : { data: { id: ids.file, status: 'finalized', originalFilename: 'invoice.pdf', mimeType: 'application/pdf', sizeBytes: 9, sha256: '0716f9264c9fe19f5d7455276107f3ddcc1d3497f63d60689a73558ae8a1bf5e', version: 1, finalizedAt: '2026-09-22T00:01:00.000Z', replayed: false }, error: null })
+    const rpc = vi.fn().mockResolvedValue({ data: { bucketId: 'c1-accounting-evidence', objectPath: `${ids.tenant}/${ids.company}/${ids.project}/${ids.file}` }, error: null })
+    const finalizeEvidence = vi.fn().mockResolvedValue({ data: { id: ids.file, status: 'finalized', originalFilename: 'invoice.pdf', mimeType: 'application/pdf', sizeBytes: 9, sha256: '0716f9264c9fe19f5d7455276107f3ddcc1d3497f63d60689a73558ae8a1bf5e', version: 1, finalizedAt: '2026-09-22T00:01:00.000Z', replayed: false }, error: null })
     const client = {
       rpc,
       from: vi.fn().mockReturnValue(query({ bucket_id: 'c1-accounting-evidence', object_path: `${ids.tenant}/${ids.company}/${ids.project}/${ids.file}`, declared_mime_type: 'application/pdf', declared_size_bytes: 9, declared_sha256: '0716f9264c9fe19f5d7455276107f3ddcc1d3497f63d60689a73558ae8a1bf5e' })),
       storage: { from: vi.fn().mockReturnValue({ download: vi.fn().mockResolvedValue({ data: blob, error: null }), createSignedUrl }) },
     }
-    const repository = new CostEvidenceRepository(client as never)
+    const repository = new CostEvidenceRepository(client as never, { finalize: finalizeEvidence })
     await repository.finalize(context([]), ids.file, finalize, ids.key)
-    expect(rpc).toHaveBeenCalledWith('c1_finalize_cost_evidence', expect.objectContaining({ target_input: expect.objectContaining({ sizeBytes: 9, sha256: '0716f9264c9fe19f5d7455276107f3ddcc1d3497f63d60689a73558ae8a1bf5e' }) }))
+    expect(finalizeEvidence).toHaveBeenCalledWith(expect.objectContaining({ target_actor_id: context([]).actorId, target_input: expect.objectContaining({ sizeBytes: 9, sha256: '0716f9264c9fe19f5d7455276107f3ddcc1d3497f63d60689a73558ae8a1bf5e' }) }))
+    expect(rpc).not.toHaveBeenCalledWith('c1_finalize_cost_evidence', expect.anything())
     await repository.createReadUrl(context([]), ids.file, { disposition: 'inline' })
     expect(rpc).toHaveBeenCalledWith('c1_get_cost_evidence_read_target', expect.objectContaining({ target_id: ids.file }))
     expect(createSignedUrl).toHaveBeenCalledWith(`${ids.tenant}/${ids.company}/${ids.project}/${ids.file}`, 60, { download: false })
@@ -40,9 +40,11 @@ describe('CostEvidenceService', () => {
     const query = () => { const result = { data: null, error: null }; const value = { select: () => value, eq: () => value, maybeSingle: async () => result, then: (resolve: (result: unknown) => unknown) => Promise.resolve(result).then(resolve) }; return value }
     const download = vi.fn()
     const replay = { id: ids.file, status: 'finalized', originalFilename: 'invoice.pdf', mimeType: 'application/pdf', sizeBytes: 9, sha256: 'a'.repeat(64), version: 1, finalizedAt: '2026-09-22T00:01:00.000Z', replayed: true }
-    const client = { rpc: vi.fn().mockResolvedValue({ data: replay, error: null }), from: vi.fn().mockReturnValue(query()), storage: { from: vi.fn().mockReturnValue({ download }) } }
-    await expect(new CostEvidenceRepository(client as never).finalize(context([]), ids.file, finalize, ids.key)).resolves.toEqual(replay)
-    expect(client.rpc).toHaveBeenCalledWith('c1_finalize_cost_evidence', expect.objectContaining({ target_input: { expectedVersion: 0 } }))
+    const client = { rpc: vi.fn(), from: vi.fn().mockReturnValue(query()), storage: { from: vi.fn().mockReturnValue({ download }) } }
+    const finalizeEvidence = vi.fn().mockResolvedValue({ data: replay, error: null })
+    await expect(new CostEvidenceRepository(client as never, { finalize: finalizeEvidence }).finalize(context([]), ids.file, finalize, ids.key)).resolves.toEqual(replay)
+    expect(finalizeEvidence).toHaveBeenCalledWith(expect.objectContaining({ target_actor_id: context([]).actorId, target_input: { expectedVersion: 0 } }))
+    expect(client.rpc).not.toHaveBeenCalled()
     expect(download).not.toHaveBeenCalled()
   })
 
@@ -53,10 +55,24 @@ describe('CostEvidenceService', () => {
     const blob = new Blob([new TextEncoder().encode('%PDF-1.7\n')], { type: 'application/pdf' })
     const result = { data: { bucket_id: 'c1-accounting-evidence', object_path: `${ids.tenant}/${ids.company}/${ids.project}/${ids.file}`, declared_mime_type: 'application/pdf', ...identity }, error: null }
     const query = () => { const value = { select: () => value, eq: () => value, maybeSingle: async () => result }; return value }
+    const finalizeEvidence = vi.fn()
     const rpc = vi.fn()
     const client = { rpc, from: vi.fn().mockReturnValue(query()), storage: { from: vi.fn().mockReturnValue({ download: vi.fn().mockResolvedValue({ data: blob, error: null }) }) } }
-    await expect(new CostEvidenceRepository(client as never).finalize(context([]), ids.file, finalize, ids.key)).rejects.toMatchObject({ code: 'EVIDENCE_UPLOAD_MISMATCH' })
+    await expect(new CostEvidenceRepository(client as never, { finalize: finalizeEvidence }).finalize(context([]), ids.file, finalize, ids.key)).rejects.toMatchObject({ code: 'EVIDENCE_UPLOAD_MISMATCH' })
     expect(rpc).not.toHaveBeenCalled()
+    expect(finalizeEvidence).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { name: 'missing object', download: { data: null, error: { message: 'not found' } } },
+    { name: 'invalid PDF bytes', download: { data: new Blob(['not-pdf'], { type: 'application/pdf' }), error: null } },
+  ])('never invokes the trusted transition for $name', async ({ download }) => {
+    const result = { data: { bucket_id: 'c1-accounting-evidence', object_path: `${ids.tenant}/${ids.company}/${ids.project}/${ids.file}`, declared_mime_type: 'application/pdf', declared_size_bytes: 7, declared_sha256: '0'.repeat(64) }, error: null }
+    const query = () => { const value = { select: () => value, eq: () => value, maybeSingle: async () => result }; return value }
+    const finalizeEvidence = vi.fn()
+    const client = { rpc: vi.fn(), from: vi.fn().mockReturnValue(query()), storage: { from: vi.fn().mockReturnValue({ download: vi.fn().mockResolvedValue(download) }) } }
+    await expect(new CostEvidenceRepository(client as never, { finalize: finalizeEvidence }).finalize(context([]), ids.file, finalize, ids.key)).rejects.toMatchObject({ code: 'EVIDENCE_UPLOAD_MISMATCH' })
+    expect(finalizeEvidence).not.toHaveBeenCalled()
   })
 
   it('uses one guarded raw-read target even when a file has multiple links', async () => {

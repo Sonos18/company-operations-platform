@@ -50,6 +50,7 @@ function privateAdminSymbolFiles(files: Array<{ path: string, source: string }>)
     'supabaseServiceRoleKey',
     'serviceRoleKey',
     'createSupabaseAdminClient',
+    'createSupabaseEvidenceFinalizer',
     'createSupabaseOffboardingAuthAdmin',
     'SupabaseAdminClient',
     'parseSupabaseAdminConfig',
@@ -74,6 +75,15 @@ async function adminFactory() {
   expect(factory).toBeTypeOf('function')
   return typeof factory === 'function'
     ? factory as (config: { url: string, serviceRoleKey: string }) => unknown
+    : undefined
+}
+
+async function evidenceFinalizerFactory() {
+  const module = await import('../../../server/utils/supabase-client') as Record<string, unknown>
+  const factory = module.createSupabaseEvidenceFinalizer
+  expect(factory).toBeTypeOf('function')
+  return typeof factory === 'function'
+    ? factory as (config: { url: string, serviceRoleKey: string }) => { finalize(args: Record<string, unknown>): Promise<unknown> }
     : undefined
 }
 
@@ -151,6 +161,24 @@ describe('Supabase Auth admin boundary', () => {
       }),
     )
     expect(JSON.stringify(createClient.mock.calls)).not.toContain(adminSecret)
+  })
+
+  it('exposes only the evidence finalize RPC through the dedicated server-only façade', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { replayed: false }, error: null })
+    createClient.mockReturnValue({ rpc, from: vi.fn(), storage: { from: vi.fn() }, auth: { admin: {} } })
+    const factory = await evidenceFinalizerFactory()
+    if (!factory) return
+    const finalizer = factory({ url: 'http://127.0.0.1:54321', serviceRoleKey: adminSecret })
+    const args = { target_actor_id: authUser(1).id, target_company_id: authUser(2).id, target_id: authUser(3).id }
+
+    await finalizer.finalize(args)
+
+    expect(rpc).toHaveBeenCalledWith('c1_finalize_cost_evidence_server', args)
+    expect(finalizer).toEqual({ finalize: expect.any(Function) })
+    expect(finalizer).not.toHaveProperty('rpc')
+    expect(finalizer).not.toHaveProperty('from')
+    expect(finalizer).not.toHaveProperty('storage')
+    expect(JSON.stringify(finalizer)).not.toContain(adminSecret)
   })
 
   it('resolves one exact normalized retry user only after completing a valid page traversal', async () => {
@@ -356,6 +384,7 @@ describe('Supabase Auth admin boundary', () => {
 
     expect(privateAdminSymbolFiles(files)).toEqual([
       'nuxt.config.ts',
+      'server/features/costs/evidence/cost-evidence.routes.ts',
       'server/features/employees/employee.routes.ts',
       'server/utils/supabase-client.ts',
       'server/utils/supabase-config.ts',
@@ -372,6 +401,17 @@ describe('Supabase Auth admin boundary', () => {
 
     expect(importers).toEqual([
       'server/features/employees/employee.routes.ts',
+      'server/utils/supabase-client.ts',
+    ])
+  })
+
+  it('limits evidence finalizer factory imports to its exact server route assembly', () => {
+    const importers = filesRecursively(resolve(root, 'server'))
+      .filter(path => readFileSync(path, 'utf8').includes('createSupabaseEvidenceFinalizer'))
+      .map(path => relative(root, path).replaceAll('\\', '/'))
+
+    expect(importers).toEqual([
+      'server/features/costs/evidence/cost-evidence.routes.ts',
       'server/utils/supabase-client.ts',
     ])
   })
