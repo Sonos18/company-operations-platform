@@ -16,7 +16,7 @@ export type FinancePartyRow = { partyId: string, code: string, displayName: stri
 
 export const costCategoryRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, code: z.string().min(1), name: z.string().min(1), display_order: z.number().int(), is_active: z.boolean(), version }).strict()
 export const costItemRowSchema = z.object({
-  id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, cost_category_id: uuid.nullable(), description: z.string(), business_reference: z.string().nullable(), amount_text: money, currency_code: currency, relevant_date: date.nullable(), publication_state: z.enum(['draft', 'published']).optional(), version, created_at: timestamp, updated_at: timestamp,
+  id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, cost_category_id: uuid.nullable(), description: z.string(), business_reference: z.string().nullable(), amount_text: money, currency_code: currency, relevant_date: date.nullable(), publication_state: z.literal('published'), version, created_at: timestamp, updated_at: timestamp,
 }).strict()
 export const detailRowSchema = z.object({
   id: uuid, tenant_id: uuid, company_id: uuid, project_cost_item_id: uuid, line_no: z.number().int().positive(), detail_kind: z.enum(['opening_balance', 'line_item']), description: z.string(), quantity_text: z.string().nullable(), unit_code: z.string().nullable(), unit_price_text: z.string().nullable(), amount_text: money,

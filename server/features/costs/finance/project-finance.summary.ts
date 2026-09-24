@@ -120,7 +120,7 @@ function currencySet(rows: Pick<FinanceSummaryTableRows, 'costItems' | 'budgets'
 }
 
 export function summarizeFinanceRows(input: { context: FinanceProjectContextRow, rows: Omit<FinanceSummaryTableRows, 'resolutions'> & { resolutions?: FinanceSummaryTableRows['resolutions'] } }): FinanceOverview {
-  const publishedCostItems = input.rows.costItems.filter(item => item.publication_state !== 'draft')
+  const publishedCostItems = input.rows.costItems.filter(item => item.publication_state === 'published')
   const publishedCostItemIds = new Set(publishedCostItems.map(item => item.id))
   const rows = { ...input.rows, costItems: publishedCostItems, details: input.rows.details.filter(detail => publishedCostItemIds.has(detail.project_cost_item_id) && detail.publication_state === 'published') }
   const currencies = currencySet(rows)

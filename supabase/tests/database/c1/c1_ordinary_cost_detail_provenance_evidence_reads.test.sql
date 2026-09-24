@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
 
-select plan(34);
+select plan(35);
 
 select has_table('public', 'project_cost_item_detail_sources', 'detail source provenance table exists');
 select has_table('public', 'cost_evidence_links', 'evidence links table exists');
@@ -61,6 +61,7 @@ set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"c1f30000-0000-4000-8000-000000000901","role":"authenticated"}',true);
 select is((public.c1_link_project_cost_detail_evidence('c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000401','{"evidenceFileId":"c1f30000-0000-4000-8000-000000000501","evidenceKind":"invoice"}','c1f30000-0000-4000-8000-000000000711','c1f30000-0000-4000-8000-000000000712')->>'replayed')::boolean,false,'finalized same-project detail evidence links once');
 select is((public.c1_link_project_cost_detail_evidence('c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000401','{"evidenceFileId":"c1f30000-0000-4000-8000-000000000501","evidenceKind":"invoice"}','c1f30000-0000-4000-8000-000000000711','c1f30000-0000-4000-8000-000000000712')->>'replayed')::boolean,true,'detail evidence command replays exactly');
+select throws_ok($$select public.c1_link_project_cost_detail_evidence('c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000401','{"evidenceFileId":"c1f30000-0000-4000-8000-000000000501","evidenceKind":"invoice"}','c1f30000-0000-4000-8000-000000000721','c1f30000-0000-4000-8000-000000000722')$$,'P0001','INPUT_INVALID','duplicate detail evidence under a new key is stable');
 select throws_ok($$select public.c1_link_project_cost_detail_evidence('c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000401','{"evidenceFileId":"not-a-uuid","evidenceKind":"invoice"}','c1f30000-0000-4000-8000-000000000713','c1f30000-0000-4000-8000-000000000714')$$,'P0001','INPUT_INVALID','invalid detail evidence UUID is stable');
 reset role;
 set local role service_role;

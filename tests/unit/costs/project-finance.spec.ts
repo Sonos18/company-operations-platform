@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { financeOverviewSchema, moneyObservationSchema } from '../../../shared/schemas/costs/project-finance'
-import { detailAggregateRowSchema, detailRowSchema } from '../../../server/features/costs/finance/project-finance.queries'
+import { costItemRowSchema, detailAggregateRowSchema, detailRowSchema } from '../../../server/features/costs/finance/project-finance.queries'
 import { deriveFinanceDate, compareFinanceRows } from '../../../shared/utils/project-finance-dates'
 import { computeConfirmedMargin, subtractFinanceMoney, sumFinanceMoney } from '../../../shared/utils/project-finance-money'
 import { summarizeFinanceRows } from '../../../server/features/costs/finance/project-finance.summary'
 
 describe('C1 finance read contracts', () => {
+  it('requires a published lifecycle state on every official parent row', () => {
+    const item = { id: '00000000-0000-4000-8000-000000000050', tenant_id: '00000000-0000-4000-8000-000000000010', company_id: '00000000-0000-4000-8000-000000000020', project_id: '00000000-0000-4000-8000-000000000001', cost_category_id: null, description: 'Cost', business_reference: null, amount_text: '1.0000', currency_code: 'VND', relevant_date: null, version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }
+    expect(costItemRowSchema.safeParse(item).success).toBe(false)
+    expect(costItemRowSchema.safeParse({ ...item, publication_state: 'unknown' }).success).toBe(false)
+  })
   it('requires a published lifecycle state on every official detail row', () => {
     const detail = { id: '00000000-0000-4000-8000-000000000060', tenant_id: '00000000-0000-4000-8000-000000000010', company_id: '00000000-0000-4000-8000-000000000020', project_cost_item_id: '00000000-0000-4000-8000-000000000050', line_no: 1, detail_kind: 'line_item', description: 'Detail', quantity_text: null, unit_code: null, unit_price_text: null, amount_text: '1.0000', retention_kind: null, retention_rate_bps: null, retention_amount_text: null, relevant_date: null, reference: null, note: null, version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }
     expect(detailRowSchema.safeParse(detail).success).toBe(false)
@@ -74,7 +79,7 @@ describe('C1 finance read contracts', () => {
       context: { projectId: '00000000-0000-4000-8000-000000000001', projectCode: 'P', projectName: 'Project', defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', operationalState: 'unknown' },
       rows: {
         categories: [{ id: '00000000-0000-4000-8000-000000000040', tenant_id: '00000000-0000-4000-8000-000000000010', company_id: '00000000-0000-4000-8000-000000000020', code: 'subcontract_labor', name: 'Subcontract', display_order: 1, is_active: true, version: 0 }],
-        costItems: [{ id: '00000000-0000-4000-8000-000000000050', tenant_id: '00000000-0000-4000-8000-000000000010', company_id: '00000000-0000-4000-8000-000000000020', project_id: '00000000-0000-4000-8000-000000000001', cost_category_id: '00000000-0000-4000-8000-000000000040', description: 'Legacy', business_reference: null, amount_text: '100.0000', currency_code: 'VND', relevant_date: null, version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }],
+        costItems: [{ id: '00000000-0000-4000-8000-000000000050', tenant_id: '00000000-0000-4000-8000-000000000010', company_id: '00000000-0000-4000-8000-000000000020', project_id: '00000000-0000-4000-8000-000000000001', cost_category_id: '00000000-0000-4000-8000-000000000040', description: 'Legacy', business_reference: null, amount_text: '100.0000', currency_code: 'VND', relevant_date: null, publication_state: 'published' as const, version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }],
         details: [{ id: '00000000-0000-4000-8000-000000000060', tenant_id: '00000000-0000-4000-8000-000000000010', company_id: '00000000-0000-4000-8000-000000000020', project_cost_item_id: '00000000-0000-4000-8000-000000000050', line_no: 1, amount_text: '100.0000', retention_kind: 'warranty', retention_rate_bps: 500, retention_amount_text: '5.0000', relevant_date: '2026-01-01', version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }],
         budgets: [], budgetLines: [], ownerAdvances: [{ id: '00000000-0000-4000-8000-000000000070', tenant_id: '00000000-0000-4000-8000-000000000010', company_id: '00000000-0000-4000-8000-000000000020', project_id: '00000000-0000-4000-8000-000000000001', amount_text: '200.0000', currency_code: 'VND', status: 'recorded', source_reference: 'synthetic/receipt', version: 0, updated_at: '2026-01-01T00:00:00.000Z' }], subcontracts: [], payments: [], resolutions: [],
       },
@@ -98,7 +103,7 @@ describe('C1 finance read contracts', () => {
     const category = (id: string, code: string, order: number) => ({ id, tenant_id: tenant, company_id: company, code, name: code, display_order: order, is_active: true, version: 0 })
     const item = (id: string, categoryId: string, amount: string) => ({
       id, tenant_id: tenant, company_id: company, project_id: project, cost_category_id: categoryId, description: 'Item', business_reference: null,
-      amount_text: amount, currency_code: 'VND', relevant_date: null, version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
+      amount_text: amount, currency_code: 'VND', relevant_date: null, publication_state: 'published' as const, version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
     })
     const result = summarizeFinanceRows({
       context: { projectId: project, projectCode: 'P', projectName: 'Project', defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', operationalState: 'active' },
@@ -183,7 +188,7 @@ describe('C1 finance read contracts', () => {
     const costItems = categories.map((category, index) => ({
       id: `00000000-0000-4000-8000-00000000005${index + 1}`, tenant_id: tenant, company_id: company, project_id: project,
       cost_category_id: category.id, description: 'Item', business_reference: null, amount_text: index === 3 ? '100.0000' : '10.0000',
-      currency_code: 'VND', relevant_date: null, version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
+      currency_code: 'VND', relevant_date: null, publication_state: 'published' as const, version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
     }))
     const result = summarizeFinanceRows({
       context: { projectId: project, projectCode: 'P', projectName: 'Project', defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', operationalState: 'active' },

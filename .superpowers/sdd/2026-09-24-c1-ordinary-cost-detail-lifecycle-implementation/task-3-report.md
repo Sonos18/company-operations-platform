@@ -59,3 +59,11 @@ Additional verification:
 | `pnpm test:unit` | pass — 164 files, 1,441 tests |
 
 No Cloud DEV or local database action was performed in this fix round.
+
+## Fix round 2
+
+- Official finance parent rows now require literal `publication_state = 'published'` in the schema and reducer. Query projections already include the field and concrete readers already filter it.
+- Added RED→GREEN unit coverage for missing/unknown parent state and updated legacy published-fixture rows to carry the state explicitly.
+- Extended the rollback-safe pgTAP fixture with the distinct-key duplicate-detail-link assertion while retaining the exact-replay case.
+
+Verification: `pnpm test:unit` passed 164 files / 1,442 tests; `pnpm typecheck` and `git diff --check` passed. No database command was executed.
