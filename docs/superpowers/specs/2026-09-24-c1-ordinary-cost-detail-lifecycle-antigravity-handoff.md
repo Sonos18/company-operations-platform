@@ -45,7 +45,7 @@ All routes are under `/api/companies/:companyId`. Bodies are strict; IDs, `Idemp
 | `VERSION_CONFLICT` | Refetch the detail before retrying. |
 | `IDEMPOTENCY_CONFLICT` | Never reuse that key with another payload. |
 | `COST_DETAIL_NOT_DRAFT` / `COST_DETAIL_ALREADY_PUBLISHED` | Stop draft editing and refetch official state. |
-| `COST_DETAIL_NOT_PUBLISHED` | Refetch the detail; use draft preparation or publish it before attempting correction. |
+| `COST_DETAIL_NOT_PUBLISHED` | Refetch the detail; prepare the draft if needed, then publish it. Use correction only after publication. |
 | `COST_DETAIL_PUBLISH_NOT_READY` | Resolve financial, source, or finalized-evidence blockers, then retry. |
 | `SUBCONTRACT_COST_MODEL_UNSUPPORTED` | Redirect to subcontract payment recording. |
 

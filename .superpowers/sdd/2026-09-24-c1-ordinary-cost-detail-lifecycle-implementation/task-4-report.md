@@ -25,3 +25,7 @@ The future-UI handoff is [2026-09-24-c1-ordinary-cost-detail-lifecycle-antigravi
 - Clarified the strict detail-evidence link body/result and the detail-evidence metadata response fields.
 - Added `COST_DETAIL_NOT_PUBLISHED` recovery: refetch, then prepare or publish the draft before correction.
 - Verified the handoff target/required contract text and `git diff --check`; no Cloud, UI, or code changes were made.
+
+## Fix round 2
+
+- Clarified `COST_DETAIL_NOT_PUBLISHED`: refetch, prepare if needed, publish, then use correction only after publication.
