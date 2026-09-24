@@ -52,6 +52,19 @@ const uploadSession = ref<EvidenceUploadSession | null>(null)
 
 // Raw URL opening state
 const openingFileId = ref<string | null>(null)
+let companyContextGeneration = 0
+
+function resetUploadState() {
+  selectedFile.value = null
+  selectedKind.value = 'invoice'
+  uploading.value = false
+  uploadProgressStage.value = null
+  uploadError.value = null
+  uploadSuccess.value = null
+  uploadSession.value = null
+  openingFileId.value = null
+  if (fileInput.value) fileInput.value.value = ''
+}
 
 const evidenceKindLabels: Record<CostEvidenceKind, string> = {
   contract: 'Hợp đồng (contract)',
@@ -101,13 +114,21 @@ watch(
     () => props.projectCostItemId,
     () => canSourceRead.value,
   ],
-  () => {
+  ([companyId, projectId, projectCostItemId], previous) => {
+    if (previous && (companyId !== previous[0] || projectId !== previous[1] || projectCostItemId !== previous[2])) {
+      companyContextGeneration++
+      resetUploadState()
+    }
     fetchEvidenceList()
   },
-  { immediate: true },
+  { immediate: true, flush: 'sync' },
 )
 
-onUnmounted(() => evidenceRequests.invalidate())
+onUnmounted(() => {
+  companyContextGeneration++
+  evidenceRequests.invalidate()
+  resetUploadState()
+})
 
 function onFileSelected(event: Event) {
   const target = event.target as HTMLInputElement
@@ -136,6 +157,10 @@ function onFileSelected(event: Event) {
 
 async function handleUpload() {
   if (!selectedFile.value || !canPrepare.value) return
+  const companyId = companyAccess.activeCompanyId
+  const generation = companyContextGeneration
+  const file = selectedFile.value
+  const isCompanyContextCurrent = () => companyAccess.activeCompanyId === companyId && companyContextGeneration === generation
 
   uploading.value = true
   uploadError.value = null
@@ -152,21 +177,25 @@ async function handleUpload() {
     }
 
     await uploadAndFinalizeEvidence({
-      companyId: companyAccess.activeCompanyId ?? '',
+      companyId: companyId ?? '',
       projectId: props.projectId,
-      file: selectedFile.value,
+      file,
       evidenceKind: selectedKind.value,
       projectCostItemId: props.projectCostItemId,
       evidenceRepo: repositories.costEvidence,
       supabaseClient: supabase,
       session: uploadSession.value,
-      onSessionChange: session => { uploadSession.value = session },
+      isCompanyContextCurrent,
+      onSessionChange: session => {
+        if (isCompanyContextCurrent()) uploadSession.value = session
+      },
       onProgress: (stage: 'hashing' | 'intent' | 'uploading' | 'finalizing' | 'linking') => {
-        uploadProgressStage.value = stageMap[stage] || stage
+        if (isCompanyContextCurrent()) uploadProgressStage.value = stageMap[stage] || stage
       },
     })
 
-    uploadSuccess.value = `Đã tải lên và liên kết chứng từ "${selectedFile.value.name}" thành công.`
+    if (!isCompanyContextCurrent()) return
+    uploadSuccess.value = `Đã tải lên và liên kết chứng từ "${file.name}" thành công.`
     uploadSession.value = null
     selectedFile.value = null
     if (fileInput.value) fileInput.value.value = ''
@@ -174,30 +203,38 @@ async function handleUpload() {
     await fetchEvidenceList()
   }
   catch (err: unknown) {
+    if (!isCompanyContextCurrent()) return
     uploadError.value = extractErrorMessage(err, 'Lỗi tải lên chứng từ.')
   }
   finally {
-    uploading.value = false
-    uploadProgressStage.value = null
+    if (isCompanyContextCurrent()) {
+      uploading.value = false
+      uploadProgressStage.value = null
+    }
   }
 }
 
 async function openEvidenceFile(fileId: string) {
   if (!canFileRead.value) return
+  const companyId = companyAccess.activeCompanyId
+  const generation = companyContextGeneration
+  const isCompanyContextCurrent = () => companyAccess.activeCompanyId === companyId && companyContextGeneration === generation
 
   openingFileId.value = fileId
 
   try {
     const result = await repositories.costEvidence.getReadUrl(fileId, { disposition: 'inline' })
+    if (!isCompanyContextCurrent()) return
     if (result.url) {
       window.open(result.url, '_blank', 'noopener,noreferrer')
     }
   }
   catch (err: unknown) {
+    if (!isCompanyContextCurrent()) return
     errorMessage.value = extractErrorMessage(err, 'Không thể tạo đường dẫn mở tệp chứng từ.')
   }
   finally {
-    openingFileId.value = null
+    if (isCompanyContextCurrent()) openingFileId.value = null
   }
 }
 

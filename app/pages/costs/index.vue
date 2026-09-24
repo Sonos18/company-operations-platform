@@ -75,7 +75,13 @@ async function loadMore() {
   }
 }
 
-watch(() => companyAccess.activeCompanyId, load, { immediate: true })
+watch(() => companyAccess.activeCompanyId, () => {
+  requestTracker.invalidate()
+  projects.value = []
+  nextCursor.value = null
+  loadingMore.value = false
+  load()
+}, { immediate: true, flush: 'sync' })
 
 onUnmounted(() => {
   requestTracker.invalidate()

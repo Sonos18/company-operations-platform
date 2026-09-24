@@ -181,7 +181,11 @@ function onPublished() {
 
 watch(
   [projectId, draftId, () => companyAccess.activeCompanyId],
-  () => {
+  ([, , companyId], previous) => {
+    if (previous?.[2] !== undefined && companyId !== previous[2]) {
+      requestTracker.invalidate()
+      isPublishModalOpen.value = false
+    }
     loadData()
   },
   { immediate: true, flush: 'sync' },

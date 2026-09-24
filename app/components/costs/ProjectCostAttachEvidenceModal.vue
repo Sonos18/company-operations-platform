@@ -40,6 +40,17 @@ const uploading = ref(false)
 const uploadProgressStage = ref<string | null>(null)
 const errorMessage = ref<string | null>(null)
 const uploadSession = ref<EvidenceUploadSession | null>(null)
+let companyContextGeneration = 0
+
+function resetUploadState() {
+  selectedFile.value = null
+  selectedKind.value = 'invoice'
+  uploading.value = false
+  uploadProgressStage.value = null
+  errorMessage.value = null
+  uploadSession.value = null
+  if (fileInput.value) fileInput.value.value = ''
+}
 
 const evidenceKindLabels: Record<CostEvidenceKind, string> = {
   contract: 'Hợp đồng (contract)',
@@ -76,13 +87,22 @@ function onFileSelected(event: Event) {
 }
 
 watch([() => props.projectId, () => props.projectCostItemId], () => {
-  uploadSession.value = null
-  selectedFile.value = null
-  if (fileInput.value) fileInput.value.value = ''
+  companyContextGeneration++
+  resetUploadState()
 })
+
+watch(() => companyAccess.activeCompanyId, () => {
+  companyContextGeneration++
+  resetUploadState()
+  isOpen.value = false
+}, { flush: 'sync' })
 
 async function handleUploadAndLink() {
   if (!selectedFile.value || !canPrepare.value) return
+  const companyId = companyAccess.activeCompanyId
+  const generation = companyContextGeneration
+  const file = selectedFile.value
+  const isCompanyContextCurrent = () => companyAccess.activeCompanyId === companyId && companyContextGeneration === generation
 
   uploading.value = true
   errorMessage.value = null
@@ -98,20 +118,24 @@ async function handleUploadAndLink() {
     }
 
     await uploadAndFinalizeEvidence({
-      companyId: companyAccess.activeCompanyId ?? '',
+      companyId: companyId ?? '',
       projectId: props.projectId,
-      file: selectedFile.value,
+      file,
       evidenceKind: selectedKind.value,
       projectCostItemId: props.projectCostItemId,
       evidenceRepo: repositories.costEvidence,
       supabaseClient: supabase,
       session: uploadSession.value,
-      onSessionChange: session => { uploadSession.value = session },
+      isCompanyContextCurrent,
+      onSessionChange: session => {
+        if (isCompanyContextCurrent()) uploadSession.value = session
+      },
       onProgress: (stage: 'hashing' | 'intent' | 'uploading' | 'finalizing' | 'linking') => {
-        uploadProgressStage.value = stageMap[stage] || stage
+        if (isCompanyContextCurrent()) uploadProgressStage.value = stageMap[stage] || stage
       },
     })
 
+    if (!isCompanyContextCurrent()) return
     uploadSession.value = null
     selectedFile.value = null
     if (fileInput.value) fileInput.value.value = ''
@@ -119,11 +143,14 @@ async function handleUploadAndLink() {
     emit('attached')
   }
   catch (err: unknown) {
+    if (!isCompanyContextCurrent()) return
     errorMessage.value = extractErrorMessage(err, 'Lỗi khi tải lên và liên kết chứng từ.')
   }
   finally {
-    uploading.value = false
-    uploadProgressStage.value = null
+    if (isCompanyContextCurrent()) {
+      uploading.value = false
+      uploadProgressStage.value = null
+    }
   }
 }
 </script>

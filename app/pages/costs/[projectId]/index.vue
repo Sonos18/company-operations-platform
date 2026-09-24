@@ -81,10 +81,16 @@ async function loadOverview() {
 
 watch(
   [projectId, () => companyAccess.activeCompanyId],
-  () => {
+  ([, companyId], previous) => {
+    if (previous?.[1] !== undefined && companyId !== previous[1]) {
+      requestTracker.invalidate()
+      overview.value = null
+      isDraftListOpen.value = false
+      isDraftCreateOpen.value = false
+    }
     loadOverview()
   },
-  { immediate: true },
+  { immediate: true, flush: 'sync' },
 )
 </script>
 

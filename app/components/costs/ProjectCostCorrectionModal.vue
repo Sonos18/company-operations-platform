@@ -109,6 +109,25 @@ const hasAnyCanonicalField = computed(() =>
   hasCanonicalRelevantDate.value,
 )
 
+function resetCorrectionState(clearPendingCommand = false) {
+  baselineRequests.invalidate()
+  detailsRequests.invalidate()
+  submitting.value = false
+  loadingDetails.value = false
+  loadingParent.value = false
+  errorMessage.value = null
+  reason.value = ''
+  includeOperational.value = false
+  includeFinancial.value = false
+  if (clearPendingCommand) pendingCommand.value = null
+  originalSnapshot.value = null
+  operational.description = ''
+  operational.workStatus = undefined
+  operational.businessReference = ''
+  operational.relevantDate = ''
+  financialLines.value = []
+}
+
 async function initializeOperationalBaseline() {
   const request = baselineRequests.start({
     companyId: companyAccess.activeCompanyId,
@@ -226,27 +245,24 @@ async function loadExistingDetails() {
 
 watch([
   () => props.open,
-  () => companyAccess.activeCompanyId,
   () => props.projectId,
   () => props.projectCostItemId,
   () => props.currentVersion,
 ], ([open]) => {
   if (open) {
-    reason.value = ''
-    includeOperational.value = false
-    includeFinancial.value = false
-    errorMessage.value = null
+    resetCorrectionState()
     initializeOperationalBaseline()
     loadExistingDetails()
   }
   else {
-    baselineRequests.invalidate()
-    detailsRequests.invalidate()
-    loadingParent.value = false
-    loadingDetails.value = false
+    resetCorrectionState()
   }
 })
-watch([() => props.projectCostItemId, () => props.currentVersion], () => { pendingCommand.value = null })
+
+watch(() => companyAccess.activeCompanyId, () => {
+  resetCorrectionState(true)
+  isOpen.value = false
+}, { flush: 'sync' })
 
 watch(() => props.currentOperational, () => {
   if (props.open) {
@@ -255,8 +271,7 @@ watch(() => props.currentOperational, () => {
 }, { deep: true })
 
 onUnmounted(() => {
-  baselineRequests.invalidate()
-  detailsRequests.invalidate()
+  resetCorrectionState(true)
 })
 
 function addFinancialLine() {
@@ -319,6 +334,8 @@ async function handleCorrect() {
 
   submitting.value = true
   errorMessage.value = null
+  const companyId = companyAccess.activeCompanyId
+  let command: { fingerprint: string; idempotencyKey: string } | null = null
 
   try {
     const payload: CorrectPublishedProjectCostInput = {
@@ -326,19 +343,25 @@ async function handleCorrect() {
       reason: reason.value.trim(),
       operationalChanges: opChanges,
     }
-    const fingerprint = JSON.stringify({ projectCostItemId: props.projectCostItemId, payload })
+    const fingerprint = JSON.stringify({ companyId, projectCostItemId: props.projectCostItemId, payload })
     if (pendingCommand.value?.fingerprint !== fingerprint) pendingCommand.value = { fingerprint, idempotencyKey: globalThis.crypto.randomUUID() }
+    command = pendingCommand.value
 
-    const result = await repositories.projectCosts.correct(props.projectCostItemId, payload, { idempotencyKey: pendingCommand.value.idempotencyKey })
+    const result = await repositories.projectCosts.correct(props.projectCostItemId, payload, { idempotencyKey: command.idempotencyKey })
+    if (companyAccess.activeCompanyId !== companyId || !command || pendingCommand.value !== command) return
+    submitting.value = false
     pendingCommand.value = null
     isOpen.value = false
     emit('corrected', { version: result.version })
   }
   catch (err: unknown) {
+    if (companyAccess.activeCompanyId !== companyId || !command || pendingCommand.value !== command) return
     errorMessage.value = extractErrorMessage(err, 'Lỗi trong quá trình điều chỉnh chi phí.')
   }
   finally {
-    submitting.value = false
+    if (companyAccess.activeCompanyId === companyId && command && pendingCommand.value === command) {
+      submitting.value = false
+    }
   }
 }
 </script>

@@ -65,6 +65,12 @@ watch([() => props.open, () => props.projectId], ([open]) => {
   }
 })
 watch(() => props.projectId, () => { pendingCommand.value = null })
+watch(() => companyAccess.activeCompanyId, () => {
+  pendingCommand.value = null
+  submitting.value = false
+  errorMessage.value = null
+  isOpen.value = false
+}, { flush: 'sync' })
 
 async function submit() {
   if (!canManage.value) {
@@ -89,6 +95,8 @@ async function submit() {
 
   submitting.value = true
   errorMessage.value = null
+  const companyId = companyAccess.activeCompanyId
+  let command: { fingerprint: string; idempotencyKey: string } | null = null
 
   try {
     const input = {
@@ -101,19 +109,23 @@ async function submit() {
       relevantDate: form.relevantDate || undefined,
       workStatus: form.workStatus,
     }
-    const fingerprint = JSON.stringify({ projectId: props.projectId, input })
+    const fingerprint = JSON.stringify({ companyId, projectId: props.projectId, input })
     if (pendingCommand.value?.fingerprint !== fingerprint) pendingCommand.value = { fingerprint, idempotencyKey: globalThis.crypto.randomUUID() }
+    command = pendingCommand.value
 
-    const result = await repositories.projectCosts.create(props.projectId, input, { idempotencyKey: pendingCommand.value.idempotencyKey })
+    const result = await repositories.projectCosts.create(props.projectId, input, { idempotencyKey: command.idempotencyKey })
+    if (companyAccess.activeCompanyId !== companyId || pendingCommand.value !== command) return
+    submitting.value = false
     pendingCommand.value = null
     isOpen.value = false
     emit('created', { id: result.id, version: result.version })
   }
   catch (err: unknown) {
+    if (companyAccess.activeCompanyId !== companyId || !command || pendingCommand.value !== command) return
     errorMessage.value = extractErrorMessage(err)
   }
   finally {
-    submitting.value = false
+    if (companyAccess.activeCompanyId === companyId && command && pendingCommand.value === command) submitting.value = false
   }
 }
 </script>

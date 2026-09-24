@@ -36,6 +36,12 @@ watch(() => props.open, (open) => {
   errorMessage.value = null
 })
 watch([() => props.projectCostItemId, () => props.version], () => { pendingCommand.value = null })
+watch(() => companyAccess.activeCompanyId, () => {
+  pendingCommand.value = null
+  submitting.value = false
+  errorMessage.value = null
+  isOpen.value = false
+}, { flush: 'sync' })
 
 async function handlePublish() {
   if (!canPublish.value) {
@@ -45,19 +51,26 @@ async function handlePublish() {
 
   submitting.value = true
   errorMessage.value = null
+  const companyId = companyAccess.activeCompanyId
+  let command: { fingerprint: string; idempotencyKey: string } | null = null
 
   try {
     const input = { expectedVersion: props.version }
-    const fingerprint = JSON.stringify({ projectCostItemId: props.projectCostItemId, input })
+    const fingerprint = JSON.stringify({ companyId, projectCostItemId: props.projectCostItemId, input })
     if (pendingCommand.value?.fingerprint !== fingerprint) pendingCommand.value = { fingerprint, idempotencyKey: globalThis.crypto.randomUUID() }
-    const result = await repositories.projectCosts.publish(props.projectCostItemId, input, { idempotencyKey: pendingCommand.value.idempotencyKey })
+    command = pendingCommand.value
+    const result = await repositories.projectCosts.publish(props.projectCostItemId, input, { idempotencyKey: command.idempotencyKey })
+    if (companyAccess.activeCompanyId !== companyId || pendingCommand.value !== command) return
 
+    submitting.value = false
     pendingCommand.value = null
     isOpen.value = false
     emit('published', { id: result.id, version: result.version })
   }
   catch (err: unknown) {
+    if (companyAccess.activeCompanyId !== companyId || !command || pendingCommand.value !== command) return
     if (err instanceof ClientError && err.code === 'COST_ALREADY_PUBLISHED') {
+      submitting.value = false
       pendingCommand.value = null
       isOpen.value = false
       emit('published')
@@ -66,7 +79,7 @@ async function handlePublish() {
     errorMessage.value = extractErrorMessage(err, 'Lỗi trong quá trình phát hành chi phí.')
   }
   finally {
-    submitting.value = false
+    if (companyAccess.activeCompanyId === companyId && command && pendingCommand.value === command) submitting.value = false
   }
 }
 </script>

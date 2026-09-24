@@ -67,6 +67,10 @@ async function load() {
     selectedProjectId.value = metadata.value.projects.some(project => project.id === requested)
       ? requested
       : metadata.value.projects[0]?.id ?? ''
+    if (requested && requested !== selectedProjectId.value) {
+      await router.replace({ query: selectedProjectId.value ? { projectId: selectedProjectId.value } : {} })
+      if (!request.isCurrent()) return
+    }
     await loadDrafts()
   }
   catch (error: unknown) {
@@ -87,7 +91,17 @@ function onCreated(result: { id: string }) {
   router.push(`/costs/${selectedProjectId.value}/drafts/${result.id}`)
 }
 
-watch(() => companyAccess.activeCompanyId, load, { immediate: true })
+watch(() => companyAccess.activeCompanyId, () => {
+  metadataRequests.invalidate()
+  draftRequests.invalidate()
+  metadata.value = { projects: [], categories: [] }
+  selectedProjectId.value = ''
+  drafts.value = []
+  createOpen.value = false
+  loading.value = true
+  errorMessage.value = null
+  load()
+}, { immediate: true, flush: 'sync' })
 watch(requestedProjectId, (requested) => {
   const nextProjectId = metadata.value.projects.some(project => project.id === requested)
     ? requested

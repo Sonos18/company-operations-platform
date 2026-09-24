@@ -1907,4 +1907,176 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     await expect(page.getByTestId('draft-permission-denied')).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Không có quyền truy cập bản nháp' })).toBeVisible()
   })
+
+  test('company switch closes an in-flight correction and prevents its A response from closing B', async ({ page, authState }) => {
+    const companyB = '10000000-0000-4000-8000-000000000060'
+    authState.sessionCompanies = [createCompany(), createCompany({ companyId: companyB, companyCode: 'VQH-B', companyName: 'Công ty B' })]
+    const item = (description: string) => projectCostBreakdownSchema.parse({
+      projectId, projectCode: 'DA-C1-01', projectName: 'Dự án C1',
+      summary: { currencyCode: 'VND', acceptedValue: '750000000.0000', acceptedCount: 1, inProgressValue: '0.0000', inProgressCount: 0, unknownStatusValue: '0.0000', unknownCount: 0, totalTrackedWorkValue: '750000000.0000' },
+      items: [{ id: publishedItemId, tenantId, companyId, projectId, description, amount: '750000000.0000', currencyCode: 'VND', workStatus: 'accepted', businessReference: 'REF-C1', partyId: null, engagementId: null, componentId: null, relevantDate: '2026-09-18', version: 3, createdAt: '2026-09-18T08:00:00.000Z', updatedAt: '2026-09-18T08:00:00.000Z' }],
+    })
+    const ordinary = financeItemDetailsSchema.parse({
+      schemaVersion: 1 as const, kind: 'ordinary' as const, project: mockProjectOverview.project, category: mockProjectOverview.categories[0]!,
+      item: { id: publishedItemId, description: 'Canonical item', businessReference: 'REF-C1', parentAmount: '750000000.0000', currencyCode: 'VND', version: 3 },
+      details: { rows: [], pagination: { page: 1, pageSize: 25, totalPages: 1, filteredCount: 0, fullCount: 0, filteredAmount: '0.0000', fullAmount: '0.0000' } },
+    })
+    let releaseA!: () => void
+    let releaseB!: () => void
+    let startedA!: () => void
+    let startedB!: () => void
+    const aGate = new Promise<void>(resolve => { releaseA = resolve })
+    const bGate = new Promise<void>(resolve => { releaseB = resolve })
+    const aStarted = new Promise<void>(resolve => { startedA = resolve })
+    const bStarted = new Promise<void>(resolve => { startedB = resolve })
+    const keys: string[] = []
+
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/projects/${projectId}/project-costs`, route => route.fulfill({ json: route.request().url().includes(companyB) ? item('Company B canonical') : item('Company A canonical') }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/items/${publishedItemId}/**`, route => route.fulfill({ json: ordinary }))
+    await page.route(`**/api/companies/**/project-costs/${publishedItemId}/details`, route => route.fulfill({ json: { projectCostItemId: publishedItemId, totalAmount: '750000000.0000', currencyCode: 'VND', details: [] } }))
+    await page.route(`**/api/companies/**/project-costs/${publishedItemId}/corrections`, async route => {
+      keys.push((await route.request().headerValue('idempotency-key')) ?? '')
+      if (route.request().url().includes(companyB)) {
+        startedB()
+        await bGate
+      }
+      else {
+        startedA()
+        await aGate
+      }
+      await route.fulfill({ json: costCommandAckSchema.parse({ id: publishedItemId, version: 4, publicationState: 'published', replayed: false }) })
+    })
+
+    await page.goto(`/costs/${projectId}/categories/${materialCategoryId}`)
+    await page.getByTestId('open-correction-btn').click()
+    await page.getByTestId('toggle-op-changes').check()
+    await page.getByTestId('corr-op-description').fill('A correction')
+    await page.getByTestId('correction-reason-input').fill('A reason')
+    await page.getByTestId('confirm-correction-btn').click()
+    await aStarted
+
+    await page.evaluate((target) => {
+      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { selectCompany(companyId: string): boolean } } } } } }
+      if (!root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore?.selectCompany(target)) throw new Error('Unable to switch company')
+    }, companyB)
+    await expect(page.getByTestId('correction-modal')).toHaveCount(0)
+
+    await page.getByTestId('open-correction-btn').click()
+    await page.getByTestId('toggle-op-changes').check()
+    await page.getByTestId('corr-op-description').fill('B correction')
+    await page.getByTestId('correction-reason-input').fill('B reason')
+    await page.getByTestId('confirm-correction-btn').click()
+    await bStarted
+    releaseA()
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    await expect(page.getByTestId('correction-modal')).toBeVisible()
+    await expect(page.getByTestId('corr-op-description')).toHaveValue('B correction')
+    expect(keys[1]).not.toBe(keys[0])
+    releaseB()
+    await expect(page.getByTestId('correction-modal')).toHaveCount(0)
+  })
+
+  test('company switch clears selected evidence and payment modal state', async ({ page, authState }) => {
+    const companyB = '10000000-0000-4000-8000-000000000060'
+    authState.sessionCompanies = [createCompany(), createCompany({ companyId: companyB, companyCode: 'VQH-B', companyName: 'Công ty B' })]
+    const payment = { id: paymentId1, contractId: subcontractId, contractCode: 'HD-KC-01', contractNo: 'KC-01', description: 'A payment', paidAmount: '10000000.0000', warrantyRetentionAmount: null, retentionRateBps: null, paymentDate: '2026-09-20', effectiveDate: '2026-09-20', dateSource: 'payment_date' as const, recordStatus: 'recorded' as const, replacementPaymentId: null, reference: null, sourceReference: null, note: null, createdAt: '2026-09-20T00:00:00.000Z', version: 1 }
+    const subcontractDetail = financeSubcontractDetailSchema.parse({
+      schemaVersion: 1 as const, project: mockProjectOverview.project, party: mockSubcontractorList.parties[0]!.party,
+      contract: { ...mockSubcontractorList.parties[0]!.contracts[0]!, reference: null, sourceReference: null, note: null, referenceHeadroom: '490000000.0000', referenceHeadroomReason: null },
+      payments: { rows: [payment], pagination: { page: 1, pageSize: 25, totalPages: 1, filteredCount: 1, fullCount: 1, filteredAmount: payment.paidAmount, fullAmount: payment.paidAmount }, recordedTotal: payment.paidAmount, recordedCount: 1, recordedRetentionTotal: null, recordedRetentionRowCount: 0 },
+    })
+    let releasePayment!: () => void
+    let paymentStarted!: () => void
+    const paymentGate = new Promise<void>(resolve => { releasePayment = resolve })
+    const paymentRequest = new Promise<void>(resolve => { paymentStarted = resolve })
+    const paymentKeys: string[] = []
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/items/${publishedItemId}/**`, route => route.fulfill({
+      json: financeItemDetailsSchema.parse({
+        schemaVersion: 1 as const,
+        kind: 'ordinary' as const,
+        project: mockProjectOverview.project,
+        category: mockProjectOverview.categories[0]!,
+        item: { id: publishedItemId, description: 'Item', businessReference: null, parentAmount: '750000000.0000', currencyCode: 'VND', version: 3 },
+        details: { rows: [], pagination: { page: 1, pageSize: 25, totalPages: 1, filteredCount: 0, fullCount: 0, filteredAmount: '0.0000', fullAmount: '0.0000' } },
+      }),
+    }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/subcontractors`, route => route.fulfill({ json: mockSubcontractorList }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/subcontracts/${subcontractId}*`, route => route.fulfill({ json: subcontractDetail }))
+    await page.route(`**/api/companies/**/projects/${projectId}/subcontracts/${subcontractId}/payments`, async route => {
+      paymentKeys.push((await route.request().headerValue('idempotency-key')) ?? '')
+      if (paymentKeys.length === 1) {
+        paymentStarted()
+        await paymentGate
+      }
+      await route.fulfill({ status: 201, json: recordSubcontractPaymentResultSchema.parse({ paymentId: paymentId2, version: 2, status: 'recorded', replayed: false }) })
+    })
+
+    const switchCompany = async (target: string) => page.evaluate((companyId) => {
+      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { selectCompany(id: string): boolean } } } } } }
+      if (!root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore?.selectCompany(companyId)) throw new Error('Unable to switch company')
+    }, target)
+
+    await page.goto(`/costs/${projectId}/categories/${materialCategoryId}`)
+    await page.getByTestId('attach-evidence-btn').click()
+    await page.getByTestId('attach-file-input').setInputFiles({ name: 'a.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF') })
+    await switchCompany(companyB)
+    await expect(page.getByTestId('attach-evidence-modal')).toHaveCount(0)
+
+    await page.goto(`/costs/${projectId}/categories/${subcontractCategoryId}?contractId=${subcontractId}&partyId=${partyId}`)
+    await page.getByTestId('open-record-payment-btn').click()
+    await expect(page.getByTestId('record-payment-form')).toBeVisible()
+    await page.getByTestId('pay-description-input').fill('Payment before company switch')
+    await page.getByTestId('pay-amount-input').fill('10000000')
+    await page.getByTestId('confirm-record-payment-btn').click()
+    await paymentRequest
+    await switchCompany(companyId)
+    await expect(page.getByTestId('record-payment-form')).toHaveCount(0)
+    releasePayment()
+
+    await page.getByRole('button', { name: 'Xem đợt thanh toán' }).click()
+    await page.getByTestId('open-record-payment-btn').click()
+    await page.getByTestId('pay-description-input').fill('Payment after company switch')
+    await page.getByTestId('pay-amount-input').fill('10000000')
+    await page.getByTestId('confirm-record-payment-btn').click()
+    await expect(page.getByTestId('record-payment-form')).toHaveCount(0)
+    expect(paymentKeys).toHaveLength(2)
+    expect(paymentKeys[1]).not.toBe(paymentKeys[0])
+
+    await page.getByTestId(`void-payment-btn-${paymentId1}`).click()
+    await expect(page.getByTestId('void-reason-input')).toBeVisible()
+    await switchCompany(companyB)
+    await expect(page.getByTestId('void-reason-input')).toHaveCount(0)
+  })
+
+  test('company switch prevents a pending A publish from navigating or closing B', async ({ page, authState }) => {
+    const companyB = '10000000-0000-4000-8000-000000000060'
+    authState.sessionCompanies = [createCompany(), createCompany({ companyId: companyB, companyCode: 'VQH-B', companyName: 'Công ty B' })]
+    const readyDraft = (description: string) => projectCostDraftSchema.parse({ ...draftFixture(draftId, projectId, description), amount: '10000000.0000', details: [{ id: '80000000-0000-4000-8000-000000000091', projectCostItemId: draftId, lineNo: 1, detailKind: 'line_item', description: 'Ready', quantity: null, unitCode: null, unitPrice: null, amount: '10000000.0000', retentionKind: null, retentionRateBps: null, retentionAmount: null, relevantDate: null, reference: null, note: null, version: 1, createdAt: '2026-09-22T08:00:00.000Z', updatedAt: '2026-09-22T08:00:00.000Z' }], publishReadiness: { ready: true, blockingCodes: [] } })
+    let releaseA!: () => void
+    let startedA!: () => void
+    const aGate = new Promise<void>(resolve => { releaseA = resolve })
+    const aStarted = new Promise<void>(resolve => { startedA = resolve })
+    await page.route(`**/api/companies/${companyId}/project-costs/${draftId}/draft`, route => route.fulfill({ json: readyDraft('Draft A') }))
+    await page.route(`**/api/companies/${companyB}/project-costs/${draftId}/draft`, route => route.fulfill({ json: readyDraft('Draft B') }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, route => route.fulfill({ json: [] }))
+    await page.route(`**/api/companies/${companyId}/project-costs/${draftId}/publish`, async route => { startedA(); await aGate; await route.fulfill({ json: costCommandAckSchema.parse({ id: draftId, version: 2, publicationState: 'published', replayed: false }) }) })
+
+    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
+    await page.getByTestId('open-publish-modal-btn').click()
+    await page.getByTestId('confirm-publish-btn').click()
+    await aStarted
+    await page.evaluate((target) => {
+      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { selectCompany(companyId: string): boolean } } } } } }
+      if (!root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore?.selectCompany(target)) throw new Error('Unable to switch company')
+    }, companyB)
+    await expect(page.getByTestId('publish-cost-modal')).toHaveCount(0)
+    await page.getByTestId('open-publish-modal-btn').click()
+    releaseA()
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    await expect(page).toHaveURL(new RegExp(`/costs/${projectId}/drafts/${draftId}$`))
+    await expect(page.getByTestId('publish-cost-modal')).toBeVisible()
+  })
 })

@@ -45,6 +45,7 @@ const selectedEvidenceFile = ref<File | null>(null)
 const evidenceFileError = ref<string | null>(null)
 const evidenceUploadSession = ref<EvidenceUploadSession | null>(null)
 const pendingCommand = ref<{ fingerprint: string; idempotencyKey: string } | null>(null)
+let companyContextGeneration = 0
 
 const form = reactive({
   description: '',
@@ -56,6 +57,24 @@ const form = reactive({
   sourceReference: '',
   note: '',
 })
+
+function resetRecordState() {
+  submitting.value = false
+  errorMessage.value = null
+  selectedEvidenceFile.value = null
+  evidenceFileError.value = null
+  evidenceUploadSession.value = null
+  pendingCommand.value = null
+  form.description = ''
+  form.paidAmount = ''
+  form.paymentDate = localDateInputValue()
+  form.warrantyRetentionAmount = ''
+  form.retentionRateBps = null
+  form.paymentReference = ''
+  form.sourceReference = ''
+  form.note = ''
+  if (evidenceFileInput.value) evidenceFileInput.value.value = ''
+}
 
 watch([() => props.open, () => props.replacesPaymentId, () => props.projectId, () => props.subcontractId], ([open]) => {
   if (open) {
@@ -76,6 +95,12 @@ watch([() => props.replacesPaymentId, () => props.projectId, () => props.subcont
   evidenceUploadSession.value = null
   pendingCommand.value = null
 })
+
+watch(() => companyAccess.activeCompanyId, () => {
+  companyContextGeneration++
+  resetRecordState()
+  isOpen.value = false
+}, { flush: 'sync' })
 
 function onEvidenceFileSelected(event: Event) {
   const target = event.target as HTMLInputElement
@@ -122,6 +147,10 @@ async function submit() {
 
   submitting.value = true
   errorMessage.value = null
+  const companyId = companyAccess.activeCompanyId
+  const generation = companyContextGeneration
+  const isCompanyContextCurrent = () => companyAccess.activeCompanyId === companyId && companyContextGeneration === generation
+  let command: { fingerprint: string; idempotencyKey: string } | null = null
 
   try {
     const evidenceFileIds: string[] = []
@@ -129,15 +158,19 @@ async function submit() {
     // Atomic payment evidence flow: upload & finalize only if canPrepareEvidence and file selected
     if (canPrepareEvidence.value && selectedEvidenceFile.value) {
       const uploadResult = await uploadAndFinalizeEvidence({
-        companyId: companyAccess.activeCompanyId ?? '',
+        companyId: companyId ?? '',
         projectId: props.projectId,
         file: selectedEvidenceFile.value,
         evidenceKind: 'payment_proof',
         evidenceRepo: repositories.costEvidence,
         supabaseClient: supabase,
         session: evidenceUploadSession.value,
-        onSessionChange: session => { evidenceUploadSession.value = session },
+        isCompanyContextCurrent,
+        onSessionChange: session => {
+          if (isCompanyContextCurrent()) evidenceUploadSession.value = session
+        },
       })
+      if (!isCompanyContextCurrent()) return
       evidenceFileIds.push(uploadResult.evidenceFileId)
     }
 
@@ -155,26 +188,32 @@ async function submit() {
       replacesPaymentId: props.replacesPaymentId || undefined,
       evidenceFileIds: evidenceFileIds.length > 0 ? evidenceFileIds : undefined,
     }
-    const fingerprint = JSON.stringify({ projectId: props.projectId, subcontractId: props.subcontractId, input })
+    const fingerprint = JSON.stringify({ companyId, projectId: props.projectId, subcontractId: props.subcontractId, input })
     if (pendingCommand.value?.fingerprint !== fingerprint) pendingCommand.value = { fingerprint, idempotencyKey: globalThis.crypto.randomUUID() }
+    command = pendingCommand.value
 
     const result = await repositories.projectFinance.recordSubcontractPayment(
       props.projectId,
       props.subcontractId,
       input,
-      { idempotencyKey: pendingCommand.value.idempotencyKey },
+      { idempotencyKey: command.idempotencyKey },
     )
 
+    if (!isCompanyContextCurrent() || pendingCommand.value !== command) return
+    submitting.value = false
     pendingCommand.value = null
     evidenceUploadSession.value = null
     isOpen.value = false
     emit('recorded', { paymentId: result.paymentId, version: result.version })
   }
   catch (err: unknown) {
+    if (!isCompanyContextCurrent() || (command && pendingCommand.value !== command)) return
     errorMessage.value = extractErrorMessage(err, 'Lỗi ghi nhận thanh toán thầu phụ.')
   }
   finally {
-    submitting.value = false
+    if (isCompanyContextCurrent() && (!command || pendingCommand.value === command)) {
+      submitting.value = false
+    }
   }
 }
 </script>

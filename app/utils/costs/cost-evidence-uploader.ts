@@ -163,6 +163,7 @@ export interface UploadEvidenceOptions {
   nowProvider?: () => number
   session?: EvidenceUploadSession | null
   onSessionChange?: (session: EvidenceUploadSession) => void
+  isCompanyContextCurrent?: () => boolean
 }
 
 export interface UploadEvidenceResult {
@@ -175,7 +176,13 @@ export interface UploadEvidenceResult {
 
 export async function uploadAndFinalizeEvidence(options: UploadEvidenceOptions): Promise<UploadEvidenceResult> {
   const { companyId, projectId, file, evidenceRepo, supabaseClient, onProgress, nowProvider = () => Date.now() } = options
+  const assertCompanyContextCurrent = () => {
+    if (options.isCompanyContextCurrent?.() === false) {
+      throw new Error('Ngữ cảnh công ty đã thay đổi. Vui lòng thử lại.')
+    }
+  }
 
+  assertCompanyContextCurrent()
   const validation = validateEvidenceFile(file)
   if (!validation.valid) {
     throw new Error(validation.error)
@@ -183,8 +190,10 @@ export async function uploadAndFinalizeEvidence(options: UploadEvidenceOptions):
 
   const mimeType = resolveEvidenceMimeType(file)
 
+  assertCompanyContextCurrent()
   onProgress?.('hashing')
   const sha256 = await computeFileSha256Hex(file)
+  assertCompanyContextCurrent()
 
   const fingerprint = JSON.stringify({ companyId, projectId, fileName: file.name, fileSize: file.size, mimeType, sha256, evidenceKind: options.evidenceKind, projectCostItemId: options.projectCostItemId ?? null, accountingSourceVersionId: options.accountingSourceVersionId ?? null })
   let session = options.session?.fingerprint === fingerprint
@@ -205,8 +214,10 @@ export async function uploadAndFinalizeEvidence(options: UploadEvidenceOptions):
 
   while (!session.finalized) {
     if (!session.intent) {
+      assertCompanyContextCurrent()
       onProgress?.('intent')
       const intent = await createEvidenceIntent(evidenceRepo, projectId, file, mimeType, sha256, session.intentKey)
+      assertCompanyContextCurrent()
       save({ ...session, intent })
     }
     const currentIntent = session.intent
@@ -227,8 +238,10 @@ export async function uploadAndFinalizeEvidence(options: UploadEvidenceOptions):
 
     if (session.storageState !== 'uploaded') {
       const priorStorageState = session.storageState
+      assertCompanyContextCurrent()
       onProgress?.('uploading')
       const uploadResult = await uploadToStorageWithIntent(supabaseClient, currentIntent, file, mimeType)
+      assertCompanyContextCurrent()
       if (!uploadResult.error) {
         save({ ...session, storageState: 'uploaded' })
       }
@@ -252,9 +265,11 @@ export async function uploadAndFinalizeEvidence(options: UploadEvidenceOptions):
       }
     }
 
+    assertCompanyContextCurrent()
     onProgress?.('finalizing')
     try {
       const finalized = await evidenceRepo.finalize(currentIntent.evidenceFileId, { expectedVersion: currentIntent.version }, { idempotencyKey: session.finalizeKey })
+      assertCompanyContextCurrent()
       save({ ...session, finalized })
     }
     catch (error: unknown) {
@@ -271,12 +286,14 @@ export async function uploadAndFinalizeEvidence(options: UploadEvidenceOptions):
   }
 
   if (options.projectCostItemId && !session.linkResult) {
+    assertCompanyContextCurrent()
     onProgress?.('linking')
     const linkResult = await evidenceRepo.link(options.projectCostItemId, {
       evidenceFileId: session.finalized.id,
       evidenceKind: options.evidenceKind,
       accountingSourceVersionId: options.accountingSourceVersionId,
     }, { idempotencyKey: session.linkKey! })
+    assertCompanyContextCurrent()
     save({ ...session, linkResult })
   }
 

@@ -134,3 +134,123 @@ test('query-only project navigation resynchronizes the draft selection and rows'
   await expect(page.getByTestId(`draft-management-row-${draftB}`)).toContainText('Draft project B')
   await expect(page.getByTestId(`draft-management-row-${draftId}`)).toHaveCount(0)
 })
+
+test('company switch clears draft-management state before delayed replacement metadata rejects the old project query', async ({ page, authState }) => {
+  const companyB = '10000000-0000-4000-8000-000000000060'
+  const projectB = '10000000-0000-4000-8000-000000000061'
+  let releaseMetadataB!: () => void
+  let metadataBStarted!: () => void
+  const metadataBGate = new Promise<void>(resolve => { releaseMetadataB = resolve })
+  const metadataBRequest = new Promise<void>(resolve => { metadataBStarted = resolve })
+  const metadataB = { ...metadata, projects: [{ id: projectB, code: 'DA-C1-02', name: 'Dự án C1 B' }] }
+
+  authState.sessionCompanies = [
+    createCompany({ permissions: ['cost.manage'] }),
+    createCompany({ companyId: companyB, companyCode: 'VQH-B', companyName: 'Công ty B', permissions: ['cost.manage'] }),
+  ]
+  await page.route('**/api/companies/**/project-cost-drafts/metadata', async route => {
+    if (route.request().url().includes(`/api/companies/${companyB}/`)) {
+      metadataBStarted()
+      await metadataBGate
+      await route.fulfill({ json: metadataB })
+      return
+    }
+    await route.fulfill({ json: metadata })
+  })
+  await page.route(`**/api/companies/**/projects/${projectId}/project-cost-drafts/operations`, route => route.fulfill({ json: [operationalDraft] }))
+  await page.route(`**/api/companies/**/projects/${projectB}/project-cost-drafts/operations`, route => route.fulfill({ json: [] }))
+
+  await page.goto(`/cost-drafts?projectId=${projectId}`)
+  await expect(page.getByTestId(`draft-management-row-${draftId}`)).toBeVisible()
+  await page.getByTestId('draft-management-create').click()
+  await expect(page.getByTestId('draft-create-form')).toBeVisible()
+
+  await page.evaluate((targetCompanyId) => {
+    const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { selectCompany(companyId: string): boolean } } } } } }
+    if (!root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore?.selectCompany(targetCompanyId)) throw new Error('Unable to switch company in test')
+  }, companyB)
+  await metadataBRequest
+
+  try {
+    await expect(page.getByTestId('draft-project-select').locator(`option[value="${projectId}"]`)).toHaveCount(0)
+    await expect(page.getByTestId(`draft-management-row-${draftId}`)).toHaveCount(0)
+    await expect(page.getByTestId('draft-management-create')).toHaveCount(0)
+    await expect(page.getByTestId('draft-create-form')).toHaveCount(0)
+
+    releaseMetadataB()
+    await expect(page.getByTestId('draft-project-select')).toHaveValue(projectB)
+    await expect(page).toHaveURL(new RegExp(`/cost-drafts(?:$|\\?(?!.*projectId=${projectId}))`))
+  }
+  finally {
+    releaseMetadataB()
+  }
+})
+
+test('stale company A draft create cannot alter company B and company B creates with a new idempotency key', async ({ page, authState }) => {
+  const companyA = createCompany({ permissions: ['cost.manage'] })
+  const companyB = '10000000-0000-4000-8000-000000000060'
+  const projectB = '10000000-0000-4000-8000-000000000061'
+  const draftA = '30000000-0000-4000-8000-000000000062'
+  const draftB = '30000000-0000-4000-8000-000000000063'
+  let releaseCreateA!: () => void
+  let createAStarted!: () => void
+  const createAGate = new Promise<void>(resolve => { releaseCreateA = resolve })
+  const createARequest = new Promise<void>(resolve => { createAStarted = resolve })
+  const idempotencyKeys: string[] = []
+  const metadataB = { ...metadata, projects: [{ id: projectB, code: 'DA-C1-02', name: 'Dự án C1 B' }] }
+
+  authState.sessionCompanies = [
+    companyA,
+    createCompany({ companyId: companyB, companyCode: 'VQH-B', companyName: 'Công ty B', permissions: ['cost.manage'] }),
+  ]
+  await page.route('**/api/companies/**/project-cost-drafts/metadata', route => route.fulfill({ json: route.request().url().includes(`/api/companies/${companyB}/`) ? metadataB : metadata }))
+  await page.route(`**/api/companies/**/projects/${projectId}/project-cost-drafts/operations`, route => route.fulfill({ json: [] }))
+  await page.route(`**/api/companies/**/projects/${projectB}/project-cost-drafts/operations`, route => route.fulfill({ json: [] }))
+  await page.route(`**/api/companies/**/projects/${projectId}/project-costs`, async route => {
+    idempotencyKeys.push(route.request().headers()['idempotency-key'] ?? '')
+    createAStarted()
+    await createAGate
+    await route.fulfill({ status: 201, json: { id: draftA, version: 1, publicationState: 'draft', replayed: false } })
+  })
+  await page.route(`**/api/companies/${companyB}/projects/${projectB}/project-costs`, route => {
+    idempotencyKeys.push(route.request().headers()['idempotency-key'] ?? '')
+    return route.fulfill({ status: 201, json: { id: draftB, version: 1, publicationState: 'draft', replayed: false } })
+  })
+
+  await page.goto('/cost-drafts')
+  await expect(page.getByTestId('draft-management-page')).toBeVisible()
+  await page.evaluate((targetCompanyId) => {
+    const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { selectCompany(companyId: string): boolean } } } } } }
+    if (!root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore?.selectCompany(targetCompanyId)) throw new Error('Unable to select company A in test')
+  }, companyA.companyId)
+  await expect(page.getByTestId('draft-project-select')).toHaveValue(projectId)
+  await page.getByTestId('draft-management-create').click()
+  await page.getByTestId('draft-create-description').fill('Bản nháp công ty A')
+  await page.getByTestId('draft-create-submit').click()
+  await createARequest
+
+  await page.evaluate((targetCompanyId) => {
+    const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { selectCompany(companyId: string): boolean } } } } } }
+    if (!root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore?.selectCompany(targetCompanyId)) throw new Error('Unable to switch company in test')
+  }, companyB)
+  try {
+    await expect(page.getByTestId('draft-project-select')).toHaveValue(projectB)
+    await expect(page.getByTestId('draft-create-form')).toHaveCount(0)
+
+    await page.getByTestId('draft-management-create').click()
+    await page.getByTestId('draft-create-description').fill('Bản nháp công ty B')
+    const createAResponse = page.waitForResponse(response => response.url().includes(`/projects/${projectId}/project-costs`) && response.status() === 201)
+    releaseCreateA()
+    await createAResponse
+
+    await expect(page).toHaveURL(/\/cost-drafts$/)
+    await expect(page.getByTestId('draft-create-form')).toBeVisible()
+    await page.getByTestId('draft-create-submit').click()
+    await expect(page).toHaveURL(new RegExp(`/costs/${projectB}/drafts/${draftB}$`))
+    expect(idempotencyKeys).toHaveLength(2)
+    expect(idempotencyKeys[1]).not.toBe(idempotencyKeys[0])
+  }
+  finally {
+    releaseCreateA()
+  }
+})

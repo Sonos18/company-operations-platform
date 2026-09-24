@@ -103,14 +103,18 @@ const currentItemVersion = computed(() => {
 })
 
 async function openCorrectionModal() {
-  const context = { projectId: projectId.value, itemId: currentCategory.value?.itemId ?? '' }
+  const context = {
+    companyId: companyAccess.activeCompanyId,
+    projectId: projectId.value,
+    itemId: currentCategory.value?.itemId ?? '',
+  }
   if (context.projectId && context.itemId) {
     if (!await loadCanonicalCostItem()) return
     if (!canonicalCostItem.value && !ordinaryController.data.value) {
       await ordinaryController.executeDispatch(false)
     }
   }
-  if (projectId.value !== context.projectId || currentCategory.value?.itemId !== context.itemId) return
+  if (companyAccess.activeCompanyId !== context.companyId || projectId.value !== context.projectId || currentCategory.value?.itemId !== context.itemId) return
   isCorrectionModalOpen.value = true
 }
 
@@ -124,8 +128,9 @@ async function onItemMutated() {
 
 const projectId = computed(() => String(route.params.projectId ?? ''))
 const categoryId = computed(() => String(route.params.categoryId ?? ''))
-const selectedPartyId = computed(() => (route.query.partyId ? String(route.query.partyId) : null))
-const selectedContractId = computed(() => (route.query.contractId ? String(route.query.contractId) : null))
+const clearingCompanyPaymentSelection = ref(false)
+const selectedPartyId = computed(() => (clearingCompanyPaymentSelection.value || !route.query.partyId ? null : String(route.query.partyId)))
+const selectedContractId = computed(() => (clearingCompanyPaymentSelection.value || !route.query.contractId ? null : String(route.query.contractId)))
 const isViewingPayments = computed(() => Boolean(selectedPartyId.value || selectedContractId.value))
 
 // Independent async stream trackers & controllers (RR01, RR02, RR04)
@@ -218,7 +223,11 @@ async function loadOverview() {
   subcontractorList.value = null
   canonicalCostItem.value = null
 
-  const token = overviewTracker.start({ projectId: projectId.value, categoryId: categoryId.value })
+  const token = overviewTracker.start({
+    companyId: companyAccess.activeCompanyId,
+    projectId: projectId.value,
+    categoryId: categoryId.value,
+  })
   pageStatus.value = 'loading'
 
   try {
@@ -270,7 +279,10 @@ async function loadOverview() {
 async function loadSubcontractorData() {
   if (!projectId.value) return
 
-  const token = subcontractorsTracker.start({ projectId: projectId.value })
+  const token = subcontractorsTracker.start({
+    companyId: companyAccess.activeCompanyId,
+    projectId: projectId.value,
+  })
   subcontractorsStatus.value = 'loading'
 
   try {
@@ -325,10 +337,36 @@ function clearSelectedParty() {
 
 watch(
   [projectId, categoryId, () => companyAccess.activeCompanyId],
-  () => {
+  ([, , companyId], previous) => {
+    if (previous?.[2] !== undefined && companyId !== previous[2]) {
+      overviewTracker.invalidate()
+      subcontractorsTracker.invalidate()
+      canonicalItemRequests.invalidate()
+      ordinaryController.resetContext()
+      paymentsController.resetContext()
+      overview.value = null
+      subcontractorList.value = null
+      canonicalCostItem.value = null
+      loadingCanonicalItem.value = false
+      subcontractorsStatus.value = 'idle'
+      isCorrectionModalOpen.value = false
+      isAttachEvidenceOpen.value = false
+      isEvidenceModalOpen.value = false
+      clearingCompanyPaymentSelection.value = false
+
+      if (route.query.partyId || route.query.contractId) {
+        const query = { ...route.query }
+        delete query.partyId
+        delete query.contractId
+        clearingCompanyPaymentSelection.value = true
+        void router.replace({ query }).finally(() => {
+          if (companyAccess.activeCompanyId === companyId) clearingCompanyPaymentSelection.value = false
+        })
+      }
+    }
     loadOverview()
   },
-  { immediate: true },
+  { immediate: true, flush: 'sync' },
 )
 
 watch(

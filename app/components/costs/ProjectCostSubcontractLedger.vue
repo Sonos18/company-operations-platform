@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type {
   FinanceSubcontractDetail,
   FinanceSubcontractorDetail,
@@ -83,6 +83,18 @@ const chosenContractId = ref<string>('')
 const selectedPaymentToVoid = ref<PaymentToVoidWithContract | null>(null)
 const selectedContractForRecord = ref<ContractItem | null>(null)
 const replacesPaymentId = ref<string | null>(null)
+
+function resetPaymentModalState() {
+  isRecordModalOpen.value = false
+  isVoidModalOpen.value = false
+  isSelectContractModalOpen.value = false
+  chosenContractId.value = ''
+  selectedPaymentToVoid.value = null
+  selectedContractForRecord.value = null
+  replacesPaymentId.value = null
+}
+
+watch(() => companyAccess.activeCompanyId, resetPaymentModalState, { flush: 'sync' })
 
 const availableContracts = computed<ContractItem[]>(() => {
   if (!props.detail) return []

@@ -40,6 +40,15 @@ const voidSucceeded = ref(false)
 const voidedPaymentId = ref<string | null>(null)
 const pendingCommand = ref<{ fingerprint: string; idempotencyKey: string } | null>(null)
 
+function resetVoidState() {
+  reason.value = ''
+  submitting.value = false
+  errorMessage.value = null
+  voidSucceeded.value = false
+  voidedPaymentId.value = null
+  pendingCommand.value = null
+}
+
 watch([() => props.open, () => props.projectId, () => props.subcontractId, () => props.payment?.id, () => props.payment?.version], ([open]) => {
   if (open) {
     reason.value = ''
@@ -49,6 +58,11 @@ watch([() => props.open, () => props.projectId, () => props.subcontractId, () =>
   }
 })
 watch([() => props.projectId, () => props.subcontractId, () => props.payment?.id, () => props.payment?.version], () => { pendingCommand.value = null })
+
+watch(() => companyAccess.activeCompanyId, () => {
+  resetVoidState()
+  isOpen.value = false
+}, { flush: 'sync' })
 
 async function handleVoid() {
   if (!canRecordCash.value || !props.payment) return
@@ -60,32 +74,41 @@ async function handleVoid() {
 
   submitting.value = true
   errorMessage.value = null
+  const companyId = companyAccess.activeCompanyId
+  const isCompanyContextCurrent = () => companyAccess.activeCompanyId === companyId
+  let command: { fingerprint: string; idempotencyKey: string } | null = null
 
   try {
     const input = {
       expectedVersion: props.payment.version,
       reason: reason.value.trim(),
     }
-    const fingerprint = JSON.stringify({ projectId: props.projectId, subcontractId: props.subcontractId, paymentId: props.payment.id, input })
+    const fingerprint = JSON.stringify({ companyId, projectId: props.projectId, subcontractId: props.subcontractId, paymentId: props.payment.id, input })
     if (pendingCommand.value?.fingerprint !== fingerprint) pendingCommand.value = { fingerprint, idempotencyKey: globalThis.crypto.randomUUID() }
+    command = pendingCommand.value
     const result = await repositories.projectFinance.voidSubcontractPayment(
       props.projectId,
       props.subcontractId,
       props.payment.id,
       input,
-      { idempotencyKey: pendingCommand.value.idempotencyKey },
+      { idempotencyKey: command.idempotencyKey },
     )
 
+    if (!isCompanyContextCurrent() || pendingCommand.value !== command) return
+    submitting.value = false
     pendingCommand.value = null
     voidSucceeded.value = true
     voidedPaymentId.value = result.paymentId
     emit('voided', { paymentId: result.paymentId, version: result.version })
   }
   catch (err: unknown) {
+    if (!isCompanyContextCurrent() || (command && pendingCommand.value !== command)) return
     errorMessage.value = extractErrorMessage(err, 'Lỗi khi hủy khoản thanh toán.')
   }
   finally {
-    submitting.value = false
+    if (isCompanyContextCurrent() && (!command || pendingCommand.value === command)) {
+      submitting.value = false
+    }
   }
 }
 

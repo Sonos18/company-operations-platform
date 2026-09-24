@@ -42,6 +42,15 @@ const draftRequests = createAsyncRequestTracker<{
   canManage: boolean
 }>()
 
+watch(() => companyAccess.activeCompanyId, () => {
+  draftRequests.invalidate()
+  financialDrafts.value = []
+  operationalDrafts.value = []
+  loading.value = false
+  errorMessage.value = null
+  isOpen.value = false
+}, { flush: 'sync' })
+
 const categoryMap = computed(() => {
   const map = new Map<string, FinanceCategoryRow>()
   for (const c of props.categories) {
@@ -92,7 +101,6 @@ async function fetchDrafts() {
 watch([
   () => props.open,
   () => props.projectId,
-  () => companyAccess.activeCompanyId,
   () => canPrepare.value,
   () => canManage.value,
 ], ([open]) => {

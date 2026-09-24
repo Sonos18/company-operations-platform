@@ -235,6 +235,51 @@ describe('Cost Evidence Uploader utility', () => {
       expect(keys).toHaveLength(2)
       expect(keys[1]).not.toBe(keys[0])
     })
+
+    it('starts a new logical session when the active company changes', async () => {
+      const file = new File(['same'], 'same.pdf', { type: 'application/pdf' })
+      const keys: string[] = []
+      const repo = {
+        createUploadIntent: vi.fn(async (_projectId, _input, command) => {
+          keys.push(command.idempotencyKey)
+          throw new Error('intent response lost')
+        }),
+      }
+      let session: EvidenceUploadSession | null = null
+      const common = { projectId, file, evidenceKind: 'invoice' as const, evidenceRepo: repo as never, supabaseClient: { storage: { from: vi.fn() } } as never, get session() { return session }, onSessionChange: (value: EvidenceUploadSession) => { session = value } }
+
+      await expect(uploadAndFinalizeEvidence({ ...common, companyId })).rejects.toThrow('intent response lost')
+      await expect(uploadAndFinalizeEvidence({ ...common, companyId: 'c1010000-0000-4000-8000-000000000099' })).rejects.toThrow('intent response lost')
+
+      expect(keys).toHaveLength(2)
+      expect(keys[1]).not.toBe(keys[0])
+    })
+
+    it('stops before finalization when its company context is no longer current', async () => {
+      const file = new File(['pdf'], 'company-switch.pdf', { type: 'application/pdf' })
+      let companyContextCurrent = true
+      const upload = vi.fn(async () => {
+        companyContextCurrent = false
+        return { error: null }
+      })
+      const finalize = vi.fn().mockResolvedValue(finalized(file))
+
+      await expect(uploadAndFinalizeEvidence({
+        companyId,
+        projectId,
+        file,
+        evidenceKind: 'invoice',
+        evidenceRepo: {
+          createUploadIntent: vi.fn().mockResolvedValue(intent()),
+          finalize,
+        } as never,
+        supabaseClient: { storage: { from: vi.fn(() => ({ upload })) } } as never,
+        isCompanyContextCurrent: () => companyContextCurrent,
+      } as never)).rejects.toThrow()
+
+      expect(upload).toHaveBeenCalledTimes(1)
+      expect(finalize).not.toHaveBeenCalled()
+    })
   })
 
   describe('Bounded upload retry on intent expiry (F-UI4)', () => {
