@@ -71,7 +71,7 @@ declare v_expected text;
 begin
   if jsonb_typeof(target_input)<>'object' or not target_input ? 'expectedVersion' or jsonb_typeof(target_input->'expectedVersion')<>'number' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
   v_expected:=target_input->>'expectedVersion';
-  if v_expected !~ '^\\d{1,19}$' or (length(v_expected)=19 and v_expected>'9223372036854775807') then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if v_expected !~ '^\d{1,19}$' or (length(v_expected)=19 and v_expected>'9223372036854775807') then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
   return v_expected::bigint;
 end;
 $$;
@@ -146,7 +146,7 @@ begin
   v_context:=private.c1_detail_context(target_company_id,'cost.prepare'); v_expected_version:=private.c1_detail_expected_version(target_input); v_detail:=private.c1_detail_require_scope(target_id,(v_context->>'tenantId')::uuid,target_company_id);
   if v_detail.publication_state<>'draft' then raise exception using errcode='P0001',message='COST_DETAIL_NOT_DRAFT'; end if;
   if v_detail.version is distinct from v_expected_version then raise exception using errcode='P0001',message='VERSION_CONFLICT'; end if;
-  if coalesce(target_input->>'amount','') !~ '^\\d{1,16}(\\.\\d{1,4})?$' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if coalesce(target_input->>'amount','') !~ '^\d{1,16}(\.\d{1,4})?$' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
   v_before:=to_jsonb(v_detail); v_amount:=(target_input->>'amount')::numeric;
   update public.project_cost_item_details detail set quantity_text=nullif(target_input->>'quantity',''),unit_code=nullif(btrim(target_input->>'unitCode'),''),unit_price_text=nullif(target_input->>'unitPrice',''),amount_text=v_amount::text,retention_kind=nullif(target_input->>'retentionKind',''),retention_rate_bps=nullif(target_input->>'retentionRateBps','')::integer,retention_amount_text=nullif(target_input->>'retentionAmount',''),version=detail.version+1,updated_at=now() where detail.id=v_detail.id returning * into v_detail;
   perform private.c1_detail_replace_sources(v_detail,case when target_input?'sourceFigureIds' then array(select jsonb_array_elements_text(target_input->'sourceFigureIds')::uuid) else null end);
@@ -172,7 +172,7 @@ returns jsonb language plpgsql security definer set search_path='' as $$
 declare v_context jsonb; v_tenant_id uuid; v_actor_id uuid; v_hash text; v_receipt public.cost_command_receipts%rowtype; v_draft jsonb; v_prepared jsonb; v_detail_id uuid; v_prepare_input jsonb;
 begin
   v_context:=private.c1_detail_context(target_company_id,'cost.manage');perform private.c1_detail_context(target_company_id,'cost.prepare');perform private.c1_detail_context(target_company_id,'cost.publish_import');v_tenant_id:=(v_context->>'tenantId')::uuid;v_actor_id:=(v_context->>'actorId')::uuid;
-  if target_idempotency_key is null or coalesce(target_input->>'amount','') !~ '^\\d{1,16}(\\.\\d{1,4})?$' or (target_input ? 'sourceFigureIds' and jsonb_typeof(target_input->'sourceFigureIds')<>'array') then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+  if target_idempotency_key is null or coalesce(target_input->>'amount','') !~ '^\d{1,16}(\.\d{1,4})?$' or (target_input ? 'sourceFigureIds' and jsonb_typeof(target_input->'sourceFigureIds')<>'array') then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
   v_hash:=encode(extensions.digest(convert_to(private.c1_jsonb_canonical_text(jsonb_build_object('projectId',target_input->>'projectId','input',target_input)),'UTF8'),'sha256'),'hex');v_receipt:=private.c1_detail_receipt(v_tenant_id,target_company_id,v_actor_id,'project_cost_detail.create_and_publish',target_idempotency_key,v_hash);if v_receipt.id is not null then return private.c1_detail_ack(v_receipt.result_resource_id,true);end if;
   v_draft:=private.c1_create_project_cost_detail_draft(target_company_id,target_input-'amount'-'quantity'-'unitCode'-'unitPrice'-'retentionKind'-'retentionRateBps'-'retentionAmount'-'sourceFigureIds',target_idempotency_key,target_request_id);v_detail_id:=(v_draft->>'id')::uuid;
   v_prepare_input:=jsonb_build_object('expectedVersion',(v_draft->>'version')::bigint,'amount',target_input->>'amount','quantity',target_input->'quantity','unitCode',target_input->'unitCode','unitPrice',target_input->'unitPrice','retentionKind',target_input->'retentionKind','retentionRateBps',target_input->'retentionRateBps','retentionAmount',target_input->'retentionAmount') || case when target_input ? 'sourceFigureIds' then jsonb_build_object('sourceFigureIds',target_input->'sourceFigureIds') else '{}'::jsonb end;
@@ -260,22 +260,22 @@ returns void language plpgsql security definer set search_path='' as $$
 declare v_changes jsonb; v_key text;
 begin
   if jsonb_typeof(target_input)<>'object' or not (target_input ?& array['expectedVersion','reason','changes']) or exists (select 1 from jsonb_object_keys(target_input) key where key not in ('expectedVersion','reason','changes'))
-    or jsonb_typeof(target_input->'expectedVersion')<>'number' or (target_input->>'expectedVersion') !~ '^\\d{1,19}$' or (length(target_input->>'expectedVersion')=19 and target_input->>'expectedVersion' > '9223372036854775807')
+    or jsonb_typeof(target_input->'expectedVersion')<>'number' or (target_input->>'expectedVersion') !~ '^\d{1,19}$' or (length(target_input->>'expectedVersion')=19 and target_input->>'expectedVersion' > '9223372036854775807')
     or jsonb_typeof(target_input->'reason')<>'string' or btrim(target_input->>'reason')='' or jsonb_typeof(target_input->'changes')<>'object' or target_input->'changes'='{}'::jsonb
   then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
   v_changes:=target_input->'changes';
   if exists (select 1 from jsonb_object_keys(v_changes) key where key not in ('description','relevantDate','reference','note','quantity','unitCode','unitPrice','amount','retentionKind','retentionRateBps','retentionAmount','sourceFigureIds')) then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
   if (v_changes ? 'description' and (jsonb_typeof(v_changes->'description')<>'string' or btrim(v_changes->>'description')=''))
-    or (v_changes ? 'relevantDate' and (jsonb_typeof(v_changes->'relevantDate') not in ('string','null') or (jsonb_typeof(v_changes->'relevantDate')='string' and (v_changes->>'relevantDate') !~ '^\\d{4}-\\d{2}-\\d{2}$')))
+    or (v_changes ? 'relevantDate' and (jsonb_typeof(v_changes->'relevantDate') not in ('string','null') or (jsonb_typeof(v_changes->'relevantDate')='string' and (v_changes->>'relevantDate') !~ '^\d{4}-\d{2}-\d{2}$')))
     or (v_changes ? 'reference' and (jsonb_typeof(v_changes->'reference') not in ('string','null') or (jsonb_typeof(v_changes->'reference')='string' and btrim(v_changes->>'reference')='')))
     or (v_changes ? 'note' and (jsonb_typeof(v_changes->'note') not in ('string','null') or (jsonb_typeof(v_changes->'note')='string' and btrim(v_changes->>'note')='')))
-    or (v_changes ? 'quantity' and (jsonb_typeof(v_changes->'quantity') not in ('string','null') or (jsonb_typeof(v_changes->'quantity')='string' and (v_changes->>'quantity') !~ '^\\d{1,16}(\\.\\d{1,4})?$')))
+    or (v_changes ? 'quantity' and (jsonb_typeof(v_changes->'quantity') not in ('string','null') or (jsonb_typeof(v_changes->'quantity')='string' and (v_changes->>'quantity') !~ '^\d{1,16}(\.\d{1,4})?$')))
     or (v_changes ? 'unitCode' and (jsonb_typeof(v_changes->'unitCode') not in ('string','null') or (jsonb_typeof(v_changes->'unitCode')='string' and btrim(v_changes->>'unitCode')='')))
-    or (v_changes ? 'unitPrice' and (jsonb_typeof(v_changes->'unitPrice') not in ('string','null') or (jsonb_typeof(v_changes->'unitPrice')='string' and (v_changes->>'unitPrice') !~ '^\\d{1,16}(\\.\\d{1,4})?$')))
-    or (v_changes ? 'amount' and (jsonb_typeof(v_changes->'amount')<>'string' or v_changes->>'amount' !~ '^\\d{1,16}(\\.\\d{1,4})?$'))
+    or (v_changes ? 'unitPrice' and (jsonb_typeof(v_changes->'unitPrice') not in ('string','null') or (jsonb_typeof(v_changes->'unitPrice')='string' and (v_changes->>'unitPrice') !~ '^\d{1,16}(\.\d{1,4})?$')))
+    or (v_changes ? 'amount' and (jsonb_typeof(v_changes->'amount')<>'string' or v_changes->>'amount' !~ '^\d{1,16}(\.\d{1,4})?$'))
     or (v_changes ? 'retentionKind' and (jsonb_typeof(v_changes->'retentionKind') not in ('string','null') or (v_changes->>'retentionKind') not in ('warranty','other')))
-    or (v_changes ? 'retentionRateBps' and (jsonb_typeof(v_changes->'retentionRateBps') not in ('number','null') or (jsonb_typeof(v_changes->'retentionRateBps')='number' and ((v_changes->>'retentionRateBps') !~ '^\\d{1,5}$' or lpad(v_changes->>'retentionRateBps',5,'0') > '10000'))))
-    or (v_changes ? 'retentionAmount' and (jsonb_typeof(v_changes->'retentionAmount') not in ('string','null') or (jsonb_typeof(v_changes->'retentionAmount')='string' and (v_changes->>'retentionAmount') !~ '^\\d{1,16}(\\.\\d{1,4})?$')))
+    or (v_changes ? 'retentionRateBps' and (jsonb_typeof(v_changes->'retentionRateBps') not in ('number','null') or (jsonb_typeof(v_changes->'retentionRateBps')='number' and ((v_changes->>'retentionRateBps') !~ '^\d{1,5}$' or lpad(v_changes->>'retentionRateBps',5,'0') > '10000'))))
+    or (v_changes ? 'retentionAmount' and (jsonb_typeof(v_changes->'retentionAmount') not in ('string','null') or (jsonb_typeof(v_changes->'retentionAmount')='string' and (v_changes->>'retentionAmount') !~ '^\d{1,16}(\.\d{1,4})?$')))
     or (v_changes ? 'sourceFigureIds' and jsonb_typeof(v_changes->'sourceFigureIds')<>'array')
   then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
   if v_changes ? 'sourceFigureIds' and (exists (select 1 from jsonb_array_elements(v_changes->'sourceFigureIds') value where jsonb_typeof(value)<>'string' or value#>>'{}' !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$') or (select count(*) from jsonb_array_elements_text(v_changes->'sourceFigureIds'))<>(select count(distinct value) from jsonb_array_elements_text(v_changes->'sourceFigureIds') value)) then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;

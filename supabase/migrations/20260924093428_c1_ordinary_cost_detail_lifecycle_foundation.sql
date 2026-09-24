@@ -21,6 +21,11 @@ $$;
 
 alter table public.cost_categories add column posting_strategy text;
 
+-- Schema backfill: preserve existing business actor/timestamp attribution instead
+-- of routing a migration-owned classification through business-edit triggers.
+alter table public.cost_categories disable trigger a_c1_finance_prepare;
+alter table public.cost_categories disable trigger z_c1_finance_audit;
+
 update public.cost_categories
 set posting_strategy = case code
   when 'subcontract_labor' then 'subcontract_payment'
@@ -29,6 +34,9 @@ set posting_strategy = case code
   when 'direct_labor' then 'ordinary_detail'
   when 'other' then 'ordinary_detail'
 end;
+
+alter table public.cost_categories enable trigger a_c1_finance_prepare;
+alter table public.cost_categories enable trigger z_c1_finance_audit;
 
 alter table public.cost_categories
   alter column posting_strategy set not null,
@@ -53,11 +61,16 @@ set publication_state = 'published',
     published_at = created_at,
     publication_request_id = null;
 
+-- Flush the existing initially-deferred amount-sync constraint trigger before
+-- changing this table's constraints, then restore its transactional mode.
+set constraints c1_project_cost_item_details_sync immediate;
+set constraints c1_project_cost_item_details_sync deferred;
+
 alter table public.project_cost_item_details
   alter column publication_state set not null,
   alter column publication_state set default 'draft',
   add constraint project_cost_item_details_amount_text_check
-    check (amount_text is null or amount_text ~ '^\\d{1,16}(\\.\\d{1,4})?$'),
+    check (amount_text is null or amount_text ~ '^\d{1,16}(\.\d{1,4})?$'),
   add constraint project_cost_item_details_publication_state_check
     check (publication_state in ('draft', 'published')),
   add constraint project_cost_item_details_publication_origin_check

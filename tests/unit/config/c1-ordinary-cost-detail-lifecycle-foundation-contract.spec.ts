@@ -20,12 +20,17 @@ describe('C1 ordinary cost detail lifecycle foundation', () => {
     }).categories[0]!.postingStrategy).toBe('ordinary_detail')
   })
 
+  it('backfills category strategy without impersonating a business actor', () => {
+    expect(sql).toMatch(/alter table public\.cost_categories disable trigger a_c1_finance_prepare;[\s\S]*disable trigger z_c1_finance_audit;[\s\S]*update public\.cost_categories[\s\S]*enable trigger a_c1_finance_prepare;[\s\S]*enable trigger z_c1_finance_audit;/iu)
+  })
+
   it('defines detail lifecycle, published-only aggregation, and a private ordinary parent resolver', () => {
     expect(sql).toMatch(/project_cost_item_details[\s\S]*add column publication_state text/iu)
     expect(sql).toMatch(/publication_origin[\s\S]*published_by[\s\S]*published_at[\s\S]*publication_request_id/iu)
     expect(sql).toMatch(/detail\.publication_state = 'published'/iu)
     expect(sql).toMatch(/create function private\.c1_resolve_or_create_ordinary_project_cost_item/iu)
     expect(sql).toContain('SUBCONTRACT_COST_MODEL_UNSUPPORTED')
+    expect(sql).toMatch(/update public\.project_cost_item_details[\s\S]*set constraints c1_project_cost_item_details_sync immediate;[\s\S]*set constraints c1_project_cost_item_details_sync deferred;[\s\S]*alter table public\.project_cost_item_details/iu)
   })
 
   it('grants the detail RLS helper to the authenticated policy role only', () => {
