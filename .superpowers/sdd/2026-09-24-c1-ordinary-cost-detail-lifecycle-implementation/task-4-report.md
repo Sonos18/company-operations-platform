@@ -19,3 +19,9 @@ The future-UI handoff is [2026-09-24-c1-ordinary-cost-detail-lifecycle-antigravi
 
 - Runtime Cloud DEV fixture execution and migration rehearsal remain intentionally not run; they require separate explicit authorization.
 - Local Node is v22.23.2 while `package.json` requests Node 24.x; checks passed with pnpm's engine warning.
+
+## Fix round 1
+
+- Clarified the strict detail-evidence link body/result and the detail-evidence metadata response fields.
+- Added `COST_DETAIL_NOT_PUBLISHED` recovery: refetch, then prepare or publish the draft before correction.
+- Verified the handoff target/required contract text and `git diff --check`; no Cloud, UI, or code changes were made.
