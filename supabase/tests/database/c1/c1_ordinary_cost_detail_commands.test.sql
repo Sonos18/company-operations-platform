@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(60);
+select plan(66);
 
 select has_table('public', 'project_cost_item_detail_sources', 'detail source provenance is introduced with the command slice');
 select has_function('public', 'c1_create_project_cost_detail_draft', 'draft-detail create RPC exists');
@@ -39,6 +39,8 @@ declare
   foreign_tenant_id constant uuid := 'c1d10000-0000-4000-8000-000000000011';
   foreign_company_id constant uuid := 'c1d10000-0000-4000-8000-000000000021';
   foreign_project_id constant uuid := 'c1d10000-0000-4000-8000-000000000102';
+  same_tenant_company_id constant uuid := 'c1d10000-0000-4000-8000-000000000022';
+  same_tenant_project_id constant uuid := 'c1d10000-0000-4000-8000-000000000103';
   category_id constant uuid := 'c1d10000-0000-4000-8000-000000000301';
   subcontract_category_id constant uuid := 'c1d10000-0000-4000-8000-000000000302';
   role_id constant uuid := 'c1d10000-0000-4000-8000-000000000911';
@@ -48,7 +50,7 @@ declare
 begin
   insert into auth.users(id,email) values(actor_id,'c1d-commands@taskovia.invalid'),(actor_without_manage,'c1d-no-manage@taskovia.invalid'),(actor_without_prepare,'c1d-no-prepare@taskovia.invalid'),(actor_without_publish,'c1d-no-publish@taskovia.invalid');
   insert into public.tenants(id,code,name) values(tenant_id,'C1D','C1 detail command tenant'),(foreign_tenant_id,'C1DF','C1 detail foreign tenant');
-  insert into public.companies(id,tenant_id,code,name) values(company_id,tenant_id,'C1D','C1 detail command company'),(foreign_company_id,foreign_tenant_id,'C1DF','C1 detail foreign company');
+  insert into public.companies(id,tenant_id,code,name) values(company_id,tenant_id,'C1D','C1 detail command company'),(foreign_company_id,foreign_tenant_id,'C1DF','C1 detail foreign company'),(same_tenant_company_id,tenant_id,'C1D2','C1 detail same-tenant foreign company');
   insert into public.tenant_memberships(user_id,tenant_id,roles) values(actor_id,tenant_id,array['member']),(actor_without_manage,tenant_id,array['member']),(actor_without_prepare,tenant_id,array['member']),(actor_without_publish,tenant_id,array['member']);
   insert into public.company_memberships(user_id,tenant_id,company_id,roles,is_active) values(actor_id,tenant_id,company_id,array['member'],true),(actor_without_manage,tenant_id,company_id,array['member'],true),(actor_without_prepare,tenant_id,company_id,array['member'],true),(actor_without_publish,tenant_id,company_id,array['member'],true);
   insert into public.roles(id,tenant_id,company_id,code,name,description,is_system) values(role_id,tenant_id,company_id,'c1d_detail_operator','C1D detail operator','fixture',false);
@@ -57,8 +59,14 @@ begin
   insert into public.role_permissions(role_id,permission_code) values(role_without_manage,'cost.prepare'),(role_without_manage,'cost.publish_import'),(role_without_prepare,'cost.manage'),(role_without_prepare,'cost.publish_import'),(role_without_publish,'cost.manage'),(role_without_publish,'cost.prepare');
   insert into public.company_role_assignments(tenant_id,company_id,user_id,role_id,granted_by,grant_reason) values(tenant_id,company_id,actor_id,role_id,actor_id,'fixture'),(tenant_id,company_id,actor_without_manage,role_without_manage,actor_id,'fixture'),(tenant_id,company_id,actor_without_prepare,role_without_prepare,actor_id,'fixture'),(tenant_id,company_id,actor_without_publish,role_without_publish,actor_id,'fixture');
   insert into public.company_cost_settings(company_id,tenant_id,enabled,created_by) values(company_id,tenant_id,true,actor_id),(foreign_company_id,foreign_tenant_id,true,actor_id);
-  insert into public.projects(id,tenant_id,company_id,code,name,origin,created_by) values(project_id,tenant_id,company_id,'C1D-P1','C1 detail command project','manual',actor_id),(foreign_project_id,foreign_tenant_id,foreign_company_id,'C1DF-P1','C1 detail foreign project','manual',actor_id);
-  insert into public.cost_categories(id,tenant_id,company_id,code,name,display_order,posting_strategy,created_by,updated_by) values(category_id,tenant_id,company_id,'materials','Materials',1,'ordinary_detail',actor_id,actor_id),(subcontract_category_id,tenant_id,company_id,'subcontract_labor','Subcontract',2,'subcontract_payment',actor_id,actor_id);
+  insert into public.projects(id,tenant_id,company_id,code,name,origin,created_by) values(project_id,tenant_id,company_id,'C1D-P1','C1 detail command project','manual',actor_id),(foreign_project_id,foreign_tenant_id,foreign_company_id,'C1DF-P1','C1 detail foreign project','manual',actor_id),(same_tenant_project_id,tenant_id,same_tenant_company_id,'C1D2-P1','C1 detail same-tenant foreign project','manual',actor_id);
+  insert into public.cost_categories(id,tenant_id,company_id,code,name,display_order,posting_strategy,created_by,updated_by) values(category_id,tenant_id,company_id,'materials','Materials',1,'ordinary_detail',actor_id,actor_id),(subcontract_category_id,tenant_id,company_id,'subcontract_labor','Subcontract',2,'subcontract_payment',actor_id,actor_id),('c1d10000-0000-4000-8000-000000000303',foreign_tenant_id,foreign_company_id,'materials','Foreign materials',1,'ordinary_detail',actor_id,actor_id),('c1d10000-0000-4000-8000-000000000304',tenant_id,same_tenant_company_id,'materials','Same-tenant foreign materials',1,'ordinary_detail',actor_id,actor_id);
+  insert into public.project_cost_items(id,tenant_id,company_id,project_id,cost_category_id,description,amount,amount_text,currency_code,work_status,publication_state,publication_origin,published_at,created_by) values
+    ('c1d10000-0000-4000-8000-000000000801',foreign_tenant_id,foreign_company_id,foreign_project_id,'c1d10000-0000-4000-8000-000000000303','Foreign detail parent',0,'0','VND','unknown','published','legacy_backfill',now(),actor_id),
+    ('c1d10000-0000-4000-8000-000000000803',tenant_id,same_tenant_company_id,same_tenant_project_id,'c1d10000-0000-4000-8000-000000000304','Same-tenant foreign detail parent',0,'0','VND','unknown','published','legacy_backfill',now(),actor_id);
+  insert into public.project_cost_item_details(id,tenant_id,company_id,project_cost_item_id,line_no,description,amount_text,publication_state,created_by) values
+    ('c1d10000-0000-4000-8000-000000000802',foreign_tenant_id,foreign_company_id,'c1d10000-0000-4000-8000-000000000801',1,'Foreign tenant detail','1','draft',actor_id),
+    ('c1d10000-0000-4000-8000-000000000804',tenant_id,same_tenant_company_id,'c1d10000-0000-4000-8000-000000000803',1,'Same-tenant foreign company detail','1','draft',actor_id);
   insert into public.controlled_import_runs(id,tenant_id,company_id,run_id,actor_id,idempotency_key,payload_digest,manifest_digest,input_digests,workbook_family,adapter_id,adapter_version,manifest_snapshot,request_id) values('c1d10000-0000-4000-8000-000000000401',tenant_id,company_id,'c1d10000-0000-4000-8000-000000000402',actor_id,'c1d10000-0000-4000-8000-000000000403',repeat('a',64),repeat('b',64),array[repeat('c',64)],'fixture','fixture','1',jsonb_build_object('fixture',true),'c1d10000-0000-4000-8000-000000000404');
   insert into public.accounting_sources(id,tenant_id,company_id,code,title,source_system,created_by) values('c1d10000-0000-4000-8000-000000000405',tenant_id,company_id,'C1D-S','C1 detail source','fixture',actor_id);
   insert into public.accounting_source_versions(id,tenant_id,company_id,source_id,import_run_id,version_no,input_file_identity,input_file_sha256,original_filename,status,created_by,shared_by,shared_at) values('c1d10000-0000-4000-8000-000000000406',tenant_id,company_id,'c1d10000-0000-4000-8000-000000000405','c1d10000-0000-4000-8000-000000000401',1,'fixture',repeat('d',64),'fixture.xlsx','shared',actor_id,actor_id,now());
@@ -68,6 +76,11 @@ begin
     ('c1d10000-0000-4000-8000-000000000502',tenant_id,company_id,'c1d10000-0000-4000-8000-000000000407','c1d10000-0000-4000-8000-000000000401',repeat('f',64),'stale figure','1','known','1',1,'VND','cost_total','net','exact','unknown','confirmed',jsonb_build_object('projectId',project_id),project_id,'whole_project','fixture','confirmed_external','draft',actor_id,null,null);
 end;
 $$;
+
+create temp table c1d_cross_scope_before as
+select detail.id, detail.description, detail.amount_text, detail.version, detail.publication_state
+from public.project_cost_item_details detail
+where detail.id in ('c1d10000-0000-4000-8000-000000000802','c1d10000-0000-4000-8000-000000000804');
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"c1d10000-0000-4000-8000-000000000901","role":"authenticated"}', true);
@@ -82,7 +95,20 @@ select public.c1_create_project_cost_detail_draft(
 select is((select result->>'publicationState' from c1d_result),'draft','draft create returns a draft detail');
 select is((select amount_text from public.project_cost_items where id=(select (result->>'projectCostItemId')::uuid from c1d_result)),'0.0000','draft create has zero parent effect');
 select throws_ok($$select public.c1_create_project_cost_detail_draft('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000102','categoryId','c1d10000-0000-4000-8000-000000000301','description','foreign project'),'c1d10000-0000-4000-8000-000000000608','c1d10000-0000-4000-8000-000000000715')$$,'P0001','RESOURCE_NOT_FOUND','foreign project IDs do not leak across tenant or company scope');
-select throws_ok($$select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000802',0,'c1d10000-0000-4000-8000-000000000609','c1d10000-0000-4000-8000-000000000716')$$,'P0001','RESOURCE_NOT_FOUND','foreign detail IDs do not leak across tenant or company scope');
+select throws_ok($$select public.c1_update_project_cost_detail_draft('c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000802',jsonb_build_object('expectedVersion',0,'description','foreign mutation'),'c1d10000-0000-4000-8000-000000000716')$$,'P0001','RESOURCE_NOT_FOUND','foreign-tenant existing detail update does not leak or mutate');
+select throws_ok($$select public.c1_read_project_cost_detail_draft_operational('c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000802')$$,'P0001','RESOURCE_NOT_FOUND','foreign-tenant existing detail operational read does not leak');
+select throws_ok($$select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000802',0,'c1d10000-0000-4000-8000-000000000609','c1d10000-0000-4000-8000-000000000717')$$,'P0001','RESOURCE_NOT_FOUND','foreign-tenant existing detail publish does not leak or mutate');
+select throws_ok($$select public.c1_prepare_project_cost_detail_financials('c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000804',jsonb_build_object('expectedVersion',0,'amount','2.0000'),'c1d10000-0000-4000-8000-000000000718')$$,'P0001','RESOURCE_NOT_FOUND','same-tenant different-company existing detail preparation does not leak or mutate');
+select throws_ok($$select public.c1_read_project_cost_detail_draft('c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000804')$$,'P0001','RESOURCE_NOT_FOUND','same-tenant different-company existing detail financial read does not leak');
+reset role;
+select is(
+  (select jsonb_agg(jsonb_build_object('id',detail.id,'description',detail.description,'amountText',detail.amount_text,'version',detail.version,'publicationState',detail.publication_state) order by detail.id) from public.project_cost_item_details detail where detail.id in ('c1d10000-0000-4000-8000-000000000802','c1d10000-0000-4000-8000-000000000804')),
+  (select jsonb_agg(jsonb_build_object('id',snapshot.id,'description',snapshot.description,'amountText',snapshot.amount_text,'version',snapshot.version,'publicationState',snapshot.publication_state) order by snapshot.id) from c1d_cross_scope_before snapshot),
+  'cross-scope detail commands leave existing foreign fixtures unchanged'
+);
+select is((select count(*) from public.audit_events event where event.resource_id in ('c1d10000-0000-4000-8000-000000000802','c1d10000-0000-4000-8000-000000000804')) + (select count(*) from public.cost_command_receipts receipt where receipt.idempotency_key='c1d10000-0000-4000-8000-000000000609'),0::bigint,'cross-scope command failures create no audit event or receipt');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"c1d10000-0000-4000-8000-000000000901","role":"authenticated"}', true);
 select is((public.c1_create_project_cost_detail_draft('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101','categoryId','c1d10000-0000-4000-8000-000000000301','description','first draft'),'c1d10000-0000-4000-8000-000000000601','c1d10000-0000-4000-8000-000000000702')->>'replayed'),'true','same create key replays one draft');
 select is((public.c1_update_project_cost_detail_draft('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',0,'description','renamed draft'),'c1d10000-0000-4000-8000-000000000703')->>'version'),'1','operational update versions only the target detail');
 select is((select amount_text from public.project_cost_items where id=(select (result->>'projectCostItemId')::uuid from c1d_result)),'0.0000','operational update retains zero official effect');

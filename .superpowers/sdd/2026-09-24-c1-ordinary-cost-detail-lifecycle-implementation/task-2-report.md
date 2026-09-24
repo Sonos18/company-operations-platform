@@ -81,3 +81,19 @@ Passed: 3 files, 94 tests.
 `pnpm typecheck`
 
 Passed, with the existing Node 22 versus required Node 24 engine warning.
+
+## Fix round 4
+
+- Replaced the prior nonexistent foreign-detail probe with reserved, rollback-safe existing-detail fixtures for a foreign tenant/company and a same-tenant different company; each fixture uses composite-scope parent/project/category foreign keys.
+- Added authorized-primary-actor update, prepare, publish, and financial/operational read probes that return `RESOURCE_NOT_FOUND`, plus row-snapshot and audit/receipt assertions proving no mutation or leakage.
+- Updated the pgTAP plan from 60 to 66 assertions. No production code changed and no Cloud DEV, Production, or Local database command was run.
+
+### Local verification
+
+`pnpm exec vitest run tests/unit/costs/ordinary-cost-detail-lifecycle.spec.ts tests/unit/server/ordinary-cost-detail-lifecycle.spec.ts tests/unit/server/api-error.spec.ts tests/unit/costs/project-costs.spec.ts tests/unit/server/project-cost.service.spec.ts tests/unit/server/project-cost.routes.spec.ts tests/unit/repositories/http-project-cost-repository.spec.ts`
+
+Passed: 7 files, 196 tests.
+
+`git diff --check`
+
+Passed. `pnpm typecheck` was not rerun because this round changes only pgTAP fixtures and task reporting.
