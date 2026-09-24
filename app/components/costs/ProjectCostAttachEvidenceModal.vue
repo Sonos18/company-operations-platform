@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import {
   ALLOWED_FILE_EXTENSIONS,
   uploadAndFinalizeEvidence,
@@ -96,6 +96,17 @@ watch(() => companyAccess.activeCompanyId, () => {
   resetUploadState()
   isOpen.value = false
 }, { flush: 'sync' })
+watch(canPrepare, (allowed) => {
+  if (allowed) return
+  companyContextGeneration++
+  resetUploadState()
+  isOpen.value = false
+}, { flush: 'sync' })
+
+onUnmounted(() => {
+  companyContextGeneration++
+  resetUploadState()
+})
 
 async function handleUploadAndLink() {
   if (!selectedFile.value || !canPrepare.value) return

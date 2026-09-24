@@ -92,7 +92,21 @@ function resetPaymentModalState() {
   replacesPaymentId.value = null
 }
 
-watch(() => companyAccess.activeCompanyId, resetPaymentModalState, { flush: 'sync' })
+const ledgerMutationContextKey = computed(() => {
+  const detail = props.detail
+  const scope = detail == null ? 'none' : 'contract' in detail ? 'contract' : 'party'
+
+  return JSON.stringify({
+    companyId: companyAccess.activeCompanyId ?? null,
+    projectId: detail?.project.projectId ?? null,
+    scope,
+    partyId: detail?.party.partyId ?? null,
+    contractId: detail != null && 'contract' in detail ? detail.contract.id : null,
+    canRecordCash: canRecordCash.value,
+  })
+})
+
+watch(ledgerMutationContextKey, resetPaymentModalState, { flush: 'sync' })
 
 const allContracts = computed<ContractItem[]>(() => extractAllContracts(props.detail))
 

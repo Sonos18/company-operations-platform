@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import type { ProjectCostDraftCategoryOption } from '../../../shared/schemas/costs/project-costs'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
 
@@ -71,6 +71,18 @@ watch(() => companyAccess.activeCompanyId, () => {
   errorMessage.value = null
   isOpen.value = false
 }, { flush: 'sync' })
+watch(canManage, (allowed) => {
+  if (allowed) return
+  pendingCommand.value = null
+  submitting.value = false
+  errorMessage.value = null
+  isOpen.value = false
+}, { flush: 'sync' })
+
+onUnmounted(() => {
+  pendingCommand.value = null
+  submitting.value = false
+})
 
 async function submit() {
   if (!canManage.value) {

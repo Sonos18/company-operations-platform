@@ -33,6 +33,7 @@ const router = useRouter()
 const repositories = useRepositories()
 const companyAccess = useNuxtApp().$companyAccessStore
 
+const canRead = computed(() => companyAccess.hasPermission('cost.read'))
 const canCorrect = computed(() => companyAccess.hasPermission('cost.correct'))
 const canPrepare = computed(() => companyAccess.hasPermission('cost.prepare'))
 const canSourceRead = computed(() => companyAccess.hasPermission('cost.source.read'))
@@ -220,8 +221,17 @@ async function loadOverview() {
   canonicalItemRequests.invalidate()
   ordinaryController.resetContext()
   paymentsController.resetContext()
+  overview.value = null
   subcontractorList.value = null
   canonicalCostItem.value = null
+  isCorrectionModalOpen.value = false
+  isAttachEvidenceOpen.value = false
+  isEvidenceModalOpen.value = false
+
+  if (!canRead.value) {
+    pageStatus.value = 'permission'
+    return
+  }
 
   const token = overviewTracker.start({
     companyId: companyAccess.activeCompanyId,
@@ -336,38 +346,47 @@ function clearSelectedParty() {
 }
 
 watch(
-  [projectId, categoryId, () => companyAccess.activeCompanyId],
+  [projectId, categoryId, () => companyAccess.activeCompanyId, canRead],
   ([, , companyId], previous) => {
-    if (previous?.[2] !== undefined && companyId !== previous[2]) {
-      overviewTracker.invalidate()
-      subcontractorsTracker.invalidate()
-      canonicalItemRequests.invalidate()
-      ordinaryController.resetContext()
-      paymentsController.resetContext()
-      overview.value = null
-      subcontractorList.value = null
-      canonicalCostItem.value = null
-      loadingCanonicalItem.value = false
-      subcontractorsStatus.value = 'idle'
-      isCorrectionModalOpen.value = false
-      isAttachEvidenceOpen.value = false
-      isEvidenceModalOpen.value = false
-      clearingCompanyPaymentSelection.value = false
+    const companyChanged = previous?.[2] !== undefined && companyId !== previous[2]
+    overviewTracker.invalidate()
+    subcontractorsTracker.invalidate()
+    canonicalItemRequests.invalidate()
+    ordinaryController.resetContext()
+    paymentsController.resetContext()
+    overview.value = null
+    subcontractorList.value = null
+    canonicalCostItem.value = null
+    loadingCanonicalItem.value = false
+    subcontractorsStatus.value = 'idle'
+    isCorrectionModalOpen.value = false
+    isAttachEvidenceOpen.value = false
+    isEvidenceModalOpen.value = false
+    clearingCompanyPaymentSelection.value = false
 
-      if (route.query.partyId || route.query.contractId) {
-        const query = { ...route.query }
-        delete query.partyId
-        delete query.contractId
-        clearingCompanyPaymentSelection.value = true
-        void router.replace({ query }).finally(() => {
-          if (companyAccess.activeCompanyId === companyId) clearingCompanyPaymentSelection.value = false
-        })
-      }
+    if (companyChanged && (route.query.partyId || route.query.contractId)) {
+      const query = { ...route.query }
+      delete query.partyId
+      delete query.contractId
+      clearingCompanyPaymentSelection.value = true
+      void router.replace({ query }).finally(() => {
+        if (companyAccess.activeCompanyId === companyId) clearingCompanyPaymentSelection.value = false
+      })
     }
     loadOverview()
   },
   { immediate: true, flush: 'sync' },
 )
+
+watch(canCorrect, (allowed) => {
+  if (!allowed) isCorrectionModalOpen.value = false
+}, { flush: 'sync' })
+watch(canPrepare, (allowed) => {
+  if (!allowed) isAttachEvidenceOpen.value = false
+}, { flush: 'sync' })
+watch(canSourceRead, (allowed) => {
+  if (!allowed) isEvidenceModalOpen.value = false
+}, { flush: 'sync' })
 
 watch(
   [selectedPartyId, selectedContractId],

@@ -13,6 +13,7 @@ definePageMeta({ requiredPermission: 'cost.read' })
 
 const repositories = useRepositories()
 const companyAccess = useNuxtApp().$companyAccessStore
+const canRead = computed(() => companyAccess.hasPermission('cost.read'))
 const projects = ref<FinanceProjectList['projects']>([])
 const nextCursor = ref<string | null>(null)
 const loadingMore = ref(false)
@@ -34,6 +35,14 @@ function onCardClick(projectId: string, event: MouseEvent) {
 }
 
 async function load() {
+  if (!canRead.value) {
+    requestTracker.invalidate()
+    projects.value = []
+    nextCursor.value = null
+    loadingMore.value = false
+    status.value = 'permission'
+    return
+  }
   const token = requestTracker.start({ companyId: companyAccess.activeCompanyId })
   status.value = 'loading'
   projects.value = []
@@ -75,7 +84,7 @@ async function loadMore() {
   }
 }
 
-watch(() => companyAccess.activeCompanyId, () => {
+watch([() => companyAccess.activeCompanyId, canRead], () => {
   requestTracker.invalidate()
   projects.value = []
   nextCursor.value = null

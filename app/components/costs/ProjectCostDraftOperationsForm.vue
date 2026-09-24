@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import type { ProjectCostDraftCategoryOption } from '../../../shared/schemas/costs/project-costs'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
 
@@ -39,6 +39,7 @@ const submitting = ref(false)
 const errorMessage = ref<string | null>(null)
 const successMessage = ref<string | null>(null)
 const isVersionConflict = ref(false)
+let contextGeneration = 0
 
 const form = reactive({
   description: props.draft.description,
@@ -53,6 +54,7 @@ const form = reactive({
 
 // Update local form state when draft prop changes
 watch(() => props.draft, (newDraft) => {
+  contextGeneration++
   form.description = newDraft.description
   form.costCategoryId = newDraft.costCategoryId ?? ''
   form.businessReference = newDraft.businessReference ?? ''
@@ -63,7 +65,12 @@ watch(() => props.draft, (newDraft) => {
   form.workStatus = newDraft.workStatus
   isVersionConflict.value = false
   errorMessage.value = null
-}, { deep: true })
+}, { deep: true, flush: 'sync' })
+watch([() => companyAccess.activeCompanyId, canManage], () => {
+  contextGeneration++
+  submitting.value = false
+}, { flush: 'sync' })
+onUnmounted(() => { contextGeneration++ })
 
 const eligibleCategories = computed(() => {
   return props.categories.filter(c => c.isActive && (c.draftEligible ?? c.code !== 'subcontract_labor'))
@@ -91,6 +98,15 @@ async function save() {
   errorMessage.value = null
   successMessage.value = null
   isVersionConflict.value = false
+  const companyId = companyAccess.activeCompanyId
+  const generation = contextGeneration
+  const draftId = props.draft.id
+  const draftVersion = props.draft.version
+  const isContextCurrent = () => companyAccess.activeCompanyId === companyId
+    && contextGeneration === generation
+    && canManage.value
+    && props.draft.id === draftId
+    && props.draft.version === draftVersion
 
   try {
     const input = {
@@ -106,10 +122,12 @@ async function save() {
     }
 
     const result = await repositories.projectCosts.update(props.draft.id, input)
+    if (!isContextCurrent()) return
     successMessage.value = 'Đã lưu thông tin vận hành thành công.'
     emit('saved', { version: result.version })
   }
   catch (err: unknown) {
+    if (!isContextCurrent()) return
     const msg = extractErrorMessage(err)
     if (msg.includes('xung đột phiên bản') || (typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code === 'VERSION_CONFLICT')) {
       isVersionConflict.value = true
@@ -120,7 +138,7 @@ async function save() {
     }
   }
   finally {
-    submitting.value = false
+    if (isContextCurrent()) submitting.value = false
   }
 }
 </script>

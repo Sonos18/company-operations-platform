@@ -263,6 +263,11 @@ watch(() => companyAccess.activeCompanyId, () => {
   resetCorrectionState(true)
   isOpen.value = false
 }, { flush: 'sync' })
+watch(canCorrect, (allowed) => {
+  if (allowed) return
+  resetCorrectionState(true)
+  isOpen.value = false
+}, { flush: 'sync' })
 
 watch(() => props.currentOperational, () => {
   if (props.open) {

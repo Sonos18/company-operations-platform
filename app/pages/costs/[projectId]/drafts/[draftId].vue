@@ -23,7 +23,12 @@ const draftId = computed(() => String(route.params.draftId ?? ''))
 
 const canManage = computed(() => companyAccess.hasPermission('cost.manage'))
 const canPrepare = computed(() => companyAccess.hasPermission('cost.prepare'))
+const canRead = computed(() => companyAccess.hasPermission('cost.read'))
 const canPublish = computed(() => companyAccess.hasPermission('cost.publish_import'))
+type DraftProjectionTier = 'prepare' | 'manage' | 'none'
+type DraftEnrichmentTier = 'published_finance' | 'draft_metadata'
+const projectionTier = computed<DraftProjectionTier>(() => canPrepare.value ? 'prepare' : canManage.value ? 'manage' : 'none')
+const enrichmentTier = computed<DraftEnrichmentTier>(() => canRead.value ? 'published_finance' : 'draft_metadata')
 
 const loading = ref(true)
 const status = ref<'loading' | 'ready' | 'not_found' | 'permission' | 'error'>('loading')
@@ -35,7 +40,13 @@ const financialDraft = ref<ProjectCostDraft | null>(null)
 const operationalDraft = ref<ProjectCostOperationalDraft | null>(null)
 
 const isPublishModalOpen = ref(false)
-const requestTracker = createAsyncRequestTracker<{ companyId: string; projectId: string; draftId: string }>()
+const requestTracker = createAsyncRequestTracker<{
+  companyId: string
+  projectId: string
+  draftId: string
+  projectionTier: DraftProjectionTier
+  enrichmentTier: DraftEnrichmentTier
+}>()
 
 const currentDraftData = computed(() => {
   if (canPrepare.value && financialDraft.value) {
@@ -74,7 +85,14 @@ const projectMetadata = computed(() => draftMetadata.value?.projects.find(projec
 const draftCategories = computed(() => draftMetadata.value?.categories ?? overview.value?.categories ?? [])
 
 async function loadData() {
-  const request = requestTracker.start({ companyId: companyAccess.activeCompanyId ?? '', projectId: projectId.value, draftId: draftId.value })
+  const request = requestTracker.start({
+    companyId: companyAccess.activeCompanyId ?? '',
+    projectId: projectId.value,
+    draftId: draftId.value,
+    projectionTier: projectionTier.value,
+    enrichmentTier: enrichmentTier.value,
+  })
+  isPublishModalOpen.value = false
   financialDraft.value = null
   operationalDraft.value = null
   overview.value = null
@@ -89,7 +107,7 @@ async function loadData() {
     return
   }
 
-  if (!canManage.value && !canPrepare.value) {
+  if (request.identity.projectionTier === 'none') {
     status.value = 'permission'
     loading.value = false
     return
@@ -101,10 +119,10 @@ async function loadData() {
     let nextOverview: FinanceOverview | null = null
     let nextDraftMetadata: ProjectCostDraftManagementMetadata | null = null
 
-    if (canPrepare.value) {
+    if (request.identity.projectionTier === 'prepare') {
       nextFinancialDraft = await repositories.projectCosts.draft(request.identity.draftId)
     }
-    else if (canManage.value) {
+    else {
       nextOperationalDraft = await repositories.projectCosts.operationalDraft(request.identity.draftId)
     }
     if (!request.isCurrent()) return
@@ -115,7 +133,7 @@ async function loadData() {
       return
     }
 
-    if (companyAccess.hasPermission('cost.read')) {
+    if (request.identity.enrichmentTier === 'published_finance') {
       try {
         nextOverview = await repositories.projectFinance.overview(request.identity.projectId)
       }
@@ -176,20 +194,21 @@ function onFinancialSaved(res: { version: number }) {
 }
 
 function onPublished() {
-  router.push(companyAccess.hasPermission('cost.read') ? `/costs/${projectId.value}` : `/cost-drafts?projectId=${projectId.value}`)
+  router.push(canRead.value ? `/costs/${projectId.value}` : `/cost-drafts?projectId=${projectId.value}`)
 }
 
 watch(
-  [projectId, draftId, () => companyAccess.activeCompanyId],
-  ([, , companyId], previous) => {
-    if (previous?.[2] !== undefined && companyId !== previous[2]) {
-      requestTracker.invalidate()
-      isPublishModalOpen.value = false
-    }
+  [projectId, draftId, () => companyAccess.activeCompanyId, projectionTier, enrichmentTier],
+  () => {
+    requestTracker.invalidate()
     loadData()
   },
   { immediate: true, flush: 'sync' },
 )
+
+watch(canPublish, (allowed) => {
+  if (!allowed) isPublishModalOpen.value = false
+}, { flush: 'sync' })
 
 onUnmounted(() => requestTracker.invalidate())
 </script>

@@ -13,6 +13,8 @@ const repositories = useRepositories()
 const companyAccess = useNuxtApp().$companyAccessStore
 const canManage = computed(() => companyAccess.hasPermission('cost.manage'))
 const canPrepare = computed(() => companyAccess.hasPermission('cost.prepare'))
+type DraftProjectionTier = 'prepare' | 'manage' | 'none'
+const projectionTier = computed<DraftProjectionTier>(() => canPrepare.value ? 'prepare' : canManage.value ? 'manage' : 'none')
 const metadata = ref<ProjectCostDraftManagementMetadata>({ projects: [], categories: [] })
 const selectedProjectId = ref('')
 const drafts = ref<Array<ProjectCostDraft | ProjectCostOperationalDraft>>([])
@@ -20,25 +22,25 @@ const loading = ref(true)
 const errorMessage = ref<string | null>(null)
 const createOpen = ref(false)
 const metadataRequests = createAsyncRequestTracker<{ companyId: string }>()
-const draftRequests = createAsyncRequestTracker<{ companyId: string; projectId: string }>()
+const draftRequests = createAsyncRequestTracker<{ companyId: string; projectId: string; projectionTier: DraftProjectionTier }>()
 
 const requestedProjectId = computed(() => typeof route.query.projectId === 'string' ? route.query.projectId : '')
 const selectedProject = computed(() => metadata.value.projects.find(project => project.id === selectedProjectId.value) ?? null)
 const categoryNames = computed(() => new Map(metadata.value.categories.map(category => [category.categoryId, category.name])))
 
 async function loadDrafts() {
-  if (!selectedProjectId.value) {
+  if (!selectedProjectId.value || projectionTier.value === 'none') {
     draftRequests.invalidate()
     drafts.value = []
     loading.value = false
     return
   }
-  const request = draftRequests.start({ companyId: companyAccess.activeCompanyId ?? '', projectId: selectedProjectId.value })
+  const request = draftRequests.start({ companyId: companyAccess.activeCompanyId ?? '', projectId: selectedProjectId.value, projectionTier: projectionTier.value })
   drafts.value = []
   loading.value = true
   errorMessage.value = null
   try {
-    const nextDrafts = canPrepare.value
+    const nextDrafts = request.identity.projectionTier === 'prepare'
       ? await repositories.projectCosts.listDrafts(selectedProjectId.value)
       : await repositories.projectCosts.listOperationalDrafts(selectedProjectId.value)
     if (!request.isCurrent()) return
@@ -110,6 +112,24 @@ watch(requestedProjectId, (requested) => {
   selectedProjectId.value = nextProjectId
   loadDrafts()
 })
+watch(projectionTier, (tier) => {
+  draftRequests.invalidate()
+  drafts.value = []
+  createOpen.value = false
+  errorMessage.value = null
+  if (tier === 'none') {
+    metadataRequests.invalidate()
+    metadata.value = { projects: [], categories: [] }
+    selectedProjectId.value = ''
+    loading.value = false
+    return
+  }
+  if (metadata.value.projects.length === 0) load()
+  else loadDrafts()
+}, { flush: 'sync' })
+watch(canManage, (allowed) => {
+  if (!allowed) createOpen.value = false
+}, { flush: 'sync' })
 onUnmounted(() => {
   metadataRequests.invalidate()
   draftRequests.invalidate()

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { ClientError } from '../../errors/client-error'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
 import { formatFinanceMoney } from '../../utils/costs/finance-display'
@@ -42,6 +42,18 @@ watch(() => companyAccess.activeCompanyId, () => {
   errorMessage.value = null
   isOpen.value = false
 }, { flush: 'sync' })
+watch(canPublish, (allowed) => {
+  if (allowed) return
+  pendingCommand.value = null
+  submitting.value = false
+  errorMessage.value = null
+  isOpen.value = false
+}, { flush: 'sync' })
+
+onUnmounted(() => {
+  pendingCommand.value = null
+  submitting.value = false
+})
 
 async function handlePublish() {
   if (!canPublish.value) {

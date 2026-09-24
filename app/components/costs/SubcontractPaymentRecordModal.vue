@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
 import {
   ALLOWED_FILE_EXTENSIONS,
@@ -91,16 +91,44 @@ watch([() => props.open, () => props.replacesPaymentId, () => props.projectId, (
     errorMessage.value = null
   }
 }, { immediate: true })
-watch([() => props.replacesPaymentId, () => props.projectId, () => props.subcontractId], () => {
-  evidenceUploadSession.value = null
-  pendingCommand.value = null
-})
+watch([
+  () => props.replacesPaymentId,
+  () => props.projectId,
+  () => props.subcontractId,
+  () => props.expectedSubcontractVersion,
+  () => props.currencyCode,
+], () => {
+  companyContextGeneration++
+  resetRecordState()
+  isOpen.value = false
+}, { flush: 'sync' })
 
 watch(() => companyAccess.activeCompanyId, () => {
   companyContextGeneration++
   resetRecordState()
   isOpen.value = false
 }, { flush: 'sync' })
+watch(canRecordCash, (allowed) => {
+  if (allowed) return
+  companyContextGeneration++
+  resetRecordState()
+  isOpen.value = false
+}, { flush: 'sync' })
+watch(canPrepareEvidence, (allowed) => {
+  if (allowed || (!selectedEvidenceFile.value && !evidenceUploadSession.value)) return
+  companyContextGeneration++
+  submitting.value = false
+  selectedEvidenceFile.value = null
+  evidenceFileError.value = null
+  evidenceUploadSession.value = null
+  pendingCommand.value = null
+  if (evidenceFileInput.value) evidenceFileInput.value.value = ''
+}, { flush: 'sync' })
+
+onUnmounted(() => {
+  companyContextGeneration++
+  resetRecordState()
+})
 
 function onEvidenceFileSelected(event: Event) {
   const target = event.target as HTMLInputElement

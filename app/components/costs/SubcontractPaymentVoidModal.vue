@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
 import { formatFinanceMoney } from '../../utils/costs/finance-display'
 
@@ -42,6 +42,7 @@ const errorMessage = ref<string | null>(null)
 const voidSucceeded = ref(false)
 const voidedPaymentId = ref<string | null>(null)
 const pendingCommand = ref<{ fingerprint: string; idempotencyKey: string } | null>(null)
+let contextGeneration = 0
 
 function resetVoidState() {
   reason.value = ''
@@ -60,12 +61,28 @@ watch([() => props.open, () => props.projectId, () => props.subcontractId, () =>
     voidedPaymentId.value = null
   }
 })
-watch([() => props.projectId, () => props.subcontractId, () => props.payment?.id, () => props.payment?.version], () => { pendingCommand.value = null })
-
-watch(() => companyAccess.activeCompanyId, () => {
+watch([() => props.projectId, () => props.subcontractId, () => props.payment?.id, () => props.payment?.version], () => {
+  contextGeneration++
   resetVoidState()
   isOpen.value = false
 }, { flush: 'sync' })
+
+watch(() => companyAccess.activeCompanyId, () => {
+  contextGeneration++
+  resetVoidState()
+  isOpen.value = false
+}, { flush: 'sync' })
+watch(canRecordCash, (allowed) => {
+  if (allowed) return
+  contextGeneration++
+  resetVoidState()
+  isOpen.value = false
+}, { flush: 'sync' })
+
+onUnmounted(() => {
+  contextGeneration++
+  resetVoidState()
+})
 
 async function handleVoid() {
   if (!canRecordCash.value || !props.payment) return
@@ -78,7 +95,8 @@ async function handleVoid() {
   submitting.value = true
   errorMessage.value = null
   const companyId = companyAccess.activeCompanyId
-  const isCompanyContextCurrent = () => companyAccess.activeCompanyId === companyId
+  const generation = contextGeneration
+  const isCompanyContextCurrent = () => companyAccess.activeCompanyId === companyId && contextGeneration === generation && canRecordCash.value
   let command: { fingerprint: string; idempotencyKey: string } | null = null
 
   try {

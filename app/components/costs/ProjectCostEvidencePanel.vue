@@ -113,13 +113,24 @@ watch(
     () => props.projectId,
     () => props.projectCostItemId,
     () => canSourceRead.value,
+    () => canPrepare.value,
+    () => canFileRead.value,
   ],
-  ([companyId, projectId, projectCostItemId], previous) => {
-    if (previous && (companyId !== previous[0] || projectId !== previous[1] || projectCostItemId !== previous[2])) {
+  ([companyId, projectId, projectCostItemId, sourceReadAllowed, prepareAllowed, fileReadAllowed], previous) => {
+    const hasPreviousContext = previous?.[0] !== undefined
+    const resourceChanged = hasPreviousContext && (companyId !== previous[0] || projectId !== previous[1] || projectCostItemId !== previous[2])
+    const metadataContextChanged = !hasPreviousContext || resourceChanged || sourceReadAllowed !== previous[3]
+    const uploadAuthorizationChanged = hasPreviousContext && prepareAllowed !== previous[4]
+    const fileAuthorizationChanged = hasPreviousContext && fileReadAllowed !== previous[5]
+    if (resourceChanged || uploadAuthorizationChanged) {
       companyContextGeneration++
       resetUploadState()
     }
-    fetchEvidenceList()
+    else if (fileAuthorizationChanged) {
+      companyContextGeneration++
+      openingFileId.value = null
+    }
+    if (metadataContextChanged) fetchEvidenceList()
   },
   { immediate: true, flush: 'sync' },
 )
@@ -160,7 +171,7 @@ async function handleUpload() {
   const companyId = companyAccess.activeCompanyId
   const generation = companyContextGeneration
   const file = selectedFile.value
-  const isCompanyContextCurrent = () => companyAccess.activeCompanyId === companyId && companyContextGeneration === generation
+  const isCompanyContextCurrent = () => companyAccess.activeCompanyId === companyId && companyContextGeneration === generation && canPrepare.value
 
   uploading.value = true
   uploadError.value = null
@@ -218,7 +229,7 @@ async function openEvidenceFile(fileId: string) {
   if (!canFileRead.value) return
   const companyId = companyAccess.activeCompanyId
   const generation = companyContextGeneration
-  const isCompanyContextCurrent = () => companyAccess.activeCompanyId === companyId && companyContextGeneration === generation
+  const isCompanyContextCurrent = () => companyAccess.activeCompanyId === companyId && companyContextGeneration === generation && canFileRead.value
 
   openingFileId.value = fileId
 

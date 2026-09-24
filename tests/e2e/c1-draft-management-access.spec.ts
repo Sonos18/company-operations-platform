@@ -36,6 +36,16 @@ async function mockDraftManagement(page: Page) {
   await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, route => route.fulfill({ json: [] }))
 }
 
+async function setActivePermissions(page: Page, permissions: string[]) {
+  await page.evaluate((nextPermissions) => {
+    const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { companies: Array<{ companyId: string; permissions: string[] }>; activeCompanyId: string } } } } } }
+    const store = root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore
+    const company = store?.companies.find(item => item.companyId === store.activeCompanyId)
+    if (!company) throw new Error('Unable to resolve active company')
+    company.permissions = nextPermissions
+  }, permissions)
+}
+
 test('cost.manage discovers projects, creates drafts, and opens operational work without cost.read', async ({ page, authState }) => {
   authState.sessionCompanies = [createCompany({ permissions: ['cost.manage'] })]
   await mockDraftManagement(page)
@@ -88,6 +98,80 @@ test('actor without manage or prepare cannot navigate to draft management', asyn
   await page.goto('/cost-drafts')
   await expect(page).toHaveURL(/\/forbidden$/)
   await expect(page.getByRole('link', { name: 'Bản nháp chi phí' })).toHaveCount(0)
+})
+
+test('same-company prepare and read revocation reloads the operational draft and removes financial actions', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['cost.prepare', 'cost.read', 'cost.publish_import'] })]
+  const financial = projectCostDraftSchema.parse({ ...financialDraft, description: 'Financial projection', publishReadiness: { ready: true, blockingCodes: [] } })
+  const operational = projectCostOperationalDraftSchema.parse({ ...operationalDraft, description: 'Operational projection' })
+  let financialReads = 0
+  let operationalReads = 0
+  let overviewReads = 0
+  let metadataReads = 0
+  await mockDraftManagement(page)
+  await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => { financialReads++; return route.fulfill({ json: financial }) })
+  await page.route(`**/api/companies/**/project-costs/${draftId}/draft/operations`, route => { operationalReads++; return route.fulfill({ json: operational }) })
+  await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => { overviewReads++; return route.fulfill({ status: 500 }) })
+  await page.route('**/api/companies/**/project-cost-drafts/metadata', route => { metadataReads++; return route.fulfill({ json: metadata }) })
+
+  await page.goto(`/costs/${projectId}/drafts/${draftId}`)
+  await expect(page.getByTestId('draft-title')).toHaveText('Financial projection')
+  await expect(page.getByTestId('financial-detail-editor')).toBeVisible()
+  await expect(page.getByTestId('open-publish-modal-btn')).toBeVisible()
+
+  await setActivePermissions(page, ['cost.manage'])
+
+  await expect(page.getByTestId('draft-title')).toHaveText('Operational projection')
+  await expect(page.getByTestId('draft-op-save-btn')).toBeVisible()
+  await expect(page.getByTestId('financial-detail-editor')).toHaveCount(0)
+  await expect(page.getByTestId('open-publish-modal-btn')).toHaveCount(0)
+  await expect.poll(() => ({ financialReads, operationalReads, overviewReads, metadataReads })).toEqual({ financialReads: 1, operationalReads: 1, overviewReads: 1, metadataReads: 1 })
+  await setActivePermissions(page, [])
+
+  await expect(page.getByTestId('draft-permission-denied')).toBeVisible()
+  await expect(page.getByTestId('draft-title')).toHaveCount(0)
+  await expect(page.getByTestId('financial-detail-editor')).toHaveCount(0)
+  await expect(page.getByTestId('open-publish-modal-btn')).toHaveCount(0)
+
+  await setActivePermissions(page, ['cost.manage'])
+
+  await expect(page.getByTestId('draft-title')).toHaveText('Operational projection')
+  await expect(page.getByTestId('draft-op-save-btn')).toBeVisible()
+
+  await setActivePermissions(page, ['cost.prepare', 'cost.read', 'cost.publish_import'])
+
+  await expect(page.getByTestId('draft-title')).toHaveText('Financial projection')
+  await expect(page.getByTestId('financial-detail-editor')).toBeVisible()
+  await expect(page.getByTestId('open-publish-modal-btn')).toBeVisible()
+  await expect.poll(() => ({ financialReads, operationalReads, overviewReads, metadataReads })).toEqual({ financialReads: 2, operationalReads: 2, overviewReads: 2, metadataReads: 2 })
+})
+
+test('same-company cost.manage revocation closes a pending draft create and keeps its response inert', async ({ page, authState }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['cost.manage'] })]
+  let releaseCreate!: () => void
+  let createStarted!: () => void
+  const createGate = new Promise<void>(resolve => { releaseCreate = resolve })
+  const createRequest = new Promise<void>(resolve => { createStarted = resolve })
+  await mockDraftManagement(page)
+  await page.route(`**/api/companies/**/projects/${projectId}/project-costs`, async route => {
+    createStarted()
+    await createGate
+    await route.fulfill({ status: 201, json: { id: draftId, version: 1, publicationState: 'draft', replayed: false } })
+  })
+
+  await page.goto('/cost-drafts')
+  await page.getByTestId('draft-management-create').click()
+  await page.getByTestId('draft-create-description').fill('Pending draft')
+  await page.getByTestId('draft-create-submit').click()
+  await createRequest
+
+  await setActivePermissions(page, [])
+
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  const response = page.waitForResponse(item => item.url().includes(`/projects/${projectId}/project-costs`) && item.status() === 201)
+  releaseCreate()
+  await response
+  await expect(page).toHaveURL(/\/cost-drafts$/)
 })
 
 test('late draft response from project A cannot overwrite the selected project B', async ({ page, authState }) => {

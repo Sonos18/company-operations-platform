@@ -104,6 +104,15 @@ watch([
   () => canPrepare.value,
   () => canManage.value,
 ], ([open]) => {
+  if (!canPrepare.value && !canManage.value) {
+    draftRequests.invalidate()
+    financialDrafts.value = []
+    operationalDrafts.value = []
+    loading.value = false
+    errorMessage.value = null
+    isOpen.value = false
+    return
+  }
   if (open) {
     fetchDrafts()
   }

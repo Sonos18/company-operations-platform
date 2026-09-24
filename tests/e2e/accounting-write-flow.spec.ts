@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures/authenticated'
+import type { Page } from '@playwright/test'
 import { createCompany } from './fixtures/auth-routes'
 import {
   financeItemDetailsSchema,
@@ -41,6 +42,16 @@ const evidenceId = '70000000-0000-4000-8000-000000000057'
 const linkId1 = '80000000-0000-4000-8000-000000000058'
 const mockSha256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
 const mockObjectPath = `${tenantId}/${companyId}/${projectId}/${evidenceId}`
+
+async function setActivePermissions(page: Page, permissions: string[]) {
+  await page.evaluate((nextPermissions) => {
+    const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { companies: Array<{ companyId: string; permissions: string[] }>; activeCompanyId: string } } } } } }
+    const store = root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore
+    const company = store?.companies.find(item => item.companyId === store.activeCompanyId)
+    if (!company) throw new Error('Unable to resolve active company')
+    company.permissions = nextPermissions
+  }, permissions)
+}
 
 function draftFixture(id: string, targetProjectId: string, description: string) {
   return projectCostDraftSchema.parse({
@@ -1061,13 +1072,20 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     })
     await page.goto(`/costs/${projectId}/drafts/${draftId}`)
     await expect(page.getByTestId('evidence-filename')).toHaveText('visible-before-revoke.pdf')
-    await page.evaluate(() => {
+    await expect(page.getByTestId('evidence-download-btn')).toBeVisible()
+    const originalPermissions = await page.evaluate(() => {
       const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { companies: Array<{ companyId: string; permissions: string[] }>; activeCompanyId: string } } } } } }
       const store = root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore
       const company = store?.companies.find(item => item.companyId === store.activeCompanyId)
       if (!company) throw new Error('Unable to resolve active company')
-      company.permissions = company.permissions.filter(permission => permission !== 'cost.source.read')
+      return company.permissions
     })
+    await setActivePermissions(page, originalPermissions.filter(permission => permission !== 'cost.file.read'))
+    await expect(page.getByTestId('evidence-filename')).toHaveText('visible-before-revoke.pdf')
+    await expect(page.getByTestId('evidence-download-btn')).toHaveCount(0)
+    await setActivePermissions(page, originalPermissions)
+    await expect(page.getByTestId('evidence-download-btn')).toBeVisible()
+    await setActivePermissions(page, originalPermissions.filter(permission => permission !== 'cost.source.read'))
     await expect(page.getByTestId('evidence-filename')).toHaveCount(0)
     await expect(page.getByText('Cần quyền cost.source.read để xem danh sách chứng từ đính kèm.')).toBeVisible()
     expect(evidenceRequests).toBe(1)
@@ -1929,6 +1947,176 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     expect(newPaymentEndpointHit).toContain(`/subcontracts/${subcontractId2}/payments`)
   })
 
+  test('R7 — contract detail navigation preserves filter-only record context but clears stale payment actions', async ({ page }) => {
+    const contractBId = '50000000-0000-4000-8000-000000000088'
+    const contractA = mockSubcontractorList.parties[0]!.contracts[0]!
+    const contractB = {
+      id: contractBId,
+      code: 'HD-KC-02',
+      contractNo: 'KC-2026-02',
+      contractName: 'Hợp đồng kết cấu thép đợt 2',
+      contractDate: '2026-08-15',
+      contractValue: '300000000.0000',
+      currencyCode: 'VND',
+      defaultRetentionRateBps: 500,
+      isActive: true,
+      version: 2,
+      paidTotal: '30000000.0000',
+      paidCount: 1,
+      recordedRetentionTotal: '1500000.0000',
+      recordedRetentionRowCount: 1,
+    }
+    const paymentA = {
+      id: paymentId1,
+      contractId: subcontractId,
+      contractCode: contractA.code,
+      contractNo: contractA.contractNo,
+      description: 'Thanh toán hợp đồng A',
+      paidAmount: '50000000.0000',
+      warrantyRetentionAmount: '2500000.0000',
+      retentionRateBps: 500,
+      paymentDate: '2026-08-10',
+      effectiveDate: '2026-08-10',
+      dateSource: 'payment_date' as const,
+      recordStatus: 'recorded' as const,
+      replacementPaymentId: null,
+      reference: 'PC-A-01',
+      sourceReference: null,
+      note: null,
+      createdAt: '2026-08-10T08:00:00.000Z',
+      version: 1,
+    }
+    const voidedPaymentA = {
+      ...paymentA,
+      id: paymentId2,
+      description: 'Thanh toán hủy hợp đồng A',
+      recordStatus: 'voided' as const,
+      reference: 'PC-A-02',
+    }
+    const paymentB = {
+      ...paymentA,
+      id: '60000000-0000-4000-8000-000000000057',
+      contractId: contractBId,
+      contractCode: contractB.code,
+      contractNo: contractB.contractNo,
+      description: 'Thanh toán hợp đồng B',
+      paidAmount: '30000000.0000',
+      reference: 'PC-B-01',
+    }
+    const detail = (contract: typeof contractA | typeof contractB, rows: Array<typeof paymentA | typeof voidedPaymentA | typeof paymentB>, url: string) => {
+      const query = new URL(url).searchParams
+      const pageNo = Number(query.get('page') ?? '1')
+      const pageSize = Number(query.get('pageSize') ?? '25')
+      return financeSubcontractDetailSchema.parse({
+        schemaVersion: 1 as const,
+        project: mockProjectOverview.project,
+        party: mockSubcontractorList.parties[0]!.party,
+        contract: {
+          ...contract,
+          reference: null,
+          sourceReference: null,
+          note: null,
+          referenceHeadroom: '450000000.0000',
+          referenceHeadroomReason: null,
+        },
+        payments: {
+          rows,
+          pagination: { page: pageNo, pageSize, totalPages: 2, filteredCount: rows.length, fullCount: rows.length, filteredAmount: rows.reduce((total, row) => total + Number(row.paidAmount), 0).toFixed(4), fullAmount: rows.reduce((total, row) => total + Number(row.paidAmount), 0).toFixed(4) },
+          recordedTotal: rows.reduce((total, row) => total + Number(row.paidAmount), 0).toFixed(4),
+          recordedCount: rows.length,
+          recordedRetentionTotal: null,
+          recordedRetentionRowCount: 0,
+        },
+      })
+    }
+    const mutationUrls: string[] = []
+    const navigateToContract = (contractId: string) => page.evaluate(async path => {
+      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $router?: { push(target: string): Promise<unknown> } } } } }
+      const router = root.__vue_app__?.config.globalProperties.$router
+      if (!router) throw new Error('Unable to resolve router in test')
+      await router.push(path)
+    }, `/costs/${projectId}/categories/${subcontractCategoryId}?contractId=${contractId}&partyId=${partyId}`)
+    const waitForLedger = (contractId: string, query: (params: URLSearchParams) => boolean) => page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return url.pathname.endsWith(`/finance/subcontracts/${contractId}`) && query(url.searchParams)
+    })
+
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/subcontractors`, route => route.fulfill({
+      json: financeSubcontractorListSchema.parse({ ...mockSubcontractorList, parties: [{ party: mockSubcontractorList.parties[0]!.party, contracts: [contractA, contractB] }] }),
+    }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/subcontracts/**`, route => {
+      const url = route.request().url()
+      route.fulfill({
+        json: url.includes(`/subcontracts/${subcontractId}`)
+          ? detail(contractA, [paymentA, voidedPaymentA], url)
+          : detail(contractB, [paymentB], url),
+      })
+    })
+    await page.route(`**/api/companies/**/projects/${projectId}/subcontracts/**`, route => {
+      if (route.request().method() !== 'POST') return route.fallback()
+      mutationUrls.push(route.request().url())
+      return route.fulfill({ status: 500, json: { code: 'UNEXPECTED_MUTATION', message: 'Navigation must not submit a payment action.' } })
+    })
+
+    await page.goto(`/costs/${projectId}/categories/${subcontractCategoryId}?contractId=${subcontractId}&partyId=${partyId}`)
+    await expect(page.getByTestId('contractor-ledger-area')).toBeVisible()
+    await page.getByTestId('open-record-payment-btn').click()
+    await page.getByTestId('pay-description-input').fill('Payment A stays open')
+    await page.getByTestId('pay-amount-input').fill('12345678')
+
+    await Promise.all([waitForLedger(subcontractId, params => params.get('q') === 'Payment A'), page.getByTestId('payment-search-input').evaluate((element) => {
+      const input = element as HTMLInputElement
+      input.value = 'Payment A'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })])
+    await Promise.all([waitForLedger(subcontractId, params => params.get('dateFrom') === '2026-08-01'), page.getByTestId('payment-date-from').evaluate((element) => {
+      const input = element as HTMLInputElement
+      input.value = '2026-08-01'
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })])
+    await Promise.all([waitForLedger(subcontractId, params => params.get('retention') === 'warranty'), page.getByTestId('payment-retention-select').evaluate((element) => {
+      const select = element as HTMLSelectElement
+      select.value = 'warranty'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })])
+    await Promise.all([waitForLedger(subcontractId, params => params.get('page') === '2'), page.getByTestId('payment-next-page-btn').evaluate(element => (element as HTMLButtonElement).click())])
+    await expect(page.getByTestId('payment-page-indicator')).toHaveText('Trang 2 / 2')
+    await expect(page.getByTestId('record-payment-form')).toBeVisible()
+    await expect(page.getByTestId('pay-description-input')).toHaveValue('Payment A stays open')
+    await expect(page.getByTestId('pay-amount-input')).toHaveValue('12345678')
+
+    await navigateToContract(contractBId)
+    await expect(page).toHaveURL(new RegExp(`contractId=${contractBId}`))
+    await expect(page.getByTestId('contractor-dossier-name')).toHaveText(contractB.contractName)
+    await expect(page.getByTestId('record-payment-form')).toHaveCount(0)
+    expect(mutationUrls).toEqual([])
+
+    await page.goBack()
+    await expect(page.getByTestId('contractor-dossier-name')).toHaveText(contractA.contractName)
+    await expect(page.getByTestId('record-payment-form')).toHaveCount(0)
+    await page.goForward()
+    await expect(page.getByTestId('contractor-dossier-name')).toHaveText(contractB.contractName)
+    await expect(page.getByTestId('record-payment-form')).toHaveCount(0)
+
+    await page.goBack()
+    await expect(page.getByTestId('contractor-dossier-name')).toHaveText(contractA.contractName)
+    await page.getByTestId(`void-payment-btn-${paymentId1}`).click()
+    await page.getByTestId('void-reason-input').fill('A void must not cross contracts')
+    await navigateToContract(contractBId)
+    await expect(page.getByTestId('contractor-dossier-name')).toHaveText(contractB.contractName)
+    await expect(page.getByTestId('void-reason-input')).toHaveCount(0)
+
+    await page.goBack()
+    await expect(page.getByTestId('contractor-dossier-name')).toHaveText(contractA.contractName)
+    await page.getByTestId(`replace-payment-btn-${paymentId2}`).click()
+    await expect(page.getByTestId('record-payment-form')).toBeVisible()
+    await navigateToContract(contractBId)
+    await expect(page.getByTestId('contractor-dossier-name')).toHaveText(contractB.contractName)
+    await expect(page.getByTestId('record-payment-form')).toHaveCount(0)
+    expect(mutationUrls).toEqual([])
+  })
+
   test('Flow F2 — Sole inactive contract: disables new payment and prevents replacement while permitting void', async ({ page }) => {
     const inactiveContract = {
       ...mockSubcontractorList.parties[0]!.contracts[0]!,
@@ -2241,5 +2429,128 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
     await expect(page).toHaveURL(new RegExp(`/costs/${projectId}/drafts/${draftId}$`))
     await expect(page.getByTestId('publish-cost-modal')).toBeVisible()
+  })
+
+  test('same-company publish revocation closes a pending publish and keeps its response inert after regrant', async ({ page, authState }) => {
+    authState.sessionCompanies = [createCompany({ permissions: ['cost.read', 'cost.prepare', 'cost.publish_import'] })]
+    const readyDraft = projectCostDraftSchema.parse({
+      ...draftFixture(draftId, projectId, 'Publish revocation'),
+      amount: '10000000.0000',
+      details: [{ id: '80000000-0000-4000-8000-000000000091', projectCostItemId: draftId, lineNo: 1, detailKind: 'line_item', description: 'Ready', quantity: null, unitCode: null, unitPrice: null, amount: '10000000.0000', retentionKind: null, retentionRateBps: null, retentionAmount: null, relevantDate: null, reference: null, note: null, version: 1, createdAt: '2026-09-22T08:00:00.000Z', updatedAt: '2026-09-22T08:00:00.000Z' }],
+      publishReadiness: { ready: true, blockingCodes: [] },
+    })
+    let releasePublish!: () => void
+    let publishStarted!: () => void
+    const publishGate = new Promise<void>(resolve => { releasePublish = resolve })
+    const publishRequest = new Promise<void>(resolve => { publishStarted = resolve })
+    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: readyDraft }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, route => route.fulfill({ json: [] }))
+    await page.route(`**/api/companies/**/project-costs/${draftId}/publish`, async route => { publishStarted(); await publishGate; await route.fulfill({ json: costCommandAckSchema.parse({ id: draftId, version: 2, publicationState: 'published', replayed: false }) }) })
+
+    try {
+      await page.goto(`/costs/${projectId}/drafts/${draftId}`)
+      await page.getByTestId('open-publish-modal-btn').click()
+      await page.getByTestId('confirm-publish-btn').click()
+      await publishRequest
+      await setActivePermissions(page, ['cost.read', 'cost.prepare'])
+      await expect(page.getByRole('dialog', { name: 'Xác nhận phát hành chi phí chính thức' })).toHaveCount(0)
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
+      expect(await page.getByText('Bạn cần quyền cost.publish_import để kích hoạt bản nháp thành dữ liệu chính thức.').count()).toBe(0)
+
+      await setActivePermissions(page, ['cost.read', 'cost.prepare', 'cost.publish_import'])
+      await expect(page.getByTestId('open-publish-modal-btn')).toBeVisible()
+      await expect(page.getByRole('dialog', { name: 'Xác nhận phát hành chi phí chính thức' })).toHaveCount(0)
+      const response = page.waitForResponse(item => item.url().includes(`/project-costs/${draftId}/publish`) && item.status() === 200)
+      releasePublish()
+      await response
+      await expect(page).toHaveURL(new RegExp(`/costs/${projectId}/drafts/${draftId}$`))
+      await expect(page.getByRole('dialog', { name: 'Xác nhận phát hành chi phí chính thức' })).toHaveCount(0)
+    }
+    finally {
+      releasePublish()
+    }
+  })
+
+  test('same-company permission revocation closes correction, attachment, and payment write modals', async ({ page, authState }) => {
+    authState.sessionCompanies = [createCompany({ permissions: ['cost.read', 'cost.correct', 'cost.prepare', 'cost.record_cash'] })]
+    const item = projectCostBreakdownSchema.parse({
+      projectId, projectCode: 'DA-C1-01', projectName: 'Dự án C1',
+      summary: { currencyCode: 'VND', acceptedValue: '750000000.0000', acceptedCount: 1, inProgressValue: '0.0000', inProgressCount: 0, unknownStatusValue: '0.0000', unknownCount: 0, totalTrackedWorkValue: '750000000.0000' },
+      items: [{ id: publishedItemId, tenantId, companyId, projectId, description: 'Canonical item', amount: '750000000.0000', currencyCode: 'VND', workStatus: 'accepted', businessReference: 'REF-C1', partyId: null, engagementId: null, componentId: null, relevantDate: '2026-09-18', version: 3, createdAt: '2026-09-18T08:00:00.000Z', updatedAt: '2026-09-18T08:00:00.000Z' }],
+    })
+    const ordinary = financeItemDetailsSchema.parse({
+      schemaVersion: 1 as const, kind: 'ordinary' as const, project: mockProjectOverview.project, category: mockProjectOverview.categories[0]!,
+      item: { id: publishedItemId, description: 'Canonical item', businessReference: 'REF-C1', parentAmount: '750000000.0000', currencyCode: 'VND', version: 3 },
+      details: { rows: [], pagination: { page: 1, pageSize: 25, totalPages: 1, filteredCount: 0, fullCount: 0, filteredAmount: '0.0000', fullAmount: '0.0000' } },
+    })
+    const payment = { id: paymentId1, contractId: subcontractId, contractCode: 'HD-KC-01', contractNo: 'KC-01', description: 'Recorded payment', paidAmount: '10000000.0000', warrantyRetentionAmount: null, retentionRateBps: null, paymentDate: '2026-09-20', effectiveDate: '2026-09-20', dateSource: 'payment_date' as const, recordStatus: 'recorded' as const, replacementPaymentId: null, reference: null, sourceReference: null, note: null, createdAt: '2026-09-20T00:00:00.000Z', version: 1 }
+    const subcontractDetail = financeSubcontractDetailSchema.parse({
+      schemaVersion: 1 as const, project: mockProjectOverview.project, party: mockSubcontractorList.parties[0]!.party,
+      contract: { ...mockSubcontractorList.parties[0]!.contracts[0]!, reference: null, sourceReference: null, note: null, referenceHeadroom: '490000000.0000', referenceHeadroomReason: null },
+      payments: { rows: [payment], pagination: { page: 1, pageSize: 25, totalPages: 1, filteredCount: 1, fullCount: 1, filteredAmount: payment.paidAmount, fullAmount: payment.paidAmount }, recordedTotal: payment.paidAmount, recordedCount: 1, recordedRetentionTotal: null, recordedRetentionRowCount: 0 },
+    })
+    let releaseUpload!: () => void
+    let uploadStarted!: () => void
+    const uploadGate = new Promise<void>(resolve => { releaseUpload = resolve })
+    const uploadRequest = new Promise<void>(resolve => { uploadStarted = resolve })
+    let finalized = 0
+    let linked = 0
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route(`**/api/companies/**/projects/${projectId}/project-costs`, route => route.fulfill({ json: item }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/items/${publishedItemId}/**`, route => route.fulfill({ json: ordinary }))
+    await page.route(`**/api/companies/**/project-costs/${publishedItemId}/details`, route => route.fulfill({ json: { projectCostItemId: publishedItemId, totalAmount: '750000000.0000', currencyCode: 'VND', details: [] } }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/subcontractors`, route => route.fulfill({ json: mockSubcontractorList }))
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/subcontracts/${subcontractId}*`, route => route.fulfill({ json: subcontractDetail }))
+    await page.route(`**/api/companies/**/projects/${projectId}/evidence/upload-intents`, route => route.fulfill({ status: 201, json: costEvidenceUploadIntentSchema.parse({ evidenceFileId: evidenceId, version: 0, bucketId: 'c1-accounting-evidence', objectPath: mockObjectPath, expiresAt: new Date(Date.now() + 120000).toISOString(), replayed: false }) }))
+    await page.route('**/storage/v1/object/**', async route => { uploadStarted(); await uploadGate; await route.fulfill({ status: 200, json: { Key: `c1-accounting-evidence/${mockObjectPath}` } }) })
+    await page.route(`**/api/companies/**/evidence-files/${evidenceId}/finalize`, route => { finalized++; return route.fulfill({ json: costEvidenceFinalizedSchema.parse({ id: evidenceId, status: 'finalized', originalFilename: 'revoke.pdf', mimeType: 'application/pdf', sizeBytes: 4, sha256: mockSha256, version: 1, finalizedAt: new Date().toISOString(), replayed: false }) }) })
+    await page.route(`**/api/companies/**/project-costs/${publishedItemId}/evidence`, route => { linked++; return route.fulfill({ json: costEvidenceLinkResultSchema.parse({ linkId: linkId1, costId: publishedItemId, evidenceFileId: evidenceId, evidenceKind: 'invoice', replayed: false }) }) })
+
+    await page.goto(`/costs/${projectId}/categories/${materialCategoryId}`)
+    await page.getByTestId('open-correction-btn').click()
+    await expect(page.getByTestId('correction-modal')).toBeVisible()
+    await setActivePermissions(page, ['cost.read', 'cost.prepare', 'cost.record_cash'])
+    await expect(page.getByRole('dialog', { name: 'Điều chỉnh chi phí đã phát hành (Kiểm toán)' })).toHaveCount(0)
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
+    expect(await page.getByText('Bạn cần quyền cost.correct để thực hiện điều chỉnh chi phí.').count()).toBe(0)
+
+    await setActivePermissions(page, ['cost.read', 'cost.prepare', 'cost.record_cash'])
+    await page.getByTestId('attach-evidence-btn').click()
+    await page.getByTestId('attach-file-input').setInputFiles({ name: 'revoke.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF') })
+    await page.getByTestId('attach-submit-btn').click()
+    await uploadRequest
+    await setActivePermissions(page, ['cost.read', 'cost.record_cash'])
+    await expect(page.getByRole('dialog', { name: 'Đính kèm chứng từ vào chi phí đã phát hành' })).toHaveCount(0)
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
+    expect(await page.getByText('Bạn cần quyền cost.prepare để đính kèm chứng từ vào chi phí.').count()).toBe(0)
+    const uploaded = page.waitForResponse(item => item.url().includes('/storage/v1/object/') && item.status() === 200)
+    releaseUpload()
+    await uploaded
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    expect({ finalized, linked }).toEqual({ finalized: 0, linked: 0 })
+
+    await setActivePermissions(page, ['cost.read', 'cost.record_cash'])
+    await page.goto(`/costs/${projectId}/categories/${subcontractCategoryId}?contractId=${subcontractId}&partyId=${partyId}`)
+    await page.getByTestId('open-record-payment-btn').click()
+    await expect(page.getByTestId('record-payment-form')).toBeVisible()
+    await setActivePermissions(page, ['cost.read'])
+    await expect(page.getByRole('dialog', { name: 'Ghi nhận thanh toán thầu phụ' })).toHaveCount(0)
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
+    expect(await page.getByText('Bạn cần quyền cost.record_cash để ghi nhận thanh toán.').count()).toBe(0)
+
+    await setActivePermissions(page, ['cost.read', 'cost.record_cash'])
+    await page.getByTestId(`void-payment-btn-${paymentId1}`).click()
+    await expect(page.getByTestId('void-payment-form')).toBeVisible()
+    await setActivePermissions(page, ['cost.read'])
+    await expect(page.getByRole('dialog', { name: 'Hủy khoản thanh toán thầu phụ' })).toHaveCount(0)
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
+    expect(await page.getByText('Bạn cần quyền cost.record_cash để hủy khoản thanh toán.').count()).toBe(0)
+
+    await setActivePermissions(page, ['cost.record_cash'])
+    await expect(page.getByTestId('category-permission-denied')).toBeVisible()
+    await expect(page.getByTestId('contractor-ledger-area')).toHaveCount(0)
+    await setActivePermissions(page, ['cost.read', 'cost.record_cash'])
+    await expect(page.getByTestId('contractor-ledger-area')).toBeVisible()
   })
 })

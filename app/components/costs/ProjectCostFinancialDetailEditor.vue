@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import type {
   PrepareProjectCostFinancialDetailInput,
   ProjectCostDetailKind,
@@ -56,6 +56,7 @@ const submitting = ref(false)
 const errorMessage = ref<string | null>(null)
 const successMessage = ref<string | null>(null)
 const isVersionConflict = ref(false)
+let contextGeneration = 0
 
 function normalizeInitialDetails() {
   if (props.initialDetails && props.initialDetails.length > 0) {
@@ -84,8 +85,19 @@ function normalizeInitialDetails() {
 }
 
 watch(() => props.initialDetails, () => {
+  contextGeneration++
   normalizeInitialDetails()
 }, { immediate: true, deep: true })
+watch([
+  () => companyAccess.activeCompanyId,
+  () => props.projectCostItemId,
+  () => props.currentVersion,
+  canPrepare,
+], () => {
+  contextGeneration++
+  submitting.value = false
+}, { flush: 'sync' })
+onUnmounted(() => { contextGeneration++ })
 
 function renumberLines() {
   lines.value.forEach((l, index) => {
@@ -169,6 +181,15 @@ async function saveFinancials() {
   errorMessage.value = null
   successMessage.value = null
   isVersionConflict.value = false
+  const companyId = companyAccess.activeCompanyId
+  const generation = contextGeneration
+  const projectCostItemId = props.projectCostItemId
+  const currentVersion = props.currentVersion
+  const isContextCurrent = () => companyAccess.activeCompanyId === companyId
+    && contextGeneration === generation
+    && canPrepare.value
+    && props.projectCostItemId === projectCostItemId
+    && props.currentVersion === currentVersion
 
   try {
     const preparedDetails: PrepareProjectCostFinancialDetailInput[] = lines.value.map((l) => {
@@ -198,10 +219,12 @@ async function saveFinancials() {
     }
 
     const result = await repositories.projectCosts.prepareFinancials(props.projectCostItemId, input)
+    if (!isContextCurrent()) return
     successMessage.value = 'Đã lưu toàn bộ ảnh chụp chi tiết tài chính thành công.'
     emit('saved', { version: result.version, amount: result.amount })
   }
   catch (err: unknown) {
+    if (!isContextCurrent()) return
     const msg = extractErrorMessage(err)
     if (msg.includes('xung đột phiên bản') || (typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code === 'VERSION_CONFLICT')) {
       isVersionConflict.value = true
@@ -212,7 +235,7 @@ async function saveFinancials() {
     }
   }
   finally {
-    submitting.value = false
+    if (isContextCurrent()) submitting.value = false
   }
 }
 </script>

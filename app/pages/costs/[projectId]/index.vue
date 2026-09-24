@@ -23,6 +23,7 @@ const overview = ref<FinanceOverview | null>(null)
 const status = ref<'loading' | 'ready' | 'module' | 'permission' | 'empty' | 'not_found' | 'error'>('loading')
 const requestTracker = createAsyncRequestTracker()
 
+const canRead = computed(() => companyAccess.hasPermission('cost.read'))
 const canManage = computed(() => companyAccess.hasPermission('cost.manage'))
 const canPrepare = computed(() => companyAccess.hasPermission('cost.prepare'))
 const isDraftListOpen = ref(false)
@@ -43,8 +44,17 @@ function onSelectCategory(categoryId: string) {
 }
 
 async function loadOverview() {
+  overview.value = null
+  isDraftListOpen.value = false
+  isDraftCreateOpen.value = false
   if (!projectId.value) {
     status.value = 'not_found'
+    return
+  }
+
+  if (!canRead.value) {
+    requestTracker.invalidate()
+    status.value = 'permission'
     return
   }
 
@@ -80,18 +90,19 @@ async function loadOverview() {
 }
 
 watch(
-  [projectId, () => companyAccess.activeCompanyId],
-  ([, companyId], previous) => {
-    if (previous?.[1] !== undefined && companyId !== previous[1]) {
-      requestTracker.invalidate()
-      overview.value = null
-      isDraftListOpen.value = false
-      isDraftCreateOpen.value = false
-    }
+  [projectId, () => companyAccess.activeCompanyId, canRead],
+  () => {
+    requestTracker.invalidate()
     loadOverview()
   },
   { immediate: true, flush: 'sync' },
 )
+watch(canManage, (allowed) => {
+  if (!allowed) isDraftCreateOpen.value = false
+}, { flush: 'sync' })
+watch([canManage, canPrepare], ([manageAllowed, prepareAllowed]) => {
+  if (!manageAllowed && !prepareAllowed) isDraftListOpen.value = false
+}, { flush: 'sync' })
 </script>
 
 <template>
