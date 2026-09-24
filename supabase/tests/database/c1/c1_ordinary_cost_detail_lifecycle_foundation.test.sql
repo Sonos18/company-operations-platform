@@ -5,11 +5,11 @@ set local search_path = public, extensions;
 select plan(26);
 
 select has_column('public', 'cost_categories', 'posting_strategy', 'category posting strategy exists');
-select ok(not exists (
-  select 1 from public.cost_categories
-  where (code = 'subcontract_labor' and posting_strategy <> 'subcontract_payment')
-     or (code in ('materials', 'machinery', 'direct_labor', 'other') and posting_strategy <> 'ordinary_detail')
-), 'the approved catalog mapping is explicit and complete');
+select results_eq(
+  $$select code || ':' || posting_strategy from public.cost_categories order by code$$,
+  $$values ('direct_labor:ordinary_detail'), ('machinery:ordinary_detail'), ('materials:ordinary_detail'), ('other:ordinary_detail'), ('subcontract_labor:subcontract_payment')$$,
+  'all and only the approved catalog codes map to the required strategies'
+);
 select has_column('public', 'project_cost_item_details', 'publication_state', 'detail publication state exists');
 select has_column('public', 'project_cost_item_details', 'publication_origin', 'detail publication origin exists');
 select has_column('public', 'project_cost_item_details', 'published_by', 'detail publisher exists');
@@ -109,7 +109,7 @@ select set_config('request.jwt.claims', '{"sub":"c1f10000-0000-4000-8000-0000000
 select is((select count(*) from public.project_cost_item_details where company_id = 'c1f10000-0000-4000-8000-000000000020'), 1::bigint, 'cost.read sees published detail but not draft detail');
 select is((select count(*) from public.project_cost_item_details where company_id = 'c1f10000-0000-4000-8000-000000000021'), 0::bigint, 'detail RLS preserves tenant and company isolation');
 select set_config('request.jwt.claims', '{"sub":"c1f10000-0000-4000-8000-000000000902","role":"authenticated"}', true);
-select is((select count(*) from public.project_cost_item_details where company_id = 'c1f10000-0000-4000-8000-000000000020'), 1::bigint, 'cost.prepare sees draft detail but not official detail');
+select is((select count(*) from public.project_cost_item_details where project_cost_item_id = 'c1f10000-0000-4000-8000-000000000201'), 1::bigint, 'cost.prepare sees the draft under a published parent but not its official detail');
 select set_config('request.jwt.claims', '{"sub":"c1f10000-0000-4000-8000-000000000903","role":"authenticated"}', true);
 select is((select count(*) from public.project_cost_item_details where company_id = 'c1f10000-0000-4000-8000-000000000020'), 0::bigint, 'cost.manage has no raw financial detail visibility');
 
@@ -119,9 +119,10 @@ create temp table c1f_resolved_parent as
 select private.c1_resolve_or_create_ordinary_project_cost_item(
   'c1f10000-0000-4000-8000-000000000010', 'c1f10000-0000-4000-8000-000000000020', 'c1f10000-0000-4000-8000-000000000102', 'c1f10000-0000-4000-8000-000000000301', 'c1f10000-0000-4000-8000-000000000903', 'c1f10000-0000-4000-8000-000000000701'
 ) id;
+-- Sequential repeat proves the deterministic same-scope invariant; real session contention needs the later two-session acceptance command.
 select is(private.c1_resolve_or_create_ordinary_project_cost_item(
   'c1f10000-0000-4000-8000-000000000010', 'c1f10000-0000-4000-8000-000000000020', 'c1f10000-0000-4000-8000-000000000102', 'c1f10000-0000-4000-8000-000000000301', 'c1f10000-0000-4000-8000-000000000903', 'c1f10000-0000-4000-8000-000000000702'
-), (select id from c1f_resolved_parent), 'resolver returns the same parent under the advisory lock');
+), (select id from c1f_resolved_parent), 'resolver returns the same parent for a repeated same-scope call');
 select is((select count(*) from public.project_cost_items where project_id = 'c1f10000-0000-4000-8000-000000000102' and cost_category_id = 'c1f10000-0000-4000-8000-000000000301'), 1::bigint, 'one project/category parent remains unique');
 select throws_ok(
   $$insert into public.project_cost_items(tenant_id,company_id,project_id,cost_category_id,description,amount,amount_text,currency_code,work_status,publication_state,publication_origin,published_by,published_at,publication_request_id,created_by) values ('c1f10000-0000-4000-8000-000000000010','c1f10000-0000-4000-8000-000000000020','c1f10000-0000-4000-8000-000000000102','c1f10000-0000-4000-8000-000000000301','duplicate',0,'0','VND','unknown','published','command','c1f10000-0000-4000-8000-000000000903',now(),'c1f10000-0000-4000-8000-000000000703','c1f10000-0000-4000-8000-000000000903')$$,
