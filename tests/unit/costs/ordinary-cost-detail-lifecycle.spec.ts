@@ -30,4 +30,12 @@ describe('ordinary cost detail lifecycle contracts', () => {
     expect(direct).toBeDefined()
     expect(direct.safeParse({ projectId: ids.project, categoryId: ids.category, description: 'Install trim', amount: '1.0000' }).success).toBe(true)
   })
+
+  it('rejects correction retention shapes that exceed or contradict the corrected amount', () => {
+    const correct = schema('correctPublishedProjectCostDetailInputSchema')
+    const base = { expectedVersion: 0, reason: 'Correct retention', changes: { amount: '10.0000', retentionKind: 'warranty', retentionRateBps: 500, retentionAmount: '1.0000' } }
+    expect(correct.safeParse(base).success).toBe(true)
+    expect(correct.safeParse({ ...base, changes: { ...base.changes, retentionAmount: '10.0001' } }).success).toBe(false)
+    expect(correct.safeParse({ ...base, changes: { ...base.changes, retentionKind: null } }).success).toBe(false)
+  })
 })

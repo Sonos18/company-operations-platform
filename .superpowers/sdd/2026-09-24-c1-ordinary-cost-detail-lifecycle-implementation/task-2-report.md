@@ -47,3 +47,25 @@ Passed: 2 files, 90 tests.
 `pnpm typecheck`
 
 Passed, with the existing Node 22 versus required Node 24 engine warning.
+
+## Fix round 2
+
+- Correction validation now bounds `expectedVersion` before bigint conversion, bounds retention rate without an unsafe integer cast, and validates final retention kind/rate/amount shape against the locked current detail before mutation.
+- Correction now applies and validates an explicitly proposed replacement source set before final stale-source validation; unchanged source links are still revalidated. Audit before/after source arrays remain explicit.
+- Replaced the command pgTAP surface-only checks with reserved-ID, rollback-safe behavioral command fixtures covering create/replay, zero effect, operational/financial isolation, version conflicts, publish/direct replay and exact aggregates, correction/audit, subcontract rejection, and invalid foreign source linkage. No database execution was authorized.
+
+### RED
+
+`pnpm exec vitest run tests/unit/costs/ordinary-cost-detail-lifecycle.spec.ts`
+
+Failed as expected: a correction with retention exceeding amount was accepted.
+
+### GREEN
+
+`pnpm exec vitest run tests/unit/costs/ordinary-cost-detail-lifecycle.spec.ts tests/unit/server/project-cost.service.spec.ts tests/unit/server/api-error.spec.ts`
+
+Passed: 3 files, 94 tests.
+
+`pnpm typecheck`
+
+Passed, with the existing Node 22 versus required Node 24 engine warning.

@@ -327,6 +327,10 @@ export const correctPublishedProjectCostDetailInputSchema = z.object({
     sourceFigureIds: uniqueSourceFigureIds.optional(),
   }).strict().superRefine((value, context) => {
     if (Object.keys(value).length === 0) context.addIssue({ code: 'custom', message: 'requires a correction change' })
+    if (['amount', 'retentionKind', 'retentionRateBps', 'retentionAmount'].every(field => Object.hasOwn(value, field))) {
+      validateRetention({ amount: value.amount!, retentionKind: value.retentionKind!, retentionRateBps: value.retentionRateBps!, retentionAmount: value.retentionAmount! }, context)
+    }
+    if (value.retentionKind === null && (value.retentionRateBps !== undefined || value.retentionAmount !== undefined)) context.addIssue({ code: 'custom', path: ['retentionKind'], message: 'retention fields require a kind' })
   }),
 }).strict()
 
