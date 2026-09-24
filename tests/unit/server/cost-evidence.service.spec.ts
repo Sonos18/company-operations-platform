@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { CostEvidenceService } from '../../../server/features/costs/evidence/cost-evidence.service'
 import { CostEvidenceRepository } from '../../../server/features/costs/evidence/cost-evidence.repository'
 
-const ids = { tenant: 'c1070000-0000-4000-8000-000000000010', company: 'c1070000-0000-4000-8000-000000000020', project: 'c1070000-0000-4000-8000-000000000101', cost: 'c1070000-0000-4000-8000-000000000201', file: 'c1070000-0000-4000-8000-000000000401', key: 'c1070000-0000-4000-8000-000000000701', request: 'c1070000-0000-4000-8000-000000000702' }
+const ids = { tenant: 'c1070000-0000-4000-8000-000000000010', company: 'c1070000-0000-4000-8000-000000000020', project: 'c1070000-0000-4000-8000-000000000101', cost: 'c1070000-0000-4000-8000-000000000201', detail: 'c1070000-0000-4000-8000-000000000301', file: 'c1070000-0000-4000-8000-000000000401', key: 'c1070000-0000-4000-8000-000000000701', request: 'c1070000-0000-4000-8000-000000000702' }
 const context = (permissions: string[]) => ({ actorId: 'c1070000-0000-4000-8000-000000000901', tenantId: ids.tenant, companyId: ids.company, permissions, requestId: ids.request, db: {} })
 const intent = { originalFilename: 'invoice.pdf', mimeType: 'application/pdf', sizeBytes: 8, sha256: 'a'.repeat(64) }
 const finalize = { expectedVersion: 0 }
@@ -109,13 +109,15 @@ describe('CostEvidenceService', () => {
   })
 
   it('routes positive prepare, metadata, and raw-file capabilities independently', async () => {
-    const repository = { createIntent: vi.fn(), finalize: vi.fn(), linkCost: vi.fn(), listCostEvidence: vi.fn(), createReadUrl: vi.fn() }
+    const repository = { createIntent: vi.fn(), finalize: vi.fn(), linkCost: vi.fn(), listCostEvidence: vi.fn(), linkDetail: vi.fn(), listDetailEvidence: vi.fn(), createReadUrl: vi.fn() }
     const service = new CostEvidenceService(repository as never)
     await service.createIntent(context(['cost.prepare']) as never, ids.project, intent, ids.key)
     await service.finalize(context(['cost.prepare']) as never, ids.file, finalize, ids.key)
     await service.linkCost(context(['cost.prepare']) as never, ids.cost, link, ids.key)
+    await service.linkDetail(context(['cost.prepare']) as never, ids.detail, link, ids.key)
     await service.listCostEvidence(context(['cost.source.read']) as never, ids.cost)
+    await service.listDetailEvidence(context(['cost.source.read']) as never, ids.detail)
     await service.createReadUrl(context(['cost.read', 'cost.file.read']) as never, ids.file, { disposition: 'attachment' })
-    expect(repository.createIntent).toHaveBeenCalledOnce(); expect(repository.finalize).toHaveBeenCalledOnce(); expect(repository.linkCost).toHaveBeenCalledOnce(); expect(repository.listCostEvidence).toHaveBeenCalledOnce(); expect(repository.createReadUrl).toHaveBeenCalledOnce()
+    expect(repository.createIntent).toHaveBeenCalledOnce(); expect(repository.finalize).toHaveBeenCalledOnce(); expect(repository.linkCost).toHaveBeenCalledOnce(); expect(repository.listCostEvidence).toHaveBeenCalledOnce(); expect(repository.linkDetail).toHaveBeenCalledOnce(); expect(repository.listDetailEvidence).toHaveBeenCalledOnce(); expect(repository.createReadUrl).toHaveBeenCalledOnce()
   })
 })

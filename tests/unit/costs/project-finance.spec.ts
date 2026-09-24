@@ -52,6 +52,17 @@ describe('C1 finance read contracts', () => {
     expect(() => financeOverviewSchema.parse({ ...overview, workStatus: 'unknown' })).toThrow()
   })
 
+  it('excludes draft details from official totals and retention', () => {
+    const tenant = '00000000-0000-4000-8000-000000000010'; const company = '00000000-0000-4000-8000-000000000020'; const project = '00000000-0000-4000-8000-000000000001'; const category = '00000000-0000-4000-8000-000000000040'; const item = '00000000-0000-4000-8000-000000000050'
+    const result = summarizeFinanceRows({ context: { projectId: project, projectCode: 'P', projectName: 'Project', defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', operationalState: 'active' }, rows: {
+      categories: [{ id: category, tenant_id: tenant, company_id: company, code: 'materials', name: 'Materials', display_order: 1, is_active: true, version: 0 }],
+      costItems: [{ id: item, tenant_id: tenant, company_id: company, project_id: project, cost_category_id: category, description: 'Cost', business_reference: null, amount_text: '10.0000', currency_code: 'VND', relevant_date: null, publication_state: 'published' as const, version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }],
+      details: [{ id: '00000000-0000-4000-8000-000000000060', tenant_id: tenant, company_id: company, project_cost_item_id: item, line_no: 1, amount_text: '10.0000', retention_kind: 'warranty' as const, retention_rate_bps: 500, retention_amount_text: '1.0000', relevant_date: '2026-01-01', publication_state: 'draft' as const, version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }],
+      budgets: [], budgetLines: [], ownerAdvances: [], subcontracts: [], payments: [], resolutions: [],
+    } })
+    expect(result.categories[0]).toMatchObject({ detailCount: 0, warrantyRetention: { state: 'not_recorded', amount: null, recordedCount: 0 } })
+  })
+
   it('uses the production reducer for legacy subcontract reconciliation', () => {
     const result = summarizeFinanceRows({
       context: { projectId: '00000000-0000-4000-8000-000000000001', projectCode: 'P', projectName: 'Project', defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', operationalState: 'unknown' },

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { COST_EVIDENCE_MAX_BYTES, costEvidenceFinalizedSchema, costEvidenceIntentAckSchema, costEvidenceLinkResultSchema, costEvidenceMetadataSchema, costEvidenceReadUrlSchema, costEvidenceUploadIntentSchema, type CostEvidenceCreateIntentInput, type CostEvidenceFinalizeInput, type CostEvidenceLinkInput, type CostEvidenceReadUrlInput } from '../../../../shared/schemas/costs/cost-evidence'
+import { COST_EVIDENCE_MAX_BYTES, costEvidenceDetailLinkResultSchema, costEvidenceFinalizedSchema, costEvidenceIntentAckSchema, costEvidenceLinkResultSchema, costEvidenceMetadataSchema, costEvidenceReadUrlSchema, costEvidenceUploadIntentSchema, type CostEvidenceCreateIntentInput, type CostEvidenceDetailLinkInput, type CostEvidenceFinalizeInput, type CostEvidenceLinkInput, type CostEvidenceReadUrlInput } from '../../../../shared/schemas/costs/cost-evidence'
 import { AppApiError } from '../../../utils/api-error'
 import type { SupabaseEvidenceFinalizer, UserSupabaseClient } from '../../../utils/supabase-client'
 import { verifyEvidenceBlob } from './evidence-file-integrity'
@@ -77,6 +77,21 @@ export class CostEvidenceRepository {
 
   async listCostEvidence(context: CostEvidenceContext, projectCostItemId: string) {
     const response = await this.client.from('cost_evidence_links').select('id,evidence_file_id,evidence_kind,accounting_source_version_id,cost_evidence_files!inner(original_filename,verified_mime_type,verified_size_bytes,verified_sha256,finalized_at)').eq('tenant_id', context.tenantId).eq('company_id', context.companyId).eq('project_cost_item_id', projectCostItemId).order('created_at')
+    if (response.error) return rpcError(response.error)
+    const rows = z.array(metadataRowSchema).safeParse(response.data)
+    if (!rows.success) return fail('Phản hồi metadata chứng từ không hợp lệ.')
+    return rows.data.map(row => costEvidenceMetadataSchema.parse({ linkId: row.id, evidenceFileId: row.evidence_file_id, evidenceKind: row.evidence_kind, accountingSourceVersionId: row.accounting_source_version_id, originalFilename: row.cost_evidence_files.original_filename, mimeType: row.cost_evidence_files.verified_mime_type, sizeBytes: row.cost_evidence_files.verified_size_bytes, sha256: row.cost_evidence_files.verified_sha256, finalizedAt: row.cost_evidence_files.finalized_at }))
+  }
+
+  async linkDetail(context: CostEvidenceContext, detailId: string, input: CostEvidenceDetailLinkInput, idempotencyKey: string) {
+    const response = await this.client.rpc('c1_link_project_cost_detail_evidence', { target_company_id: context.companyId, target_detail_id: detailId, target_input: input, target_idempotency_key: idempotencyKey, target_request_id: context.requestId })
+    if (response.error) return rpcError(response.error)
+    const result = costEvidenceDetailLinkResultSchema.safeParse(response.data)
+    return result.success ? result.data : fail('Phản hồi liên kết chứng từ không hợp lệ.')
+  }
+
+  async listDetailEvidence(context: CostEvidenceContext, detailId: string) {
+    const response = await this.client.from('cost_evidence_links').select('id,evidence_file_id,evidence_kind,accounting_source_version_id,cost_evidence_files!inner(original_filename,verified_mime_type,verified_size_bytes,verified_sha256,finalized_at)').eq('tenant_id', context.tenantId).eq('company_id', context.companyId).eq('project_cost_item_detail_id', detailId).order('created_at')
     if (response.error) return rpcError(response.error)
     const rows = z.array(metadataRowSchema).safeParse(response.data)
     if (!rows.success) return fail('Phản hồi metadata chứng từ không hợp lệ.')

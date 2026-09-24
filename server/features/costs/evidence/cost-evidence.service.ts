@@ -1,5 +1,5 @@
 import type { PermissionCode } from '../../../../shared/constants/permissions'
-import { costEvidenceCreateIntentInputSchema, costEvidenceFinalizeInputSchema, costEvidenceLinkInputSchema, costEvidenceReadUrlInputSchema } from '../../../../shared/schemas/costs/cost-evidence'
+import { costEvidenceCreateIntentInputSchema, costEvidenceDetailLinkInputSchema, costEvidenceFinalizeInputSchema, costEvidenceLinkInputSchema, costEvidenceReadUrlInputSchema } from '../../../../shared/schemas/costs/cost-evidence'
 import { AppApiError } from '../../../utils/api-error'
 import type { CostEvidenceRepository } from './cost-evidence.repository'
 
@@ -13,5 +13,7 @@ export class CostEvidenceService {
   async finalize(context: CostEvidenceServiceContext, evidenceFileId: string, value: unknown, idempotencyKey: string) { requirePermission(context, 'cost.prepare'); return this.repository.finalize(context, evidenceFileId, parse(costEvidenceFinalizeInputSchema, value), idempotencyKey) }
   async linkCost(context: CostEvidenceServiceContext, projectCostItemId: string, value: unknown, idempotencyKey: string) { requirePermission(context, 'cost.prepare'); return this.repository.linkCost(context, projectCostItemId, parse(costEvidenceLinkInputSchema, value), idempotencyKey) }
   async listCostEvidence(context: CostEvidenceServiceContext, projectCostItemId: string) { requirePermission(context, 'cost.source.read'); return this.repository.listCostEvidence(context, projectCostItemId) }
+  async linkDetail(context: CostEvidenceServiceContext, detailId: string, value: unknown, idempotencyKey: string) { requirePermission(context, 'cost.prepare'); return this.repository.linkDetail(context, detailId, parse(costEvidenceDetailLinkInputSchema, value), idempotencyKey) }
+  async listDetailEvidence(context: CostEvidenceServiceContext, detailId: string) { requirePermission(context, 'cost.source.read'); return this.repository.listDetailEvidence(context, detailId) }
   async createReadUrl(context: CostEvidenceServiceContext, evidenceFileId: string, value: unknown) { requirePermission(context, 'cost.read'); requirePermission(context, 'cost.file.read'); return this.repository.createReadUrl(context, evidenceFileId, parse(costEvidenceReadUrlInputSchema, value)) }
 }

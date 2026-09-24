@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import {
   costEvidenceCreateIntentInputSchema,
+  costEvidenceDetailLinkInputSchema,
+  costEvidenceDetailLinkResultSchema,
   costEvidenceFinalizeInputSchema,
   costEvidenceFinalizedSchema,
   costEvidenceLinkInputSchema,
@@ -10,6 +12,8 @@ import {
   costEvidenceReadUrlSchema,
   costEvidenceUploadIntentSchema,
   type CostEvidenceCreateIntentInput,
+  type CostEvidenceDetailLinkInput,
+  type CostEvidenceDetailLinkResult,
   type CostEvidenceFinalizeInput,
   type CostEvidenceFinalized,
   type CostEvidenceLinkInput,
@@ -68,6 +72,11 @@ export function createHttpCostEvidenceRepository(options: {
         schema: z.array(costEvidenceMetadataSchema),
       })
     },
+    linkDetail: (detailId: string, input: CostEvidenceDetailLinkInput, command: { idempotencyKey: string }): Promise<CostEvidenceDetailLinkResult> => {
+      const body = costEvidenceDetailLinkInputSchema.parse(input)
+      return options.client.request({ url: `${base()}/project-cost-details/${id(detailId)}/evidence`, method: 'POST', body, idempotencyKey: command.idempotencyKey, schema: costEvidenceDetailLinkResultSchema })
+    },
+    listDetailMetadata: (detailId: string): Promise<CostEvidenceMetadata[]> => options.client.request({ url: `${base()}/project-cost-details/${id(detailId)}/evidence`, method: 'GET', schema: z.array(costEvidenceMetadataSchema) }),
     getReadUrl: (evidenceFileId: string, input?: CostEvidenceReadUrlInput): Promise<CostEvidenceReadUrl> => {
       const body = costEvidenceReadUrlInputSchema.parse(input ?? { disposition: 'inline' })
       return options.client.request({

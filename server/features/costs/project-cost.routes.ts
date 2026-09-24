@@ -19,6 +19,7 @@ function param(event: H3Event, name: string) { const value = uuid.safeParse(getR
 async function body<T>(event: H3Event, schema: z.ZodType<T>) { const value = schema.safeParse(await readBody(event)); if (!value.success) throw new AppApiError(400, 'INPUT_INVALID', 'Dữ liệu yêu cầu không hợp lệ.'); return value.data }
 
 export function createProjectCostRoutes(dependencies: ProjectCostRouteDependencies) {
+  // Deprecated parent lifecycle routes remain only for compatibility; new work uses detail commands below.
   async function resolved(event: H3Event) {
     const context = await dependencies.resolveContext(event, param(event, 'companyId'))
     return { context, service: dependencies.service ?? new ProjectCostService(new ProjectCostRepository(context.db)) }

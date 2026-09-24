@@ -35,7 +35,7 @@ import type {
 import type { BusinessParty, CompanyCostSettings, CreateBusinessPartyInput, CreateEngagementComponentInput, CreateEngagementInput, CreateProjectRegisterInput, Engagement, EngagementComponent, ProjectRegister, UpdateBusinessPartyInput, UpdateEngagementComponentInput, UpdateEngagementInput, UpdateProjectRegisterInput } from '../../shared/schemas/costs/master-data'
 import type { CostSourceFiguresQuery, CostSourceOverview, CostSourceProjectDetail, CostSourceProvenance, CostSourceFigure } from '../../shared/schemas/costs/source-read-model'
 import type { CostCommandAck, CorrectPublishedProjectCostDetailInput, CorrectPublishedProjectCostInput, CreateAndPublishProjectCostDetailInput, CreateProjectCostDetailDraftInput, CreateProjectCostDraftInput, PrepareProjectCostDetailFinancialsInput, PrepareProjectCostFinancialsInput, PrepareProjectCostFinancialsResult, ProjectCostBreakdown, ProjectCostDetailCommandAck, ProjectCostDetailDraft, ProjectCostDetailOperationalDraft, ProjectCostDetailsResponse, ProjectCostDraft, ProjectCostDraftManagementMetadata, ProjectCostOperationalDraft, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, PublishProjectCostDetailInput, PublishProjectCostInput, UpdateProjectCostDetailDraftInput, UpdateProjectCostDraftInput } from '../../shared/schemas/costs/project-costs'
-import type { CostEvidenceCreateIntentInput, CostEvidenceFinalizeInput, CostEvidenceFinalized, CostEvidenceLinkInput, CostEvidenceLinkResult, CostEvidenceMetadata, CostEvidenceReadUrl, CostEvidenceReadUrlInput, CostEvidenceUploadIntent } from '../../shared/schemas/costs/cost-evidence'
+import type { CostEvidenceCreateIntentInput, CostEvidenceDetailLinkInput, CostEvidenceDetailLinkResult, CostEvidenceFinalizeInput, CostEvidenceFinalized, CostEvidenceLinkInput, CostEvidenceLinkResult, CostEvidenceMetadata, CostEvidenceReadUrl, CostEvidenceReadUrlInput, CostEvidenceUploadIntent } from '../../shared/schemas/costs/cost-evidence'
 import type {
   RecordSubcontractPaymentInput,
   VoidSubcontractPaymentInput,
@@ -183,6 +183,8 @@ export interface CostEvidenceRepository {
   finalize(evidenceFileId: string, input: CostEvidenceFinalizeInput, options: IdempotentCommandOptions): Promise<CostEvidenceFinalized>
   link(projectCostItemId: string, input: CostEvidenceLinkInput, options: IdempotentCommandOptions): Promise<CostEvidenceLinkResult>
   listMetadata(projectCostItemId: string): Promise<CostEvidenceMetadata[]>
+  linkDetail(detailId: string, input: CostEvidenceDetailLinkInput, options: IdempotentCommandOptions): Promise<CostEvidenceDetailLinkResult>
+  listDetailMetadata(detailId: string): Promise<CostEvidenceMetadata[]>
   getReadUrl(evidenceFileId: string, input?: CostEvidenceReadUrlInput): Promise<CostEvidenceReadUrl>
 }
 export interface ProjectFinanceRepository {
