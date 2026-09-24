@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { runC1OrdinaryDetailConcurrency, validateC1OrdinaryDetailConcurrencySql } from '../../../scripts/run-c1-ordinary-detail-concurrency.mjs'
 
 const phaseSql = (phase: string) => `-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE\n-- ${phase}\nselect 'c1f10000-0000-4000-8000-000000000010'::uuid;`
+const exactCleanupSql = `-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE
+delete from public.tenants where id = 'c1f10000-0000-4000-8000-000000000010';
+delete from auth.users where id = 'c1f10000-0000-4000-8000-000000000903';`
 
 describe('C1 ordinary-detail concurrency runner', () => {
   it('rejects non-synthetic or unsafe fixture SQL', () => {
@@ -11,6 +14,10 @@ describe('C1 ordinary-detail concurrency runner', () => {
     expect(() => validateC1OrdinaryDetailConcurrencySql('actor_a', '-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE\nupdate public.project_cost_items set amount = 0;')).toThrow('broad update')
     expect(() => validateC1OrdinaryDetailConcurrencySql('actor_a', '-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE\nselect private.c1_resolve_or_create_ordinary_project_cost_item(\'c1f10000-0000-4000-8000-000000000010\',\'c1f10000-0000-4000-8000-000000000020\',\'c1f10000-0000-4000-8000-000000000102\',\'c1f10000-0000-4000-8000-000000000301\',\'c1f10000-0000-4000-8000-000000000903\',\'c1f10000-0000-4000-8000-000000000711\');')).toThrow('transaction-held')
     expect(() => validateC1OrdinaryDetailConcurrencySql('actor_b', '-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE\nselect private.c1_resolve_or_create_ordinary_project_cost_item(\'c1f10000-0000-4000-8000-000000000010\',\'c1f10000-0000-4000-8000-000000000020\',\'c1f10000-0000-4000-8000-000000000102\',\'c1f10000-0000-4000-8000-000000000301\',\'c1f10000-0000-4000-8000-000000000903\',\'c1f10000-0000-4000-8000-000000000712\');')).toThrow('readiness barrier')
+    expect(() => validateC1OrdinaryDetailConcurrencySql('cleanup', `${exactCleanupSql}\ndelete from public.tenants where true;`)).toThrow('only exact approved cleanup DELETE')
+    expect(() => validateC1OrdinaryDetailConcurrencySql('cleanup', `${exactCleanupSql}\ndelete from public.project_cost_items where id = 'c1f10000-0000-4000-8000-000000000201';`)).toThrow('only exact approved cleanup DELETE')
+    expect(() => validateC1OrdinaryDetailConcurrencySql('cleanup', `${exactCleanupSql}\ndelete from public.tenants where id = 'c1f10000-0000-4000-8000-000000000011';`)).toThrow('only exact approved cleanup DELETE')
+    expect(() => validateC1OrdinaryDetailConcurrencySql('actor_a', `-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE\nbegin;\nselect private.c1_resolve_or_create_ordinary_project_cost_item();\nselect pg_catalog.pg_sleep(1);\ncommit;\nupdate public.project_cost_items set amount = 0 where id = 'c1f10000-0000-4000-8000-000000000201';`)).toThrow('broad update')
   })
 
   it('guards the target, launches exactly two sessions, asserts one parent, and always performs exact cleanup', async () => {
@@ -73,5 +80,52 @@ describe('C1 ordinary-detail concurrency runner', () => {
       },
     })).rejects.toThrow('same parent ID')
     expect(calls.at(-1)).toBe('cleanup')
+  })
+
+  it('waits for both rejected actors before cleanup and retains both failures', async () => {
+    let actorASettled = false
+    let actorBSettled = false
+    let cleanupAfterActors = false
+    let cleanupCalls = 0
+    let rejectActorA!: (reason: Error) => void
+    let rejectActorB!: (reason: Error) => void
+    let startActorA!: () => void
+    let startActorB!: () => void
+    const actorAStarted = new Promise<void>(resolve => { startActorA = resolve })
+    const actorBStarted = new Promise<void>(resolve => { startActorB = resolve })
+    const actorAFailure = new Error('actor A failed')
+    const actorBFailure = new Error('actor B failed')
+
+    const execution = runC1OrdinaryDetailConcurrency({
+      assertTarget: vi.fn(), readPhase: phaseSql,
+      runPhase: phase => {
+        if (phase === 'cleanup') {
+          cleanupCalls += 1
+          if (cleanupCalls === 2) cleanupAfterActors = actorASettled && actorBSettled
+          return Promise.resolve({})
+        }
+        if (phase === 'actor_a') return new Promise((_resolve, reject) => {
+          startActorA()
+          rejectActorA = reason => { actorASettled = true; reject(reason) }
+        })
+        if (phase === 'actor_b') return new Promise((_resolve, reject) => {
+          startActorB()
+          rejectActorB = reason => { actorBSettled = true; reject(reason) }
+        })
+        return Promise.resolve({})
+      },
+    })
+
+    await Promise.all([actorAStarted, actorBStarted])
+    rejectActorA(actorAFailure)
+    await Promise.resolve()
+    expect(cleanupCalls).toBe(1)
+
+    rejectActorB(actorBFailure)
+    const failure = await execution.catch(error => error)
+
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors).toEqual([actorAFailure, actorBFailure])
+    expect(cleanupAfterActors).toBe(true)
   })
 })
