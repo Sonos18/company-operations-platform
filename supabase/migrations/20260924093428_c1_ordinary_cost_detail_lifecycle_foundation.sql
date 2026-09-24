@@ -158,6 +158,7 @@ as $$
 $$;
 
 revoke all on function private.c1_can_read_project_cost_detail(uuid, uuid, uuid, text) from public, anon, authenticated;
+grant execute on function private.c1_can_read_project_cost_detail(uuid, uuid, uuid, text) to authenticated;
 
 drop policy c1_project_cost_item_details_select on public.project_cost_item_details;
 create policy c1_project_cost_item_details_select

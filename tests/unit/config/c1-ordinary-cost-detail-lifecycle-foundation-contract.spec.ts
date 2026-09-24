@@ -27,4 +27,8 @@ describe('C1 ordinary cost detail lifecycle foundation', () => {
     expect(sql).toMatch(/create function private\.c1_resolve_or_create_ordinary_project_cost_item/iu)
     expect(sql).toContain('SUBCONTRACT_COST_MODEL_UNSUPPORTED')
   })
+
+  it('grants the detail RLS helper to the authenticated policy role only', () => {
+    expect(sql).toMatch(/revoke all on function private\.c1_can_read_project_cost_detail\(uuid, uuid, uuid, text\) from public, anon, authenticated;[\s\S]*grant execute on function private\.c1_can_read_project_cost_detail\(uuid, uuid, uuid, text\) to authenticated;/iu)
+  })
 })
