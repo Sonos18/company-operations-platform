@@ -137,7 +137,6 @@ insert into public.source_review_issues(id,tenant_id,company_id,source_selection
 set local role authenticated;
 select throws_ok($$select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_sibling),jsonb_build_object('expectedVersion',1),'c1d10000-0000-4000-8000-000000000611','c1d10000-0000-4000-8000-000000000719')$$,'P0001','COST_DETAIL_PUBLISH_NOT_READY','publish revalidates an open blocking review issue on a persisted source');
 reset role;
-delete from public.source_review_issues where id='c1d10000-0000-4000-8000-000000000503';
 set local role authenticated;
 select is((public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',2),'c1d10000-0000-4000-8000-000000000602','c1d10000-0000-4000-8000-000000000706')->>'publicationState'),'published','publish transitions one prepared detail');
 select is((select amount_text from public.project_cost_items where id=(select (result->>'projectCostItemId')::uuid from c1d_result)),'5','publish updates the parent exactly once');
