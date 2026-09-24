@@ -30,6 +30,18 @@ describe('C1 Cloud DEV runner', () => {
     expect(() => validateC1CloudDevSql(path, sql)).not.toThrow()
   })
 
+  it.each([
+    'c1_ordinary_cost_detail_lifecycle_foundation.test.sql',
+    'c1_ordinary_cost_detail_commands.test.sql',
+    'c1_ordinary_cost_detail_provenance_evidence_reads.test.sql',
+  ])('allows %s only in its reserved synthetic UUID namespace', path => {
+    const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1', path), 'utf8')
+
+    expect(() => validateC1CloudDevSql(path, sql)).not.toThrow()
+    expect(() => validateC1CloudDevSql(path, "begin;\nselect 'c1000000-0000-4000-8000-000000000001';\nrollback;")).toThrow('must use reserved synthetic UUIDs')
+    expect(() => validateC1CloudDevSql(path, "begin;\nselect 'Yong Mei';\nrollback;")).toThrow('cannot reference real VQH/customer identifiers')
+  })
+
   it('keeps foundation in the c110/c111 transaction-only namespaces', () => {
     const fixture = (name: string) => readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1', name), 'utf8')
     const foundation = fixture('c1_foundation.test.sql')

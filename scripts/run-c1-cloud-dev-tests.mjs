@@ -16,12 +16,21 @@ const allowlist = [
   'c1_accounting_write_lifecycle.test.sql',
   'c1_accounting_write_evidence.test.sql',
   'c1_accounting_write_cash.test.sql',
+  'c1_ordinary_cost_detail_lifecycle_foundation.test.sql',
+  'c1_ordinary_cost_detail_commands.test.sql',
+  'c1_ordinary_cost_detail_provenance_evidence_reads.test.sql',
 ]
 
 const accountingWriteSyntheticPrefixes = {
   'c1_accounting_write_lifecycle.test.sql': 'c106',
   'c1_accounting_write_evidence.test.sql': 'c107',
   'c1_accounting_write_cash.test.sql': 'c108',
+}
+
+const ordinaryCostDetailSyntheticPrefixes = {
+  'c1_ordinary_cost_detail_lifecycle_foundation.test.sql': 'c1f1',
+  'c1_ordinary_cost_detail_commands.test.sql': 'c1d1',
+  'c1_ordinary_cost_detail_provenance_evidence_reads.test.sql': 'c1f3',
 }
 
 export function validateC1CloudDevSql(path, sql) {
@@ -53,6 +62,12 @@ export function validateC1CloudDevSql(path, sql) {
   if (accountingWritePrefix) {
     const ids = normalized.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
     if (ids.some(id => !id.toLowerCase().startsWith(accountingWritePrefix))) throw new Error(`${path} must use reserved synthetic UUIDs`)
+  }
+  const ordinaryCostDetailPrefix = ordinaryCostDetailSyntheticPrefixes[path]
+  if (ordinaryCostDetailPrefix) {
+    const ids = normalized.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
+    if (ids.some(id => !id.toLowerCase().startsWith(ordinaryCostDetailPrefix))) throw new Error(`${path} must use reserved synthetic UUIDs`)
+    if (/\b(?:Eo\s+Gi\p{L}*|Yong\s+Mei)\b/iu.test(normalized)) throw new Error('C1 ordinary detail SQL cannot reference real VQH/customer identifiers')
   }
 }
 

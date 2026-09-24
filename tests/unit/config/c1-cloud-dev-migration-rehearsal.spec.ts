@@ -25,6 +25,9 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
     '20260922090010_c1_accounting_write_finalize_validation_fix.sql',
     '20260922090011_c1_accounting_write_raw_target_metadata_fix.sql',
     '20260922090012_c1_accounting_write_finalize_server_boundary.sql',
+    '20260924093428_c1_ordinary_cost_detail_lifecycle_foundation.sql',
+    '20260924110107_c1_ordinary_cost_detail_commands.sql',
+    '20260924120131_c1_ordinary_cost_detail_provenance_evidence_reads.sql',
   ]
 
   function migrationRoot(names = migrationNames) {
@@ -47,10 +50,10 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
     expect(() => buildC1MigrationRehearsalSql('commit;')).toThrow('C1 migration rehearsal cannot contain transaction control')
   })
 
-  it('loads all accounting-write migrations once in timestamp order', () => {
+  it('loads accounting-write and ordinary-detail migrations once in timestamp order', () => {
     const sql = readC1MigrationSql(migrationRoot())
 
-    expect(sql).toBe('select 1;\n\nselect 2;\n\nselect 3;\n\nselect 4;\n\nselect 5;\n\nselect 6;\n\nselect 7;\n\nselect 8;\n\nselect 9;\n\nselect 10;\n\nselect 11;\n\nselect 12;\n\nselect 13;\n')
+    expect(sql).toBe('select 1;\n\nselect 2;\n\nselect 3;\n\nselect 4;\n\nselect 5;\n\nselect 6;\n\nselect 7;\n\nselect 8;\n\nselect 9;\n\nselect 10;\n\nselect 11;\n\nselect 12;\n\nselect 13;\n\nselect 14;\n\nselect 15;\n\nselect 16;\n')
   })
 
   it('rejects a missing accounting-write migration before Cloud access', () => {
