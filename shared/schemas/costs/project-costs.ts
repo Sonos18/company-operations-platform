@@ -260,7 +260,6 @@ export const projectCostDraftManagementMetadataSchema = z.object({
 }).strict()
 
 export const createProjectCostDetailDraftInputSchema = z.object({
-  projectId: uuid,
   categoryId: uuid,
   description: text,
   relevantDate: relevantDate.optional(),
@@ -293,7 +292,6 @@ export const prepareProjectCostDetailFinancialsInputSchema = z.object({
 export const publishProjectCostDetailInputSchema = z.object({ expectedVersion: version }).strict()
 
 export const createAndPublishProjectCostDetailInputSchema = z.object({
-  projectId: uuid,
   categoryId: uuid,
   description: text,
   quantity: decimalStringSchema.nullable().optional().default(null),

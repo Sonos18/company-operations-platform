@@ -13,18 +13,7 @@ afterEach(() => {
 describe('C1 Cloud DEV migration rehearsal runner', () => {
   const migrationNames = [
     '20260922090000_c1_accounting_write_publication_rbac.sql',
-    '20260922090001_c1_accounting_write_draft_commands.sql',
-    '20260922090002_c1_accounting_write_evidence_storage.sql',
-    '20260922090003_c1_accounting_write_publish_command.sql',
-    '20260922090004_c1_accounting_write_correction_command.sql',
-    '20260922090005_c1_accounting_write_cash_commands.sql',
-    '20260922090006_c1_accounting_write_snapshot_constraint_scope_fix.sql',
-    '20260922090007_c1_accounting_write_evidence_rls_initplan_fix.sql',
-    '20260922090008_c1_accounting_write_evidence_kind_contract_fix.sql',
-    '20260922090009_c1_accounting_write_review_security_hardening.sql',
-    '20260922090010_c1_accounting_write_finalize_validation_fix.sql',
-    '20260922090011_c1_accounting_write_raw_target_metadata_fix.sql',
-    '20260922090012_c1_accounting_write_finalize_server_boundary.sql',
+    '20260923134446_c1_accounting_write_draft_management_metadata.sql',
     '20260924093428_c1_ordinary_cost_detail_lifecycle_foundation.sql',
     '20260924110107_c1_ordinary_cost_detail_commands.sql',
     '20260924120131_c1_ordinary_cost_detail_provenance_evidence_reads.sql',
@@ -50,19 +39,19 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
     expect(() => buildC1MigrationRehearsalSql('commit;')).toThrow('C1 migration rehearsal cannot contain transaction control')
   })
 
-  it('loads accounting-write and ordinary-detail migrations once in timestamp order', () => {
+  it('loads the exact currently pending C1 stack once in timestamp order and excludes applied history', () => {
     const sql = readC1MigrationSql(migrationRoot())
 
-    expect(sql).toBe('select 1;\n\nselect 2;\n\nselect 3;\n\nselect 4;\n\nselect 5;\n\nselect 6;\n\nselect 7;\n\nselect 8;\n\nselect 9;\n\nselect 10;\n\nselect 11;\n\nselect 12;\n\nselect 13;\n\nselect 14;\n\nselect 15;\n\nselect 16;\n')
+    expect(sql).toBe('select 2;\n\nselect 3;\n\nselect 4;\n\nselect 5;\n')
   })
 
-  it('rejects a missing accounting-write migration before Cloud access', () => {
-    expect(() => readC1MigrationSql(migrationRoot(migrationNames.slice(0, 12)))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_accounting_write_finalize_server_boundary.sql')
+  it('rejects a missing pending migration before Cloud access', () => {
+    expect(() => readC1MigrationSql(migrationRoot(migrationNames.filter(name => !name.includes('draft_management_metadata'))))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_accounting_write_draft_management_metadata.sql')
   })
 
   it('rejects duplicate migration suffixes before Cloud access', () => {
-    const duplicate = ['20260922080000_c1_accounting_write_publication_rbac.sql', ...migrationNames]
-    expect(() => readC1MigrationSql(migrationRoot(duplicate))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_accounting_write_publication_rbac.sql')
+    const duplicate = ['20260923130000_c1_accounting_write_draft_management_metadata.sql', ...migrationNames]
+    expect(() => readC1MigrationSql(migrationRoot(duplicate))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_accounting_write_draft_management_metadata.sql')
   })
 
   it('checks the Cloud DEV target before dispatching the temporary rehearsal SQL', () => {

@@ -71,7 +71,7 @@ export function createHttpProjectCostRepository(options: { companyId: string | (
       return options.client.request({ url: `${base()}/project-costs/${id(projectCostItemId)}/corrections`, method: 'POST', body, idempotencyKey: command.idempotencyKey, schema: costCommandAckSchema })
     },
     createDetailDraft: (projectId, input, command) => {
-      const body = createProjectCostDetailDraftInputSchema.parse({ ...input, projectId })
+      const body = createProjectCostDetailDraftInputSchema.parse(input)
       return options.client.request({ url: `${base()}/projects/${id(projectId)}/cost-entry-drafts`, method: 'POST', body, idempotencyKey: command.idempotencyKey, schema: projectCostDetailCommandAckSchema })
     },
     updateDetailDraft: (detailId, input) => options.client.request({ url: `${base()}/project-cost-details/${id(detailId)}`, method: 'PATCH', body: updateProjectCostDetailDraftInputSchema.parse(input), schema: projectCostDetailCommandAckSchema }),
@@ -82,7 +82,7 @@ export function createHttpProjectCostRepository(options: { companyId: string | (
     listOperationalDetailDrafts: projectId => options.client.request({ url: `${base()}/projects/${id(projectId)}/cost-entry-drafts/operations`, method: 'GET', schema: z.array(projectCostDetailOperationalDraftSchema) }),
     publishDetail: (detailId, input, command) => options.client.request({ url: `${base()}/project-cost-details/${id(detailId)}/publish`, method: 'POST', body: publishProjectCostDetailInputSchema.parse(input), idempotencyKey: command.idempotencyKey, schema: projectCostDetailCommandAckSchema }),
     createAndPublishDetail: (projectId, input, command) => {
-      const body = createAndPublishProjectCostDetailInputSchema.parse({ ...input, projectId })
+      const body = createAndPublishProjectCostDetailInputSchema.parse(input)
       return options.client.request({ url: `${base()}/projects/${id(projectId)}/cost-entries`, method: 'POST', body, idempotencyKey: command.idempotencyKey, schema: projectCostDetailCommandAckSchema })
     },
     correctPublishedDetail: (detailId, input, command) => options.client.request({ url: `${base()}/project-cost-details/${id(detailId)}/corrections`, method: 'POST', body: correctPublishedProjectCostDetailInputSchema.parse(input), idempotencyKey: command.idempotencyKey, schema: projectCostDetailCommandAckSchema }),

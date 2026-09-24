@@ -597,16 +597,13 @@ describe('Project Cost service', () => {
       expect(result.details[0]!.createdAt).toBe('2026-09-17T07:45:34.829269+00:00')
     })
 
-    it('returns empty details array when item has no detail rows without failing invariant', async () => {
+    it('rejects a nonzero parent with no published detail rows', async () => {
       const client = makeDetailsClient([parentRow], [])
       const repository = new ProjectCostRepository(client as never)
 
-      const result = await repository.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)
-      expect(result).toEqual({
-        projectCostItemId: parentRow.id,
-        totalAmount: '100.0000',
-        currencyCode: 'VND',
-        details: [],
+      await expect(repository.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)).rejects.toMatchObject({
+        statusCode: 500,
+        code: 'INTERNAL_ERROR',
       })
     })
 

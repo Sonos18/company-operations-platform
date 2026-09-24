@@ -39,25 +39,46 @@ alter table public.project_cost_item_detail_sources enable row level security;
 alter table public.project_cost_item_detail_sources force row level security;
 revoke all on table public.project_cost_item_detail_sources from public, anon, authenticated;
 grant select on table public.project_cost_item_detail_sources to authenticated;
+create function private.c1_can_read_project_cost_detail_source(target_tenant_id uuid,target_company_id uuid,target_detail_id uuid)
+returns boolean language sql stable security definer set search_path='' as $$
+  select exists (
+    select 1
+    from public.project_cost_item_details detail
+    join public.project_cost_items item on item.id=detail.project_cost_item_id and item.tenant_id=detail.tenant_id and item.company_id=detail.company_id
+    join public.company_cost_settings settings on settings.tenant_id=detail.tenant_id and settings.company_id=detail.company_id and settings.enabled
+    where detail.id=target_detail_id and detail.tenant_id=target_tenant_id and detail.company_id=target_company_id
+      and (
+        (detail.publication_state='published' and private.has_company_permission(target_tenant_id,target_company_id,'cost.read'))
+        or (detail.publication_state='draft' and private.has_company_permission(target_tenant_id,target_company_id,'cost.prepare'))
+      )
+  );
+$$;
+create function private.c1_can_read_project_cost_detail_evidence_metadata(target_tenant_id uuid,target_company_id uuid,target_detail_id uuid)
+returns boolean language sql stable security definer set search_path='' as $$
+  select exists (
+    select 1
+    from public.project_cost_item_details detail
+    join public.company_cost_settings settings on settings.tenant_id=detail.tenant_id and settings.company_id=detail.company_id and settings.enabled
+    where detail.id=target_detail_id and detail.tenant_id=target_tenant_id and detail.company_id=target_company_id
+      and detail.publication_state='published' and private.has_company_permission(target_tenant_id,target_company_id,'cost.source.read')
+  );
+$$;
+revoke all on function private.c1_can_read_project_cost_detail_source(uuid,uuid,uuid), private.c1_can_read_project_cost_detail_evidence_metadata(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function private.c1_can_read_project_cost_detail_source(uuid,uuid,uuid), private.c1_can_read_project_cost_detail_evidence_metadata(uuid,uuid,uuid) to authenticated;
 create policy c1_project_cost_item_detail_sources_select on public.project_cost_item_detail_sources for select to authenticated using (
-  exists (
-    select 1 from public.project_cost_item_details detail
-    where detail.id = project_cost_item_detail_id and detail.tenant_id = project_cost_item_detail_sources.tenant_id and detail.company_id = project_cost_item_detail_sources.company_id
-      and private.c1_can_read_project_cost_detail(detail.tenant_id, detail.company_id, detail.project_cost_item_id, detail.publication_state)
-  )
+  private.c1_can_read_project_cost_detail_source(tenant_id,company_id,project_cost_item_detail_id)
 );
 create function private.c1_detail_is_published(target_tenant_id uuid,target_company_id uuid,target_detail_id uuid)
 returns boolean language sql stable security definer set search_path='' as $$
   select exists (select 1 from public.project_cost_item_details detail where detail.id=target_detail_id and detail.tenant_id=target_tenant_id and detail.company_id=target_company_id and detail.publication_state='published');
 $$;
 revoke all on function private.c1_detail_is_published(uuid,uuid,uuid) from public,anon,authenticated;
-grant execute on function private.c1_detail_is_published(uuid,uuid,uuid) to authenticated;
 drop policy c1_cost_evidence_links_select on public.cost_evidence_links;
 create policy c1_cost_evidence_links_select on public.cost_evidence_links for select to authenticated using (
   private.has_company_permission(tenant_id, company_id, 'cost.source.read')
   and (
     project_cost_item_detail_id is null
-    or private.c1_detail_is_published(tenant_id,company_id,project_cost_item_detail_id)
+    or private.c1_can_read_project_cost_detail_evidence_metadata(tenant_id,company_id,project_cost_item_detail_id)
   )
 );
 
@@ -80,9 +101,10 @@ returns boolean language sql stable security definer set search_path='' as $$
         )
       ) and not exists (
         select 1 from public.cost_evidence_links draft_link
+        join public.project_cost_item_details detail on detail.id=draft_link.project_cost_item_detail_id and detail.tenant_id=draft_link.tenant_id and detail.company_id=draft_link.company_id
         where draft_link.evidence_file_id=file.id and draft_link.tenant_id=file.tenant_id and draft_link.company_id=file.company_id
           and draft_link.project_cost_item_detail_id is not null
-          and not private.c1_detail_is_published(draft_link.tenant_id,draft_link.company_id,draft_link.project_cost_item_detail_id)
+          and detail.publication_state<>'published'
       ))
     )
   );

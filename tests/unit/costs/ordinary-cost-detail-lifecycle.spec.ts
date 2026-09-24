@@ -11,11 +11,12 @@ type Parser = { safeParse(value: unknown): { success: boolean } }
 const schema = (name: string) => (contracts as Record<string, Parser>)[name]
 
 describe('ordinary cost detail lifecycle contracts', () => {
-  it('keeps draft creation operational and requires its project and category scope', () => {
+  it('keeps draft creation operational and keeps the path project out of the strict body', () => {
     const create = schema('createProjectCostDetailDraftInputSchema')
     expect(create).toBeDefined()
-    expect(create.safeParse({ projectId: ids.project, categoryId: ids.category, description: 'Install trim' }).success).toBe(true)
-    expect(create.safeParse({ projectId: ids.project, categoryId: ids.category, description: 'Install trim', amount: '1.0000' }).success).toBe(false)
+    expect(create.safeParse({ categoryId: ids.category, description: 'Install trim' }).success).toBe(true)
+    expect(create.safeParse({ projectId: ids.project, categoryId: ids.category, description: 'Install trim' }).success).toBe(false)
+    expect(create.safeParse({ categoryId: ids.category, description: 'Install trim', amount: '1.0000' }).success).toBe(false)
   })
 
   it('requires a version and amount for one-detail financial preparation', () => {
@@ -28,7 +29,8 @@ describe('ordinary cost detail lifecycle contracts', () => {
   it('requires all three command permissions through separate service gates', () => {
     const direct = schema('createAndPublishProjectCostDetailInputSchema')
     expect(direct).toBeDefined()
-    expect(direct.safeParse({ projectId: ids.project, categoryId: ids.category, description: 'Install trim', amount: '1.0000' }).success).toBe(true)
+    expect(direct.safeParse({ categoryId: ids.category, description: 'Install trim', amount: '1.0000' }).success).toBe(true)
+    expect(direct.safeParse({ projectId: ids.project, categoryId: ids.category, description: 'Install trim', amount: '1.0000' }).success).toBe(false)
   })
 
   it('rejects correction retention shapes that exceed or contradict the corrected amount', () => {

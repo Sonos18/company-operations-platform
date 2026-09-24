@@ -14,13 +14,13 @@ All routes are under `/api/companies/:companyId`. Bodies are strict; IDs, `Idemp
 
 | Action | Endpoint | Permission | Request |
 | --- | --- | --- | --- |
-| Save Draft | `POST /projects/:projectId/cost-entry-drafts` | `cost.manage` | Header `Idempotency-Key`; `{ projectId, categoryId, description, relevantDate?, reference?, note? }` → draft result. |
+| Save Draft | `POST /projects/:projectId/cost-entry-drafts` | `cost.manage` | Header `Idempotency-Key`; `{ categoryId, description, relevantDate?, reference?, note? }` → draft result. `projectId` comes only from the path. |
 | Operational edit | `PATCH /project-cost-details/:detailId` | `cost.manage` | `{ expectedVersion, description?, relevantDate?, reference?, note? }` while draft only. |
 | Prepare financials | `PUT /project-cost-details/:detailId/financials` | `cost.prepare` | `{ expectedVersion, amount, quantity?, unitCode?, unitPrice?, retentionKind?, retentionRateBps?, retentionAmount?, sourceFigureIds? }` while draft only. |
 | Read draft | `GET /projects/:projectId/cost-entry-drafts` and `GET /project-cost-details/:detailId/draft` | `cost.prepare` | Complete draft financial/source projection. |
 | Read draft operations | `GET /projects/:projectId/cost-entry-drafts/operations` and `GET /project-cost-details/:detailId/draft/operations` | `cost.manage` | Operational projection only; financial/source fields are omitted. |
 | Publish Draft | `POST /project-cost-details/:detailId/publish` | `cost.publish_import` | Header `Idempotency-Key`; `{ expectedVersion }` → published result. |
-| Publish Now | `POST /projects/:projectId/cost-entries` | `cost.manage` + `cost.prepare` + `cost.publish_import` | Header `Idempotency-Key`; `{ projectId, categoryId, description, amount, quantity?, unitCode?, unitPrice?, retentionKind?, retentionRateBps?, retentionAmount?, relevantDate?, reference?, note?, sourceFigureIds? }` → published result. Atomic create-and-publish; never client-side draft then publish. |
+| Publish Now | `POST /projects/:projectId/cost-entries` | `cost.manage` + `cost.prepare` + `cost.publish_import` | Header `Idempotency-Key`; `{ categoryId, description, amount, quantity?, unitCode?, unitPrice?, retentionKind?, retentionRateBps?, retentionAmount?, relevantDate?, reference?, note?, sourceFigureIds? }` → published result. `projectId` comes only from the path. Atomic create-and-publish; never client-side draft then publish. |
 | Correction | `POST /project-cost-details/:detailId/corrections` | `cost.correct` | Header `Idempotency-Key`; `{ expectedVersion, reason, changes }`. The same detail identity is versioned and audited; no hard delete. |
 
 `sourceFigureIds` attach only explicitly chosen detail-level source figures. Do not copy parent/category provenance to a detail. Detail evidence is independent and financially neutral:

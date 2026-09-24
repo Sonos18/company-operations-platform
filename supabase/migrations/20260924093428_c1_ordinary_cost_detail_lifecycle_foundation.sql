@@ -147,13 +147,8 @@ as $$
     where settings.tenant_id = target_tenant_id
       and settings.company_id = target_company_id
       and settings.enabled
-      and (
-        (target_publication_state = 'published'
-          and private.has_company_permission(target_tenant_id, target_company_id, 'cost.read'))
-        or
-        (target_publication_state = 'draft'
-          and private.has_company_permission(target_tenant_id, target_company_id, 'cost.prepare'))
-      )
+      and target_publication_state = 'published'
+      and private.has_company_permission(target_tenant_id, target_company_id, 'cost.read')
   );
 $$;
 
@@ -183,6 +178,7 @@ declare
   v_context jsonb;
   v_category public.cost_categories%rowtype;
   v_item_id uuid;
+  v_item_publication_state text;
   v_currency_code text;
 begin
   if target_actor_id is null or target_request_id is null or auth.uid() is distinct from target_actor_id then
@@ -216,14 +212,17 @@ begin
     'c1_ordinary_cost_parent:' || target_tenant_id::text || ':' || target_company_id::text || ':' || target_project_id::text || ':' || target_cost_category_id::text,
     0
   ));
-  select item.id into v_item_id
+  select item.id, item.publication_state into v_item_id, v_item_publication_state
   from public.project_cost_items item
   where item.tenant_id = target_tenant_id
     and item.company_id = target_company_id
     and item.project_id = target_project_id
     and item.cost_category_id = target_cost_category_id
   for update;
-  if found then return v_item_id; end if;
+  if found then
+    if v_item_publication_state <> 'published' then raise exception using errcode = 'P0001', message = 'COST_DETAIL_PUBLISH_NOT_READY'; end if;
+    return v_item_id;
+  end if;
 
   select settings.default_currency_code into v_currency_code
   from public.company_cost_settings settings

@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
 
-select plan(45);
+select plan(46);
 
 select has_table('public', 'project_cost_item_detail_sources', 'detail source provenance table exists');
 select has_table('public', 'cost_evidence_links', 'evidence links table exists');
@@ -26,6 +26,7 @@ select ok(exists (select 1 from pg_policies where schemaname='public' and tablen
 select ok(not has_table_privilege('authenticated', 'public.project_cost_item_details', 'update'), 'detail lifecycle remains command-only');
 select ok(to_regprocedure('private.c1_sync_project_cost_item_amount(uuid)') is not null, 'parent aggregate remains derived from details');
 select ok(to_regprocedure('private.c1_can_read_project_cost_detail(uuid,uuid,uuid,text)') is not null, 'detail read authorization remains lifecycle-aware');
+select ok(not pg_catalog.has_function_privilege('authenticated', 'private.c1_detail_is_published(uuid,uuid,uuid)', 'execute'), 'authenticated cannot probe arbitrary detail publication state');
 select ok(to_regprocedure('private.c1_can_select_evidence_object(text,text)') is not null, 'storage raw read remains resource-aware');
 
 do $$

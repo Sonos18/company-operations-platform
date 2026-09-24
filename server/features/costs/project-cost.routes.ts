@@ -70,8 +70,8 @@ export function createProjectCostRoutes(dependencies: ProjectCostRouteDependenci
     async createDetailDraft(event: H3Event) {
       const value = await resolved(event); const projectId = param(event, 'projectId'); const input = await body(event, createProjectCostDetailDraftInputSchema)
       const idempotencyKey = uuid.safeParse(getHeader(event, 'idempotency-key'))
-      if (!idempotencyKey.success || input.projectId !== projectId) invalid()
-      return value.service.createDetailDraft(value.context, input, idempotencyKey.data)
+      if (!idempotencyKey.success) invalid()
+      return value.service.createDetailDraft(value.context, projectId, input, idempotencyKey.data)
     },
     async updateDetailDraft(event: H3Event) { const value = await resolved(event); return value.service.updateDetailDraft(value.context, param(event, 'detailId'), await body(event, updateProjectCostDetailDraftInputSchema)) },
     async prepareDetailFinancials(event: H3Event) { const value = await resolved(event); return value.service.prepareDetailFinancials(value.context, param(event, 'detailId'), await body(event, prepareProjectCostDetailFinancialsInputSchema)) },
@@ -86,8 +86,8 @@ export function createProjectCostRoutes(dependencies: ProjectCostRouteDependenci
     },
     async createAndPublishDetail(event: H3Event) {
       const value = await resolved(event); const projectId = param(event, 'projectId'); const input = await body(event, createAndPublishProjectCostDetailInputSchema); const idempotencyKey = uuid.safeParse(getHeader(event, 'idempotency-key'))
-      if (!idempotencyKey.success || input.projectId !== projectId) invalid()
-      return value.service.createAndPublishDetail(value.context, input, idempotencyKey.data)
+      if (!idempotencyKey.success) invalid()
+      return value.service.createAndPublishDetail(value.context, projectId, input, idempotencyKey.data)
     },
     async correctPublishedDetail(event: H3Event) {
       const value = await resolved(event); const input = await body(event, correctPublishedProjectCostDetailInputSchema); const idempotencyKey = uuid.safeParse(getHeader(event, 'idempotency-key'))

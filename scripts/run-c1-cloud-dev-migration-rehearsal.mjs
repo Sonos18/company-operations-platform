@@ -6,19 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
 
 const migrationSuffixes = [
-  '_c1_accounting_write_publication_rbac.sql',
-  '_c1_accounting_write_draft_commands.sql',
-  '_c1_accounting_write_evidence_storage.sql',
-  '_c1_accounting_write_publish_command.sql',
-  '_c1_accounting_write_correction_command.sql',
-  '_c1_accounting_write_cash_commands.sql',
-  '_c1_accounting_write_snapshot_constraint_scope_fix.sql',
-  '_c1_accounting_write_evidence_rls_initplan_fix.sql',
-  '_c1_accounting_write_evidence_kind_contract_fix.sql',
-  '_c1_accounting_write_review_security_hardening.sql',
-  '_c1_accounting_write_finalize_validation_fix.sql',
-  '_c1_accounting_write_raw_target_metadata_fix.sql',
-  '_c1_accounting_write_finalize_server_boundary.sql',
+  '_c1_accounting_write_draft_management_metadata.sql',
   '_c1_ordinary_cost_detail_lifecycle_foundation.sql',
   '_c1_ordinary_cost_detail_commands.sql',
   '_c1_ordinary_cost_detail_provenance_evidence_reads.sql',

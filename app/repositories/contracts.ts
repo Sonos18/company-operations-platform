@@ -167,7 +167,7 @@ export interface ProjectCostRepository {
   listOperationalDrafts(projectId: string): Promise<ProjectCostOperationalDraft[]>
   publish(projectCostItemId: string, input: PublishProjectCostInput, options: IdempotentCommandOptions): Promise<CostCommandAck>
   correct(projectCostItemId: string, input: CorrectPublishedProjectCostInput, options: IdempotentCommandOptions): Promise<CostCommandAck>
-  createDetailDraft(projectId: string, input: Omit<CreateProjectCostDetailDraftInput, 'projectId'>, options: IdempotentCommandOptions): Promise<ProjectCostDetailCommandAck>
+  createDetailDraft(projectId: string, input: CreateProjectCostDetailDraftInput, options: IdempotentCommandOptions): Promise<ProjectCostDetailCommandAck>
   updateDetailDraft(detailId: string, input: UpdateProjectCostDetailDraftInput): Promise<ProjectCostDetailCommandAck>
   prepareDetailFinancials(detailId: string, input: PrepareProjectCostDetailFinancialsInput): Promise<ProjectCostDetailCommandAck>
   detailDraft(detailId: string): Promise<ProjectCostDetailDraft>
@@ -175,7 +175,7 @@ export interface ProjectCostRepository {
   operationalDetailDraft(detailId: string): Promise<ProjectCostDetailOperationalDraft>
   listOperationalDetailDrafts(projectId: string): Promise<ProjectCostDetailOperationalDraft[]>
   publishDetail(detailId: string, input: PublishProjectCostDetailInput, options: IdempotentCommandOptions): Promise<ProjectCostDetailCommandAck>
-  createAndPublishDetail(projectId: string, input: Omit<CreateAndPublishProjectCostDetailInput, 'projectId'>, options: IdempotentCommandOptions): Promise<ProjectCostDetailCommandAck>
+  createAndPublishDetail(projectId: string, input: CreateAndPublishProjectCostDetailInput, options: IdempotentCommandOptions): Promise<ProjectCostDetailCommandAck>
   correctPublishedDetail(detailId: string, input: CorrectPublishedProjectCostDetailInput, options: IdempotentCommandOptions): Promise<ProjectCostDetailCommandAck>
 }
 export interface CostEvidenceRepository {

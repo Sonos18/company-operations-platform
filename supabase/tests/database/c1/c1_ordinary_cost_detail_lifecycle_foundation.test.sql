@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(26);
+select plan(27);
 
 select has_column('public', 'cost_categories', 'posting_strategy', 'category posting strategy exists');
 select results_eq(
@@ -109,7 +109,7 @@ select set_config('request.jwt.claims', '{"sub":"c1f10000-0000-4000-8000-0000000
 select is((select count(*) from public.project_cost_item_details where company_id = 'c1f10000-0000-4000-8000-000000000020'), 1::bigint, 'cost.read sees published detail but not draft detail');
 select is((select count(*) from public.project_cost_item_details where company_id = 'c1f10000-0000-4000-8000-000000000021'), 0::bigint, 'detail RLS preserves tenant and company isolation');
 select set_config('request.jwt.claims', '{"sub":"c1f10000-0000-4000-8000-000000000902","role":"authenticated"}', true);
-select is((select count(*) from public.project_cost_item_details where project_cost_item_id = 'c1f10000-0000-4000-8000-000000000201'), 1::bigint, 'cost.prepare sees the draft under a published parent but not its official detail');
+select is((select count(*) from public.project_cost_item_details where project_cost_item_id = 'c1f10000-0000-4000-8000-000000000201'), 0::bigint, 'cost.prepare has no raw detail visibility, including drafts');
 select set_config('request.jwt.claims', '{"sub":"c1f10000-0000-4000-8000-000000000903","role":"authenticated"}', true);
 select is((select count(*) from public.project_cost_item_details where company_id = 'c1f10000-0000-4000-8000-000000000020'), 0::bigint, 'cost.manage has no raw financial detail visibility');
 
@@ -132,6 +132,9 @@ select throws_ok(
   $$select private.c1_resolve_or_create_ordinary_project_cost_item('c1f10000-0000-4000-8000-000000000010','c1f10000-0000-4000-8000-000000000020','c1f10000-0000-4000-8000-000000000102','c1f10000-0000-4000-8000-000000000302','c1f10000-0000-4000-8000-000000000903','c1f10000-0000-4000-8000-000000000704')$$,
   'P0001', 'SUBCONTRACT_COST_MODEL_UNSUPPORTED', 'resolver rejects subcontract payment categories'
 );
+insert into public.cost_categories(id,tenant_id,company_id,code,name,display_order,posting_strategy,created_by,updated_by) values ('c1f10000-0000-4000-8000-000000000303','c1f10000-0000-4000-8000-000000000010','c1f10000-0000-4000-8000-000000000020','other','Other',3,'ordinary_detail','c1f10000-0000-4000-8000-000000000903','c1f10000-0000-4000-8000-000000000903');
+insert into public.project_cost_items(id,tenant_id,company_id,project_id,cost_category_id,description,amount,amount_text,currency_code,work_status,publication_state,created_by) values ('c1f10000-0000-4000-8000-000000000204','c1f10000-0000-4000-8000-000000000010','c1f10000-0000-4000-8000-000000000020','c1f10000-0000-4000-8000-000000000101','c1f10000-0000-4000-8000-000000000303','real colliding draft parent',0,'0','VND','unknown','draft','c1f10000-0000-4000-8000-000000000903');
+select throws_ok($$select private.c1_resolve_or_create_ordinary_project_cost_item('c1f10000-0000-4000-8000-000000000010','c1f10000-0000-4000-8000-000000000020','c1f10000-0000-4000-8000-000000000101','c1f10000-0000-4000-8000-000000000303','c1f10000-0000-4000-8000-000000000903','c1f10000-0000-4000-8000-000000000705')$$,'P0001','COST_DETAIL_PUBLISH_NOT_READY','resolver rejects a real same-scope draft parent collision');
 
 select * from finish();
 rollback;
