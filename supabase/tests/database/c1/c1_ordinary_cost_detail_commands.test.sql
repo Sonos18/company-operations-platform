@@ -129,15 +129,10 @@ select is((select amount_text from public.project_cost_item_details where id=(se
 select is((select amount_text from public.project_cost_items where id=(select (result->>'projectCostItemId')::uuid from c1d_result)),'0.0000','prepare retains zero official effect');
 select is((public.c1_prepare_project_cost_detail_financials('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_sibling),jsonb_build_object('expectedVersion',0,'amount','1.0000','sourceFigureIds',jsonb_build_array('c1d10000-0000-4000-8000-000000000501')),'c1d10000-0000-4000-8000-000000000717')->>'version'),'1','prepared sibling persists an explicit shared source link');
 reset role;
-alter table public.source_reported_figures disable trigger all;
-update public.source_reported_figures set status='draft', shared_by=null, shared_at=null where id='c1d10000-0000-4000-8000-000000000501';
-alter table public.source_reported_figures enable trigger all;
-set local role authenticated;
-select throws_ok($$select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_sibling),jsonb_build_object('expectedVersion',1),'c1d10000-0000-4000-8000-000000000610','c1d10000-0000-4000-8000-000000000718')$$,'P0001','COST_DETAIL_PUBLISH_NOT_READY','publish revalidates a persisted source that became non-shared');
-reset role;
-alter table public.source_reported_figures disable trigger all;
-update public.source_reported_figures set status='shared', shared_by='c1d10000-0000-4000-8000-000000000901', shared_at=now() where id='c1d10000-0000-4000-8000-000000000501';
-alter table public.source_reported_figures enable trigger all;
+select throws_ok(
+  $$update public.source_reported_figures set status='draft', shared_by=null, shared_at=null where id='c1d10000-0000-4000-8000-000000000501'$$,
+  'P0001','HISTORY_IMMUTABLE','a persisted shared source cannot become non-shared after preparation'
+);
 insert into public.source_review_issues(id,tenant_id,company_id,source_selection_id,import_run_id,issue_identity,issue_kind,impact,description,status,opened_by) values('c1d10000-0000-4000-8000-000000000503','c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000407','c1d10000-0000-4000-8000-000000000401',repeat('1',64),'other','blocks_normalization','fixture blocking review','open','c1d10000-0000-4000-8000-000000000901');
 set local role authenticated;
 select throws_ok($$select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_sibling),jsonb_build_object('expectedVersion',1),'c1d10000-0000-4000-8000-000000000611','c1d10000-0000-4000-8000-000000000719')$$,'P0001','COST_DETAIL_PUBLISH_NOT_READY','publish revalidates an open blocking review issue on a persisted source');
