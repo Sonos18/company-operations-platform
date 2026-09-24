@@ -34,7 +34,7 @@ import type {
 } from '../../shared/schemas/stage01-config'
 import type { BusinessParty, CompanyCostSettings, CreateBusinessPartyInput, CreateEngagementComponentInput, CreateEngagementInput, CreateProjectRegisterInput, Engagement, EngagementComponent, ProjectRegister, UpdateBusinessPartyInput, UpdateEngagementComponentInput, UpdateEngagementInput, UpdateProjectRegisterInput } from '../../shared/schemas/costs/master-data'
 import type { CostSourceFiguresQuery, CostSourceOverview, CostSourceProjectDetail, CostSourceProvenance, CostSourceFigure } from '../../shared/schemas/costs/source-read-model'
-import type { CostCommandAck, CorrectPublishedProjectCostInput, CreateProjectCostDraftInput, PrepareProjectCostFinancialsInput, PrepareProjectCostFinancialsResult, ProjectCostBreakdown, ProjectCostDetailsResponse, ProjectCostDraft, ProjectCostDraftManagementMetadata, ProjectCostOperationalDraft, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, PublishProjectCostInput, UpdateProjectCostDraftInput } from '../../shared/schemas/costs/project-costs'
+import type { CostCommandAck, CorrectPublishedProjectCostDetailInput, CorrectPublishedProjectCostInput, CreateAndPublishProjectCostDetailInput, CreateProjectCostDetailDraftInput, CreateProjectCostDraftInput, PrepareProjectCostDetailFinancialsInput, PrepareProjectCostFinancialsInput, PrepareProjectCostFinancialsResult, ProjectCostBreakdown, ProjectCostDetailCommandAck, ProjectCostDetailDraft, ProjectCostDetailOperationalDraft, ProjectCostDetailsResponse, ProjectCostDraft, ProjectCostDraftManagementMetadata, ProjectCostOperationalDraft, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, PublishProjectCostDetailInput, PublishProjectCostInput, UpdateProjectCostDetailDraftInput, UpdateProjectCostDraftInput } from '../../shared/schemas/costs/project-costs'
 import type { CostEvidenceCreateIntentInput, CostEvidenceFinalizeInput, CostEvidenceFinalized, CostEvidenceLinkInput, CostEvidenceLinkResult, CostEvidenceMetadata, CostEvidenceReadUrl, CostEvidenceReadUrlInput, CostEvidenceUploadIntent } from '../../shared/schemas/costs/cost-evidence'
 import type {
   RecordSubcontractPaymentInput,
@@ -167,6 +167,16 @@ export interface ProjectCostRepository {
   listOperationalDrafts(projectId: string): Promise<ProjectCostOperationalDraft[]>
   publish(projectCostItemId: string, input: PublishProjectCostInput, options: IdempotentCommandOptions): Promise<CostCommandAck>
   correct(projectCostItemId: string, input: CorrectPublishedProjectCostInput, options: IdempotentCommandOptions): Promise<CostCommandAck>
+  createDetailDraft(projectId: string, input: Omit<CreateProjectCostDetailDraftInput, 'projectId'>, options: IdempotentCommandOptions): Promise<ProjectCostDetailCommandAck>
+  updateDetailDraft(detailId: string, input: UpdateProjectCostDetailDraftInput): Promise<ProjectCostDetailCommandAck>
+  prepareDetailFinancials(detailId: string, input: PrepareProjectCostDetailFinancialsInput): Promise<ProjectCostDetailCommandAck>
+  detailDraft(detailId: string): Promise<ProjectCostDetailDraft>
+  listDetailDrafts(projectId: string): Promise<ProjectCostDetailDraft[]>
+  operationalDetailDraft(detailId: string): Promise<ProjectCostDetailOperationalDraft>
+  listOperationalDetailDrafts(projectId: string): Promise<ProjectCostDetailOperationalDraft[]>
+  publishDetail(detailId: string, input: PublishProjectCostDetailInput, options: IdempotentCommandOptions): Promise<ProjectCostDetailCommandAck>
+  createAndPublishDetail(projectId: string, input: Omit<CreateAndPublishProjectCostDetailInput, 'projectId'>, options: IdempotentCommandOptions): Promise<ProjectCostDetailCommandAck>
+  correctPublishedDetail(detailId: string, input: CorrectPublishedProjectCostDetailInput, options: IdempotentCommandOptions): Promise<ProjectCostDetailCommandAck>
 }
 export interface CostEvidenceRepository {
   createUploadIntent(projectId: string, input: CostEvidenceCreateIntentInput, options: IdempotentCommandOptions): Promise<CostEvidenceUploadIntent>

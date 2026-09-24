@@ -1,8 +1,15 @@
 import { z } from 'zod'
 import {
+  correctPublishedProjectCostDetailInputSchema,
   correctPublishedProjectCostInputSchema,
+  createAndPublishProjectCostDetailInputSchema,
+  createProjectCostDetailDraftInputSchema,
   costCommandAckSchema,
+  prepareProjectCostDetailFinancialsInputSchema,
   createProjectCostDraftInputSchema,
+  projectCostDetailCommandAckSchema,
+  projectCostDetailDraftSchema,
+  projectCostDetailOperationalDraftSchema,
   prepareProjectCostFinancialsInputSchema,
   prepareProjectCostFinancialsResultSchema,
   projectCostBreakdownSchema,
@@ -11,7 +18,9 @@ import {
   projectCostDraftManagementMetadataSchema,
   projectCostOperationalDraftSchema,
   projectCostSummaryEntrySchema,
+  publishProjectCostDetailInputSchema,
   publishProjectCostInputSchema,
+  updateProjectCostDetailDraftInputSchema,
   updateProjectCostDraftInputSchema,
 } from '../../../shared/schemas/costs/project-costs'
 import type {
@@ -61,5 +70,21 @@ export function createHttpProjectCostRepository(options: { companyId: string | (
       const body = correctPublishedProjectCostInputSchema.parse(input)
       return options.client.request({ url: `${base()}/project-costs/${id(projectCostItemId)}/corrections`, method: 'POST', body, idempotencyKey: command.idempotencyKey, schema: costCommandAckSchema })
     },
+    createDetailDraft: (projectId, input, command) => {
+      const body = createProjectCostDetailDraftInputSchema.parse({ ...input, projectId })
+      return options.client.request({ url: `${base()}/projects/${id(projectId)}/cost-entry-drafts`, method: 'POST', body, idempotencyKey: command.idempotencyKey, schema: projectCostDetailCommandAckSchema })
+    },
+    updateDetailDraft: (detailId, input) => options.client.request({ url: `${base()}/project-cost-details/${id(detailId)}`, method: 'PATCH', body: updateProjectCostDetailDraftInputSchema.parse(input), schema: projectCostDetailCommandAckSchema }),
+    prepareDetailFinancials: (detailId, input) => options.client.request({ url: `${base()}/project-cost-details/${id(detailId)}/financials`, method: 'PUT', body: prepareProjectCostDetailFinancialsInputSchema.parse(input), schema: projectCostDetailCommandAckSchema }),
+    detailDraft: detailId => options.client.request({ url: `${base()}/project-cost-details/${id(detailId)}/draft`, method: 'GET', schema: projectCostDetailDraftSchema }),
+    listDetailDrafts: projectId => options.client.request({ url: `${base()}/projects/${id(projectId)}/cost-entry-drafts`, method: 'GET', schema: z.array(projectCostDetailDraftSchema) }),
+    operationalDetailDraft: detailId => options.client.request({ url: `${base()}/project-cost-details/${id(detailId)}/draft/operations`, method: 'GET', schema: projectCostDetailOperationalDraftSchema }),
+    listOperationalDetailDrafts: projectId => options.client.request({ url: `${base()}/projects/${id(projectId)}/cost-entry-drafts/operations`, method: 'GET', schema: z.array(projectCostDetailOperationalDraftSchema) }),
+    publishDetail: (detailId, input, command) => options.client.request({ url: `${base()}/project-cost-details/${id(detailId)}/publish`, method: 'POST', body: publishProjectCostDetailInputSchema.parse(input), idempotencyKey: command.idempotencyKey, schema: projectCostDetailCommandAckSchema }),
+    createAndPublishDetail: (projectId, input, command) => {
+      const body = createAndPublishProjectCostDetailInputSchema.parse({ ...input, projectId })
+      return options.client.request({ url: `${base()}/projects/${id(projectId)}/cost-entries`, method: 'POST', body, idempotencyKey: command.idempotencyKey, schema: projectCostDetailCommandAckSchema })
+    },
+    correctPublishedDetail: (detailId, input, command) => options.client.request({ url: `${base()}/project-cost-details/${id(detailId)}/corrections`, method: 'POST', body: correctPublishedProjectCostDetailInputSchema.parse(input), idempotencyKey: command.idempotencyKey, schema: projectCostDetailCommandAckSchema }),
   }
 }
