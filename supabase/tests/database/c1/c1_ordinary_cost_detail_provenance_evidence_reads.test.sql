@@ -155,9 +155,9 @@ select set_config('taskovia.c1_cost_write.snapshot','1',true);
 insert into public.project_cost_item_details(id,tenant_id,company_id,project_cost_item_id,line_no,detail_kind,description,amount_text,publication_state,created_by) values('c1f30000-0000-4000-8000-000000000404','c1f30000-0000-4000-8000-000000000010','c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000203',1,'line_item','Legacy correction replacement','1.0000','draft','c1f30000-0000-4000-8000-000000000901');
 insert into public.audit_events(tenant_id,company_id,actor_id,action,resource_type,resource_id,request_id,after_summary) values('c1f30000-0000-4000-8000-000000000010','c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000901','c1.project_cost_item.corrected','project_cost_item','c1f30000-0000-4000-8000-000000000203','c1f30000-0000-4000-8000-000000000719','{}');
 select is((select publication_request_id from public.project_cost_item_details where id='c1f30000-0000-4000-8000-000000000404'),'c1f30000-0000-4000-8000-000000000719'::uuid,'legacy correction replacement receives current command request metadata');
+reset role;
 select is((select coalesce(sum(payment.paid_amount_text::numeric),0)::text from public.project_subcontract_payments payment where payment.project_subcontract_id='c1f30000-0000-4000-8000-000000000602' and payment.status='recorded'),'7.0000','canonical subcontract Actual excludes the legacy detail and voided payment');
 select is((select coalesce(sum(payment.paid_amount_text::numeric),0)::text from public.project_subcontract_payments payment where payment.project_subcontract_id='c1f30000-0000-4000-8000-000000000602' and payment.status='recorded'),(select actual from c1f3_subcontract_actual_before),'ordinary detail, source, and evidence operations do not change payment-only Actual');
-reset role;
 
 select * from finish();
 rollback;
