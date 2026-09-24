@@ -30,7 +30,18 @@ describe('ordinary cost detail lifecycle contracts', () => {
     const direct = schema('createAndPublishProjectCostDetailInputSchema')
     expect(direct).toBeDefined()
     expect(direct.safeParse({ categoryId: ids.category, description: 'Install trim', amount: '1.0000' }).success).toBe(true)
+    expect(direct.safeParse({ categoryId: ids.category, description: 'Install trim', amount: '1.0000', sourceFigureIds: [] }).success).toBe(true)
+    expect(direct.safeParse({ categoryId: ids.category, description: 'Install trim', amount: '1.0000', sourceFigureIds: null }).success).toBe(false)
+    expect(direct.safeParse({ categoryId: ids.category, description: 'Install trim', amount: '1.0000', sourceFigureIds: 'not-an-array' }).success).toBe(false)
     expect(direct.safeParse({ projectId: ids.project, categoryId: ids.category, description: 'Install trim', amount: '1.0000' }).success).toBe(false)
+  })
+
+  it('keeps publish input to its required version field only', () => {
+    const publish = schema('publishProjectCostDetailInputSchema')
+    expect(publish).toBeDefined()
+    expect(publish.safeParse({ expectedVersion: 0 }).success).toBe(true)
+    expect(publish.safeParse({ expectedVersion: null }).success).toBe(false)
+    expect(publish.safeParse({ expectedVersion: 0, unexpected: true }).success).toBe(false)
   })
 
   it('rejects correction retention shapes that exceed or contradict the corrected amount', () => {
