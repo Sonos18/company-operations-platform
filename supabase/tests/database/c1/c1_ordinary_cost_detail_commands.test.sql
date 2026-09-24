@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(80);
+select plan(81);
 
 select has_table('public', 'project_cost_item_detail_sources', 'detail source provenance is introduced with the command slice');
 select has_function('public', 'c1_create_project_cost_detail_draft', 'draft-detail create RPC exists');
@@ -146,6 +146,7 @@ set local role authenticated;
 select is((public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',2),'c1d10000-0000-4000-8000-000000000602','c1d10000-0000-4000-8000-000000000706')->>'publicationState'),'published','publish transitions one prepared detail');
 select is((select amount_text from public.project_cost_items where id=(select (result->>'projectCostItemId')::uuid from c1d_result)),'5','publish updates the parent exactly once');
 select is((public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',2),'c1d10000-0000-4000-8000-000000000602','c1d10000-0000-4000-8000-000000000707')->>'replayed'),'true','same publish key replays');
+select throws_ok($$select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),NULL::jsonb,'c1d10000-0000-4000-8000-000000000629','c1d10000-0000-4000-8000-000000000729')$$,'P0001','INPUT_INVALID','publish rejects a SQL null JSON payload before hashing or receipt lookup');
 select throws_ok($$select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',3,'unexpected',true),'c1d10000-0000-4000-8000-000000000626','c1d10000-0000-4000-8000-000000000726')$$,'P0001','INPUT_INVALID','publish rejects extra JSON keys before hashing or receipt lookup');
 select throws_ok($$select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',3),'c1d10000-0000-4000-8000-000000000603','c1d10000-0000-4000-8000-000000000708')$$,'P0001','COST_DETAIL_ALREADY_PUBLISHED','new publish key cannot publish twice');
 select is((public.c1_correct_published_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',3,'reason','correct amount','changes',jsonb_build_object('amount','6.0000')),'c1d10000-0000-4000-8000-000000000604','c1d10000-0000-4000-8000-000000000709')->>'version'),'4','published correction versions the same detail');

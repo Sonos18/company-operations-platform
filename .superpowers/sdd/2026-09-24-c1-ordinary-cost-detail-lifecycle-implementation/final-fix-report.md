@@ -33,3 +33,7 @@ One local-only fix wave addressed every whole-branch review finding. No Cloud DE
 - Direct create-and-publish now rejects present `sourceFigureIds` values unless they are JSON arrays. Its internal prepare payload explicitly appends that key only when it was supplied; absent remains absent and explicit `[]` remains `[]`.
 - The publish JSON RPC wrapper and private command now reject non-object, null/invalid, or extra-key payloads before version extraction, hash construction, or receipt lookup.
 - Added static schema coverage and three rollback-safe pgTAP assertions for malformed direct source arrays and publish extra keys. pgTAP remains unrun under the no-database-execution boundary.
+
+## SQL-null publish correction
+
+- Publish now uses `IS DISTINCT FROM 'object'` for its JSON wrapper guard, so `NULL::jsonb` is rejected as `INPUT_INVALID` before hashing or receipt lookup. The command pgTAP plan is now 81 assertions.

@@ -79,7 +79,7 @@ $$;
 create function private.c1_detail_publish_expected_version(target_input jsonb)
 returns bigint language plpgsql immutable security definer set search_path='' as $$
 begin
-  if jsonb_typeof(target_input)<>'object' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if jsonb_typeof(target_input) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
   if not target_input ? 'expectedVersion' or exists (select 1 from jsonb_object_keys(target_input) key where key<>'expectedVersion') then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
   return private.c1_detail_expected_version(target_input);
 end;
