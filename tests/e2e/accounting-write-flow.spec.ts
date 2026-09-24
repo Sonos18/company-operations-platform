@@ -1665,14 +1665,21 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     expect((recordedPayload as Record<string, unknown>)?.evidenceFileIds).toBeUndefined()
   })
 
-  test('Flow F — Multi-contract party ledger: routes void and replacement to correct contracts, and requires explicit contract selection for new payment', async ({ page }) => {
+  test('Flow F — Multi-contract party ledger: routes void and replacement to correct contracts, excludes inactive contracts from new payment and replacement', async ({ page }) => {
     const subcontractId2 = '50000000-0000-4000-8000-000000000088'
-    let voidEndpointHit = ''
+    const subcontractId3 = '50000000-0000-4000-8000-000000000089'
+    let void1EndpointHit = ''
+    let void2EndpointHit = ''
     let replacementEndpointHit = ''
     let newPaymentEndpointHit = ''
     let replacementPayload: Record<string, unknown> | null = null
 
-    const contract1 = mockSubcontractorList.parties[0]!.contracts[0]!
+    // Contract 1 is INACTIVE
+    const contract1 = {
+      ...mockSubcontractorList.parties[0]!.contracts[0]!,
+      isActive: false,
+    }
+    // Contract 2 is ACTIVE
     const contract2 = {
       id: subcontractId2,
       code: 'HD-KC-02',
@@ -1688,6 +1695,23 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
       paidCount: 1,
       recordedRetentionTotal: '1500000.0000',
       recordedRetentionRowCount: 1,
+    }
+    // Contract 3 is ACTIVE
+    const contract3 = {
+      id: subcontractId3,
+      code: 'HD-KC-03',
+      contractNo: 'KC-2026-03',
+      contractName: 'Hợp đồng kết cấu thép đợt 3',
+      contractDate: '2026-09-01',
+      contractValue: '200000000.0000',
+      currencyCode: 'VND',
+      defaultRetentionRateBps: 500,
+      isActive: true,
+      version: 1,
+      paidTotal: '0.0000',
+      paidCount: 0,
+      recordedRetentionTotal: null,
+      recordedRetentionRowCount: 0,
     }
 
     const paymentRows = [
@@ -1747,7 +1771,7 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
             schemaVersion: 1 as const,
             project: mockProjectOverview.project,
             party: mockSubcontractorList.parties[0]!.party,
-            contracts: [contract1, contract2],
+            contracts: [contract1, contract2, contract3],
             payments: {
               rows: paymentRows,
               pagination: {
@@ -1772,9 +1796,28 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
       }
     })
 
-    // Intercept void endpoint for Contract 2
+    // Intercept void endpoint for Contract 1 (inactive)
+    await page.route(`**/api/companies/**/projects/${projectId}/subcontracts/${subcontractId}/payments/${paymentId1}/void`, async route => {
+      void1EndpointHit = route.request().url()
+      const p = paymentRows.find(r => r.id === paymentId1)
+      if (p) {
+        p.recordStatus = 'voided'
+        p.version = 2
+      }
+      route.fulfill({
+        status: 200,
+        json: voidSubcontractPaymentResultSchema.parse({
+          paymentId: paymentId1,
+          version: 2,
+          status: 'voided',
+          replayed: false,
+        }),
+      })
+    })
+
+    // Intercept void endpoint for Contract 2 (active)
     await page.route(`**/api/companies/**/projects/${projectId}/subcontracts/${subcontractId2}/payments/${paymentId2}/void`, async route => {
-      voidEndpointHit = route.request().url()
+      void2EndpointHit = route.request().url()
       const p = paymentRows.find(r => r.id === paymentId2)
       if (p) {
         p.recordStatus = 'voided'
@@ -1812,24 +1855,36 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
       })
     })
 
-    // 1. Navigate to party-level ledger
+    // 1. Navigate to party-level ledger: both historical payments visible
     await page.goto(`/costs/${projectId}/categories/${subcontractCategoryId}?partyId=${partyId}`)
     await expect(page.getByTestId('contractor-ledger-area')).toBeVisible()
+    await expect(page.getByTestId(`payment-row-${paymentId1}`)).toBeVisible()
+    await expect(page.getByTestId(`payment-row-${paymentId2}`)).toBeVisible()
 
-    // 2. Void Payment 2 (which belongs to Contract 2)
+    // 2. Void Payment 1 under INACTIVE Contract 1: void must succeed
+    await page.getByTestId(`void-payment-btn-${paymentId1}`).click()
+    await expect(page.getByTestId('void-reason-input')).toBeVisible()
+    await page.getByTestId('void-reason-input').fill('Hủy khoản thanh toán của hợp đồng cũ đã đóng')
+    await page.getByTestId('confirm-void-payment-btn').click()
+
+    await expect(page.getByTestId(`payment-status-${paymentId1}`)).toHaveText('Đã hủy')
+    expect(void1EndpointHit).toContain(`/subcontracts/${subcontractId}/payments/${paymentId1}/void`)
+
+    // Assert: Inactive Contract 1 does NOT expose replacement button, but shows inactive hint
+    await expect(page.getByTestId(`replace-payment-btn-${paymentId1}`)).toHaveCount(0)
+    await expect(page.getByTestId(`payment-inactive-contract-hint-${paymentId1}`)).toBeVisible()
+    await expect(page.getByTestId(`payment-inactive-contract-hint-${paymentId1}`)).toHaveText('Hợp đồng đã ngừng hoạt động — không thể ghi nhận thanh toán thay thế')
+
+    // 3. Void Payment 2 under ACTIVE Contract 2: void must succeed and replacement MUST be available
     await page.getByTestId(`void-payment-btn-${paymentId2}`).click()
     await expect(page.getByTestId('void-reason-input')).toBeVisible()
     await page.getByTestId('void-reason-input').fill('Hủy do sai thông tin hợp đồng 2')
     await page.getByTestId('confirm-void-payment-btn').click()
 
-    // 3. Status updates to voided in the ledger, proving void completed
     await expect(page.getByTestId(`payment-status-${paymentId2}`)).toHaveText('Đã hủy')
+    expect(void2EndpointHit).toContain(`/subcontracts/${subcontractId2}/payments/${paymentId2}/void`)
 
-    // Assert void endpoint was called on Contract 2 (NOT Contract 1)
-    expect(voidEndpointHit).toContain(`/subcontracts/${subcontractId2}/payments/${paymentId2}/void`)
-    expect(voidEndpointHit).not.toContain(`/subcontracts/${subcontractId}/`)
-
-    // Start replacement for Payment 2
+    // Active Contract 2: replacement button is visible and actionable
     const replaceBtn = page.getByTestId(`replace-payment-btn-${paymentId2}`)
     await expect(replaceBtn).toBeVisible()
     await replaceBtn.click()
@@ -1849,9 +1904,15 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
       paidAmount: '28000000',
     })
 
-    // 4. Record NEW payment in party-level view: must prompt explicit contract selection
+    // 4. Record NEW payment in party-level view: multi-contract selector must EXCLUDE inactive Contract 1
     await page.getByTestId('open-record-payment-btn').click()
     await expect(page.getByTestId('select-contract-dropdown')).toBeVisible()
+
+    // Inactive contract 1 must NOT appear in dropdown
+    await expect(page.locator(`#select-contract-dropdown option[value="${subcontractId}"]`)).toHaveCount(0)
+    // Active contracts 2 and 3 must appear
+    await expect(page.locator(`#select-contract-dropdown option[value="${subcontractId2}"]`)).toHaveCount(1)
+    await expect(page.locator(`#select-contract-dropdown option[value="${subcontractId3}"]`)).toHaveCount(1)
 
     // Select Contract 2 explicitly
     await page.getByTestId('select-contract-dropdown').selectOption(subcontractId2)
@@ -1866,6 +1927,108 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
 
     // Assert new payment went to Contract 2
     expect(newPaymentEndpointHit).toContain(`/subcontracts/${subcontractId2}/payments`)
+  })
+
+  test('Flow F2 — Sole inactive contract: disables new payment and prevents replacement while permitting void', async ({ page }) => {
+    const inactiveContract = {
+      ...mockSubcontractorList.parties[0]!.contracts[0]!,
+      isActive: false,
+      reference: null,
+      sourceReference: null,
+      note: null,
+      referenceHeadroom: '450000000.0000',
+      referenceHeadroomReason: null,
+    }
+
+    const singlePayment = {
+      id: paymentId1,
+      contractId: subcontractId,
+      contractCode: inactiveContract.code,
+      contractNo: inactiveContract.contractNo,
+      description: 'Khoản chi duy nhất hợp đồng cũ',
+      paidAmount: '10000000.0000',
+      warrantyRetentionAmount: null,
+      retentionRateBps: null,
+      paymentDate: '2026-08-01',
+      effectiveDate: '2026-08-01',
+      dateSource: 'payment_date' as const,
+      recordStatus: 'recorded' as const,
+      replacementPaymentId: null,
+      reference: 'PC-OLD',
+      sourceReference: null,
+      note: null,
+      createdAt: '2026-08-01T08:00:00.000Z',
+      version: 1,
+    }
+
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => {
+      route.fulfill({ json: mockProjectOverview })
+    })
+
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/subcontractors**`, route => {
+      route.fulfill({ json: mockSubcontractorList })
+    })
+
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/subcontracts/${subcontractId}**`, route => {
+      route.fulfill({
+        json: financeSubcontractDetailSchema.parse({
+          schemaVersion: 1 as const,
+          project: mockProjectOverview.project,
+          party: mockSubcontractorList.parties[0]!.party,
+          contract: inactiveContract,
+          payments: {
+            rows: [singlePayment],
+            pagination: {
+              page: 1,
+              pageSize: 25,
+              totalPages: 1,
+              filteredCount: 1,
+              fullCount: 1,
+              filteredAmount: '10000000.0000',
+              fullAmount: '10000000.0000',
+            },
+            recordedTotal: '10000000.0000',
+            recordedCount: 1,
+            recordedRetentionTotal: null,
+            recordedRetentionRowCount: 0,
+          },
+        }),
+      })
+    })
+
+    await page.route(`**/api/companies/**/projects/${projectId}/subcontracts/${subcontractId}/payments/${paymentId1}/void`, async route => {
+      singlePayment.recordStatus = 'voided'
+      singlePayment.version = 2
+      route.fulfill({
+        status: 200,
+        json: voidSubcontractPaymentResultSchema.parse({
+          paymentId: paymentId1,
+          version: 2,
+          status: 'voided',
+          replayed: false,
+        }),
+      })
+    })
+
+    // Navigate to contract-level ledger for the inactive contract
+    await page.goto(`/costs/${projectId}/categories/${subcontractCategoryId}?contractId=${subcontractId}&partyId=${partyId}`)
+    await expect(page.getByTestId('contractor-ledger-area')).toBeVisible()
+
+    // 1. "Ghi nhận thanh toán" button is disabled because contract is inactive
+    await expect(page.getByTestId('open-record-payment-btn')).toBeDisabled()
+
+    // 2. Void is still permitted for recorded payment
+    await page.getByTestId(`void-payment-btn-${paymentId1}`).click()
+    await expect(page.getByTestId('void-reason-input')).toBeVisible()
+    await page.getByTestId('void-reason-input').fill('Hủy hợp đồng cũ')
+    await page.getByTestId('confirm-void-payment-btn').click()
+
+    await expect(page.getByTestId(`payment-status-${paymentId1}`)).toHaveText('Đã hủy')
+
+    // 3. Replacement is forbidden because contract is inactive
+    await expect(page.getByTestId(`replace-payment-btn-${paymentId1}`)).toHaveCount(0)
+    await expect(page.getByTestId(`payment-inactive-contract-hint-${paymentId1}`)).toBeVisible()
+    await expect(page.getByTestId(`payment-inactive-contract-hint-${paymentId1}`)).toHaveText('Hợp đồng đã ngừng hoạt động — không thể ghi nhận thanh toán thay thế')
   })
 
   test('Flow G — Draft canonical error states: displays not-found and permission-denied views based on ClientError.code', async ({ page }) => {

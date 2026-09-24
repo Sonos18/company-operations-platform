@@ -654,11 +654,14 @@ describe('C1 Accounting Write UI contracts and workflows', () => {
         expect(subcontractLedgerSource).toContain('openReplacementModal(paymentId: string, contractId?: string)')
       })
 
-      it('ProjectCostSubcontractLedger requires explicit contract selection for multi-contract party view', () => {
+      it('ProjectCostSubcontractLedger requires explicit contract selection for multi-contract party view and gates on activeContracts', () => {
         expect(subcontractLedgerSource).toContain('isSelectContractModalOpen')
         expect(subcontractLedgerSource).toContain('select-contract-dropdown')
         expect(subcontractLedgerSource).toContain('confirm-select-contract-btn')
-        expect(subcontractLedgerSource).toContain(':disabled="availableContracts.length === 0"')
+        expect(subcontractLedgerSource).toContain(':disabled="activeContracts.length === 0"')
+        expect(subcontractLedgerSource).toContain('v-for="c in activeContracts"')
+        expect(subcontractLedgerSource).toContain('isContractActive(p.contractId)')
+        expect(subcontractLedgerSource).toContain('data-testid="`payment-inactive-contract-hint-${p.id}`"')
       })
 
       it('validates multi-contract party detail schema parsing', () => {

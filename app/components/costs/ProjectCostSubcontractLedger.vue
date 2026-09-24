@@ -9,6 +9,12 @@ import {
   formatFinanceMoney,
 } from '../../utils/costs/finance-display'
 import type { LedgerUiStatus } from '../../composables/costs/useLedgerQueryController'
+import {
+  type ContractItem,
+  extractAllContracts,
+  filterActiveContracts,
+  buildContractsById,
+} from '../../utils/costs/subcontract-ledger-contracts'
 import SubcontractPaymentRecordModal from './SubcontractPaymentRecordModal.vue'
 import SubcontractPaymentVoidModal from './SubcontractPaymentVoidModal.vue'
 
@@ -58,14 +64,6 @@ const emit = defineEmits<{
 const companyAccess = useNuxtApp().$companyAccessStore
 const canRecordCash = computed(() => companyAccess.hasPermission('cost.record_cash'))
 
-interface ContractItem {
-  id: string
-  version: number
-  code: string
-  contractName: string
-  currencyCode?: string
-}
-
 interface PaymentToVoidWithContract {
   id: string
   contractId: string
@@ -96,43 +94,34 @@ function resetPaymentModalState() {
 
 watch(() => companyAccess.activeCompanyId, resetPaymentModalState, { flush: 'sync' })
 
-const availableContracts = computed<ContractItem[]>(() => {
-  if (!props.detail) return []
-  if ('contract' in props.detail && props.detail.contract) {
-    return [props.detail.contract]
-  }
-  if ('contracts' in props.detail && Array.isArray(props.detail.contracts)) {
-    return props.detail.contracts
-  }
-  return []
-})
+const allContracts = computed<ContractItem[]>(() => extractAllContracts(props.detail))
 
-const contractsById = computed(() => {
-  const map = new Map<string, ContractItem>()
-  for (const c of availableContracts.value) {
-    map.set(c.id, c)
-  }
-  return map
-})
+const activeContracts = computed<ContractItem[]>(() => filterActiveContracts(allContracts.value))
+
+const contractsById = computed(() => buildContractsById(allContracts.value))
+
+function isContractActive(contractId: string): boolean {
+  return contractsById.value.get(contractId)?.isActive === true
+}
 
 const projectId = computed(() => props.detail?.project.projectId ?? '')
 
 function openRecordPaymentModal() {
   replacesPaymentId.value = null
-  const contracts = availableContracts.value
+  const actionable = activeContracts.value
 
-  if (contracts.length === 0) {
+  if (actionable.length === 0) {
     return
   }
 
-  // Contract-level view or single-contract party view: proceed directly
-  if (contracts.length === 1) {
-    selectedContractForRecord.value = contracts[0]!
+  // Exactly one active contract: proceed directly
+  if (actionable.length === 1) {
+    selectedContractForRecord.value = actionable[0]!
     isRecordModalOpen.value = true
     return
   }
 
-  // Multi-contract party view: prompt user to explicitly select contract
+  // Multiple active contracts: prompt user to explicitly select an active contract
   chosenContractId.value = ''
   isSelectContractModalOpen.value = true
 }
@@ -140,7 +129,7 @@ function openRecordPaymentModal() {
 function confirmContractSelection() {
   if (!chosenContractId.value) return
   const contract = contractsById.value.get(chosenContractId.value)
-  if (!contract) return
+  if (!contract || !contract.isActive) return
 
   selectedContractForRecord.value = contract
   isSelectContractModalOpen.value = false
@@ -156,7 +145,7 @@ function openReplacementModal(paymentId: string, contractId?: string) {
   const targetContractId = contractId || selectedPaymentToVoid.value?.contractId
   if (!targetContractId) return
   const contract = contractsById.value.get(targetContractId)
-  if (!contract) return
+  if (!contract || !contract.isActive) return
 
   selectedContractForRecord.value = contract
   replacesPaymentId.value = paymentId
@@ -249,7 +238,7 @@ function onPageSizeChange(event: Event) {
             size="sm"
             color="primary"
             icon="i-lucide-plus"
-            :disabled="availableContracts.length === 0"
+            :disabled="activeContracts.length === 0"
             data-testid="open-record-payment-btn"
             @click="openRecordPaymentModal"
           >
@@ -516,7 +505,7 @@ function onPageSizeChange(event: Event) {
                   </UButton>
 
                   <UButton
-                    v-if="p.recordStatus === 'voided' && p.replacementPaymentId == null && canRecordCash"
+                    v-if="p.recordStatus === 'voided' && p.replacementPaymentId == null && isContractActive(p.contractId) && canRecordCash"
                     size="xs"
                     color="primary"
                     variant="outline"
@@ -526,6 +515,14 @@ function onPageSizeChange(event: Event) {
                   >
                     Thay thế
                   </UButton>
+
+                  <span
+                    v-if="p.recordStatus === 'voided' && p.replacementPaymentId == null && !isContractActive(p.contractId)"
+                    class="cockpit-badge cockpit-badge--neutral text-[11px]"
+                    :data-testid="`payment-inactive-contract-hint-${p.id}`"
+                  >
+                    Hợp đồng đã ngừng hoạt động — không thể ghi nhận thanh toán thay thế
+                  </span>
 
                   <span
                     v-if="p.recordStatus === 'voided' && p.replacementPaymentId != null"
@@ -617,7 +614,7 @@ function onPageSizeChange(event: Event) {
             >
               <option value="" disabled>-- Chọn hợp đồng --</option>
               <option
-                v-for="c in availableContracts"
+                v-for="c in activeContracts"
                 :key="c.id"
                 :value="c.id"
               >
@@ -665,6 +662,7 @@ function onPageSizeChange(event: Event) {
       :project-id="projectId"
       :subcontract-id="selectedPaymentToVoid.contractId"
       :payment="selectedPaymentToVoid"
+      :can-replace="canRecordCash && isContractActive(selectedPaymentToVoid.contractId)"
       @voided="onPaymentMutated"
       @start-replacement="(id) => openReplacementModal(id, selectedPaymentToVoid?.contractId)"
     />

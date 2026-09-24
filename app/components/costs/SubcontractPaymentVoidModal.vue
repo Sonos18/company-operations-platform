@@ -11,12 +11,15 @@ interface PaymentToVoid {
   currencyCode?: string
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   open: boolean
   projectId: string
   subcontractId: string
   payment: PaymentToVoid | null
-}>()
+  canReplace?: boolean
+}>(), {
+  canReplace: true,
+})
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
@@ -113,7 +116,7 @@ async function handleVoid() {
 }
 
 function handleReplacement() {
-  if (voidedPaymentId.value) {
+  if (voidedPaymentId.value && props.canReplace) {
     isOpen.value = false
     emit('start-replacement', voidedPaymentId.value)
   }
@@ -159,6 +162,7 @@ function handleReplacement() {
             Đóng
           </UButton>
           <UButton
+            v-if="props.canReplace"
             color="primary"
             icon="i-lucide-replace"
             data-testid="start-replacement-btn"
