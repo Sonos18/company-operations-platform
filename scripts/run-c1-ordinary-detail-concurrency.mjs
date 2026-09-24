@@ -7,9 +7,34 @@ import { readDedicatedSupabaseDevAccessToken } from './run-supabase-dev.mjs'
 const marker = '-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE'
 const phases = new Set(['setup', 'actor_a', 'actor_b', 'assert', 'cleanup'])
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
-const exactCleanupSql = `${marker}
+const exactCleanupSql = `-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE
+begin;
+alter table public.cost_categories disable trigger a_c1_finance_prepare;
+alter table public.roles disable trigger roles_audit_role_catalog_change;
+alter table public.role_permissions disable trigger role_permissions_audit_role_catalog_change;
+alter table public.company_role_assignments disable trigger company_role_assignments_audit_employee_rbac_change;
+alter table public.company_role_assignments disable trigger company_role_assignments_prevent_last_admin_removal;
+alter table public.audit_events disable trigger audit_events_prevent_mutation;
+delete from public.project_cost_items where tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020' and project_id = 'c1f10000-0000-4000-8000-000000000102' and cost_category_id = 'c1f10000-0000-4000-8000-000000000301';
+delete from public.cost_categories where id = 'c1f10000-0000-4000-8000-000000000301' and tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020';
+delete from public.projects where id = 'c1f10000-0000-4000-8000-000000000102' and tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020';
+delete from public.company_cost_settings where tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020';
+delete from public.company_role_assignments where tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020' and user_id = 'c1f10000-0000-4000-8000-000000000903' and role_id = 'c1f10000-0000-4000-8000-000000000913';
+delete from public.role_permissions where role_id = 'c1f10000-0000-4000-8000-000000000913';
+delete from public.roles where id = 'c1f10000-0000-4000-8000-000000000913' and tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020';
+delete from public.company_memberships where user_id = 'c1f10000-0000-4000-8000-000000000903' and tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020';
+delete from public.tenant_memberships where user_id = 'c1f10000-0000-4000-8000-000000000903' and tenant_id = 'c1f10000-0000-4000-8000-000000000010';
+delete from public.audit_events where tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020';
+delete from public.companies where id = 'c1f10000-0000-4000-8000-000000000020' and tenant_id = 'c1f10000-0000-4000-8000-000000000010';
 delete from public.tenants where id = 'c1f10000-0000-4000-8000-000000000010';
-delete from auth.users where id = 'c1f10000-0000-4000-8000-000000000903';`
+delete from auth.users where id = 'c1f10000-0000-4000-8000-000000000903';
+alter table public.audit_events enable trigger audit_events_prevent_mutation;
+alter table public.company_role_assignments enable trigger company_role_assignments_prevent_last_admin_removal;
+alter table public.company_role_assignments enable trigger company_role_assignments_audit_employee_rbac_change;
+alter table public.role_permissions enable trigger role_permissions_audit_role_catalog_change;
+alter table public.roles enable trigger roles_audit_role_catalog_change;
+alter table public.cost_categories enable trigger a_c1_finance_prepare;
+commit;`
 
 export function validateC1OrdinaryDetailConcurrencySql(phase, sql) {
   if (!phases.has(phase) || !sql.startsWith(marker)) throw new Error('Invalid C1 ordinary-detail concurrency fixture')

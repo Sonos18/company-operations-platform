@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { runC1OrdinaryDetailConcurrency, validateC1OrdinaryDetailConcurrencySql } from '../../../scripts/run-c1-ordinary-detail-concurrency.mjs'
 
 const phaseSql = (phase: string) => `-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE\n-- ${phase}\nselect 'c1f10000-0000-4000-8000-000000000010'::uuid;`
-const exactCleanupSql = `-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE
-delete from public.tenants where id = 'c1f10000-0000-4000-8000-000000000010';
-delete from auth.users where id = 'c1f10000-0000-4000-8000-000000000903';`
+const exactCleanupSql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1_ordinary_detail_concurrency/cleanup.sql'), 'utf8').replace(/\r\n?/g, '\n').trim()
 
 describe('C1 ordinary-detail concurrency runner', () => {
   it('rejects non-synthetic or unsafe fixture SQL', () => {
