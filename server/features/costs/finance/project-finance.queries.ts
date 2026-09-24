@@ -20,11 +20,11 @@ export const costItemRowSchema = z.object({
 }).strict()
 export const detailRowSchema = z.object({
   id: uuid, tenant_id: uuid, company_id: uuid, project_cost_item_id: uuid, line_no: z.number().int().positive(), detail_kind: z.enum(['opening_balance', 'line_item']), description: z.string(), quantity_text: z.string().nullable(), unit_code: z.string().nullable(), unit_price_text: z.string().nullable(), amount_text: money,
-  retention_kind: z.enum(['warranty', 'other']).nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), retention_amount_text: money.nullable(), relevant_date: date.nullable(), reference: z.string().nullable(), note: z.string().nullable(), publication_state: z.enum(['draft', 'published']).optional(), version, created_at: timestamp, updated_at: timestamp,
+  retention_kind: z.enum(['warranty', 'other']).nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), retention_amount_text: money.nullable(), relevant_date: date.nullable(), reference: z.string().nullable(), note: z.string().nullable(), publication_state: z.literal('published'), version, created_at: timestamp, updated_at: timestamp,
 }).strict()
 export const detailAggregateRowSchema = z.object({
   id: uuid, tenant_id: uuid, company_id: uuid, project_cost_item_id: uuid, line_no: z.number().int().positive(), amount_text: money,
-  retention_kind: z.enum(['warranty', 'other']).nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), retention_amount_text: money.nullable(), relevant_date: date.nullable(), publication_state: z.enum(['draft', 'published']).optional(), version, created_at: timestamp, updated_at: timestamp,
+  retention_kind: z.enum(['warranty', 'other']).nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), retention_amount_text: money.nullable(), relevant_date: date.nullable(), publication_state: z.literal('published'), version, created_at: timestamp, updated_at: timestamp,
 }).strict()
 export const budgetRowSchema = z.object({
   id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, revision_no: z.number().int().nonnegative(), name: z.string().min(1), currency_code: currency, detail_mode: z.enum(['summary', 'categorized']), total_amount_text: money, status: z.string().min(1), approved_at: timestamp.nullable(), effective_date: date.nullable(), reference: z.string().nullable(), source_reference: z.string().nullable(), note: z.string().nullable(), version, updated_at: timestamp,

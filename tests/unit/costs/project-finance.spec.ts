@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { financeOverviewSchema, moneyObservationSchema } from '../../../shared/schemas/costs/project-finance'
+import { detailAggregateRowSchema, detailRowSchema } from '../../../server/features/costs/finance/project-finance.queries'
 import { deriveFinanceDate, compareFinanceRows } from '../../../shared/utils/project-finance-dates'
 import { computeConfirmedMargin, subtractFinanceMoney, sumFinanceMoney } from '../../../shared/utils/project-finance-money'
 import { summarizeFinanceRows } from '../../../server/features/costs/finance/project-finance.summary'
 
 describe('C1 finance read contracts', () => {
+  it('requires a published lifecycle state on every official detail row', () => {
+    const detail = { id: '00000000-0000-4000-8000-000000000060', tenant_id: '00000000-0000-4000-8000-000000000010', company_id: '00000000-0000-4000-8000-000000000020', project_cost_item_id: '00000000-0000-4000-8000-000000000050', line_no: 1, detail_kind: 'line_item', description: 'Detail', quantity_text: null, unit_code: null, unit_price_text: null, amount_text: '1.0000', retention_kind: null, retention_rate_bps: null, retention_amount_text: null, relevant_date: null, reference: null, note: null, version: 0, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }
+    expect(detailRowSchema.safeParse(detail).success).toBe(false)
+    expect(detailAggregateRowSchema.safeParse({ ...detail, publication_state: 'unknown' }).success).toBe(false)
+  })
   it('keeps recorded zero distinct from an unrecorded observation', () => {
     expect(moneyObservationSchema.parse({ state: 'recorded', amount: '0.0000', recordedCount: 1 })).toEqual({ state: 'recorded', amount: '0.0000', recordedCount: 1 })
     expect(moneyObservationSchema.parse({ state: 'not_recorded', amount: null, recordedCount: 0 })).toEqual({ state: 'not_recorded', amount: null, recordedCount: 0 })

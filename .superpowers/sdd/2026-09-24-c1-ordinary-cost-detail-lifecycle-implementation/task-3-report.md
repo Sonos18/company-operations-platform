@@ -39,3 +39,23 @@ The commands warned that the active Node is `v22.23.2` while the project request
 - Migration SQL and pgTAP were reviewed statically only. It must be exercised through the authorized Cloud DEV migration/pgTAP stage before any production decision.
 - Existing legacy parent evidence/source links stay parent-scoped by design; no historical child attribution was created.
 - No generated database types were refreshed because that workflow would touch the Cloud DEV target and is outside this task's authorization.
+
+## Fix round 1
+
+Addressed the post-review findings without database execution:
+
+- A single draft-detail evidence link now blocks raw access to the file even if another parent/payment link would otherwise be readable. Raw access becomes eligible only after every linked detail is published.
+- Evidence-link metadata RLS now requires `cost.source.read`; `cost.file.read` alone cannot enumerate metadata.
+- The detail evidence RPC validates the evidence UUID before casting and converts relation/constraint conflicts into `INPUT_INVALID`; idempotency replay/conflict behavior remains receipt-backed.
+- Legacy parent compatibility now keeps a valid legacy shape while snapshot replacement rows are inserted and upgrades those rows to the actual correction audit actor/time/request metadata inside the same transaction. Parent publishing continues to promote its draft children with the parent command identity.
+- Finance readers, reducer, and coherence check require the literal `published` state; missing or unknown detail lifecycle state is rejected.
+- The pgTAP file now contains rollback-safe behavioral fixtures for replay, invalid UUIDs, exact-one targets, mixed raw visibility, metadata RLS, financial neutrality, parent-publish child promotion, and legacy correction command metadata. It remains unexecuted by instruction.
+
+Additional verification:
+
+| Check | Result |
+| --- | --- |
+| Focused finance/evidence unit tests | pass — 66 tests in 6 files |
+| `pnpm test:unit` | pass — 164 files, 1,441 tests |
+
+No Cloud DEV or local database action was performed in this fix round.
