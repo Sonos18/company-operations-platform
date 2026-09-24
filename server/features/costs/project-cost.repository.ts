@@ -48,7 +48,7 @@ export function summarizeProjectCosts(rows: readonly ProjectCostRow[]): ProjectC
 
 function rpcError(error: unknown): never {
   const parsed = z.object({ code: z.string().optional(), message: z.string().optional(), details: z.string().optional() }).safeParse(error)
-  const code = parsed.success ? [parsed.data.message, parsed.data.code].find(value => ['MODULE_DISABLED', 'PERMISSION_DENIED', 'RESOURCE_NOT_FOUND', 'IDEMPOTENCY_CONFLICT', 'VERSION_CONFLICT', 'INPUT_INVALID', 'COST_NOT_DRAFT', 'COST_ALREADY_PUBLISHED', 'COST_PUBLISH_NOT_READY', 'COST_DETAIL_NOT_DRAFT', 'COST_DETAIL_ALREADY_PUBLISHED', 'COST_DETAIL_PUBLISH_NOT_READY', 'SOURCE_VERSION_NOT_SHARED', 'SOURCE_REVIEW_REQUIRED', 'SUBCONTRACT_COST_MODEL_UNSUPPORTED'].includes(value ?? '')) : undefined
+  const code = parsed.success ? [parsed.data.message, parsed.data.code].find(value => ['MODULE_DISABLED', 'PERMISSION_DENIED', 'RESOURCE_NOT_FOUND', 'IDEMPOTENCY_CONFLICT', 'VERSION_CONFLICT', 'INPUT_INVALID', 'COST_NOT_DRAFT', 'COST_ALREADY_PUBLISHED', 'COST_PUBLISH_NOT_READY', 'COST_DETAIL_NOT_DRAFT', 'COST_DETAIL_NOT_PUBLISHED', 'COST_DETAIL_ALREADY_PUBLISHED', 'COST_DETAIL_PUBLISH_NOT_READY', 'SOURCE_VERSION_NOT_SHARED', 'SOURCE_REVIEW_REQUIRED', 'SUBCONTRACT_COST_MODEL_UNSUPPORTED'].includes(value ?? '')) : undefined
   if (code === 'MODULE_DISABLED') throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', { reason: 'MODULE_DISABLED' })
   if (code === 'PERMISSION_DENIED') throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.')
   if (code === 'RESOURCE_NOT_FOUND') throw new AppApiError(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy Project Cost.')
@@ -57,6 +57,7 @@ function rpcError(error: unknown): never {
   if (code === 'COST_NOT_DRAFT') throw new AppApiError(409, 'COST_NOT_DRAFT', 'Project Cost không còn ở trạng thái nháp.')
   if (code === 'COST_ALREADY_PUBLISHED') throw new AppApiError(409, 'COST_ALREADY_PUBLISHED', 'Project Cost đã được công bố.')
   if (code === 'COST_DETAIL_NOT_DRAFT') throw new AppApiError(409, 'COST_DETAIL_NOT_DRAFT', 'Chi tiết Project Cost không còn ở trạng thái nháp.')
+  if (code === 'COST_DETAIL_NOT_PUBLISHED') throw new AppApiError(409, 'COST_DETAIL_NOT_PUBLISHED', 'Chi tiết Project Cost chưa được công bố.')
   if (code === 'COST_DETAIL_ALREADY_PUBLISHED') throw new AppApiError(409, 'COST_DETAIL_ALREADY_PUBLISHED', 'Chi tiết Project Cost đã được công bố.')
   if (code === 'COST_DETAIL_PUBLISH_NOT_READY') throw new AppApiError(409, 'COST_DETAIL_PUBLISH_NOT_READY', 'Chi tiết Project Cost chưa sẵn sàng công bố.')
   if (code === 'COST_PUBLISH_NOT_READY') {
@@ -235,7 +236,7 @@ export class ProjectCostRepository implements ProjectCostDataRepository {
     }
     const parent = parsedParents.data[0]!
 
-    const detailsRes = await this.client.from('project_cost_item_details').select(detailColumns).eq('tenant_id', tenantId).eq('company_id', companyId).eq('project_cost_item_id', projectCostItemId).order('line_no').order('id')
+    const detailsRes = await this.client.from('project_cost_item_details').select(detailColumns).eq('tenant_id', tenantId).eq('company_id', companyId).eq('project_cost_item_id', projectCostItemId).eq('publication_state', 'published').order('line_no').order('id')
     if (detailsRes.error) return rpcError(detailsRes.error)
     const dRows = detailRows(detailsRes.data)
 

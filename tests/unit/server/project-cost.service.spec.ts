@@ -546,6 +546,7 @@ describe('Project Cost service', () => {
       expect(client.detailsQuery.eq).toHaveBeenCalledWith('tenant_id', context([]).tenantId)
       expect(client.detailsQuery.eq).toHaveBeenCalledWith('company_id', context([]).companyId)
       expect(client.detailsQuery.eq).toHaveBeenCalledWith('project_cost_item_id', parentRow.id)
+      expect(client.detailsQuery.eq).toHaveBeenCalledWith('publication_state', 'published')
       expect(client.detailsQuery.order).toHaveBeenCalledWith('line_no')
     })
 
