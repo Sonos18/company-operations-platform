@@ -83,7 +83,7 @@ export async function runC1OrdinaryDetailConcurrency({ cwd = process.cwd(), asse
     const assertion = await execute('assert')
     if (assertion?.parentCount !== 1) throw new Error('C1 ordinary-detail concurrency requires exactly one parent')
   } catch (error) { failure = error }
-  try { await execute('cleanup') } catch (error) { throw error }
+  await execute('cleanup')
   if (failure) throw failure
 }
 
