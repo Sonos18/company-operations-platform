@@ -74,3 +74,12 @@ Verification: `pnpm test:unit` passed 164 files / 1,442 tests; `pnpm typecheck` 
 - The pgTAP plan is now 36 assertions and remains wrapped in `begin`/`rollback`.
 
 Focused finance tests passed (17 tests) and `git diff --check` passed. The pgTAP file was not executed by instruction.
+
+## Fix round 4
+
+- Replaced the detail-source policy-presence assertion with a rollback-safe SELECT visibility matrix using separate `cost.read`, `cost.prepare`, and `cost.manage` role fixtures. It proves published-source access, draft-source access, manage-only denial, and same-tenant cross-company denial against real rows.
+- Added a same-tenant foreign-company ordinary detail, finalized evidence file, and source link. A primary-company authenticated link attempt returns `RESOURCE_NOT_FOUND` and leaves no detail evidence link, audit event, or idempotency receipt.
+- Added a legacy subcontract detail alongside a recorded payment and a real voided payment. The payment-only Actual remains `7.0000`, excluding both the legacy detail and voided payment, before and after ordinary detail/source/evidence operations.
+- The pgTAP plan is now 45 assertions and remains wrapped in `begin`/`rollback`.
+
+Verification: `pnpm typecheck`, static pgTAP plan/fixture audit, and `git diff --check` passed. No Cloud DEV, local database, production target, or database command was run; execution remains an authorized-environment follow-up.
