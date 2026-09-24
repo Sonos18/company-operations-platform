@@ -12,8 +12,13 @@ export function validateC1OrdinaryDetailConcurrencySql(phase, sql) {
   if (!phases.has(phase) || !sql.startsWith(marker)) throw new Error('Invalid C1 ordinary-detail concurrency fixture')
   const ids = sql.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
   if (ids.some(id => !id.toLowerCase().startsWith('c1f'))) throw new Error('C1 ordinary-detail concurrency fixture must use reserved synthetic identifiers')
-  if (/\b(delete|update)\s+from?\s+public\.[a-z_]+\s*;/iu.test(sql) || /\b(drop|truncate|reset|repair)\b/iu.test(sql)) throw new Error('C1 ordinary-detail concurrency fixture contains a broad delete or forbidden operation')
-  if (phase === 'cleanup' && !/delete\s+from\s+public\.tenants\s+where\s+id\s*=\s*'c1f/iu.test(sql)) throw new Error('C1 ordinary-detail concurrency cleanup must be exact-scope')
+  const broadDelete = /\bdelete\s+from\s+(?:public\.[a-z_]+|auth\.users)\s*;/iu.test(sql)
+  const broadUpdate = /\bupdate\s+public\.[a-z_]+\s+set\b(?:(?!\bwhere\b)[^;])*;/iu.test(sql)
+  if (broadDelete || broadUpdate || /\b(drop|truncate|reset|repair)\b/iu.test(sql)) throw new Error(`C1 ordinary-detail concurrency fixture contains a broad ${broadUpdate ? 'update' : 'delete'} or forbidden operation`)
+  if (phase === 'cleanup' && !/delete\s+from\s+public\.tenants\s+where\s+id\s*=\s*'c1f10000-0000-4000-8000-000000000010'\s*;/iu.test(sql)) throw new Error('C1 ordinary-detail concurrency cleanup must delete the exact synthetic tenant')
+  if (phase === 'cleanup' && !/delete\s+from\s+auth\.users\s+where\s+id\s*=\s*'c1f10000-0000-4000-8000-000000000903'\s*;/iu.test(sql)) throw new Error('C1 ordinary-detail concurrency cleanup must delete the exact auth user')
+  if (phase === 'actor_a' && !/\bbegin\s*;[\s\S]*private\.c1_resolve_or_create_ordinary_project_cost_item[\s\S]*pg_catalog\.pg_sleep\s*\([\s\S]*\)[\s\S]*\bcommit\s*;/iu.test(sql)) throw new Error('C1 ordinary-detail concurrency actor A requires a transaction-held resolver lock')
+  if (phase === 'actor_b' && !/\bbegin\s*;[\s\S]*pg_catalog\.pg_try_advisory_lock\s*\([\s\S]*c1_ordinary_cost_parent:[\s\S]*\)[\s\S]*private\.c1_resolve_or_create_ordinary_project_cost_item[\s\S]*\bcommit\s*;/iu.test(sql)) throw new Error('C1 ordinary-detail concurrency actor B requires an actor A readiness barrier')
 }
 
 function defaultReadPhase(phase) {
