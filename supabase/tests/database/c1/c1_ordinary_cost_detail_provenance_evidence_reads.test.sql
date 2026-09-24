@@ -85,7 +85,6 @@ select set_config('request.jwt.claims','{"sub":"c1f30000-0000-4000-8000-00000000
 create temp table c1f3_void_result as
 select public.c1_void_subcontract_payment('c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000101','c1f30000-0000-4000-8000-000000000602','c1f30000-0000-4000-8000-000000000604',0,'fixture void','c1f30000-0000-4000-8000-000000000740','c1f30000-0000-4000-8000-000000000741') result;
 reset role;
-set local role service_role;
 create temp table c1f3_subcontract_actual_before as
 select coalesce(sum(payment.paid_amount_text::numeric),0)::text actual
 from public.project_subcontract_payments payment
@@ -104,7 +103,6 @@ select throws_ok($$select public.c1_link_project_cost_detail_evidence('c1f30000-
 select throws_ok($$select public.c1_link_project_cost_detail_evidence('c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000401','{"evidenceFileId":"not-a-uuid","evidenceKind":"invoice"}','c1f30000-0000-4000-8000-000000000713','c1f30000-0000-4000-8000-000000000714')$$,'P0001','INPUT_INVALID','invalid detail evidence UUID is stable');
 select throws_ok($$select public.c1_link_project_cost_detail_evidence('c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000410','{"evidenceFileId":"c1f30000-0000-4000-8000-000000000502","evidenceKind":"invoice"}','c1f30000-0000-4000-8000-000000000750','c1f30000-0000-4000-8000-000000000751')$$,'P0001','RESOURCE_NOT_FOUND','same-tenant foreign detail and finalized evidence do not leak through the primary company command');
 reset role;
-set local role service_role;
 select is((select count(*) from public.cost_evidence_links where project_cost_item_detail_id='c1f30000-0000-4000-8000-000000000410'),0::bigint,'foreign detail link attempt creates no link');
 select is((select count(*) from public.audit_events where action='c1.cost_evidence.detail_linked' and request_id='c1f30000-0000-4000-8000-000000000751'),0::bigint,'foreign detail link attempt creates no audit event');
 select is((select count(*) from public.cost_command_receipts where company_id='c1f30000-0000-4000-8000-000000000020' and actor_id='c1f30000-0000-4000-8000-000000000901' and command_name='cost_evidence.detail_link' and idempotency_key='c1f30000-0000-4000-8000-000000000750'),0::bigint,'foreign detail link attempt creates no receipt');
@@ -133,7 +131,6 @@ set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"c1f30000-0000-4000-8000-000000000901","role":"authenticated"}',true);
 select is((select count(*) from public.project_cost_item_detail_sources where project_cost_item_detail_id='c1f30000-0000-4000-8000-000000000410'),0::bigint,'cross-company detail source rows are denied');
 reset role;
-set local role service_role;
 update public.project_cost_item_details set publication_state='published',publication_origin='command',published_by='c1f30000-0000-4000-8000-000000000901',published_at=now(),publication_request_id='c1f30000-0000-4000-8000-000000000717' where id='c1f30000-0000-4000-8000-000000000401';
 reset role;
 set local role authenticated;
@@ -145,7 +142,6 @@ set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"c1f30000-0000-4000-8000-000000000902","role":"authenticated"}',true);
 select is((select count(*) from public.cost_evidence_links where evidence_file_id='c1f30000-0000-4000-8000-000000000501'),0::bigint,'cost.file.read alone cannot list evidence metadata');
 reset role;
-set local role service_role;
 insert into public.project_cost_items(id,tenant_id,company_id,project_id,cost_category_id,description,amount,amount_text,currency_code,work_status,publication_state,created_by) values('c1f30000-0000-4000-8000-000000000202','c1f30000-0000-4000-8000-000000000010','c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000101','c1f30000-0000-4000-8000-000000000301','Draft parent',1,'1.0000','VND','unknown','draft','c1f30000-0000-4000-8000-000000000901');
 insert into public.project_cost_item_details(id,tenant_id,company_id,project_cost_item_id,line_no,detail_kind,description,amount_text,publication_state,created_by) values('c1f30000-0000-4000-8000-000000000403','c1f30000-0000-4000-8000-000000000010','c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000202',1,'line_item','Legacy prepared draft','1.0000','draft','c1f30000-0000-4000-8000-000000000901');
 update public.project_cost_items set publication_state='published',publication_origin='command',published_by='c1f30000-0000-4000-8000-000000000901',published_at=now(),publication_request_id='c1f30000-0000-4000-8000-000000000718' where id='c1f30000-0000-4000-8000-000000000202';
