@@ -219,7 +219,8 @@ ${C1_PERMISSION_METADATA_SQL}
       ('technical_staff','project.read'), ('technical_staff','task.read_assigned'), ('technical_staff','task.update_assigned'), ('technical_staff','technical_document.read'), ('technical_staff','technical_document.update'),
       ('designer','project.read'), ('designer','task.read_assigned'), ('designer','task.update_assigned'), ('designer','drawing.read'), ('designer','drawing.create'), ('designer','drawing.update'),
       ('accountant','accounting_document.read'), ('accountant','accounting_document.update'), ('accountant','supplier.read'), ('accountant','inventory_value.read'),
-      ('accountant','cost.read'), ('accountant','cost.source.read'), ('accountant','cost.file.read'), ('accountant','cost.manage'), ('accountant','cost.prepare'), ('accountant','cost.publish_import'), ('accountant','cost.correct'), ('accountant','cost.record_cash')
+      ('accountant','cost.read'), ('accountant','cost.source.read'), ('accountant','cost.file.read'), ('accountant','cost.manage'), ('accountant','cost.prepare'), ('accountant','cost.publish_import'), ('accountant','cost.correct'), ('accountant','cost.record_cash'),
+      ('c1_vqh_cost_operator','cost.correct'), ('c1_vqh_cost_operator','cost.manage')
     ), expected_role_permissions(role_code, permission_code) as (
       select role_code, permission_code from explicit_role_permissions
       union all select 'company_admin', code from company_admin_expected_permissions
@@ -228,6 +229,12 @@ ${C1_PERMISSION_METADATA_SQL}
       from public.role_permissions role_permission
       join public.roles role on role.id = role_permission.role_id
       where role.id in ('10000000-0000-4000-8000-000000000301'::uuid, '10000000-0000-4000-8000-000000000302'::uuid, '10000000-0000-4000-8000-000000000303'::uuid, '10000000-0000-4000-8000-000000000304'::uuid, '10000000-0000-4000-8000-000000000305'::uuid, '10000000-0000-4000-8000-000000000306'::uuid, '10000000-0000-4000-8000-000000000307'::uuid, '10000000-0000-4000-8000-000000000308'::uuid)
+         or (role.tenant_id = '10000000-0000-4000-8000-000000000010'::uuid
+           and role.company_id = '10000000-0000-4000-8000-000000000020'::uuid
+           and role.code = 'c1_vqh_cost_operator'
+           and role.is_active
+           and role.is_privileged is false
+           and role.is_system is false)
     )
     select 1 from (
       (select role_code, permission_code from expected_role_permissions except select role_code, permission_code from actual_role_permissions)
