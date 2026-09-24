@@ -84,6 +84,19 @@ const STAGE01_PERMISSION_METADATA_SQL = String.raw`      ('opportunity.read', 'o
       ('stage01.config.read', 'stage01', 'Read Stage 01 configuration', 'Read published Stage 01 configuration and active drafts'),
       ('stage01.config.update', 'stage01', 'Update Stage 01 configuration', 'Create, update, and discard Stage 01 configuration drafts'),
       ('stage01.config.publish', 'stage01', 'Publish Stage 01 configuration', 'Publish immutable Stage 01 configuration snapshots')`
+const C1_PERMISSION_METADATA_SQL = String.raw`      ('project.register.manage', 'cost', 'Manage project register', 'Create and update C1 project register records'),
+      ('party.manage', 'cost', 'Manage business parties', 'Create and update C1 business parties'),
+      ('engagement.manage', 'cost', 'Manage engagements', 'Create and update C1 engagements and components'),
+      ('cost.read', 'cost', 'Read costs', 'Read published C1 financial records'),
+      ('cost.source.read', 'cost', 'Read cost sources', 'Read shared C1 source records'),
+      ('cost.prepare', 'cost', 'Prepare costs', 'Prepare C1 drafts and source records'),
+      ('cost.publish_import', 'cost', 'Publish cost import', 'Publish C1 imported records'),
+      ('cost.record_cash', 'cost', 'Record cash', 'Record C1 cash data'),
+      ('cost.correct', 'cost', 'Correct costs', 'Create C1 corrections and disputes'),
+      ('cost.file.read', 'cost', 'Read cost files', 'Read C1 financial source bytes'),
+      ('cost.coverage.assert', 'cost', 'Assert cost coverage', 'Assert C1 coverage'),
+      ('cost.config.manage', 'cost', 'Manage cost configuration', 'Manage C1 company configuration'),
+      ('cost.manage', 'cost', 'Manage Project Costs', 'Create and update C1 Project Cost items')`
 const VQH_CANONICAL_CHECK_SQL = String.raw`begin;
 do $$
 begin
@@ -142,10 +155,14 @@ begin
       ('employee.read_directory', 'employee', 'Read employee directory', 'Read the company employee directory'), ('employee.read_self_private', 'employee', 'Read own private details', 'Read the employee private record linked to the current account'), ('employee.read_all', 'employee', 'Read all employee records', 'Read all company employee directory records'), ('employee.read_private', 'employee', 'Read employee private details', 'Read private details for company employees'), ('employee.create', 'employee', 'Create employees', 'Create employee records during onboarding'), ('employee.update', 'employee', 'Update employees', 'Update employee and private-detail records'), ('employee.offboard', 'employee', 'Offboard employees', 'Offboard an employee and remove company access'), ('account.invite', 'account', 'Invite accounts', 'Invite an Auth account for onboarding'), ('account.disable', 'account', 'Disable accounts', 'Disable an Auth account during offboarding'), ('role.read', 'role', 'Read roles', 'Read the company role catalog and assignments'), ('role.assign', 'role', 'Assign roles', 'Grant company role assignments'), ('role.revoke', 'role', 'Revoke roles', 'Revoke company role assignments'), ('supplier.read', 'supplier', 'Read suppliers', 'Read supplier records'), ('supplier.create', 'supplier', 'Create suppliers', 'Create supplier records'), ('supplier.update', 'supplier', 'Update suppliers', 'Update supplier records'), ('quotation_request.create', 'quotation_request', 'Create quotation requests', 'Create supplier quotation requests'), ('quotation_request.update', 'quotation_request', 'Update quotation requests', 'Update supplier quotation requests'), ('inventory.read', 'inventory', 'Read inventory', 'Read inventory context'), ('stock_count.create', 'inventory', 'Create stock counts', 'Create stock count records'), ('stock_count.update', 'inventory', 'Update stock counts', 'Update stock count records'), ('stock_adjustment.read', 'inventory', 'Read stock adjustments', 'Read stock adjustment history'), ('stock_adjustment.approve', 'inventory', 'Approve stock adjustments', 'Approve stock adjustments'), ('technical_document.read', 'technical_document', 'Read technical documents', 'Read technical documents'), ('technical_document.update', 'technical_document', 'Update technical documents', 'Update technical documents'), ('drawing.read', 'drawing', 'Read drawings', 'Read design drawings'), ('drawing.create', 'drawing', 'Create drawings', 'Create design drawings'), ('drawing.update', 'drawing', 'Update drawings', 'Update design drawings'), ('accounting_document.read', 'accounting_document', 'Read accounting documents', 'Read accounting documents'), ('accounting_document.update', 'accounting_document', 'Update accounting documents', 'Update accounting documents'), ('supplier_payment.approve', 'accounting_document', 'Approve supplier payments', 'Approve supplier payments'), ('inventory_value.read', 'inventory', 'Read inventory value', 'Read inventory valuation'), ('project.read', 'project', 'Read projects', 'Read projects needed for assigned work'), ('task.read_assigned', 'task', 'Read assigned tasks', 'Read tasks assigned to the current employee'), ('task.update_assigned', 'task', 'Update assigned tasks', 'Update assigned tasks')
     ), expected_stage01_permissions(code, module, name, description) as (values
 ${STAGE01_PERMISSION_METADATA_SQL}
+    ), expected_c1_permissions(code, module, name, description) as (values
+${C1_PERMISSION_METADATA_SQL}
     ), all_expected_permissions(code, module, name, description) as (
       select * from expected_permissions
       union all
       select * from expected_stage01_permissions
+      union all
+      select * from expected_c1_permissions
     )
     select 1 from all_expected_permissions expected
     left join public.permissions permission on permission.code = expected.code
@@ -160,10 +177,14 @@ ${STAGE01_PERMISSION_METADATA_SQL}
       ('employee.read_directory'), ('employee.read_self_private'), ('employee.read_all'), ('employee.read_private'), ('employee.create'), ('employee.update'), ('employee.offboard'), ('account.invite'), ('account.disable'), ('role.read'), ('role.assign'), ('role.revoke'), ('supplier.read'), ('supplier.create'), ('supplier.update'), ('quotation_request.create'), ('quotation_request.update'), ('inventory.read'), ('stock_count.create'), ('stock_count.update'), ('stock_adjustment.read'), ('stock_adjustment.approve'), ('technical_document.read'), ('technical_document.update'), ('drawing.read'), ('drawing.create'), ('drawing.update'), ('accounting_document.read'), ('accounting_document.update'), ('supplier_payment.approve'), ('inventory_value.read'), ('project.read'), ('task.read_assigned'), ('task.update_assigned')
     ), expected_stage01_permissions(code, module, name, description) as (values
 ${STAGE01_PERMISSION_METADATA_SQL}
+    ), expected_c1_permissions(code, module, name, description) as (values
+${C1_PERMISSION_METADATA_SQL}
     ), all_expected_permissions(code) as (
       select code from expected_permissions
       union all
       select code from expected_stage01_permissions
+      union all
+      select code from expected_c1_permissions
     )
     select 1 from (
       (select code from all_expected_permissions except select code from public.permissions)
@@ -178,7 +199,15 @@ ${STAGE01_PERMISSION_METADATA_SQL}
       ('employee.read_directory'), ('employee.read_self_private'), ('employee.read_all'), ('employee.read_private'), ('employee.create'), ('employee.update'), ('employee.offboard'), ('account.invite'), ('account.disable'), ('role.read'), ('role.assign'), ('role.revoke'), ('supplier.read'), ('supplier.create'), ('supplier.update'), ('quotation_request.create'), ('quotation_request.update'), ('inventory.read'), ('stock_count.create'), ('stock_count.update'), ('stock_adjustment.read'), ('stock_adjustment.approve'), ('technical_document.read'), ('technical_document.update'), ('drawing.read'), ('drawing.create'), ('drawing.update'), ('accounting_document.read'), ('accounting_document.update'), ('supplier_payment.approve'), ('inventory_value.read'), ('project.read'), ('task.read_assigned'), ('task.update_assigned')
     ), expected_stage01_permissions(code, module, name, description) as (values
 ${STAGE01_PERMISSION_METADATA_SQL}
+    ), expected_c1_permissions(code, module, name, description) as (values
+${C1_PERMISSION_METADATA_SQL}
     ), all_expected_permissions(code) as (
+      select code from expected_permissions
+      union all
+      select code from expected_stage01_permissions
+      union all
+      select code from expected_c1_permissions
+    ), company_admin_expected_permissions(code) as (
       select code from expected_permissions
       union all
       select code from expected_stage01_permissions
@@ -189,10 +218,11 @@ ${STAGE01_PERMISSION_METADATA_SQL}
       ('inventory_auditor','inventory.read'), ('inventory_auditor','stock_count.create'), ('inventory_auditor','stock_count.update'), ('inventory_auditor','stock_adjustment.read'),
       ('technical_staff','project.read'), ('technical_staff','task.read_assigned'), ('technical_staff','task.update_assigned'), ('technical_staff','technical_document.read'), ('technical_staff','technical_document.update'),
       ('designer','project.read'), ('designer','task.read_assigned'), ('designer','task.update_assigned'), ('designer','drawing.read'), ('designer','drawing.create'), ('designer','drawing.update'),
-      ('accountant','accounting_document.read'), ('accountant','accounting_document.update'), ('accountant','supplier.read'), ('accountant','inventory_value.read')
+      ('accountant','accounting_document.read'), ('accountant','accounting_document.update'), ('accountant','supplier.read'), ('accountant','inventory_value.read'),
+      ('accountant','cost.read'), ('accountant','cost.source.read'), ('accountant','cost.file.read'), ('accountant','cost.manage'), ('accountant','cost.prepare'), ('accountant','cost.publish_import'), ('accountant','cost.correct'), ('accountant','cost.record_cash')
     ), expected_role_permissions(role_code, permission_code) as (
       select role_code, permission_code from explicit_role_permissions
-      union all select 'company_admin', code from all_expected_permissions
+      union all select 'company_admin', code from company_admin_expected_permissions
     ), actual_role_permissions(role_code, permission_code) as (
       select role.code, role_permission.permission_code
       from public.role_permissions role_permission
