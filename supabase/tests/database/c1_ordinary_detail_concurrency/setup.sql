@@ -1,0 +1,13 @@
+-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE
+insert into auth.users(id,email) values ('c1f10000-0000-4000-8000-000000000903','c1f-race-manager@taskovia.invalid');
+insert into public.tenants(id,code,name) values ('c1f10000-0000-4000-8000-000000000010','C1F-RACE','C1F race tenant');
+insert into public.companies(id,tenant_id,code,name) values ('c1f10000-0000-4000-8000-000000000020','c1f10000-0000-4000-8000-000000000010','C1FR','C1F race company');
+insert into public.tenant_memberships(user_id,tenant_id,roles) values ('c1f10000-0000-4000-8000-000000000903','c1f10000-0000-4000-8000-000000000010',array['member']);
+insert into public.company_memberships(user_id,tenant_id,company_id,roles,is_active) values ('c1f10000-0000-4000-8000-000000000903','c1f10000-0000-4000-8000-000000000010','c1f10000-0000-4000-8000-000000000020',array['member'],true);
+insert into public.roles(id,tenant_id,company_id,code,name,description,is_system) values ('c1f10000-0000-4000-8000-000000000913','c1f10000-0000-4000-8000-000000000010','c1f10000-0000-4000-8000-000000000020','c1f_race_manager','C1F race manager','synthetic fixture',false);
+insert into public.role_permissions(role_id,permission_code) values ('c1f10000-0000-4000-8000-000000000913','cost.manage');
+insert into public.company_role_assignments(tenant_id,company_id,user_id,role_id,granted_by,grant_reason) values ('c1f10000-0000-4000-8000-000000000010','c1f10000-0000-4000-8000-000000000020','c1f10000-0000-4000-8000-000000000903','c1f10000-0000-4000-8000-000000000913','c1f10000-0000-4000-8000-000000000903','synthetic fixture');
+insert into public.company_cost_settings(company_id,tenant_id,enabled,created_by) values ('c1f10000-0000-4000-8000-000000000020','c1f10000-0000-4000-8000-000000000010',true,'c1f10000-0000-4000-8000-000000000903');
+insert into public.projects(id,tenant_id,company_id,code,name,origin,created_by) values ('c1f10000-0000-4000-8000-000000000102','c1f10000-0000-4000-8000-000000000010','c1f10000-0000-4000-8000-000000000020','C1F-RACE','C1F race project','manual','c1f10000-0000-4000-8000-000000000903');
+select set_config('taskovia.c1_finance.actor_id','c1f10000-0000-4000-8000-000000000903',true); select set_config('taskovia.c1_finance.request_id','c1f10000-0000-4000-8000-000000000701',true); select set_config('taskovia.c1_finance.change_reason','synthetic fixture',true);
+insert into public.cost_categories(id,tenant_id,company_id,code,name,display_order,posting_strategy,created_by,updated_by) values ('c1f10000-0000-4000-8000-000000000301','c1f10000-0000-4000-8000-000000000010','c1f10000-0000-4000-8000-000000000020','materials','Materials',1,'ordinary_detail','c1f10000-0000-4000-8000-000000000903','c1f10000-0000-4000-8000-000000000903');
