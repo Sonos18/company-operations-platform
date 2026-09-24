@@ -71,9 +71,9 @@ begin
   insert into public.projects(id, tenant_id, company_id, code, name, origin, created_by) values
     ('c1060000-0000-4000-8000-000000000101', tenant_id, company_id, 'C106-P', 'C106 project', 'manual', preparer);
   perform set_config('taskovia.c1_finance.actor_id', preparer::text, true); perform set_config('taskovia.c1_finance.request_id', 'c1060000-0000-4000-8000-000000000601', true); perform set_config('taskovia.c1_finance.change_reason', 'fixture', true);
-  insert into public.cost_categories(id, tenant_id, company_id, code, name, display_order, created_by, updated_by) values
-    ('c1060000-0000-4000-8000-000000000301', tenant_id, company_id, 'materials', 'Materials', 1, preparer, preparer),
-    ('c1060000-0000-4000-8000-000000000302', tenant_id, company_id, 'subcontract_labor', 'Subcontract labor', 2, preparer, preparer);
+  insert into public.cost_categories(id, tenant_id, company_id, code, name, display_order, posting_strategy, created_by, updated_by) values
+    ('c1060000-0000-4000-8000-000000000301', tenant_id, company_id, 'materials', 'Materials', 1, 'ordinary_detail', preparer, preparer),
+    ('c1060000-0000-4000-8000-000000000302', tenant_id, company_id, 'subcontract_labor', 'Subcontract labor', 2, 'subcontract_payment', preparer, preparer);
   insert into public.controlled_import_runs(id,tenant_id,company_id,run_id,actor_id,idempotency_key,payload_digest,manifest_digest,input_digests,workbook_family,adapter_id,adapter_version,manifest_snapshot,request_id)
   values('c1060000-0000-4000-8000-000000000501',tenant_id,company_id,'c1060000-0000-4000-8000-000000000502',preparer,'c1060000-0000-4000-8000-000000000503',repeat('a',64),repeat('b',64),array[repeat('c',64)],'c106','c106','1.0.0','{}','c1060000-0000-4000-8000-000000000504');
   insert into public.accounting_sources(id,tenant_id,company_id,code,title,source_system,created_by)
@@ -172,7 +172,11 @@ select is((public.c1_prepare_project_cost_financials(
 )->>'amount'), '0.0000', 'cost.prepare accepts an explicit zero detail snapshot');
 select is((public.c1_read_project_cost_draft('c1060000-0000-4000-8000-000000000020', (select (result->>'id')::uuid from c1_p2_result))->'publishReadiness'->>'ready')::boolean, true, 'prepared ordinary draft is publish-ready');
 select is((public.c1_read_project_cost_draft('c1060000-0000-4000-8000-000000000020','c1060000-0000-4000-8000-000000000202')->'publishReadiness'->'blockingCodes'->>0), 'FINANCIAL_DETAILS_REQUIRED', 'unprepared draft reports the financial-details blocker');
-select is((select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)),1::bigint,'cost.prepare can directly read draft financial details');
+select ok(
+  jsonb_array_length(public.c1_read_project_cost_draft('c1060000-0000-4000-8000-000000000020', (select (result->>'id')::uuid from c1_p2_result))->'details') = 1
+    and (select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)) = 0,
+  'cost.prepare reads draft financial details through the guarded RPC, not raw detail RLS'
+);
 select is((select count(*) from public.project_cost_item_sources where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)),1::bigint,'cost.prepare can directly read draft source links');
 select throws_ok(
   $$select public.c1_prepare_project_cost_financials('c1060000-0000-4000-8000-000000000020', 'c1060000-0000-4000-8000-000000000201', '{"expectedVersion":0,"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"line_item","description":"Published","amount":"1.0000"}],"sourceFigureIds":[]}', 'c1060000-0000-4000-8000-000000000720')$$,

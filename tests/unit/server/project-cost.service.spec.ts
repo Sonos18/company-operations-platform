@@ -108,7 +108,7 @@ describe('Project Cost service', () => {
     }
     const rpc = vi.fn().mockImplementation(async (name: string) => ({
       data: name === 'c1_read_project_cost_draft_management_metadata'
-        ? { projects: [{ id: draft.projectId, code: 'P1', name: 'Project one' }], categories: [{ categoryId: draft.costCategoryId, code: 'vat_tu', name: 'Vật tư', isActive: true, draftEligible: true }] }
+        ? { projects: [{ id: draft.projectId, code: 'P1', name: 'Project one' }], categories: [{ categoryId: draft.costCategoryId, code: 'vat_tu', name: 'Vật tư', isActive: true, draftEligible: true, postingStrategy: 'ordinary_detail' }] }
         : name === 'c1_prepare_project_cost_financials'
         ? { id: draft.id, version: 1, publicationState: 'draft', amount: '0', detailCount: 1, publishReadiness: { ready: true, blockingCodes: [] }, replayed: false }
         : name === 'c1_read_project_cost_draft' ? draft
@@ -546,6 +546,7 @@ describe('Project Cost service', () => {
       expect(client.detailsQuery.eq).toHaveBeenCalledWith('tenant_id', context([]).tenantId)
       expect(client.detailsQuery.eq).toHaveBeenCalledWith('company_id', context([]).companyId)
       expect(client.detailsQuery.eq).toHaveBeenCalledWith('project_cost_item_id', parentRow.id)
+      expect(client.detailsQuery.eq).toHaveBeenCalledWith('publication_state', 'published')
       expect(client.detailsQuery.order).toHaveBeenCalledWith('line_no')
     })
 
@@ -596,16 +597,13 @@ describe('Project Cost service', () => {
       expect(result.details[0]!.createdAt).toBe('2026-09-17T07:45:34.829269+00:00')
     })
 
-    it('returns empty details array when item has no detail rows without failing invariant', async () => {
+    it('rejects a nonzero parent with no published detail rows', async () => {
       const client = makeDetailsClient([parentRow], [])
       const repository = new ProjectCostRepository(client as never)
 
-      const result = await repository.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)
-      expect(result).toEqual({
-        projectCostItemId: parentRow.id,
-        totalAmount: '100.0000',
-        currencyCode: 'VND',
-        details: [],
+      await expect(repository.itemDetails(context([]).tenantId, context([]).companyId, parentRow.id)).rejects.toMatchObject({
+        statusCode: 500,
+        code: 'INTERNAL_ERROR',
       })
     })
 

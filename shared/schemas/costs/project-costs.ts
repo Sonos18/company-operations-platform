@@ -256,8 +256,120 @@ export const projectCostOperationalDraftSchema = projectCostDraftSchema.pick({
 })
 export const projectCostDraftManagementMetadataSchema = z.object({
   projects: z.array(z.object({ id: uuid, code: text, name: text }).strict()),
-  categories: z.array(z.object({ categoryId: uuid, code: text, name: text, isActive: z.boolean(), draftEligible: z.boolean() }).strict()),
+  categories: z.array(z.object({ categoryId: uuid, code: text, name: text, isActive: z.boolean(), draftEligible: z.boolean(), postingStrategy: z.enum(['ordinary_detail', 'subcontract_payment']) }).strict()),
 }).strict()
+
+export const createProjectCostDetailDraftInputSchema = z.object({
+  categoryId: uuid,
+  description: text,
+  relevantDate: relevantDate.optional(),
+  reference: z.string().trim().min(1).optional(),
+  note: z.string().trim().min(1).optional(),
+}).strict()
+
+export const updateProjectCostDetailDraftInputSchema = z.object({
+  expectedVersion: version,
+  description: text.optional(),
+  relevantDate: relevantDate.nullable().optional(),
+  reference: z.string().trim().min(1).nullable().optional(),
+  note: z.string().trim().min(1).nullable().optional(),
+}).strict().superRefine((value, context) => {
+  if (!['description', 'relevantDate', 'reference', 'note'].some(field => Object.hasOwn(value, field))) context.addIssue({ code: 'custom', message: 'requires a mutable field' })
+})
+
+export const prepareProjectCostDetailFinancialsInputSchema = z.object({
+  expectedVersion: version,
+  quantity: decimalStringSchema.nullable().optional().default(null),
+  unitCode: z.string().trim().min(1).nullable().optional().default(null),
+  unitPrice: decimalStringSchema.nullable().optional().default(null),
+  amount: decimalStringSchema,
+  retentionKind: projectCostRetentionKindSchema.nullable().optional().default(null),
+  retentionRateBps: z.number().int().min(0).max(10000).nullable().optional().default(null),
+  retentionAmount: decimalStringSchema.nullable().optional().default(null),
+  sourceFigureIds: uniqueSourceFigureIds.optional(),
+}).strict().superRefine(validateRetention)
+
+export const publishProjectCostDetailInputSchema = z.object({ expectedVersion: version }).strict()
+
+export const createAndPublishProjectCostDetailInputSchema = z.object({
+  categoryId: uuid,
+  description: text,
+  quantity: decimalStringSchema.nullable().optional().default(null),
+  unitCode: z.string().trim().min(1).nullable().optional().default(null),
+  unitPrice: decimalStringSchema.nullable().optional().default(null),
+  amount: decimalStringSchema,
+  retentionKind: projectCostRetentionKindSchema.nullable().optional().default(null),
+  retentionRateBps: z.number().int().min(0).max(10000).nullable().optional().default(null),
+  retentionAmount: decimalStringSchema.nullable().optional().default(null),
+  relevantDate: relevantDate.optional(),
+  reference: z.string().trim().min(1).optional(),
+  note: z.string().trim().min(1).optional(),
+  sourceFigureIds: uniqueSourceFigureIds.optional(),
+}).strict().superRefine(validateRetention)
+
+export const correctPublishedProjectCostDetailInputSchema = z.object({
+  expectedVersion: version,
+  reason: text,
+  changes: z.object({
+    description: text.optional(),
+    relevantDate: relevantDate.nullable().optional(),
+    reference: z.string().trim().min(1).nullable().optional(),
+    note: z.string().trim().min(1).nullable().optional(),
+    quantity: decimalStringSchema.nullable().optional(),
+    unitCode: z.string().trim().min(1).nullable().optional(),
+    unitPrice: decimalStringSchema.nullable().optional(),
+    amount: decimalStringSchema.optional(),
+    retentionKind: projectCostRetentionKindSchema.nullable().optional(),
+    retentionRateBps: z.number().int().min(0).max(10000).nullable().optional(),
+    retentionAmount: decimalStringSchema.nullable().optional(),
+    sourceFigureIds: uniqueSourceFigureIds.optional(),
+  }).strict().superRefine((value, context) => {
+    if (Object.keys(value).length === 0) context.addIssue({ code: 'custom', message: 'requires a correction change' })
+    if (['amount', 'retentionKind', 'retentionRateBps', 'retentionAmount'].every(field => Object.hasOwn(value, field))) {
+      validateRetention({ amount: value.amount!, retentionKind: value.retentionKind!, retentionRateBps: value.retentionRateBps!, retentionAmount: value.retentionAmount! }, context)
+    }
+    if (value.retentionKind === null && (value.retentionRateBps !== undefined || value.retentionAmount !== undefined)) context.addIssue({ code: 'custom', path: ['retentionKind'], message: 'retention fields require a kind' })
+  }),
+}).strict()
+
+export const projectCostDetailCommandAckSchema = z.object({
+  id: uuid,
+  projectCostItemId: uuid,
+  publicationState: projectCostPublicationStateSchema,
+  version,
+  replayed: z.boolean(),
+}).strict()
+
+export const projectCostDetailDraftSchema = z.object({
+  id: uuid,
+  projectCostItemId: uuid,
+  projectId: uuid,
+  categoryId: uuid,
+  lineNo: z.number().int().positive(),
+  description: text,
+  relevantDate: relevantDate.nullable(),
+  reference: z.string().nullable(),
+  note: z.string().nullable(),
+  quantity: decimalStringSchema.nullable(),
+  unitCode: z.string().nullable(),
+  unitPrice: decimalStringSchema.nullable(),
+  amount: decimalStringSchema.nullable(),
+  retentionKind: projectCostRetentionKindSchema.nullable(),
+  retentionRateBps: z.number().int().min(0).max(10000).nullable(),
+  retentionAmount: decimalStringSchema.nullable(),
+  sourceFigureIds: uniqueSourceFigureIds,
+  publicationState: z.literal('draft'),
+  version,
+  publishReadiness: projectCostPublishReadinessSchema,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+}).strict()
+
+export const projectCostDetailOperationalDraftSchema = projectCostDetailDraftSchema.pick({
+  id: true, projectCostItemId: true, projectId: true, categoryId: true, lineNo: true,
+  description: true, relevantDate: true, reference: true, note: true,
+  publicationState: true, version: true, createdAt: true, updatedAt: true,
+})
 
 export type ProjectCostWorkStatus = z.infer<typeof projectCostWorkStatusSchema>
 export type ProjectCostPublicationState = z.infer<typeof projectCostPublicationStateSchema>
@@ -274,7 +386,16 @@ export type CorrectPublishedProjectCostInput = z.infer<typeof correctPublishedPr
 export type ProjectCostDraft = z.infer<typeof projectCostDraftSchema>
 export type ProjectCostOperationalDraft = z.infer<typeof projectCostOperationalDraftSchema>
 export type ProjectCostDraftManagementMetadata = z.infer<typeof projectCostDraftManagementMetadataSchema>
-export type ProjectCostDraftCategoryOption = { categoryId: string; code: string; name: string; isActive: boolean; draftEligible?: boolean }
+export type ProjectCostDraftCategoryOption = { categoryId: string; code: string; name: string; isActive: boolean; draftEligible?: boolean; postingStrategy?: 'ordinary_detail' | 'subcontract_payment' }
+export type CreateProjectCostDetailDraftInput = z.infer<typeof createProjectCostDetailDraftInputSchema>
+export type UpdateProjectCostDetailDraftInput = z.infer<typeof updateProjectCostDetailDraftInputSchema>
+export type PrepareProjectCostDetailFinancialsInput = z.infer<typeof prepareProjectCostDetailFinancialsInputSchema>
+export type PublishProjectCostDetailInput = z.infer<typeof publishProjectCostDetailInputSchema>
+export type CreateAndPublishProjectCostDetailInput = z.infer<typeof createAndPublishProjectCostDetailInputSchema>
+export type CorrectPublishedProjectCostDetailInput = z.infer<typeof correctPublishedProjectCostDetailInputSchema>
+export type ProjectCostDetailCommandAck = z.infer<typeof projectCostDetailCommandAckSchema>
+export type ProjectCostDetailDraft = z.infer<typeof projectCostDetailDraftSchema>
+export type ProjectCostDetailOperationalDraft = z.infer<typeof projectCostDetailOperationalDraftSchema>
 export type CreateProjectCostItemInput = z.infer<typeof createProjectCostItemInputSchema>
 export type UpdateProjectCostItemInput = z.infer<typeof updateProjectCostItemInputSchema>
 export type CorrectProjectCostItemInput = z.infer<typeof correctProjectCostItemInputSchema>

@@ -38,7 +38,7 @@ function item(id: string, categoryId: string, amount: string, relevantDate: stri
   return { id, tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, cost_category_id: categoryId, description: id, business_reference: null, amount_text: amount, currency_code: 'VND', relevant_date: relevantDate, publication_state: 'published' as const, version: 0, created_at: createdAt, updated_at: createdAt }
 }
 function detail(id: string, itemId: string, lineNo: number, amount: string, retentionKind: 'warranty' | 'other' | null, retentionAmount: string | null, relevantDate: string | null) {
-  return { id, tenant_id: ids.tenant, company_id: ids.company, project_cost_item_id: itemId, line_no: lineNo, detail_kind: 'line_item' as const, description: id, quantity_text: null, unit_code: null, unit_price_text: null, amount_text: amount, retention_kind: retentionKind, retention_rate_bps: retentionKind === null ? null : 500, retention_amount_text: retentionAmount, relevant_date: relevantDate, reference: null, note: null, version: 0, created_at: createdAt, updated_at: createdAt }
+  return { id, tenant_id: ids.tenant, company_id: ids.company, project_cost_item_id: itemId, line_no: lineNo, detail_kind: 'line_item' as const, description: id, quantity_text: null, unit_code: null, unit_price_text: null, amount_text: amount, retention_kind: retentionKind, retention_rate_bps: retentionKind === null ? null : 500, retention_amount_text: retentionAmount, relevant_date: relevantDate, reference: null, note: null, publication_state: 'published' as const, version: 0, created_at: createdAt, updated_at: createdAt }
 }
 function payment(id: string, amount: string, retention: string | null, paymentDate = '2026-02-10', status: 'recorded' | 'voided' = 'recorded', replacesPaymentId: string | null = null, contractId = ids.contract) {
   return { id, tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, project_subcontract_id: contractId, paid_amount_text: amount, warranty_retention_amount_text: retention, retention_rate_bps: 500, currency_code: 'VND', status, description: id, payment_date: paymentDate, payment_reference: null, source_reference: null, note: null, replaces_payment_id: replacesPaymentId, created_at: createdAt, version: 0, updated_at: createdAt }
@@ -69,7 +69,7 @@ function multiSnapshot(projectId: string, projectCode: string, currencyCode: str
   const rows = readSet(budgetAmount)
   rows.context = { ...context, projectId, projectCode, projectName: projectCode, defaultCurrencyCode: currencyCode }
   rows.costItems = [{ ...rows.costItems[0]!, id: itemId, project_id: projectId, amount_text: costAmount, currency_code: currencyCode }]
-  rows.details = []
+  rows.details = [detail(itemId, itemId, 1, costAmount, null, null, '2026-01-10')]
   rows.budgets = [{ ...rows.budgets[0]!, id: budgetId, project_id: projectId, currency_code: currencyCode, total_amount_text: budgetAmount, detail_mode: 'categorized' }]
   rows.budgetLines = [{ id: lineId, tenant_id: ids.tenant, company_id: ids.company, project_id: projectId, budget_version_id: budgetId, cost_category_id: ids.materials, line_no: 1, amount_text: budgetAmount, description: 'Budget line', reference: null, source_reference: null, note: null, version: 0, updated_at: createdAt }]
   rows.ownerAdvances = ownerAmount === null ? [] : [{ id: `${ownerAmount === '100.0000' ? 'c1070000-0000-4000-8000-000000000132' : 'c1070000-0000-4000-8000-000000000133'}`, tenant_id: ids.tenant, company_id: ids.company, project_id: projectId, amount_text: ownerAmount, currency_code: currencyCode, status: 'recorded', description: 'Owner receipt', payer_name: 'Owner', receipt_no: projectCode, received_date: '2026-02-01', reference: null, source_reference: null, note: null, version: 0, created_at: createdAt, updated_at: createdAt }]
@@ -134,7 +134,7 @@ function fakeSupabaseMulti(projectRows: readonly ReturnType<typeof multiSnapshot
   const tableRows: Record<string, readonly Record<string, unknown>[]> = {
     cost_categories: projectRows[0]!.categories,
     project_cost_items: projectRows.flatMap(rows => rows.costItems),
-    project_cost_item_details: [],
+    project_cost_item_details: projectRows.flatMap(rows => rows.details),
     project_budget_versions: projectRows.flatMap(rows => rows.budgets),
     project_budget_lines: projectRows.flatMap(rows => rows.budgetLines),
     project_owner_advances: projectRows.flatMap(rows => rows.ownerAdvances),
@@ -356,6 +356,17 @@ describe('C1 finance review regressions on concrete production readers', () => {
     await expect(repository.itemDetails(scope, ids.project, ids.materialsItem, itemQuery)).resolves.toHaveProperty('kind', 'ordinary')
   })
 
+  it('F08 fails closed when a nonzero ordinary parent has no published detail rows', async () => {
+    const rows = readSet()
+    rows.details = []
+    const repository = createSupabaseProjectFinanceRepository(fakeSupabase(rows) as never)
+
+    await expect(repository.overview(scope, ids.project)).rejects.toMatchObject({
+      code: 'INTERNAL_ERROR',
+      details: { reason: 'DATA_CONSISTENCY_ERROR' },
+    })
+  })
+
   it('F04 partitions every project-owned relation in a batched factory directory read', async () => {
     const projectA = multiSnapshot(ids.project, 'P-A', 'VND', 'c1070000-0000-4000-8000-000000000140', 'c1070000-0000-4000-8000-000000000141', 'c1070000-0000-4000-8000-000000000142', 'c1070000-0000-4000-8000-000000000143', 'c1070000-0000-4000-8000-000000000144', 'c1070000-0000-4000-8000-000000000145', '100.0000', '100.0000', '10.0000')
     const projectB = multiSnapshot(multiIds.projectB, 'P-B', 'USD', multiIds.itemB, multiIds.partyB, multiIds.contractB, multiIds.budgetB, multiIds.lineB, multiIds.paymentB, '200.0000', '200.0000', '20.0000')
@@ -447,7 +458,12 @@ describe('C1 finance review regressions on concrete production readers', () => {
       item('c1070000-0000-4000-8000-000000000154', 'c1070000-0000-4000-8000-000000000151', '25.0000'),
       item('c1070000-0000-4000-8000-000000000155', 'c1070000-0000-4000-8000-000000000152', '25.0000'),
     ]
-    rows.details = [detail(ids.detailWarranty, ids.materialsItem, 1, '25.0000', 'warranty', '5.0000', '2026-02-03')]
+    rows.details = [
+      detail(ids.detailWarranty, ids.materialsItem, 1, '25.0000', 'warranty', '5.0000', '2026-02-03'),
+      detail('c1070000-0000-4000-8000-000000000153', 'c1070000-0000-4000-8000-000000000153', 1, '25.0000', null, null, '2026-02-03'),
+      detail('c1070000-0000-4000-8000-000000000154', 'c1070000-0000-4000-8000-000000000154', 1, '25.0000', null, null, '2026-02-03'),
+      detail('c1070000-0000-4000-8000-000000000155', 'c1070000-0000-4000-8000-000000000155', 1, '25.0000', null, null, '2026-02-03'),
+    ]
     rows.budgets = []
     rows.payments = [payment(ids.paymentWarranty, '20.0000', '10.0000')]
     rows.ownerAdvances = [{ id: 'c1070000-0000-4000-8000-000000000156', tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, amount_text: '100.0000', currency_code: 'VND', status: 'recorded', description: 'Synthetic owner receipt', payer_name: null, receipt_no: null, received_date: '2026-02-01', reference: null, source_reference: 'synthetic/J3', note: null, version: 0, created_at: createdAt, updated_at: createdAt }]

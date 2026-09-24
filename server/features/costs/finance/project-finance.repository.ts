@@ -214,8 +214,8 @@ function coherent(readSet: FinanceSummaryTableReadSet): boolean {
   const detailsByItem = new Map<string, typeof readSet.details>()
   for (const detail of readSet.details) detailsByItem.set(detail.project_cost_item_id, [...(detailsByItem.get(detail.project_cost_item_id) ?? []), detail])
   for (const item of readSet.costItems) {
-    const details = detailsByItem.get(item.id) ?? []
-    if (details.length > 0 && sumFinanceMoney(details.map(detail => detail.amount_text)) !== sumFinanceMoney([item.amount_text])) return false
+    const details = (detailsByItem.get(item.id) ?? []).filter(detail => detail.publication_state === 'published')
+    if (sumFinanceMoney(details.map(detail => detail.amount_text)) !== sumFinanceMoney([item.amount_text])) return false
   }
   for (const budget of readSet.budgets.filter(row => row.status === 'approved' && row.detail_mode === 'categorized')) {
     const lines = readSet.budgetLines.filter(line => line.budget_version_id === budget.id)

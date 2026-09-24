@@ -71,7 +71,7 @@ describe('HTTP Project Cost repository', () => {
     await opListRepo.listOperationalDrafts('project/id')
     expect(opListClient.request).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/companies/company%2Fid/projects/project%2Fid/project-cost-drafts/operations', method: 'GET' }))
 
-    const metadataResponse = { projects: [{ id: ids.project, code: 'P1', name: 'Project one' }], categories: [{ categoryId: draft.costCategoryId, code: 'vat_tu', name: 'Vật tư', isActive: true, draftEligible: true }] }
+    const metadataResponse = { projects: [{ id: ids.project, code: 'P1', name: 'Project one' }], categories: [{ categoryId: draft.costCategoryId, code: 'vat_tu', name: 'Vật tư', isActive: true, draftEligible: true, postingStrategy: 'ordinary_detail' }] }
     const metadataClient = responseClient(metadataResponse)
     await expect(createHttpProjectCostRepository({ companyId: 'company/id', client: metadataClient as never }).draftManagementMetadata()).resolves.toEqual(metadataResponse)
     expect(metadataClient.request).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/companies/company%2Fid/project-cost-drafts/metadata', method: 'GET' }))
@@ -356,5 +356,25 @@ describe('HTTP Project Cost repository', () => {
     await expect(repositoryExtra.details(ids.item)).rejects.toThrow()
     await expect(repositoryInvalidKind.details(ids.item)).rejects.toThrow()
     await expect(repositoryExcessRetention.details(ids.item)).rejects.toThrow()
+  })
+
+  it('keeps path project IDs out of strict ordinary-detail POST bodies', async () => {
+    const response = { id: ids.item, projectCostItemId: ids.item, publicationState: 'published', version: 0, replayed: false }
+    const client = responseClient(response)
+    const repository = createHttpProjectCostRepository({ companyId: ids.company, client: client as never })
+
+    await repository.createDetailDraft(ids.project, { categoryId: draft.costCategoryId, description: 'draft detail' }, { idempotencyKey: ids.key })
+    await repository.createAndPublishDetail(ids.project, { categoryId: draft.costCategoryId, description: 'posted detail', amount: '1.0000', sourceFigureIds: [] }, { idempotencyKey: ids.key })
+
+    expect(client.request).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      url: `/api/companies/${ids.company}/projects/${ids.project}/cost-entry-drafts`,
+      body: { categoryId: draft.costCategoryId, description: 'draft detail' },
+    }))
+    expect(client.request).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      url: `/api/companies/${ids.company}/projects/${ids.project}/cost-entries`,
+      body: expect.objectContaining({ categoryId: draft.costCategoryId, description: 'posted detail', amount: '1.0000', sourceFigureIds: [] }),
+    }))
+    expect((client.request.mock.calls[0]![0].body as Record<string, unknown>).projectId).toBeUndefined()
+    expect((client.request.mock.calls[1]![0].body as Record<string, unknown>).projectId).toBeUndefined()
   })
 })

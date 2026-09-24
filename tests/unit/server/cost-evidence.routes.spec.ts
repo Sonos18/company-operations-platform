@@ -3,13 +3,22 @@ import { createCostEvidenceRoutes } from '../../../server/features/costs/evidenc
 
 const { getHeader, getRouterParam, readBody } = vi.hoisted(() => ({ getHeader: vi.fn(), getRouterParam: vi.fn(), readBody: vi.fn() }))
 vi.mock('h3', async importOriginal => ({ ...await importOriginal<typeof import('h3')>(), getHeader, getRouterParam, readBody }))
-const ids = { companyId: 'c1070000-0000-4000-8000-000000000020', projectId: 'c1070000-0000-4000-8000-000000000101', costId: 'c1070000-0000-4000-8000-000000000201', fileId: 'c1070000-0000-4000-8000-000000000401', key: 'c1070000-0000-4000-8000-000000000701' }
+const ids = { companyId: 'c1070000-0000-4000-8000-000000000020', projectId: 'c1070000-0000-4000-8000-000000000101', costId: 'c1070000-0000-4000-8000-000000000201', detailId: 'c1070000-0000-4000-8000-000000000301', fileId: 'c1070000-0000-4000-8000-000000000401', key: 'c1070000-0000-4000-8000-000000000701' }
 const context = { actorId: 'c1070000-0000-4000-8000-000000000901', tenantId: 'c1070000-0000-4000-8000-000000000010', companyId: ids.companyId, permissions: ['cost.prepare'], requestId: 'c1070000-0000-4000-8000-000000000702', db: {} }
 
 describe('cost evidence routes', () => {
   beforeEach(() => {
     vi.clearAllMocks(); getHeader.mockReturnValue(ids.key)
-    getRouterParam.mockImplementation((_event, name) => ({ companyId: ids.companyId, projectId: ids.projectId, projectCostItemId: ids.costId, evidenceFileId: ids.fileId }[name]))
+    getRouterParam.mockImplementation((_event, name) => ({ companyId: ids.companyId, projectId: ids.projectId, projectCostItemId: ids.costId, detailId: ids.detailId, evidenceFileId: ids.fileId }[name]))
+  })
+
+  it('binds detail evidence routes to the exact detail ID', async () => {
+    const service = { linkDetail: vi.fn(), listDetailEvidence: vi.fn() }
+    const routes = createCostEvidenceRoutes({ resolveContext: vi.fn().mockResolvedValue(context), service: service as never })
+    readBody.mockResolvedValue({ evidenceFileId: ids.fileId, evidenceKind: 'invoice' })
+    await routes.linkDetail({} as never); await routes.listDetailEvidence({} as never)
+    expect(service.linkDetail).toHaveBeenCalledWith(context, ids.detailId, { evidenceFileId: ids.fileId, evidenceKind: 'invoice' }, ids.key)
+    expect(service.listDetailEvidence).toHaveBeenCalledWith(context, ids.detailId)
   })
 
   it('binds intent, finalize, link, metadata, and read URL to exact route IDs', async () => {

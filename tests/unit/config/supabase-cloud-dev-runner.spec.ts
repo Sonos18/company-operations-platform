@@ -491,11 +491,27 @@ describe('Cloud DEV fixed-mode runner', () => {
     for (const metadata of stage01ConfigPermissionMetadata) {
       expect(sql.split(metadata)).toHaveLength(4)
     }
+    for (const code of [
+      'project.register.manage', 'party.manage', 'engagement.manage', 'cost.read',
+      'cost.source.read', 'cost.prepare', 'cost.publish_import', 'cost.record_cash',
+      'cost.correct', 'cost.file.read', 'cost.coverage.assert', 'cost.config.manage',
+      'cost.manage',
+    ]) {
+      expect(sql).toContain(`('${code}', 'cost',`)
+    }
     expect(sql).toContain('role.is_privileged is distinct from expected.is_privileged')
     expect(sql).toContain('role.is_system is distinct from true')
     expect(sql).toContain('role.is_active is distinct from true')
     expect(sql).toContain('expected_role_permissions')
-    expect(sql).toContain("union all select 'company_admin', code from all_expected_permissions")
+    expect(sql).toContain("union all select 'company_admin', code from company_admin_expected_permissions")
+    expect(sql).toContain("('accountant','cost.manage')")
+    expect(sql).toContain("('accountant','cost.publish_import')")
+    expect(sql).toContain("('accountant','cost.record_cash')")
+    expect(sql).toContain("('c1_vqh_cost_operator','cost.correct')")
+    expect(sql).toContain("('c1_vqh_cost_operator','cost.manage')")
+    expect(sql).toContain("role.code = 'c1_vqh_cost_operator'")
+    expect(sql).toContain('role.is_privileged is false')
+    expect(sql).toContain('role.is_system is false')
     expect(sql).toContain('select code from public.permissions except select code from all_expected_permissions')
     expect(sql).toContain('select code from all_expected_permissions except select code from public.permissions')
     expect(sql).toContain('select role_code, permission_code from expected_role_permissions except select role_code, permission_code from actual_role_permissions')

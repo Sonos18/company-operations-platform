@@ -4,6 +4,7 @@ import { createHttpCostEvidenceRepository } from '../../../app/repositories/http
 const companyId = 'c1010000-0000-4000-8000-000000000020'
 const projectId = 'c1010000-0000-4000-8000-000000000101'
 const costItemId = 'c1010000-0000-4000-8000-000000000001'
+const detailId = 'c1010000-0000-4000-8000-000000000002'
 const evidenceFileId = 'c1010000-0000-4000-8000-000000000701'
 const linkId = 'c1010000-0000-4000-8000-000000000801'
 const idempotencyKey = 'c1010000-0000-4000-8000-000000000999'
@@ -123,6 +124,14 @@ describe('HTTP Cost Evidence repository', () => {
       url: `/api/companies/${companyId}/project-costs/${costItemId}/evidence`,
       method: 'GET',
     }))
+  })
+
+  it('links evidence to the exact detail endpoint', async () => {
+    const response = { linkId, detailId, evidenceFileId, evidenceKind: 'invoice', replayed: false }
+    const client = responseClient(response)
+    const repo = createHttpCostEvidenceRepository({ companyId, client: client as never })
+    await expect(repo.linkDetail(detailId, { evidenceFileId, evidenceKind: 'invoice' }, { idempotencyKey })).resolves.toEqual(response)
+    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ url: `/api/companies/${companyId}/project-cost-details/${detailId}/evidence`, method: 'POST' }))
   })
 
   it('gets signed read URL', async () => {

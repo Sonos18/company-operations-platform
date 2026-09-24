@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3'
 import { getHeader, getRouterParam, readBody } from 'h3'
 import { z } from 'zod'
-import { correctPublishedProjectCostInputSchema, createProjectCostDraftInputSchema, prepareProjectCostFinancialsInputSchema, publishProjectCostInputSchema, updateProjectCostDraftInputSchema } from '../../../shared/schemas/costs/project-costs'
+import { correctPublishedProjectCostDetailInputSchema, correctPublishedProjectCostInputSchema, createAndPublishProjectCostDetailInputSchema, createProjectCostDetailDraftInputSchema, createProjectCostDraftInputSchema, prepareProjectCostDetailFinancialsInputSchema, prepareProjectCostFinancialsInputSchema, publishProjectCostDetailInputSchema, publishProjectCostInputSchema, updateProjectCostDetailDraftInputSchema, updateProjectCostDraftInputSchema } from '../../../shared/schemas/costs/project-costs'
 import { AppApiError } from '../../utils/api-error'
 import { c1RequestContext } from '../c1-master-data/context'
 import { ProjectCostRepository } from './project-cost.repository'
@@ -19,6 +19,7 @@ function param(event: H3Event, name: string) { const value = uuid.safeParse(getR
 async function body<T>(event: H3Event, schema: z.ZodType<T>) { const value = schema.safeParse(await readBody(event)); if (!value.success) throw new AppApiError(400, 'INPUT_INVALID', 'Dữ liệu yêu cầu không hợp lệ.'); return value.data }
 
 export function createProjectCostRoutes(dependencies: ProjectCostRouteDependencies) {
+  // Deprecated parent lifecycle routes remain only for compatibility; new work uses detail commands below.
   async function resolved(event: H3Event) {
     const context = await dependencies.resolveContext(event, param(event, 'companyId'))
     return { context, service: dependencies.service ?? new ProjectCostService(new ProjectCostRepository(context.db)) }
@@ -66,6 +67,33 @@ export function createProjectCostRoutes(dependencies: ProjectCostRouteDependenci
       const value = await resolved(event)
       return value.service.itemDetails(value.context, param(event, 'projectCostItemId'))
     },
+    async createDetailDraft(event: H3Event) {
+      const value = await resolved(event); const projectId = param(event, 'projectId'); const input = await body(event, createProjectCostDetailDraftInputSchema)
+      const idempotencyKey = uuid.safeParse(getHeader(event, 'idempotency-key'))
+      if (!idempotencyKey.success) invalid()
+      return value.service.createDetailDraft(value.context, projectId, input, idempotencyKey.data)
+    },
+    async updateDetailDraft(event: H3Event) { const value = await resolved(event); return value.service.updateDetailDraft(value.context, param(event, 'detailId'), await body(event, updateProjectCostDetailDraftInputSchema)) },
+    async prepareDetailFinancials(event: H3Event) { const value = await resolved(event); return value.service.prepareDetailFinancials(value.context, param(event, 'detailId'), await body(event, prepareProjectCostDetailFinancialsInputSchema)) },
+    async detailDraft(event: H3Event) { const value = await resolved(event); return value.service.detailDraft(value.context, param(event, 'detailId')) },
+    async listDetailDrafts(event: H3Event) { const value = await resolved(event); return value.service.listDetailDrafts(value.context, param(event, 'projectId')) },
+    async operationalDetailDraft(event: H3Event) { const value = await resolved(event); return value.service.operationalDetailDraft(value.context, param(event, 'detailId')) },
+    async listOperationalDetailDrafts(event: H3Event) { const value = await resolved(event); return value.service.listOperationalDetailDrafts(value.context, param(event, 'projectId')) },
+    async publishDetail(event: H3Event) {
+      const value = await resolved(event); const input = await body(event, publishProjectCostDetailInputSchema); const idempotencyKey = uuid.safeParse(getHeader(event, 'idempotency-key'))
+      if (!idempotencyKey.success) invalid()
+      return value.service.publishDetail(value.context, param(event, 'detailId'), input, idempotencyKey.data)
+    },
+    async createAndPublishDetail(event: H3Event) {
+      const value = await resolved(event); const projectId = param(event, 'projectId'); const input = await body(event, createAndPublishProjectCostDetailInputSchema); const idempotencyKey = uuid.safeParse(getHeader(event, 'idempotency-key'))
+      if (!idempotencyKey.success) invalid()
+      return value.service.createAndPublishDetail(value.context, projectId, input, idempotencyKey.data)
+    },
+    async correctPublishedDetail(event: H3Event) {
+      const value = await resolved(event); const input = await body(event, correctPublishedProjectCostDetailInputSchema); const idempotencyKey = uuid.safeParse(getHeader(event, 'idempotency-key'))
+      if (!idempotencyKey.success) invalid()
+      return value.service.correctPublishedDetail(value.context, param(event, 'detailId'), input, idempotencyKey.data)
+    },
   }
 }
 
@@ -85,5 +113,15 @@ export function createSupabaseProjectCostRoutes(event: H3Event) {
     publish: () => routes.publish(event),
     correction: () => routes.correction(event),
     details: () => routes.details(event),
+    createDetailDraft: () => routes.createDetailDraft(event),
+    updateDetailDraft: () => routes.updateDetailDraft(event),
+    prepareDetailFinancials: () => routes.prepareDetailFinancials(event),
+    detailDraft: () => routes.detailDraft(event),
+    listDetailDrafts: () => routes.listDetailDrafts(event),
+    operationalDetailDraft: () => routes.operationalDetailDraft(event),
+    listOperationalDetailDrafts: () => routes.listOperationalDetailDrafts(event),
+    publishDetail: () => routes.publishDetail(event),
+    createAndPublishDetail: () => routes.createAndPublishDetail(event),
+    correctPublishedDetail: () => routes.correctPublishedDetail(event),
   }
 }
