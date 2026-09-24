@@ -38,6 +38,7 @@
     "db:dev:stage01:integrity-races": "node scripts/run-stage01-cloud-dev-integrity-races.mjs",
     "db:dev:advisors:security": "node scripts/run-supabase-dev.mjs advisors-security",
     "db:dev:advisors:performance": "node scripts/run-supabase-dev.mjs advisors-performance",
+    "jev:router:shadow": "node scripts/run-jev-router-shadow.mjs",
     "verify:app": "pnpm test:unit && pnpm typecheck && pnpm lint && pnpm build",
     "verify:dev": "pnpm db:dev:status && pnpm db:dev:dry-run && pnpm db:dev:types && pnpm verify:app"
   },

@@ -9,3 +9,4 @@ test-results/
 .supabase.dev.env.local
 .superpowers/
 .worktrees/
+.jev-router-shadow/
