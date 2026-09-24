@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
 
-select plan(35);
+select plan(36);
 
 select has_table('public', 'project_cost_item_detail_sources', 'detail source provenance table exists');
 select has_table('public', 'cost_evidence_links', 'evidence links table exists');
@@ -67,6 +67,11 @@ reset role;
 set local role service_role;
 select throws_ok($$insert into public.cost_evidence_links(tenant_id,company_id,project_id,evidence_file_id,evidence_kind,request_id,created_by) values('c1f30000-0000-4000-8000-000000000010','c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000101','c1f30000-0000-4000-8000-000000000501','invoice','c1f30000-0000-4000-8000-000000000715','c1f30000-0000-4000-8000-000000000901')$$,'23514',null,'exact-one target rejects an unscoped evidence link');
 insert into public.cost_evidence_links(tenant_id,company_id,project_id,evidence_file_id,project_cost_item_id,evidence_kind,request_id,created_by) values('c1f30000-0000-4000-8000-000000000010','c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000101','c1f30000-0000-4000-8000-000000000501','c1f30000-0000-4000-8000-000000000201','contract','c1f30000-0000-4000-8000-000000000716','c1f30000-0000-4000-8000-000000000901');
+insert into public.business_parties(id,tenant_id,company_id,code,display_name,party_kind,created_by,updated_by) values('c1f30000-0000-4000-8000-000000000601','c1f30000-0000-4000-8000-000000000010','c1f30000-0000-4000-8000-000000000020','C1F3-SUB','C1F3 subcontractor','organization','c1f30000-0000-4000-8000-000000000901','c1f30000-0000-4000-8000-000000000901');
+insert into public.project_subcontracts(id,tenant_id,company_id,project_id,subcontractor_party_id,code,contract_name,currency_code,created_by,updated_by) values('c1f30000-0000-4000-8000-000000000602','c1f30000-0000-4000-8000-000000000010','c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000101','c1f30000-0000-4000-8000-000000000601','C1F3-SUB','C1F3 subcontract','VND','c1f30000-0000-4000-8000-000000000901','c1f30000-0000-4000-8000-000000000901');
+insert into public.project_subcontract_payments(id,tenant_id,company_id,project_id,project_subcontract_id,currency_code,description,paid_amount_text,created_by,updated_by) values('c1f30000-0000-4000-8000-000000000603','c1f30000-0000-4000-8000-000000000010','c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000101','c1f30000-0000-4000-8000-000000000602','VND','C1F3 recorded payment','7.0000','c1f30000-0000-4000-8000-000000000901','c1f30000-0000-4000-8000-000000000901');
+insert into public.cost_evidence_links(tenant_id,company_id,project_id,evidence_file_id,project_subcontract_payment_id,evidence_kind,request_id,created_by) values('c1f30000-0000-4000-8000-000000000010','c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000101','c1f30000-0000-4000-8000-000000000501','c1f30000-0000-4000-8000-000000000603','payment_proof','c1f30000-0000-4000-8000-000000000723','c1f30000-0000-4000-8000-000000000901');
+select is((select count(*) from public.cost_evidence_links where evidence_file_id='c1f30000-0000-4000-8000-000000000501' and (project_cost_item_id is not null or project_subcontract_payment_id is not null)),2::bigint,'existing parent and subcontract-payment evidence targets remain valid');
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"c1f30000-0000-4000-8000-000000000901","role":"authenticated"}',true);

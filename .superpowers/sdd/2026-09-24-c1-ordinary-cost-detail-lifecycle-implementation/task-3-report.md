@@ -67,3 +67,10 @@ No Cloud DEV or local database action was performed in this fix round.
 - Extended the rollback-safe pgTAP fixture with the distinct-key duplicate-detail-link assertion while retaining the exact-replay case.
 
 Verification: `pnpm test:unit` passed 164 files / 1,442 tests; `pnpm typecheck` and `git diff --check` passed. No database command was executed.
+
+## Fix round 3
+
+- Added a rollback-safe subcontract-payment fixture and evidence link assertion, paired with the existing parent-target assertion, to prove both historical target shapes remain valid under the exactly-one target constraint.
+- The pgTAP plan is now 36 assertions and remains wrapped in `begin`/`rollback`.
+
+Focused finance tests passed (17 tests) and `git diff --check` passed. The pgTAP file was not executed by instruction.
