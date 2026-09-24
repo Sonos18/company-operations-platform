@@ -17,6 +17,7 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
     '20260924093428_c1_ordinary_cost_detail_lifecycle_foundation.sql',
     '20260924110107_c1_ordinary_cost_detail_commands.sql',
     '20260924120131_c1_ordinary_cost_detail_provenance_evidence_reads.sql',
+    '20260924142834_c1_ordinary_cost_detail_publish_hash_fix.sql',
   ]
 
   function migrationRoot(names = migrationNames) {
@@ -42,16 +43,16 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
   it('loads the exact currently pending C1 stack once in timestamp order and excludes applied history', () => {
     const sql = readC1MigrationSql(migrationRoot())
 
-    expect(sql).toBe('select 2;\n\nselect 3;\n\nselect 4;\n\nselect 5;\n')
+    expect(sql).toBe('select 6;\n')
   })
 
   it('rejects a missing pending migration before Cloud access', () => {
-    expect(() => readC1MigrationSql(migrationRoot(migrationNames.filter(name => !name.includes('draft_management_metadata'))))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_accounting_write_draft_management_metadata.sql')
+    expect(() => readC1MigrationSql(migrationRoot(migrationNames.filter(name => !name.includes('publish_hash_fix'))))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_ordinary_cost_detail_publish_hash_fix.sql')
   })
 
   it('rejects duplicate migration suffixes before Cloud access', () => {
-    const duplicate = ['20260923130000_c1_accounting_write_draft_management_metadata.sql', ...migrationNames]
-    expect(() => readC1MigrationSql(migrationRoot(duplicate))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_accounting_write_draft_management_metadata.sql')
+    const duplicate = ['20260924142835_c1_ordinary_cost_detail_publish_hash_fix.sql', ...migrationNames]
+    expect(() => readC1MigrationSql(migrationRoot(duplicate))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_ordinary_cost_detail_publish_hash_fix.sql')
   })
 
   it('checks the Cloud DEV target before dispatching the temporary rehearsal SQL', () => {
