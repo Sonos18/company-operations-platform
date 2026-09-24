@@ -60,15 +60,16 @@ $$;
 
 create function private.c1_detail_replace_sources(target_detail public.project_cost_item_details, target_source_ids uuid[])
 returns void language plpgsql security definer set search_path = '' as $$
-declare v_project_id uuid; v_count integer;
+declare v_project_id uuid; v_scope_count integer;
 begin
   if target_source_ids is null then return; end if;
   select item.project_id into v_project_id from public.project_cost_items item where item.id=target_detail.project_cost_item_id and item.tenant_id=target_detail.tenant_id and item.company_id=target_detail.company_id;
-  select count(*) into v_count from public.source_reported_figures figure
-  where figure.id = any(target_source_ids) and figure.tenant_id=target_detail.tenant_id and figure.company_id=target_detail.company_id and figure.project_id=v_project_id and figure.status='shared';
-  if v_count <> cardinality(target_source_ids) or exists (
-    select 1 from public.source_reported_figures figure join public.source_review_issues issue on issue.source_selection_id=figure.source_selection_id and issue.tenant_id=figure.tenant_id and issue.company_id=figure.company_id
-    where figure.id=any(target_source_ids) and issue.status='open' and issue.impact='blocks_normalization'
+  select count(*) into v_scope_count from public.source_reported_figures figure
+  where figure.id = any(target_source_ids) and figure.tenant_id=target_detail.tenant_id and figure.company_id=target_detail.company_id and figure.project_id=v_project_id;
+  if v_scope_count <> cardinality(target_source_ids) then raise exception using errcode='P0001', message='RESOURCE_NOT_FOUND'; end if;
+  if exists (
+    select 1 from public.source_reported_figures figure left join public.source_review_issues issue on issue.source_selection_id=figure.source_selection_id and issue.tenant_id=figure.tenant_id and issue.company_id=figure.company_id and issue.status='open' and issue.impact='blocks_normalization'
+    where figure.id=any(target_source_ids) and (figure.status<>'shared' or issue.id is not null)
   ) then raise exception using errcode='P0001', message='COST_DETAIL_PUBLISH_NOT_READY'; end if;
   delete from public.project_cost_item_detail_sources link where link.project_cost_item_detail_id=target_detail.id and link.tenant_id=target_detail.tenant_id and link.company_id=target_detail.company_id;
   insert into public.project_cost_item_detail_sources(tenant_id,company_id,project_cost_item_detail_id,source_reported_figure_id)

@@ -48,6 +48,18 @@ Passed: 2 files, 90 tests.
 
 Passed, with the existing Node 22 versus required Node 24 engine warning.
 
+## Fix round 3
+
+- Expanded the same rollback-only pgTAP fixture with foreign project/detail/source isolation, three independently denied direct-publish roles, persisted-source status and review-issue readiness checks, direct-command row/draft/replay assertions, sibling preservation, and exact correction source-array audit assertions.
+- Corrected the source scope contract: missing or foreign source IDs now produce `RESOURCE_NOT_FOUND`; existing in-scope sources that are non-shared or blocked remain `COST_DETAIL_PUBLISH_NOT_READY`.
+- Corrected the prior report wording: pgTAP coverage is authored but still unexecuted because no Cloud or Local database run is authorized.
+
+### Verification
+
+`pnpm exec vitest run tests/unit/costs/ordinary-cost-detail-lifecycle.spec.ts tests/unit/server/ordinary-cost-detail-lifecycle.spec.ts tests/unit/server/api-error.spec.ts tests/unit/costs/project-costs.spec.ts tests/unit/server/project-cost.service.spec.ts tests/unit/server/project-cost.routes.spec.ts tests/unit/repositories/http-project-cost-repository.spec.ts`
+
+Run after the test-only expansion; no database command was run.
+
 ## Fix round 2
 
 - Correction validation now bounds `expectedVersion` before bigint conversion, bounds retention rate without an unsafe integer cast, and validates final retention kind/rate/amount shape against the locked current detail before mutation.
