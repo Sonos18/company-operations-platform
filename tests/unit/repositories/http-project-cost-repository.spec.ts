@@ -71,7 +71,7 @@ describe('HTTP Project Cost repository', () => {
     await opListRepo.listOperationalDrafts('project/id')
     expect(opListClient.request).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/companies/company%2Fid/projects/project%2Fid/project-cost-drafts/operations', method: 'GET' }))
 
-    const metadataResponse = { projects: [{ id: ids.project, code: 'P1', name: 'Project one' }], categories: [{ categoryId: draft.costCategoryId, code: 'vat_tu', name: 'Vật tư', isActive: true, draftEligible: true }] }
+    const metadataResponse = { projects: [{ id: ids.project, code: 'P1', name: 'Project one' }], categories: [{ categoryId: draft.costCategoryId, code: 'vat_tu', name: 'Vật tư', isActive: true, draftEligible: true, postingStrategy: 'ordinary_detail' }] }
     const metadataClient = responseClient(metadataResponse)
     await expect(createHttpProjectCostRepository({ companyId: 'company/id', client: metadataClient as never }).draftManagementMetadata()).resolves.toEqual(metadataResponse)
     expect(metadataClient.request).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/companies/company%2Fid/project-cost-drafts/metadata', method: 'GET' }))

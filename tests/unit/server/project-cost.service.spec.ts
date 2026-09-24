@@ -108,7 +108,7 @@ describe('Project Cost service', () => {
     }
     const rpc = vi.fn().mockImplementation(async (name: string) => ({
       data: name === 'c1_read_project_cost_draft_management_metadata'
-        ? { projects: [{ id: draft.projectId, code: 'P1', name: 'Project one' }], categories: [{ categoryId: draft.costCategoryId, code: 'vat_tu', name: 'Vật tư', isActive: true, draftEligible: true }] }
+        ? { projects: [{ id: draft.projectId, code: 'P1', name: 'Project one' }], categories: [{ categoryId: draft.costCategoryId, code: 'vat_tu', name: 'Vật tư', isActive: true, draftEligible: true, postingStrategy: 'ordinary_detail' }] }
         : name === 'c1_prepare_project_cost_financials'
         ? { id: draft.id, version: 1, publicationState: 'draft', amount: '0', detailCount: 1, publishReadiness: { ready: true, blockingCodes: [] }, replayed: false }
         : name === 'c1_read_project_cost_draft' ? draft
