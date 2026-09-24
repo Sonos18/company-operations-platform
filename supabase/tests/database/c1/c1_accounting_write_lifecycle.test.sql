@@ -172,7 +172,11 @@ select is((public.c1_prepare_project_cost_financials(
 )->>'amount'), '0.0000', 'cost.prepare accepts an explicit zero detail snapshot');
 select is((public.c1_read_project_cost_draft('c1060000-0000-4000-8000-000000000020', (select (result->>'id')::uuid from c1_p2_result))->'publishReadiness'->>'ready')::boolean, true, 'prepared ordinary draft is publish-ready');
 select is((public.c1_read_project_cost_draft('c1060000-0000-4000-8000-000000000020','c1060000-0000-4000-8000-000000000202')->'publishReadiness'->'blockingCodes'->>0), 'FINANCIAL_DETAILS_REQUIRED', 'unprepared draft reports the financial-details blocker');
-select is((select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)),1::bigint,'cost.prepare can directly read draft financial details');
+select ok(
+  jsonb_array_length(public.c1_read_project_cost_draft('c1060000-0000-4000-8000-000000000020', (select (result->>'id')::uuid from c1_p2_result))->'details') = 1
+    and (select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)) = 0,
+  'cost.prepare reads draft financial details through the guarded RPC, not raw detail RLS'
+);
 select is((select count(*) from public.project_cost_item_sources where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)),1::bigint,'cost.prepare can directly read draft source links');
 select throws_ok(
   $$select public.c1_prepare_project_cost_financials('c1060000-0000-4000-8000-000000000020', 'c1060000-0000-4000-8000-000000000201', '{"expectedVersion":0,"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"line_item","description":"Published","amount":"1.0000"}],"sourceFigureIds":[]}', 'c1060000-0000-4000-8000-000000000720')$$,
