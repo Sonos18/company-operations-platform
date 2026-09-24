@@ -71,17 +71,20 @@ function detailRetentionMatches(row: { retentionKind: 'warranty' | 'other' | nul
   if (retention === 'other') return row.retentionKind === 'other'
   return row.retentionAmount === null
 }
-function paymentView(payment: FinanceTableRows['payments'][number], contract: FinanceTableRows['subcontracts'][number], timeZone: string) {
+function replacementIds(payments: readonly FinanceTableRows['payments'][number][]) {
+  return new Map(payments.flatMap(payment => payment.replaces_payment_id === null ? [] : [[`${payment.project_subcontract_id}:${payment.replaces_payment_id}`, payment.id] as const]))
+}
+function paymentView(payment: FinanceTableRows['payments'][number], contract: FinanceTableRows['subcontracts'][number], timeZone: string, replacements: ReadonlyMap<string, string>) {
   const date = deriveFinanceDate(payment.payment_date, payment.created_at, timeZone)
-  return { id: payment.id, contractId: contract.id, contractCode: contract.code, contractNo: contract.contract_no, description: payment.description, paidAmount: sumFinanceMoney([payment.paid_amount_text]), warrantyRetentionAmount: payment.warranty_retention_amount_text === null ? null : sumFinanceMoney([payment.warranty_retention_amount_text]), retentionRateBps: payment.retention_rate_bps, paymentDate: payment.payment_date, effectiveDate: date.effectiveDate, dateSource: date.usedFallback ? 'created_at' as const : 'payment_date' as const, recordStatus: payment.status === 'recorded' ? 'recorded' as const : 'voided' as const, reference: payment.payment_reference, sourceReference: payment.source_reference, note: payment.note, createdAt: payment.created_at, version: payment.version }
+  return { id: payment.id, contractId: contract.id, contractCode: contract.code, contractNo: contract.contract_no, description: payment.description, paidAmount: sumFinanceMoney([payment.paid_amount_text]), warrantyRetentionAmount: payment.warranty_retention_amount_text === null ? null : sumFinanceMoney([payment.warranty_retention_amount_text]), retentionRateBps: payment.retention_rate_bps, paymentDate: payment.payment_date, effectiveDate: date.effectiveDate, dateSource: date.usedFallback ? 'created_at' as const : 'payment_date' as const, recordStatus: payment.status === 'recorded' ? 'recorded' as const : 'voided' as const, replacementPaymentId: replacements.get(`${payment.project_subcontract_id}:${payment.id}`) ?? null, reference: payment.payment_reference, sourceReference: payment.source_reference, note: payment.note, createdAt: payment.created_at, version: payment.version }
 }
 
 function paymentPage(rows: readonly ReturnType<typeof paymentView>[], query: PaymentQuery) {
-  const visible = rows.filter(row => row.recordStatus === 'recorded').filter(row => paymentRetentionMatches(row, query.retention)).filter(row => textMatch(query, [row.description, row.reference, row.contractCode, row.contractNo, row.note])).filter(row => dateMatch(query, row.effectiveDate))
-  const full = rows.filter(row => row.recordStatus === 'recorded')
-  const selected = page(full, query, row => visible.includes(row), rowOrder(query), values => values.length === 0 ? '0.0000' : sumFinanceMoney(values.map(row => row.paidAmount)))
-  const total = paymentTotal(full.map(row => ({ paid_amount_text: row.paidAmount, warranty_retention_amount_text: row.warrantyRetentionAmount, status: row.recordStatus })))
-  return { rows: selected.rows, pagination: { ...selected.pagination, fullCount: full.length, fullAmount: total.amount }, recordedTotal: total.amount, recordedCount: total.count, recordedRetentionTotal: total.retentionAmount, recordedRetentionRowCount: total.retentionCount }
+  const visible = rows.filter(row => paymentRetentionMatches(row, query.retention)).filter(row => textMatch(query, [row.description, row.reference, row.contractCode, row.contractNo, row.note])).filter(row => dateMatch(query, row.effectiveDate))
+  const recordedAmount = (values: readonly ReturnType<typeof paymentView>[]) => sumFinanceMoney(values.filter(row => row.recordStatus === 'recorded').map(row => row.paidAmount))
+  const selected = page(rows, query, row => visible.includes(row), rowOrder(query), recordedAmount)
+  const total = paymentTotal(rows.map(row => ({ paid_amount_text: row.paidAmount, warranty_retention_amount_text: row.warrantyRetentionAmount, status: row.recordStatus })))
+  return { rows: selected.rows, pagination: { ...selected.pagination, fullAmount: total.amount }, recordedTotal: total.amount, recordedCount: total.count, recordedRetentionTotal: total.retentionAmount, recordedRetentionRowCount: total.retentionCount }
 }
 
 function contractSummary(contract: FinanceTableRows['subcontracts'][number], payments: readonly FinanceTableRows['payments'][number][]) {
@@ -161,7 +164,8 @@ export class ConcreteProjectFinanceRepository implements FinanceReadRepository {
     const contracts = readSet.subcontracts.filter(contract => contract.subcontractor_party_id === partyId)
     if (contracts.length === 0) throw new AppApiError(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy nhà thầu.')
     const contractIds = new Set(contracts.map(contract => contract.id))
-    const paymentRows = readSet.payments.filter(payment => contractIds.has(payment.project_subcontract_id)).map(payment => paymentView(payment, readSet.subcontracts.find(contract => contract.id === payment.project_subcontract_id)!, readSet.context.timeZone))
+    const replacements = replacementIds(readSet.payments)
+    const paymentRows = readSet.payments.filter(payment => contractIds.has(payment.project_subcontract_id)).map(payment => paymentView(payment, readSet.subcontracts.find(contract => contract.id === payment.project_subcontract_id)!, readSet.context.timeZone, replacements))
     return financeSubcontractorDetailSchema.parse({ schemaVersion: 1, project: overview.project, party, contracts: contracts.map(contract => contractSummary(contract, readSet.payments.filter(payment => payment.project_subcontract_id === contract.id))), payments: paymentPage(paymentRows, query) })
   }
 
@@ -170,7 +174,8 @@ export class ConcreteProjectFinanceRepository implements FinanceReadRepository {
     const overview = summarizeFinanceRows({ context: readSet.context, rows: readSet })
     const contract = findContract(readSet, subcontractId)
     const party = findParty(readSet, contract.subcontractor_party_id)
-    const paymentRows = readSet.payments.filter(payment => payment.project_subcontract_id === contract.id).map(payment => paymentView(payment, contract, readSet.context.timeZone))
+    const replacements = replacementIds(readSet.payments)
+    const paymentRows = readSet.payments.filter(payment => payment.project_subcontract_id === contract.id).map(payment => paymentView(payment, contract, readSet.context.timeZone, replacements))
     return financeSubcontractDetailSchema.parse({
       schemaVersion: 1, project: overview.project, party,
       contract: { ...contractSummary(contract, readSet.payments.filter(payment => payment.project_subcontract_id === contract.id)), reference: contract.reference, sourceReference: contract.source_reference, note: contract.note, referenceHeadroom: referenceHeadroom(contract.contract_value_text, readSet.payments.filter(payment => payment.project_subcontract_id === contract.id), contract.warranty_retention_rate_bps).value, referenceHeadroomReason: referenceHeadroom(contract.contract_value_text, readSet.payments.filter(payment => payment.project_subcontract_id === contract.id), contract.warranty_retention_rate_bps).reason },

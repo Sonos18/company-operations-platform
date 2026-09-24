@@ -35,6 +35,7 @@ const blockedAccessStatePaths = new Set(['/select-company', '/no-access', '/forb
 export function resolvePreferredRoute(permissions: readonly PermissionCode[] = []): string {
   if (permissions.includes('project.read')) return '/projects'
   if (permissions.includes('cost.read')) return '/costs'
+  if (permissions.includes('cost.manage') || permissions.includes('cost.prepare')) return '/cost-drafts'
   if (permissions.includes('cost.source.read')) return '/costs/sources'
   return '/forbidden'
 }

@@ -115,6 +115,12 @@ describe('access navigation policy', () => {
       path: '/login', authMode: 'guest', requiresCompany: false, lifecycle: 'authenticated', companyIds: ['company-a'], activeCompanyId: 'company-a', permissions: ['cost.source.read'],
     })).toEqual({ type: 'redirect', to: '/costs/sources' })
     expect(resolveAccessNavigation({
+      path: '/login', authMode: 'guest', requiresCompany: false, lifecycle: 'authenticated', companyIds: ['company-a'], activeCompanyId: 'company-a', permissions: ['cost.manage'],
+    })).toEqual({ type: 'redirect', to: '/cost-drafts' })
+    expect(resolveAccessNavigation({
+      path: '/login', authMode: 'guest', requiresCompany: false, lifecycle: 'authenticated', companyIds: ['company-a'], activeCompanyId: 'company-a', permissions: ['cost.prepare'],
+    })).toEqual({ type: 'redirect', to: '/cost-drafts' })
+    expect(resolveAccessNavigation({
       path: '/login', authMode: 'guest', requiresCompany: false, lifecycle: 'authenticated', companyIds: ['company-a'], activeCompanyId: 'company-a', permissions: ['cost.read', 'cost.source.read'],
     })).toEqual({ type: 'redirect', to: '/costs' })
     expect(resolveAccessNavigation({

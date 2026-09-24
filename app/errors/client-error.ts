@@ -32,6 +32,7 @@ export interface ClientErrorOptions {
   requestId?: string
   reason?: ClientErrorReason
   retryable: boolean
+  details?: Record<string, unknown>
 }
 
 export class ClientError extends Error {
@@ -41,6 +42,7 @@ export class ClientError extends Error {
   readonly requestId?: string
   readonly reason?: ClientErrorReason
   readonly retryable: boolean
+  readonly details?: Record<string, unknown>
 
   constructor(options: ClientErrorOptions) {
     super(options.message)
@@ -51,5 +53,6 @@ export class ClientError extends Error {
     this.requestId = options.requestId
     this.reason = options.reason
     this.retryable = options.retryable
+    this.details = options.details
   }
 }

@@ -1,4 +1,36 @@
 import { expect, test } from './fixtures/authenticated'
+import { financeProjectListSchema } from '../../shared/schemas/costs/project-finance'
+
+const navigationProjectList = financeProjectListSchema.parse({
+  schemaVersion: 1,
+  projects: Array.from({ length: 5 }, (_, index) => ({
+    project: {
+      projectId: `10000000-0000-4000-8000-00000000010${index + 1}`,
+      projectCode: `P-${index + 1}`,
+      projectName: `Project ${index + 1}`,
+      currencyCode: 'VND',
+      moneyScale: 0,
+      timeZone: 'Asia/Ho_Chi_Minh',
+      operationalState: 'active',
+    },
+    summary: {
+      budget: { state: 'not_recorded', amount: null, recordedCount: 0 },
+      ownerAdvances: { state: 'not_recorded', amount: null, recordedCount: 0 },
+      cost: { state: 'not_recorded', amount: null, recordedCount: 0, knownSubtotal: '0.0000' },
+      warrantyRetention: { state: 'not_recorded', amount: null, recordedCount: 0 },
+      reference: { kind: 'none', amount: null },
+      margin: { state: 'unavailable', amount: null, reasons: ['NO_APPROVED_BUDGET', 'COST_INCOMPLETE'] },
+      management: {
+        receipts: { state: 'not_recorded', amount: null, recordedCount: 0, origin: 'none', quality: 'not_recorded', coverage: 'none', sourceReferences: [] },
+        reference: { kind: 'none', amount: null, basis: 'none' },
+        result: { state: 'unavailable', amount: null, basis: 'none', components: { receipts: null, cost: null, independentlyHeldRetention: null }, reasons: ['NO_REFERENCE', 'COST_INCOMPLETE', 'RETENTION_INCOMPLETE'] },
+        headline: { kind: 'unavailable', amount: null, basis: 'none' },
+      },
+      issues: [],
+    },
+  })),
+  nextCursor: null,
+})
 
 test.use({ viewport: { width: 1280, height: 900 } })
 
@@ -191,9 +223,10 @@ test('keeps the Stage 01 configuration action outside primary and mobile navigat
 
   const header = page.getByTestId('app-header')
   await expect(header.getByRole('link', { name: 'Cấu hình', exact: true })).toHaveAttribute('href', '/settings/stage-01')
-  await expect(page.getByTestId('app-sidebar').getByRole('link')).toHaveCount(6)
+  await expect(page.getByTestId('app-sidebar').getByRole('link')).toHaveCount(7)
   await expect(page.getByTestId('app-sidebar').getByRole('link', { name: 'Cơ hội', exact: true })).toHaveAttribute('href', '/opportunities')
   await expect(page.getByTestId('app-sidebar').getByRole('link', { name: 'Chi phí dự án', exact: true })).toHaveAttribute('href', '/costs')
+  await expect(page.getByTestId('app-sidebar').getByRole('link', { name: 'Bản nháp chi phí', exact: true })).toHaveAttribute('href', '/cost-drafts')
   await expect(page.getByTestId('app-sidebar').getByRole('link', { name: 'Nguồn chi phí', exact: true })).toHaveAttribute('href', '/costs/sources')
 
   await page.setViewportSize({ width: 390, height: 844 })
@@ -201,7 +234,7 @@ test('keeps the Stage 01 configuration action outside primary and mobile navigat
   await expect(header.getByRole('link', { name: 'Cấu hình', exact: true })).toBeVisible()
 
   const mobileNavigation = page.locator('.mobile-nav')
-  await expect(mobileNavigation.getByRole('link')).toHaveCount(6)
+  await expect(mobileNavigation.getByRole('link')).toHaveCount(7)
   await expect(mobileNavigation.getByRole('link', { name: 'Cơ hội', exact: true })).toHaveAttribute('href', '/opportunities')
   await expect(mobileNavigation.getByRole('link', { name: 'Cấu hình', exact: true })).toHaveCount(0)
 })
@@ -241,7 +274,7 @@ test('resets compact state after a full reload', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Thu gọn thanh điều hướng bên trái' })).toHaveAttribute('aria-expanded', 'true')
 })
 
-test('arranges six mobile navigation links into a balanced 3x2 grid with touch-sized targets and page clearance', async ({ page }) => {
+test('arranges seven mobile navigation links into a balanced 4+3 grid with touch-sized targets and page clearance', async ({ page }) => {
   await page.route('**/api/companies/**/project-costs', async (route) => {
     await route.fulfill({
       json: [
@@ -323,6 +356,7 @@ test('arranges six mobile navigation links into a balanced 3x2 grid with touch-s
       ],
     })
   })
+  await page.route('**/api/companies/**/project-finances*', route => route.fulfill({ json: navigationProjectList }))
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/costs')
@@ -331,18 +365,18 @@ test('arranges six mobile navigation links into a balanced 3x2 grid with touch-s
   await expect(mobileNav).toBeVisible()
 
   const links = mobileNav.getByRole('link')
-  await expect(links).toHaveCount(6)
+  await expect(links).toHaveCount(7)
 
   // B. Tap targets: every visible mobile navigation link height >= 44
   const boxes = []
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 7; i++) {
     const box = await links.nth(i).boundingBox()
     expect(box).not.toBeNull()
     expect(box!.height).toBeGreaterThanOrEqual(44)
     boxes.push(box!)
   }
 
-  // A. Navigation layout: exactly two rows with 3 links each
+  // A. Navigation layout: exactly two balanced rows (4 + 3)
   const rows: typeof boxes[] = []
   for (const box of boxes) {
     const midY = box.y + box.height / 2
@@ -355,14 +389,14 @@ test('arranges six mobile navigation links into a balanced 3x2 grid with touch-s
   }
 
   expect(rows).toHaveLength(2)
-  expect(rows[0]).toHaveLength(3)
+  expect(rows[0]).toHaveLength(4)
   expect(rows[1]).toHaveLength(3)
 
-  // Exactly three distinct horizontal positions per row
+  // Every visible link keeps its own horizontal slot.
   for (const row of rows) {
     const xPositions = row.map(b => Math.round(b.x))
     const uniqueX = new Set(xPositions)
-    expect(uniqueX.size).toBe(3)
+    expect(uniqueX.size).toBe(row.length)
   }
 
   // C. No horizontal overflow

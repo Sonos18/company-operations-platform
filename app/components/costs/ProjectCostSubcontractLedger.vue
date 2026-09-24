@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type {
   FinanceSubcontractDetail,
   FinanceSubcontractorDetail,
@@ -9,6 +9,14 @@ import {
   formatFinanceMoney,
 } from '../../utils/costs/finance-display'
 import type { LedgerUiStatus } from '../../composables/costs/useLedgerQueryController'
+import {
+  type ContractItem,
+  extractAllContracts,
+  filterActiveContracts,
+  buildContractsById,
+} from '../../utils/costs/subcontract-ledger-contracts'
+import SubcontractPaymentRecordModal from './SubcontractPaymentRecordModal.vue'
+import SubcontractPaymentVoidModal from './SubcontractPaymentVoidModal.vue'
 
 interface Props {
   detail: FinanceSubcontractorDetail | FinanceSubcontractDetail | null
@@ -50,7 +58,117 @@ const emit = defineEmits<{
   'update:pageSize': [value: 25 | 50 | 100]
   'change-page': [newPage: number]
   'clear-filters': []
+  'payment-mutated': []
 }>()
+
+const companyAccess = useNuxtApp().$companyAccessStore
+const canRecordCash = computed(() => companyAccess.hasPermission('cost.record_cash'))
+
+interface PaymentToVoidWithContract {
+  id: string
+  contractId: string
+  version: number
+  description: string
+  paidAmount: string
+  currencyCode?: string
+}
+
+const isRecordModalOpen = ref(false)
+const isVoidModalOpen = ref(false)
+const isSelectContractModalOpen = ref(false)
+const chosenContractId = ref<string>('')
+
+const selectedPaymentToVoid = ref<PaymentToVoidWithContract | null>(null)
+const selectedContractForRecord = ref<ContractItem | null>(null)
+const replacesPaymentId = ref<string | null>(null)
+
+function resetPaymentModalState() {
+  isRecordModalOpen.value = false
+  isVoidModalOpen.value = false
+  isSelectContractModalOpen.value = false
+  chosenContractId.value = ''
+  selectedPaymentToVoid.value = null
+  selectedContractForRecord.value = null
+  replacesPaymentId.value = null
+}
+
+const ledgerMutationContextKey = computed(() => {
+  const detail = props.detail
+  const scope = detail == null ? 'none' : 'contract' in detail ? 'contract' : 'party'
+
+  return JSON.stringify({
+    companyId: companyAccess.activeCompanyId ?? null,
+    projectId: detail?.project.projectId ?? null,
+    scope,
+    partyId: detail?.party.partyId ?? null,
+    contractId: detail != null && 'contract' in detail ? detail.contract.id : null,
+    canRecordCash: canRecordCash.value,
+  })
+})
+
+watch(ledgerMutationContextKey, resetPaymentModalState, { flush: 'sync' })
+
+const allContracts = computed<ContractItem[]>(() => extractAllContracts(props.detail))
+
+const activeContracts = computed<ContractItem[]>(() => filterActiveContracts(allContracts.value))
+
+const contractsById = computed(() => buildContractsById(allContracts.value))
+
+function isContractActive(contractId: string): boolean {
+  return contractsById.value.get(contractId)?.isActive === true
+}
+
+const projectId = computed(() => props.detail?.project.projectId ?? '')
+
+function openRecordPaymentModal() {
+  replacesPaymentId.value = null
+  const actionable = activeContracts.value
+
+  if (actionable.length === 0) {
+    return
+  }
+
+  // Exactly one active contract: proceed directly
+  if (actionable.length === 1) {
+    selectedContractForRecord.value = actionable[0]!
+    isRecordModalOpen.value = true
+    return
+  }
+
+  // Multiple active contracts: prompt user to explicitly select an active contract
+  chosenContractId.value = ''
+  isSelectContractModalOpen.value = true
+}
+
+function confirmContractSelection() {
+  if (!chosenContractId.value) return
+  const contract = contractsById.value.get(chosenContractId.value)
+  if (!contract || !contract.isActive) return
+
+  selectedContractForRecord.value = contract
+  isSelectContractModalOpen.value = false
+  isRecordModalOpen.value = true
+}
+
+function openVoidModal(payment: { id: string; contractId: string; version: number; description: string; paidAmount: string }) {
+  selectedPaymentToVoid.value = { ...payment, currencyCode: props.currencyCode }
+  isVoidModalOpen.value = true
+}
+
+function openReplacementModal(paymentId: string, contractId?: string) {
+  const targetContractId = contractId || selectedPaymentToVoid.value?.contractId
+  if (!targetContractId) return
+  const contract = contractsById.value.get(targetContractId)
+  if (!contract || !contract.isActive) return
+
+  selectedContractForRecord.value = contract
+  replacesPaymentId.value = paymentId
+  isRecordModalOpen.value = true
+}
+
+function onPaymentMutated() {
+  emit('payment-mutated')
+}
 
 const pagination = computed(() => props.detail?.payments.pagination ?? null)
 
@@ -121,11 +239,25 @@ function onPageSizeChange(event: Event) {
             {{ detail.contract.contractName }}
           </div>
         </div>
-        <div class="contractor-total-badge">
-          <span class="label">Tổng chi/ứng đã ghi nhận:</span>
-          <span class="value font-mono font-bold" data-testid="ledger-full-total">
-            {{ formatFinanceMoney(pagination?.fullAmount ?? detail.payments.recordedTotal, currencyCode, moneyScale) }}
-          </span>
+        <div class="flex items-center gap-2">
+          <div class="contractor-total-badge">
+            <span class="label">Tổng chi/ứng đã ghi nhận:</span>
+            <span class="value font-mono font-bold" data-testid="ledger-full-total">
+              {{ formatFinanceMoney(pagination?.fullAmount ?? detail.payments.recordedTotal, currencyCode, moneyScale) }}
+            </span>
+          </div>
+
+          <UButton
+            v-if="canRecordCash"
+            size="sm"
+            color="primary"
+            icon="i-lucide-plus"
+            :disabled="activeContracts.length === 0"
+            data-testid="open-record-payment-btn"
+            @click="openRecordPaymentModal"
+          >
+            Ghi nhận thanh toán
+          </UButton>
         </div>
       </div>
 
@@ -216,11 +348,11 @@ function onPageSizeChange(event: Event) {
       <!-- Scope & Totals Display (RR01) -->
       <div v-if="pagination && (status === 'ready' || status === 'empty')" class="totals-status-bar" data-testid="payment-totals-bar">
         <div class="full-total-info">
-          <span>Toàn bộ: <strong>{{ pagination.fullCount }} khoản</strong> ({{ formatFinanceMoney(pagination.fullAmount, currencyCode, moneyScale) ?? '0 VND' }})</span>
+          <span>Lịch sử: <strong>{{ pagination.fullCount }} khoản</strong> · Đã ghi nhận: {{ formatFinanceMoney(pagination.fullAmount, currencyCode, moneyScale) ?? '0 VND' }}</span>
         </div>
         <div v-if="isFiltered" class="filtered-total-info" data-testid="payment-filtered-totals">
           <span class="cockpit-badge cockpit-badge--primary">
-            Kết quả lọc: <strong>{{ pagination.filteredCount }} khoản</strong> ({{ formatFinanceMoney(pagination.filteredAmount, currencyCode, moneyScale) ?? '0 VND' }})
+            Kết quả lọc: <strong>{{ pagination.filteredCount }} khoản</strong> · Đã ghi nhận: {{ formatFinanceMoney(pagination.filteredAmount, currencyCode, moneyScale) ?? '0 VND' }}
           </span>
         </div>
       </div>
@@ -319,6 +451,9 @@ function onPageSizeChange(event: Event) {
               <th scope="col" class="col-ref">
                 Tham chiếu & Ghi chú
               </th>
+              <th scope="col" class="col-actions text-center">
+                Trạng thái & Thao tác
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -359,6 +494,57 @@ function onPageSizeChange(event: Event) {
                   <span v-if="p.reference" class="font-mono text-xs ref-badge">{{ p.reference }}</span>
                   <p v-if="p.note" class="row-note text-xs text-muted">{{ p.note }}</p>
                   <span v-if="!p.reference && !p.note" class="text-muted">—</span>
+                </div>
+              </td>
+              <td class="col-actions text-center">
+                <div class="flex items-center justify-center gap-1.5 flex-wrap">
+                  <span
+                    class="cockpit-badge text-[11px]"
+                    :class="p.recordStatus === 'voided' ? 'cockpit-badge--error' : 'cockpit-badge--success'"
+                    :data-testid="`payment-status-${p.id}`"
+                  >
+                    {{ p.recordStatus === 'voided' ? 'Đã hủy' : 'Đã ghi nhận' }}
+                  </span>
+
+                  <UButton
+                    v-if="p.recordStatus === 'recorded' && canRecordCash"
+                    size="xs"
+                    color="error"
+                    variant="ghost"
+                    icon="i-lucide-ban"
+                    :data-testid="`void-payment-btn-${p.id}`"
+                    @click="openVoidModal(p)"
+                  >
+                    Hủy
+                  </UButton>
+
+                  <UButton
+                    v-if="p.recordStatus === 'voided' && p.replacementPaymentId == null && isContractActive(p.contractId) && canRecordCash"
+                    size="xs"
+                    color="primary"
+                    variant="outline"
+                    icon="i-lucide-replace"
+                    :data-testid="`replace-payment-btn-${p.id}`"
+                    @click="openReplacementModal(p.id, p.contractId)"
+                  >
+                    Thay thế
+                  </UButton>
+
+                  <span
+                    v-if="p.recordStatus === 'voided' && p.replacementPaymentId == null && !isContractActive(p.contractId)"
+                    class="cockpit-badge cockpit-badge--neutral text-[11px]"
+                    :data-testid="`payment-inactive-contract-hint-${p.id}`"
+                  >
+                    Hợp đồng đã ngừng hoạt động — không thể ghi nhận thanh toán thay thế
+                  </span>
+
+                  <span
+                    v-if="p.recordStatus === 'voided' && p.replacementPaymentId != null"
+                    class="cockpit-badge cockpit-badge--neutral text-[11px]"
+                    :data-testid="`payment-replaced-hint-${p.id}`"
+                  >
+                    Đã có thanh toán thay thế
+                  </span>
                 </div>
               </td>
             </tr>
@@ -421,6 +607,79 @@ function onPageSizeChange(event: Event) {
         </div>
       </div>
     </template>
+
+    <!-- Contract Selection Modal for Multi-Contract Party View -->
+    <UModal
+      v-model:open="isSelectContractModalOpen"
+      title="Chọn hợp đồng để ghi nhận thanh toán"
+      description="Nhà thầu này có nhiều hợp đồng. Vui lòng chọn hợp đồng cụ thể để ghi nhận khoản thanh toán."
+    >
+      <template #body>
+        <div class="space-y-4 py-2">
+          <div class="space-y-1.5">
+            <label class="block text-xs font-bold text-gray-700 dark:text-gray-300" for="select-contract-dropdown">
+              Hợp đồng thầu phụ *
+            </label>
+            <select
+              id="select-contract-dropdown"
+              v-model="chosenContractId"
+              class="cockpit-select w-full"
+              data-testid="select-contract-dropdown"
+            >
+              <option value="" disabled>-- Chọn hợp đồng --</option>
+              <option
+                v-for="c in activeContracts"
+                :key="c.id"
+                :value="c.id"
+              >
+                {{ c.code }} — {{ c.contractName }} (v{{ c.version }})
+              </option>
+            </select>
+          </div>
+
+          <div class="flex justify-end gap-2 pt-3 border-t border-gray-200 dark:border-gray-800">
+            <UButton
+              color="neutral"
+              variant="outline"
+              @click="() => { isSelectContractModalOpen = false }"
+            >
+              Hủy
+            </UButton>
+            <UButton
+              color="primary"
+              :disabled="!chosenContractId"
+              data-testid="confirm-select-contract-btn"
+              @click="confirmContractSelection"
+            >
+              Tiếp tục
+            </UButton>
+          </div>
+        </div>
+      </template>
+    </UModal>
+
+    <!-- Subcontract Payment Modals -->
+    <SubcontractPaymentRecordModal
+      v-if="selectedContractForRecord"
+      v-model:open="isRecordModalOpen"
+      :project-id="projectId"
+      :subcontract-id="selectedContractForRecord.id"
+      :expected-subcontract-version="selectedContractForRecord.version"
+      :currency-code="selectedContractForRecord.currencyCode || currencyCode"
+      :replaces-payment-id="replacesPaymentId"
+      @recorded="onPaymentMutated"
+    />
+
+    <SubcontractPaymentVoidModal
+      v-if="selectedPaymentToVoid"
+      v-model:open="isVoidModalOpen"
+      :project-id="projectId"
+      :subcontract-id="selectedPaymentToVoid.contractId"
+      :payment="selectedPaymentToVoid"
+      :can-replace="canRecordCash && isContractActive(selectedPaymentToVoid.contractId)"
+      @voided="onPaymentMutated"
+      @start-replacement="(id) => openReplacementModal(id, selectedPaymentToVoid?.contractId)"
+    />
   </div>
 </template>
 

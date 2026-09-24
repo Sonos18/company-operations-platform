@@ -209,6 +209,7 @@ const basePaymentRows = Array.from({ length: 65 }, (_, i) => {
     effectiveDate: dateStr,
     dateSource: 'payment_date' as const,
     recordStatus: 'recorded' as const,
+    replacementPaymentId: null,
     reference: `PAY-${String(index).padStart(4, '0')}`,
     sourceReference: null,
     note: index === 5 ? 'Lưu ý kiểm tra đối soát đợt 5' : isWarranty ? 'Bảo hành 5%' : null,

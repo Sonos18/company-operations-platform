@@ -39,13 +39,13 @@ export const subcontractRowSchema = z.object({
   id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, subcontractor_party_id: uuid, code: z.string().min(1), contract_no: z.string().nullable(), contract_name: z.string().min(1), contract_date: date.nullable(), contract_value_text: money.nullable(), currency_code: currency, warranty_retention_rate_bps: z.number().int().min(0).max(10000).nullable(), is_active: z.boolean(), reference: z.string().nullable(), source_reference: z.string().nullable(), note: z.string().nullable(), version, updated_at: timestamp,
 }).strict()
 export const paymentRowSchema = z.object({
-  id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, project_subcontract_id: uuid, paid_amount_text: money, warranty_retention_amount_text: money.nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), currency_code: currency, status: z.string().min(1), description: z.string(), payment_date: date.nullable(), payment_reference: z.string().nullable(), source_reference: z.string().nullable(), note: z.string().nullable(), created_at: timestamp, version, updated_at: timestamp,
+  id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, project_subcontract_id: uuid, paid_amount_text: money, warranty_retention_amount_text: money.nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), currency_code: currency, status: z.string().min(1), description: z.string(), payment_date: date.nullable(), payment_reference: z.string().nullable(), source_reference: z.string().nullable(), note: z.string().nullable(), replaces_payment_id: uuid.nullable(), created_at: timestamp, version, updated_at: timestamp,
 }).strict()
 const budgetAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, currency_code: currency, detail_mode: z.enum(['summary', 'categorized']), total_amount_text: money, status: z.string().min(1), version, updated_at: timestamp }).strict()
 const budgetLineAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, budget_version_id: uuid, cost_category_id: uuid, line_no: z.number().int().positive(), amount_text: money, version, updated_at: timestamp }).strict()
 const ownerAdvanceAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, amount_text: money, currency_code: currency, status: z.string().min(1), source_reference: z.string().nullable(), version, updated_at: timestamp }).strict()
 const subcontractAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, subcontractor_party_id: uuid, code: z.string().min(1), contract_no: z.string().nullable(), contract_name: z.string().min(1), contract_date: date.nullable(), contract_value_text: money.nullable(), currency_code: currency, warranty_retention_rate_bps: z.number().int().min(0).max(10000).nullable(), is_active: z.boolean(), version, updated_at: timestamp }).strict()
-const paymentAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, project_subcontract_id: uuid, paid_amount_text: money, warranty_retention_amount_text: money.nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), currency_code: currency, status: z.string().min(1), payment_date: date.nullable(), created_at: timestamp, version, updated_at: timestamp }).strict()
+const paymentAggregateRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, project_subcontract_id: uuid, paid_amount_text: money, warranty_retention_amount_text: money.nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), currency_code: currency, status: z.string().min(1), payment_date: date.nullable(), replaces_payment_id: uuid.nullable(), created_at: timestamp, version, updated_at: timestamp }).strict()
 export const reconciliationResolutionRowSchema = z.object({
   id: uuid, tenant_id: uuid, company_id: uuid, project_id: uuid, cost_category_id: uuid,
   resolution_code: z.literal('canonical_subcontract_payments_authoritative'), reason: z.string().min(1), version, updated_at: timestamp,
@@ -158,7 +158,7 @@ const columns = {
   budgetLines: 'id,tenant_id,company_id,project_id,budget_version_id,cost_category_id,line_no,amount_text,description,reference,source_reference,note,version,updated_at',
   advances: 'id,tenant_id,company_id,project_id,amount_text,currency_code,status,description,payer_name,receipt_no,received_date,reference,source_reference,note,version,created_at,updated_at',
   subcontracts: 'id,tenant_id,company_id,project_id,subcontractor_party_id,code,contract_no,contract_name,contract_date,contract_value_text,currency_code,warranty_retention_rate_bps,is_active,reference,source_reference,note,version,updated_at',
-  payments: 'id,tenant_id,company_id,project_id,project_subcontract_id,paid_amount_text,warranty_retention_amount_text,retention_rate_bps,currency_code,status,description,payment_date,payment_reference,source_reference,note,created_at,version,updated_at',
+  payments: 'id,tenant_id,company_id,project_id,project_subcontract_id,paid_amount_text,warranty_retention_amount_text,retention_rate_bps,currency_code,status,description,payment_date,payment_reference,source_reference,note,replaces_payment_id,created_at,version,updated_at',
   resolutions: 'id,tenant_id,company_id,project_id,cost_category_id,resolution_code,reason,version,updated_at',
 } as const
 const aggregateColumns = {
@@ -166,7 +166,7 @@ const aggregateColumns = {
   budgetLines: 'id,tenant_id,company_id,project_id,budget_version_id,cost_category_id,line_no,amount_text,version,updated_at',
   advances: 'id,tenant_id,company_id,project_id,amount_text,currency_code,status,source_reference,version,updated_at',
   subcontracts: 'id,tenant_id,company_id,project_id,subcontractor_party_id,code,contract_no,contract_name,contract_date,contract_value_text,currency_code,warranty_retention_rate_bps,is_active,version,updated_at',
-  payments: 'id,tenant_id,company_id,project_id,project_subcontract_id,paid_amount_text,warranty_retention_amount_text,retention_rate_bps,currency_code,status,payment_date,created_at,version,updated_at',
+  payments: 'id,tenant_id,company_id,project_id,project_subcontract_id,paid_amount_text,warranty_retention_amount_text,retention_rate_bps,currency_code,status,payment_date,replaces_payment_id,created_at,version,updated_at',
 } as const
 const detailAggregateColumns = 'id,tenant_id,company_id,project_cost_item_id,line_no,amount_text,retention_kind,retention_rate_bps,retention_amount_text,relevant_date,version,created_at,updated_at'
 

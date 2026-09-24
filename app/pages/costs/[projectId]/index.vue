@@ -9,6 +9,8 @@ import { mapCostsApiError } from '../../../utils/costs/costs-error-mapper'
 import { createAsyncRequestTracker } from '../../../utils/costs/async-request-tracker'
 import ProjectCostCategoryChart from '../../../components/costs/ProjectCostCategoryChart.client.vue'
 import ProjectCostInfoDisclosure from '../../../components/costs/ProjectCostInfoDisclosure.vue'
+import ProjectCostDraftCreateModal from '../../../components/costs/ProjectCostDraftCreateModal.vue'
+import ProjectCostDraftListModal from '../../../components/costs/ProjectCostDraftListModal.vue'
 
 definePageMeta({ requiredPermission: 'cost.read' })
 
@@ -21,6 +23,16 @@ const overview = ref<FinanceOverview | null>(null)
 const status = ref<'loading' | 'ready' | 'module' | 'permission' | 'empty' | 'not_found' | 'error'>('loading')
 const requestTracker = createAsyncRequestTracker()
 
+const canRead = computed(() => companyAccess.hasPermission('cost.read'))
+const canManage = computed(() => companyAccess.hasPermission('cost.manage'))
+const canPrepare = computed(() => companyAccess.hasPermission('cost.prepare'))
+const isDraftListOpen = ref(false)
+const isDraftCreateOpen = ref(false)
+
+function onDraftCreated(result: { id: string }) {
+  navigateTo(`/costs/${projectId.value}/drafts/${result.id}`)
+}
+
 const kpis = computed(() => computeProjectKpiCards(overview.value?.summary, overview.value?.project))
 
 onBeforeUnmount(() => {
@@ -32,8 +44,17 @@ function onSelectCategory(categoryId: string) {
 }
 
 async function loadOverview() {
+  overview.value = null
+  isDraftListOpen.value = false
+  isDraftCreateOpen.value = false
   if (!projectId.value) {
     status.value = 'not_found'
+    return
+  }
+
+  if (!canRead.value) {
+    requestTracker.invalidate()
+    status.value = 'permission'
     return
   }
 
@@ -69,12 +90,19 @@ async function loadOverview() {
 }
 
 watch(
-  [projectId, () => companyAccess.activeCompanyId],
+  [projectId, () => companyAccess.activeCompanyId, canRead],
   () => {
+    requestTracker.invalidate()
     loadOverview()
   },
-  { immediate: true },
+  { immediate: true, flush: 'sync' },
 )
+watch(canManage, (allowed) => {
+  if (!allowed) isDraftCreateOpen.value = false
+}, { flush: 'sync' })
+watch([canManage, canPrepare], ([manageAllowed, prepareAllowed]) => {
+  if (!manageAllowed && !prepareAllowed) isDraftListOpen.value = false
+}, { flush: 'sync' })
 </script>
 
 <template>
@@ -153,6 +181,29 @@ watch(
           <p class="subtitle">
             Chi tiết các hạng mục chi phí công việc đang theo dõi.
           </p>
+
+          <div v-if="canManage || canPrepare" class="draft-actions-bar flex items-center gap-2 pt-3" data-testid="draft-actions-bar">
+            <UButton
+              color="neutral"
+              variant="outline"
+              size="sm"
+              icon="i-lucide-file-text"
+              data-testid="open-drafts-list-btn"
+              @click="() => { isDraftListOpen = true }"
+            >
+              Danh sách bản nháp
+            </UButton>
+            <UButton
+              v-if="canManage"
+              color="primary"
+              size="sm"
+              icon="i-lucide-plus"
+              data-testid="header-create-draft-btn"
+              @click="() => { isDraftCreateOpen = true }"
+            >
+              Tạo bản nháp chi phí
+            </UButton>
+          </div>
         </div>
 
         <div class="summary-cards" data-testid="detail-summary-cards">
@@ -302,6 +353,23 @@ watch(
         />
       </section>
     </div>
+
+    <!-- Draft Management Modals -->
+    <ProjectCostDraftListModal
+      v-if="overview"
+      v-model:open="isDraftListOpen"
+      :project-id="projectId"
+      :categories="overview.categories"
+      @open-create="isDraftCreateOpen = true"
+    />
+
+    <ProjectCostDraftCreateModal
+      v-if="overview"
+      v-model:open="isDraftCreateOpen"
+      :project-id="projectId"
+      :categories="overview.categories"
+      @created="onDraftCreated"
+    />
   </div>
 </template>
 

@@ -19,6 +19,12 @@ import { createLedgerQueryController } from '../../../../composables/costs/useLe
 import ProjectCostSubcontractorTable, { type SubcontractorTableRow } from '../../../../components/costs/ProjectCostSubcontractorTable.vue'
 import ProjectCostSubcontractLedger from '../../../../components/costs/ProjectCostSubcontractLedger.vue'
 import ProjectCostOrdinaryLedger from '../../../../components/costs/ProjectCostOrdinaryLedger.vue'
+import ProjectCostAttachEvidenceModal from '../../../../components/costs/ProjectCostAttachEvidenceModal.vue'
+import ProjectCostCorrectionModal, {
+  type ProjectCostCanonicalOperational,
+} from '../../../../components/costs/ProjectCostCorrectionModal.vue'
+import ProjectCostEvidencePanel from '../../../../components/costs/ProjectCostEvidencePanel.vue'
+import type { ProjectCostItem } from '../../../../../shared/schemas/costs/project-costs'
 
 definePageMeta({ requiredPermission: 'cost.read' })
 
@@ -27,10 +33,105 @@ const router = useRouter()
 const repositories = useRepositories()
 const companyAccess = useNuxtApp().$companyAccessStore
 
+const canRead = computed(() => companyAccess.hasPermission('cost.read'))
+const canCorrect = computed(() => companyAccess.hasPermission('cost.correct'))
+const canPrepare = computed(() => companyAccess.hasPermission('cost.prepare'))
+const canSourceRead = computed(() => companyAccess.hasPermission('cost.source.read'))
+
+const isCorrectionModalOpen = ref(false)
+const isAttachEvidenceOpen = ref(false)
+const isEvidenceModalOpen = ref(false)
+
+const canonicalCostItem = ref<ProjectCostItem | null>(null)
+const loadingCanonicalItem = ref(false)
+const canonicalItemRequests = createAsyncRequestTracker<{
+  companyId: string | null
+  projectId: string
+  itemId: string
+}>()
+
+async function loadCanonicalCostItem(): Promise<boolean> {
+  const request = canonicalItemRequests.start({
+    companyId: companyAccess.activeCompanyId,
+    projectId: projectId.value,
+    itemId: currentCategory.value?.itemId ?? '',
+  })
+  canonicalCostItem.value = null
+  loadingCanonicalItem.value = false
+  if (!request.identity.projectId || !request.identity.itemId) return false
+
+  loadingCanonicalItem.value = true
+  try {
+    const data = await repositories.projectCosts.project(request.identity.projectId)
+    if (!request.isCurrent()) return false
+    canonicalCostItem.value = data.items.find(i => i.id === request.identity.itemId) ?? null
+    return true
+  }
+  catch {
+    if (!request.isCurrent()) return false
+    canonicalCostItem.value = null
+    return true
+  }
+  finally {
+    if (request.isCurrent()) loadingCanonicalItem.value = false
+  }
+}
+
+const canonicalOperational = computed<ProjectCostCanonicalOperational | null>(() => {
+  if (canonicalCostItem.value) {
+    return {
+      description: canonicalCostItem.value.description,
+      workStatus: canonicalCostItem.value.workStatus,
+      businessReference: canonicalCostItem.value.businessReference,
+      relevantDate: canonicalCostItem.value.relevantDate,
+    }
+  }
+  if (ordinaryController.data.value?.kind === 'ordinary') {
+    const item = ordinaryController.data.value.item
+    return {
+      description: item.description,
+      businessReference: item.businessReference,
+    }
+  }
+  return null
+})
+
+const currentItemVersion = computed(() => {
+  if (canonicalCostItem.value) {
+    return canonicalCostItem.value.version
+  }
+  return ordinaryController.data.value?.kind === 'ordinary' ? ordinaryController.data.value.item.version : 0
+})
+
+async function openCorrectionModal() {
+  const context = {
+    companyId: companyAccess.activeCompanyId,
+    projectId: projectId.value,
+    itemId: currentCategory.value?.itemId ?? '',
+  }
+  if (context.projectId && context.itemId) {
+    if (!await loadCanonicalCostItem()) return
+    if (!canonicalCostItem.value && !ordinaryController.data.value) {
+      await ordinaryController.executeDispatch(false)
+    }
+  }
+  if (companyAccess.activeCompanyId !== context.companyId || projectId.value !== context.projectId || currentCategory.value?.itemId !== context.itemId) return
+  isCorrectionModalOpen.value = true
+}
+
+async function onItemMutated() {
+  await loadOverview()
+  await Promise.all([
+    ordinaryController.executeDispatch(true),
+    loadCanonicalCostItem(),
+  ])
+}
+
 const projectId = computed(() => String(route.params.projectId ?? ''))
 const categoryId = computed(() => String(route.params.categoryId ?? ''))
-const selectedPartyId = computed(() => (route.query.partyId ? String(route.query.partyId) : null))
-const selectedContractId = computed(() => (route.query.contractId ? String(route.query.contractId) : null))
+const clearingCompanyPaymentSelection = ref(false)
+const selectedPartyId = computed(() => (clearingCompanyPaymentSelection.value || !route.query.partyId ? null : String(route.query.partyId)))
+const selectedContractId = computed(() => (clearingCompanyPaymentSelection.value || !route.query.contractId ? null : String(route.query.contractId)))
 const isViewingPayments = computed(() => Boolean(selectedPartyId.value || selectedContractId.value))
 
 // Independent async stream trackers & controllers (RR01, RR02, RR04)
@@ -117,11 +218,26 @@ async function loadOverview() {
   // Invalidate subordinate streams immediately when overview reloads (RR02)
   overviewTracker.invalidate()
   subcontractorsTracker.invalidate()
+  canonicalItemRequests.invalidate()
   ordinaryController.resetContext()
   paymentsController.resetContext()
+  overview.value = null
   subcontractorList.value = null
+  canonicalCostItem.value = null
+  isCorrectionModalOpen.value = false
+  isAttachEvidenceOpen.value = false
+  isEvidenceModalOpen.value = false
 
-  const token = overviewTracker.start({ projectId: projectId.value, categoryId: categoryId.value })
+  if (!canRead.value) {
+    pageStatus.value = 'permission'
+    return
+  }
+
+  const token = overviewTracker.start({
+    companyId: companyAccess.activeCompanyId,
+    projectId: projectId.value,
+    categoryId: categoryId.value,
+  })
   pageStatus.value = 'loading'
 
   try {
@@ -143,8 +259,12 @@ async function loadOverview() {
       pageStatus.value = 'empty'
     }
     else {
+      await Promise.all([
+        ordinaryController.executeDispatch(true),
+        canCorrect.value ? loadCanonicalCostItem() : Promise.resolve(),
+      ])
+      if (!token.isCurrent()) return
       pageStatus.value = 'ready'
-      await ordinaryController.executeDispatch(true)
     }
   }
   catch (err: unknown) {
@@ -169,7 +289,10 @@ async function loadOverview() {
 async function loadSubcontractorData() {
   if (!projectId.value) return
 
-  const token = subcontractorsTracker.start({ projectId: projectId.value })
+  const token = subcontractorsTracker.start({
+    companyId: companyAccess.activeCompanyId,
+    projectId: projectId.value,
+  })
   subcontractorsStatus.value = 'loading'
 
   try {
@@ -223,12 +346,47 @@ function clearSelectedParty() {
 }
 
 watch(
-  [projectId, categoryId, () => companyAccess.activeCompanyId],
-  () => {
+  [projectId, categoryId, () => companyAccess.activeCompanyId, canRead],
+  ([, , companyId], previous) => {
+    const companyChanged = previous?.[2] !== undefined && companyId !== previous[2]
+    overviewTracker.invalidate()
+    subcontractorsTracker.invalidate()
+    canonicalItemRequests.invalidate()
+    ordinaryController.resetContext()
+    paymentsController.resetContext()
+    overview.value = null
+    subcontractorList.value = null
+    canonicalCostItem.value = null
+    loadingCanonicalItem.value = false
+    subcontractorsStatus.value = 'idle'
+    isCorrectionModalOpen.value = false
+    isAttachEvidenceOpen.value = false
+    isEvidenceModalOpen.value = false
+    clearingCompanyPaymentSelection.value = false
+
+    if (companyChanged && (route.query.partyId || route.query.contractId)) {
+      const query = { ...route.query }
+      delete query.partyId
+      delete query.contractId
+      clearingCompanyPaymentSelection.value = true
+      void router.replace({ query }).finally(() => {
+        if (companyAccess.activeCompanyId === companyId) clearingCompanyPaymentSelection.value = false
+      })
+    }
     loadOverview()
   },
-  { immediate: true },
+  { immediate: true, flush: 'sync' },
 )
+
+watch(canCorrect, (allowed) => {
+  if (!allowed) isCorrectionModalOpen.value = false
+}, { flush: 'sync' })
+watch(canPrepare, (allowed) => {
+  if (!allowed) isAttachEvidenceOpen.value = false
+}, { flush: 'sync' })
+watch(canSourceRead, (allowed) => {
+  if (!allowed) isEvidenceModalOpen.value = false
+}, { flush: 'sync' })
 
 watch(
   [selectedPartyId, selectedContractId],
@@ -245,6 +403,7 @@ watch(
 onUnmounted(() => {
   overviewTracker.invalidate()
   subcontractorsTracker.invalidate()
+  canonicalItemRequests.invalidate()
   ordinaryController.destroy()
   paymentsController.destroy()
 })
@@ -416,6 +575,48 @@ onUnmounted(() => {
             <p v-if="currentCategory.description" class="category-desc">
               {{ currentCategory.description }}
             </p>
+
+            <!-- Actions for published ordinary cost items -->
+            <div
+              v-if="currentCategory.code !== 'subcontract_labor' && currentCategory.itemId"
+              class="category-actions-bar flex flex-wrap items-center gap-2 pt-2"
+              data-testid="ordinary-category-actions"
+            >
+              <UButton
+                v-if="canSourceRead"
+                size="xs"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-paperclip"
+                data-testid="view-evidence-btn"
+                @click="() => { isEvidenceModalOpen = true }"
+              >
+                Hồ sơ chứng từ
+              </UButton>
+              <UButton
+                v-if="canPrepare"
+                size="xs"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-upload"
+                data-testid="attach-evidence-btn"
+                @click="() => { isAttachEvidenceOpen = true }"
+              >
+                Đính kèm chứng từ
+              </UButton>
+              <UButton
+                v-if="canCorrect"
+                size="xs"
+                color="primary"
+                variant="outline"
+                icon="i-lucide-file-pen"
+                :loading="loadingCanonicalItem"
+                data-testid="open-correction-btn"
+                @click="openCorrectionModal"
+              >
+                Điều chỉnh chi phí (Kiểm toán)
+              </UButton>
+            </div>
           </div>
 
           <!-- Category Key Metrics -->
@@ -492,6 +693,7 @@ onUnmounted(() => {
           @change-page="paymentsController.goToPage"
           @clear-filters="paymentsController.clearFilters"
           @retry="paymentsController.retry"
+          @payment-mutated="onItemMutated"
         />
       </section>
 
@@ -522,6 +724,44 @@ onUnmounted(() => {
         />
       </section>
     </div>
+
+    <!-- Ordinary Cost Action Modals -->
+    <template v-if="currentCategory?.itemId">
+      <ProjectCostAttachEvidenceModal
+        v-model:open="isAttachEvidenceOpen"
+        :project-id="projectId"
+        :project-cost-item-id="currentCategory.itemId"
+        :item-description="canonicalOperational?.description ?? categoryDisplayName(currentCategory.code, currentCategory.name)"
+        @attached="onItemMutated"
+      />
+
+      <ProjectCostCorrectionModal
+        v-if="canCorrect && currentCategory?.itemId"
+        v-model:open="isCorrectionModalOpen"
+        :project-id="projectId"
+        :project-cost-item-id="currentCategory.itemId"
+        :current-version="currentItemVersion"
+        :current-operational="canonicalOperational"
+        :currency-code="overview?.project.currencyCode"
+        :categories="overview?.categories ?? []"
+        @corrected="onItemMutated"
+      />
+
+      <UModal
+        v-model:open="isEvidenceModalOpen"
+        title="Hồ sơ chứng từ đính kèm"
+        :description="canonicalOperational?.description ?? categoryDisplayName(currentCategory.code, currentCategory.name)"
+        class="max-w-4xl"
+      >
+        <template #body>
+          <ProjectCostEvidencePanel
+            :project-id="projectId"
+            :project-cost-item-id="currentCategory.itemId"
+            @evidence-linked="onItemMutated"
+          />
+        </template>
+      </UModal>
+    </template>
   </div>
 </template>
 

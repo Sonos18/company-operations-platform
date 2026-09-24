@@ -67,7 +67,7 @@ function isActive(to: string) {
     </div>
   </aside>
 
-  <nav class="mobile-nav" aria-label="Điều hướng chính trên điện thoại">
+  <nav class="mobile-nav" :class="{ 'mobile-nav--dense': visibleLinks.length > 6 }" aria-label="Điều hướng chính trên điện thoại">
     <NuxtLink
       v-for="link in visibleLinks"
       :key="link.to"
@@ -203,6 +203,7 @@ function isActive(to: string) {
     background: var(--color-primary);
     color: #ffffff;
   }
+  .mobile-nav--dense { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

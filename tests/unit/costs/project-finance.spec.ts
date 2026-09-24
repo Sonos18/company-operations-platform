@@ -124,7 +124,7 @@ describe('C1 finance read contracts', () => {
           id: '00000000-0000-4000-8000-000000000082', tenant_id: tenant, company_id: company, project_id: project,
           project_subcontract_id: '00000000-0000-4000-8000-000000000081', paid_amount_text: '50.0000',
           warranty_retention_amount_text: null, retention_rate_bps: null, currency_code: 'VND', status: 'recorded',
-          payment_date: '2026-01-02', created_at: '2026-01-02T00:00:00.000Z', version: 0,
+          payment_date: '2026-01-02', replaces_payment_id: null, created_at: '2026-01-02T00:00:00.000Z', version: 0,
           updated_at: '2026-01-02T00:00:00.000Z',
         }],
         resolutions: [{
@@ -195,7 +195,7 @@ describe('C1 finance read contracts', () => {
           id: '00000000-0000-4000-8000-000000000082', tenant_id: tenant, company_id: company, project_id: project,
           project_subcontract_id: '00000000-0000-4000-8000-000000000081', paid_amount_text: '50.0000',
           warranty_retention_amount_text: null, retention_rate_bps: null, currency_code: 'VND', status: 'recorded',
-          payment_date: '2026-01-02', created_at: '2026-01-02T00:00:00.000Z', version: 0,
+          payment_date: '2026-01-02', replaces_payment_id: null, created_at: '2026-01-02T00:00:00.000Z', version: 0,
           updated_at: '2026-01-02T00:00:00.000Z',
         }],
         resolutions: [{

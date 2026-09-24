@@ -26,6 +26,7 @@ export function createProjectCostRoutes(dependencies: ProjectCostRouteDependenci
   return {
     async summaries(event: H3Event) { const value = await resolved(event); return value.service.listSummaries(value.context) },
     async project(event: H3Event) { const value = await resolved(event); return value.service.projectSummary(value.context, param(event, 'projectId')) },
+    async draftManagementMetadata(event: H3Event) { const value = await resolved(event); return value.service.draftManagementMetadata(value.context) },
     async create(event: H3Event) {
       const value = await resolved(event)
       const projectId = param(event, 'projectId')
@@ -73,6 +74,7 @@ export function createSupabaseProjectCostRoutes(event: H3Event) {
   return {
     summaries: () => routes.summaries(event),
     project: () => routes.project(event),
+    draftManagementMetadata: () => routes.draftManagementMetadata(event),
     create: () => routes.create(event),
     patch: () => routes.patch(event),
     financials: () => routes.financials(event),

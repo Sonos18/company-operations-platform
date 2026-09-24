@@ -23,6 +23,18 @@ const listClient = (data: unknown, error: unknown = null) => {
 }
 
 describe('Project Cost service', () => {
+  it.each(['cost.manage', 'cost.prepare'] as const)('allows %s to read narrow draft-management metadata', async permission => {
+    const repository = { draftManagementMetadata: vi.fn().mockResolvedValue({ projects: [], categories: [] }) }
+    await expect(new ProjectCostService(repository as never).draftManagementMetadata(context([permission]))).resolves.toEqual({ projects: [], categories: [] })
+    expect(repository.draftManagementMetadata).toHaveBeenCalledWith(expect.objectContaining({ companyId: context([]).companyId }))
+  })
+
+  it.each(['cost.read', 'cost.source.read', 'cost.file.read', 'cost.publish_import', 'cost.correct', 'cost.record_cash'] as const)('does not let %s read draft-management metadata', async permission => {
+    const repository = { draftManagementMetadata: vi.fn() }
+    await expect(new ProjectCostService(repository as never).draftManagementMetadata(context([permission]))).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    expect(repository.draftManagementMetadata).not.toHaveBeenCalled()
+  })
+
   it.each(['cost.manage', 'cost.prepare', 'cost.publish_import', 'cost.record_cash'] as const)('does not let %s substitute for cost.correct on published correction', async permission => {
     const repository = { correctPublished: vi.fn() }
     await expect(new ProjectCostService(repository as never).correctPublished(context([permission]), itemRow().id, { expectedVersion: 2, reason: 'Correct source', operationalChanges: { workStatus: 'accepted' } }, context([]).requestId)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
@@ -95,7 +107,9 @@ describe('Project Cost service', () => {
       publishReadiness: { ready: false, blockingCodes: ['FINANCIAL_DETAILS_REQUIRED'] }, createdAt: itemRow().created_at, updatedAt: itemRow().updated_at,
     }
     const rpc = vi.fn().mockImplementation(async (name: string) => ({
-      data: name === 'c1_prepare_project_cost_financials'
+      data: name === 'c1_read_project_cost_draft_management_metadata'
+        ? { projects: [{ id: draft.projectId, code: 'P1', name: 'Project one' }], categories: [{ categoryId: draft.costCategoryId, code: 'vat_tu', name: 'Vật tư', isActive: true, draftEligible: true }] }
+        : name === 'c1_prepare_project_cost_financials'
         ? { id: draft.id, version: 1, publicationState: 'draft', amount: '0', detailCount: 1, publishReadiness: { ready: true, blockingCodes: [] }, replayed: false }
         : name === 'c1_read_project_cost_draft' ? draft
           : name === 'c1_list_project_cost_drafts' ? [draft]
@@ -114,8 +128,9 @@ describe('Project Cost service', () => {
     await repository.listDrafts(requestContext, draft.projectId)
     await repository.operationalDraft(requestContext, draft.id)
     await repository.listOperationalDrafts(requestContext, draft.projectId)
+    await repository.draftManagementMetadata(requestContext)
 
-    expect(rpc.mock.calls.map(call => call[0])).toEqual(['c1_create_project_cost_draft', 'c1_update_project_cost_draft', 'c1_prepare_project_cost_financials', 'c1_read_project_cost_draft', 'c1_list_project_cost_drafts', 'c1_read_project_cost_draft_operational', 'c1_list_project_cost_drafts_operational'])
+    expect(rpc.mock.calls.map(call => call[0])).toEqual(['c1_create_project_cost_draft', 'c1_update_project_cost_draft', 'c1_prepare_project_cost_financials', 'c1_read_project_cost_draft', 'c1_list_project_cost_drafts', 'c1_read_project_cost_draft_operational', 'c1_list_project_cost_drafts_operational', 'c1_read_project_cost_draft_management_metadata'])
   })
 
   it('maps a snake_case database row to the public project cost item without losing decimal text', async () => {

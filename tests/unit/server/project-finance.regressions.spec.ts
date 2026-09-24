@@ -40,8 +40,8 @@ function item(id: string, categoryId: string, amount: string, relevantDate: stri
 function detail(id: string, itemId: string, lineNo: number, amount: string, retentionKind: 'warranty' | 'other' | null, retentionAmount: string | null, relevantDate: string | null) {
   return { id, tenant_id: ids.tenant, company_id: ids.company, project_cost_item_id: itemId, line_no: lineNo, detail_kind: 'line_item' as const, description: id, quantity_text: null, unit_code: null, unit_price_text: null, amount_text: amount, retention_kind: retentionKind, retention_rate_bps: retentionKind === null ? null : 500, retention_amount_text: retentionAmount, relevant_date: relevantDate, reference: null, note: null, version: 0, created_at: createdAt, updated_at: createdAt }
 }
-function payment(id: string, amount: string, retention: string | null, paymentDate = '2026-02-10', status: 'recorded' | 'voided' = 'recorded') {
-  return { id, tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, project_subcontract_id: ids.contract, paid_amount_text: amount, warranty_retention_amount_text: retention, retention_rate_bps: 500, currency_code: 'VND', status, description: id, payment_date: paymentDate, payment_reference: null, source_reference: null, note: null, created_at: createdAt, version: 0, updated_at: createdAt }
+function payment(id: string, amount: string, retention: string | null, paymentDate = '2026-02-10', status: 'recorded' | 'voided' = 'recorded', replacesPaymentId: string | null = null, contractId = ids.contract) {
+  return { id, tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, project_subcontract_id: contractId, paid_amount_text: amount, warranty_retention_amount_text: retention, retention_rate_bps: 500, currency_code: 'VND', status, description: id, payment_date: paymentDate, payment_reference: null, source_reference: null, note: null, replaces_payment_id: replacesPaymentId, created_at: createdAt, version: 0, updated_at: createdAt }
 }
 
 function readSet(budgetAmount = '400.00'): FinanceTableRows & { context: typeof context, parties: readonly { partyId: string, code: string, displayName: string, partyKind: 'organization' }[] } {
@@ -74,7 +74,7 @@ function multiSnapshot(projectId: string, projectCode: string, currencyCode: str
   rows.budgetLines = [{ id: lineId, tenant_id: ids.tenant, company_id: ids.company, project_id: projectId, budget_version_id: budgetId, cost_category_id: ids.materials, line_no: 1, amount_text: budgetAmount, description: 'Budget line', reference: null, source_reference: null, note: null, version: 0, updated_at: createdAt }]
   rows.ownerAdvances = ownerAmount === null ? [] : [{ id: `${ownerAmount === '100.0000' ? 'c1070000-0000-4000-8000-000000000132' : 'c1070000-0000-4000-8000-000000000133'}`, tenant_id: ids.tenant, company_id: ids.company, project_id: projectId, amount_text: ownerAmount, currency_code: currencyCode, status: 'recorded', description: 'Owner receipt', payer_name: 'Owner', receipt_no: projectCode, received_date: '2026-02-01', reference: null, source_reference: null, note: null, version: 0, created_at: createdAt, updated_at: createdAt }]
   rows.subcontracts = [{ id: contractId, tenant_id: ids.tenant, company_id: ids.company, project_id: projectId, subcontractor_party_id: partyId, code: `${projectCode}-SC`, contract_no: null, contract_name: 'Contract', contract_date: '2026-01-01', contract_value_text: currencyCode === 'USD' ? '1000.0000' : '1000000.0000', currency_code: currencyCode, warranty_retention_rate_bps: 500, is_active: true, reference: null, source_reference: null, note: null, version: 0, updated_at: createdAt }]
-  rows.payments = [{ id: paymentId, tenant_id: ids.tenant, company_id: ids.company, project_id: projectId, project_subcontract_id: contractId, paid_amount_text: currencyCode === 'USD' ? '200.0000' : '200000.0000', warranty_retention_amount_text: currencyCode === 'USD' ? '10.0000' : '10000.0000', retention_rate_bps: 500, currency_code: currencyCode, status: 'recorded', description: 'Payment', payment_date: '2026-02-02', payment_reference: null, source_reference: null, note: null, created_at: createdAt, version: 0, updated_at: createdAt }]
+  rows.payments = [{ id: paymentId, tenant_id: ids.tenant, company_id: ids.company, project_id: projectId, project_subcontract_id: contractId, paid_amount_text: currencyCode === 'USD' ? '200.0000' : '200000.0000', warranty_retention_amount_text: currencyCode === 'USD' ? '10.0000' : '10000.0000', retention_rate_bps: 500, currency_code: currencyCode, status: 'recorded', description: 'Payment', payment_date: '2026-02-02', payment_reference: null, source_reference: null, note: null, replaces_payment_id: null, created_at: createdAt, version: 0, updated_at: createdAt }]
   rows.parties = [{ partyId, code: `${projectCode}-PARTY`, displayName: `${projectCode} party`, partyKind: 'organization' }]
   return rows
 }
@@ -206,6 +206,44 @@ describe('C1 finance review regressions on concrete production readers', () => {
     ])).toMatchObject({ amount: '90.0000', count: 1 })
   })
 
+  it('keeps voided payment history visible while every economic total remains recorded-only', async () => {
+    const repository = concrete(readSet())
+    const contract = await repository.subcontract(scope, ids.project, ids.contract, paymentQuery)
+    const party = await repository.subcontractor(scope, ids.project, ids.party, paymentQuery)
+    const voidedId = 'c1070000-0000-4000-8000-000000000093'
+
+    expect(contract.payments.rows.map(row => row.id)).toEqual([voidedId, ids.paymentNoRetention, ids.paymentZeroRetention, ids.paymentWarranty])
+    expect(contract.payments.rows[0]).toMatchObject({ id: voidedId, contractId: ids.contract, recordStatus: 'voided' })
+    expect(contract.payments.pagination).toMatchObject({ filteredCount: 4, fullCount: 4, filteredAmount: '60.0000', fullAmount: '60.0000' })
+    expect(contract.payments).toMatchObject({ recordedTotal: '60.0000', recordedCount: 3, recordedRetentionTotal: '5.0000', recordedRetentionRowCount: 2 })
+    expect(party.payments).toEqual(contract.payments)
+    expect(contract.contract).toMatchObject({ paidTotal: '60.0000', paidCount: 3, recordedRetentionTotal: '5.0000', recordedRetentionRowCount: 2 })
+  })
+
+  it('derives same-contract replacement identity without counting the voided original', async () => {
+    const rows = readSet()
+    const voidedId = 'c1070000-0000-4000-8000-000000000093'
+    const replacementId = 'c1070000-0000-4000-8000-000000000094'
+    rows.payments.push(payment(replacementId, '90.0000', '4.0000', '2026-02-12', 'recorded', voidedId))
+
+    const contract = await concrete(rows).subcontract(scope, ids.project, ids.contract, paymentQuery)
+    expect(contract.payments.rows.find(row => row.id === voidedId)).toMatchObject({ recordStatus: 'voided', replacementPaymentId: replacementId })
+    expect(contract.payments.rows.find(row => row.id === replacementId)).toMatchObject({ recordStatus: 'recorded', replacementPaymentId: null })
+    expect(contract.payments).toMatchObject({ recordedTotal: '150.0000', recordedCount: 4, recordedRetentionTotal: '9.0000', recordedRetentionRowCount: 3 })
+    expect(contract.contract).toMatchObject({ paidTotal: '150.0000', paidCount: 4, recordedRetentionTotal: '9.0000', recordedRetentionRowCount: 3 })
+  })
+
+  it('does not infer replacement state across subcontract contracts', async () => {
+    const rows = readSet()
+    const voidedId = 'c1070000-0000-4000-8000-000000000093'
+    const otherContract = 'c1070000-0000-4000-8000-000000000075'
+    rows.subcontracts.push({ ...rows.subcontracts[0]!, id: otherContract, code: 'SC-OTHER' })
+    rows.payments.push(payment('c1070000-0000-4000-8000-000000000095', '70.0000', null, '2026-02-12', 'recorded', voidedId, otherContract))
+
+    const contract = await concrete(rows).subcontract(scope, ids.project, ids.contract, paymentQuery)
+    expect(contract.payments.rows.find(row => row.id === voidedId)).toMatchObject({ replacementPaymentId: null })
+  })
+
   it('keeps draft cost parents out of official finance totals', async () => {
     const rows = readSet()
     rows.costItems = [
@@ -226,10 +264,10 @@ describe('C1 finance review regressions on concrete production readers', () => {
     const contract = await repository.subcontract(scope, ids.project, ids.contract, paymentQuery)
     expect(item.kind).toBe('ordinary')
     if (item.kind === 'ordinary') expect(item.details.pagination).toMatchObject({ filteredCount: 4, filteredAmount: '100.0000', fullCount: 4, fullAmount: '100.0000' })
-    expect(party.payments.pagination).toMatchObject({ filteredCount: 3, filteredAmount: '60.0000', fullCount: 3, fullAmount: '60.0000' })
-    expect(contract.payments.pagination).toMatchObject({ filteredCount: 3, filteredAmount: '60.0000', fullCount: 3, fullAmount: '60.0000' })
+    expect(party.payments.pagination).toMatchObject({ filteredCount: 4, filteredAmount: '60.0000', fullCount: 4, fullAmount: '60.0000' })
+    expect(contract.payments.pagination).toMatchObject({ filteredCount: 4, filteredAmount: '60.0000', fullCount: 4, fullAmount: '60.0000' })
     const warranty = await repository.subcontract(scope, ids.project, ids.contract, paymentQuerySchema.parse({ page: 1, pageSize: 100, sort: 'newest', retention: 'warranty' }))
-    expect(warranty.payments.pagination.filteredCount).toBe(2)
+    expect(warranty.payments.pagination).toMatchObject({ filteredCount: 3, filteredAmount: '50.0000' })
     const noRecordedRetention = await repository.subcontract(scope, ids.project, ids.contract, paymentQuerySchema.parse({ page: 1, pageSize: 100, sort: 'newest', retention: 'no_recorded_retention' }))
     expect(noRecordedRetention.payments.rows.map(row => row.id)).toEqual([ids.paymentNoRetention])
     const other = await repository.itemDetails(scope, ids.project, ids.materialsItem, itemDetailQuerySchema.parse({ page: 1, pageSize: 100, sort: 'newest', retention: 'other' }))
