@@ -6,8 +6,9 @@ alter table public.role_permissions disable trigger role_permissions_audit_role_
 alter table public.company_role_assignments disable trigger company_role_assignments_audit_employee_rbac_change;
 alter table public.company_role_assignments disable trigger company_role_assignments_prevent_last_admin_removal;
 alter table public.audit_events disable trigger audit_events_prevent_mutation;
-delete from public.project_cost_items where tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020' and project_id = 'c1f10000-0000-4000-8000-000000000102' and cost_category_id = 'c1f10000-0000-4000-8000-000000000301';
-delete from public.cost_categories where id = 'c1f10000-0000-4000-8000-000000000301' and tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020';
+delete from public.cost_command_receipts where tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020' and actor_id = 'c1f10000-0000-4000-8000-000000000903' and command_name in ('project_cost_draft.create','project_cost.correct');
+delete from public.project_cost_items where tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020' and project_id = 'c1f10000-0000-4000-8000-000000000102';
+delete from public.cost_categories where id in ('c1f10000-0000-4000-8000-000000000301','c1f10000-0000-4000-8000-000000000302') and tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020';
 delete from public.projects where id = 'c1f10000-0000-4000-8000-000000000102' and tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020';
 delete from public.company_cost_settings where tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020';
 delete from public.company_role_assignments where tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020' and user_id = 'c1f10000-0000-4000-8000-000000000903' and role_id = 'c1f10000-0000-4000-8000-000000000913';

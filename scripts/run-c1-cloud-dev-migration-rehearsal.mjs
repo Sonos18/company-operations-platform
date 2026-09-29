@@ -7,6 +7,7 @@ import { assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
 
 const migrationSuffixes = [
   '_c1_ordinary_cost_detail_review_fixes.sql',
+  '_c1_root_cause_hardening.sql',
 ]
 
 export function buildC1MigrationRehearsalSql(migrationSql) {

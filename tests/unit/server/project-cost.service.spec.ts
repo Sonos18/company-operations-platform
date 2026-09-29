@@ -23,6 +23,13 @@ const listClient = (data: unknown, error: unknown = null) => {
 }
 
 describe('Project Cost service', () => {
+  it.each(['PROJECT_COST_CATEGORY_CONFLICT', 'HISTORY_IMMUTABLE', 'COST_DETAIL_PUBLISH_NOT_READY'] as const)('maps the database %s conflict to the API boundary', async code => {
+    const repository = new ProjectCostRepository({ rpc: vi.fn().mockResolvedValue({ data: null, error: { message: code, details: '["EVIDENCE_NOT_FINALIZED"]' } }) } as never)
+    const error = await repository.createDraft({ companyId: context([]).companyId, requestId: context([]).requestId }, createDraftInput, context([]).requestId).catch(error => error)
+    expect(error).toMatchObject({ statusCode: 409, code })
+    if (code === 'COST_DETAIL_PUBLISH_NOT_READY') expect(error).toMatchObject({ details: { blockingCodes: ['EVIDENCE_NOT_FINALIZED'] } })
+  })
+
   it.each(['cost.manage', 'cost.prepare'] as const)('allows %s to read narrow draft-management metadata', async permission => {
     const repository = { draftManagementMetadata: vi.fn().mockResolvedValue({ projects: [], categories: [] }) }
     await expect(new ProjectCostService(repository as never).draftManagementMetadata(context([permission]))).resolves.toEqual({ projects: [], categories: [] })

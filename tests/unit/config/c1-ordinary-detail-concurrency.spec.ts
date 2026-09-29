@@ -1,12 +1,79 @@
-import { describe, expect, it, vi } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { runC1OrdinaryDetailConcurrency, validateC1OrdinaryDetailConcurrencySql } from '../../../scripts/run-c1-ordinary-detail-concurrency.mjs'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { CANONICAL_DEV_PROJECT_REF } from '../../../scripts/assert-cloud-dev-target.mjs'
+import { C1_ORDINARY_DETAIL_CONCURRENCY_SCENARIOS, runC1OrdinaryDetailConcurrency, runC1OrdinaryDetailManagementQuery, validateC1OrdinaryDetailConcurrencySql } from '../../../scripts/run-c1-ordinary-detail-concurrency.mjs'
 
 const phaseSql = (phase: string) => `-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE\n-- ${phase}\nselect 'c1f10000-0000-4000-8000-000000000010'::uuid;`
 const exactCleanupSql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1_ordinary_detail_concurrency/cleanup.sql'), 'utf8').replace(/\r\n?/g, '\n').trim()
+const managementRoots: string[] = []
+
+function makeManagementRoot() {
+  const root = mkdtempSync(join(tmpdir(), 'taskovia-c1-concurrency-'))
+  managementRoots.push(root)
+  mkdirSync(join(root, 'supabase/.temp'), { recursive: true })
+  writeFileSync(join(root, 'supabase/.temp/project-ref'), `${CANONICAL_DEV_PROJECT_REF}\n`)
+  writeFileSync(join(root, '.env.local'), `NUXT_PUBLIC_SUPABASE_URL=https://${CANONICAL_DEV_PROJECT_REF}.supabase.co\nNUXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_test-key\n`)
+  writeFileSync(join(root, '.supabase.dev.env.local'), 'SUPABASE_DEV_ACCESS_TOKEN=dedicated-dev-pat\n')
+  return root
+}
+
+afterEach(() => {
+  for (const root of managementRoots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
 
 describe('C1 ordinary-detail concurrency runner', () => {
+  it('covers the approved resolver and legacy parent identity race outcomes', () => {
+    expect(C1_ORDINARY_DETAIL_CONCURRENCY_SCENARIOS).toEqual([
+      { name: 'resolver-resolver', outcome: 'same-parent' },
+      { name: 'descriptive-correction-resolver', outcome: 'same-parent' },
+      { name: 'legacy-create-legacy-create', outcome: 'actor-b-category-conflict' },
+      { name: 'legacy-create-resolver', outcome: 'actor-b-category-conflict' },
+      { name: 'legacy-recateg-resolver', outcome: 'actor-b-category-conflict' },
+    ])
+  })
+
+  it('normalizes only the exact category conflict from a real management API error envelope', async () => {
+    const cwd = makeManagementRoot()
+    await expect(runC1OrdinaryDetailManagementQuery('actor_b', phaseSql('actor_b'), {
+      cwd,
+      fetchImpl: async () => new Response(JSON.stringify({ message: 'Failed to run sql query: ERROR: P0001: PROJECT_COST_CATEGORY_CONFLICT' }), { status: 400 }),
+    })).resolves.toEqual({ errorCode: 'PROJECT_COST_CATEGORY_CONFLICT' })
+
+    for (const body of [
+      { message: 'Failed to run sql query: ERROR: PROJECT_COST_CATEGORY_CONFLICT' },
+      { message: 'Failed to run sql query: ERROR: XP0001: PROJECT_COST_CATEGORY_CONFLICT' },
+      { message: 'Failed to run sql query: ERROR: P0001: PROJECT_COST_CATEGORY_CONFLICT_EXTRA' },
+      { message: 'Failed to run sql query: ERROR: P0001: VERSION_CONFLICT', hint: 'PROJECT_COST_CATEGORY_CONFLICT' },
+    ]) {
+      await expect(runC1OrdinaryDetailManagementQuery('actor_b', phaseSql('actor_b'), {
+        cwd,
+        fetchImpl: async () => new Response(JSON.stringify(body), { status: 400 }),
+      })).rejects.toThrow('C1 ordinary-detail concurrency actor_b failed')
+    }
+    await expect(runC1OrdinaryDetailManagementQuery('actor_b', phaseSql('actor_b'), {
+      cwd,
+      fetchImpl: async () => new Response('malformed management response', { status: 400 }),
+    })).rejects.toThrow('C1 ordinary-detail concurrency actor_b failed')
+  })
+
+  it('accepts one successful parent and the stable category-conflict loser for a legacy race', async () => {
+    const calls: string[] = []
+    await expect(runC1OrdinaryDetailConcurrency({
+      scenarios: [{ name: 'legacy-create-resolver', outcome: 'actor-b-category-conflict' }],
+      assertTarget: vi.fn(), readPhase: phaseSql,
+      runPhase: async phase => {
+        calls.push(phase)
+        if (phase === 'actor_a') return { parentId: 'c1f10000-0000-4000-8000-000000000201' }
+        if (phase === 'actor_b') return { errorCode: 'PROJECT_COST_CATEGORY_CONFLICT' }
+        if (phase === 'assert') return { parentCount: 1 }
+        return {}
+      },
+    })).resolves.toBeUndefined()
+    expect(calls).toEqual(['cleanup', 'setup', 'actor_a', 'actor_b', 'assert', 'cleanup'])
+  })
+
   it('rejects non-synthetic or unsafe fixture SQL', () => {
     expect(() => validateC1OrdinaryDetailConcurrencySql('actor_a', '-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE\nselect \'10000000-0000-4000-8000-000000000010\';')).toThrow('reserved synthetic')
     expect(() => validateC1OrdinaryDetailConcurrencySql('cleanup', '-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE\ndelete from public.project_cost_items;')).toThrow('broad delete')
@@ -20,6 +87,27 @@ describe('C1 ordinary-detail concurrency runner', () => {
     expect(() => validateC1OrdinaryDetailConcurrencySql('actor_a', `-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE\nbegin;\nselect private.c1_resolve_or_create_ordinary_project_cost_item();\nselect pg_catalog.pg_sleep(1);\ncommit;\nupdate public.project_cost_items set amount = 0 where id = 'c1f10000-0000-4000-8000-000000000201';`)).toThrow('broad update')
   })
 
+  it('uses the exact cleanup to cover every populated synthetic fixture table', () => {
+    for (const table of [
+      'public.project_cost_items', 'public.cost_command_receipts', 'public.cost_categories', 'public.projects',
+      'public.company_cost_settings', 'public.company_role_assignments', 'public.role_permissions', 'public.roles',
+      'public.company_memberships', 'public.tenant_memberships', 'public.audit_events', 'public.companies',
+      'public.tenants', 'auth.users',
+    ]) expect(exactCleanupSql).toContain(`delete from ${table}`)
+    expect(exactCleanupSql).toContain("command_name in ('project_cost_draft.create','project_cost.correct')")
+  })
+
+  it('requires the descriptive correction race to prove both lock directions before either command runs', () => {
+    const fixtureRoot = resolve(process.cwd(), 'supabase/tests/database/c1_ordinary_detail_concurrency/descriptive-correction-resolver')
+    const actorA = readFileSync(resolve(fixtureRoot, 'actor_a.sql'), 'utf8')
+    const actorB = readFileSync(resolve(fixtureRoot, 'actor_b.sql'), 'utf8')
+
+    expect(actorA).toMatch(/for update[\s\S]*c1_descriptive_parent_row_ready[\s\S]*pg_try_advisory_lock[\s\S]*c1_project_cost_category:[\s\S]*c1_correct_published_project_cost/iu)
+    expect(actorB).toMatch(/pg_try_advisory_lock[\s\S]*c1_descriptive_parent_row_ready[\s\S]*pg_advisory_xact_lock[\s\S]*c1_project_cost_category:[\s\S]*c1_resolve_or_create_ordinary_project_cost_item/iu)
+    expect(actorA).toContain('category-lock readiness barrier timed out')
+    expect(actorB).toContain('parent-row readiness barrier timed out')
+  })
+
   it('guards the target, launches exactly two sessions, asserts one parent, and always performs exact cleanup', async () => {
     const assertTarget = vi.fn()
     const calls: string[] = []
@@ -31,7 +119,7 @@ describe('C1 ordinary-detail concurrency runner', () => {
       return {}
     })
 
-    await runC1OrdinaryDetailConcurrency({ assertTarget, readPhase: phaseSql, runPhase: run })
+    await runC1OrdinaryDetailConcurrency({ scenarios: [C1_ORDINARY_DETAIL_CONCURRENCY_SCENARIOS[0]], assertTarget, readPhase: phaseSql, runPhase: run })
 
     expect(assertTarget).toHaveBeenCalledTimes(1)
     expect(calls).toEqual(['cleanup', 'setup', 'actor_a', 'actor_b', 'assert', 'cleanup'])
@@ -41,7 +129,7 @@ describe('C1 ordinary-detail concurrency runner', () => {
   it.each(['setup', 'actor_a', 'assert'])('cleans up after a %s failure', async failedPhase => {
     const calls: string[] = []
     await expect(runC1OrdinaryDetailConcurrency({
-      assertTarget: vi.fn(), readPhase: phaseSql,
+      scenarios: [C1_ORDINARY_DETAIL_CONCURRENCY_SCENARIOS[0]], assertTarget: vi.fn(), readPhase: phaseSql,
       runPhase: async phase => {
         calls.push(phase)
         if (phase === failedPhase) throw new Error(`${phase} failed`)
@@ -56,7 +144,7 @@ describe('C1 ordinary-detail concurrency runner', () => {
   it('accepts only the checked deterministic fixture files', async () => {
     const calls: string[] = []
     await runC1OrdinaryDetailConcurrency({
-      assertTarget: vi.fn(),
+      scenarios: [C1_ORDINARY_DETAIL_CONCURRENCY_SCENARIOS[0]], assertTarget: vi.fn(),
       runPhase: async phase => {
         calls.push(phase)
         if (phase === 'actor_a' || phase === 'actor_b') return { parentId: 'c1f10000-0000-4000-8000-000000000201' }
@@ -67,10 +155,27 @@ describe('C1 ordinary-detail concurrency runner', () => {
     expect(calls).toEqual(['cleanup', 'setup', 'actor_a', 'actor_b', 'assert', 'cleanup'])
   })
 
+  it('loads and checks every approved real fixture scenario', async () => {
+    const calls: string[] = []
+    await runC1OrdinaryDetailConcurrency({
+      assertTarget: vi.fn(),
+      runPhase: async (phase, _sql, scenario) => {
+        calls.push(`${scenario.name}:${phase}`)
+        if (phase === 'actor_a') return { parentId: 'c1f10000-0000-4000-8000-000000000201' }
+        if (phase === 'actor_b') return scenario.outcome === 'same-parent'
+          ? { parentId: 'c1f10000-0000-4000-8000-000000000201' }
+          : { errorCode: 'PROJECT_COST_CATEGORY_CONFLICT' }
+        if (phase === 'assert') return { parentCount: 1 }
+        return {}
+      },
+    })
+    expect(calls).toHaveLength(C1_ORDINARY_DETAIL_CONCURRENCY_SCENARIOS.length * 6)
+  })
+
   it('fails closed when actor parent IDs differ while still cleaning up', async () => {
     const calls: string[] = []
     await expect(runC1OrdinaryDetailConcurrency({
-      assertTarget: vi.fn(), readPhase: phaseSql,
+      scenarios: [C1_ORDINARY_DETAIL_CONCURRENCY_SCENARIOS[0]], assertTarget: vi.fn(), readPhase: phaseSql,
       runPhase: async phase => {
         calls.push(phase)
         if (phase === 'actor_a') return { parentId: 'c1f10000-0000-4000-8000-000000000201' }
@@ -97,7 +202,7 @@ describe('C1 ordinary-detail concurrency runner', () => {
     const actorBFailure = new Error('actor B failed')
 
     const execution = runC1OrdinaryDetailConcurrency({
-      assertTarget: vi.fn(), readPhase: phaseSql,
+      scenarios: [C1_ORDINARY_DETAIL_CONCURRENCY_SCENARIOS[0]], assertTarget: vi.fn(), readPhase: phaseSql,
       runPhase: phase => {
         if (phase === 'cleanup') {
           cleanupCalls += 1

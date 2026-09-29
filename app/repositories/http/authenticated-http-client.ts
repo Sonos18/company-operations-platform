@@ -138,7 +138,7 @@ function isInternalApiUrl(value: string): boolean {
 
 function extractSafeDetails(code: ApiErrorCode, details?: Record<string, unknown>): Record<string, unknown> | undefined {
   if (!details) return undefined
-  if (code === 'COST_PUBLISH_NOT_READY' && Array.isArray(details.blockingCodes)) {
+  if ((code === 'COST_PUBLISH_NOT_READY' || code === 'COST_DETAIL_PUBLISH_NOT_READY') && Array.isArray(details.blockingCodes)) {
     return { blockingCodes: details.blockingCodes }
   }
   return undefined

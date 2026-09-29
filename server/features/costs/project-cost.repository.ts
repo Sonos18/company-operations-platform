@@ -48,7 +48,7 @@ export function summarizeProjectCosts(rows: readonly ProjectCostRow[]): ProjectC
 
 function rpcError(error: unknown): never {
   const parsed = z.object({ code: z.string().optional(), message: z.string().optional(), details: z.string().optional() }).safeParse(error)
-  const code = parsed.success ? [parsed.data.message, parsed.data.code].find(value => ['MODULE_DISABLED', 'PERMISSION_DENIED', 'RESOURCE_NOT_FOUND', 'IDEMPOTENCY_CONFLICT', 'VERSION_CONFLICT', 'INPUT_INVALID', 'COST_NOT_DRAFT', 'COST_ALREADY_PUBLISHED', 'COST_PUBLISH_NOT_READY', 'COST_DETAIL_NOT_DRAFT', 'COST_DETAIL_NOT_PUBLISHED', 'COST_DETAIL_ALREADY_PUBLISHED', 'COST_DETAIL_PUBLISH_NOT_READY', 'SOURCE_VERSION_NOT_SHARED', 'SOURCE_REVIEW_REQUIRED', 'SUBCONTRACT_COST_MODEL_UNSUPPORTED'].includes(value ?? '')) : undefined
+  const code = parsed.success ? [parsed.data.message, parsed.data.code].find(value => ['MODULE_DISABLED', 'PERMISSION_DENIED', 'RESOURCE_NOT_FOUND', 'IDEMPOTENCY_CONFLICT', 'VERSION_CONFLICT', 'INPUT_INVALID', 'HISTORY_IMMUTABLE', 'PROJECT_COST_CATEGORY_CONFLICT', 'COST_NOT_DRAFT', 'COST_ALREADY_PUBLISHED', 'COST_PUBLISH_NOT_READY', 'COST_DETAIL_NOT_DRAFT', 'COST_DETAIL_NOT_PUBLISHED', 'COST_DETAIL_ALREADY_PUBLISHED', 'COST_DETAIL_PUBLISH_NOT_READY', 'SOURCE_VERSION_NOT_SHARED', 'SOURCE_REVIEW_REQUIRED', 'SUBCONTRACT_COST_MODEL_UNSUPPORTED'].includes(value ?? '')) : undefined
   if (code === 'MODULE_DISABLED') throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', { reason: 'MODULE_DISABLED' })
   if (code === 'PERMISSION_DENIED') throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.')
   if (code === 'RESOURCE_NOT_FOUND') throw new AppApiError(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy Project Cost.')
@@ -59,11 +59,11 @@ function rpcError(error: unknown): never {
   if (code === 'COST_DETAIL_NOT_DRAFT') throw new AppApiError(409, 'COST_DETAIL_NOT_DRAFT', 'Chi tiết Project Cost không còn ở trạng thái nháp.')
   if (code === 'COST_DETAIL_NOT_PUBLISHED') throw new AppApiError(409, 'COST_DETAIL_NOT_PUBLISHED', 'Chi tiết Project Cost chưa được công bố.')
   if (code === 'COST_DETAIL_ALREADY_PUBLISHED') throw new AppApiError(409, 'COST_DETAIL_ALREADY_PUBLISHED', 'Chi tiết Project Cost đã được công bố.')
-  if (code === 'COST_DETAIL_PUBLISH_NOT_READY') throw new AppApiError(409, 'COST_DETAIL_PUBLISH_NOT_READY', 'Chi tiết Project Cost chưa sẵn sàng công bố.')
-  if (code === 'COST_PUBLISH_NOT_READY') {
+  if (code === 'HISTORY_IMMUTABLE' || code === 'PROJECT_COST_CATEGORY_CONFLICT') throw new AppApiError(409, code, code === 'HISTORY_IMMUTABLE' ? 'Lịch sử tài chính là bất biến.' : 'Đã có Project Cost cho hạng mục này.')
+  if (code === 'COST_DETAIL_PUBLISH_NOT_READY' || code === 'COST_PUBLISH_NOT_READY') {
     let blockingCodes: unknown
     try { blockingCodes = JSON.parse(parsed.success ? parsed.data.details ?? '[]' : '[]') } catch { blockingCodes = [] }
-    throw new AppApiError(409, 'COST_PUBLISH_NOT_READY', 'Project Cost chưa sẵn sàng công bố.', { blockingCodes })
+    throw new AppApiError(409, code, code === 'COST_DETAIL_PUBLISH_NOT_READY' ? 'Chi tiết Project Cost chưa sẵn sàng công bố.' : 'Project Cost chưa sẵn sàng công bố.', { blockingCodes })
   }
   if (code === 'SUBCONTRACT_COST_MODEL_UNSUPPORTED') throw new AppApiError(409, 'SUBCONTRACT_COST_MODEL_UNSUPPORTED', 'Chi phí thầu phụ sử dụng sổ thanh toán chuẩn.')
   if (code === 'SOURCE_VERSION_NOT_SHARED' || code === 'SOURCE_REVIEW_REQUIRED') throw new AppApiError(409, 'COST_PUBLISH_NOT_READY', 'Nguồn kế toán chưa sẵn sàng.', { reason: code })

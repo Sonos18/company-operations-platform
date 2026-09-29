@@ -22,4 +22,11 @@ describe('AuthenticatedHttpClient', () => {
 
     expect(fetch).toHaveBeenCalledWith('/api/test', expect.objectContaining({ headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' } }))
   })
+
+  it('preserves detail publish readiness blockers from a safe API error body', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: 'COST_DETAIL_PUBLISH_NOT_READY', message: 'Not ready', requestId: 'c1010000-0000-4000-8000-000000000999', details: { blockingCodes: ['EVIDENCE_NOT_FINALIZED'] } } }), { status: 409 }))
+    const client = createAuthenticatedHttpClient({ fetch, getAccessToken: vi.fn().mockResolvedValue('token') })
+
+    await expect(client.request({ url: '/api/test', method: 'POST', schema })).rejects.toMatchObject({ code: 'COST_DETAIL_PUBLISH_NOT_READY', details: { blockingCodes: ['EVIDENCE_NOT_FINALIZED'] } })
+  })
 })
