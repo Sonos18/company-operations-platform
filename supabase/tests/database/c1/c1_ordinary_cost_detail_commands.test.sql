@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(116);
+select plan(124);
 
 select has_table('public', 'project_cost_item_detail_sources', 'detail source provenance is introduced with the command slice');
 select has_function('public', 'c1_create_project_cost_detail_draft', 'draft-detail create RPC exists');
@@ -204,6 +204,23 @@ select ok(exists(select 1 from public.audit_events where resource_id=(select res
 insert into public.project_cost_item_detail_sources(tenant_id,company_id,project_cost_item_detail_id,source_reported_figure_id) values('c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),'c1d10000-0000-4000-8000-000000000502');
 set local role authenticated;
 select is((public.c1_correct_published_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',4,'reason','replace stale source','changes',jsonb_build_object('sourceFigureIds',jsonb_build_array('c1d10000-0000-4000-8000-000000000501'))),'c1d10000-0000-4000-8000-000000000612','c1d10000-0000-4000-8000-000000000720')->>'version'),'5','correction remediates stale persisted sources with an explicit replacement');
+create temp table c1d_retention_set as
+select public.c1_correct_published_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',5,'reason','set retention before clear','changes',jsonb_build_object('retentionKind','warranty','retentionRateBps',500,'retentionAmount','1.0000')),'c1d10000-0000-4000-8000-000000000780','c1d10000-0000-4000-8000-000000000781') result;
+select throws_ok($$select public.c1_correct_published_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',6,'reason','invalid amount below effective retention','changes',jsonb_build_object('amount','0.5000')),'c1d10000-0000-4000-8000-000000000787','c1d10000-0000-4000-8000-000000000788')$$,'P0001','INPUT_INVALID','database validates an amount-only patch against the persisted retention amount');
+select throws_ok($$select public.c1_correct_published_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',6,'reason','invalid partial retention clear','changes',jsonb_build_object('retentionKind',null)),'c1d10000-0000-4000-8000-000000000782','c1d10000-0000-4000-8000-000000000783')$$,'P0001','INPUT_INVALID','database rejects a partial retention clear against retained effective values');
+create temp table c1d_retention_clear as
+select public.c1_correct_published_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',6,'reason','remove retention','changes',jsonb_build_object('retentionKind',null,'retentionRateBps',null,'retentionAmount',null)),'c1d10000-0000-4000-8000-000000000784','c1d10000-0000-4000-8000-000000000785') result;
+select is((select (result->>'version')::bigint from c1d_retention_clear),7::bigint,'full retention clear increments the detail version exactly once');
+reset role;
+select is((select jsonb_build_object('kind',retention_kind,'rate',retention_rate_bps,'amount',retention_amount_text) from public.project_cost_item_details where id=(select (result->>'id')::uuid from c1d_result)),jsonb_build_object('kind',null,'rate',null,'amount',null),'full retention clear persists all three retention fields as null');
+select is((select amount_text from public.project_cost_items where id=(select (result->>'projectCostItemId')::uuid from c1d_result)),'6.0000','retention-only correction preserves the parent aggregate');
+select is((select jsonb_build_object('beforeKind',before_summary#>>'{detail,retention_kind}','beforeRate',before_summary#>>'{detail,retention_rate_bps}','beforeAmount',before_summary#>>'{detail,retention_amount_text}','afterKind',after_summary#>'{detail,retention_kind}','afterRate',after_summary#>'{detail,retention_rate_bps}','afterAmount',after_summary#>'{detail,retention_amount_text}') from public.audit_events where request_id='c1d10000-0000-4000-8000-000000000785'),jsonb_build_object('beforeKind','warranty','beforeRate','500','beforeAmount','1.0000','afterKind','null'::jsonb,'afterRate','null'::jsonb,'afterAmount','null'::jsonb),'retention clear audit records the effective before and after states');
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1d10000-0000-4000-8000-000000000901","role":"authenticated"}',true);
+create temp table c1d_retention_clear_replay as
+select public.c1_correct_published_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',6,'reason','remove retention','changes',jsonb_build_object('retentionKind',null,'retentionRateBps',null,'retentionAmount',null)),'c1d10000-0000-4000-8000-000000000784','c1d10000-0000-4000-8000-000000000786') result;
+select is((select result-'replayed' from c1d_retention_clear_replay),(select result-'replayed' from c1d_retention_clear),'full retention clear replay preserves the original acknowledgement');
+select is((select result->>'replayed' from c1d_retention_clear_replay),'true','full retention clear replay is marked replayed');
 reset role;
 insert into public.cost_evidence_files(id,tenant_id,company_id,project_id,object_path,original_filename,declared_mime_type,declared_size_bytes,declared_sha256,verified_mime_type,verified_size_bytes,verified_sha256,status,intent_expires_at,created_by,finalized_by,finalized_at) values('c1d10000-0000-4000-8000-000000000505','c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000101','c1d10000-0000-4000-8000-000000000010/c1d10000-0000-4000-8000-000000000020/c1d10000-0000-4000-8000-000000000101/c1d10000-0000-4000-8000-000000000505','fixture.pdf','application/pdf',1,repeat('b',64),'application/pdf',1,repeat('b',64),'finalized',now()+interval '1 hour','c1d10000-0000-4000-8000-000000000901','c1d10000-0000-4000-8000-000000000901',now());
 set local role authenticated;

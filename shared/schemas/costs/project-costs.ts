@@ -151,6 +151,34 @@ function validateRetention(val: { amount: string, retentionKind: 'warranty' | 'o
   if (val.retentionAmount !== null && new Decimal(val.retentionAmount).greaterThan(new Decimal(val.amount))) ctx.addIssue({ code: 'custom', path: ['retentionAmount'], message: 'retentionAmount cannot be greater than detail amount' })
 }
 
+function validateRetentionCorrectionPatch(value: {
+  amount?: string
+  retentionKind?: 'warranty' | 'other' | null
+  retentionRateBps?: number | null
+  retentionAmount?: string | null
+}, context: z.RefinementCtx) {
+  const hasKind = Object.hasOwn(value, 'retentionKind')
+  const hasRate = Object.hasOwn(value, 'retentionRateBps')
+  const hasRetentionAmount = Object.hasOwn(value, 'retentionAmount')
+  if (!hasKind && !hasRate && !hasRetentionAmount) return
+
+  const fullClear = hasKind && value.retentionKind === null
+    && hasRate && value.retentionRateBps === null
+    && hasRetentionAmount && value.retentionAmount === null
+  if (hasKind && value.retentionKind === null) {
+    if (!fullClear) context.addIssue({ code: 'custom', path: ['retentionKind'], message: 'clearing retention requires all retention fields to be null' })
+    return
+  }
+  if (hasKind && value.retentionKind !== null && value.retentionKind !== undefined && hasRetentionAmount && value.retentionAmount === null) {
+    context.addIssue({ code: 'custom', path: ['retentionAmount'], message: 'retentionAmount must be non-null when retentionKind is supplied' })
+  }
+  if (Object.hasOwn(value, 'amount') && value.amount !== undefined
+    && hasRetentionAmount && value.retentionAmount !== null && value.retentionAmount !== undefined
+    && new Decimal(value.retentionAmount).greaterThan(new Decimal(value.amount))) {
+    context.addIssue({ code: 'custom', path: ['retentionAmount'], message: 'retentionAmount cannot be greater than detail amount' })
+  }
+}
+
 export const prepareProjectCostFinancialDetailInputSchema = z.object({
   lineNo: z.number().int().positive(),
   detailKind: projectCostDetailKindSchema,
@@ -325,10 +353,8 @@ export const correctPublishedProjectCostDetailInputSchema = z.object({
     sourceFigureIds: uniqueSourceFigureIds.optional(),
   }).strict().superRefine((value, context) => {
     if (Object.keys(value).length === 0) context.addIssue({ code: 'custom', message: 'requires a correction change' })
-    if (['amount', 'retentionKind', 'retentionRateBps', 'retentionAmount'].every(field => Object.hasOwn(value, field))) {
-      validateRetention({ amount: value.amount!, retentionKind: value.retentionKind!, retentionRateBps: value.retentionRateBps!, retentionAmount: value.retentionAmount! }, context)
-    }
-    if (value.retentionKind === null && (value.retentionRateBps !== undefined || value.retentionAmount !== undefined)) context.addIssue({ code: 'custom', path: ['retentionKind'], message: 'retention fields require a kind' })
+    if (Object.values(value).some(field => field === undefined)) context.addIssue({ code: 'custom', message: 'correction fields cannot be undefined' })
+    validateRetentionCorrectionPatch(value, context)
   }),
 }).strict()
 
