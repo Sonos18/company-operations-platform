@@ -7,6 +7,8 @@ import { C1_ORDINARY_DETAIL_CONCURRENCY_SCENARIOS, runC1OrdinaryDetailConcurrenc
 
 const phaseSql = (phase: string) => `-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE\n-- ${phase}\nselect 'c1f10000-0000-4000-8000-000000000010'::uuid;`
 const exactCleanupSql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1_ordinary_detail_concurrency/cleanup.sql'), 'utf8').replace(/\r\n?/g, '\n').trim()
+const runnerSource = readFileSync(resolve(process.cwd(), 'scripts/run-c1-ordinary-detail-concurrency.mjs'), 'utf8')
+const runnerCleanupSql = runnerSource.match(/const exactCleanupSql = `([\s\S]*?)`/u)?.[1].replace(/\r\n?/g, '\n').trim()
 const managementRoots: string[] = []
 
 function makeManagementRoot() {
@@ -96,6 +98,31 @@ describe('C1 ordinary-detail concurrency runner', () => {
       'public.tenants', 'auth.users',
     ]) expect(exactCleanupSql).toContain(`delete from ${table}`)
     expect(exactCleanupSql).toContain("command_name in ('project_cost_draft.create','project_cost.correct','project_cost_detail.create_and_publish')")
+  })
+
+  it('removes managed detail history before asserting it is gone and deleting fixture parents', () => {
+    expect(runnerCleanupSql).toBe(exactCleanupSql)
+    for (const fragment of [
+      "command_name = 'cost_evidence.detail_link'",
+      "command_name like 'project_cost_detail.%'",
+      "action like 'c1.project_cost_detail.%'",
+      'delete from public.cost_evidence_links',
+      'delete from public.project_cost_item_detail_sources',
+      'private.c1_project_cost_item_has_managed_detail_state',
+    ]) expect(exactCleanupSql).toContain(fragment)
+
+    const receipt = exactCleanupSql.indexOf("command_name = 'cost_evidence.detail_link'")
+    const audit = exactCleanupSql.indexOf("action like 'c1.project_cost_detail.%'")
+    const evidence = exactCleanupSql.indexOf('delete from public.cost_evidence_links')
+    const source = exactCleanupSql.indexOf('delete from public.project_cost_item_detail_sources')
+    const assertion = exactCleanupSql.indexOf('private.c1_project_cost_item_has_managed_detail_state')
+    const parent = exactCleanupSql.indexOf('delete from public.project_cost_items')
+    expect(receipt).toBeGreaterThan(-1)
+    expect(receipt).toBeLessThan(audit)
+    expect(audit).toBeLessThan(evidence)
+    expect(evidence).toBeLessThan(source)
+    expect(source).toBeLessThan(assertion)
+    expect(assertion).toBeLessThan(parent)
   })
 
   it('requires the descriptive correction race to prove both lock directions before either command runs', () => {

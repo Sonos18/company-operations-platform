@@ -121,6 +121,42 @@ describe('C1 root-cause hardening migration', () => {
     expect(direct.indexOf('v_receipt:=private.c1_detail_receipt')).toBeLessThan(direct.indexOf('perform private.c1_detail_validate_direct_create_input(target_input)'))
   })
 
+  it('hardens draft create and update envelopes without breaking historical create replay', () => {
+    const sql = hardeningSql()
+    const createValidator = sql.match(/create function private\.c1_detail_validate_draft_create_input[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
+    const updateValidator = sql.match(/create function private\.c1_detail_validate_draft_update_input[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
+    const create = sql.match(/create or replace function private\.c1_create_project_cost_detail_draft[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
+    const update = sql.match(/create or replace function private\.c1_update_project_cost_detail_draft[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
+
+    expect(createValidator).toContain("'projectId','categoryId','description','relevantDate','reference','note'")
+    expect(createValidator).toMatch(/if jsonb_typeof\(target_input\) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;/u)
+    expect(createValidator).toContain('private.c1_parse_project_cost_date')
+    expect(createValidator).toContain("jsonb_typeof(target_input->'projectId')<>'string'")
+    expect(createValidator).toContain("jsonb_typeof(target_input->'categoryId')<>'string'")
+    expect(updateValidator).toContain("'expectedVersion','description','relevantDate','reference','note'")
+    expect(updateValidator).toMatch(/if jsonb_typeof\(target_input\) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;/u)
+    expect(updateValidator).toContain('private.c1_detail_expected_version(target_input)')
+    expect(updateValidator).toContain('target_input ? \'description\' or target_input ? \'relevantDate\' or target_input ? \'reference\' or target_input ? \'note\'')
+    expect(create).toContain('perform private.c1_detail_validate_draft_create_input(target_input)')
+    expect(update).toContain('private.c1_detail_validate_draft_update_input(target_input)')
+    expect(create.indexOf('v_receipt:=private.c1_detail_receipt')).toBeLessThan(create.indexOf('perform private.c1_detail_validate_draft_create_input(target_input)'))
+    expect(create).toContain("return private.c1_detail_replay_ack(v_receipt.result_resource_id,v_receipt.result_version,'draft')")
+    expect(update.indexOf('private.c1_detail_validate_draft_update_input(target_input)')).toBeLessThan(update.indexOf('update public.project_cost_item_details'))
+  })
+
+  it('rejects noncanonical evidence UUID text before the detail evidence command casts it', () => {
+    const sql = hardeningSql()
+    const evidence = sql.match(/create or replace function private\.c1_link_project_cost_detail_evidence[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
+    const correction = sql.match(/create or replace function private\.c1_detail_validate_correction_input[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
+
+    expect(evidence).toContain("target_input->>'evidenceFileId' !~* '^(00000000-0000-0000-0000-000000000000|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$'")
+    expect(evidence).toMatch(/if jsonb_typeof\(target_input\) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;/u)
+    expect(evidence.indexOf("target_input->>'evidenceFileId' !~*")).toBeLessThan(evidence.indexOf("v_file_id:=(target_input->>'evidenceFileId')::uuid"))
+    expect(evidence.indexOf('select receipt.* into v_receipt')).toBeLessThan(evidence.indexOf("target_input->>'evidenceFileId' !~*"))
+    expect(correction).toContain("value#>>'{}' !~* '^(00000000-0000-0000-0000-000000000000|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$'")
+    expect(correction).toMatch(/if jsonb_typeof\(target_input\) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;/u)
+  })
+
   it('keeps volatile parent command calls out of assertion lookup predicates', () => {
     const sql = detailCommandsSql()
 

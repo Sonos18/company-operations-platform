@@ -215,6 +215,147 @@ begin
 end;
 $$;
 
+create function private.c1_detail_validate_draft_create_input(target_input jsonb)
+returns void language plpgsql immutable security definer set search_path='' as $$
+begin
+  if jsonb_typeof(target_input) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if not (target_input ? 'projectId')
+    or not (target_input ? 'categoryId')
+    or not (target_input ? 'description')
+    or exists(select 1 from jsonb_object_keys(target_input) key where key not in ('projectId','categoryId','description','relevantDate','reference','note'))
+    or jsonb_typeof(target_input->'projectId')<>'string'
+    or jsonb_typeof(target_input->'categoryId')<>'string'
+    or jsonb_typeof(target_input->'description')<>'string'
+    or target_input->>'projectId' !~* '^(00000000-0000-0000-0000-000000000000|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$'
+    or target_input->>'categoryId' !~* '^(00000000-0000-0000-0000-000000000000|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$'
+    or coalesce(btrim(target_input->>'description'),'')=''
+    or (target_input ? 'relevantDate' and (jsonb_typeof(target_input->'relevantDate')<>'string' or coalesce(btrim(target_input->>'relevantDate'),'')=''))
+    or (target_input ? 'reference' and (jsonb_typeof(target_input->'reference')<>'string' or coalesce(btrim(target_input->>'reference'),'')=''))
+    or (target_input ? 'note' and (jsonb_typeof(target_input->'note')<>'string' or coalesce(btrim(target_input->>'note'),'')=''))
+  then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if target_input ? 'relevantDate' then perform private.c1_parse_project_cost_date(target_input->>'relevantDate'); end if;
+end;
+$$;
+
+create function private.c1_detail_validate_draft_update_input(target_input jsonb)
+returns bigint language plpgsql immutable security definer set search_path='' as $$
+begin
+  if jsonb_typeof(target_input) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if not (target_input ? 'expectedVersion')
+    or exists(select 1 from jsonb_object_keys(target_input) key where key not in ('expectedVersion','description','relevantDate','reference','note'))
+    or not (target_input ? 'description' or target_input ? 'relevantDate' or target_input ? 'reference' or target_input ? 'note')
+    or (target_input ? 'description' and (jsonb_typeof(target_input->'description')<>'string' or coalesce(btrim(target_input->>'description'),'')=''))
+    or (target_input ? 'relevantDate' and jsonb_typeof(target_input->'relevantDate') not in ('null','string'))
+    or (target_input ? 'reference' and (jsonb_typeof(target_input->'reference') not in ('null','string') or (jsonb_typeof(target_input->'reference')='string' and coalesce(btrim(target_input->>'reference'),'')='')))
+    or (target_input ? 'note' and (jsonb_typeof(target_input->'note') not in ('null','string') or (jsonb_typeof(target_input->'note')='string' and coalesce(btrim(target_input->>'note'),'')='')))
+  then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if target_input ? 'relevantDate' and jsonb_typeof(target_input->'relevantDate')='string' then perform private.c1_parse_project_cost_date(target_input->>'relevantDate'); end if;
+  return private.c1_detail_expected_version(target_input);
+end;
+$$;
+
+create or replace function private.c1_create_project_cost_detail_draft(target_company_id uuid,target_input jsonb,target_idempotency_key uuid,target_request_id uuid)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_context jsonb; v_tenant_id uuid; v_actor_id uuid; v_hash text; v_receipt public.cost_command_receipts%rowtype; v_parent_id uuid; v_detail public.project_cost_item_details%rowtype; v_line_no integer;
+begin
+  v_context:=private.c1_detail_context(target_company_id,'cost.manage');v_tenant_id:=(v_context->>'tenantId')::uuid;v_actor_id:=(v_context->>'actorId')::uuid;
+  if target_idempotency_key is null or target_input->>'projectId' is null or target_input->>'categoryId' is null or coalesce(btrim(target_input->>'description'),'')='' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  v_hash:=encode(extensions.digest(convert_to(private.c1_jsonb_canonical_text(jsonb_build_object('projectId',target_input->>'projectId','input',target_input)),'UTF8'),'sha256'),'hex');
+  v_receipt:=private.c1_detail_receipt(v_tenant_id,target_company_id,v_actor_id,'project_cost_detail.create_draft',target_idempotency_key,v_hash);
+  if v_receipt.id is not null then return private.c1_detail_replay_ack(v_receipt.result_resource_id,v_receipt.result_version,'draft'); end if;
+  perform private.c1_detail_validate_draft_create_input(target_input);
+  v_parent_id:=private.c1_resolve_or_create_ordinary_project_cost_item(v_tenant_id,target_company_id,(target_input->>'projectId')::uuid,(target_input->>'categoryId')::uuid,v_actor_id,target_request_id);
+  perform 1 from public.project_cost_items item where item.id=v_parent_id for update;
+  select coalesce(max(detail.line_no),0)+1 into v_line_no from public.project_cost_item_details detail where detail.project_cost_item_id=v_parent_id and detail.tenant_id=v_tenant_id and detail.company_id=target_company_id;
+  insert into public.project_cost_item_details(tenant_id,company_id,project_cost_item_id,line_no,detail_kind,description,relevant_date,reference,note,publication_state,created_by)
+  values(v_tenant_id,target_company_id,v_parent_id,v_line_no,'line_item',btrim(target_input->>'description'),case when target_input ? 'relevantDate' then private.c1_parse_project_cost_date(target_input->>'relevantDate') end,nullif(btrim(target_input->>'reference'),''),nullif(btrim(target_input->>'note'),''),'draft',v_actor_id) returning * into v_detail;
+  insert into public.audit_events(tenant_id,company_id,actor_id,action,resource_type,resource_id,request_id,after_summary) values(v_tenant_id,target_company_id,v_actor_id,'c1.project_cost_detail.draft_created','project_cost_item_detail',v_detail.id::text,target_request_id,to_jsonb(v_detail));
+  insert into public.cost_command_receipts(tenant_id,company_id,actor_id,command_name,idempotency_key,request_hash,result_resource_id,result_version) values(v_tenant_id,target_company_id,v_actor_id,'project_cost_detail.create_draft',target_idempotency_key,v_hash,v_detail.id,v_detail.version);
+  return private.c1_detail_ack(v_detail.id,false);
+end;
+$$;
+
+create or replace function private.c1_update_project_cost_detail_draft(target_company_id uuid,target_id uuid,target_input jsonb,target_request_id uuid)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_context jsonb; v_detail public.project_cost_item_details%rowtype; v_before jsonb; v_expected_version bigint;
+begin
+  v_context:=private.c1_detail_context(target_company_id,'cost.manage');v_expected_version:=private.c1_detail_validate_draft_update_input(target_input);v_detail:=private.c1_detail_require_scope(target_id,(v_context->>'tenantId')::uuid,target_company_id);
+  if v_detail.publication_state<>'draft' then raise exception using errcode='P0001',message='COST_DETAIL_NOT_DRAFT'; end if;
+  if v_detail.version is distinct from v_expected_version then raise exception using errcode='P0001',message='VERSION_CONFLICT'; end if;
+  v_before:=to_jsonb(v_detail);
+  update public.project_cost_item_details detail set description=case when target_input?'description' then btrim(target_input->>'description') else detail.description end,relevant_date=case when target_input?'relevantDate' then case when jsonb_typeof(target_input->'relevantDate')='null' then null else private.c1_parse_project_cost_date(target_input->>'relevantDate') end else detail.relevant_date end,reference=case when target_input?'reference' then nullif(btrim(target_input->>'reference'),'') else detail.reference end,note=case when target_input?'note' then nullif(btrim(target_input->>'note'),'') else detail.note end,version=detail.version+1,updated_at=now() where detail.id=v_detail.id returning * into v_detail;
+  insert into public.audit_events(tenant_id,company_id,actor_id,action,resource_type,resource_id,request_id,before_summary,after_summary) values((v_context->>'tenantId')::uuid,target_company_id,(v_context->>'actorId')::uuid,'c1.project_cost_detail.draft_updated','project_cost_item_detail',v_detail.id::text,target_request_id,v_before,to_jsonb(v_detail));
+  return private.c1_detail_ack(v_detail.id,false);
+end;
+$$;
+
+create or replace function private.c1_detail_validate_correction_input(target_input jsonb)
+returns void language plpgsql security definer set search_path='' as $$
+declare v_changes jsonb; v_key text;
+begin
+  if jsonb_typeof(target_input) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if not (target_input ?& array['expectedVersion','reason','changes']) or exists (select 1 from jsonb_object_keys(target_input) key where key not in ('expectedVersion','reason','changes'))
+    or jsonb_typeof(target_input->'expectedVersion')<>'number' or (target_input->>'expectedVersion') !~ '^\d{1,19}$' or (length(target_input->>'expectedVersion')=19 and target_input->>'expectedVersion' > '9223372036854775807')
+    or jsonb_typeof(target_input->'reason')<>'string' or btrim(target_input->>'reason')='' or jsonb_typeof(target_input->'changes')<>'object' or target_input->'changes'='{}'::jsonb
+  then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  v_changes:=target_input->'changes';
+  if exists (select 1 from jsonb_object_keys(v_changes) key where key not in ('description','relevantDate','reference','note','quantity','unitCode','unitPrice','amount','retentionKind','retentionRateBps','retentionAmount','sourceFigureIds')) then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if (v_changes ? 'description' and (jsonb_typeof(v_changes->'description')<>'string' or btrim(v_changes->>'description')=''))
+    or (v_changes ? 'relevantDate' and (jsonb_typeof(v_changes->'relevantDate') not in ('string','null') or (jsonb_typeof(v_changes->'relevantDate')='string' and (v_changes->>'relevantDate') !~ '^\d{4}-\d{2}-\d{2}$')))
+    or (v_changes ? 'reference' and (jsonb_typeof(v_changes->'reference') not in ('string','null') or (jsonb_typeof(v_changes->'reference')='string' and btrim(v_changes->>'reference')='')))
+    or (v_changes ? 'note' and (jsonb_typeof(v_changes->'note') not in ('string','null') or (jsonb_typeof(v_changes->'note')='string' and btrim(v_changes->>'note')='')))
+    or (v_changes ? 'quantity' and (jsonb_typeof(v_changes->'quantity') not in ('string','null') or (jsonb_typeof(v_changes->'quantity')='string' and (v_changes->>'quantity') !~ '^\d{1,16}(\.\d{1,4})?$')))
+    or (v_changes ? 'unitCode' and (jsonb_typeof(v_changes->'unitCode') not in ('string','null') or (jsonb_typeof(v_changes->'unitCode')='string' and btrim(v_changes->>'unitCode')='')))
+    or (v_changes ? 'unitPrice' and (jsonb_typeof(v_changes->'unitPrice') not in ('string','null') or (jsonb_typeof(v_changes->'unitPrice')='string' and (v_changes->>'unitPrice') !~ '^\d{1,16}(\.\d{1,4})?$')))
+    or (v_changes ? 'amount' and (jsonb_typeof(v_changes->'amount')<>'string' or v_changes->>'amount' !~ '^\d{1,16}(\.\d{1,4})?$'))
+    or (v_changes ? 'retentionKind' and (jsonb_typeof(v_changes->'retentionKind') not in ('string','null') or (v_changes->>'retentionKind') not in ('warranty','other')))
+    or (v_changes ? 'retentionRateBps' and (jsonb_typeof(v_changes->'retentionRateBps') not in ('number','null') or (jsonb_typeof(v_changes->'retentionRateBps')='number' and ((v_changes->>'retentionRateBps') !~ '^\d{1,5}$' or lpad(v_changes->>'retentionRateBps',5,'0') > '10000'))))
+    or (v_changes ? 'retentionAmount' and (jsonb_typeof(v_changes->'retentionAmount') not in ('string','null') or (jsonb_typeof(v_changes->'retentionAmount')='string' and (v_changes->>'retentionAmount') !~ '^\d{1,16}(\.\d{1,4})?$')))
+    or (v_changes ? 'sourceFigureIds' and jsonb_typeof(v_changes->'sourceFigureIds')<>'array')
+  then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if v_changes ? 'sourceFigureIds' and (exists (select 1 from jsonb_array_elements(v_changes->'sourceFigureIds') value where jsonb_typeof(value)<>'string' or value#>>'{}' !~* '^(00000000-0000-0000-0000-000000000000|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$') or (select count(*) from jsonb_array_elements_text(v_changes->'sourceFigureIds'))<>(select count(distinct value) from jsonb_array_elements_text(v_changes->'sourceFigureIds') value)) then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if v_changes ? 'relevantDate' and jsonb_typeof(v_changes->'relevantDate')='string' then perform private.c1_parse_project_cost_date(v_changes->>'relevantDate'); end if;
+end;
+$$;
+
+create or replace function private.c1_link_project_cost_detail_evidence(target_company_id uuid,target_detail_id uuid,target_input jsonb,target_idempotency_key uuid,target_request_id uuid)
+returns jsonb language plpgsql volatile security definer set search_path='' as $$
+declare
+  v_context jsonb; v_actor_id uuid:=auth.uid(); v_tenant_id uuid; v_file_id uuid; v_detail public.project_cost_item_details%rowtype; v_file public.cost_evidence_files%rowtype; v_link public.cost_evidence_links%rowtype; v_receipt public.cost_command_receipts%rowtype; v_hash text;
+begin
+  if v_actor_id is null then raise exception using errcode='P0001',message='PERMISSION_DENIED'; end if;
+  v_context:=private.c1_master_context(target_company_id,'cost.prepare'); v_tenant_id:=(v_context->>'tenantId')::uuid;
+  if jsonb_typeof(target_input) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if (v_context->>'actorId')::uuid is distinct from v_actor_id or target_idempotency_key is null or target_request_id is null
+    or not(target_input ?& array['evidenceFileId','evidenceKind']) or exists(select 1 from jsonb_object_keys(target_input) key where key not in('evidenceFileId','evidenceKind'))
+    or jsonb_typeof(target_input->'evidenceFileId') is distinct from 'string' or jsonb_typeof(target_input->'evidenceKind') is distinct from 'string'
+    or target_input->>'evidenceKind' not in('contract','acceptance_record','invoice','accounting_support','payment_proof','source_workbook','other') then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  v_hash:=encode(extensions.digest(convert_to(private.c1_jsonb_canonical_text(jsonb_build_object('companyId',target_company_id,'detailId',target_detail_id,'input',target_input)),'UTF8'),'sha256'),'hex');
+  perform pg_advisory_xact_lock(hashtextextended('c1_evidence:detail-link:'||target_company_id::text||':'||v_actor_id::text||':'||target_idempotency_key::text,0));
+  select receipt.* into v_receipt from public.cost_command_receipts receipt where receipt.company_id=target_company_id and receipt.actor_id=v_actor_id and receipt.command_name='cost_evidence.detail_link' and receipt.idempotency_key=target_idempotency_key for update;
+  if found then
+    if v_receipt.request_hash<>v_hash then raise exception using errcode='P0001',message='IDEMPOTENCY_CONFLICT'; end if;
+    select link.* into v_link from public.cost_evidence_links link where link.id=v_receipt.result_resource_id and link.tenant_id=v_tenant_id and link.company_id=target_company_id;
+    return jsonb_build_object('linkId',v_link.id,'detailId',v_link.project_cost_item_detail_id,'evidenceFileId',v_link.evidence_file_id,'evidenceKind',v_link.evidence_kind,'replayed',true);
+  end if;
+  if target_input->>'evidenceFileId' !~* '^(00000000-0000-0000-0000-000000000000|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  begin v_file_id:=(target_input->>'evidenceFileId')::uuid; exception when invalid_text_representation then raise exception using errcode='P0001',message='INPUT_INVALID'; end;
+  select detail.* into v_detail from public.project_cost_item_details detail join public.project_cost_items item on item.id=detail.project_cost_item_id and item.tenant_id=detail.tenant_id and item.company_id=detail.company_id
+    join public.cost_categories category on category.id=item.cost_category_id and category.tenant_id=item.tenant_id and category.company_id=item.company_id
+    where detail.id=target_detail_id and detail.tenant_id=v_tenant_id and detail.company_id=target_company_id and category.posting_strategy='ordinary_detail' for update;
+  if not found then raise exception using errcode='P0001',message='RESOURCE_NOT_FOUND'; end if;
+  select file.* into v_file from public.cost_evidence_files file where file.id=v_file_id and file.tenant_id=v_tenant_id and file.company_id=target_company_id and file.project_id=(select item.project_id from public.project_cost_items item where item.id=v_detail.project_cost_item_id) and file.status='finalized';
+  if not found then raise exception using errcode='P0001',message='RESOURCE_NOT_FOUND'; end if;
+  begin
+    insert into public.cost_evidence_links(tenant_id,company_id,project_id,evidence_file_id,project_cost_item_detail_id,evidence_kind,request_id,created_by)
+    values(v_tenant_id,target_company_id,v_file.project_id,v_file.id,v_detail.id,target_input->>'evidenceKind',target_request_id,v_actor_id) returning * into v_link;
+  exception when unique_violation or foreign_key_violation or check_violation then raise exception using errcode='P0001',message='INPUT_INVALID'; end;
+  insert into public.cost_command_receipts(tenant_id,company_id,actor_id,command_name,idempotency_key,request_hash,result_resource_id,result_version) values(v_tenant_id,target_company_id,v_actor_id,'cost_evidence.detail_link',target_idempotency_key,v_hash,v_link.id,0);
+  insert into public.audit_events(tenant_id,company_id,actor_id,action,resource_type,resource_id,request_id,after_summary) values(v_tenant_id,target_company_id,v_actor_id,'c1.cost_evidence.detail_linked','cost_evidence_link',v_link.id::text,target_request_id,jsonb_build_object('detailId',v_detail.id,'evidenceFileId',v_file.id,'evidenceKind',v_link.evidence_kind));
+  return jsonb_build_object('linkId',v_link.id,'detailId',v_link.project_cost_item_detail_id,'evidenceFileId',v_link.evidence_file_id,'evidenceKind',v_link.evidence_kind,'replayed',false);
+end;
+$$;
+
 create or replace function private.c1_prepare_project_cost_detail_financials(target_company_id uuid,target_id uuid,target_input jsonb,target_request_id uuid)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare v_context jsonb; v_detail public.project_cost_item_details%rowtype; v_before jsonb; v_amount numeric; v_expected_version bigint;
@@ -325,5 +466,5 @@ begin
 end;
 $$;
 
-revoke all on function private.c1_lock_project_cost_category(uuid,uuid,uuid,uuid), private.c1_project_cost_item_has_managed_detail_state(uuid,uuid,uuid), private.c1_project_cost_detail_publish_readiness(uuid,uuid,uuid), private.c1_detail_load_readiness_scope(uuid,uuid,uuid), private.c1_detail_validate_financial_input(jsonb), private.c1_detail_validate_prepare_financial_input(jsonb), private.c1_detail_validate_direct_create_input(jsonb) from public, anon, authenticated;
+revoke all on function private.c1_lock_project_cost_category(uuid,uuid,uuid,uuid), private.c1_project_cost_item_has_managed_detail_state(uuid,uuid,uuid), private.c1_project_cost_detail_publish_readiness(uuid,uuid,uuid), private.c1_detail_load_readiness_scope(uuid,uuid,uuid), private.c1_detail_validate_financial_input(jsonb), private.c1_detail_validate_prepare_financial_input(jsonb), private.c1_detail_validate_direct_create_input(jsonb), private.c1_detail_validate_draft_create_input(jsonb), private.c1_detail_validate_draft_update_input(jsonb), private.c1_detail_validate_correction_input(jsonb), private.c1_create_project_cost_detail_draft(uuid,jsonb,uuid,uuid), private.c1_update_project_cost_detail_draft(uuid,uuid,jsonb,uuid), private.c1_link_project_cost_detail_evidence(uuid,uuid,jsonb,uuid,uuid) from public, anon, authenticated;
 notify pgrst,'reload schema';
