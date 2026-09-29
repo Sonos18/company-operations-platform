@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
 
-select plan(46);
+select plan(54);
 
 select has_table('public', 'project_cost_item_detail_sources', 'detail source provenance table exists');
 select has_table('public', 'cost_evidence_links', 'evidence links table exists');
@@ -39,15 +39,16 @@ declare
   v_read_only uuid := 'c1f30000-0000-4000-8000-000000000903';
   v_prepare_only uuid := 'c1f30000-0000-4000-8000-000000000904';
   v_manage_only uuid := 'c1f30000-0000-4000-8000-000000000905';
+  v_source_only uuid := 'c1f30000-0000-4000-8000-000000000906';
 begin
-  insert into auth.users(id,email) values(v_actor,'c1f3-actor@taskovia.invalid'),(v_file_only,'c1f3-file@taskovia.invalid'),(v_read_only,'c1f3-read@taskovia.invalid'),(v_prepare_only,'c1f3-prepare@taskovia.invalid'),(v_manage_only,'c1f3-manage@taskovia.invalid');
+  insert into auth.users(id,email) values(v_actor,'c1f3-actor@taskovia.invalid'),(v_file_only,'c1f3-file@taskovia.invalid'),(v_read_only,'c1f3-read@taskovia.invalid'),(v_prepare_only,'c1f3-prepare@taskovia.invalid'),(v_manage_only,'c1f3-manage@taskovia.invalid'),(v_source_only,'c1f3-source@taskovia.invalid');
   insert into public.tenants(id,code,name) values(v_tenant,'c1f3','C1F3');
   insert into public.companies(id,tenant_id,code,name) values(v_company,v_tenant,'C1F3','C1F3'),(v_other_company,v_tenant,'C1F3X','C1F3 foreign company');
-  insert into public.tenant_memberships(user_id,tenant_id,roles) values(v_actor,v_tenant,array['member']),(v_file_only,v_tenant,array['member']),(v_read_only,v_tenant,array['member']),(v_prepare_only,v_tenant,array['member']),(v_manage_only,v_tenant,array['member']);
-  insert into public.company_memberships(user_id,tenant_id,company_id,roles,is_active) values(v_actor,v_tenant,v_company,array['member'],true),(v_file_only,v_tenant,v_company,array['member'],true),(v_read_only,v_tenant,v_company,array['member'],true),(v_prepare_only,v_tenant,v_company,array['member'],true),(v_manage_only,v_tenant,v_company,array['member'],true);
-  insert into public.roles(id,tenant_id,company_id,code,name,description,is_system) values('c1f30000-0000-4000-8000-000000000911',v_tenant,v_company,'c1f3_primary','C1F3 primary','fixture',false),('c1f30000-0000-4000-8000-000000000912',v_tenant,v_company,'c1f3_file','C1F3 file','fixture',false),('c1f30000-0000-4000-8000-000000000913',v_tenant,v_company,'c1f3_read','C1F3 read','fixture',false),('c1f30000-0000-4000-8000-000000000914',v_tenant,v_company,'c1f3_prepare','C1F3 prepare','fixture',false),('c1f30000-0000-4000-8000-000000000915',v_tenant,v_company,'c1f3_manage','C1F3 manage','fixture',false);
-  insert into public.role_permissions(role_id,permission_code) values('c1f30000-0000-4000-8000-000000000911','cost.prepare'),('c1f30000-0000-4000-8000-000000000911','cost.source.read'),('c1f30000-0000-4000-8000-000000000911','cost.read'),('c1f30000-0000-4000-8000-000000000911','cost.file.read'),('c1f30000-0000-4000-8000-000000000911','cost.record_cash'),('c1f30000-0000-4000-8000-000000000912','cost.file.read'),('c1f30000-0000-4000-8000-000000000913','cost.read'),('c1f30000-0000-4000-8000-000000000914','cost.prepare'),('c1f30000-0000-4000-8000-000000000915','cost.manage');
-  insert into public.company_role_assignments(tenant_id,company_id,user_id,role_id,granted_by,grant_reason) values(v_tenant,v_company,v_actor,'c1f30000-0000-4000-8000-000000000911',v_actor,'fixture'),(v_tenant,v_company,v_file_only,'c1f30000-0000-4000-8000-000000000912',v_actor,'fixture'),(v_tenant,v_company,v_read_only,'c1f30000-0000-4000-8000-000000000913',v_actor,'fixture'),(v_tenant,v_company,v_prepare_only,'c1f30000-0000-4000-8000-000000000914',v_actor,'fixture'),(v_tenant,v_company,v_manage_only,'c1f30000-0000-4000-8000-000000000915',v_actor,'fixture');
+  insert into public.tenant_memberships(user_id,tenant_id,roles) values(v_actor,v_tenant,array['member']),(v_file_only,v_tenant,array['member']),(v_read_only,v_tenant,array['member']),(v_prepare_only,v_tenant,array['member']),(v_manage_only,v_tenant,array['member']),(v_source_only,v_tenant,array['member']);
+  insert into public.company_memberships(user_id,tenant_id,company_id,roles,is_active) values(v_actor,v_tenant,v_company,array['member'],true),(v_file_only,v_tenant,v_company,array['member'],true),(v_read_only,v_tenant,v_company,array['member'],true),(v_prepare_only,v_tenant,v_company,array['member'],true),(v_manage_only,v_tenant,v_company,array['member'],true),(v_source_only,v_tenant,v_company,array['member'],true);
+  insert into public.roles(id,tenant_id,company_id,code,name,description,is_system) values('c1f30000-0000-4000-8000-000000000911',v_tenant,v_company,'c1f3_primary','C1F3 primary','fixture',false),('c1f30000-0000-4000-8000-000000000912',v_tenant,v_company,'c1f3_file','C1F3 file','fixture',false),('c1f30000-0000-4000-8000-000000000913',v_tenant,v_company,'c1f3_read','C1F3 read','fixture',false),('c1f30000-0000-4000-8000-000000000914',v_tenant,v_company,'c1f3_prepare','C1F3 prepare','fixture',false),('c1f30000-0000-4000-8000-000000000915',v_tenant,v_company,'c1f3_manage','C1F3 manage','fixture',false),('c1f30000-0000-4000-8000-000000000916',v_tenant,v_company,'c1f3_source','C1F3 source','fixture',false);
+  insert into public.role_permissions(role_id,permission_code) values('c1f30000-0000-4000-8000-000000000911','cost.prepare'),('c1f30000-0000-4000-8000-000000000911','cost.source.read'),('c1f30000-0000-4000-8000-000000000911','cost.read'),('c1f30000-0000-4000-8000-000000000911','cost.file.read'),('c1f30000-0000-4000-8000-000000000911','cost.record_cash'),('c1f30000-0000-4000-8000-000000000912','cost.file.read'),('c1f30000-0000-4000-8000-000000000913','cost.read'),('c1f30000-0000-4000-8000-000000000914','cost.prepare'),('c1f30000-0000-4000-8000-000000000915','cost.manage'),('c1f30000-0000-4000-8000-000000000916','cost.source.read');
+  insert into public.company_role_assignments(tenant_id,company_id,user_id,role_id,granted_by,grant_reason) values(v_tenant,v_company,v_actor,'c1f30000-0000-4000-8000-000000000911',v_actor,'fixture'),(v_tenant,v_company,v_file_only,'c1f30000-0000-4000-8000-000000000912',v_actor,'fixture'),(v_tenant,v_company,v_read_only,'c1f30000-0000-4000-8000-000000000913',v_actor,'fixture'),(v_tenant,v_company,v_prepare_only,'c1f30000-0000-4000-8000-000000000914',v_actor,'fixture'),(v_tenant,v_company,v_manage_only,'c1f30000-0000-4000-8000-000000000915',v_actor,'fixture'),(v_tenant,v_company,v_source_only,'c1f30000-0000-4000-8000-000000000916',v_actor,'fixture');
   insert into public.company_cost_settings(company_id,tenant_id,enabled,created_by) values(v_company,v_tenant,true,v_actor),(v_other_company,v_tenant,true,v_actor);
   insert into public.projects(id,tenant_id,company_id,code,name,origin,created_by) values
     ('c1f30000-0000-4000-8000-000000000101',v_tenant,v_company,'C1F3-P','C1F3 project','manual',v_actor),
@@ -64,7 +65,7 @@ begin
     ('c1f30000-0000-4000-8000-000000000401',v_tenant,v_company,'c1f30000-0000-4000-8000-000000000201',1,'line_item','Draft detail','1.0000','draft',null,null,null,null,v_actor),
     ('c1f30000-0000-4000-8000-000000000402',v_tenant,v_company,'c1f30000-0000-4000-8000-000000000201',2,'line_item','Published detail','1.0000','published','command',v_actor,now(),'c1f30000-0000-4000-8000-000000000702',v_actor),
     ('c1f30000-0000-4000-8000-000000000405',v_tenant,v_company,'c1f30000-0000-4000-8000-000000000205',1,'line_item','Legacy subcontract detail','19.0000','published','legacy_backfill',null,now(),null,v_actor),
-    ('c1f30000-0000-4000-8000-000000000410',v_tenant,v_other_company,'c1f30000-0000-4000-8000-000000000210',1,'line_item','Foreign detail','1.0000','published','legacy_backfill',null,now(),null,v_actor);
+    ('c1f30000-0000-4000-8000-000000000410',v_tenant,v_other_company,'c1f30000-0000-4000-8000-000000000210',1,'line_item','Foreign detail','1.0000','draft',null,null,null,null,v_actor);
   insert into public.controlled_import_runs(id,tenant_id,company_id,run_id,actor_id,idempotency_key,payload_digest,manifest_digest,input_digests,workbook_family,adapter_id,adapter_version,manifest_snapshot,request_id) values
     ('c1f30000-0000-4000-8000-000000000506',v_tenant,v_company,'c1f30000-0000-4000-8000-000000000507',v_actor,'c1f30000-0000-4000-8000-000000000508',repeat('a',64),repeat('b',64),array[repeat('c',64)],'fixture','fixture','1','{}','c1f30000-0000-4000-8000-000000000509'),
     ('c1f30000-0000-4000-8000-000000000530',v_tenant,v_other_company,'c1f30000-0000-4000-8000-000000000531',v_actor,'c1f30000-0000-4000-8000-000000000532',repeat('d',64),repeat('e',64),array[repeat('f',64)],'fixture','fixture','1','{}','c1f30000-0000-4000-8000-000000000533');
@@ -103,6 +104,7 @@ create temp table c1f3_prepare_result as
 select public.c1_prepare_project_cost_detail_financials('c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000401','{"expectedVersion":0,"amount":"1.0000","sourceFigureIds":["c1f30000-0000-4000-8000-000000000514"]}','c1f30000-0000-4000-8000-000000000742') result;
 select is((public.c1_link_project_cost_detail_evidence('c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000401','{"evidenceFileId":"c1f30000-0000-4000-8000-000000000501","evidenceKind":"invoice"}','c1f30000-0000-4000-8000-000000000711','c1f30000-0000-4000-8000-000000000712')->>'replayed')::boolean,false,'finalized same-project detail evidence links once');
 select is((public.c1_link_project_cost_detail_evidence('c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000401','{"evidenceFileId":"c1f30000-0000-4000-8000-000000000501","evidenceKind":"invoice"}','c1f30000-0000-4000-8000-000000000711','c1f30000-0000-4000-8000-000000000712')->>'replayed')::boolean,true,'detail evidence command replays exactly');
+select is((select count(*) from public.cost_evidence_links link join public.cost_evidence_files file on file.id=link.evidence_file_id and file.tenant_id=link.tenant_id and file.company_id=link.company_id where link.project_cost_item_detail_id='c1f30000-0000-4000-8000-000000000401'),1::bigint,'prepare plus source-read can list draft detail evidence metadata through the API query shape');
 select throws_ok($$select public.c1_link_project_cost_detail_evidence('c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000401','{"evidenceFileId":"c1f30000-0000-4000-8000-000000000501","evidenceKind":"invoice"}','c1f30000-0000-4000-8000-000000000721','c1f30000-0000-4000-8000-000000000722')$$,'P0001','INPUT_INVALID','duplicate detail evidence under a new key is stable');
 select throws_ok($$select public.c1_link_project_cost_detail_evidence('c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000401','{"evidenceFileId":"not-a-uuid","evidenceKind":"invoice"}','c1f30000-0000-4000-8000-000000000713','c1f30000-0000-4000-8000-000000000714')$$,'P0001','INPUT_INVALID','invalid detail evidence UUID is stable');
 select throws_ok($$select public.c1_link_project_cost_detail_evidence('c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000410','{"evidenceFileId":"c1f30000-0000-4000-8000-000000000502","evidenceKind":"invoice"}','c1f30000-0000-4000-8000-000000000750','c1f30000-0000-4000-8000-000000000751')$$,'P0001','RESOURCE_NOT_FOUND','same-tenant foreign detail and finalized evidence do not leak through the primary company command');
@@ -110,6 +112,9 @@ reset role;
 select is((select count(*) from public.cost_evidence_links where project_cost_item_detail_id='c1f30000-0000-4000-8000-000000000410'),0::bigint,'foreign detail link attempt creates no link');
 select is((select count(*) from public.audit_events where action='c1.cost_evidence.detail_linked' and request_id='c1f30000-0000-4000-8000-000000000751'),0::bigint,'foreign detail link attempt creates no audit event');
 select is((select count(*) from public.cost_command_receipts where company_id='c1f30000-0000-4000-8000-000000000020' and actor_id='c1f30000-0000-4000-8000-000000000901' and command_name='cost_evidence.detail_link' and idempotency_key='c1f30000-0000-4000-8000-000000000750'),0::bigint,'foreign detail link attempt creates no receipt');
+insert into public.cost_evidence_links(tenant_id,company_id,project_id,evidence_file_id,project_cost_item_detail_id,evidence_kind,request_id,created_by)
+values('c1f30000-0000-4000-8000-000000000010','c1f30000-0000-4000-8000-000000000021','c1f30000-0000-4000-8000-000000000102','c1f30000-0000-4000-8000-000000000502','c1f30000-0000-4000-8000-000000000410','invoice','c1f30000-0000-4000-8000-000000000752','c1f30000-0000-4000-8000-000000000901');
+select is((select publication_state from public.project_cost_item_details where id='c1f30000-0000-4000-8000-000000000410'),'draft','cross-company metadata fixture is a draft detail');
 select throws_ok($$insert into public.cost_evidence_links(tenant_id,company_id,project_id,evidence_file_id,evidence_kind,request_id,created_by) values('c1f30000-0000-4000-8000-000000000010','c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000101','c1f30000-0000-4000-8000-000000000501','invoice','c1f30000-0000-4000-8000-000000000715','c1f30000-0000-4000-8000-000000000901')$$,'23514',null,'exact-one target rejects an unscoped evidence link');
 insert into public.cost_evidence_links(tenant_id,company_id,project_id,evidence_file_id,project_cost_item_id,evidence_kind,request_id,created_by) values('c1f30000-0000-4000-8000-000000000010','c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000101','c1f30000-0000-4000-8000-000000000501','c1f30000-0000-4000-8000-000000000201','contract','c1f30000-0000-4000-8000-000000000716','c1f30000-0000-4000-8000-000000000901');
 insert into public.cost_evidence_links(tenant_id,company_id,project_id,evidence_file_id,project_subcontract_payment_id,evidence_kind,request_id,created_by) values('c1f30000-0000-4000-8000-000000000010','c1f30000-0000-4000-8000-000000000020','c1f30000-0000-4000-8000-000000000101','c1f30000-0000-4000-8000-000000000501','c1f30000-0000-4000-8000-000000000603','payment_proof','c1f30000-0000-4000-8000-000000000723','c1f30000-0000-4000-8000-000000000901');
@@ -118,6 +123,26 @@ reset role;
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"c1f30000-0000-4000-8000-000000000901","role":"authenticated"}',true);
 select ok(not private.c1_can_select_evidence_object('c1-accounting-evidence','c1f30000-0000-4000-8000-000000000010/c1f30000-0000-4000-8000-000000000020/c1f30000-0000-4000-8000-000000000101/c1f30000-0000-4000-8000-000000000501'),'a draft detail link blocks mixed parent raw access');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1f30000-0000-4000-8000-000000000904","role":"authenticated"}',true);
+select is((select count(*) from public.cost_evidence_links where project_cost_item_detail_id='c1f30000-0000-4000-8000-000000000401'),0::bigint,'cost.prepare alone cannot list draft detail evidence metadata');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1f30000-0000-4000-8000-000000000906","role":"authenticated"}',true);
+select is((select count(*) from public.cost_evidence_links where project_cost_item_detail_id='c1f30000-0000-4000-8000-000000000401'),0::bigint,'cost.source.read alone cannot list draft detail evidence metadata');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1f30000-0000-4000-8000-000000000902","role":"authenticated"}',true);
+select is((select count(*) from public.cost_evidence_links where project_cost_item_detail_id='c1f30000-0000-4000-8000-000000000401'),0::bigint,'cost.file.read alone cannot list draft detail evidence metadata');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1f30000-0000-4000-8000-000000000905","role":"authenticated"}',true);
+select is((select count(*) from public.cost_evidence_links where project_cost_item_detail_id='c1f30000-0000-4000-8000-000000000401'),0::bigint,'cost.manage alone cannot list draft detail evidence metadata');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1f30000-0000-4000-8000-000000000901","role":"authenticated"}',true);
+select is((select count(*) from public.cost_evidence_links where project_cost_item_detail_id='c1f30000-0000-4000-8000-000000000410'),0::bigint,'cross-company actor cannot list draft detail evidence metadata');
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"c1f30000-0000-4000-8000-000000000903","role":"authenticated"}',true);
@@ -136,6 +161,10 @@ select set_config('request.jwt.claims','{"sub":"c1f30000-0000-4000-8000-00000000
 select is((select count(*) from public.project_cost_item_detail_sources where project_cost_item_detail_id='c1f30000-0000-4000-8000-000000000410'),0::bigint,'cross-company detail source rows are denied');
 reset role;
 update public.project_cost_item_details set publication_state='published',publication_origin='command',published_by='c1f30000-0000-4000-8000-000000000901',published_at=now(),publication_request_id='c1f30000-0000-4000-8000-000000000717' where id='c1f30000-0000-4000-8000-000000000401';
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1f30000-0000-4000-8000-000000000906","role":"authenticated"}',true);
+select is((select count(*) from public.cost_evidence_links link join public.cost_evidence_files file on file.id=link.evidence_file_id and file.tenant_id=link.tenant_id and file.company_id=link.company_id where link.project_cost_item_detail_id='c1f30000-0000-4000-8000-000000000401'),1::bigint,'cost.source.read can list published detail evidence metadata');
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"c1f30000-0000-4000-8000-000000000901","role":"authenticated"}',true);

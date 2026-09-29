@@ -108,6 +108,18 @@ describe('CostEvidenceService', () => {
     expect(repository.createReadUrl).not.toHaveBeenCalled()
   })
 
+  it('does not let the draft evidence capability set mint a raw-file URL', async () => {
+    const repository = { createReadUrl: vi.fn() }
+    await expect(new CostEvidenceService(repository as never).createReadUrl(context(['cost.prepare', 'cost.source.read', 'cost.file.read']) as never, ids.file, { disposition: 'inline' })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    expect(repository.createReadUrl).not.toHaveBeenCalled()
+  })
+
+  it.each(['cost.prepare', 'cost.file.read', 'cost.manage'])('does not let %s substitute for cost.source.read on detail metadata GET', async permission => {
+    const repository = { listDetailEvidence: vi.fn() }
+    await expect(new CostEvidenceService(repository as never).listDetailEvidence(context([permission]) as never, ids.detail)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    expect(repository.listDetailEvidence).not.toHaveBeenCalled()
+  })
+
   it('routes positive prepare, metadata, and raw-file capabilities independently', async () => {
     const repository = { createIntent: vi.fn(), finalize: vi.fn(), linkCost: vi.fn(), listCostEvidence: vi.fn(), linkDetail: vi.fn(), listDetailEvidence: vi.fn(), createReadUrl: vi.fn() }
     const service = new CostEvidenceService(repository as never)

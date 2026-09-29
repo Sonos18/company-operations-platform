@@ -18,6 +18,7 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
     '20260924110107_c1_ordinary_cost_detail_commands.sql',
     '20260924120131_c1_ordinary_cost_detail_provenance_evidence_reads.sql',
     '20260924142834_c1_ordinary_cost_detail_publish_hash_fix.sql',
+    '20260929000000_c1_ordinary_cost_detail_review_fixes.sql',
   ]
 
   function migrationRoot(names = migrationNames) {
@@ -43,16 +44,16 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
   it('loads the exact currently pending C1 stack once in timestamp order and excludes applied history', () => {
     const sql = readC1MigrationSql(migrationRoot())
 
-    expect(sql).toBe('select 6;\n')
+    expect(sql).toBe('select 7;\n')
   })
 
   it('rejects a missing pending migration before Cloud access', () => {
-    expect(() => readC1MigrationSql(migrationRoot(migrationNames.filter(name => !name.includes('publish_hash_fix'))))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_ordinary_cost_detail_publish_hash_fix.sql')
+    expect(() => readC1MigrationSql(migrationRoot(migrationNames.filter(name => !name.includes('review_fixes'))))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_ordinary_cost_detail_review_fixes.sql')
   })
 
   it('rejects duplicate migration suffixes before Cloud access', () => {
-    const duplicate = ['20260924142835_c1_ordinary_cost_detail_publish_hash_fix.sql', ...migrationNames]
-    expect(() => readC1MigrationSql(migrationRoot(duplicate))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_ordinary_cost_detail_publish_hash_fix.sql')
+    const duplicate = ['20260929000001_c1_ordinary_cost_detail_review_fixes.sql', ...migrationNames]
+    expect(() => readC1MigrationSql(migrationRoot(duplicate))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_ordinary_cost_detail_review_fixes.sql')
   })
 
   it('checks the Cloud DEV target before dispatching the temporary rehearsal SQL', () => {

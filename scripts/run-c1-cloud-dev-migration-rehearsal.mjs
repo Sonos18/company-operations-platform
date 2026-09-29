@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
 
 const migrationSuffixes = [
-  '_c1_ordinary_cost_detail_publish_hash_fix.sql',
+  '_c1_ordinary_cost_detail_review_fixes.sql',
 ]
 
 export function buildC1MigrationRehearsalSql(migrationSql) {

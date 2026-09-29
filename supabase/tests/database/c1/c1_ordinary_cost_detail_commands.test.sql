@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(81);
+select plan(90);
 
 select has_table('public', 'project_cost_item_detail_sources', 'detail source provenance is introduced with the command slice');
 select has_function('public', 'c1_create_project_cost_detail_draft', 'draft-detail create RPC exists');
@@ -141,13 +141,17 @@ set local role authenticated;
 select throws_ok($$select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_sibling),jsonb_build_object('expectedVersion',1),'c1d10000-0000-4000-8000-000000000611','c1d10000-0000-4000-8000-000000000719')$$,'P0001','COST_DETAIL_PUBLISH_NOT_READY','publish revalidates an open blocking review issue on a persisted source');
 reset role;
 set local role authenticated;
-select is((public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',2),'c1d10000-0000-4000-8000-000000000602','c1d10000-0000-4000-8000-000000000706')->>'publicationState'),'published','publish transitions one prepared detail');
+create temp table c1d_publish_result as
+select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',2),'c1d10000-0000-4000-8000-000000000602','c1d10000-0000-4000-8000-000000000706') result;
+select is((select result->>'publicationState' from c1d_publish_result),'published','publish transitions one prepared detail');
 select is((select amount_text from public.project_cost_items where id=(select (result->>'projectCostItemId')::uuid from c1d_result)),'5.0000','publish updates the parent exactly once');
 select is((public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',2),'c1d10000-0000-4000-8000-000000000602','c1d10000-0000-4000-8000-000000000707')->>'replayed'),'true','same publish key replays');
 select throws_ok($$select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),NULL::jsonb,'c1d10000-0000-4000-8000-000000000629','c1d10000-0000-4000-8000-000000000729')$$,'P0001','INPUT_INVALID','publish rejects a SQL null JSON payload before hashing or receipt lookup');
 select throws_ok($$select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',3,'unexpected',true),'c1d10000-0000-4000-8000-000000000626','c1d10000-0000-4000-8000-000000000726')$$,'P0001','INPUT_INVALID','publish rejects extra JSON keys before hashing or receipt lookup');
 select throws_ok($$select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',3),'c1d10000-0000-4000-8000-000000000603','c1d10000-0000-4000-8000-000000000708')$$,'P0001','COST_DETAIL_ALREADY_PUBLISHED','new publish key cannot publish twice');
-select is((public.c1_correct_published_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',3,'reason','correct amount','changes',jsonb_build_object('amount','6.0000')),'c1d10000-0000-4000-8000-000000000604','c1d10000-0000-4000-8000-000000000709')->>'version'),'4','published correction versions the same detail');
+create temp table c1d_correction_result as
+select public.c1_correct_published_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',3,'reason','correct amount','changes',jsonb_build_object('amount','6.0000')),'c1d10000-0000-4000-8000-000000000604','c1d10000-0000-4000-8000-000000000709') result;
+select is((select result->>'version' from c1d_correction_result),'4','published correction versions the same detail');
 reset role;
 select is((select amount_text from public.project_cost_items where id=(select (result->>'projectCostItemId')::uuid from c1d_result)),'6.0000','published correction recalculates the parent');
 select is((select amount_text from public.project_cost_item_details where id=(select (result->>'id')::uuid from c1d_sibling)),'1.0000','correction preserves the sibling detail unchanged');
@@ -155,6 +159,38 @@ select ok(exists(select 1 from public.audit_events where resource_id=(select res
 insert into public.project_cost_item_detail_sources(tenant_id,company_id,project_cost_item_detail_id,source_reported_figure_id) values('c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),'c1d10000-0000-4000-8000-000000000502');
 set local role authenticated;
 select is((public.c1_correct_published_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',4,'reason','replace stale source','changes',jsonb_build_object('sourceFigureIds',jsonb_build_array('c1d10000-0000-4000-8000-000000000501'))),'c1d10000-0000-4000-8000-000000000612','c1d10000-0000-4000-8000-000000000720')->>'version'),'5','correction remediates stale persisted sources with an explicit replacement');
+reset role;
+create temp table c1d_replay_effects_before as
+select
+  (select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'projectCostItemId')::uuid from c1d_result)) detail_count,
+  (select count(*) from public.audit_events where resource_id=(select result->>'id' from c1d_result)) audit_count,
+  (select count(*) from public.cost_command_receipts where result_resource_id=(select (result->>'id')::uuid from c1d_result)) receipt_count,
+  (select amount_text from public.project_cost_items where id=(select (result->>'projectCostItemId')::uuid from c1d_result)) parent_amount;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"c1d10000-0000-4000-8000-000000000901","role":"authenticated"}', true);
+create temp table c1d_create_replay as
+select public.c1_create_project_cost_detail_draft('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101','categoryId','c1d10000-0000-4000-8000-000000000301','description','first draft'),'c1d10000-0000-4000-8000-000000000601','c1d10000-0000-4000-8000-000000000743') result;
+create temp table c1d_publish_replay as
+select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',2),'c1d10000-0000-4000-8000-000000000602','c1d10000-0000-4000-8000-000000000744') result;
+create temp table c1d_correction_replay as
+select public.c1_correct_published_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('expectedVersion',3,'reason','correct amount','changes',jsonb_build_object('amount','6.0000')),'c1d10000-0000-4000-8000-000000000604','c1d10000-0000-4000-8000-000000000745') result;
+reset role;
+select is((select result-'replayed' from c1d_create_replay),(select result-'replayed' from c1d_result),'create-draft replay after publication preserves the original draft acknowledgement');
+select is((select result->>'replayed' from c1d_create_replay),'true','create-draft replay after publication is marked replayed');
+select is(
+  jsonb_build_object(
+    'details',(select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'projectCostItemId')::uuid from c1d_result)),
+    'audits',(select count(*) from public.audit_events where resource_id=(select result->>'id' from c1d_result)),
+    'receipts',(select count(*) from public.cost_command_receipts where result_resource_id=(select (result->>'id')::uuid from c1d_result)),
+    'parentAmount',(select amount_text from public.project_cost_items where id=(select (result->>'projectCostItemId')::uuid from c1d_result))
+  ),
+  (select jsonb_build_object('details',detail_count,'audits',audit_count,'receipts',receipt_count,'parentAmount',parent_amount) from c1d_replay_effects_before),
+  'historical replays create no detail, audit, receipt, or financial effect'
+);
+select is((select result-'replayed' from c1d_publish_replay),(select result-'replayed' from c1d_publish_result),'publish replay after later corrections preserves its original acknowledgement');
+select is((select result->>'replayed' from c1d_publish_replay),'true','historical publish replay is marked replayed');
+select is((select result-'replayed' from c1d_correction_replay),(select result-'replayed' from c1d_correction_result),'correction replay after a later correction preserves its recorded version');
+select is((select result->>'replayed' from c1d_correction_replay),'true','historical correction replay is marked replayed');
 reset role;
 select is((select before_summary->'sourceFigureIds' from public.audit_events where request_id='c1d10000-0000-4000-8000-000000000720'),'["c1d10000-0000-4000-8000-000000000502"]'::jsonb,'correction audit records exactly the prior source-link array');
 select is((select after_summary->'sourceFigureIds' from public.audit_events where request_id='c1d10000-0000-4000-8000-000000000720'),'["c1d10000-0000-4000-8000-000000000501"]'::jsonb,'correction audit records exactly the replacement source-link array');
@@ -165,12 +201,18 @@ reset role;
 create temp table c1d_direct_before as select count(*) detail_count,count(*) filter(where publication_state='draft') draft_count from public.project_cost_item_details where project_cost_item_id=(select (result->>'projectCostItemId')::uuid from c1d_result);
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"c1d10000-0000-4000-8000-000000000901","role":"authenticated"}', true);
-select is((public.c1_create_and_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101','categoryId','c1d10000-0000-4000-8000-000000000301','description','direct','amount','2.0000'),'c1d10000-0000-4000-8000-000000000606','c1d10000-0000-4000-8000-000000000711')->>'publicationState'),'published','direct command creates and publishes atomically');
+create temp table c1d_direct_result as
+select public.c1_create_and_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101','categoryId','c1d10000-0000-4000-8000-000000000301','description','direct','amount','2.0000'),'c1d10000-0000-4000-8000-000000000606','c1d10000-0000-4000-8000-000000000711') result;
+select is((select result->>'publicationState' from c1d_direct_result),'published','direct command creates and publishes atomically');
 reset role;
 select is((select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'projectCostItemId')::uuid from c1d_result)),(select detail_count+1 from c1d_direct_before),'direct publish creates exactly one detail');
 select is((select count(*) filter(where publication_state='draft') from public.project_cost_item_details where project_cost_item_id=(select (result->>'projectCostItemId')::uuid from c1d_result)),(select draft_count from c1d_direct_before),'direct publish leaves no committed draft or transient duplicate');
 set local role authenticated;
-select is((public.c1_create_and_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101','categoryId','c1d10000-0000-4000-8000-000000000301','description','direct','amount','2.0000'),'c1d10000-0000-4000-8000-000000000606','c1d10000-0000-4000-8000-000000000712')->>'replayed'),'true','same direct command key replays');
+select is((public.c1_correct_published_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_direct_result),jsonb_build_object('expectedVersion',0,'reason','later direct correction','changes',jsonb_build_object('note','corrected after direct publish')),'c1d10000-0000-4000-8000-000000000630','c1d10000-0000-4000-8000-000000000746')->>'version'),'1','direct-published detail accepts a later correction');
+create temp table c1d_direct_replay as
+select public.c1_create_and_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101','categoryId','c1d10000-0000-4000-8000-000000000301','description','direct','amount','2.0000'),'c1d10000-0000-4000-8000-000000000606','c1d10000-0000-4000-8000-000000000712') result;
+select is((select result-'replayed' from c1d_direct_replay),(select result-'replayed' from c1d_direct_result),'direct-publish replay after correction preserves its original acknowledgement');
+select is((select result->>'replayed' from c1d_direct_replay),'true','historical direct-publish replay is marked replayed');
 reset role;
 select is((select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'projectCostItemId')::uuid from c1d_result)),(select detail_count+1 from c1d_direct_before),'direct replay creates no second detail');
 select is((select amount_text from public.project_cost_items where id=(select (result->>'projectCostItemId')::uuid from c1d_result)),'8.0000','direct publish has one additional exact aggregate effect');

@@ -134,6 +134,15 @@ describe('HTTP Cost Evidence repository', () => {
     expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ url: `/api/companies/${companyId}/project-cost-details/${detailId}/evidence`, method: 'POST' }))
   })
 
+  it('lists detail evidence metadata through the exact GET endpoint', async () => {
+    const metadata = [{ linkId, evidenceFileId, evidenceKind: 'invoice', accountingSourceVersionId: null, originalFilename: 'invoice.pdf', mimeType: 'application/pdf', sizeBytes: 1024, sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', finalizedAt: '2026-09-23T12:05:00.000Z' }]
+    const client = responseClient(metadata)
+    const repo = createHttpCostEvidenceRepository({ companyId, client: client as never })
+
+    await expect(repo.listDetailMetadata(detailId)).resolves.toEqual(metadata)
+    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ url: `/api/companies/${companyId}/project-cost-details/${detailId}/evidence`, method: 'GET' }))
+  })
+
   it('gets signed read URL', async () => {
     const readUrlResponse = {
       url: 'https://supabase.co/storage/v1/object/sign/c1-accounting-evidence/file.pdf?token=xyz',
