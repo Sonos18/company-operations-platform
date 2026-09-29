@@ -98,6 +98,29 @@ describe('C1 root-cause hardening migration', () => {
     expect(direct.indexOf('v_receipt:=private.c1_detail_receipt')).toBeLessThan(direct.indexOf('perform private.c1_detail_validate_financial_input'))
   })
 
+  it('enforces strict RPC envelopes before financial casts while retaining direct replay precedence', () => {
+    const sql = hardeningSql()
+    const financial = sql.match(/create function private\.c1_detail_validate_financial_input[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
+    const directEnvelope = sql.match(/create function private\.c1_detail_validate_direct_create_input[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
+    const prepareEnvelope = sql.match(/create function private\.c1_detail_validate_prepare_financial_input[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
+    const direct = sql.match(/create or replace function private\.c1_create_and_publish_project_cost_detail[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
+    const prepare = sql.match(/create or replace function private\.c1_prepare_project_cost_detail_financials[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
+
+    expect(sql).toContain('private.c1_detail_validate_direct_create_input')
+    expect(sql).toContain('private.c1_detail_validate_prepare_financial_input')
+    expect(direct).toContain('perform private.c1_detail_validate_direct_create_input(target_input)')
+    expect(prepare).toContain('private.c1_detail_validate_prepare_financial_input(target_input)')
+    expect(financial).toContain("jsonb_typeof(target_input->'amount')<>'string'")
+    expect(financial).toContain("jsonb_typeof(target_input->'retentionRateBps')<>'number'")
+    expect(financial).toContain("jsonb_typeof(target_input->'unitCode')<>'string'")
+    expect(financial.indexOf("jsonb_typeof(target_input->'amount')<>'string'")).toBeLessThan(financial.indexOf("target_input->>'amount'"))
+    expect(directEnvelope).toMatch(/if jsonb_typeof\(target_input\) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;/u)
+    expect(prepareEnvelope).toMatch(/if jsonb_typeof\(target_input\) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;/u)
+    expect(directEnvelope.indexOf("jsonb_typeof(target_input) is distinct from 'object'")).toBeLessThan(directEnvelope.indexOf('jsonb_object_keys(target_input)'))
+    expect(prepareEnvelope.indexOf("jsonb_typeof(target_input) is distinct from 'object'")).toBeLessThan(prepareEnvelope.indexOf('jsonb_object_keys(target_input)'))
+    expect(direct.indexOf('v_receipt:=private.c1_detail_receipt')).toBeLessThan(direct.indexOf('perform private.c1_detail_validate_direct_create_input(target_input)'))
+  })
+
   it('keeps volatile parent command calls out of assertion lookup predicates', () => {
     const sql = detailCommandsSql()
 

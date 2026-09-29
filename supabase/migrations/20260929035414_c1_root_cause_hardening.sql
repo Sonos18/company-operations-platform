@@ -157,15 +157,21 @@ returns void language plpgsql immutable security definer set search_path='' as $
 declare v_amount numeric; v_retention_kind text; v_retention_rate_bps integer; v_retention_amount numeric;
 begin
   if jsonb_typeof(target_input) is distinct from 'object'
-    or coalesce(target_input->>'amount','') !~ '^\d{1,16}(\.\d{1,4})?$'
-    or (coalesce(target_input->>'quantity','')<>'' and target_input->>'quantity' !~ '^\d{1,16}(\.\d{1,4})?$')
-    or (coalesce(target_input->>'unitPrice','')<>'' and target_input->>'unitPrice' !~ '^\d{1,16}(\.\d{1,4})?$')
-    or (coalesce(target_input->>'retentionKind','')<>'' and target_input->>'retentionKind' not in ('warranty','other'))
-    or (coalesce(target_input->>'retentionRateBps','')<>'' and (target_input->>'retentionRateBps' !~ '^\d{1,5}$' or lpad(target_input->>'retentionRateBps',5,'0')>'10000'))
-    or (coalesce(target_input->>'retentionAmount','')<>'' and target_input->>'retentionAmount' !~ '^\d{1,16}(\.\d{1,4})?$')
-    or (target_input ? 'sourceFigureIds' and jsonb_typeof(target_input->'sourceFigureIds')<>'array')
+    or jsonb_typeof(target_input->'amount')<>'string'
+    or (target_input ? 'quantity' and jsonb_typeof(target_input->'quantity')<>'null' and (jsonb_typeof(target_input->'quantity')<>'string' or target_input->>'quantity' !~ '^\d{1,16}(\.\d{1,4})?$'))
+    or (target_input ? 'unitCode' and jsonb_typeof(target_input->'unitCode')<>'null' and (jsonb_typeof(target_input->'unitCode')<>'string' or coalesce(btrim(target_input->>'unitCode'),'')=''))
+    or (target_input ? 'unitPrice' and jsonb_typeof(target_input->'unitPrice')<>'null' and (jsonb_typeof(target_input->'unitPrice')<>'string' or target_input->>'unitPrice' !~ '^\d{1,16}(\.\d{1,4})?$'))
+    or (target_input ? 'retentionKind' and jsonb_typeof(target_input->'retentionKind')<>'null' and (jsonb_typeof(target_input->'retentionKind')<>'string' or target_input->>'retentionKind' not in ('warranty','other')))
+    or (target_input ? 'retentionRateBps' and jsonb_typeof(target_input->'retentionRateBps')<>'null' and (jsonb_typeof(target_input->'retentionRateBps')<>'number' or target_input->>'retentionRateBps' !~ '^\d{1,5}$' or lpad(target_input->>'retentionRateBps',5,'0')>'10000'))
+    or (target_input ? 'retentionAmount' and jsonb_typeof(target_input->'retentionAmount')<>'null' and (jsonb_typeof(target_input->'retentionAmount')<>'string' or target_input->>'retentionAmount' !~ '^\d{1,16}(\.\d{1,4})?$'))
   then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
-  if target_input ? 'sourceFigureIds' and (exists(select 1 from jsonb_array_elements_text(target_input->'sourceFigureIds') source_id where source_id !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') or (select count(*) from jsonb_array_elements_text(target_input->'sourceFigureIds'))<>(select count(distinct source_id) from jsonb_array_elements_text(target_input->'sourceFigureIds') source_id)) then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if target_input->>'amount' !~ '^\d{1,16}(\.\d{1,4})?$' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if target_input ? 'sourceFigureIds' then
+    if jsonb_typeof(target_input->'sourceFigureIds')<>'array' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+    if exists(select 1 from jsonb_array_elements(target_input->'sourceFigureIds') source_id where jsonb_typeof(source_id)<>'string' or source_id#>>'{}' !~* '^(00000000-0000-0000-0000-000000000000|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$')
+      or (select count(*) from jsonb_array_elements_text(target_input->'sourceFigureIds'))<>(select count(distinct source_id) from jsonb_array_elements_text(target_input->'sourceFigureIds') source_id)
+    then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  end if;
   v_amount:=(target_input->>'amount')::numeric;
   v_retention_kind:=nullif(target_input->>'retentionKind','');
   v_retention_rate_bps:=nullif(target_input->>'retentionRateBps','')::integer;
@@ -174,11 +180,46 @@ begin
 end;
 $$;
 
+create function private.c1_detail_validate_prepare_financial_input(target_input jsonb)
+returns bigint language plpgsql immutable security definer set search_path='' as $$
+begin
+  if jsonb_typeof(target_input) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if not (target_input ? 'expectedVersion')
+    or not (target_input ? 'amount')
+    or exists(select 1 from jsonb_object_keys(target_input) key where key not in ('expectedVersion','amount','quantity','unitCode','unitPrice','retentionKind','retentionRateBps','retentionAmount','sourceFigureIds'))
+  then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  return private.c1_detail_expected_version(target_input);
+end;
+$$;
+
+create function private.c1_detail_validate_direct_create_input(target_input jsonb)
+returns void language plpgsql immutable security definer set search_path='' as $$
+begin
+  if jsonb_typeof(target_input) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if not (target_input ? 'projectId')
+    or not (target_input ? 'categoryId')
+    or not (target_input ? 'description')
+    or not (target_input ? 'amount')
+    or exists(select 1 from jsonb_object_keys(target_input) key where key not in ('projectId','categoryId','description','amount','quantity','unitCode','unitPrice','retentionKind','retentionRateBps','retentionAmount','relevantDate','reference','note','sourceFigureIds'))
+    or jsonb_typeof(target_input->'projectId')<>'string'
+    or jsonb_typeof(target_input->'categoryId')<>'string'
+    or jsonb_typeof(target_input->'description')<>'string'
+    or target_input->>'projectId' !~* '^(00000000-0000-0000-0000-000000000000|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$'
+    or target_input->>'categoryId' !~* '^(00000000-0000-0000-0000-000000000000|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$'
+    or coalesce(btrim(target_input->>'description'),'')=''
+    or (target_input ? 'reference' and (jsonb_typeof(target_input->'reference')<>'string' or coalesce(btrim(target_input->>'reference'),'')=''))
+    or (target_input ? 'note' and (jsonb_typeof(target_input->'note')<>'string' or coalesce(btrim(target_input->>'note'),'')=''))
+    or (target_input ? 'relevantDate' and (jsonb_typeof(target_input->'relevantDate')<>'string' or coalesce(btrim(target_input->>'relevantDate'),'')=''))
+  then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  if target_input ? 'relevantDate' then perform private.c1_parse_project_cost_date(target_input->>'relevantDate'); end if;
+end;
+$$;
+
 create or replace function private.c1_prepare_project_cost_detail_financials(target_company_id uuid,target_id uuid,target_input jsonb,target_request_id uuid)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare v_context jsonb; v_detail public.project_cost_item_details%rowtype; v_before jsonb; v_amount numeric; v_expected_version bigint;
 begin
-  v_context:=private.c1_detail_context(target_company_id,'cost.prepare');v_expected_version:=private.c1_detail_expected_version(target_input);v_detail:=private.c1_detail_require_scope(target_id,(v_context->>'tenantId')::uuid,target_company_id);
+  v_context:=private.c1_detail_context(target_company_id,'cost.prepare');v_expected_version:=private.c1_detail_validate_prepare_financial_input(target_input);v_detail:=private.c1_detail_require_scope(target_id,(v_context->>'tenantId')::uuid,target_company_id);
   if v_detail.publication_state<>'draft' then raise exception using errcode='P0001',message='COST_DETAIL_NOT_DRAFT'; end if;
   if v_detail.version is distinct from v_expected_version then raise exception using errcode='P0001',message='VERSION_CONFLICT'; end if;
   perform private.c1_detail_validate_financial_input(target_input);
@@ -221,9 +262,8 @@ begin
   v_hash:=encode(extensions.digest(convert_to(private.c1_jsonb_canonical_text(jsonb_build_object('projectId',target_input->>'projectId','input',target_input)),'UTF8'),'sha256'),'hex');
   v_receipt:=private.c1_detail_receipt(v_tenant_id,target_company_id,v_actor_id,'project_cost_detail.create_and_publish',target_idempotency_key,v_hash);
   if v_receipt.id is not null then return private.c1_detail_replay_ack(v_receipt.result_resource_id,v_receipt.result_version,'published'); end if;
-  if jsonb_typeof(target_input) is distinct from 'object' or target_input->>'projectId' is null or target_input->>'categoryId' is null or coalesce(btrim(target_input->>'description'),'')='' then raise exception using errcode='P0001',message='INPUT_INVALID'; end if;
+  perform private.c1_detail_validate_direct_create_input(target_input);
   perform private.c1_detail_validate_financial_input(target_input);
-  if coalesce(target_input->>'relevantDate','')<>'' then perform private.c1_parse_project_cost_date(target_input->>'relevantDate'); end if;
   v_amount:=(target_input->>'amount')::numeric;
   v_retention_kind:=nullif(target_input->>'retentionKind','');
   v_retention_rate_bps:=nullif(target_input->>'retentionRateBps','')::integer;
@@ -285,5 +325,5 @@ begin
 end;
 $$;
 
-revoke all on function private.c1_lock_project_cost_category(uuid,uuid,uuid,uuid), private.c1_project_cost_item_has_managed_detail_state(uuid,uuid,uuid), private.c1_project_cost_detail_publish_readiness(uuid,uuid,uuid), private.c1_detail_load_readiness_scope(uuid,uuid,uuid), private.c1_detail_validate_financial_input(jsonb) from public, anon, authenticated;
+revoke all on function private.c1_lock_project_cost_category(uuid,uuid,uuid,uuid), private.c1_project_cost_item_has_managed_detail_state(uuid,uuid,uuid), private.c1_project_cost_detail_publish_readiness(uuid,uuid,uuid), private.c1_detail_load_readiness_scope(uuid,uuid,uuid), private.c1_detail_validate_financial_input(jsonb), private.c1_detail_validate_prepare_financial_input(jsonb), private.c1_detail_validate_direct_create_input(jsonb) from public, anon, authenticated;
 notify pgrst,'reload schema';
