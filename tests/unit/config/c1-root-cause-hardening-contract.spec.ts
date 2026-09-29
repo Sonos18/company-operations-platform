@@ -73,6 +73,31 @@ describe('C1 root-cause hardening migration', () => {
     expect(publish).toContain('private.c1_detail_load_readiness_scope')
   })
 
+  it('replaces direct create-and-publish with one v0 published command history', () => {
+    const sql = hardeningSql()
+    const direct = sql.match(/create or replace function private\.c1_create_and_publish_project_cost_detail[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
+    const prepare = sql.match(/create or replace function private\.c1_prepare_project_cost_detail_financials[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
+
+    expect(sql).toContain('private.c1_detail_validate_financial_input')
+    expect(prepare).toContain('private.c1_detail_validate_financial_input')
+    expect(direct).toContain("private.c1_detail_context(target_company_id,'cost.manage')")
+    expect(direct).toContain("private.c1_detail_context(target_company_id,'cost.prepare')")
+    expect(direct).toContain("private.c1_detail_context(target_company_id,'cost.publish_import')")
+    expect(direct).toContain('private.c1_resolve_or_create_ordinary_project_cost_item')
+    expect(direct).toContain('private.c1_detail_validate_financial_input')
+    expect(direct).toContain('private.c1_detail_replace_sources')
+    expect(direct).toContain('private.c1_project_cost_detail_publish_readiness')
+    expect(direct).toContain('private.c1_sync_project_cost_item_amount')
+    expect(direct).toContain("'c1.project_cost_detail.created_and_published'")
+    expect(direct).toContain("'project_cost_detail.create_and_publish'")
+    expect(direct).not.toContain('private.c1_create_project_cost_detail_draft')
+    expect(direct).not.toContain('private.c1_prepare_project_cost_detail_financials')
+    expect(direct).not.toContain('private.c1_publish_project_cost_detail')
+    expect(direct).not.toContain('jsonb_object_keys')
+    expect(direct).not.toMatch(/update\s+public\.project_cost_item_details[\s\S]*?set\s+version\s*=\s*0/iu)
+    expect(direct.indexOf('v_receipt:=private.c1_detail_receipt')).toBeLessThan(direct.indexOf('perform private.c1_detail_validate_financial_input'))
+  })
+
   it('keeps volatile parent command calls out of assertion lookup predicates', () => {
     const sql = detailCommandsSql()
 

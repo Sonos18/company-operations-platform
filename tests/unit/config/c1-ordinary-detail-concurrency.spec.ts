@@ -27,6 +27,7 @@ describe('C1 ordinary-detail concurrency runner', () => {
   it('covers the approved resolver and legacy parent identity race outcomes', () => {
     expect(C1_ORDINARY_DETAIL_CONCURRENCY_SCENARIOS).toEqual([
       { name: 'resolver-resolver', outcome: 'same-parent' },
+      { name: 'direct-direct', outcome: 'same-parent' },
       { name: 'descriptive-correction-resolver', outcome: 'same-parent' },
       { name: 'legacy-create-legacy-create', outcome: 'actor-b-category-conflict' },
       { name: 'legacy-create-resolver', outcome: 'actor-b-category-conflict' },
@@ -94,7 +95,7 @@ describe('C1 ordinary-detail concurrency runner', () => {
       'public.company_memberships', 'public.tenant_memberships', 'public.audit_events', 'public.companies',
       'public.tenants', 'auth.users',
     ]) expect(exactCleanupSql).toContain(`delete from ${table}`)
-    expect(exactCleanupSql).toContain("command_name in ('project_cost_draft.create','project_cost.correct')")
+    expect(exactCleanupSql).toContain("command_name in ('project_cost_draft.create','project_cost.correct','project_cost_detail.create_and_publish')")
   })
 
   it('requires the descriptive correction race to prove both lock directions before either command runs', () => {
@@ -165,7 +166,9 @@ describe('C1 ordinary-detail concurrency runner', () => {
         if (phase === 'actor_b') return scenario.outcome === 'same-parent'
           ? { parentId: 'c1f10000-0000-4000-8000-000000000201' }
           : { errorCode: 'PROJECT_COST_CATEGORY_CONFLICT' }
-        if (phase === 'assert') return { parentCount: 1 }
+        if (phase === 'assert') return scenario.name === 'direct-direct'
+          ? { parentCount: 1, detailCount: 2, publishedCount: 2, distinctLineCount: 2, amountText: '3.0000', directReceiptCount: 2, directAuditCount: 2 }
+          : { parentCount: 1 }
         return {}
       },
     })
