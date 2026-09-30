@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { financeListQuerySchema, itemDetailQuerySchema, paymentQuerySchema } from '../../../shared/schemas/costs/project-finance'
 import { compareFinanceRows } from '../../../shared/utils/project-finance-dates'
 import { sumFinanceMoney } from '../../../shared/utils/project-finance-money'
+import { ProjectCostRepository } from '../../../server/features/costs/project-cost.repository'
 import { AppApiError } from '../../../server/utils/api-error'
 import { ProjectFinanceMetadataReader, ProjectFinanceTableReader, type FinanceProjectContextRow, type FinanceTableRows } from '../../../server/features/costs/finance/project-finance.queries'
 import { ConcreteProjectFinanceRepository, createSupabaseProjectFinanceRepository } from '../../../server/features/costs/finance/project-finance.repository'
@@ -112,6 +113,9 @@ function fakeSupabase(rows: ReturnType<typeof readSet>) {
         in(field: string, values: readonly string[]) { ins.set(field, values); return query },
         gt(_field: string, value: string) { greaterThan = value; return query },
         order() { return query },
+        then(resolve: (value: { data: Record<string, unknown>[], error: null }) => unknown) {
+          return query.limit(Number.MAX_SAFE_INTEGER).then(resolve)
+        },
         async limit(size: number) {
           const fields = selected.split(',')
           const values = [...(tableRows[table] ?? [])].filter(row => [...equals].every(([field, value]) => row[field] === value)).filter(row => [...ins].every(([field, allowed]) => allowed.includes(String(row[field])))).filter(row => greaterThan === null || String(row.id) > greaterThan)
@@ -365,6 +369,21 @@ describe('C1 finance review regressions on concrete production readers', () => {
       code: 'INTERNAL_ERROR',
       details: { reason: 'DATA_CONSISTENCY_ERROR' },
     })
+  })
+
+  it.each(['legacy_backfill', 'command'] as const)('keeps %s historical parent-only and draft-only balances fail-closed across both readers', async (origin) => {
+    for (const state of ['absent', 'draft'] as const) {
+      const rows = readSet()
+      rows.costItems = [{ ...rows.costItems[0]!, publication_origin: origin }]
+      rows.details = state === 'absent' ? [] : [{ ...rows.details[0]!, amount_text: '100.0000', publication_state: 'draft' }]
+      const before = JSON.stringify(rows)
+      const client = fakeSupabase(rows)
+      const finance = createSupabaseProjectFinanceRepository(client as never)
+      await expect(finance.overview(scope, ids.project)).rejects.toMatchObject({ code: 'INTERNAL_ERROR', details: { reason: 'DATA_CONSISTENCY_ERROR' } })
+      await expect(finance.listProjects(scope, directoryQuery)).rejects.toMatchObject({ code: 'INTERNAL_ERROR', details: { reason: 'DATA_CONSISTENCY_ERROR' } })
+      await expect(new ProjectCostRepository(client as never).itemDetails(ids.tenant, ids.company, ids.materialsItem)).rejects.toMatchObject({ code: 'INTERNAL_ERROR', statusCode: 500 })
+      expect(JSON.stringify(rows)).toBe(before)
+    }
   })
 
   it('F04 partitions every project-owned relation in a batched factory directory read', async () => {

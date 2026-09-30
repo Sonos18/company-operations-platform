@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { buildC1MigrationRehearsalSql, readC1MigrationSql, runC1MigrationRehearsal, validateC1MigrationRehearsalSql } from '../../../scripts/run-c1-cloud-dev-migration-rehearsal.mjs'
 
 const roots: string[] = []
@@ -25,6 +25,7 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
     '20260930000002_c1_ordinary_parent_balance_guard.sql',
     '20260930000003_c1_legacy_parent_correction_snapshot_scope.sql',
     '20260930000004_c1_allow_legacy_opening_balance_publication.sql',
+    '20260930111326_c1_draft_list_parent_eligibility.sql',
   ]
 
   function migrationRoot(names = migrationNames) {
@@ -50,16 +51,16 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
   it('loads the exact currently pending C1 stack once in timestamp order and excludes applied history', () => {
     const sql = readC1MigrationSql(migrationRoot())
 
-    expect(sql).toBe('select 13;\n')
+    expect(sql).toBe('select 14;\n')
   })
 
   it('rejects a missing pending migration before Cloud access', () => {
-    expect(() => readC1MigrationSql(migrationRoot(migrationNames.filter(name => !name.includes('allow_legacy_opening_balance_publication'))))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_allow_legacy_opening_balance_publication.sql')
+    expect(() => readC1MigrationSql(migrationRoot(migrationNames.filter(name => !name.includes('draft_list_parent_eligibility'))))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_draft_list_parent_eligibility.sql')
   })
 
   it('rejects duplicate migration suffixes before Cloud access', () => {
-    const duplicate = ['20260930000005_c1_allow_legacy_opening_balance_publication.sql', ...migrationNames]
-    expect(() => readC1MigrationSql(migrationRoot(duplicate))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_allow_legacy_opening_balance_publication.sql')
+    const duplicate = ['20260930120000_c1_draft_list_parent_eligibility.sql', ...migrationNames]
+    expect(() => readC1MigrationSql(migrationRoot(duplicate))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_draft_list_parent_eligibility.sql')
   })
 
   it('checks the Cloud DEV target before dispatching the temporary rehearsal SQL', () => {
@@ -75,4 +76,51 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
     })).toThrow('target mismatch')
     expect(spawns).toBe(0)
   })
+  it('rejects transaction controls before checking the target or spawning', () => {
+    let checks = 0
+    let spawns = 0
+    expect(() => runC1MigrationRehearsal({
+      migrationSql: 'commit;',
+      assertTarget: () => { checks += 1 },
+      spawn: () => { spawns += 1; return { status: 0 } },
+    })).toThrow('C1 migration rehearsal cannot contain transaction control')
+    expect(checks).toBe(0)
+    expect(spawns).toBe(0)
+  })
+
+  it.each([0, 1])('dispatches the production preflight and isolated controls once and cleans up (exit %s)', (status) => {
+    const cwd = resolve(import.meta.dirname, '../../..')
+    let checked = false
+    let dispatchedPath = ''
+    let spawns = 0
+    const run = () => runC1MigrationRehearsal({
+      cwd,
+      assertTarget: () => { checked = true },
+      spawn: (_command: string, args: string[]) => {
+        expect(checked).toBe(true)
+        spawns += 1
+        expect(args.slice(1, 7)).toEqual(['db', 'query', '--linked', '--output-format', 'json', '--file'])
+        dispatchedPath = args[7]!
+        const sql = readFileSync(dispatchedPath, 'utf8')
+        expect(() => validateC1MigrationRehearsalSql(sql)).not.toThrow()
+        expect(sql.indexOf('C1_PUBLISHED_COST_HISTORY_REQUIRES_REVIEW')).toBeLessThan(sql.indexOf('create or replace function'))
+        expect(sql).toContain('C1_PUBLISHED_COST_HISTORY_REHEARSAL_COMPLETE')
+        expect(sql).toContain('pg_temp.c1_history_parents')
+        return { status, stdout: JSON.stringify({ rows: [{ result: 'C1_PUBLISHED_COST_HISTORY_REHEARSAL_COMPLETE' }] }) }
+      },
+    })
+    if (status === 0) expect(run).not.toThrow()
+    else expect(run).toThrow('C1 Cloud DEV migration rehearsal failed')
+    expect(spawns).toBe(1)
+    expect(existsSync(dispatchedPath)).toBe(false)
+  })
+
+  it.each(['', '{}', '{"rows":[]}', '{"rows":[{"result":"wrong"}]}'])('rejects exit-zero without the historical rehearsal completion evidence: %s', (stdout) => {
+    expect(() => runC1MigrationRehearsal({
+      cwd: resolve(import.meta.dirname, '../../..'),
+      assertTarget: () => {},
+      spawn: () => ({ status: 0, stdout }),
+    })).toThrow('C1 Cloud DEV migration rehearsal returned no valid completion evidence')
+  })
+
 })
