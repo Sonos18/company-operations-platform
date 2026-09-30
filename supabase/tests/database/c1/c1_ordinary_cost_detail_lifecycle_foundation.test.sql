@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(27);
+select plan(29);
 
 select has_column('public', 'cost_categories', 'posting_strategy', 'category posting strategy exists');
 select results_eq(
@@ -34,6 +34,18 @@ select ok(exists (
   where conrelid = 'public.project_cost_item_details'::regclass
     and conname = 'project_cost_item_details_publication_shape_check'
 ), 'detail lifecycle shape constraint exists');
+select ok(exists (
+  select 1 from pg_index index_metadata
+  where index_metadata.indexrelid = to_regclass('public.c1fc_cost_item_one_category')
+    and index_metadata.indrelid = 'public.project_cost_items'::regclass
+    and index_metadata.indisunique and index_metadata.indisvalid and index_metadata.indisready
+    and index_metadata.indnkeyatts = 4
+    and pg_get_indexdef(index_metadata.indexrelid, 1, true) = 'tenant_id'
+    and pg_get_indexdef(index_metadata.indexrelid, 2, true) = 'company_id'
+    and pg_get_indexdef(index_metadata.indexrelid, 3, true) = 'project_id'
+    and pg_get_indexdef(index_metadata.indexrelid, 4, true) = 'cost_category_id'
+    and pg_get_expr(index_metadata.indpred, index_metadata.indrelid) = '(cost_category_id IS NOT NULL)'
+), 'baseline unique index enforces the exact classified project category scope');
 
 do $$
 declare
@@ -128,6 +140,12 @@ select throws_ok(
   $$insert into public.project_cost_items(tenant_id,company_id,project_id,cost_category_id,description,amount,amount_text,currency_code,work_status,publication_state,publication_origin,published_by,published_at,publication_request_id,created_by) values ('c1f10000-0000-4000-8000-000000000010','c1f10000-0000-4000-8000-000000000020','c1f10000-0000-4000-8000-000000000102','c1f10000-0000-4000-8000-000000000301','duplicate',0,'0','VND','unknown','published','command','c1f10000-0000-4000-8000-000000000903',now(),'c1f10000-0000-4000-8000-000000000703','c1f10000-0000-4000-8000-000000000903')$$,
   'P0001', 'PROJECT_COST_CATEGORY_CONFLICT', 'duplicate parent is rejected by the parent identity guard'
 );
+alter table public.project_cost_items disable trigger c1_project_cost_parent_identity_guard;
+select throws_ok(
+  $$insert into public.project_cost_items(tenant_id,company_id,project_id,cost_category_id,description,amount,amount_text,currency_code,work_status,publication_state,publication_origin,published_by,published_at,publication_request_id,created_by) values ('c1f10000-0000-4000-8000-000000000010','c1f10000-0000-4000-8000-000000000020','c1f10000-0000-4000-8000-000000000102','c1f10000-0000-4000-8000-000000000301','duplicate without identity trigger',0,'0','VND','unknown','published','command','c1f10000-0000-4000-8000-000000000903',now(),'c1f10000-0000-4000-8000-000000000703','c1f10000-0000-4000-8000-000000000903')$$,
+  '23505', 'duplicate key value violates unique constraint "c1fc_cost_item_one_category"', 'baseline unique index rejects duplicate parents independently of the identity trigger'
+);
+alter table public.project_cost_items enable trigger c1_project_cost_parent_identity_guard;
 select throws_ok(
   $$select private.c1_resolve_or_create_ordinary_project_cost_item('c1f10000-0000-4000-8000-000000000010','c1f10000-0000-4000-8000-000000000020','c1f10000-0000-4000-8000-000000000102','c1f10000-0000-4000-8000-000000000302','c1f10000-0000-4000-8000-000000000903','c1f10000-0000-4000-8000-000000000704')$$,
   'P0001', 'SUBCONTRACT_COST_MODEL_UNSUPPORTED', 'resolver rejects subcontract payment categories'
