@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(204);
+select plan(210);
 
 select has_table('public', 'project_cost_item_detail_sources', 'detail source provenance is introduced with the command slice');
 select has_function('public', 'c1_create_project_cost_detail_draft', 'draft-detail create RPC exists');
@@ -436,6 +436,35 @@ select set_config('request.jwt.claims', '{"sub":"c1d10000-0000-4000-8000-0000000
 select throws_ok($$select public.c1_create_and_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101','categoryId','c1d10000-0000-4000-8000-000000000301','description','no publish','amount','1.0000'),'c1d10000-0000-4000-8000-000000000615','c1d10000-0000-4000-8000-000000000723')$$,'P0001','PERMISSION_DENIED','direct publish independently requires cost.publish_import');
 reset role;
 select is((select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'projectCostItemId')::uuid from c1d_result)),(select detail_count from c1d_permission_before),'denied direct commands create no row or aggregate effect');
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"c1d10000-0000-4000-8000-000000000901","role":"authenticated"}', true);
+reset role;
+insert into public.source_reported_figures(id,tenant_id,company_id,source_selection_id,import_run_id,figure_identity,label,raw_value_text,value_state,amount_text,amount,currency_code,metric_kind,basis,rounding_basis,period_basis,mapping_state,reviewed_mapping,project_id,scope_kind,scope_description,confirmation,status,created_by,shared_by,shared_at)
+values('c1d10000-0000-4000-8000-000000000504','c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000407','c1d10000-0000-4000-8000-000000000401',repeat('8',64),'replacement shared figure','1','known','1',1,'VND','cost_total','net','exact','unknown','confirmed',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101'),'c1d10000-0000-4000-8000-000000000101','whole_project','fixture','confirmed_external','shared','c1d10000-0000-4000-8000-000000000901','c1d10000-0000-4000-8000-000000000901',now());
+set local role authenticated;
+create temp table c1d_source_audit_prepare_draft as
+select public.c1_create_project_cost_detail_draft('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101','categoryId','c1d10000-0000-4000-8000-000000000301','description','source audit prepare'),'c1d10000-0000-4000-8000-000000000850','c1d10000-0000-4000-8000-000000000850') result;
+create temp table c1d_source_audit_prepare_a as
+select public.c1_prepare_project_cost_detail_financials('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_source_audit_prepare_draft),jsonb_build_object('expectedVersion',0,'amount','1.0000','sourceFigureIds',jsonb_build_array('c1d10000-0000-4000-8000-000000000501')),'c1d10000-0000-4000-8000-000000000851') result;
+create temp table c1d_source_audit_prepare_b as
+select public.c1_prepare_project_cost_detail_financials('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_source_audit_prepare_draft),jsonb_build_object('expectedVersion',1,'amount','2.0000','sourceFigureIds',jsonb_build_array('c1d10000-0000-4000-8000-000000000504')),'c1d10000-0000-4000-8000-000000000852') result;
+create temp table c1d_source_audit_prepare_c as
+select public.c1_prepare_project_cost_detail_financials('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_source_audit_prepare_draft),jsonb_build_object('expectedVersion',2,'amount','3.0000'),'c1d10000-0000-4000-8000-000000000853') result;
+create temp table c1d_source_audit_prepare_d as
+select public.c1_prepare_project_cost_detail_financials('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_source_audit_prepare_draft),jsonb_build_object('expectedVersion',3,'amount','4.0000','sourceFigureIds','[]'::jsonb),'c1d10000-0000-4000-8000-000000000854') result;
+create temp table c1d_source_audit_publish_draft as
+select public.c1_create_project_cost_detail_draft('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101','categoryId','c1d10000-0000-4000-8000-000000000301','description','source audit publish'),'c1d10000-0000-4000-8000-000000000860','c1d10000-0000-4000-8000-000000000860') result;
+create temp table c1d_source_audit_publish_prepared as
+select public.c1_prepare_project_cost_detail_financials('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_source_audit_publish_draft),jsonb_build_object('expectedVersion',0,'amount','4.0000','sourceFigureIds',jsonb_build_array('c1d10000-0000-4000-8000-000000000501')),'c1d10000-0000-4000-8000-000000000861') result;
+select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_source_audit_publish_draft),jsonb_build_object('expectedVersion',1),'c1d10000-0000-4000-8000-000000000862','c1d10000-0000-4000-8000-000000000863');
+reset role;
+select is((select jsonb_build_object('id',after_summary->>'id','sourceFigureIds',after_summary->'sourceFigureIds') from public.audit_events where action='c1.project_cost_detail.prepared' and request_id='c1d10000-0000-4000-8000-000000000851'),jsonb_build_object('id',(select result->>'id' from c1d_source_audit_prepare_draft),'sourceFigureIds',jsonb_build_array('c1d10000-0000-4000-8000-000000000501'::uuid)),'prepare audit preserves the detail snapshot and records persisted replacement sources');
+select is((select before_summary->'sourceFigureIds' from public.audit_events where action='c1.project_cost_detail.prepared' and request_id='c1d10000-0000-4000-8000-000000000851'),'[]'::jsonb,'prepare audit records empty persisted sources before first replacement');
+select is((select jsonb_build_object('before',before_summary->'sourceFigureIds','after',after_summary->'sourceFigureIds') from public.audit_events where action='c1.project_cost_detail.prepared' and request_id='c1d10000-0000-4000-8000-000000000852'),jsonb_build_object('before',jsonb_build_array('c1d10000-0000-4000-8000-000000000501'::uuid),'after',jsonb_build_array('c1d10000-0000-4000-8000-000000000504'::uuid)),'prepare replacement snapshots the old and new persisted source links');
+select is((select jsonb_build_object('before',before_summary->'sourceFigureIds','after',after_summary->'sourceFigureIds') from public.audit_events where action='c1.project_cost_detail.prepared' and request_id='c1d10000-0000-4000-8000-000000000853'),jsonb_build_object('before',jsonb_build_array('c1d10000-0000-4000-8000-000000000504'::uuid),'after',jsonb_build_array('c1d10000-0000-4000-8000-000000000504'::uuid)),'prepare omission snapshots persisted source links without clearing them');
+select is((select jsonb_build_object('before',before_summary->'sourceFigureIds','after',after_summary->'sourceFigureIds') from public.audit_events where action='c1.project_cost_detail.prepared' and request_id='c1d10000-0000-4000-8000-000000000854'),jsonb_build_object('before',jsonb_build_array('c1d10000-0000-4000-8000-000000000504'::uuid),'after','[]'::jsonb),'prepare explicit empty sources snapshots the persisted clear');
+select is((select jsonb_build_object('id',after_summary->>'id','sourceFigureIds',after_summary->'sourceFigureIds') from public.audit_events where action='c1.project_cost_detail.published' and request_id='c1d10000-0000-4000-8000-000000000863'),jsonb_build_object('id',(select result->>'id' from c1d_source_audit_publish_draft),'sourceFigureIds',jsonb_build_array('c1d10000-0000-4000-8000-000000000501'::uuid)),'publish audit preserves the detail snapshot and records persisted sources');
 
 select * from finish();
 rollback;

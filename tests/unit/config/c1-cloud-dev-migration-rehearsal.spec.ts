@@ -21,6 +21,7 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
     '20260929000000_c1_ordinary_cost_detail_review_fixes.sql',
     '20260929000001_c1_root_cause_hardening.sql',
     '20260930000000_c1_draft_read_snapshot_fix.sql',
+    '20260930000001_c1_detail_source_audit_snapshots.sql',
   ]
 
   function migrationRoot(names = migrationNames) {
@@ -46,7 +47,7 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
   it('loads the exact currently pending C1 stack once in timestamp order and excludes applied history', () => {
     const sql = readC1MigrationSql(migrationRoot())
 
-    expect(sql).toBe('select 7;\n\nselect 8;\n\nselect 9;\n')
+    expect(sql).toBe('select 7;\n\nselect 8;\n\nselect 9;\n\nselect 10;\n')
   })
 
   it('rejects a missing pending migration before Cloud access', () => {

@@ -9,6 +9,7 @@ const migrationSuffixes = [
   '_c1_ordinary_cost_detail_review_fixes.sql',
   '_c1_root_cause_hardening.sql',
   '_c1_draft_read_snapshot_fix.sql',
+  '_c1_detail_source_audit_snapshots.sql',
 ]
 
 export function buildC1MigrationRehearsalSql(migrationSql) {
