@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(210);
+select plan(215);
 
 select has_table('public', 'project_cost_item_detail_sources', 'detail source provenance is introduced with the command slice');
 select has_function('public', 'c1_create_project_cost_detail_draft', 'draft-detail create RPC exists');
@@ -465,6 +465,54 @@ select is((select jsonb_build_object('before',before_summary->'sourceFigureIds',
 select is((select jsonb_build_object('before',before_summary->'sourceFigureIds','after',after_summary->'sourceFigureIds') from public.audit_events where action='c1.project_cost_detail.prepared' and request_id='c1d10000-0000-4000-8000-000000000853'),jsonb_build_object('before',jsonb_build_array('c1d10000-0000-4000-8000-000000000504'::uuid),'after',jsonb_build_array('c1d10000-0000-4000-8000-000000000504'::uuid)),'prepare omission snapshots persisted source links without clearing them');
 select is((select jsonb_build_object('before',before_summary->'sourceFigureIds','after',after_summary->'sourceFigureIds') from public.audit_events where action='c1.project_cost_detail.prepared' and request_id='c1d10000-0000-4000-8000-000000000854'),jsonb_build_object('before',jsonb_build_array('c1d10000-0000-4000-8000-000000000504'::uuid),'after','[]'::jsonb),'prepare explicit empty sources snapshots the persisted clear');
 select is((select jsonb_build_object('id',after_summary->>'id','sourceFigureIds',after_summary->'sourceFigureIds') from public.audit_events where action='c1.project_cost_detail.published' and request_id='c1d10000-0000-4000-8000-000000000863'),jsonb_build_object('id',(select result->>'id' from c1d_source_audit_publish_draft),'sourceFigureIds',jsonb_build_array('c1d10000-0000-4000-8000-000000000501'::uuid)),'publish audit preserves the detail snapshot and records persisted sources');
+
+insert into public.cost_categories(id,tenant_id,company_id,code,name,display_order,posting_strategy,created_by,updated_by) values
+  ('c1d10000-0000-4000-8000-000000000310','c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','balance_legacy','Balance legacy',10,'ordinary_detail','c1d10000-0000-4000-8000-000000000901','c1d10000-0000-4000-8000-000000000901'),
+  ('c1d10000-0000-4000-8000-000000000311','c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','balance_zero','Balance zero',11,'ordinary_detail','c1d10000-0000-4000-8000-000000000901','c1d10000-0000-4000-8000-000000000901'),
+  ('c1d10000-0000-4000-8000-000000000312','c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','balance_coherent','Balance coherent',12,'ordinary_detail','c1d10000-0000-4000-8000-000000000901','c1d10000-0000-4000-8000-000000000901');
+insert into public.project_cost_items(id,tenant_id,company_id,project_id,cost_category_id,description,amount,amount_text,currency_code,work_status,publication_state,publication_origin,published_at,created_by) values
+  ('c1d10000-0000-4000-8000-000000000810','c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000101','c1d10000-0000-4000-8000-000000000310','legacy nonzero parent',10,'10.0000','VND','unknown','published','legacy_backfill',now(),'c1d10000-0000-4000-8000-000000000901'),
+  ('c1d10000-0000-4000-8000-000000000811','c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000101','c1d10000-0000-4000-8000-000000000311','zero empty shell',0,'0.0000','VND','unknown','published','legacy_backfill',now(),'c1d10000-0000-4000-8000-000000000901'),
+  ('c1d10000-0000-4000-8000-000000000812','c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000101','c1d10000-0000-4000-8000-000000000312','coherent nonzero parent',10,'10.0000','VND','unknown','published','legacy_backfill',now(),'c1d10000-0000-4000-8000-000000000901');
+insert into public.project_cost_item_sources(tenant_id,company_id,project_cost_item_id,source_reported_figure_id)
+values('c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000810','c1d10000-0000-4000-8000-000000000501');
+insert into public.cost_command_receipts(tenant_id,company_id,actor_id,command_name,idempotency_key,request_hash,result_resource_id,result_version)
+values('c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000901','project_cost.correct','c1d10000-0000-4000-8000-000000000870',repeat('9',64),'c1d10000-0000-4000-8000-000000000810',0);
+insert into public.audit_events(tenant_id,company_id,actor_id,action,resource_type,resource_id,request_id,after_summary)
+values('c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000901','c1.project_cost_item.published','project_cost_item','c1d10000-0000-4000-8000-000000000810','c1d10000-0000-4000-8000-000000000970',jsonb_build_object('fixture','legacy parent identity'));
+insert into public.project_cost_item_details(id,tenant_id,company_id,project_cost_item_id,line_no,description,amount_text,publication_state,publication_origin,published_at,created_by)
+values('c1d10000-0000-4000-8000-000000000813','c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000812',1,'coherent published detail','10.0000','published','legacy_backfill',now(),'c1d10000-0000-4000-8000-000000000901');
+set constraints all immediate;
+create temp table c1d_legacy_parent_balance_before as
+select jsonb_build_object(
+  'parent',jsonb_build_object('amount',item.amount,'amountText',item.amount_text,'version',item.version,'publicationState',item.publication_state,'publicationOrigin',item.publication_origin,'publishedBy',item.published_by,'publishedAt',item.published_at,'publicationRequestId',item.publication_request_id),
+  'sources',(select coalesce(jsonb_agg(link.source_reported_figure_id order by link.source_reported_figure_id),'[]'::jsonb) from public.project_cost_item_sources link where link.project_cost_item_id=item.id),
+  'details',(select count(*) from public.project_cost_item_details detail where detail.project_cost_item_id=item.id),
+  'receipt',(select to_jsonb(receipt) from public.cost_command_receipts receipt where receipt.idempotency_key='c1d10000-0000-4000-8000-000000000870'),
+  'parentAudits',(select count(*) from public.audit_events audit where audit.resource_id=item.id::text),
+  'attemptReceipts',(select count(*) from public.cost_command_receipts receipt where receipt.idempotency_key in ('c1d10000-0000-4000-8000-000000000871','c1d10000-0000-4000-8000-000000000872')),
+  'attemptAudits',(select count(*) from public.audit_events audit where audit.request_id in ('c1d10000-0000-4000-8000-000000000971','c1d10000-0000-4000-8000-000000000972'))
+) state
+from public.project_cost_items item where item.id='c1d10000-0000-4000-8000-000000000810';
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"c1d10000-0000-4000-8000-000000000901","role":"authenticated"}', true);
+select throws_ok($$select public.c1_create_project_cost_detail_draft('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101','categoryId','c1d10000-0000-4000-8000-000000000310','description','legacy parent balance draft'),'c1d10000-0000-4000-8000-000000000871','c1d10000-0000-4000-8000-000000000971')$$,'P0001','COST_DETAIL_PUBLISH_NOT_READY','legacy nonzero parent is rejected before detail creation');
+select throws_ok($$select public.c1_create_and_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101','categoryId','c1d10000-0000-4000-8000-000000000310','description','legacy parent balance direct','amount','1.0000'),'c1d10000-0000-4000-8000-000000000872','c1d10000-0000-4000-8000-000000000972')$$,'P0001','COST_DETAIL_PUBLISH_NOT_READY','legacy nonzero parent rejects direct publish before detail creation');
+reset role;
+create temp table c1d_legacy_parent_balance_after as
+select jsonb_build_object(
+  'parent',jsonb_build_object('amount',item.amount,'amountText',item.amount_text,'version',item.version,'publicationState',item.publication_state,'publicationOrigin',item.publication_origin,'publishedBy',item.published_by,'publishedAt',item.published_at,'publicationRequestId',item.publication_request_id),
+  'sources',(select coalesce(jsonb_agg(link.source_reported_figure_id order by link.source_reported_figure_id),'[]'::jsonb) from public.project_cost_item_sources link where link.project_cost_item_id=item.id),
+  'details',(select count(*) from public.project_cost_item_details detail where detail.project_cost_item_id=item.id),
+  'receipt',(select to_jsonb(receipt) from public.cost_command_receipts receipt where receipt.idempotency_key='c1d10000-0000-4000-8000-000000000870'),
+  'parentAudits',(select count(*) from public.audit_events audit where audit.resource_id=item.id::text),
+  'attemptReceipts',(select count(*) from public.cost_command_receipts receipt where receipt.idempotency_key in ('c1d10000-0000-4000-8000-000000000871','c1d10000-0000-4000-8000-000000000872')),
+  'attemptAudits',(select count(*) from public.audit_events audit where audit.request_id in ('c1d10000-0000-4000-8000-000000000971','c1d10000-0000-4000-8000-000000000972'))
+) state
+from public.project_cost_items item where item.id='c1d10000-0000-4000-8000-000000000810';
+select is((select state from c1d_legacy_parent_balance_after),(select state from c1d_legacy_parent_balance_before),'legacy parent amount version provenance detail receipt source and audit state remain unchanged');
+select is(private.c1_resolve_or_create_ordinary_project_cost_item('c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000101','c1d10000-0000-4000-8000-000000000311','c1d10000-0000-4000-8000-000000000901','c1d10000-0000-4000-8000-000000000973'),'c1d10000-0000-4000-8000-000000000811','zero-valued published empty shell remains reusable');
+select is(private.c1_resolve_or_create_ordinary_project_cost_item('c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000101','c1d10000-0000-4000-8000-000000000312','c1d10000-0000-4000-8000-000000000901','c1d10000-0000-4000-8000-000000000974'),'c1d10000-0000-4000-8000-000000000812','coherent nonzero published parent remains reusable');
 
 select * from finish();
 rollback;
