@@ -23,6 +23,7 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
     '20260930000000_c1_draft_read_snapshot_fix.sql',
     '20260930000001_c1_detail_source_audit_snapshots.sql',
     '20260930000002_c1_ordinary_parent_balance_guard.sql',
+    '20260930000003_c1_legacy_parent_correction_snapshot_scope.sql',
   ]
 
   function migrationRoot(names = migrationNames) {
@@ -48,16 +49,16 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
   it('loads the exact currently pending C1 stack once in timestamp order and excludes applied history', () => {
     const sql = readC1MigrationSql(migrationRoot())
 
-    expect(sql).toBe('select 8;\n\nselect 9;\n\nselect 10;\n\nselect 11;\n')
+    expect(sql).toBe('select 12;\n')
   })
 
   it('rejects a missing pending migration before Cloud access', () => {
-    expect(() => readC1MigrationSql(migrationRoot(migrationNames.filter(name => !name.includes('root_cause_hardening'))))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_root_cause_hardening.sql')
+    expect(() => readC1MigrationSql(migrationRoot(migrationNames.filter(name => !name.includes('legacy_parent_correction_snapshot_scope'))))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_legacy_parent_correction_snapshot_scope.sql')
   })
 
   it('rejects duplicate migration suffixes before Cloud access', () => {
-    const duplicate = ['20260929000002_c1_root_cause_hardening.sql', ...migrationNames]
-    expect(() => readC1MigrationSql(migrationRoot(duplicate))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_root_cause_hardening.sql')
+    const duplicate = ['20260930000004_c1_legacy_parent_correction_snapshot_scope.sql', ...migrationNames]
+    expect(() => readC1MigrationSql(migrationRoot(duplicate))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_legacy_parent_correction_snapshot_scope.sql')
   })
 
   it('checks the Cloud DEV target before dispatching the temporary rehearsal SQL', () => {

@@ -6,10 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
 
 const migrationSuffixes = [
-  '_c1_root_cause_hardening.sql',
-  '_c1_draft_read_snapshot_fix.sql',
-  '_c1_detail_source_audit_snapshots.sql',
-  '_c1_ordinary_parent_balance_guard.sql',
+  '_c1_legacy_parent_correction_snapshot_scope.sql',
 ]
 
 export function buildC1MigrationRehearsalSql(migrationSql) {
