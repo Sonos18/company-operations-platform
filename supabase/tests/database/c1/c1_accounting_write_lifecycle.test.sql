@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
 
-select plan(55);
+select plan(57);
 
 select has_column('public', 'project_cost_items', 'publication_state', 'publication state exists');
 select is((select column_default from information_schema.columns where table_schema='public' and table_name='project_cost_items' and column_name='publication_state'), '''draft''::text', 'new cost rows default to draft');
@@ -71,9 +71,9 @@ begin
   insert into public.projects(id, tenant_id, company_id, code, name, origin, created_by) values
     ('c1060000-0000-4000-8000-000000000101', tenant_id, company_id, 'C106-P', 'C106 project', 'manual', preparer);
   perform set_config('taskovia.c1_finance.actor_id', preparer::text, true); perform set_config('taskovia.c1_finance.request_id', 'c1060000-0000-4000-8000-000000000601', true); perform set_config('taskovia.c1_finance.change_reason', 'fixture', true);
-  insert into public.cost_categories(id, tenant_id, company_id, code, name, display_order, created_by, updated_by) values
-    ('c1060000-0000-4000-8000-000000000301', tenant_id, company_id, 'materials', 'Materials', 1, preparer, preparer),
-    ('c1060000-0000-4000-8000-000000000302', tenant_id, company_id, 'subcontract_labor', 'Subcontract labor', 2, preparer, preparer);
+  insert into public.cost_categories(id, tenant_id, company_id, code, name, display_order, posting_strategy, created_by, updated_by) values
+    ('c1060000-0000-4000-8000-000000000301', tenant_id, company_id, 'materials', 'Materials', 1, 'ordinary_detail', preparer, preparer),
+    ('c1060000-0000-4000-8000-000000000302', tenant_id, company_id, 'subcontract_labor', 'Subcontract labor', 2, 'subcontract_payment', preparer, preparer);
   insert into public.controlled_import_runs(id,tenant_id,company_id,run_id,actor_id,idempotency_key,payload_digest,manifest_digest,input_digests,workbook_family,adapter_id,adapter_version,manifest_snapshot,request_id)
   values('c1060000-0000-4000-8000-000000000501',tenant_id,company_id,'c1060000-0000-4000-8000-000000000502',preparer,'c1060000-0000-4000-8000-000000000503',repeat('a',64),repeat('b',64),array[repeat('c',64)],'c106','c106','1.0.0','{}','c1060000-0000-4000-8000-000000000504');
   insert into public.accounting_sources(id,tenant_id,company_id,code,title,source_system,created_by)
@@ -167,12 +167,16 @@ select set_config('request.jwt.claims', '{"sub":"c1060000-0000-4000-8000-0000000
 select is((public.c1_prepare_project_cost_financials(
   'c1060000-0000-4000-8000-000000000020',
   (select (result->>'id')::uuid from c1_p2_result),
-  '{"expectedVersion":0,"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"line_item","description":"Explicit zero","amount":"0.0000"}],"sourceFigureIds":["c1060000-0000-4000-8000-000000000508"]}',
+  '{"expectedVersion":0,"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"opening_balance","description":"Explicit zero","amount":"0.0000"}],"sourceFigureIds":["c1060000-0000-4000-8000-000000000508"]}',
   'c1060000-0000-4000-8000-000000000719'
 )->>'amount'), '0.0000', 'cost.prepare accepts an explicit zero detail snapshot');
 select is((public.c1_read_project_cost_draft('c1060000-0000-4000-8000-000000000020', (select (result->>'id')::uuid from c1_p2_result))->'publishReadiness'->>'ready')::boolean, true, 'prepared ordinary draft is publish-ready');
 select is((public.c1_read_project_cost_draft('c1060000-0000-4000-8000-000000000020','c1060000-0000-4000-8000-000000000202')->'publishReadiness'->'blockingCodes'->>0), 'FINANCIAL_DETAILS_REQUIRED', 'unprepared draft reports the financial-details blocker');
-select is((select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)),1::bigint,'cost.prepare can directly read draft financial details');
+select ok(
+  jsonb_array_length(public.c1_read_project_cost_draft('c1060000-0000-4000-8000-000000000020', (select (result->>'id')::uuid from c1_p2_result))->'details') = 1
+    and (select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)) = 0,
+  'cost.prepare reads draft financial details through the guarded RPC, not raw detail RLS'
+);
 select is((select count(*) from public.project_cost_item_sources where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)),1::bigint,'cost.prepare can directly read draft source links');
 select throws_ok(
   $$select public.c1_prepare_project_cost_financials('c1060000-0000-4000-8000-000000000020', 'c1060000-0000-4000-8000-000000000201', '{"expectedVersion":0,"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"line_item","description":"Published","amount":"1.0000"}],"sourceFigureIds":[]}', 'c1060000-0000-4000-8000-000000000720')$$,
@@ -195,6 +199,7 @@ create temp table c1_publish_result as select public.c1_publish_project_cost(
 select is((select result->>'publicationState' from c1_publish_result),'published','ready draft publishes explicitly');
 reset role;
 select is((select publication_state from public.project_cost_items where id=(select (result->>'id')::uuid from c1_p2_result)),'published','publish changes canonical state exactly once');
+select is((select jsonb_build_object('kind',detail_kind,'origin',publication_origin) from public.project_cost_item_details where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)),jsonb_build_object('kind','opening_balance','origin','command'),'legacy publish preserves opening balance detail with command provenance');
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"c1060000-0000-4000-8000-000000000904","role":"authenticated"}',true);
 select is((public.c1_publish_project_cost('c1060000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1_p2_result),1,'c1060000-0000-4000-8000-000000000731','c1060000-0000-4000-8000-000000000733')->>'replayed')::boolean,true,'exact publish replay is idempotent');
@@ -231,18 +236,19 @@ select throws_ok(
 );
 create temp table c1_correction_result as select public.c1_correct_published_project_cost(
   'c1060000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1_p2_result),
-  '{"expectedVersion":2,"reason":"Correct source total","financialChanges":{"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"line_item","description":"Corrected","amount":"2.0000"}],"sourceFigureIds":[]}}',
+  '{"expectedVersion":2,"reason":"Correct source total","financialChanges":{"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"opening_balance","description":"Corrected","amount":"2.0000"}],"sourceFigureIds":[]}}',
   'c1060000-0000-4000-8000-000000000755','c1060000-0000-4000-8000-000000000756') result;
 select is((select (result->>'version')::bigint from c1_correction_result),3::bigint,'correction increments the external version exactly once');
 reset role;
 select is((select amount_text from public.project_cost_items where id=(select (result->>'id')::uuid from c1_p2_result)),'2.0000','corrected parent amount is derived from the new snapshot');
 select is((select sum(amount_text::numeric)::text from public.project_cost_item_details where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)),'2.0000','corrected detail sum equals the parent amount');
+select is((select jsonb_build_object('kind',detail_kind,'origin',publication_origin) from public.project_cost_item_details where project_cost_item_id=(select (result->>'id')::uuid from c1_p2_result)),jsonb_build_object('kind','opening_balance','origin','command'),'legacy correction preserves opening balance replacement with command provenance');
 select ok(exists(select 1 from public.audit_events where action='c1.project_cost_item.corrected' and resource_id=(select result->>'id' from c1_p2_result) and before_summary ? 'details' and after_summary ? 'details'),'correction audit retains before and after snapshots');
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"c1060000-0000-4000-8000-000000000905","role":"authenticated"}',true);
 select is((public.c1_correct_published_project_cost(
   'c1060000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1_p2_result),
-  '{"expectedVersion":2,"reason":"Correct source total","financialChanges":{"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"line_item","description":"Corrected","amount":"2.0000"}],"sourceFigureIds":[]}}',
+  '{"expectedVersion":2,"reason":"Correct source total","financialChanges":{"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"opening_balance","description":"Corrected","amount":"2.0000"}],"sourceFigureIds":[]}}',
   'c1060000-0000-4000-8000-000000000755','c1060000-0000-4000-8000-000000000757')->>'replayed')::boolean,true,'exact correction replay is idempotent');
 select throws_ok(
   $$select public.c1_correct_published_project_cost('c1060000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1_p2_result),'{"expectedVersion":2,"reason":"Changed","operationalChanges":{"workStatus":"accepted"}}','c1060000-0000-4000-8000-000000000755','c1060000-0000-4000-8000-000000000758')$$,

@@ -17,6 +17,7 @@ describe('accounting-error-mapper', () => {
       ['IDEMPOTENCY_CONFLICT', 'Yêu cầu bị trùng lặp'],
       ['COST_NOT_DRAFT', 'không còn ở trạng thái nháp'],
       ['COST_ALREADY_PUBLISHED', 'đã được phát hành chính thức'],
+      ['PROJECT_COST_CATEGORY_CONFLICT', 'Đã có Project Cost'],
       ['SUBCONTRACT_COST_MODEL_UNSUPPORTED', 'Mô hình chi phí thầu phụ không hỗ trợ'],
       ['EVIDENCE_UPLOAD_MISMATCH', 'không khớp'],
       ['FILE_TOO_LARGE', 'vượt quá giới hạn 25 MiB'],
@@ -36,10 +37,10 @@ describe('accounting-error-mapper', () => {
     }
   })
 
-  it('translates COST_PUBLISH_NOT_READY with blocker codes', () => {
+  it.each(['COST_PUBLISH_NOT_READY', 'COST_DETAIL_PUBLISH_NOT_READY'] as const)('translates %s with blocker codes', code => {
     const errorWithBlockers = new ClientError({
       kind: 'api',
-      code: 'COST_PUBLISH_NOT_READY' as unknown as ClientErrorCode,
+      code: code as unknown as ClientErrorCode,
       message: 'Not ready',
       retryable: false,
       details: {
@@ -53,11 +54,11 @@ describe('accounting-error-mapper', () => {
 
     const errorWithoutBlockers = new ClientError({
       kind: 'api',
-      code: 'COST_PUBLISH_NOT_READY' as unknown as ClientErrorCode,
+      code: code as unknown as ClientErrorCode,
       message: 'Not ready',
       retryable: false,
     })
-    expect(mapAccountingErrorMessage(errorWithoutBlockers)).toContain('Bản nháp chưa đủ điều kiện phát hành')
+    expect(mapAccountingErrorMessage(errorWithoutBlockers)).toContain(code === 'COST_DETAIL_PUBLISH_NOT_READY' ? 'Chi tiết chưa đủ điều kiện phát hành' : 'Bản nháp chưa đủ điều kiện phát hành')
   })
 
   it('translates each of the 5 documented publish blocker codes', () => {

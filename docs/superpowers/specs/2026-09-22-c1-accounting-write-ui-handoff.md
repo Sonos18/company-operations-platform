@@ -1,5 +1,7 @@
 # C1 Accounting Write Backend — Antigravity Handoff
 
+> Deprecation pointer (2026-09-24): the parent-draft lifecycle below is temporary compatibility only. New ordinary-cost UI must use the detail lifecycle in [the ordinary cost detail handoff](2026-09-24-c1-ordinary-cost-detail-lifecycle-antigravity-handoff.md); no historical contract or evidence attribution is rewritten here.
+
 ## Scope and authority
 
 This document describes the implemented backend contract for a later Antigravity UI task. It contains no visual design. Company context comes from `:companyId` plus the authenticated server session; clients never send tenant, actor, permission, publication attribution, or audit identity.

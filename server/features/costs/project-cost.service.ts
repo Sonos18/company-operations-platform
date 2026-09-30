@@ -1,5 +1,5 @@
 import type { PermissionCode } from '../../../shared/constants/permissions'
-import { correctProjectCostItemInputSchema, correctPublishedProjectCostInputSchema, createProjectCostDraftInputSchema, createProjectCostItemInputSchema, prepareProjectCostFinancialsInputSchema, publishProjectCostInputSchema, updateProjectCostDraftInputSchema, updateProjectCostItemInputSchema } from '../../../shared/schemas/costs/project-costs'
+import { correctProjectCostItemInputSchema, correctPublishedProjectCostDetailInputSchema, correctPublishedProjectCostInputSchema, createAndPublishProjectCostDetailInputSchema, createProjectCostDetailDraftInputSchema, createProjectCostDraftInputSchema, createProjectCostItemInputSchema, prepareProjectCostDetailFinancialsInputSchema, prepareProjectCostFinancialsInputSchema, publishProjectCostDetailInputSchema, publishProjectCostInputSchema, updateProjectCostDetailDraftInputSchema, updateProjectCostDraftInputSchema, updateProjectCostItemInputSchema } from '../../../shared/schemas/costs/project-costs'
 import { AppApiError } from '../../utils/api-error'
 import type { ProjectCostDataRepository, ProjectCostRequestContext } from './project-cost.repository'
 
@@ -28,4 +28,17 @@ export class ProjectCostService {
   async update(context: ProjectCostServiceContext, id: string, value: unknown) { requirePermission(context, 'cost.manage'); return this.repository.update(context, id, { kind: 'update', input: input(updateProjectCostItemInputSchema, value) }) }
   async correct(context: ProjectCostServiceContext, id: string, value: unknown) { requirePermission(context, 'cost.correct'); return this.repository.update(context, id, { kind: 'correction', input: input(correctProjectCostItemInputSchema, value) }) }
   async itemDetails(context: ProjectCostServiceContext, projectCostItemId: string) { requirePermission(context, 'cost.read'); return this.repository.itemDetails(context.tenantId, context.companyId, projectCostItemId) }
+  async createDetailDraft(context: ProjectCostServiceContext, projectId: string, value: unknown, idempotencyKey: string) { requirePermission(context, 'cost.manage'); return this.repository.createDetailDraft(context, projectId, input(createProjectCostDetailDraftInputSchema, value), idempotencyKey) }
+  async updateDetailDraft(context: ProjectCostServiceContext, id: string, value: unknown) { requirePermission(context, 'cost.manage'); return this.repository.updateDetailDraft(context, id, input(updateProjectCostDetailDraftInputSchema, value)) }
+  async prepareDetailFinancials(context: ProjectCostServiceContext, id: string, value: unknown) { requirePermission(context, 'cost.prepare'); return this.repository.prepareDetailFinancials(context, id, input(prepareProjectCostDetailFinancialsInputSchema, value)) }
+  async detailDraft(context: ProjectCostServiceContext, id: string) { requirePermission(context, 'cost.prepare'); return this.repository.detailDraft(context, id) }
+  async listDetailDrafts(context: ProjectCostServiceContext, projectId: string) { requirePermission(context, 'cost.prepare'); return this.repository.listDetailDrafts(context, projectId) }
+  async operationalDetailDraft(context: ProjectCostServiceContext, id: string) { requirePermission(context, 'cost.manage'); return this.repository.operationalDetailDraft(context, id) }
+  async listOperationalDetailDrafts(context: ProjectCostServiceContext, projectId: string) { requirePermission(context, 'cost.manage'); return this.repository.listOperationalDetailDrafts(context, projectId) }
+  async publishDetail(context: ProjectCostServiceContext, id: string, value: unknown, idempotencyKey: string) { requirePermission(context, 'cost.publish_import'); return this.repository.publishDetail(context, id, input(publishProjectCostDetailInputSchema, value), idempotencyKey) }
+  async createAndPublishDetail(context: ProjectCostServiceContext, projectId: string, value: unknown, idempotencyKey: string) {
+    requirePermission(context, 'cost.manage'); requirePermission(context, 'cost.prepare'); requirePermission(context, 'cost.publish_import')
+    return this.repository.createAndPublishDetail(context, projectId, input(createAndPublishProjectCostDetailInputSchema, value), idempotencyKey)
+  }
+  async correctPublishedDetail(context: ProjectCostServiceContext, id: string, value: unknown, idempotencyKey: string) { requirePermission(context, 'cost.correct'); return this.repository.correctPublishedDetail(context, id, input(correctPublishedProjectCostDetailInputSchema, value), idempotencyKey) }
 }

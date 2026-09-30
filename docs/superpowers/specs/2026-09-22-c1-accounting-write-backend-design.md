@@ -1,6 +1,7 @@
 # C1 Accounting Write Backend Design
 
 **Status:** Canonical implemented backend design reflected by PR #17 at reviewed HEAD `94ea9a18fbe91de36b05b5f35532d0ef24ccfea5`.
+**Lifecycle deprecation pointer:** Parent-draft lifecycle semantics remain temporary compatibility only. New ordinary-cost UI must use the detail APIs documented in [the 2026-09-24 ordinary cost detail handoff](2026-09-24-c1-ordinary-cost-detail-lifecycle-antigravity-handoff.md); this pointer does not alter historical evidence or source attribution.
 **Repository:** `Sonos18/company-operations-platform`
 **Design baseline:** `origin/main` at `eb4074306b9b27b4b573a874949ef60b8b991b50`
 **Design owner split:** CodeX owns database, Storage, backend APIs, shared non-visual contracts, and backend/database tests. Antigravity owns all UI.

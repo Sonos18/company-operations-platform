@@ -23,11 +23,72 @@ describe('C1 Cloud DEV runner', () => {
     expect(() => runC1CloudDevTests({ files: [{ path: 'c1_foundation.test.sql', sql }], spawn: () => ({ status: 1 }) })).toThrow('C1 Cloud DEV SQL verification failed')
   })
 
+  it('stops after a zero-exit pgTAP failure report', () => {
+    const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1/c1_foundation.test.sql'), 'utf8')
+    let calls = 0
+
+    expect(() => runC1CloudDevTests({
+      files: [{ path: 'c1_foundation.test.sql', sql }, { path: 'c1_controlled_import_commands.test.sql', sql }],
+      spawn: () => {
+        calls += 1
+        return {
+          status: 0,
+          stdout: `Initialising login role...\n${JSON.stringify({ boundary: 'linked', rows: [{ finish: '# Looks like you failed 1 test of 27' }], warning: null })}`,
+          stderr: '',
+        }
+      },
+    })).toThrow('C1 Cloud DEV SQL verification failed for c1_foundation.test.sql: pgTAP finish reported a diagnostic')
+    expect(calls).toBe(1)
+  })
+
+  it('continues after a successful pgTAP response without a finish row', () => {
+    const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1/c1_foundation.test.sql'), 'utf8')
+    let calls = 0
+
+    expect(() => runC1CloudDevTests({
+      files: [{ path: 'c1_foundation.test.sql', sql }, { path: 'c1_controlled_import_commands.test.sql', sql }],
+      spawn: () => {
+        calls += 1
+        return {
+          status: 0,
+          stdout: `Initialising login role...\n${JSON.stringify({ boundary: 'linked', rows: [{ c1_fixture_completion: 'C1_FOUNDATION_FIXTURE_COMPLETE' }], warning: null })}`,
+          stderr: '',
+        }
+      },
+    })).not.toThrow()
+    expect(calls).toBe(2)
+  })
+
+  it('rejects a zero-exit pgTAP plan diagnostic', () => {
+    const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1/c1_foundation.test.sql'), 'utf8')
+
+    expect(() => runC1CloudDevTests({
+      files: [{ path: 'c1_foundation.test.sql', sql }],
+      spawn: () => ({
+        status: 0,
+        stdout: `Initialising login role...\n${JSON.stringify({ boundary: 'linked', rows: [{ finish: '# planned 27 tests but ran 26' }], warning: null })}`,
+        stderr: '',
+      }),
+    })).toThrow('C1 Cloud DEV SQL verification failed for c1_foundation.test.sql: pgTAP finish reported a diagnostic')
+  })
+
   it('accepts the actual C1 foundation fixture before any Cloud command', () => {
     const path = 'c1_foundation.test.sql'
     const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1', path), 'utf8')
 
     expect(() => validateC1CloudDevSql(path, sql)).not.toThrow()
+  })
+
+  it.each([
+    'c1_ordinary_cost_detail_lifecycle_foundation.test.sql',
+    'c1_ordinary_cost_detail_commands.test.sql',
+    'c1_ordinary_cost_detail_provenance_evidence_reads.test.sql',
+  ])('allows %s only in its reserved synthetic UUID namespace', path => {
+    const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1', path), 'utf8')
+
+    expect(() => validateC1CloudDevSql(path, sql)).not.toThrow()
+    expect(() => validateC1CloudDevSql(path, "begin;\nselect 'c1000000-0000-4000-8000-000000000001';\nrollback;")).toThrow('must use reserved synthetic UUIDs')
+    expect(() => validateC1CloudDevSql(path, "begin;\nselect 'Yong Mei';\nrollback;")).toThrow('cannot reference real VQH/customer identifiers')
   })
 
   it('keeps foundation in the c110/c111 transaction-only namespaces', () => {

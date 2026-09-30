@@ -724,6 +724,7 @@ export type Database = {
           id: string
           is_active: boolean
           name: string
+          posting_strategy: string
           tenant_id: string
           updated_at: string
           updated_by: string
@@ -738,6 +739,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name: string
+          posting_strategy: string
           tenant_id: string
           updated_at?: string
           updated_by: string
@@ -752,6 +754,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name?: string
+          posting_strategy?: string
           tenant_id?: string
           updated_at?: string
           updated_by?: string
@@ -963,6 +966,7 @@ export type Database = {
           evidence_file_id: string
           evidence_kind: string
           id: string
+          project_cost_item_detail_id: string | null
           project_cost_item_id: string | null
           project_id: string
           project_subcontract_payment_id: string | null
@@ -977,6 +981,7 @@ export type Database = {
           evidence_file_id: string
           evidence_kind: string
           id?: string
+          project_cost_item_detail_id?: string | null
           project_cost_item_id?: string | null
           project_id: string
           project_subcontract_payment_id?: string | null
@@ -991,6 +996,7 @@ export type Database = {
           evidence_file_id?: string
           evidence_kind?: string
           id?: string
+          project_cost_item_detail_id?: string | null
           project_cost_item_id?: string | null
           project_id?: string
           project_subcontract_payment_id?: string | null
@@ -1011,6 +1017,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "cost_evidence_links_detail_scope_fkey"
+            columns: ["project_cost_item_detail_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "project_cost_item_details"
+            referencedColumns: ["id", "tenant_id", "company_id"]
           },
           {
             foreignKeyName: "cost_evidence_links_evidence_file_id_tenant_id_company_id__fkey"
@@ -2176,9 +2189,58 @@ export type Database = {
           },
         ]
       }
+      project_cost_item_detail_sources: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          project_cost_item_detail_id: string
+          source_reported_figure_id: string
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          project_cost_item_detail_id: string
+          source_reported_figure_id: string
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          project_cost_item_detail_id?: string
+          source_reported_figure_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_cost_item_detail_sour_project_cost_item_detail_id__fkey"
+            columns: ["project_cost_item_detail_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "project_cost_item_details"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "project_cost_item_detail_sour_source_reported_figure_id_te_fkey"
+            columns: ["source_reported_figure_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "source_reported_figures"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "project_cost_item_detail_sources_company_id_tenant_id_fkey"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+        ]
+      }
       project_cost_item_details: {
         Row: {
-          amount_text: string
+          amount_text: string | null
           company_id: string
           created_at: string
           created_by: string
@@ -2188,6 +2250,11 @@ export type Database = {
           line_no: number
           note: string | null
           project_cost_item_id: string
+          publication_origin: string | null
+          publication_request_id: string | null
+          publication_state: string
+          published_at: string | null
+          published_by: string | null
           quantity_text: string | null
           reference: string | null
           relevant_date: string | null
@@ -2201,7 +2268,7 @@ export type Database = {
           version: number
         }
         Insert: {
-          amount_text: string
+          amount_text?: string | null
           company_id: string
           created_at?: string
           created_by: string
@@ -2211,6 +2278,11 @@ export type Database = {
           line_no: number
           note?: string | null
           project_cost_item_id: string
+          publication_origin?: string | null
+          publication_request_id?: string | null
+          publication_state?: string
+          published_at?: string | null
+          published_by?: string | null
           quantity_text?: string | null
           reference?: string | null
           relevant_date?: string | null
@@ -2224,7 +2296,7 @@ export type Database = {
           version?: number
         }
         Update: {
-          amount_text?: string
+          amount_text?: string | null
           company_id?: string
           created_at?: string
           created_by?: string
@@ -2234,6 +2306,11 @@ export type Database = {
           line_no?: number
           note?: string | null
           project_cost_item_id?: string
+          publication_origin?: string | null
+          publication_request_id?: string | null
+          publication_state?: string
+          published_at?: string | null
+          published_by?: string | null
           quantity_text?: string | null
           reference?: string | null
           relevant_date?: string | null
@@ -4297,6 +4374,25 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_correct_published_project_cost_detail: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_create_and_publish_project_cost_detail: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_create_business_party: {
         Args: {
           target_company_id: string
@@ -4336,6 +4432,15 @@ export type Database = {
       c1_create_project: {
         Args: {
           target_company_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_create_project_cost_detail_draft: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
           target_input: Json
           target_request_id: string
         }
@@ -4398,6 +4503,24 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_link_project_cost_detail_evidence: {
+        Args: {
+          target_company_id: string
+          target_detail_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_list_project_cost_detail_drafts: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
+      c1_list_project_cost_detail_drafts_operational: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
       c1_list_project_cost_drafts: {
         Args: { target_company_id: string; target_project_id: string }
         Returns: Json
@@ -4411,6 +4534,15 @@ export type Database = {
           target_company_id: string
           target_payload_digest: string
           target_request: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_prepare_project_cost_detail_financials: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_input: Json
           target_request_id: string
         }
         Returns: Json
@@ -4438,6 +4570,16 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_publish_project_cost_detail: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_read_cost_source_hierarchy: {
         Args: { target_company_id: string }
         Returns: {
@@ -4453,8 +4595,20 @@ export type Database = {
           source_selection_id: string
         }[]
       }
+      c1_read_project_cost_detail_draft: {
+        Args: { target_company_id: string; target_id: string }
+        Returns: Json
+      }
+      c1_read_project_cost_detail_draft_operational: {
+        Args: { target_company_id: string; target_id: string }
+        Returns: Json
+      }
       c1_read_project_cost_draft: {
         Args: { target_company_id: string; target_id: string }
+        Returns: Json
+      }
+      c1_read_project_cost_draft_management_metadata: {
+        Args: { target_company_id: string }
         Returns: Json
       }
       c1_read_project_cost_draft_operational: {
@@ -4528,6 +4682,15 @@ export type Database = {
         Returns: Json
       }
       c1_update_project: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_update_project_cost_detail_draft: {
         Args: {
           target_company_id: string
           target_id: string

@@ -36,13 +36,16 @@ export function extractErrorMessage(err: unknown, fallbackMessage = 'Đã xảy 
       return 'Bản ghi chi phí này không còn ở trạng thái nháp.'
     case 'COST_ALREADY_PUBLISHED':
       return 'Chi phí này đã được phát hành chính thức, không thể chỉnh sửa như bản nháp.'
-    case 'COST_PUBLISH_NOT_READY': {
+    case 'PROJECT_COST_CATEGORY_CONFLICT':
+      return 'Đã có Project Cost cho hạng mục này.'
+    case 'COST_PUBLISH_NOT_READY':
+    case 'COST_DETAIL_PUBLISH_NOT_READY': {
       const blockingCodes = (clientError.details?.blockingCodes as string[]) || []
       if (blockingCodes.length > 0) {
         const list = blockingCodes.map(c => `• ${translatePublishBlockingCode(c)}`).join('\n')
         return `Bản nháp chưa đủ điều kiện phát hành:\n${list}`
       }
-      return 'Bản nháp chưa đủ điều kiện phát hành. Vui lòng hoàn thiện chi tiết tài chính và chứng từ đính kèm.'
+      return code === 'COST_DETAIL_PUBLISH_NOT_READY' ? 'Chi tiết chưa đủ điều kiện phát hành.' : 'Bản nháp chưa đủ điều kiện phát hành. Vui lòng hoàn thiện chi tiết tài chính và chứng từ đính kèm.'
     }
     case 'SUBCONTRACT_COST_MODEL_UNSUPPORTED':
       return 'Mô hình chi phí thầu phụ không hỗ trợ thao tác này. Vui lòng sử dụng luồng quản lý thanh toán thầu phụ chuyên biệt.'

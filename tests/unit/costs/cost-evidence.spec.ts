@@ -1,6 +1,6 @@
 import JSZip from 'jszip'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { COST_EVIDENCE_MAX_BYTES, costEvidenceCreateIntentInputSchema, costEvidenceMimeTypeSchema, costEvidenceUploadIntentSchema } from '../../../shared/schemas/costs/cost-evidence'
+import { COST_EVIDENCE_MAX_BYTES, costEvidenceCreateIntentInputSchema, costEvidenceDetailLinkInputSchema, costEvidenceDetailLinkResultSchema, costEvidenceMimeTypeSchema, costEvidenceUploadIntentSchema } from '../../../shared/schemas/costs/cost-evidence'
 import { verifyEvidenceBlob } from '../../../server/features/costs/evidence/evidence-file-integrity'
 
 describe('cost evidence contracts', () => {
@@ -20,6 +20,13 @@ describe('cost evidence contracts', () => {
     expect(costEvidenceUploadIntentSchema.safeParse(intent).success).toBe(true)
     expect(costEvidenceUploadIntentSchema.safeParse({ ...intent, signedUploadToken: 'token' }).success).toBe(false)
     expect(costEvidenceUploadIntentSchema.safeParse({ ...intent, objectPath: `${id(2)}/${id(3)}/${id(4)}/invoice.pdf` }).success).toBe(false)
+  })
+
+  it('uses a detail target, never a parent-cost target, for ordinary evidence links', () => {
+    const detailId = 'c1070000-0000-4000-8000-000000000101'
+    const fileId = 'c1070000-0000-4000-8000-000000000401'
+    expect(costEvidenceDetailLinkInputSchema.safeParse({ evidenceFileId: fileId, evidenceKind: 'invoice' }).success).toBe(true)
+    expect(costEvidenceDetailLinkResultSchema.parse({ linkId: fileId, detailId, evidenceFileId: fileId, evidenceKind: 'invoice', replayed: false }).detailId).toBe(detailId)
   })
 
   it('verifies PDF bytes while streaming the exact digest and byte ceiling', async () => {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { buildC1MigrationRehearsalSql, readC1MigrationSql, runC1MigrationRehearsal, validateC1MigrationRehearsalSql } from '../../../scripts/run-c1-cloud-dev-migration-rehearsal.mjs'
 
 const roots: string[] = []
@@ -13,18 +13,19 @@ afterEach(() => {
 describe('C1 Cloud DEV migration rehearsal runner', () => {
   const migrationNames = [
     '20260922090000_c1_accounting_write_publication_rbac.sql',
-    '20260922090001_c1_accounting_write_draft_commands.sql',
-    '20260922090002_c1_accounting_write_evidence_storage.sql',
-    '20260922090003_c1_accounting_write_publish_command.sql',
-    '20260922090004_c1_accounting_write_correction_command.sql',
-    '20260922090005_c1_accounting_write_cash_commands.sql',
-    '20260922090006_c1_accounting_write_snapshot_constraint_scope_fix.sql',
-    '20260922090007_c1_accounting_write_evidence_rls_initplan_fix.sql',
-    '20260922090008_c1_accounting_write_evidence_kind_contract_fix.sql',
-    '20260922090009_c1_accounting_write_review_security_hardening.sql',
-    '20260922090010_c1_accounting_write_finalize_validation_fix.sql',
-    '20260922090011_c1_accounting_write_raw_target_metadata_fix.sql',
-    '20260922090012_c1_accounting_write_finalize_server_boundary.sql',
+    '20260923134446_c1_accounting_write_draft_management_metadata.sql',
+    '20260924093428_c1_ordinary_cost_detail_lifecycle_foundation.sql',
+    '20260924110107_c1_ordinary_cost_detail_commands.sql',
+    '20260924120131_c1_ordinary_cost_detail_provenance_evidence_reads.sql',
+    '20260924142834_c1_ordinary_cost_detail_publish_hash_fix.sql',
+    '20260929000000_c1_ordinary_cost_detail_review_fixes.sql',
+    '20260929000001_c1_root_cause_hardening.sql',
+    '20260930000000_c1_draft_read_snapshot_fix.sql',
+    '20260930000001_c1_detail_source_audit_snapshots.sql',
+    '20260930000002_c1_ordinary_parent_balance_guard.sql',
+    '20260930000003_c1_legacy_parent_correction_snapshot_scope.sql',
+    '20260930000004_c1_allow_legacy_opening_balance_publication.sql',
+    '20260930111326_c1_draft_list_parent_eligibility.sql',
   ]
 
   function migrationRoot(names = migrationNames) {
@@ -47,19 +48,19 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
     expect(() => buildC1MigrationRehearsalSql('commit;')).toThrow('C1 migration rehearsal cannot contain transaction control')
   })
 
-  it('loads all accounting-write migrations once in timestamp order', () => {
+  it('loads the exact currently pending C1 stack once in timestamp order and excludes applied history', () => {
     const sql = readC1MigrationSql(migrationRoot())
 
-    expect(sql).toBe('select 1;\n\nselect 2;\n\nselect 3;\n\nselect 4;\n\nselect 5;\n\nselect 6;\n\nselect 7;\n\nselect 8;\n\nselect 9;\n\nselect 10;\n\nselect 11;\n\nselect 12;\n\nselect 13;\n')
+    expect(sql).toBe('select 14;\n')
   })
 
-  it('rejects a missing accounting-write migration before Cloud access', () => {
-    expect(() => readC1MigrationSql(migrationRoot(migrationNames.slice(0, 12)))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_accounting_write_finalize_server_boundary.sql')
+  it('rejects a missing pending migration before Cloud access', () => {
+    expect(() => readC1MigrationSql(migrationRoot(migrationNames.filter(name => !name.includes('draft_list_parent_eligibility'))))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_draft_list_parent_eligibility.sql')
   })
 
   it('rejects duplicate migration suffixes before Cloud access', () => {
-    const duplicate = ['20260922080000_c1_accounting_write_publication_rbac.sql', ...migrationNames]
-    expect(() => readC1MigrationSql(migrationRoot(duplicate))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_accounting_write_publication_rbac.sql')
+    const duplicate = ['20260930120000_c1_draft_list_parent_eligibility.sql', ...migrationNames]
+    expect(() => readC1MigrationSql(migrationRoot(duplicate))).toThrow('C1 migration rehearsal requires exactly one migration for _c1_draft_list_parent_eligibility.sql')
   })
 
   it('checks the Cloud DEV target before dispatching the temporary rehearsal SQL', () => {
@@ -75,4 +76,51 @@ describe('C1 Cloud DEV migration rehearsal runner', () => {
     })).toThrow('target mismatch')
     expect(spawns).toBe(0)
   })
+  it('rejects transaction controls before checking the target or spawning', () => {
+    let checks = 0
+    let spawns = 0
+    expect(() => runC1MigrationRehearsal({
+      migrationSql: 'commit;',
+      assertTarget: () => { checks += 1 },
+      spawn: () => { spawns += 1; return { status: 0 } },
+    })).toThrow('C1 migration rehearsal cannot contain transaction control')
+    expect(checks).toBe(0)
+    expect(spawns).toBe(0)
+  })
+
+  it.each([0, 1])('dispatches the production preflight and isolated controls once and cleans up (exit %s)', (status) => {
+    const cwd = resolve(import.meta.dirname, '../../..')
+    let checked = false
+    let dispatchedPath = ''
+    let spawns = 0
+    const run = () => runC1MigrationRehearsal({
+      cwd,
+      assertTarget: () => { checked = true },
+      spawn: (_command: string, args: string[]) => {
+        expect(checked).toBe(true)
+        spawns += 1
+        expect(args.slice(1, 7)).toEqual(['db', 'query', '--linked', '--output-format', 'json', '--file'])
+        dispatchedPath = args[7]!
+        const sql = readFileSync(dispatchedPath, 'utf8')
+        expect(() => validateC1MigrationRehearsalSql(sql)).not.toThrow()
+        expect(sql.indexOf('C1_PUBLISHED_COST_HISTORY_REQUIRES_REVIEW')).toBeLessThan(sql.indexOf('create or replace function'))
+        expect(sql).toContain('C1_PUBLISHED_COST_HISTORY_REHEARSAL_COMPLETE')
+        expect(sql).toContain('pg_temp.c1_history_parents')
+        return { status, stdout: JSON.stringify({ rows: [{ result: 'C1_PUBLISHED_COST_HISTORY_REHEARSAL_COMPLETE' }] }) }
+      },
+    })
+    if (status === 0) expect(run).not.toThrow()
+    else expect(run).toThrow('C1 Cloud DEV migration rehearsal failed')
+    expect(spawns).toBe(1)
+    expect(existsSync(dispatchedPath)).toBe(false)
+  })
+
+  it.each(['', '{}', '{"rows":[]}', '{"rows":[{"result":"wrong"}]}'])('rejects exit-zero without the historical rehearsal completion evidence: %s', (stdout) => {
+    expect(() => runC1MigrationRehearsal({
+      cwd: resolve(import.meta.dirname, '../../..'),
+      assertTarget: () => {},
+      spawn: () => ({ status: 0, stdout }),
+    })).toThrow('C1 Cloud DEV migration rehearsal returned no valid completion evidence')
+  })
+
 })

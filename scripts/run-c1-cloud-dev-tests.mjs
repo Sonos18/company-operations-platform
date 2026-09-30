@@ -16,12 +16,21 @@ const allowlist = [
   'c1_accounting_write_lifecycle.test.sql',
   'c1_accounting_write_evidence.test.sql',
   'c1_accounting_write_cash.test.sql',
+  'c1_ordinary_cost_detail_lifecycle_foundation.test.sql',
+  'c1_ordinary_cost_detail_commands.test.sql',
+  'c1_ordinary_cost_detail_provenance_evidence_reads.test.sql',
 ]
 
 const accountingWriteSyntheticPrefixes = {
   'c1_accounting_write_lifecycle.test.sql': 'c106',
   'c1_accounting_write_evidence.test.sql': 'c107',
   'c1_accounting_write_cash.test.sql': 'c108',
+}
+
+const ordinaryCostDetailSyntheticPrefixes = {
+  'c1_ordinary_cost_detail_lifecycle_foundation.test.sql': 'c1f1',
+  'c1_ordinary_cost_detail_commands.test.sql': 'c1d1',
+  'c1_ordinary_cost_detail_provenance_evidence_reads.test.sql': 'c1f3',
 }
 
 export function validateC1CloudDevSql(path, sql) {
@@ -54,6 +63,30 @@ export function validateC1CloudDevSql(path, sql) {
     const ids = normalized.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
     if (ids.some(id => !id.toLowerCase().startsWith(accountingWritePrefix))) throw new Error(`${path} must use reserved synthetic UUIDs`)
   }
+  const ordinaryCostDetailPrefix = ordinaryCostDetailSyntheticPrefixes[path]
+  if (ordinaryCostDetailPrefix) {
+    const ids = normalized.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
+    if (ids.some(id => !id.toLowerCase().startsWith(ordinaryCostDetailPrefix))) throw new Error(`${path} must use reserved synthetic UUIDs`)
+    if (/\b(?:Eo\s+Gi\p{L}*|Yong\s+Mei)\b/iu.test(normalized)) throw new Error('C1 ordinary detail SQL cannot reference real VQH/customer identifiers')
+  }
+}
+
+function assertC1CloudDevPgTapResult(path, stdout) {
+  const payloadStart = stdout.indexOf('{')
+  if (payloadStart < 0) throw new Error(`C1 Cloud DEV SQL verification failed for ${path}: Supabase CLI returned no JSON result`)
+
+  let response
+  try {
+    response = JSON.parse(stdout.slice(payloadStart))
+  } catch {
+    throw new Error(`C1 Cloud DEV SQL verification failed for ${path}: Supabase CLI returned invalid JSON`)
+  }
+  if (!response || typeof response !== 'object' || Array.isArray(response) || !Array.isArray(response.rows)) {
+    throw new Error(`C1 Cloud DEV SQL verification failed for ${path}: Supabase CLI returned an invalid query result`)
+  }
+
+  const finish = response.rows.find(row => row && typeof row === 'object' && !Array.isArray(row) && typeof row.finish === 'string')?.finish
+  if (finish) throw new Error(`C1 Cloud DEV SQL verification failed for ${path}: pgTAP finish reported a diagnostic`)
 }
 
 export function runC1CloudDevTests({ cwd = process.cwd(), files, spawn = spawnSync } = {}) {
@@ -63,8 +96,13 @@ export function runC1CloudDevTests({ cwd = process.cwd(), files, spawn = spawnSy
   assertCloudDevTarget({ cwd })
   const cli = resolve(cwd, 'node_modules/supabase/dist/supabase.js')
   for (const file of selected) {
-    const result = spawn(process.execPath, [cli, 'db', 'query', '--linked', '--file', resolve(cwd, 'supabase/tests/database/c1', file.path)], { cwd, stdio: 'inherit' })
-    if (result.status !== 0) throw new Error('C1 Cloud DEV SQL verification failed')
+    const result = spawn(process.execPath, [cli, 'db', 'query', '--linked', '--output-format', 'json', '--file', resolve(cwd, 'supabase/tests/database/c1', file.path)], { cwd, encoding: 'utf8' })
+    const stdout = String(result.stdout ?? '')
+    const stderr = String(result.stderr ?? '')
+    if (stdout) process.stdout.write(stdout)
+    if (stderr) process.stderr.write(stderr)
+    if (result.status !== 0) throw new Error(`C1 Cloud DEV SQL verification failed for ${file.path}`)
+    assertC1CloudDevPgTapResult(file.path, stdout)
   }
 }
 

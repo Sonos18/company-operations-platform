@@ -55,14 +55,14 @@ begin
 end;
 $$;
 
-insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, created_by) values
-  ('c1010000-0000-4000-8000-000000000601', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000301', 1, 'C101 reader detail', '10', 'c1010000-0000-4000-8000-000000000903'),
-  ('c1010000-0000-4000-8000-000000000602', 'c1010000-0000-4000-8000-000000000011', 'c1010000-0000-4000-8000-000000000021', 'c1010000-0000-4000-8000-000000000302', 1, 'C101 foreign detail', '10', 'c1010000-0000-4000-8000-000000000903');
+insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, publication_state, publication_origin, published_at, created_by) values
+  ('c1010000-0000-4000-8000-000000000601', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000301', 1, 'C101 reader detail', '10', 'published', 'legacy_backfill', now(), 'c1010000-0000-4000-8000-000000000903'),
+  ('c1010000-0000-4000-8000-000000000602', 'c1010000-0000-4000-8000-000000000011', 'c1010000-0000-4000-8000-000000000021', 'c1010000-0000-4000-8000-000000000302', 1, 'C101 foreign detail', '10', 'published', 'legacy_backfill', now(), 'c1010000-0000-4000-8000-000000000903');
 set constraints all immediate;
 set constraints all deferred;
 
-insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, created_by)
-values ('c1010000-0000-4000-8000-000000000632', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000309', 1, 'C101 equal-total detail', '100', 'c1010000-0000-4000-8000-000000000903');
+insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, publication_state, publication_origin, published_at, created_by)
+values ('c1010000-0000-4000-8000-000000000632', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000309', 1, 'C101 equal-total detail', '100', 'published', 'legacy_backfill', now(), 'c1010000-0000-4000-8000-000000000903');
 set constraints all immediate;
 do $$
 begin
@@ -117,8 +117,8 @@ end;
 $$;
 reset role;
 
-insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, created_by)
-values ('c1010000-0000-4000-8000-000000000611', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000303', 1, 'C101 inserted detail', '40', 'c1010000-0000-4000-8000-000000000903');
+insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, publication_state, publication_origin, published_at, created_by)
+values ('c1010000-0000-4000-8000-000000000611', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000303', 1, 'C101 inserted detail', '40', 'published', 'legacy_backfill', now(), 'c1010000-0000-4000-8000-000000000903');
 do $$
 begin
   if (select amount from public.project_cost_items where id = 'c1010000-0000-4000-8000-000000000303') <> 0 then
@@ -138,9 +138,9 @@ end;
 $$;
 set constraints all deferred;
 
-insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, created_by) values
-  ('c1010000-0000-4000-8000-000000000621', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000304', 1, 'C101 sum detail A', '40', 'c1010000-0000-4000-8000-000000000903'),
-  ('c1010000-0000-4000-8000-000000000622', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000304', 2, 'C101 sum detail B', '60', 'c1010000-0000-4000-8000-000000000903');
+insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, publication_state, publication_origin, published_at, created_by) values
+  ('c1010000-0000-4000-8000-000000000621', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000304', 1, 'C101 sum detail A', '40', 'published', 'legacy_backfill', now(), 'c1010000-0000-4000-8000-000000000903'),
+  ('c1010000-0000-4000-8000-000000000622', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000304', 2, 'C101 sum detail B', '60', 'published', 'legacy_backfill', now(), 'c1010000-0000-4000-8000-000000000903');
 set constraints all immediate;
 do $$
 begin
@@ -154,8 +154,8 @@ end;
 $$;
 set constraints all deferred;
 
-insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, retention_kind, retention_rate_bps, retention_amount_text, created_by)
-values ('c1010000-0000-4000-8000-000000000631', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000305', 1, 'C101 retention detail', '100', 'warranty', 500, '5', 'c1010000-0000-4000-8000-000000000903');
+insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, retention_kind, retention_rate_bps, retention_amount_text, publication_state, publication_origin, published_at, created_by)
+values ('c1010000-0000-4000-8000-000000000631', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000305', 1, 'C101 retention detail', '100', 'warranty', 500, '5', 'published', 'legacy_backfill', now(), 'c1010000-0000-4000-8000-000000000903');
 set constraints all immediate;
 do $$
 begin
@@ -217,9 +217,9 @@ end;
 $$;
 set constraints all deferred;
 
-insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, created_by) values
-  ('c1010000-0000-4000-8000-000000000641', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000306', 1, 'C101 moved detail', '40', 'c1010000-0000-4000-8000-000000000903'),
-  ('c1010000-0000-4000-8000-000000000642', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000307', 1, 'C101 destination detail', '10', 'c1010000-0000-4000-8000-000000000903');
+insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, publication_state, publication_origin, published_at, created_by) values
+  ('c1010000-0000-4000-8000-000000000641', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000306', 1, 'C101 moved detail', '40', 'published', 'legacy_backfill', now(), 'c1010000-0000-4000-8000-000000000903'),
+  ('c1010000-0000-4000-8000-000000000642', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000307', 1, 'C101 destination detail', '10', 'published', 'legacy_backfill', now(), 'c1010000-0000-4000-8000-000000000903');
 set constraints all immediate;
 set constraints all deferred;
 update public.project_cost_item_details
@@ -238,8 +238,8 @@ end;
 $$;
 set constraints all deferred;
 
-insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, created_by)
-values ('c1010000-0000-4000-8000-000000000651', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000308', 1, 'C101 validation detail', '1', 'c1010000-0000-4000-8000-000000000903');
+insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, publication_state, publication_origin, published_at, created_by)
+values ('c1010000-0000-4000-8000-000000000651', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000308', 1, 'C101 validation detail', '1', 'published', 'legacy_backfill', now(), 'c1010000-0000-4000-8000-000000000903');
 set constraints all immediate;
 set constraints all deferred;
 
@@ -315,9 +315,9 @@ begin
 end;
 $$;
 
-insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, retention_kind, retention_amount_text, retention_rate_bps, created_by) values
-  ('c1010000-0000-4000-8000-000000000661', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000308', 10, 'C101 zero rate', '1', 'warranty', '1', 0, 'c1010000-0000-4000-8000-000000000903'),
-  ('c1010000-0000-4000-8000-000000000662', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000308', 11, 'C101 full rate', '1', 'warranty', '1', 10000, 'c1010000-0000-4000-8000-000000000903');
+insert into public.project_cost_item_details(id, tenant_id, company_id, project_cost_item_id, line_no, description, amount_text, retention_kind, retention_amount_text, retention_rate_bps, publication_state, publication_origin, published_at, created_by) values
+  ('c1010000-0000-4000-8000-000000000661', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000308', 10, 'C101 zero rate', '1', 'warranty', '1', 0, 'published', 'legacy_backfill', now(), 'c1010000-0000-4000-8000-000000000903'),
+  ('c1010000-0000-4000-8000-000000000662', 'c1010000-0000-4000-8000-000000000010', 'c1010000-0000-4000-8000-000000000020', 'c1010000-0000-4000-8000-000000000308', 11, 'C101 full rate', '1', 'warranty', '1', 10000, 'published', 'legacy_backfill', now(), 'c1010000-0000-4000-8000-000000000903');
 set constraints all immediate;
 set constraints all deferred;
 

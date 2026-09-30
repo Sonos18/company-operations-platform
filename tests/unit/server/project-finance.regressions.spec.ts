@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { financeListQuerySchema, itemDetailQuerySchema, paymentQuerySchema } from '../../../shared/schemas/costs/project-finance'
 import { compareFinanceRows } from '../../../shared/utils/project-finance-dates'
 import { sumFinanceMoney } from '../../../shared/utils/project-finance-money'
+import { ProjectCostRepository } from '../../../server/features/costs/project-cost.repository'
 import { AppApiError } from '../../../server/utils/api-error'
 import { ProjectFinanceMetadataReader, ProjectFinanceTableReader, type FinanceProjectContextRow, type FinanceTableRows } from '../../../server/features/costs/finance/project-finance.queries'
 import { ConcreteProjectFinanceRepository, createSupabaseProjectFinanceRepository } from '../../../server/features/costs/finance/project-finance.repository'
 import { ProjectFinanceService } from '../../../server/features/costs/finance/project-finance.service'
-import { paymentTotal } from '../../../server/features/costs/finance/project-finance.summary'
+import { paymentTotal, summarizeFinanceRows } from '../../../server/features/costs/finance/project-finance.summary'
 
 const ids = {
   tenant: 'c1070000-0000-4000-8000-000000000010', company: 'c1070000-0000-4000-8000-000000000020', project: 'c1070000-0000-4000-8000-000000000030', otherProject: 'c1070000-0000-4000-8000-000000000031',
@@ -35,10 +36,10 @@ function category(id: string, code: string, displayOrder: number) {
   return { id, tenant_id: ids.tenant, company_id: ids.company, code, name: code, display_order: displayOrder, is_active: true, version: 0 }
 }
 function item(id: string, categoryId: string, amount: string, relevantDate: string | null = '2026-01-10') {
-  return { id, tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, cost_category_id: categoryId, description: id, business_reference: null, amount_text: amount, currency_code: 'VND', relevant_date: relevantDate, publication_state: 'published' as const, version: 0, created_at: createdAt, updated_at: createdAt }
+  return { id, tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, cost_category_id: categoryId, description: id, business_reference: null, amount_text: amount, currency_code: 'VND', relevant_date: relevantDate, publication_origin: 'legacy_backfill' as const, publication_state: 'published' as const, version: 0, created_at: createdAt, updated_at: createdAt }
 }
 function detail(id: string, itemId: string, lineNo: number, amount: string, retentionKind: 'warranty' | 'other' | null, retentionAmount: string | null, relevantDate: string | null) {
-  return { id, tenant_id: ids.tenant, company_id: ids.company, project_cost_item_id: itemId, line_no: lineNo, detail_kind: 'line_item' as const, description: id, quantity_text: null, unit_code: null, unit_price_text: null, amount_text: amount, retention_kind: retentionKind, retention_rate_bps: retentionKind === null ? null : 500, retention_amount_text: retentionAmount, relevant_date: relevantDate, reference: null, note: null, version: 0, created_at: createdAt, updated_at: createdAt }
+  return { id, tenant_id: ids.tenant, company_id: ids.company, project_cost_item_id: itemId, line_no: lineNo, detail_kind: 'line_item' as const, description: id, quantity_text: null, unit_code: null, unit_price_text: null, amount_text: amount, retention_kind: retentionKind, retention_rate_bps: retentionKind === null ? null : 500, retention_amount_text: retentionAmount, relevant_date: relevantDate, reference: null, note: null, publication_state: 'published' as const, version: 0, created_at: createdAt, updated_at: createdAt }
 }
 function payment(id: string, amount: string, retention: string | null, paymentDate = '2026-02-10', status: 'recorded' | 'voided' = 'recorded', replacesPaymentId: string | null = null, contractId = ids.contract) {
   return { id, tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, project_subcontract_id: contractId, paid_amount_text: amount, warranty_retention_amount_text: retention, retention_rate_bps: 500, currency_code: 'VND', status, description: id, payment_date: paymentDate, payment_reference: null, source_reference: null, note: null, replaces_payment_id: replacesPaymentId, created_at: createdAt, version: 0, updated_at: createdAt }
@@ -69,7 +70,7 @@ function multiSnapshot(projectId: string, projectCode: string, currencyCode: str
   const rows = readSet(budgetAmount)
   rows.context = { ...context, projectId, projectCode, projectName: projectCode, defaultCurrencyCode: currencyCode }
   rows.costItems = [{ ...rows.costItems[0]!, id: itemId, project_id: projectId, amount_text: costAmount, currency_code: currencyCode }]
-  rows.details = []
+  rows.details = [detail(itemId, itemId, 1, costAmount, null, null, '2026-01-10')]
   rows.budgets = [{ ...rows.budgets[0]!, id: budgetId, project_id: projectId, currency_code: currencyCode, total_amount_text: budgetAmount, detail_mode: 'categorized' }]
   rows.budgetLines = [{ id: lineId, tenant_id: ids.tenant, company_id: ids.company, project_id: projectId, budget_version_id: budgetId, cost_category_id: ids.materials, line_no: 1, amount_text: budgetAmount, description: 'Budget line', reference: null, source_reference: null, note: null, version: 0, updated_at: createdAt }]
   rows.ownerAdvances = ownerAmount === null ? [] : [{ id: `${ownerAmount === '100.0000' ? 'c1070000-0000-4000-8000-000000000132' : 'c1070000-0000-4000-8000-000000000133'}`, tenant_id: ids.tenant, company_id: ids.company, project_id: projectId, amount_text: ownerAmount, currency_code: currencyCode, status: 'recorded', description: 'Owner receipt', payer_name: 'Owner', receipt_no: projectCode, received_date: '2026-02-01', reference: null, source_reference: null, note: null, version: 0, created_at: createdAt, updated_at: createdAt }]
@@ -112,6 +113,9 @@ function fakeSupabase(rows: ReturnType<typeof readSet>) {
         in(field: string, values: readonly string[]) { ins.set(field, values); return query },
         gt(_field: string, value: string) { greaterThan = value; return query },
         order() { return query },
+        then(resolve: (value: { data: Record<string, unknown>[], error: null }) => unknown) {
+          return query.limit(Number.MAX_SAFE_INTEGER).then(resolve)
+        },
         async limit(size: number) {
           const fields = selected.split(',')
           const values = [...(tableRows[table] ?? [])].filter(row => [...equals].every(([field, value]) => row[field] === value)).filter(row => [...ins].every(([field, allowed]) => allowed.includes(String(row[field])))).filter(row => greaterThan === null || String(row.id) > greaterThan)
@@ -134,7 +138,7 @@ function fakeSupabaseMulti(projectRows: readonly ReturnType<typeof multiSnapshot
   const tableRows: Record<string, readonly Record<string, unknown>[]> = {
     cost_categories: projectRows[0]!.categories,
     project_cost_items: projectRows.flatMap(rows => rows.costItems),
-    project_cost_item_details: [],
+    project_cost_item_details: projectRows.flatMap(rows => rows.details),
     project_budget_versions: projectRows.flatMap(rows => rows.budgets),
     project_budget_lines: projectRows.flatMap(rows => rows.budgetLines),
     project_owner_advances: projectRows.flatMap(rows => rows.ownerAdvances),
@@ -356,6 +360,32 @@ describe('C1 finance review regressions on concrete production readers', () => {
     await expect(repository.itemDetails(scope, ids.project, ids.materialsItem, itemQuery)).resolves.toHaveProperty('kind', 'ordinary')
   })
 
+  it('F08 fails closed when a nonzero ordinary parent has no published detail rows', async () => {
+    const rows = readSet()
+    rows.details = []
+    const repository = createSupabaseProjectFinanceRepository(fakeSupabase(rows) as never)
+
+    await expect(repository.overview(scope, ids.project)).rejects.toMatchObject({
+      code: 'INTERNAL_ERROR',
+      details: { reason: 'DATA_CONSISTENCY_ERROR' },
+    })
+  })
+
+  it.each(['legacy_backfill', 'command'] as const)('keeps %s historical parent-only and draft-only balances fail-closed across both readers', async (origin) => {
+    for (const state of ['absent', 'draft'] as const) {
+      const rows = readSet()
+      rows.costItems = [{ ...rows.costItems[0]!, publication_origin: origin }]
+      rows.details = state === 'absent' ? [] : [{ ...rows.details[0]!, amount_text: '100.0000', publication_state: 'draft' }]
+      const before = JSON.stringify(rows)
+      const client = fakeSupabase(rows)
+      const finance = createSupabaseProjectFinanceRepository(client as never)
+      await expect(finance.overview(scope, ids.project)).rejects.toMatchObject({ code: 'INTERNAL_ERROR', details: { reason: 'DATA_CONSISTENCY_ERROR' } })
+      await expect(finance.listProjects(scope, directoryQuery)).rejects.toMatchObject({ code: 'INTERNAL_ERROR', details: { reason: 'DATA_CONSISTENCY_ERROR' } })
+      await expect(new ProjectCostRepository(client as never).itemDetails(ids.tenant, ids.company, ids.materialsItem)).rejects.toMatchObject({ code: 'INTERNAL_ERROR', statusCode: 500 })
+      expect(JSON.stringify(rows)).toBe(before)
+    }
+  })
+
   it('F04 partitions every project-owned relation in a batched factory directory read', async () => {
     const projectA = multiSnapshot(ids.project, 'P-A', 'VND', 'c1070000-0000-4000-8000-000000000140', 'c1070000-0000-4000-8000-000000000141', 'c1070000-0000-4000-8000-000000000142', 'c1070000-0000-4000-8000-000000000143', 'c1070000-0000-4000-8000-000000000144', 'c1070000-0000-4000-8000-000000000145', '100.0000', '100.0000', '10.0000')
     const projectB = multiSnapshot(multiIds.projectB, 'P-B', 'USD', multiIds.itemB, multiIds.partyB, multiIds.contractB, multiIds.budgetB, multiIds.lineB, multiIds.paymentB, '200.0000', '200.0000', '20.0000')
@@ -447,7 +477,12 @@ describe('C1 finance review regressions on concrete production readers', () => {
       item('c1070000-0000-4000-8000-000000000154', 'c1070000-0000-4000-8000-000000000151', '25.0000'),
       item('c1070000-0000-4000-8000-000000000155', 'c1070000-0000-4000-8000-000000000152', '25.0000'),
     ]
-    rows.details = [detail(ids.detailWarranty, ids.materialsItem, 1, '25.0000', 'warranty', '5.0000', '2026-02-03')]
+    rows.details = [
+      detail(ids.detailWarranty, ids.materialsItem, 1, '25.0000', 'warranty', '5.0000', '2026-02-03'),
+      detail('c1070000-0000-4000-8000-000000000153', 'c1070000-0000-4000-8000-000000000153', 1, '25.0000', null, null, '2026-02-03'),
+      detail('c1070000-0000-4000-8000-000000000154', 'c1070000-0000-4000-8000-000000000154', 1, '25.0000', null, null, '2026-02-03'),
+      detail('c1070000-0000-4000-8000-000000000155', 'c1070000-0000-4000-8000-000000000155', 1, '25.0000', null, null, '2026-02-03'),
+    ]
     rows.budgets = []
     rows.payments = [payment(ids.paymentWarranty, '20.0000', '10.0000')]
     rows.ownerAdvances = [{ id: 'c1070000-0000-4000-8000-000000000156', tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, amount_text: '100.0000', currency_code: 'VND', status: 'recorded', description: 'Synthetic owner receipt', payer_name: null, receipt_no: null, received_date: '2026-02-01', reference: null, source_reference: 'synthetic/J3', note: null, version: 0, created_at: createdAt, updated_at: createdAt }]
@@ -460,6 +495,71 @@ describe('C1 finance review regressions on concrete production readers', () => {
     expect(overview.summary.margin.amount).toBeNull()
     const directory = await repository.listProjects(scope, directoryQuery)
     expect(directory.projects[0]?.summary.management).toEqual(overview.summary.management)
+  })
+
+  it.each(['VND', 'USD'])('does not let a different-currency draft shell change %s finance overview or directory currency', async currency => {
+    const rows = readSet()
+    for (const collection of [rows.costItems, rows.budgets, rows.ownerAdvances, rows.subcontracts, rows.payments]) for (const row of collection) row.currency_code = currency
+    const repository = () => createSupabaseProjectFinanceRepository(fakeSupabase(rows) as never)
+    const before = await repository().overview(scope, ids.project)
+    rows.costItems.push({ ...item('c1070000-0000-4000-8000-000000000159', ids.materials, '0.0000'), currency_code: currency === 'USD' ? 'VND' : 'USD', publication_origin: 'command' })
+    const after = await repository().overview(scope, ids.project)
+    expect(after.project.currencyCode).toBe(before.project.currencyCode)
+    expect(after.summary).toEqual(before.summary)
+    const list = await repository().listProjects(scope, directoryQuery)
+    expect(list.projects[0]?.summary).toEqual(before.summary)
+  })
+
+  it.each(['0.0000', '12.0000'])('keeps a new draft shell unrecorded until a %s detail is published', async amount => {
+    const rows = readSet()
+    rows.categories = [category(ids.materials, 'materials', 1), category(ids.subcontract, 'subcontract_labor', 2),
+      category('c1070000-0000-4000-8000-000000000150', 'machinery', 3),
+      category('c1070000-0000-4000-8000-000000000151', 'direct_labor', 4),
+      category('c1070000-0000-4000-8000-000000000152', 'other', 5)]
+    rows.costItems = rows.categories.slice(2).map((value, index) => ({ ...item(`c1070000-0000-4000-8000-00000000015${index + 3}`, value.id, '0.0000'), publication_origin: 'legacy_backfill' as const }))
+    rows.details = []
+    rows.payments = [payment(ids.paymentZeroRetention, '20.0000', '0.0000')]
+    rows.ownerAdvances = [{ id: 'c1070000-0000-4000-8000-000000000156', tenant_id: ids.tenant, company_id: ids.company, project_id: ids.project, amount_text: '100.0000', currency_code: 'VND', status: 'recorded', description: 'Receipt', payer_name: null, receipt_no: null, received_date: null, reference: null, source_reference: null, note: null, version: 0, created_at: createdAt, updated_at: createdAt }]
+    const overview = () => createSupabaseProjectFinanceRepository(fakeSupabase(rows) as never).overview(scope, ids.project)
+    const missing = await overview()
+    rows.costItems.push({ ...item(ids.materialsItem, ids.materials, '0.0000'), publication_origin: 'command' } as typeof rows.costItems[number])
+    // These are persisted lifecycle snapshots, not simulated command implementations.
+    for (const preparedAmount of [null, amount]) {
+      rows.details = [{ ...detail(ids.detailNoRetention, ids.materialsItem, 1, amount, null, null, null), publication_state: 'draft', amount_text: preparedAmount } as unknown as typeof rows.details[number]]
+      const draft = await overview()
+      await expect(createSupabaseProjectFinanceRepository(fakeSupabase(rows) as never).itemDetails(scope, ids.project, ids.materialsItem, itemQuery)).resolves.toMatchObject({ kind: 'ordinary', details: { rows: [] } })
+      expect(draft.categories.find(value => value.code === 'materials')).toMatchObject({ cost: { state: 'not_recorded', amount: null, recordedCount: 0 }, detailCount: 0, latestRecordedDate: null })
+      expect(draft.summary.cost).toEqual(missing.summary.cost)
+      const directory = await createSupabaseProjectFinanceRepository(fakeSupabase(rows) as never).listProjects(scope, directoryQuery)
+      expect(directory.projects[0]?.summary).toEqual(draft.summary)
+      expect(draft.summary.management.result).toMatchObject({ state: 'unavailable', amount: null, reasons: ['COST_INCOMPLETE'] })
+      expect(draft.summary.warrantyRetention).toEqual(missing.summary.warrantyRetention)
+      expect(draft.categories.filter(value => value.code !== 'materials')).toEqual(missing.categories.filter(value => value.code !== 'materials'))
+    }
+    rows.costItems.at(-1)!.amount_text = amount
+    rows.details = [detail(ids.detailNoRetention, ids.materialsItem, 1, amount, null, null, null)]
+    const published = await overview()
+    expect(published.categories.find(value => value.code === 'materials')?.cost).toEqual({ state: 'recorded', amount, recordedCount: 1 })
+    expect(published.summary.cost.state).toBe('recorded')
+    expect(published.summary.management.result.state).toBe('provisional')
+    const directory = await createSupabaseProjectFinanceRepository(fakeSupabase(rows) as never).listProjects(scope, directoryQuery)
+    expect(directory.projects[0]?.summary).toEqual(published.summary)
+  })
+
+  it.each(['0.0000', '25.0000'])('preserves the reducer legacy parent-only amount %s', amount => {
+    const rows = readSet()
+    rows.costItems = [{ ...item(ids.materialsItem, ids.materials, amount), publication_origin: 'legacy_backfill' } as typeof rows.costItems[number]]
+    rows.details = []
+    const result = summarizeFinanceRows({ context, rows })
+    expect(result.categories.find(value => value.code === 'materials')?.cost).toEqual({ state: 'recorded', amount, recordedCount: 1 })
+  })
+
+  it('preserves a command-origin parent-only nonzero reducer observation', () => {
+    const rows = readSet()
+    rows.costItems = [{ ...item(ids.materialsItem, ids.materials, '25.0000'), publication_origin: 'command' }]
+    rows.details = []
+    const result = summarizeFinanceRows({ context, rows })
+    expect(result.categories.find(value => value.code === 'materials')?.cost).toEqual({ state: 'recorded', amount: '25.0000', recordedCount: 1 })
   })
 
   it('keeps the documented deterministic date tie-break', () => {
