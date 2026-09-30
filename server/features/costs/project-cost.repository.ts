@@ -48,7 +48,7 @@ export function summarizeProjectCosts(rows: readonly ProjectCostRow[]): ProjectC
 }
 
 function rpcError(error: unknown): never {
-  const parsed = z.object({ code: z.string().optional(), message: z.string().optional(), details: z.string().optional() }).safeParse(error)
+  const parsed = z.object({ code: z.string().optional(), message: z.string().optional(), details: z.string().nullish() }).safeParse(error)
   const code = parsed.success ? [parsed.data.message, parsed.data.code].find(value => ['MODULE_DISABLED', 'PERMISSION_DENIED', 'RESOURCE_NOT_FOUND', 'IDEMPOTENCY_CONFLICT', 'VERSION_CONFLICT', 'INPUT_INVALID', 'HISTORY_IMMUTABLE', 'PROJECT_COST_CATEGORY_CONFLICT', 'COST_NOT_DRAFT', 'COST_ALREADY_PUBLISHED', 'COST_PUBLISH_NOT_READY', 'COST_DETAIL_NOT_DRAFT', 'COST_DETAIL_NOT_PUBLISHED', 'COST_DETAIL_ALREADY_PUBLISHED', 'COST_DETAIL_PUBLISH_NOT_READY', 'SOURCE_VERSION_NOT_SHARED', 'SOURCE_REVIEW_REQUIRED', 'SUBCONTRACT_COST_MODEL_UNSUPPORTED'].includes(value ?? '')) : undefined
   if (code === 'MODULE_DISABLED') throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.', { reason: 'MODULE_DISABLED' })
   if (code === 'PERMISSION_DENIED') throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.')

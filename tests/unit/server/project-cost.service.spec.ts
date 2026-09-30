@@ -100,6 +100,11 @@ describe('Project Cost service', () => {
     if (code === 'COST_DETAIL_PUBLISH_NOT_READY') expect(error).toMatchObject({ details: { blockingCodes: ['EVIDENCE_NOT_FINALIZED'] } })
   })
 
+  it.each(['COST_DETAIL_ALREADY_PUBLISHED', 'COST_DETAIL_NOT_DRAFT', 'HISTORY_IMMUTABLE'] as const)('maps the PostgREST %s conflict with null details when publishing a detail', async code => {
+    const repository = new ProjectCostRepository({ rpc: vi.fn().mockResolvedValue({ data: null, error: { code: 'P0001', message: code, details: null, hint: null } }) } as never)
+    await expect(repository.publishDetail(context([]), itemRow().id, { expectedVersion: 0 }, context([]).requestId)).rejects.toMatchObject({ statusCode: 409, code })
+  })
+
   it.each(['cost.manage', 'cost.prepare'] as const)('allows %s to read narrow draft-management metadata', async permission => {
     const repository = { draftManagementMetadata: vi.fn().mockResolvedValue({ projects: [], categories: [] }) }
     await expect(new ProjectCostService(repository as never).draftManagementMetadata(context([permission]))).resolves.toEqual({ projects: [], categories: [] })
