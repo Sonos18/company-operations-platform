@@ -332,8 +332,8 @@ select is(jsonb_build_object(
 set local role authenticated;
 create temp table c1d_safe_parent_correction as select public.c1_correct_published_project_cost('c1d10000-0000-4000-8000-000000000020',(select (result->>'projectCostItemId')::uuid from c1d_result),jsonb_build_object('expectedVersion',(select version from public.project_cost_items where id=(select (result->>'projectCostItemId')::uuid from c1d_result)),'reason','safe parent wording correction','operationalChanges',jsonb_build_object('description','safe corrected parent description')),'c1d10000-0000-4000-8000-000000000770','c1d10000-0000-4000-8000-000000000771') result;
 select is((select description from public.project_cost_items where id=(select (result->>'id')::uuid from c1d_safe_parent_correction)),'safe corrected parent description','managed-detail parent allows a safe descriptive correction');
-select is((select jsonb_build_object('state',publication_state,'amount',amount_text,'version',version) from public.project_cost_item_details where id=(select (result->>'id')::uuid from c1d_create_optional)),jsonb_build_object('state','draft','amount',null,'version',0),'legacy parent operational correction leaves a same-transaction draft untouched');
 reset role;
+select is((select jsonb_build_object('state',publication_state,'amount',amount_text,'version',version) from public.project_cost_item_details where id=(select (result->>'id')::uuid from c1d_create_optional)),jsonb_build_object('state','draft','amount',null,'version',0),'legacy parent operational correction leaves a same-transaction draft untouched');
 create temp table c1d_replay_effects_before as
 select
   (select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'projectCostItemId')::uuid from c1d_result)) detail_count,
