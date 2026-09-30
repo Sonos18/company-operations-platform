@@ -1,3 +1,4 @@
+import { isProjectCostObservation } from '../project-cost-observation'
 import { financeOverviewSchema, type FinanceCategoryRow, type FinanceOverview, type MoneyObservation } from '../../../../shared/schemas/costs/project-finance'
 import { deriveFinanceDate, compareFinanceRows } from '../../../../shared/utils/project-finance-dates'
 import { subtractFinanceMoney, sumFinanceMoney } from '../../../../shared/utils/project-finance-money'
@@ -81,7 +82,7 @@ function categoryRow(category: RawCategory, items: readonly RawItem[], details: 
   const recordedPayments = category.code === 'subcontract_labor' ? payments.filter(payment => payment.status === 'recorded') : []
   // Command-created zero parents are aggregate shells until a detail is published.
   // Imported parent-only observations (including known zero) keep their legacy meaning.
-  const recordedItems = categoryItems.filter(item => item.publication_origin !== 'command' || !isZero(item.amount_text) || categoryDetails.some(detail => detail.project_cost_item_id === item.id))
+  const recordedItems = categoryItems.filter(item => isProjectCostObservation(item, categoryDetails.some(detail => detail.project_cost_item_id === item.id)))
   const costValues = category.code === 'subcontract_labor' ? recordedPayments.map(payment => payment.paid_amount_text) : recordedItems.map(item => item.amount_text)
   const cost = legacy ? { state: 'needs_reconciliation' as const, amount: null, recordedCount: categoryItems.length } : observation(costValues)
   const item = categoryItems.length === 1 ? categoryItems[0]! : null
@@ -126,7 +127,9 @@ export function summarizeFinanceRows(input: { context: FinanceProjectContextRow,
   const publishedCostItems = input.rows.costItems.filter(item => item.publication_state === 'published')
   const publishedCostItemIds = new Set(publishedCostItems.map(item => item.id))
   const rows = { ...input.rows, costItems: publishedCostItems, details: input.rows.details.filter(detail => publishedCostItemIds.has(detail.project_cost_item_id) && detail.publication_state === 'published') }
-  const currencies = currencySet(rows)
+  const publishedDetailParentIds = new Set(rows.details.map(detail => detail.project_cost_item_id))
+  const observations = rows.costItems.filter(item => isProjectCostObservation(item, publishedDetailParentIds.has(item.id)))
+  const currencies = currencySet({ ...rows, costItems: observations })
   if (currencies.size > 1) throw new AppApiError(500, 'INTERNAL_ERROR', 'Dữ liệu tài chính có nhiều loại tiền tệ.', { reason: 'MIXED_CURRENCY' })
   const currencyCode = [...currencies][0] ?? input.context.defaultCurrencyCode
   const project = context(input.context, currencyCode)

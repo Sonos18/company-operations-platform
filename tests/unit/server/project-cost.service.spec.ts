@@ -7,7 +7,7 @@ const context = (permissions: string[]) => ({ actorId: 'c1010000-0000-4000-8000-
 const createInput = { projectId: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount: '1.00', currencyCode: 'VND', workStatus: 'unknown' as const, nonOverlapConfirmationReference: 'confirmed' }
 const createDraftInput = { projectId: createInput.projectId, description: 'Synthetic draft', costCategoryId: 'c1010000-0000-4000-8000-000000000301', workStatus: 'unknown' as const }
 const financialInput = { expectedVersion: 0, currencyCode: 'VND', details: [{ lineNo: 1, detailKind: 'line_item' as const, description: 'Zero', amount: '0.0000' }], sourceFigureIds: [] }
-const itemRow = (overrides: Record<string, unknown> = {}) => ({ id: 'c1010000-0000-4000-8000-000000000001', tenant_id: 'c1010000-0000-4000-8000-000000000010', company_id: 'c1010000-0000-4000-8000-000000000020', project_id: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount_text: '1.0000', currency_code: 'VND', work_status: 'unknown', business_reference: null, party_id: null, engagement_id: null, component_id: null, relevant_date: null, version: 0, created_by: 'c1010000-0000-4000-8000-000000000902', created_at: '2026-09-16T00:00:00.000Z', updated_at: '2026-09-16T00:00:00.000Z', ...overrides })
+const itemRow = (overrides: Record<string, unknown> = {}) => ({ id: 'c1010000-0000-4000-8000-000000000001', tenant_id: 'c1010000-0000-4000-8000-000000000010', company_id: 'c1010000-0000-4000-8000-000000000020', project_id: 'c1010000-0000-4000-8000-000000000101', publication_origin: 'legacy_backfill', description: 'Synthetic', amount_text: '1.0000', currency_code: 'VND', work_status: 'unknown', business_reference: null, party_id: null, engagement_id: null, component_id: null, relevant_date: null, version: 0, created_by: 'c1010000-0000-4000-8000-000000000902', created_at: '2026-09-16T00:00:00.000Z', updated_at: '2026-09-16T00:00:00.000Z', ...overrides })
 const metadata = (projectId: string) => ({ projectId, projectCode: projectId.endsWith('102') ? 'C101-P2' : 'C101-P1', projectName: projectId.endsWith('102') ? 'C101 project two' : 'C101 project one' })
 const listClient = (data: unknown, error: unknown = null) => {
   const result = Promise.resolve({ data, error })
@@ -23,6 +23,76 @@ const listClient = (data: unknown, error: unknown = null) => {
 }
 
 describe('Project Cost service', () => {
+  const observationClient = (parents: ReturnType<typeof itemRow>[], children: Record<string, unknown>[] = [], beforeRead?: (table: string) => void) => ({
+    from: (table: string) => {
+      const filters: Array<[string, string]> = []
+      let maximum = Infinity
+      let columns: string[] = []
+      const query = {
+        select: (value: string) => { columns = value.split(','); return query },
+        eq: (key: string, value: string) => { filters.push([key, value]); return query },
+        order: () => query,
+        limit: (size: number) => { maximum = size; return query },
+        then: (resolve: (value: unknown) => unknown) => { beforeRead?.(table); return Promise.resolve({ data: (table === 'project_cost_items' ? parents : children).filter(row => filters.every(([key, value]) => (row as Record<string, unknown>)[key] === value)).slice(0, maximum).map(row => Object.fromEntries(columns.map(key => [key, (row as Record<string, unknown>)[key]]))), error: null }).then(resolve) },
+      }
+      return query
+    },
+    rpc: async (_name: string, args: { target_project_ids: string[] }) => ({ data: args.target_project_ids.map(metadata), error: null }),
+  })
+
+  it.each(['VND', 'USD'])('omits a draft-only %s shell from old list and project reads', async currency => {
+    const legacy = itemRow({ publication_state: 'published', publication_origin: 'legacy_backfill' })
+    const shell = itemRow({ id: 'c1010000-0000-4000-8000-000000000002', amount_text: '0.0000', currency_code: currency, publication_state: 'published', publication_origin: 'command' })
+    const repository = new ProjectCostRepository(observationClient([legacy, shell]) as never)
+    expect(await repository.listSummaries(legacy.tenant_id, legacy.company_id)).toMatchObject([{ summary: { unknownCount: 1, currencyCode: 'VND' } }])
+    expect(await repository.projectSummary(legacy.tenant_id, legacy.company_id, legacy.project_id)).toMatchObject({ items: [{ id: legacy.id }], summary: { unknownCount: 1, currencyCode: 'VND' } })
+  })
+
+  it('preserves empty list and missing project for a first draft shell', async () => {
+    const shell = itemRow({ amount_text: '0.0000', publication_state: 'published', publication_origin: 'command' })
+    const draft = { id: 'c1010000-0000-4000-8000-000000000004', tenant_id: shell.tenant_id, company_id: shell.company_id, project_cost_item_id: shell.id, publication_state: 'draft' }
+    const repository = new ProjectCostRepository(observationClient([shell], [draft]) as never)
+    await expect(repository.listSummaries(shell.tenant_id, shell.company_id)).resolves.toEqual([])
+    await expect(repository.projectSummary(shell.tenant_id, shell.company_id, shell.project_id)).rejects.toMatchObject({ statusCode: 404 })
+    await expect(repository.itemDetails(shell.tenant_id, shell.company_id, shell.id)).resolves.toMatchObject({ details: [] })
+  })
+
+  it.each(['list', 'project'])('refreshes a zero shell published between parent and child reads in the %s API', async api => {
+    const parent = itemRow({ amount_text: '0.0000', publication_state: 'published', publication_origin: 'command' })
+    const child = { id: 'c1010000-0000-4000-8000-000000000004', tenant_id: parent.tenant_id, company_id: parent.company_id, project_cost_item_id: parent.id, publication_state: 'published' }
+    const repository = new ProjectCostRepository(observationClient([parent], [child], table => {
+      if (table === 'project_cost_item_details') { parent.amount_text = '10.0000'; parent.version = 1 }
+    }) as never)
+    if (api === 'list') {
+      expect(await repository.listSummaries(parent.tenant_id, parent.company_id)).toMatchObject([{ summary: { unknownCount: 1, unknownStatusValue: '10.0000' } }])
+    } else {
+      expect(await repository.projectSummary(parent.tenant_id, parent.company_id, parent.project_id)).toMatchObject({ summary: { unknownCount: 1, unknownStatusValue: '10.0000' }, items: [{ amount: '10.0000', version: 1 }] })
+    }
+  })
+
+  it('finds each published zero independently of other parents and out-of-scope children', async () => {
+    const first = itemRow({ amount_text: '0.0000', publication_state: 'published', publication_origin: 'command' })
+    const second = { ...first, id: 'c1010000-0000-4000-8000-000000000002' }
+    const shell = { ...first, id: 'c1010000-0000-4000-8000-000000000003' }
+    const evidence = (parent: typeof first) => ({ id: 'c1010000-0000-4000-8000-000000000004', tenant_id: parent.tenant_id, company_id: parent.company_id, project_cost_item_id: parent.id, publication_state: 'published' })
+    const children = [...Array.from({ length: 1001 }, () => evidence(first)), evidence(second), { ...evidence(shell), company_id: 'c1010000-0000-4000-8000-000000000099' }]
+    const repository = new ProjectCostRepository(observationClient([first, second, shell], children) as never)
+    const result = await repository.projectSummary(first.tenant_id, first.company_id, first.project_id)
+    expect(result.items.map(item => item.id)).toEqual([first.id, second.id])
+    expect(result.summary.unknownCount).toBe(2)
+  })
+
+  it.each([['legacy_backfill', '0.0000', false], ['legacy_backfill', '12.0000', false], ['command', '12.0000', false], ['command', '0.0000', true]])('keeps %s %s observations with published-child evidence %s', async (origin, amount, publishedChild) => {
+    const parent = itemRow({ amount_text: amount, publication_state: 'published', publication_origin: origin })
+    const children = [
+      { id: 'c1010000-0000-4000-8000-000000000003', tenant_id: parent.tenant_id, company_id: parent.company_id, project_cost_item_id: parent.id, publication_state: 'draft' },
+      ...(publishedChild ? [{ id: 'c1010000-0000-4000-8000-000000000004', tenant_id: parent.tenant_id, company_id: parent.company_id, project_cost_item_id: parent.id, publication_state: 'published' }] : []),
+    ]
+    const repository = new ProjectCostRepository(observationClient([parent], children) as never)
+    expect(await repository.listSummaries(parent.tenant_id, parent.company_id)).toMatchObject([{ summary: { unknownCount: 1, unknownStatusValue: amount } }])
+    expect(await repository.projectSummary(parent.tenant_id, parent.company_id, parent.project_id)).toMatchObject({ items: [{ id: parent.id }] })
+  })
+
   it.each(['PROJECT_COST_CATEGORY_CONFLICT', 'HISTORY_IMMUTABLE', 'COST_DETAIL_PUBLISH_NOT_READY'] as const)('maps the database %s conflict to the API boundary', async code => {
     const repository = new ProjectCostRepository({ rpc: vi.fn().mockResolvedValue({ data: null, error: { message: code, details: '["EVIDENCE_NOT_FINALIZED"]' } }) } as never)
     const error = await repository.createDraft({ companyId: context([]).companyId, requestId: context([]).requestId }, createDraftInput, context([]).requestId).catch(error => error)
@@ -149,7 +219,7 @@ describe('Project Cost service', () => {
             eq: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
                 eq: vi.fn().mockReturnValue({
-                  order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [{ id: 'c1010000-0000-4000-8000-000000000001', tenant_id: 'c1010000-0000-4000-8000-000000000010', company_id: 'c1010000-0000-4000-8000-000000000020', project_id: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount_text: '9007199254740993.0000', currency_code: 'VND', work_status: 'accepted', business_reference: null, party_id: null, engagement_id: null, component_id: null, relevant_date: null, version: 2, created_by: 'c1010000-0000-4000-8000-000000000902', created_at: '2026-09-16T00:00:00.000Z', updated_at: '2026-09-16T00:00:00.000Z' }], error: null }) }),
+                  order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [{ id: 'c1010000-0000-4000-8000-000000000001', tenant_id: 'c1010000-0000-4000-8000-000000000010', company_id: 'c1010000-0000-4000-8000-000000000020', project_id: 'c1010000-0000-4000-8000-000000000101', publication_origin: 'legacy_backfill', description: 'Synthetic', amount_text: '9007199254740993.0000', currency_code: 'VND', work_status: 'accepted', business_reference: null, party_id: null, engagement_id: null, component_id: null, relevant_date: null, version: 2, created_by: 'c1010000-0000-4000-8000-000000000902', created_at: '2026-09-16T00:00:00.000Z', updated_at: '2026-09-16T00:00:00.000Z' }], error: null }) }),
                 }),
               }),
             }),

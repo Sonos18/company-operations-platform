@@ -1,12 +1,13 @@
+import { isProjectCostObservation } from './project-cost-observation'
 import Decimal from 'decimal.js'
 import { z } from 'zod'
 import { costCommandAckSchema, prepareProjectCostFinancialsResultSchema, projectCostBreakdownSchema, projectCostDetailCommandAckSchema, projectCostDetailDraftSchema, projectCostDetailOperationalDraftSchema, projectCostDetailsResponseSchema, projectCostDraftManagementMetadataSchema, projectCostDraftSchema, projectCostItemDetailSchema, projectCostItemSchema, projectCostOperationalDraftSchema, projectCostProjectMetadataSchema, projectCostSummaryEntrySchema, projectCostSummarySchema, type CostCommandAck, type CorrectPublishedProjectCostDetailInput, type CorrectPublishedProjectCostInput, type CreateAndPublishProjectCostDetailInput, type CreateProjectCostDetailDraftInput, type CreateProjectCostDraftInput, type CreateProjectCostItemInput, type CorrectProjectCostItemInput, type PrepareProjectCostDetailFinancialsInput, type PrepareProjectCostFinancialsInput, type PrepareProjectCostFinancialsResult, type ProjectCostBreakdown, type ProjectCostDetailCommandAck, type ProjectCostDetailDraft, type ProjectCostDetailOperationalDraft, type ProjectCostDetailsResponse, type ProjectCostDraft, type ProjectCostDraftManagementMetadata, type ProjectCostItem, type ProjectCostItemDetail, type ProjectCostOperationalDraft, type ProjectCostSummary, type ProjectCostSummaryEntry, type UpdateProjectCostDetailDraftInput, type UpdateProjectCostDraftInput, type UpdateProjectCostItemInput } from '../../../shared/schemas/costs/project-costs'
 import { AppApiError } from '../../utils/api-error'
 import type { UserSupabaseClient } from '../../utils/supabase-client'
 
-const columns = 'id,tenant_id,company_id,project_id,description,amount_text,currency_code,work_status,business_reference,party_id,engagement_id,component_id,relevant_date,publication_state,version,created_by,created_at,updated_at'
+const columns = 'id,tenant_id,company_id,project_id,description,amount_text,currency_code,work_status,business_reference,party_id,engagement_id,component_id,relevant_date,publication_state,publication_origin,version,created_by,created_at,updated_at'
 const rowSchema = z.object({
-  id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), project_id: z.string().uuid(), description: z.string(), amount_text: z.string(), currency_code: z.string().length(3), work_status: z.enum(['unknown', 'in_progress', 'accepted']), business_reference: z.string().nullable(), party_id: z.string().uuid().nullable(), engagement_id: z.string().uuid().nullable(), component_id: z.string().uuid().nullable(), relevant_date: z.string().date().nullable(), publication_state: z.enum(['draft', 'published']).optional(), version: z.number().int().nonnegative(), created_by: z.string().uuid(), created_at: z.string().datetime({ offset: true }), updated_at: z.string().datetime({ offset: true }),
+  id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), project_id: z.string().uuid(), description: z.string(), amount_text: z.string(), currency_code: z.string().length(3), work_status: z.enum(['unknown', 'in_progress', 'accepted']), business_reference: z.string().nullable(), party_id: z.string().uuid().nullable(), engagement_id: z.string().uuid().nullable(), component_id: z.string().uuid().nullable(), relevant_date: z.string().date().nullable(), publication_state: z.enum(['draft', 'published']).optional(), publication_origin: z.enum(['command', 'legacy_backfill']), version: z.number().int().nonnegative(), created_by: z.string().uuid(), created_at: z.string().datetime({ offset: true }), updated_at: z.string().datetime({ offset: true }),
 }).strict()
 const parentRowSchema = z.object({
   id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), amount_text: z.string(), currency_code: z.string().length(3),
@@ -23,7 +24,7 @@ type ProjectCostDetailRow = z.infer<typeof detailRowSchema>
 type Acknowledgement = z.infer<typeof acknowledgementSchema>
 type CreateAcknowledgement = z.infer<typeof createAcknowledgementSchema>
 type QueryResult = { data: unknown; error: unknown }
-interface Query extends PromiseLike<QueryResult> { select(columns: string): Query; eq(column: string, value: string): Query; order(column: string): Query }
+interface Query extends PromiseLike<QueryResult> { select(columns: string): Query; eq(column: string, value: string): Query; order(column: string): Query; limit(size: number): Query }
 interface Client { from(table: 'project_cost_items' | 'project_cost_item_details'): Query; rpc(name: 'c1_create_project_cost_item' | 'c1_update_project_cost_item' | 'c1_correct_project_cost_item' | 'c1_read_project_cost_project_metadata' | 'c1_read_project_cost_draft_management_metadata' | 'c1_create_project_cost_draft' | 'c1_update_project_cost_draft' | 'c1_prepare_project_cost_financials' | 'c1_read_project_cost_draft' | 'c1_list_project_cost_drafts' | 'c1_read_project_cost_draft_operational' | 'c1_list_project_cost_drafts_operational' | 'c1_publish_project_cost' | 'c1_correct_published_project_cost' | 'c1_create_project_cost_detail_draft' | 'c1_update_project_cost_detail_draft' | 'c1_prepare_project_cost_detail_financials' | 'c1_read_project_cost_detail_draft' | 'c1_list_project_cost_detail_drafts' | 'c1_read_project_cost_detail_draft_operational' | 'c1_list_project_cost_detail_drafts_operational' | 'c1_publish_project_cost_detail' | 'c1_create_and_publish_project_cost_detail' | 'c1_correct_published_project_cost_detail', args: Record<string, unknown>): Promise<QueryResult> }
 export interface ProjectCostRequestContext { companyId: string; requestId: string }
 export interface ProjectCostDataRepository { listSummaries(tenantId: string, companyId: string): Promise<ProjectCostSummaryEntry[]>; projectSummary(tenantId: string, companyId: string, projectId: string): Promise<ProjectCostBreakdown>; draftManagementMetadata(context: ProjectCostRequestContext): Promise<ProjectCostDraftManagementMetadata>; itemDetails(tenantId: string, companyId: string, projectCostItemId: string): Promise<ProjectCostDetailsResponse>; createDraft(context: ProjectCostRequestContext, input: CreateProjectCostDraftInput, idempotencyKey: string): Promise<CostCommandAck>; updateDraft(context: ProjectCostRequestContext, id: string, input: UpdateProjectCostDraftInput): Promise<CostCommandAck>; prepareFinancials(context: ProjectCostRequestContext, id: string, input: PrepareProjectCostFinancialsInput): Promise<PrepareProjectCostFinancialsResult>; draft(context: ProjectCostRequestContext, id: string): Promise<ProjectCostDraft>; listDrafts(context: ProjectCostRequestContext, projectId: string): Promise<ProjectCostDraft[]>; operationalDraft(context: ProjectCostRequestContext, id: string): Promise<ProjectCostOperationalDraft>; listOperationalDrafts(context: ProjectCostRequestContext, projectId: string): Promise<ProjectCostOperationalDraft[]>; publish(context: ProjectCostRequestContext, id: string, expectedVersion: number, idempotencyKey: string): Promise<CostCommandAck>; correctPublished(context: ProjectCostRequestContext, id: string, input: CorrectPublishedProjectCostInput, idempotencyKey: string): Promise<CostCommandAck>; create(context: ProjectCostRequestContext, input: CreateProjectCostItemInput, idempotencyKey: string): Promise<CreateAcknowledgement>; update(context: ProjectCostRequestContext, id: string, mutation: { kind: 'update'; input: UpdateProjectCostItemInput } | { kind: 'correction'; input: CorrectProjectCostItemInput }): Promise<Acknowledgement>; createDetailDraft(context: ProjectCostRequestContext, projectId: string, input: CreateProjectCostDetailDraftInput, idempotencyKey: string): Promise<ProjectCostDetailCommandAck>; updateDetailDraft(context: ProjectCostRequestContext, id: string, input: UpdateProjectCostDetailDraftInput): Promise<ProjectCostDetailCommandAck>; prepareDetailFinancials(context: ProjectCostRequestContext, id: string, input: PrepareProjectCostDetailFinancialsInput): Promise<ProjectCostDetailCommandAck>; detailDraft(context: ProjectCostRequestContext, id: string): Promise<ProjectCostDetailDraft>; listDetailDrafts(context: ProjectCostRequestContext, projectId: string): Promise<ProjectCostDetailDraft[]>; operationalDetailDraft(context: ProjectCostRequestContext, id: string): Promise<ProjectCostDetailOperationalDraft>; listOperationalDetailDrafts(context: ProjectCostRequestContext, projectId: string): Promise<ProjectCostDetailOperationalDraft[]>; publishDetail(context: ProjectCostRequestContext, id: string, input: { expectedVersion: number }, idempotencyKey: string): Promise<ProjectCostDetailCommandAck>; createAndPublishDetail(context: ProjectCostRequestContext, projectId: string, input: CreateAndPublishProjectCostDetailInput, idempotencyKey: string): Promise<ProjectCostDetailCommandAck>; correctPublishedDetail(context: ProjectCostRequestContext, id: string, input: CorrectPublishedProjectCostDetailInput, idempotencyKey: string): Promise<ProjectCostDetailCommandAck> }
@@ -94,10 +95,32 @@ export class ProjectCostRepository implements ProjectCostDataRepository {
     return metadata(data, projectIds)
   }
 
+  private async observations(tenantId: string, companyId: string, parents: ProjectCostRow[]): Promise<ProjectCostRow[]> {
+    const result: ProjectCostRow[] = []
+    for (const parent of parents) {
+      if (isProjectCostObservation(parent, false)) { result.push(parent); continue }
+      // Existence is bounded per candidate, so a prolific parent's children cannot
+      // consume a shared response cap and hide another parent's published zero.
+      const { data, error } = await this.client.from('project_cost_item_details').select('id,tenant_id,company_id,project_cost_item_id').eq('tenant_id', tenantId).eq('company_id', companyId).eq('project_cost_item_id', parent.id).eq('publication_state', 'published').limit(1)
+      if (error) return rpcError(error)
+      const evidence = z.array(z.object({ id: z.string().uuid(), tenant_id: z.literal(tenantId), company_id: z.literal(companyId), project_cost_item_id: z.literal(parent.id) }).strict()).max(1).safeParse(data)
+      if (!evidence.success) return fail('Không thể đọc chi tiết Project Cost.')
+      if (evidence.data.length === 0) continue
+      // Publication can commit after the first parent read. Never combine new
+      // child evidence with the stale zero aggregate from that earlier snapshot.
+      const refreshed = await this.client.from('project_cost_items').select(columns).eq('tenant_id', tenantId).eq('company_id', companyId).eq('project_id', parent.project_id).eq('id', parent.id).eq('publication_state', 'published').limit(1)
+      if (refreshed.error) return rpcError(refreshed.error)
+      const current = rows(refreshed.data)
+      if (current.length > 1 || current.some(row => row.id !== parent.id || row.tenant_id !== tenantId || row.company_id !== companyId || row.project_id !== parent.project_id || row.publication_state !== 'published')) return fail('Không thể đọc Project Cost.')
+      if (current[0] && isProjectCostObservation(current[0], true)) result.push(current[0])
+    }
+    return result
+  }
+
   async listSummaries(tenantId: string, companyId: string) {
     const { data, error } = await this.client.from('project_cost_items').select(columns).eq('tenant_id', tenantId).eq('company_id', companyId).eq('publication_state', 'published')
     if (error) return rpcError(error)
-    const result = rows(data)
+    const result = await this.observations(tenantId, companyId, rows(data))
     const grouped = new Map<string, ProjectCostRow[]>()
     for (const row of result) grouped.set(row.project_id, [...(grouped.get(row.project_id) ?? []), row])
     if (grouped.size === 0) return []
@@ -109,7 +132,7 @@ export class ProjectCostRepository implements ProjectCostDataRepository {
   async projectSummary(tenantId: string, companyId: string, projectId: string) {
     const { data, error } = await this.client.from('project_cost_items').select(columns).eq('tenant_id', tenantId).eq('company_id', companyId).eq('project_id', projectId).eq('publication_state', 'published').order('created_at').order('id')
     if (error) return rpcError(error)
-    const result = rows(data)
+    const result = await this.observations(tenantId, companyId, rows(data))
     if (result.length === 0) throw new AppApiError(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy Project Cost.')
     const projectMetadata = await this.projectMetadata(companyId, [projectId])
     return projectCostBreakdownSchema.parse({ ...projectMetadata.get(projectId)!, projectId, summary: summarizeProjectCosts(result), items: result.map(item) })

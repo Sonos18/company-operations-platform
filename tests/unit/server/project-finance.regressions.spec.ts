@@ -478,6 +478,19 @@ describe('C1 finance review regressions on concrete production readers', () => {
     expect(directory.projects[0]?.summary.management).toEqual(overview.summary.management)
   })
 
+  it.each(['VND', 'USD'])('does not let a different-currency draft shell change %s finance overview or directory currency', async currency => {
+    const rows = readSet()
+    for (const collection of [rows.costItems, rows.budgets, rows.ownerAdvances, rows.subcontracts, rows.payments]) for (const row of collection) row.currency_code = currency
+    const repository = () => createSupabaseProjectFinanceRepository(fakeSupabase(rows) as never)
+    const before = await repository().overview(scope, ids.project)
+    rows.costItems.push({ ...item('c1070000-0000-4000-8000-000000000159', ids.materials, '0.0000'), currency_code: currency === 'USD' ? 'VND' : 'USD', publication_origin: 'command' })
+    const after = await repository().overview(scope, ids.project)
+    expect(after.project.currencyCode).toBe(before.project.currencyCode)
+    expect(after.summary).toEqual(before.summary)
+    const list = await repository().listProjects(scope, directoryQuery)
+    expect(list.projects[0]?.summary).toEqual(before.summary)
+  })
+
   it.each(['0.0000', '12.0000'])('keeps a new draft shell unrecorded until a %s detail is published', async amount => {
     const rows = readSet()
     rows.categories = [category(ids.materials, 'materials', 1), category(ids.subcontract, 'subcontract_labor', 2),
@@ -495,6 +508,7 @@ describe('C1 finance review regressions on concrete production readers', () => {
     for (const preparedAmount of [null, amount]) {
       rows.details = [{ ...detail(ids.detailNoRetention, ids.materialsItem, 1, amount, null, null, null), publication_state: 'draft', amount_text: preparedAmount } as unknown as typeof rows.details[number]]
       const draft = await overview()
+      await expect(createSupabaseProjectFinanceRepository(fakeSupabase(rows) as never).itemDetails(scope, ids.project, ids.materialsItem, itemQuery)).resolves.toMatchObject({ kind: 'ordinary', details: { rows: [] } })
       expect(draft.categories.find(value => value.code === 'materials')).toMatchObject({ cost: { state: 'not_recorded', amount: null, recordedCount: 0 }, detailCount: 0, latestRecordedDate: null })
       expect(draft.summary.cost).toEqual(missing.summary.cost)
       const directory = await createSupabaseProjectFinanceRepository(fakeSupabase(rows) as never).listProjects(scope, directoryQuery)
