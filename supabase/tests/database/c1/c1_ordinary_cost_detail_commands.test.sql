@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(217);
+select plan(224);
 
 select has_table('public', 'project_cost_item_detail_sources', 'detail source provenance is introduced with the command slice');
 select has_function('public', 'c1_create_project_cost_detail_draft', 'draft-detail create RPC exists');
@@ -536,6 +536,51 @@ from public.project_cost_items item where item.id='c1d10000-0000-4000-8000-00000
 select is((select state from c1d_legacy_parent_balance_after),(select state from c1d_legacy_parent_balance_before),'legacy parent amount version provenance detail receipt source and audit state remain unchanged');
 select is(private.c1_resolve_or_create_ordinary_project_cost_item('c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000101','c1d10000-0000-4000-8000-000000000311','c1d10000-0000-4000-8000-000000000901','c1d10000-0000-4000-8000-000000000973'),'c1d10000-0000-4000-8000-000000000811','zero-valued published empty shell remains reusable');
 select is(private.c1_resolve_or_create_ordinary_project_cost_item('c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000101','c1d10000-0000-4000-8000-000000000312','c1d10000-0000-4000-8000-000000000901','c1d10000-0000-4000-8000-000000000974'),'c1d10000-0000-4000-8000-000000000812','coherent nonzero published parent remains reusable');
+
+
+-- Coexistence: a prepared legacy parent draft must not break either new detail list.
+reset role;
+insert into public.projects(id,tenant_id,company_id,code,name,origin,created_by)
+values('c1d10000-0000-4000-8000-000000000104','c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','C1D-MIXED','Mixed draft lifecycle fixture','manual','c1d10000-0000-4000-8000-000000000901');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"c1d10000-0000-4000-8000-000000000901","role":"authenticated"}', true);
+create temp table c1d_list_legacy as select public.c1_create_project_cost_draft(
+  'c1d10000-0000-4000-8000-000000000020',
+  '{"projectId":"c1d10000-0000-4000-8000-000000000104","costCategoryId":"c1d10000-0000-4000-8000-000000000305","description":"Legacy parent draft"}',
+  'c1d10000-0000-4000-8000-000000000a01','c1d10000-0000-4000-8000-000000000a02') result;
+select public.c1_prepare_project_cost_financials(
+  'c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_list_legacy),
+  '{"expectedVersion":0,"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"line_item","description":"Prepared legacy child","amount":"0.0000"}],"sourceFigureIds":[]}',
+  'c1d10000-0000-4000-8000-000000000a03');
+create temp table c1d_list_ordinary as select public.c1_create_project_cost_detail_draft(
+  'c1d10000-0000-4000-8000-000000000020',
+  '{"projectId":"c1d10000-0000-4000-8000-000000000104","categoryId":"c1d10000-0000-4000-8000-000000000301","description":"Ordinary draft"}',
+  'c1d10000-0000-4000-8000-000000000a04','c1d10000-0000-4000-8000-000000000a05') result;
+select is(public.c1_list_project_cost_detail_drafts('c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000104'),
+  jsonb_build_array(public.c1_read_project_cost_detail_draft('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_list_ordinary))),
+  'financial list returns only the eligible ordinary draft alongside a prepared legacy parent draft');
+select is(public.c1_list_project_cost_detail_drafts_operational('c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000104'),
+  jsonb_build_array(public.c1_read_project_cost_detail_draft_operational('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_list_ordinary))),
+  'operational list returns only the eligible ordinary draft alongside a prepared legacy parent draft');
+reset role;
+select is((select jsonb_build_object('state',publication_state,'origin',publication_origin,'amount',amount_text) from public.project_cost_items where id=(select (result->>'projectCostItemId')::uuid from c1d_list_ordinary)),
+  '{"state":"published","origin":"command","amount":"0.0000"}'::jsonb,'unpriced ordinary draft has an identifiable command-origin zero shell');
+select is((select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'id')::uuid from c1d_list_legacy) and publication_state='draft'),1::bigint,'legacy preparation actually created a draft child');
+set local role authenticated;
+create temp table c1d_list_zero_prepared as select public.c1_prepare_project_cost_detail_financials(
+  'c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_list_ordinary),
+  '{"expectedVersion":0,"amount":"0.0000"}','c1d10000-0000-4000-8000-000000000a06') result;
+reset role;
+select is((select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'projectCostItemId')::uuid from c1d_list_ordinary) and publication_state='published'),0::bigint,'prepared zero still has no official published observation');
+set local role authenticated;
+select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_list_ordinary),
+  jsonb_build_object('expectedVersion',(select (result->>'version')::bigint from c1d_list_zero_prepared)),
+  'c1d10000-0000-4000-8000-000000000a07','c1d10000-0000-4000-8000-000000000a08');
+reset role;
+select is((select amount_text from public.project_cost_item_details where id=(select (result->>'id')::uuid from c1d_list_ordinary) and publication_state='published'),'0.0000','explicit zero becomes an official observation only after publication');
+set local role authenticated;
+select is(public.c1_list_project_cost_detail_drafts('c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000104'),'[]'::jsonb,'published ordinary detail disappears while prepared legacy child remains excluded');
+reset role;
 
 select * from finish();
 rollback;

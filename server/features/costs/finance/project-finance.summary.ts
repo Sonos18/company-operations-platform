@@ -79,12 +79,15 @@ function categoryRow(category: RawCategory, items: readonly RawItem[], details: 
   const legacyRowsExist = category.code === 'subcontract_labor' && categoryItems.some(item => !isZero(item.amount_text) || categoryDetails.some(detail => detail.project_cost_item_id === item.id))
   const legacy = legacyRowsExist && !hasCanonicalSubcontractResolution(category.id, resolutions)
   const recordedPayments = category.code === 'subcontract_labor' ? payments.filter(payment => payment.status === 'recorded') : []
-  const costValues = category.code === 'subcontract_labor' ? recordedPayments.map(payment => payment.paid_amount_text) : categoryItems.map(item => item.amount_text)
+  // Command-created zero parents are aggregate shells until a detail is published.
+  // Imported parent-only observations (including known zero) keep their legacy meaning.
+  const recordedItems = categoryItems.filter(item => item.publication_origin !== 'command' || !isZero(item.amount_text) || categoryDetails.some(detail => detail.project_cost_item_id === item.id))
+  const costValues = category.code === 'subcontract_labor' ? recordedPayments.map(payment => payment.paid_amount_text) : recordedItems.map(item => item.amount_text)
   const cost = legacy ? { state: 'needs_reconciliation' as const, amount: null, recordedCount: categoryItems.length } : observation(costValues)
   const item = categoryItems.length === 1 ? categoryItems[0]! : null
   const dateRows = category.code === 'subcontract_labor'
     ? recordedPayments.map(payment => ({ id: payment.id, created_at: payment.created_at, relevant_date: payment.payment_date }))
-    : categoryDetails.length > 0 ? categoryDetails : categoryItems
+    : categoryDetails.length > 0 ? categoryDetails : recordedItems
   return {
     categoryId: category.id,
     code: category.code,
