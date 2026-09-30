@@ -59,6 +59,10 @@ describe('C1 ordinary-detail concurrency runner', () => {
       cwd,
       fetchImpl: async () => new Response('malformed management response', { status: 400 }),
     })).rejects.toThrow('C1 ordinary-detail concurrency actor_b failed')
+    await expect(runC1OrdinaryDetailManagementQuery('actor_a', phaseSql('actor_a'), {
+      cwd,
+      fetchImpl: async () => new Response(JSON.stringify({ message: 'Failed to run sql query: ERROR: 42501: permission denied for schema private\nCONTEXT: PL/pgSQL function private.example() line 4 at SQL statement' }), { status: 400 }),
+    })).rejects.toThrow('C1 ordinary-detail concurrency actor_a failed with status 400 (42501: permission denied for schema private) at PL/pgSQL function private.example() line 4 at SQL statement')
   })
 
   it('accepts one successful parent and the stable category-conflict loser for a legacy race', async () => {
@@ -131,7 +135,7 @@ describe('C1 ordinary-detail concurrency runner', () => {
     const actorB = readFileSync(resolve(fixtureRoot, 'actor_b.sql'), 'utf8')
 
     expect(actorA).toMatch(/for update[\s\S]*c1_descriptive_parent_row_ready[\s\S]*pg_try_advisory_lock[\s\S]*c1_project_cost_category:[\s\S]*c1_correct_published_project_cost/iu)
-    expect(actorB).toMatch(/pg_try_advisory_lock[\s\S]*c1_descriptive_parent_row_ready[\s\S]*pg_advisory_xact_lock[\s\S]*c1_project_cost_category:[\s\S]*c1_resolve_or_create_ordinary_project_cost_item/iu)
+    expect(actorB).toMatch(/pg_try_advisory_lock[\s\S]*c1_descriptive_parent_row_ready[\s\S]*pg_advisory_xact_lock[\s\S]*c1_project_cost_category:[\s\S]*pg_sleep\(3\)[\s\S]*c1_resolve_or_create_ordinary_project_cost_item/iu)
     expect(actorA).toContain('category-lock readiness barrier timed out')
     expect(actorB).toContain('parent-row readiness barrier timed out')
   })
@@ -185,10 +189,12 @@ describe('C1 ordinary-detail concurrency runner', () => {
 
   it('loads and checks every approved real fixture scenario', async () => {
     const calls: string[] = []
+    const setups = new Map<string, string>()
     await runC1OrdinaryDetailConcurrency({
       assertTarget: vi.fn(),
-      runPhase: async (phase, _sql, scenario) => {
+      runPhase: async (phase, sql, scenario) => {
         calls.push(`${scenario.name}:${phase}`)
+        if (phase === 'setup') setups.set(scenario.name, sql)
         if (phase === 'actor_a') return { parentId: 'c1f10000-0000-4000-8000-000000000201' }
         if (phase === 'actor_b') return scenario.outcome === 'same-parent'
           ? { parentId: 'c1f10000-0000-4000-8000-000000000201' }
@@ -200,6 +206,9 @@ describe('C1 ordinary-detail concurrency runner', () => {
       },
     })
     expect(calls).toHaveLength(C1_ORDINARY_DETAIL_CONCURRENCY_SCENARIOS.length * 6)
+    expect(setups.get('descriptive-correction-resolver')).toContain("'cost.correct'")
+    expect(setups.get('legacy-recateg-resolver')).toContain('legacy recategorization source')
+    expect(setups.get('resolver-resolver')).not.toContain("'cost.correct'")
   })
 
   it('fails closed when actor parent IDs differ while still cleaning up', async () => {
