@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(216);
+select plan(217);
 
 select has_table('public', 'project_cost_item_detail_sources', 'detail source provenance is introduced with the command slice');
 select has_function('public', 'c1_create_project_cost_detail_draft', 'draft-detail create RPC exists');
@@ -383,6 +383,7 @@ reset role;
 select is((select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'projectCostItemId')::uuid from c1d_result)),(select detail_count+1 from c1d_direct_before),'direct publish creates exactly one detail');
 select is((select count(*) filter(where publication_state='draft') from public.project_cost_item_details where project_cost_item_id=(select (result->>'projectCostItemId')::uuid from c1d_result)),(select draft_count from c1d_direct_before),'direct publish leaves no committed draft or transient duplicate');
 select is((select version from public.project_cost_item_details where id=(select (result->>'id')::uuid from c1d_direct_result)),0::bigint,'direct-published detail persists at version zero');
+select is((select count(*) from public.project_cost_item_details where id in ((select (result->>'id')::uuid from c1d_result),(select (result->>'id')::uuid from c1d_direct_result)) and detail_kind='line_item'),2::bigint,'new draft and direct commands still create line-item details');
 select is((select count(*) from public.cost_command_receipts where result_resource_id=(select (result->>'id')::uuid from c1d_direct_result) and command_name='project_cost_detail.create_and_publish' and result_version=0),1::bigint,'direct command writes one version-zero receipt');
 select is((select count(*) from public.cost_command_receipts where result_resource_id=(select (result->>'id')::uuid from c1d_direct_result) and command_name in ('project_cost_detail.create_draft','project_cost_detail.publish')),0::bigint,'direct command leaves child receipt namespaces unconsumed');
 select is((select count(*) from public.audit_events where resource_id=(select result->>'id' from c1d_direct_result) and action='c1.project_cost_detail.created_and_published'),1::bigint,'direct command writes one coherent audit event');

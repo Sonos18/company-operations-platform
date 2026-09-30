@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
 
 const migrationSuffixes = [
-  '_c1_legacy_parent_correction_snapshot_scope.sql',
+  '_c1_allow_legacy_opening_balance_publication.sql',
 ]
 
 export function buildC1MigrationRehearsalSql(migrationSql) {
