@@ -63,13 +63,11 @@ describe('C1 root-cause hardening migration', () => {
     expect(guard.indexOf('is not distinct from')).toBeLessThan(guard.indexOf('private.c1_lock_project_cost_category'))
   })
 
-  it('loads read and publish scope without preempting the canonical strategy blocker', () => {
+  it('keeps the mutation locking scope helper for publish without preempting the canonical strategy blocker', () => {
     const sql = hardeningSql()
-    const read = sql.match(/create or replace function private\.c1_read_project_cost_detail_draft[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
     const publish = sql.match(/create or replace function private\.c1_publish_project_cost_detail[\s\S]*?\n\$\$;/iu)?.[0] ?? ''
 
     expect(sql).toContain('private.c1_detail_load_readiness_scope')
-    expect(read).toContain('private.c1_detail_load_readiness_scope')
     expect(publish).toContain('private.c1_detail_load_readiness_scope')
   })
 

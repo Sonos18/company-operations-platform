@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(202);
+select plan(204);
 
 select has_table('public', 'project_cost_item_detail_sources', 'detail source provenance is introduced with the command slice');
 select has_function('public', 'c1_create_project_cost_detail_draft', 'draft-detail create RPC exists');
@@ -31,6 +31,8 @@ select has_function('private', 'c1_detail_validate_linked_sources', array['uuid'
 select ok(pg_get_functiondef('private.c1_can_read_project_cost_detail(uuid,uuid,uuid,text)'::regprocedure) !~ 'cost.prepare', 'raw detail RLS never exposes drafts through combined read and prepare permissions');
 select ok(pg_get_functiondef('private.c1_detail_receipt(uuid,uuid,uuid,text,uuid,text)'::regprocedure) ~ 'pg_advisory_xact_lock', 'idempotent receipt lookup takes a deterministic advisory lock');
 select ok(pg_get_functiondef('private.c1_correct_published_project_cost_detail(uuid,uuid,jsonb,uuid,uuid)'::regprocedure) ~ 'COST_DETAIL_NOT_PUBLISHED', 'draft correction rejects with the published-detail lifecycle error');
+select is((select procedure.provolatile::text from pg_catalog.pg_proc procedure where procedure.oid='private.c1_read_project_cost_detail_draft(uuid,uuid,boolean)'::regprocedure), 's', 'draft reader remains STABLE');
+select ok(pg_get_functiondef('private.c1_read_project_cost_detail_draft(uuid,uuid,boolean)'::regprocedure) !~* '\mfor\s+update\M', 'draft reader does not take a row lock');
 
 do $$
 declare
