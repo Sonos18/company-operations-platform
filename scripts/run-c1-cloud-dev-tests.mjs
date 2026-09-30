@@ -71,6 +71,24 @@ export function validateC1CloudDevSql(path, sql) {
   }
 }
 
+function assertC1CloudDevPgTapResult(path, stdout) {
+  const payloadStart = stdout.indexOf('{')
+  if (payloadStart < 0) throw new Error(`C1 Cloud DEV SQL verification failed for ${path}: Supabase CLI returned no JSON result`)
+
+  let response
+  try {
+    response = JSON.parse(stdout.slice(payloadStart))
+  } catch {
+    throw new Error(`C1 Cloud DEV SQL verification failed for ${path}: Supabase CLI returned invalid JSON`)
+  }
+  if (!response || typeof response !== 'object' || Array.isArray(response) || !Array.isArray(response.rows)) {
+    throw new Error(`C1 Cloud DEV SQL verification failed for ${path}: Supabase CLI returned an invalid query result`)
+  }
+
+  const finish = response.rows.find(row => row && typeof row === 'object' && !Array.isArray(row) && typeof row.finish === 'string')?.finish
+  if (finish) throw new Error(`C1 Cloud DEV SQL verification failed for ${path}: pgTAP finish reported a diagnostic`)
+}
+
 export function runC1CloudDevTests({ cwd = process.cwd(), files, spawn = spawnSync } = {}) {
   const selected = files ?? allowlist.filter(path => existsSync(resolve(cwd, 'supabase/tests/database/c1', path))).map(path => ({ path, sql: readFileSync(resolve(cwd, 'supabase/tests/database/c1', path), 'utf8') }))
   if (!files && selected.length !== allowlist.length) throw new Error('Missing C1 SQL verification file')
@@ -78,8 +96,13 @@ export function runC1CloudDevTests({ cwd = process.cwd(), files, spawn = spawnSy
   assertCloudDevTarget({ cwd })
   const cli = resolve(cwd, 'node_modules/supabase/dist/supabase.js')
   for (const file of selected) {
-    const result = spawn(process.execPath, [cli, 'db', 'query', '--linked', '--file', resolve(cwd, 'supabase/tests/database/c1', file.path)], { cwd, stdio: 'inherit' })
-    if (result.status !== 0) throw new Error('C1 Cloud DEV SQL verification failed')
+    const result = spawn(process.execPath, [cli, 'db', 'query', '--linked', '--output-format', 'json', '--file', resolve(cwd, 'supabase/tests/database/c1', file.path)], { cwd, encoding: 'utf8' })
+    const stdout = String(result.stdout ?? '')
+    const stderr = String(result.stderr ?? '')
+    if (stdout) process.stdout.write(stdout)
+    if (stderr) process.stderr.write(stderr)
+    if (result.status !== 0) throw new Error(`C1 Cloud DEV SQL verification failed for ${file.path}`)
+    assertC1CloudDevPgTapResult(file.path, stdout)
   }
 }
 

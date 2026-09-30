@@ -23,6 +23,55 @@ describe('C1 Cloud DEV runner', () => {
     expect(() => runC1CloudDevTests({ files: [{ path: 'c1_foundation.test.sql', sql }], spawn: () => ({ status: 1 }) })).toThrow('C1 Cloud DEV SQL verification failed')
   })
 
+  it('stops after a zero-exit pgTAP failure report', () => {
+    const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1/c1_foundation.test.sql'), 'utf8')
+    let calls = 0
+
+    expect(() => runC1CloudDevTests({
+      files: [{ path: 'c1_foundation.test.sql', sql }, { path: 'c1_controlled_import_commands.test.sql', sql }],
+      spawn: () => {
+        calls += 1
+        return {
+          status: 0,
+          stdout: `Initialising login role...\n${JSON.stringify({ boundary: 'linked', rows: [{ finish: '# Looks like you failed 1 test of 27' }], warning: null })}`,
+          stderr: '',
+        }
+      },
+    })).toThrow('C1 Cloud DEV SQL verification failed for c1_foundation.test.sql: pgTAP finish reported a diagnostic')
+    expect(calls).toBe(1)
+  })
+
+  it('continues after a successful pgTAP response without a finish row', () => {
+    const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1/c1_foundation.test.sql'), 'utf8')
+    let calls = 0
+
+    expect(() => runC1CloudDevTests({
+      files: [{ path: 'c1_foundation.test.sql', sql }, { path: 'c1_controlled_import_commands.test.sql', sql }],
+      spawn: () => {
+        calls += 1
+        return {
+          status: 0,
+          stdout: `Initialising login role...\n${JSON.stringify({ boundary: 'linked', rows: [{ c1_fixture_completion: 'C1_FOUNDATION_FIXTURE_COMPLETE' }], warning: null })}`,
+          stderr: '',
+        }
+      },
+    })).not.toThrow()
+    expect(calls).toBe(2)
+  })
+
+  it('rejects a zero-exit pgTAP plan diagnostic', () => {
+    const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1/c1_foundation.test.sql'), 'utf8')
+
+    expect(() => runC1CloudDevTests({
+      files: [{ path: 'c1_foundation.test.sql', sql }],
+      spawn: () => ({
+        status: 0,
+        stdout: `Initialising login role...\n${JSON.stringify({ boundary: 'linked', rows: [{ finish: '# planned 27 tests but ran 26' }], warning: null })}`,
+        stderr: '',
+      }),
+    })).toThrow('C1 Cloud DEV SQL verification failed for c1_foundation.test.sql: pgTAP finish reported a diagnostic')
+  })
+
   it('accepts the actual C1 foundation fixture before any Cloud command', () => {
     const path = 'c1_foundation.test.sql'
     const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1', path), 'utf8')

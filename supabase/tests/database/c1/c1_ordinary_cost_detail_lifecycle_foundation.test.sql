@@ -126,7 +126,7 @@ select is(private.c1_resolve_or_create_ordinary_project_cost_item(
 select is((select count(*) from public.project_cost_items where project_id = 'c1f10000-0000-4000-8000-000000000102' and cost_category_id = 'c1f10000-0000-4000-8000-000000000301'), 1::bigint, 'one project/category parent remains unique');
 select throws_ok(
   $$insert into public.project_cost_items(tenant_id,company_id,project_id,cost_category_id,description,amount,amount_text,currency_code,work_status,publication_state,publication_origin,published_by,published_at,publication_request_id,created_by) values ('c1f10000-0000-4000-8000-000000000010','c1f10000-0000-4000-8000-000000000020','c1f10000-0000-4000-8000-000000000102','c1f10000-0000-4000-8000-000000000301','duplicate',0,'0','VND','unknown','published','command','c1f10000-0000-4000-8000-000000000903',now(),'c1f10000-0000-4000-8000-000000000703','c1f10000-0000-4000-8000-000000000903')$$,
-  '23505', null, 'duplicate parent is rejected by c1fc_cost_item_one_category'
+  'P0001', 'PROJECT_COST_CATEGORY_CONFLICT', 'duplicate parent is rejected by the parent identity guard'
 );
 select throws_ok(
   $$select private.c1_resolve_or_create_ordinary_project_cost_item('c1f10000-0000-4000-8000-000000000010','c1f10000-0000-4000-8000-000000000020','c1f10000-0000-4000-8000-000000000102','c1f10000-0000-4000-8000-000000000302','c1f10000-0000-4000-8000-000000000903','c1f10000-0000-4000-8000-000000000704')$$,
