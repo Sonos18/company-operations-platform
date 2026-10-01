@@ -4446,24 +4446,6 @@ export type Database = {
         }
         Returns: Json
       }
-      c1_create_project_cost_draft: {
-        Args: {
-          target_company_id: string
-          target_idempotency_key: string
-          target_input: Json
-          target_request_id: string
-        }
-        Returns: Json
-      }
-      c1_create_project_cost_item: {
-        Args: {
-          target_company_id: string
-          target_idempotency_key: string
-          target_input: Json
-          target_request_id: string
-        }
-        Returns: Json
-      }
       c1_finalize_cost_evidence: {
         Args: {
           target_company_id: string
@@ -4521,14 +4503,6 @@ export type Database = {
         Args: { target_company_id: string; target_project_id: string }
         Returns: Json
       }
-      c1_list_project_cost_drafts: {
-        Args: { target_company_id: string; target_project_id: string }
-        Returns: Json
-      }
-      c1_list_project_cost_drafts_operational: {
-        Args: { target_company_id: string; target_project_id: string }
-        Returns: Json
-      }
       c1_persist_controlled_import: {
         Args: {
           target_company_id: string
@@ -4547,27 +4521,8 @@ export type Database = {
         }
         Returns: Json
       }
-      c1_prepare_project_cost_financials: {
-        Args: {
-          target_company_id: string
-          target_id: string
-          target_input: Json
-          target_request_id: string
-        }
-        Returns: Json
-      }
       c1_probe_cost_source_read: {
         Args: { target_company_id: string }
-        Returns: Json
-      }
-      c1_publish_project_cost: {
-        Args: {
-          target_company_id: string
-          target_expected_version: number
-          target_id: string
-          target_idempotency_key: string
-          target_request_id: string
-        }
         Returns: Json
       }
       c1_publish_project_cost_detail: {
@@ -4603,16 +4558,8 @@ export type Database = {
         Args: { target_company_id: string; target_id: string }
         Returns: Json
       }
-      c1_read_project_cost_draft: {
-        Args: { target_company_id: string; target_id: string }
-        Returns: Json
-      }
       c1_read_project_cost_draft_management_metadata: {
         Args: { target_company_id: string }
-        Returns: Json
-      }
-      c1_read_project_cost_draft_operational: {
-        Args: { target_company_id: string; target_id: string }
         Returns: Json
       }
       c1_read_project_cost_project_metadata: {
@@ -4691,24 +4638,6 @@ export type Database = {
         Returns: Json
       }
       c1_update_project_cost_detail_draft: {
-        Args: {
-          target_company_id: string
-          target_id: string
-          target_input: Json
-          target_request_id: string
-        }
-        Returns: Json
-      }
-      c1_update_project_cost_draft: {
-        Args: {
-          target_company_id: string
-          target_id: string
-          target_input: Json
-          target_request_id: string
-        }
-        Returns: Json
-      }
-      c1_update_project_cost_item: {
         Args: {
           target_company_id: string
           target_id: string

@@ -11,9 +11,6 @@ export const C1_ORDINARY_DETAIL_CONCURRENCY_SCENARIOS = Object.freeze([
   { name: 'resolver-resolver', outcome: 'same-parent' },
   { name: 'direct-direct', outcome: 'same-parent' },
   { name: 'descriptive-correction-resolver', outcome: 'same-parent' },
-  { name: 'legacy-create-legacy-create', outcome: 'actor-b-category-conflict' },
-  { name: 'legacy-create-resolver', outcome: 'actor-b-category-conflict' },
-  { name: 'legacy-recateg-resolver', outcome: 'actor-b-category-conflict' },
 ])
 const scenariosByName = new Map(C1_ORDINARY_DETAIL_CONCURRENCY_SCENARIOS.map(scenario => [scenario.name, scenario]))
 const exactCleanupSql = `-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE
@@ -26,7 +23,7 @@ alter table public.company_role_assignments disable trigger company_role_assignm
 alter table public.audit_events disable trigger audit_events_prevent_mutation;
 delete from public.cost_command_receipts receipt where receipt.command_name = 'cost_evidence.detail_link' and exists (select 1 from public.cost_evidence_links link join public.project_cost_item_details detail on detail.id=link.project_cost_item_detail_id join public.project_cost_items item on item.id=detail.project_cost_item_id where receipt.result_resource_id=link.id and item.tenant_id='c1f10000-0000-4000-8000-000000000010' and item.company_id='c1f10000-0000-4000-8000-000000000020' and item.project_id='c1f10000-0000-4000-8000-000000000102');
 delete from public.cost_command_receipts receipt where receipt.command_name like 'project_cost_detail.%' and exists (select 1 from public.project_cost_item_details detail join public.project_cost_items item on item.id=detail.project_cost_item_id where receipt.result_resource_id=detail.id and item.tenant_id='c1f10000-0000-4000-8000-000000000010' and item.company_id='c1f10000-0000-4000-8000-000000000020' and item.project_id='c1f10000-0000-4000-8000-000000000102');
-delete from public.cost_command_receipts where tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020' and actor_id = 'c1f10000-0000-4000-8000-000000000903' and command_name in ('project_cost_draft.create','project_cost.correct','project_cost_detail.create_and_publish');
+delete from public.cost_command_receipts where tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020' and actor_id = 'c1f10000-0000-4000-8000-000000000903' and command_name in ('project_cost.correct','project_cost_detail.create_and_publish');
 delete from public.audit_events audit where audit.action like 'c1.project_cost_detail.%' and exists (select 1 from public.project_cost_item_details detail join public.project_cost_items item on item.id=detail.project_cost_item_id where audit.resource_type='project_cost_item_detail' and audit.resource_id=detail.id::text and item.tenant_id='c1f10000-0000-4000-8000-000000000010' and item.company_id='c1f10000-0000-4000-8000-000000000020' and item.project_id='c1f10000-0000-4000-8000-000000000102');
 delete from public.cost_evidence_links link where exists (select 1 from public.project_cost_item_details detail join public.project_cost_items item on item.id=detail.project_cost_item_id where link.project_cost_item_detail_id=detail.id and item.tenant_id='c1f10000-0000-4000-8000-000000000010' and item.company_id='c1f10000-0000-4000-8000-000000000020' and item.project_id='c1f10000-0000-4000-8000-000000000102');
 delete from public.project_cost_item_detail_sources link where exists (select 1 from public.project_cost_item_details detail join public.project_cost_items item on item.id=detail.project_cost_item_id where link.project_cost_item_detail_id=detail.id and item.tenant_id='c1f10000-0000-4000-8000-000000000010' and item.company_id='c1f10000-0000-4000-8000-000000000020' and item.project_id='c1f10000-0000-4000-8000-000000000102');
@@ -63,6 +60,7 @@ export function validateC1OrdinaryDetailConcurrencySql(phase, sql, scenarioName 
   const scenario = scenariosByName.get(scenarioName)
   if (!scenario) throw new Error('Invalid C1 ordinary-detail concurrency scenario')
   if (!phases.has(phase) || !sql.startsWith(marker)) throw new Error('Invalid C1 ordinary-detail concurrency fixture')
+  if (/\b(?:select|perform|call)\s+public\.c1_(?:create_project_cost_draft|update_project_cost_draft|prepare_project_cost_financials|publish_project_cost|create_project_cost_item|update_project_cost_item)\s*\(/iu.test(sql)) throw new Error('C1 ordinary-detail concurrency fixture calls a retired parent draft RPC')
   const ids = sql.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
   if (ids.some(id => !id.toLowerCase().startsWith('c1f'))) throw new Error('C1 ordinary-detail concurrency fixture must use reserved synthetic identifiers')
   const hasExactTenantCleanup = sql.includes("delete from public.tenants where id = 'c1f10000-0000-4000-8000-000000000010';")
@@ -76,10 +74,9 @@ export function validateC1OrdinaryDetailConcurrencySql(phase, sql, scenarioName 
   if (phase === 'actor_b' && !/\bbegin\s*;[\s\S]*pg_catalog\.pg_try_advisory_lock\s*\([\s\S]*(?:c1_project_cost_category:|c1_descriptive_parent_row_ready)[\s\S]*\)[\s\S]*\bcommit\s*;/iu.test(sql)) throw new Error('C1 ordinary-detail concurrency actor B requires an actor A readiness barrier')
   if (phase === 'actor_a' && scenarioName === 'descriptive-correction-resolver' && (!/public\.c1_correct_published_project_cost/iu.test(sql) || !/for update/iu.test(sql) || !/c1_descriptive_parent_row_ready/iu.test(sql) || !/pg_try_advisory_lock\s*\([\s\S]*c1_project_cost_category:/iu.test(sql))) throw new Error('C1 ordinary-detail concurrency descriptive correction actor requires the reciprocal category-lock barrier')
   if (phase === 'actor_b' && scenarioName === 'descriptive-correction-resolver' && !/pg_try_advisory_lock\s*\([\s\S]*c1_descriptive_parent_row_ready[\s\S]*pg_advisory_xact_lock\s*\([\s\S]*c1_project_cost_category:[\s\S]*pg_sleep\s*\([\s\S]*private\.c1_resolve_or_create_ordinary_project_cost_item/iu.test(sql)) throw new Error('C1 ordinary-detail concurrency resolver actor requires the reciprocal parent-row barrier')
-  if (phase === 'actor_a' && scenarioName === 'legacy-recateg-resolver' && !/public\.c1_update_project_cost_draft/iu.test(sql)) throw new Error('C1 ordinary-detail concurrency recategorization actor requires legacy draft update')
   if (scenarioName === 'direct-direct' && phase.startsWith('actor_') && !/public\.c1_create_and_publish_project_cost_detail/iu.test(sql)) throw new Error('C1 ordinary-detail concurrency direct actor must use the direct publish command')
-  if (phase === 'actor_a' && !['legacy-recateg-resolver', 'descriptive-correction-resolver', 'direct-direct'].includes(scenarioName) && !(scenarioName === 'resolver-resolver' ? /private\.c1_resolve_or_create_ordinary_project_cost_item/iu : /public\.c1_create_project_cost_draft/iu).test(sql)) throw new Error('C1 ordinary-detail concurrency actor A does not match its scenario')
-  if (phase === 'actor_b' && scenarioName !== 'direct-direct' && !(scenarioName === 'legacy-create-legacy-create' ? /public\.c1_create_project_cost_draft/iu : /private\.c1_resolve_or_create_ordinary_project_cost_item/iu).test(sql)) throw new Error('C1 ordinary-detail concurrency actor B does not match its scenario')
+  if (phase === 'actor_a' && scenarioName === 'resolver-resolver' && !/private\.c1_resolve_or_create_ordinary_project_cost_item/iu.test(sql)) throw new Error('C1 ordinary-detail concurrency actor A must resolve an ordinary parent')
+  if (phase === 'actor_b' && scenarioName === 'resolver-resolver' && !/private\.c1_resolve_or_create_ordinary_project_cost_item/iu.test(sql)) throw new Error('C1 ordinary-detail concurrency actor B must resolve an ordinary parent')
 }
 
 function defaultReadPhase(phase, scenarioName) {

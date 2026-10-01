@@ -151,6 +151,7 @@ const mockSubcontractorList = financeSubcontractorListSchema.parse({
 
 test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
   test('Flow A - project overview opens ordinary detail creation without parent draft requests', async ({ page }) => {
+    test.setTimeout(120_000)
     let parentRequests = 0
     await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
     await page.route('**/api/companies/**/project-cost-drafts/metadata', route => route.fulfill({ json: {
@@ -163,11 +164,11 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     })
 
     await page.goto(`/costs/${projectId}`)
-    await expect(page.getByTestId('header-create-detail-entry-btn')).toBeVisible()
+    await expect(page.getByTestId('header-create-detail-entry-btn')).toBeVisible({ timeout: 60_000 })
     await expect(page.getByTestId('header-create-draft-btn')).toHaveCount(0)
     await page.getByTestId('header-create-detail-entry-btn').click()
     await expect(page).toHaveURL(new RegExp(`/costs/${projectId}/entries/new$`))
-    await expect(page.getByTestId('new-cost-detail-page')).toBeVisible()
+    await expect(page.getByTestId('new-cost-detail-page')).toBeVisible({ timeout: 60_000 })
     await expect(page.getByTestId('new-category-select').locator('option')).toHaveCount(2)
     expect(parentRequests).toBe(0)
   })

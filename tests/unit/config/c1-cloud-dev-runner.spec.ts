@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { isC1CloudDevCliInvocation, runC1CloudDevCli, runC1CloudDevTests, validateC1CloudDevSql } from '../../../scripts/run-c1-cloud-dev-tests.mjs'
 
 describe('C1 Cloud DEV runner', () => {
+  const mockTarget = () => {}
   it('runs the Windows CLI entry point exactly once and never on import-style argv', () => {
     const scriptPath = win32.join('C:\\workspace with spaces', 'scripts', 'run-c1-cloud-dev-tests.mjs')
     const moduleUrl = pathToFileURL(scriptPath).href
@@ -20,7 +21,7 @@ describe('C1 Cloud DEV runner', () => {
   it('propagates a Supabase subprocess failure', () => {
     const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1/c1_foundation.test.sql'), 'utf8')
 
-    expect(() => runC1CloudDevTests({ files: [{ path: 'c1_foundation.test.sql', sql }], spawn: () => ({ status: 1 }) })).toThrow('C1 Cloud DEV SQL verification failed')
+    expect(() => runC1CloudDevTests({ files: [{ path: 'c1_foundation.test.sql', sql }], spawn: () => ({ status: 1 }), assertTarget: mockTarget })).toThrow('C1 Cloud DEV SQL verification failed')
   })
 
   it('stops after a zero-exit pgTAP failure report', () => {
@@ -29,6 +30,7 @@ describe('C1 Cloud DEV runner', () => {
 
     expect(() => runC1CloudDevTests({
       files: [{ path: 'c1_foundation.test.sql', sql }, { path: 'c1_controlled_import_commands.test.sql', sql }],
+      assertTarget: mockTarget,
       spawn: () => {
         calls += 1
         return {
@@ -47,6 +49,7 @@ describe('C1 Cloud DEV runner', () => {
 
     expect(() => runC1CloudDevTests({
       files: [{ path: 'c1_foundation.test.sql', sql }, { path: 'c1_controlled_import_commands.test.sql', sql }],
+      assertTarget: mockTarget,
       spawn: () => {
         calls += 1
         return {
@@ -64,6 +67,7 @@ describe('C1 Cloud DEV runner', () => {
 
     expect(() => runC1CloudDevTests({
       files: [{ path: 'c1_foundation.test.sql', sql }],
+      assertTarget: mockTarget,
       spawn: () => ({
         status: 0,
         stdout: `Initialising login role...\n${JSON.stringify({ boundary: 'linked', rows: [{ finish: '# planned 27 tests but ran 26' }], warning: null })}`,
@@ -192,13 +196,16 @@ describe('C1 Cloud DEV runner', () => {
     expect(() => validateC1CloudDevSql(path, sql)).not.toThrow()
   })
 
-  it('captures Project Cost RPC results or explicitly discards them', () => {
+  it('captures the surviving published-parent correction and receipt replay', () => {
     const sql = readFileSync(resolve(process.cwd(), 'supabase/tests/database/c1/c1_project_cost_items.test.sql'), 'utf8')
-    expect(sql).toContain('create temp table c101_created as select public.c1_create_project_cost_draft')
-    expect(sql).toMatch(/select public\.c1_create_project_cost_draft[\s\S]*?into replay/iu)
-    expect(sql).toMatch(/select public\.c1_prepare_project_cost_financials[\s\S]*?into prepared/iu)
-    expect(sql).toMatch(/select public\.c1_correct_published_project_cost[\s\S]*?into corrected/iu)
-    expect(sql).toContain('perform public.c1_update_project_cost_draft')
+    expect(sql).toContain('create temp table c101_corrected as select public.c1_correct_published_project_cost')
+    expect(sql).toMatch(/select public\.c1_correct_published_project_cost[\s\S]*?into replay/iu)
+    expect(sql).toContain('C1_PC_CORRECTION_RECEIPT')
+  })
+
+  it('rejects retired parent RPC calls before running Cloud DEV SQL', () => {
+    const sql = "begin;\nselect public.c1_create_project_cost_draft('c1010000-0000-4000-8000-000000000020', '{}'::jsonb, 'c1010000-0000-4000-8000-000000000711', 'c1010000-0000-4000-8000-000000000712');\nrollback;"
+    expect(() => validateC1CloudDevSql('c1_project_cost_items.test.sql', sql)).toThrow('retired parent draft RPC')
   })
 
   it.each([

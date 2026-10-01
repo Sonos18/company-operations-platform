@@ -1,12 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AppApiError } from '../../../server/utils/api-error'
 import { ProjectCostRepository } from '../../../server/features/costs/project-cost.repository'
 import { ProjectCostService } from '../../../server/features/costs/project-cost.service'
 
 const context = (permissions: string[]) => ({ actorId: 'c1010000-0000-4000-8000-000000000902', tenantId: 'c1010000-0000-4000-8000-000000000010', companyId: 'c1010000-0000-4000-8000-000000000020', permissions, requestId: 'c1010000-0000-4000-8000-000000000999' })
 const createInput = { projectId: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount: '1.00', currencyCode: 'VND', workStatus: 'unknown' as const, nonOverlapConfirmationReference: 'confirmed' }
-const createDraftInput = { projectId: createInput.projectId, description: 'Synthetic draft', costCategoryId: 'c1010000-0000-4000-8000-000000000301', workStatus: 'unknown' as const }
-const financialInput = { expectedVersion: 0, currencyCode: 'VND', details: [{ lineNo: 1, detailKind: 'line_item' as const, description: 'Zero', amount: '0.0000' }], sourceFigureIds: [] }
 const itemRow = (overrides: Record<string, unknown> = {}) => ({ id: 'c1010000-0000-4000-8000-000000000001', tenant_id: 'c1010000-0000-4000-8000-000000000010', company_id: 'c1010000-0000-4000-8000-000000000020', project_id: 'c1010000-0000-4000-8000-000000000101', publication_origin: 'legacy_backfill', description: 'Synthetic', amount_text: '1.0000', currency_code: 'VND', work_status: 'unknown', business_reference: null, party_id: null, engagement_id: null, component_id: null, relevant_date: null, version: 0, created_by: 'c1010000-0000-4000-8000-000000000902', created_at: '2026-09-16T00:00:00.000Z', updated_at: '2026-09-16T00:00:00.000Z', ...overrides })
 const metadata = (projectId: string) => ({ projectId, projectCode: projectId.endsWith('102') ? 'C101-P2' : 'C101-P1', projectName: projectId.endsWith('102') ? 'C101 project two' : 'C101 project one' })
 const listClient = (data: unknown, error: unknown = null) => {
@@ -93,13 +90,6 @@ describe('Project Cost service', () => {
     expect(await repository.projectSummary(parent.tenant_id, parent.company_id, parent.project_id)).toMatchObject({ items: [{ id: parent.id }] })
   })
 
-  it.each(['PROJECT_COST_CATEGORY_CONFLICT', 'HISTORY_IMMUTABLE', 'COST_DETAIL_PUBLISH_NOT_READY'] as const)('maps the database %s conflict to the API boundary', async code => {
-    const repository = new ProjectCostRepository({ rpc: vi.fn().mockResolvedValue({ data: null, error: { message: code, details: '["EVIDENCE_NOT_FINALIZED"]' } }) } as never)
-    const error = await repository.createDraft({ companyId: context([]).companyId, requestId: context([]).requestId }, createDraftInput, context([]).requestId).catch(error => error)
-    expect(error).toMatchObject({ statusCode: 409, code })
-    if (code === 'COST_DETAIL_PUBLISH_NOT_READY') expect(error).toMatchObject({ details: { blockingCodes: ['EVIDENCE_NOT_FINALIZED'] } })
-  })
-
   it.each(['COST_DETAIL_ALREADY_PUBLISHED', 'COST_DETAIL_NOT_DRAFT', 'HISTORY_IMMUTABLE'] as const)('maps the PostgREST %s conflict with null details when publishing a detail', async code => {
     const repository = new ProjectCostRepository({ rpc: vi.fn().mockResolvedValue({ data: null, error: { code: 'P0001', message: code, details: null, hint: null } }) } as never)
     await expect(repository.publishDetail(context([]), itemRow().id, { expectedVersion: 0 }, context([]).requestId)).rejects.toMatchObject({ statusCode: 409, code })
@@ -130,89 +120,27 @@ describe('Project Cost service', () => {
     expect(repository.correctPublished).toHaveBeenCalledWith(expect.objectContaining({ companyId: context([]).companyId }), itemRow().id, expect.objectContaining(input), context([]).requestId)
   })
 
-  it.each(['cost.manage', 'cost.prepare', 'cost.correct', 'cost.record_cash'] as const)('does not let %s substitute for cost.publish_import', async permission => {
-    const repository = { publish: vi.fn() }
-    await expect(new ProjectCostService(repository as never).publish(context([permission]), itemRow().id, { expectedVersion: 1 }, context([]).requestId)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
-    expect(repository.publish).not.toHaveBeenCalled()
-  })
-
-  it('publishes only with cost.publish_import', async () => {
-    const repository = { publish: vi.fn().mockResolvedValue({ id: itemRow().id, version: 2, publicationState: 'published', replayed: false }) }
-    await new ProjectCostService(repository as never).publish(context(['cost.publish_import']), itemRow().id, { expectedVersion: 1 }, context([]).requestId)
-    expect(repository.publish).toHaveBeenCalledWith(expect.objectContaining({ companyId: context([]).companyId }), itemRow().id, 1, context([]).requestId)
-  })
-
-  it.each(['cost.prepare', 'cost.publish_import', 'cost.correct', 'cost.record_cash'] as const)('does not let %s substitute for cost.manage', async permission => {
-    const repository = { createDraft: vi.fn() }
-    await expect(new ProjectCostService(repository as never).createDraft(context([permission]), createDraftInput, context([]).requestId)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
-    expect(repository.createDraft).not.toHaveBeenCalled()
-  })
-
-  it.each(['cost.manage', 'cost.publish_import', 'cost.correct', 'cost.record_cash'] as const)('does not let %s substitute for cost.prepare', async permission => {
-    const repository = { prepareFinancials: vi.fn() }
-    await expect(new ProjectCostService(repository as never).prepareFinancials(context([permission]), itemRow().id, financialInput)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
-    expect(repository.prepareFinancials).not.toHaveBeenCalled()
-  })
-
-  it('owns draft identity with cost.manage and financial preparation with cost.prepare', async () => {
-    const repository = { createDraft: vi.fn().mockResolvedValue({ id: itemRow().id }), prepareFinancials: vi.fn().mockResolvedValue({ id: itemRow().id }) }
+  it('keeps ordinary detail create, prepare, and publish behind separate permissions', async () => {
+    const repository = { createDetailDraft: vi.fn(), prepareDetailFinancials: vi.fn(), publishDetail: vi.fn() }
     const service = new ProjectCostService(repository as never)
-    await service.createDraft(context(['cost.manage']), createDraftInput, context([]).requestId)
-    await service.prepareFinancials(context(['cost.prepare']), itemRow().id, financialInput)
-    expect(repository.createDraft).toHaveBeenCalledOnce()
-    expect(repository.prepareFinancials).toHaveBeenCalledOnce()
-  })
+    const id = itemRow().id
+    const projectId = itemRow().project_id
+    const requestId = context([]).requestId
+    const draft = { categoryId: 'c1010000-0000-4000-8000-000000000301', description: 'Ordinary detail' }
 
-  it('lets cost.manage read only the operational draft projection', async () => {
-    const repository = { operationalDraft: vi.fn().mockResolvedValue({ id: itemRow().id }), listOperationalDrafts: vi.fn().mockResolvedValue([]) }
-    const service = new ProjectCostService(repository as never)
-    await service.operationalDraft(context(['cost.manage']), itemRow().id)
-    await service.listOperationalDrafts(context(['cost.manage']), createDraftInput.projectId)
-    expect(repository.operationalDraft).toHaveBeenCalledOnce()
-    expect(repository.listOperationalDrafts).toHaveBeenCalledOnce()
-  })
+    await service.createDetailDraft(context(['cost.manage']), projectId, draft, requestId)
+    await service.prepareDetailFinancials(context(['cost.prepare']), id, { expectedVersion: 0, amount: '2.0000' })
+    await service.publishDetail(context(['cost.publish_import']), id, { expectedVersion: 1 }, requestId)
+    expect(repository.createDetailDraft).toHaveBeenCalledOnce()
+    expect(repository.prepareDetailFinancials).toHaveBeenCalledOnce()
+    expect(repository.publishDetail).toHaveBeenCalledOnce()
 
-  it.each(['cost.prepare', 'cost.read', 'cost.publish_import', 'cost.correct', 'cost.record_cash'] as const)('does not let %s substitute for cost.manage on operational draft reads', async permission => {
-    const repository = { operationalDraft: vi.fn(), listOperationalDrafts: vi.fn() }
-    const service = new ProjectCostService(repository as never)
-    await expect(service.operationalDraft(context([permission]), itemRow().id)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
-    await expect(service.listOperationalDrafts(context([permission]), createDraftInput.projectId)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
-    expect(repository.operationalDraft).not.toHaveBeenCalled()
-    expect(repository.listOperationalDrafts).not.toHaveBeenCalled()
-  })
-
-  it('maps the financial and operational draft reads to distinct RPCs', async () => {
-    const draft = {
-      id: itemRow().id, projectId: createDraftInput.projectId, description: createDraftInput.description, costCategoryId: createDraftInput.costCategoryId,
-      businessReference: null, partyId: null, engagementId: null, componentId: null, relevantDate: null, workStatus: 'unknown', amount: null,
-      currencyCode: 'VND', publicationState: 'draft', version: 0, details: [], sourceFigureIds: [],
-      publishReadiness: { ready: false, blockingCodes: ['FINANCIAL_DETAILS_REQUIRED'] }, createdAt: itemRow().created_at, updatedAt: itemRow().updated_at,
-    }
-    const rpc = vi.fn().mockImplementation(async (name: string) => ({
-      data: name === 'c1_read_project_cost_draft_management_metadata'
-        ? { projects: [{ id: draft.projectId, code: 'P1', name: 'Project one' }], categories: [{ categoryId: draft.costCategoryId, code: 'vat_tu', name: 'Vật tư', isActive: true, draftEligible: true, postingStrategy: 'ordinary_detail' }] }
-        : name === 'c1_prepare_project_cost_financials'
-        ? { id: draft.id, version: 1, publicationState: 'draft', amount: '0', detailCount: 1, publishReadiness: { ready: true, blockingCodes: [] }, replayed: false }
-        : name === 'c1_read_project_cost_draft' ? draft
-          : name === 'c1_list_project_cost_drafts' ? [draft]
-            : name === 'c1_read_project_cost_draft_operational' ? { id: draft.id, projectId: draft.projectId, description: draft.description, costCategoryId: draft.costCategoryId, businessReference: null, partyId: null, engagementId: null, componentId: null, relevantDate: null, workStatus: 'unknown', publicationState: 'draft', version: 0, createdAt: draft.createdAt, updatedAt: draft.updatedAt }
-              : name === 'c1_list_project_cost_drafts_operational' ? []
-            : { id: draft.id, version: name === 'c1_update_project_cost_draft' ? 1 : 0, publicationState: 'draft', replayed: false },
-      error: null,
-    }))
-    const repository = new ProjectCostRepository({ rpc } as never)
-    const requestContext = { companyId: context([]).companyId, requestId: context([]).requestId }
-
-    await repository.createDraft(requestContext, createDraftInput, context([]).requestId)
-    await repository.updateDraft(requestContext, draft.id, { expectedVersion: 0, description: 'Updated' })
-    await repository.prepareFinancials(requestContext, draft.id, financialInput)
-    await repository.draft(requestContext, draft.id)
-    await repository.listDrafts(requestContext, draft.projectId)
-    await repository.operationalDraft(requestContext, draft.id)
-    await repository.listOperationalDrafts(requestContext, draft.projectId)
-    await repository.draftManagementMetadata(requestContext)
-
-    expect(rpc.mock.calls.map(call => call[0])).toEqual(['c1_create_project_cost_draft', 'c1_update_project_cost_draft', 'c1_prepare_project_cost_financials', 'c1_read_project_cost_draft', 'c1_list_project_cost_drafts', 'c1_read_project_cost_draft_operational', 'c1_list_project_cost_drafts_operational', 'c1_read_project_cost_draft_management_metadata'])
+    await expect(service.createDetailDraft(context(['cost.prepare']), projectId, draft, requestId)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    await expect(service.prepareDetailFinancials(context(['cost.manage']), id, { expectedVersion: 0, amount: '2.0000' })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    await expect(service.publishDetail(context(['cost.manage']), id, { expectedVersion: 1 }, requestId)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    expect(repository.createDetailDraft).toHaveBeenCalledOnce()
+    expect(repository.prepareDetailFinancials).toHaveBeenCalledOnce()
+    expect(repository.publishDetail).toHaveBeenCalledOnce()
   })
 
   it('maps a snake_case database row to the public project cost item without losing decimal text', async () => {
@@ -236,21 +164,6 @@ describe('Project Cost service', () => {
 
     await expect(repository.projectSummary(context(['cost.read']).tenantId, context(['cost.read']).companyId, 'c1010000-0000-4000-8000-000000000101')).resolves.toMatchObject({ items: [expect.objectContaining({ projectId: 'c1010000-0000-4000-8000-000000000101', amount: '9007199254740993.0000', currencyCode: 'VND', workStatus: 'accepted', version: 2 })] })
     expect(client.from.mock.results[0].value.select).toHaveBeenCalledWith(expect.not.stringContaining('*'))
-  })
-
-  it('returns the RPC acknowledgement instead of the Supabase response envelope', async () => {
-    const client = { rpc: vi.fn().mockResolvedValue({ data: { id: 'c1010000-0000-4000-8000-000000000001', version: 0, replayed: false }, error: null }) }
-    const repository = new ProjectCostRepository(client as never)
-
-    await expect(repository.create(context(['cost.manage']), { projectId: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount: '1.00', currencyCode: 'VND', workStatus: 'unknown', nonOverlapConfirmationReference: 'confirmed' }, 'c1010000-0000-4000-8000-000000000998')).resolves.toEqual({ id: 'c1010000-0000-4000-8000-000000000001', version: 0, replayed: false })
-  })
-
-  it('maps VERSION_CONFLICT from RPC to a 409 AppApiError', async () => {
-    const client = { rpc: vi.fn().mockResolvedValue({ data: null, error: { code: 'VERSION_CONFLICT', message: 'stale version' } }) }
-    const repository = new ProjectCostRepository(client as never)
-
-    await expect(repository.create(context(['cost.manage']), { projectId: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount: '1.00', currencyCode: 'VND', workStatus: 'unknown', nonOverlapConfirmationReference: 'confirmed' }, 'c1010000-0000-4000-8000-000000000998')).rejects.toBeInstanceOf(AppApiError)
-    await expect(repository.create(context(['cost.manage']), { projectId: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount: '1.00', currencyCode: 'VND', workStatus: 'unknown', nonOverlapConfirmationReference: 'confirmed' }, 'c1010000-0000-4000-8000-000000000998')).rejects.toMatchObject({ statusCode: 409, code: 'VERSION_CONFLICT' })
   })
 
   it('filters project cost reads by tenant, company, and project', async () => {
@@ -373,31 +286,6 @@ describe('Project Cost service', () => {
     await expect(summaryRepository.projectSummary(context([]).tenantId, context([]).companyId, createInput.projectId)).rejects.toMatchObject(expected)
   })
 
-  it('preserves MODULE_DISABLED as the reason for direct RPC errors', async () => {
-    const repository = new ProjectCostRepository({ rpc: vi.fn().mockResolvedValue({ data: null, error: { code: 'P0001', message: 'MODULE_DISABLED' } }) } as never)
-
-    await expect(repository.create(context(['cost.manage']), createInput, 'c1010000-0000-4000-8000-000000000998')).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED', details: { reason: 'MODULE_DISABLED' } })
-  })
-
-  it.each([
-    ['MODULE_DISABLED', 403, 'PERMISSION_DENIED'], ['PERMISSION_DENIED', 403, 'PERMISSION_DENIED'], ['RESOURCE_NOT_FOUND', 404, 'RESOURCE_NOT_FOUND'], ['IDEMPOTENCY_CONFLICT', 409, 'IDEMPOTENCY_CONFLICT'], ['INPUT_INVALID', 400, 'INPUT_INVALID'], ['unexpected database error', 500, 'INTERNAL_ERROR'],
-  ])('maps RPC %s to the public API error', async (code, statusCode, expectedCode) => {
-    const repository = new ProjectCostRepository({ rpc: vi.fn().mockResolvedValue({ data: null, error: { code: 'P0001', message: code } }) } as never)
-
-    await expect(repository.create(context(['cost.manage']), createInput, 'c1010000-0000-4000-8000-000000000998')).rejects.toMatchObject({ statusCode, code: expectedCode })
-  })
-
-  it('returns update and correction acknowledgements without a post-write table read', async () => {
-    const client = { from: vi.fn(), rpc: vi.fn().mockResolvedValue({ data: { id: 'c1010000-0000-4000-8000-000000000001', version: 3 }, error: null }) }
-    const repository = new ProjectCostRepository(client as never)
-
-    await expect(repository.update(context(['cost.manage']), 'c1010000-0000-4000-8000-000000000001', { kind: 'update', input: { description: 'Renamed', expectedVersion: 2 } })).resolves.toEqual({ id: 'c1010000-0000-4000-8000-000000000001', version: 3 })
-    await expect(repository.update(context(['cost.correct']), 'c1010000-0000-4000-8000-000000000001', { kind: 'correction', input: { amount: '2.00', reason: 'Correction', expectedVersion: 2 } })).resolves.toEqual({ id: 'c1010000-0000-4000-8000-000000000001', version: 3 })
-    expect(client.rpc).toHaveBeenNthCalledWith(1, 'c1_update_project_cost_item', expect.any(Object))
-    expect(client.rpc).toHaveBeenNthCalledWith(2, 'c1_correct_project_cost_item', expect.any(Object))
-    expect(client.from).not.toHaveBeenCalled()
-  })
-
   it('requires cost.read before summary access', async () => {
     const repository = { listSummaries: vi.fn() }
     const service = new ProjectCostService(repository as never)
@@ -421,50 +309,6 @@ describe('Project Cost service', () => {
     await expect(service.projectSummary(context([permission]), createInput.projectId)).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
     expect(repository.listSummaries).not.toHaveBeenCalled()
     expect(repository.projectSummary).not.toHaveBeenCalled()
-  })
-
-  it('allows cost.manage create without cost.read and preserves idempotency input', async () => {
-    const repository = { create: vi.fn().mockResolvedValue({ id: 'c1010000-0000-4000-8000-000000000001', version: 0, replayed: false }) }
-    const service = new ProjectCostService(repository as never)
-    await expect(service.create(context(['cost.manage']), { projectId: 'c1010000-0000-4000-8000-000000000101', description: 'Synthetic', amount: '9007199254740993.0000', currencyCode: 'VND', workStatus: 'unknown', nonOverlapConfirmationReference: 'confirmed' }, 'c1010000-0000-4000-8000-000000000998')).resolves.toMatchObject({ replayed: false })
-    expect(repository.create).toHaveBeenCalledOnce()
-  })
-
-  it('passes valid source figure provenance IDs unchanged to the guarded create repository', async () => {
-    const repository = { create: vi.fn().mockResolvedValue({ id: 'c1010000-0000-4000-8000-000000000001', version: 0, replayed: false }) }
-    const service = new ProjectCostService(repository as never)
-    const input = { ...createInput, sourceFigureIds: ['c1010000-0000-4000-8000-000000000604', 'c1010000-0000-4000-8000-000000000605'] }
-
-    await service.create(context(['cost.manage']), input, 'c1010000-0000-4000-8000-000000000998')
-    expect(repository.create).toHaveBeenCalledWith(context(['cost.manage']), input, 'c1010000-0000-4000-8000-000000000998')
-  })
-
-  it('rejects duplicate source figure provenance IDs before repository invocation', async () => {
-    const repository = { create: vi.fn() }
-    const service = new ProjectCostService(repository as never)
-    const sourceFigureId = 'c1010000-0000-4000-8000-000000000604'
-
-    await expect(service.create(context(['cost.manage']), { ...createInput, sourceFigureIds: [sourceFigureId, sourceFigureId] }, 'c1010000-0000-4000-8000-000000000998')).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' })
-    expect(repository.create).not.toHaveBeenCalled()
-  })
-
-  it('requires cost.manage for ordinary updates and cost.correct for corrections', async () => {
-    const repository = { update: vi.fn().mockResolvedValue({ id: 'c1010000-0000-4000-8000-000000000001', version: 1 }) }
-    const service = new ProjectCostService(repository as never)
-
-    await expect(service.update(context(['cost.manage']), 'c1010000-0000-4000-8000-000000000001', { description: 'Renamed', expectedVersion: 0 })).resolves.toEqual(expect.any(Object))
-    await expect(service.correct(context(['cost.correct']), 'c1010000-0000-4000-8000-000000000001', { amount: '2.00', reason: 'Correction', expectedVersion: 0 })).resolves.toEqual(expect.any(Object))
-    await expect(service.correct(context(['cost.manage']), 'c1010000-0000-4000-8000-000000000001', { amount: '2.00', reason: 'Correction', expectedVersion: 0 })).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
-    await expect(service.update(context(['cost.correct']), 'c1010000-0000-4000-8000-000000000001', { description: 'Renamed', expectedVersion: 0 })).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
-    expect(repository.update).toHaveBeenCalledTimes(2)
-  })
-
-  it('maps invalid Zod input to INPUT_INVALID before calling the repository', async () => {
-    const repository = { create: vi.fn() }
-    const service = new ProjectCostService(repository as never)
-
-    await expect(service.create(context(['cost.manage']), { ...createInput, amount: 'not-a-decimal' }, 'c1010000-0000-4000-8000-000000000998')).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' })
-    expect(repository.create).not.toHaveBeenCalled()
   })
 
   it('accepts PostgreSQL timestamptz with explicit timezone offsets in listSummaries', async () => {

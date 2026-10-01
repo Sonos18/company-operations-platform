@@ -65,22 +65,21 @@ describe('C1 Project Cost database foundation', () => {
     }
   })
 
-  it('requires synthetic lifecycle command assertions and direct-write denial', () => {
-    for (const assertion of ['C1_PC_PERMISSION_BOUNDARY','C1_PC_PRIVATE_BOUNDARY','C1_PC_DRAFT_SHAPE','C1_PC_DRAFT_LEAK','C1_PC_IDEMPOTENCY','C1_PC_DERIVED_AMOUNT']) expect(fixtureSql).toContain(assertion)
-    for (const rpc of ['c1_create_project_cost_draft','c1_update_project_cost_draft','c1_prepare_project_cost_financials','c1_publish_project_cost','c1_correct_published_project_cost']) expect(fixtureSql).toContain(`public.${rpc}`)
+  it('requires synthetic published-parent correction and direct-write denial', () => {
+    for (const assertion of ['C1_PC_PERMISSION_BOUNDARY','C1_PC_RETIRED_RPC_PRESENT','C1_PC_DECIMAL_SAFE_AMOUNT','C1_PC_CORRECTION_PERMISSION','C1_PC_CORRECTION_REPLAY','C1_PC_PRECISION_OR_VERSION','C1_PC_CORRECTION_AUDIT','C1_PC_CORRECTION_RECEIPT']) expect(fixtureSql).toContain(assertion)
+    expect(fixtureSql).toContain('public.c1_correct_published_project_cost')
   })
 
-  it('keeps source preparation explicit and separate from draft creation', () => {
-    expect(fixtureSql).toContain('"sourceFigureIds":[]')
-    expect(fixtureSql).not.toMatch(/c1_create_project_cost_draft[\s\S]{0,500}sourceFigureIds/iu)
+  it('does not call retired parent lifecycle commands from the executable fixture', () => {
+    expect(fixtureSql).not.toMatch(/\b(?:select|perform)\s+public\.c1_(?:create_project_cost_draft|update_project_cost_draft|prepare_project_cost_financials|publish_project_cost|create_project_cost_item|update_project_cost_item)\s*\(/iu)
   })
 
   it('uses only reserved lowercase synthetic UUIDs', () => {
     for (const [id] of fixtureSql.matchAll(/\bc10[01][0-9a-f]{4}-[0-9a-f-]{27,}\b/gu)) expect(id).toBe(id.toLowerCase())
   })
 
-  it('keeps publish and correction on the same canonical Project Cost identity', () => {
-    expect(fixtureSql).toMatch(/c101_created[\s\S]*c1_publish_project_cost[\s\S]*c101_created[\s\S]*c1_correct_published_project_cost/iu)
+  it('corrects a preserved published parent on the canonical Project Cost identity', () => {
+    expect(fixtureSql).toMatch(/c1010000-0000-4000-8000-000000000803[\s\S]*c1_correct_published_project_cost/iu)
     expect(fixtureSql).not.toMatch(/create table public\.(?:project_cost_drafts|project_cost_corrections)/iu)
   })
 
@@ -91,7 +90,7 @@ describe('C1 Project Cost database foundation', () => {
     expect(correctionIndex).toBeGreaterThanOrEqual(0)
     expect(resetIndex).toBeGreaterThan(correctionIndex)
     expect(auditIndex).toBeGreaterThan(resetIndex)
-    expect(fixtureSql.slice(auditIndex)).toContain('C1_PC_AUDIT_HISTORY')
+    expect(fixtureSql.slice(auditIndex)).toContain('C1_PC_CORRECTION_AUDIT')
   })
 
   it('adds cost.manage to the shared permission catalog', () => {
@@ -214,8 +213,8 @@ describe('C1 Project Cost database foundation', () => {
     for (const id of fixtureSql.matchAll(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu)) {
       expect(id[0]).toMatch(/^c10[01][0-9a-f]{4}-/iu)
     }
-    for (const rpc of ['c1_create_project_cost_draft','c1_update_project_cost_draft','c1_prepare_project_cost_financials','c1_publish_project_cost','c1_correct_published_project_cost']) expect(fixtureSql).toContain(`public.${rpc}`)
-    for (const assertion of ['C1_PC_PERMISSION_BOUNDARY','C1_PC_PRIVATE_BOUNDARY','C1_PC_DECIMAL_SAFE_AMOUNT','C1_PC_DRAFT_SHAPE','C1_PC_DRAFT_LEAK','C1_PC_IDEMPOTENCY','C1_PC_PUBLISH_VISIBILITY','C1_PC_METADATA_SCOPE','C1_PC_CORRECTION_VERSION','C1_PC_DERIVED_AMOUNT','C1_PC_AUDIT_HISTORY']) expect(fixtureSql).toContain(assertion)
+    expect(fixtureSql).toContain('public.c1_correct_published_project_cost')
+    for (const assertion of ['C1_PC_PERMISSION_BOUNDARY','C1_PC_RETIRED_RPC_PRESENT','C1_PC_DECIMAL_SAFE_AMOUNT','C1_PC_METADATA_SCOPE','C1_PC_CORRECTION_PERMISSION','C1_PC_CORRECTION_REPLAY','C1_PC_PRECISION_OR_VERSION','C1_PC_CORRECTION_AUDIT','C1_PC_CORRECTION_RECEIPT']) expect(fixtureSql).toContain(assertion)
     const decimal = fixtureSql.match(/(9007199254740993\.0000)/u)?.[1]
     expect(decimal).toBe('9007199254740993.0000')
     expect(BigInt(decimal!.split('.')[0]!)).not.toBe(BigInt(Number(decimal!.split('.')[0]!)))
