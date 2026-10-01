@@ -1,5 +1,34 @@
 import Decimal from 'decimal.js'
 
+export function deriveUnitPrice(amount: string, quantity: string): string | null {
+  try {
+    const qty = new Decimal(quantity)
+    if (!qty.isFinite() || !qty.gt(0)) return null
+    return new Decimal(amount).div(qty).toFixed(4)
+  }
+  catch {
+    return null
+  }
+}
+
+export function deriveRetentionAmount(amount: string, rateBps: number): string | null {
+  try {
+    return new Decimal(amount).mul(rateBps).div(10000).toFixed(4)
+  }
+  catch {
+    return null
+  }
+}
+
+export function isDecimalGreaterThan(left: string, right: string): boolean {
+  try {
+    return new Decimal(left).gt(new Decimal(right))
+  }
+  catch {
+    return false
+  }
+}
+
 export function formatFinanceMoney(
   value: string | number | null | undefined,
   currencyCode?: string,

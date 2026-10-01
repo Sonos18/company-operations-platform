@@ -2,6 +2,11 @@ import { expect, test } from './fixtures/authenticated'
 import type { Page } from '@playwright/test'
 import { createCompany } from './fixtures/auth-routes'
 import {
+  costEvidenceDetailLinkResultSchema,
+  costEvidenceFinalizedSchema,
+  costEvidenceUploadIntentSchema,
+} from '../../shared/schemas/costs/cost-evidence'
+import {
   projectCostDetailDraftSchema,
   projectCostDetailOperationalDraftSchema,
   projectCostDraftManagementMetadataSchema,
@@ -11,6 +16,10 @@ const projectId = '10000000-0000-4000-8000-000000000050'
 const ordinaryCategoryId = '20000000-0000-4000-8000-000000000051'
 const subcontractCategoryId = '20000000-0000-4000-8000-000000000099'
 const detailId = '30000000-0000-4000-8000-000000000088'
+const evidenceId = '70000000-0000-4000-8000-000000000057'
+const evidenceLinkId = '80000000-0000-4000-8000-000000000058'
+const evidenceHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+const evidencePath = `10000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000002/${projectId}/${evidenceId}`
 
 const metadata = projectCostDraftManagementMetadataSchema.parse({
   projects: [{ id: projectId, code: 'DA-C1-01', name: 'Dự án C1' }],
@@ -59,6 +68,106 @@ async function mockMetadata(page: Page) {
 }
 
 test.describe('C1 Ordinary Cost Detail Screen & Workflows (Phase 1)', () => {
+  test('atomic create sends exact derived unit price and retention for a 16-digit amount', async ({ page, authState }) => {
+    authState.sessionCompanies = [createCompany({ permissions: ['cost.manage', 'cost.prepare', 'cost.publish_import', 'cost.read'] })]
+    await mockMetadata(page)
+    let payload: Record<string, unknown> | null = null
+    await page.route(`**/api/companies/**/projects/${projectId}/cost-entries`, async (route) => {
+      payload = route.request().postDataJSON() as Record<string, unknown>
+      await route.fulfill({ status: 201, json: { id: detailId, projectCostItemId: '90000000-0000-4000-8000-000000000001', version: 1, publicationState: 'published', replayed: false } })
+    })
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: { summary: {}, project: {} } }))
+    await page.goto(`/costs/${projectId}/entries/new`)
+    await page.getByTestId('new-category-select').selectOption(ordinaryCategoryId)
+    await page.getByTestId('new-desc-input').fill('Exact decimal cost')
+    await page.getByTestId('new-amount-input').fill('9007199254740993')
+    await page.getByTestId('new-quantity-input').fill('3')
+    await page.getByTestId('new-quantity-input').blur()
+    await expect(page.getByTestId('new-unit-price-input')).toHaveValue('3002399751580331.0000')
+    await page.getByTestId('new-retention-kind-select').selectOption('warranty')
+    await page.getByTestId('new-retention-rate-input').fill('500')
+    await expect(page.getByTestId('new-retention-amount-input')).toHaveValue('450359962737049.6500')
+    await page.getByTestId('publish-now-btn').click()
+    await expect(page).toHaveURL(new RegExp(`/costs/${projectId}$`))
+    expect(payload).toMatchObject({ amount: '9007199254740993', quantity: '3', unitPrice: '3002399751580331.0000', retentionRateBps: 500, retentionAmount: '450359962737049.6500' })
+  })
+
+  test('detail financial preparation sends exact derived values for a 16-digit amount', async ({ page, authState }) => {
+    authState.sessionCompanies = [createCompany({ permissions: ['cost.prepare'] })]
+    await mockMetadata(page)
+    const unpriced = projectCostDetailDraftSchema.parse({ ...fullDetailDraft, amount: null, quantity: null, unitPrice: null, retentionKind: null, retentionRateBps: null, retentionAmount: null, publishReadiness: { ready: false, blockingCodes: ['FINANCIAL_DETAILS_REQUIRED'] } })
+    await page.route(`**/api/companies/**/project-cost-details/${detailId}/draft`, route => route.fulfill({ json: unpriced }))
+    let payload: Record<string, unknown> | null = null
+    await page.route(`**/api/companies/**/project-cost-details/${detailId}/financials`, async (route) => {
+      payload = route.request().postDataJSON() as Record<string, unknown>
+      await route.fulfill({ json: { id: detailId, projectCostItemId: unpriced.projectCostItemId, publicationState: 'draft', version: 2, replayed: false } })
+    })
+    await page.goto(`/costs/${projectId}/entries/${detailId}`)
+    await page.getByTestId('detail-amount-input').fill('9007199254740993')
+    await page.getByTestId('detail-quantity-input').fill('3')
+    await page.getByTestId('detail-quantity-input').blur()
+    await expect(page.getByTestId('detail-unit-price-input')).toHaveValue('3002399751580331.0000')
+    await page.getByTestId('detail-retention-kind-select').selectOption('warranty')
+    await page.getByTestId('detail-retention-rate-input').fill('500')
+    await expect(page.getByTestId('detail-retention-amount-input')).toHaveValue('450359962737049.6500')
+    await page.getByTestId('save-financials-btn').click()
+    await expect(page.getByTestId('financial-success-alert')).toBeVisible()
+    expect(payload).toMatchObject({ amount: '9007199254740993', quantity: '3', unitPrice: '3002399751580331.0000', retentionRateBps: 500, retentionAmount: '450359962737049.6500' })
+  })
+
+  test('prepare-only can upload and link evidence without metadata or raw-file reads', async ({ page, authState }) => {
+    authState.sessionCompanies = [createCompany({ permissions: ['cost.prepare'] })]
+    await mockMetadata(page)
+    await page.route(`**/api/companies/**/project-cost-details/${detailId}/draft`, route => route.fulfill({ json: fullDetailDraft }))
+    let metadataReads = 0
+    let rawReads = 0
+    let links = 0
+    await page.route(`**/api/companies/**/project-cost-details/${detailId}/evidence`, async (route) => {
+      if (route.request().method() === 'GET') { metadataReads++; await route.fulfill({ status: 403 }); return }
+      links++
+      await route.fulfill({ json: costEvidenceDetailLinkResultSchema.parse({ linkId: evidenceLinkId, detailId, evidenceFileId: evidenceId, evidenceKind: 'invoice', replayed: false }) })
+    })
+    await page.route('**/api/companies/**/evidence-files/**/read-url', async (route) => { rawReads++; await route.fulfill({ status: 403 }) })
+    await page.route(`**/api/companies/**/projects/${projectId}/evidence/upload-intents`, route => route.fulfill({ status: 201, json: costEvidenceUploadIntentSchema.parse({ evidenceFileId: evidenceId, version: 0, bucketId: 'c1-accounting-evidence', objectPath: evidencePath, expiresAt: new Date(Date.now() + 120000).toISOString(), replayed: false }) }))
+    await page.route('**/storage/v1/object/**', route => route.fulfill({ status: 200, json: { Key: `c1-accounting-evidence/${evidencePath}` } }))
+    await page.route(`**/api/companies/**/evidence-files/${evidenceId}/finalize`, route => route.fulfill({ json: costEvidenceFinalizedSchema.parse({ id: evidenceId, status: 'finalized', originalFilename: 'invoice.pdf', mimeType: 'application/pdf', sizeBytes: 4, sha256: evidenceHash, version: 1, finalizedAt: new Date().toISOString(), replayed: false }) }))
+    await page.goto(`/costs/${projectId}/entries/${detailId}`)
+    await expect(page.getByTestId('evidence-upload-section')).toBeVisible()
+    await expect(page.getByTestId('detail-evidence-table')).toHaveCount(0)
+    await page.getByTestId('detail-evidence-file-input').setInputFiles({ name: 'invoice.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF') })
+    await page.getByTestId('upload-evidence-btn').click()
+    await expect.poll(() => links).toBe(1)
+    expect({ metadataReads, rawReads }).toEqual({ metadataReads: 0, rawReads: 0 })
+  })
+
+  test('committed detail evidence link with lost response retries exact payload and key without reupload', async ({ page, authState }) => {
+    authState.sessionCompanies = [createCompany({ permissions: ['cost.prepare', 'cost.source.read'] })]
+    await mockMetadata(page)
+    await page.route(`**/api/companies/**/project-cost-details/${detailId}/draft`, route => route.fulfill({ json: fullDetailDraft }))
+    const attempts: Array<{ key: string | null; body: unknown }> = []
+    let intents = 0
+    let uploads = 0
+    let finalizes = 0
+    await page.route(`**/api/companies/**/project-cost-details/${detailId}/evidence`, async (route) => {
+      if (route.request().method() === 'GET') { await route.fulfill({ json: [] }); return }
+      attempts.push({ key: await route.request().headerValue('idempotency-key'), body: route.request().postDataJSON() })
+      if (attempts.length === 1) { await route.abort('connectionfailed'); return }
+      const sameCommand = attempts[1]?.key === attempts[0]?.key && JSON.stringify(attempts[1]?.body) === JSON.stringify(attempts[0]?.body)
+      await route.fulfill(sameCommand ? { json: costEvidenceDetailLinkResultSchema.parse({ linkId: evidenceLinkId, detailId, evidenceFileId: evidenceId, evidenceKind: 'invoice', replayed: true }) } : { status: 400, json: { code: 'INPUT_INVALID' } })
+    })
+    await page.route(`**/api/companies/**/projects/${projectId}/evidence/upload-intents`, route => { intents++; return route.fulfill({ status: 201, json: costEvidenceUploadIntentSchema.parse({ evidenceFileId: evidenceId, version: 0, bucketId: 'c1-accounting-evidence', objectPath: evidencePath, expiresAt: new Date(Date.now() + 120000).toISOString(), replayed: false }) }) })
+    await page.route('**/storage/v1/object/**', route => { uploads++; return route.fulfill({ status: 200, json: { Key: `c1-accounting-evidence/${evidencePath}` } }) })
+    await page.route(`**/api/companies/**/evidence-files/${evidenceId}/finalize`, route => { finalizes++; return route.fulfill({ json: costEvidenceFinalizedSchema.parse({ id: evidenceId, status: 'finalized', originalFilename: 'invoice.pdf', mimeType: 'application/pdf', sizeBytes: 4, sha256: evidenceHash, version: 1, finalizedAt: new Date().toISOString(), replayed: false }) }) })
+    await page.goto(`/costs/${projectId}/entries/${detailId}`)
+    await page.getByTestId('detail-evidence-file-input').setInputFiles({ name: 'invoice.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF') })
+    await page.getByTestId('upload-evidence-btn').click()
+    await expect(page.getByTestId('evidence-upload-error')).toBeVisible()
+    await page.getByTestId('upload-evidence-btn').click()
+    await expect.poll(() => attempts.length).toBe(2)
+    await expect(page.getByTestId('evidence-upload-success')).toBeVisible()
+    expect(attempts[1]).toEqual(attempts[0])
+    expect({ intents, uploads, finalizes }).toEqual({ intents: 1, uploads: 1, finalizes: 1 })
+  })
   test('cost.manage creates an ordinary detail draft and opens the workbench without financial leakage', async ({ page, authState }) => {
     authState.sessionCompanies = [createCompany({ permissions: ['cost.manage'] })]
     await mockMetadata(page)

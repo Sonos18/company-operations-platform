@@ -10,6 +10,7 @@ import {
 } from '../../utils/costs/cost-evidence-uploader'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
 import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
+import { isDefinitivelyRejectedError } from '../../utils/costs/cost-command-recovery'
 
 const props = withDefaults(defineProps<{
   projectId: string
@@ -26,6 +27,7 @@ const emit = defineEmits<{
 const repositories = useRepositories()
 const nuxtApp = useNuxtApp()
 const companyAccess = nuxtApp.$companyAccessStore
+const authStore = nuxtApp.$authStore
 const supabase = nuxtApp.$supabaseClient
 
 const canSourceRead = computed(() => companyAccess.hasPermission('cost.source.read'))
@@ -50,6 +52,16 @@ const uploadProgressStage = ref<string | null>(null)
 const uploadError = ref<string | null>(null)
 const uploadSuccess = ref<string | null>(null)
 const uploadSession = ref<EvidenceUploadSession | null>(null)
+const pendingDetailLink = ref<{
+  companyId: string
+  actorId: string
+  projectId: string
+  detailId: string
+  idempotencyKey: string
+  payload: { evidenceFileId: string, evidenceKind: CostEvidenceKind }
+  originalFilename: string
+} | null>(null)
+let uploadContextGeneration = 0
 
 // Raw URL opening state
 const openingFileId = ref<string | null>(null)
@@ -62,6 +74,7 @@ function resetUploadState() {
   uploadError.value = null
   uploadSuccess.value = null
   uploadSession.value = null
+  pendingDetailLink.value = null
   openingFileId.value = null
   if (fileInput.value) fileInput.value.value = ''
 }
@@ -107,8 +120,9 @@ async function fetchEvidenceList() {
 }
 
 watch(
-  [() => props.detailId, () => companyAccess.activeCompanyId, canSourceRead],
+  [() => props.projectId, () => props.detailId, () => companyAccess.activeCompanyId, () => authStore?.user?.id, canSourceRead, canPrepare],
   () => {
+    uploadContextGeneration++
     resetUploadState()
     fetchEvidenceList()
   },
@@ -116,6 +130,7 @@ watch(
 )
 
 onUnmounted(() => {
+  uploadContextGeneration++
   evidenceTracker.invalidate()
 })
 
@@ -147,13 +162,29 @@ function onFileSelected(event: Event) {
 }
 
 async function startUploadAndLink() {
-  if (!selectedFile.value || !props.detailId || !props.projectId) return
+  if (uploading.value || (!selectedFile.value && !pendingDetailLink.value) || !props.detailId || !props.projectId) return
   if (!canPrepare.value) {
     uploadError.value = 'Bạn không có quyền cost.prepare để tải lên và liên kết chứng từ.'
     return
   }
 
   const companyId = companyAccess.activeCompanyId ?? ''
+  const actorId = authStore?.user?.id ?? 'anonymous'
+  const projectId = props.projectId
+  const detailId = props.detailId
+  const generation = uploadContextGeneration
+  const isCurrent = () => uploadContextGeneration === generation
+    && companyAccess.activeCompanyId === companyId
+    && (authStore?.user?.id ?? 'anonymous') === actorId
+    && props.projectId === projectId
+    && props.detailId === detailId
+    && canPrepare.value
+  if (pendingDetailLink.value && (
+    pendingDetailLink.value.companyId !== companyId
+    || pendingDetailLink.value.actorId !== actorId
+    || pendingDetailLink.value.projectId !== projectId
+    || pendingDetailLink.value.detailId !== detailId
+  )) return
   uploading.value = true
   uploadError.value = null
   uploadSuccess.value = null
@@ -168,45 +199,64 @@ async function startUploadAndLink() {
       finalizing: 'Đang xác thực cấu trúc tệp trên máy chủ…',
     }
 
-    const uploadResult = await uploadAndFinalizeEvidence({
-      companyId,
-      projectId: props.projectId,
-      file,
-      evidenceKind: selectedKind.value,
-      evidenceRepo: repositories.costEvidence,
-      supabaseClient: supabase,
-      session: uploadSession.value,
-      onSessionChange: (session: EvidenceUploadSession) => {
-        uploadSession.value = session
-      },
-      onProgress: (stage: 'hashing' | 'intent' | 'uploading' | 'finalizing' | 'linking') => {
-        uploadProgressStage.value = stageMap[stage] || stage
-      },
-    })
+    if (!pendingDetailLink.value) {
+      if (!file) return
+      const evidenceKind = selectedKind.value
+      const uploadResult = await uploadAndFinalizeEvidence({
+        companyId,
+        projectId,
+        file,
+        evidenceKind,
+        evidenceRepo: repositories.costEvidence,
+        supabaseClient: supabase,
+        session: uploadSession.value,
+        isCompanyContextCurrent: isCurrent,
+        onSessionChange: (session: EvidenceUploadSession) => {
+          if (isCurrent()) uploadSession.value = session
+        },
+        onProgress: (stage: 'hashing' | 'intent' | 'uploading' | 'finalizing' | 'linking') => {
+          if (isCurrent()) uploadProgressStage.value = stageMap[stage] || stage
+        },
+      })
+      if (!isCurrent()) return
+      pendingDetailLink.value = {
+        companyId,
+        actorId,
+        projectId,
+        detailId,
+        idempotencyKey: globalThis.crypto.randomUUID(),
+        payload: { evidenceFileId: uploadResult.evidenceFileId, evidenceKind },
+        originalFilename: uploadResult.originalFilename,
+      }
+    }
 
     uploadProgressStage.value = 'Đang liên kết chứng từ với chi tiết chi phí…'
 
-    const idempotencyKey = globalThis.crypto.randomUUID()
+    const command = pendingDetailLink.value
+    if (!command || !isCurrent()) return
     await repositories.costEvidence.linkDetail(
-      props.detailId,
-      {
-        evidenceFileId: uploadResult.evidenceFileId,
-        evidenceKind: selectedKind.value,
-      },
-      { idempotencyKey },
+      command.detailId,
+      command.payload,
+      { idempotencyKey: command.idempotencyKey },
     )
 
-    uploadSuccess.value = `Đã liên kết chứng từ "${uploadResult.originalFilename}" thành công.`
+    if (!isCurrent()) return
     resetUploadState()
+    uploadSuccess.value = `Đã liên kết chứng từ "${command.originalFilename}" thành công.`
     await fetchEvidenceList()
-    emit('evidence-linked')
+    if (isCurrent()) emit('evidence-linked')
   }
   catch (err: unknown) {
-    uploadError.value = extractErrorMessage(err, 'Lỗi khi tải lên hoặc liên kết chứng từ.')
+    if (isCurrent()) {
+      if (pendingDetailLink.value && isDefinitivelyRejectedError(err)) pendingDetailLink.value = null
+      uploadError.value = extractErrorMessage(err, 'Lỗi khi tải lên hoặc liên kết chứng từ.')
+    }
   }
   finally {
-    uploading.value = false
-    uploadProgressStage.value = null
+    if (isCurrent()) {
+      uploading.value = false
+      uploadProgressStage.value = null
+    }
   }
 }
 
@@ -250,9 +300,9 @@ async function openFile(evidenceFileId: string) {
       Cần quyền <code>cost.source.read</code> để xem danh sách chứng từ đính kèm.
     </div>
 
-    <template v-else>
+    <template v-if="canPrepare || canSourceRead">
       <UAlert
-        v-if="errorMessage"
+        v-if="canSourceRead && errorMessage"
         color="error"
         variant="subtle"
         :description="errorMessage"
@@ -287,7 +337,7 @@ async function openFile(evidenceFileId: string) {
               id="detail-evidence-kind"
               v-model="selectedKind"
               class="cockpit-select w-full"
-              :disabled="disabled || uploading"
+              :disabled="disabled || uploading || !!pendingDetailLink"
               data-testid="detail-evidence-kind-select"
             >
               <option v-for="(label, kind) in evidenceKindLabels" :key="kind" :value="kind">
@@ -306,7 +356,7 @@ async function openFile(evidenceFileId: string) {
               type="file"
               class="cockpit-input w-full text-xs"
               :accept="ALLOWED_FILE_EXTENSIONS.join(',')"
-              :disabled="disabled || uploading"
+              :disabled="disabled || uploading || !!pendingDetailLink"
               data-testid="detail-evidence-file-input"
               @change="onFileSelected"
             >
@@ -324,7 +374,7 @@ async function openFile(evidenceFileId: string) {
             size="sm"
             icon="i-lucide-upload"
             :loading="uploading"
-            :disabled="disabled || uploading || !selectedFile"
+            :disabled="disabled || uploading || (!selectedFile && !pendingDetailLink)"
             data-testid="upload-evidence-btn"
             @click="startUploadAndLink"
           >
@@ -334,6 +384,7 @@ async function openFile(evidenceFileId: string) {
       </div>
 
       <!-- Evidence Table -->
+      <template v-if="canSourceRead">
       <div v-if="loading" class="text-center py-4 text-xs text-gray-500">
         Đang tải danh sách chứng từ…
       </div>
@@ -386,6 +437,7 @@ async function openFile(evidenceFileId: string) {
           </tbody>
         </table>
       </div>
+      </template>
     </template>
   </div>
 </template>

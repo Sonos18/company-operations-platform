@@ -6,7 +6,7 @@ import type {
   ProjectCostDraftCategoryOption,
 } from '../../../../../shared/schemas/costs/project-costs'
 import { extractErrorMessage } from '../../../../utils/costs/accounting-error-mapper'
-import { formatFinanceMoney } from '../../../../utils/costs/finance-display'
+import { deriveRetentionAmount, deriveUnitPrice, formatFinanceMoney, isDecimalGreaterThan } from '../../../../utils/costs/finance-display'
 import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
 import {
   clearCommandRecord,
@@ -240,20 +240,15 @@ const hasEnteredFinancials = computed(() => {
 
 function onAmountOrQuantityBlur() {
   if (form.amount !== '' && form.quantity !== '') {
-    const amt = Number(form.amount)
-    const qty = Number(form.quantity)
-    if (!Number.isNaN(amt) && !Number.isNaN(qty) && qty > 0 && !form.unitPrice) {
-      form.unitPrice = (amt / qty).toFixed(4)
-    }
+    const derived = deriveUnitPrice(form.amount, form.quantity)
+    if (derived !== null && !form.unitPrice) form.unitPrice = derived
   }
 }
 
 function onRetentionRateChange() {
   if (form.amount !== '' && form.retentionRateBps !== null) {
-    const amt = Number(form.amount)
-    if (!Number.isNaN(amt)) {
-      form.retentionAmount = (amt * (form.retentionRateBps / 10000)).toFixed(4)
-    }
+    const derived = deriveRetentionAmount(form.amount, form.retentionRateBps)
+    if (derived !== null) form.retentionAmount = derived
   }
 }
 
@@ -480,7 +475,7 @@ async function submitPublishNow(isReplay = false) {
         formError.value = 'Vui lòng nhập số tiền tạm giữ bảo hành hợp lệ.'
         return
       }
-      if (Number(form.retentionAmount) > Number(amtTrimmed)) {
+      if (isDecimalGreaterThan(form.retentionAmount, amtTrimmed)) {
         formError.value = 'Số tiền tạm giữ không được lớn hơn tổng số tiền chi tiết.'
         return
       }
