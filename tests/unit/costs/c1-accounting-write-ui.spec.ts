@@ -31,10 +31,6 @@ const publishedOverviewPageSource = readFileSync(
   new URL('../../../app/pages/costs/[projectId]/index.vue', import.meta.url),
   'utf8',
 )
-const financialDetailEditorSource = readFileSync(
-  new URL('../../../app/components/costs/ProjectCostFinancialDetailEditor.vue', import.meta.url),
-  'utf8',
-)
 const correctionModalSource = readFileSync(
   new URL('../../../app/components/costs/ProjectCostCorrectionModal.vue', import.meta.url),
   'utf8',
@@ -473,17 +469,6 @@ describe('C1 Accounting Write UI contracts and workflows', () => {
   })
 
   describe('F-UI2 — Canonical detailKind Options', () => {
-    it('renders only opening_balance and line_item options in FinancialDetailEditor', () => {
-      const selectBlock = financialDetailEditorSource.match(/data-testid="line-kind-select"[\s\S]*?<\/select>/)?.[0] ?? ''
-      expect(selectBlock).toContain('<option value="line_item">Dòng chi tiết (line_item)</option>')
-      expect(selectBlock).toContain('<option value="opening_balance">Số dư / giá trị mở đầu (opening_balance)</option>')
-
-      expect(selectBlock).not.toContain('value="milestone"')
-      expect(selectBlock).not.toContain('value="adjustment"')
-      expect(selectBlock).not.toContain('value="tax"')
-      expect(selectBlock).not.toContain('value="other"')
-    })
-
     it('renders only opening_balance and line_item options in ProjectCostCorrectionModal', () => {
       const selectBlock = correctionModalSource.match(/<select v-model="line\.detailKind"[\s\S]*?<\/select>/)?.[0] ?? ''
       expect(selectBlock).toContain('<option value="line_item">Dòng chi tiết (line_item)</option>')
@@ -759,13 +744,6 @@ describe('C1 Accounting Write UI contracts and workflows', () => {
     })
 
     describe('C18-F4 — Map draft API failures from ClientError.code', () => {
-      it('drafts/[draftId].vue uses mapCostsApiError instead of err.statusCode', () => {
-        expect(draftPageSource).toContain('mapCostsApiError(err)')
-        expect(draftPageSource).not.toContain('statusCode')
-        expect(draftPageSource).toContain('data-testid="draft-not-found"')
-        expect(draftPageSource).toContain('data-testid="draft-permission-denied"')
-      })
-
       it('mapCostsApiError correctly maps canonical ClientError codes for drafts', () => {
         const notFoundErr = new ClientError({
           code: 'RESOURCE_NOT_FOUND',

@@ -434,11 +434,11 @@ describe('C1 Ordinary Cost Detail Lifecycle UI & Recovery Contracts', () => {
   })
 
   describe('8. UI Source Contracts & Policy Verification', () => {
-    it('enforces Decision 1.A: segmented tabs for Ordinary Details and Legacy Parent Drafts', () => {
-      expect(costDraftsPageSource).toContain('details')
-      expect(costDraftsPageSource).toContain('legacy')
-      expect(costDraftsPageSource).toContain('Chi tiết chi phí')
-      expect(costDraftsPageSource).toContain('Bản nháp tổng hợp (Legacy)')
+    it('shows only ordinary detail drafts and explains retired legacy tab links', () => {
+      expect(costDraftsPageSource).toContain('listDetailDrafts')
+      expect(costDraftsPageSource).toContain('listOperationalDetailDrafts')
+      expect(costDraftsPageSource).toContain('legacy-tab-retired-notice')
+      expect(costDraftsPageSource).not.toContain('listOperationalDrafts(')
     })
 
     it('enforces Decision 2.A: active ordinary_detail category filtering and safe deep links', () => {

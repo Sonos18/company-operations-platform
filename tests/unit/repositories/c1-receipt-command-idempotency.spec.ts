@@ -27,7 +27,7 @@ function responseFor(url: string) {
 }
 
 describe('C1 receipt-backed HTTP command identity', () => {
-  it('forwards the caller-owned key unchanged for the complete command family', async () => {
+  it('forwards the caller-owned key unchanged for retained cost, evidence, and subcontract commands', async () => {
     const client = {
       request: vi.fn(async input => input.schema.parse(responseFor(input.url))),
     }
@@ -37,8 +37,6 @@ describe('C1 receipt-backed HTTP command identity', () => {
     const command = { idempotencyKey: ids.callerKey }
 
     const commands = [
-      () => projectCosts.create(ids.project, { description: 'Draft', costCategoryId: ids.category, workStatus: 'unknown' }, command),
-      () => projectCosts.publish(ids.cost, { expectedVersion: 0 }, command),
       () => projectCosts.correct(ids.cost, { expectedVersion: 0, reason: 'Correct description', operationalChanges: { description: 'Corrected' } }, command),
       () => evidence.createUploadIntent(ids.project, { originalFilename: 'invoice.pdf', mimeType: 'application/pdf', sizeBytes: 3, sha256: '0'.repeat(64) }, command),
       () => evidence.finalize(ids.evidence, { expectedVersion: 0 }, command),

@@ -9,8 +9,6 @@ import { mapCostsApiError } from '../../../utils/costs/costs-error-mapper'
 import { createAsyncRequestTracker } from '../../../utils/costs/async-request-tracker'
 import ProjectCostCategoryChart from '../../../components/costs/ProjectCostCategoryChart.client.vue'
 import ProjectCostInfoDisclosure from '../../../components/costs/ProjectCostInfoDisclosure.vue'
-import ProjectCostDraftCreateModal from '../../../components/costs/ProjectCostDraftCreateModal.vue'
-import ProjectCostDraftListModal from '../../../components/costs/ProjectCostDraftListModal.vue'
 import ProjectCostDetailDraftListModal from '../../../components/costs/ProjectCostDetailDraftListModal.vue'
 
 definePageMeta({ requiredPermission: 'cost.read' })
@@ -27,13 +25,7 @@ const requestTracker = createAsyncRequestTracker()
 const canRead = computed(() => companyAccess.hasPermission('cost.read'))
 const canManage = computed(() => companyAccess.hasPermission('cost.manage'))
 const canPrepare = computed(() => companyAccess.hasPermission('cost.prepare'))
-const isDraftListOpen = ref(false)
-const isDraftCreateOpen = ref(false)
 const isDetailDraftListOpen = ref(false)
-
-function onDraftCreated(result: { id: string }) {
-  navigateTo(`/costs/${projectId.value}/drafts/${result.id}`)
-}
 
 const kpis = computed(() => computeProjectKpiCards(overview.value?.summary, overview.value?.project))
 
@@ -47,8 +39,6 @@ function onSelectCategory(categoryId: string) {
 
 async function loadOverview() {
   overview.value = null
-  isDraftListOpen.value = false
-  isDraftCreateOpen.value = false
   if (!projectId.value) {
     status.value = 'not_found'
     return
@@ -99,12 +89,8 @@ watch(
   },
   { immediate: true, flush: 'sync' },
 )
-watch(canManage, (allowed) => {
-  if (!allowed) isDraftCreateOpen.value = false
-}, { flush: 'sync' })
 watch([canManage, canPrepare], ([manageAllowed, prepareAllowed]) => {
   if (!manageAllowed && !prepareAllowed) {
-    isDraftListOpen.value = false
     isDetailDraftListOpen.value = false
   }
 }, { flush: 'sync' })
@@ -207,27 +193,6 @@ watch([canManage, canPrepare], ([manageAllowed, prepareAllowed]) => {
               :to="`/costs/${projectId}/entries/new`"
             >
               Ghi nhận chi phí mới
-            </UButton>
-            <UButton
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              icon="i-lucide-file-text"
-              data-testid="open-drafts-list-btn"
-              @click="() => { isDraftListOpen = true }"
-            >
-              Bản nháp tổng hợp (Legacy)
-            </UButton>
-            <UButton
-              v-if="canManage"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              icon="i-lucide-plus"
-              data-testid="header-create-draft-btn"
-              @click="() => { isDraftCreateOpen = true }"
-            >
-              Tạo nháp tổng hợp (Legacy)
             </UButton>
           </div>
         </div>
@@ -379,23 +344,6 @@ watch([canManage, canPrepare], ([manageAllowed, prepareAllowed]) => {
         />
       </section>
     </div>
-
-    <!-- Draft Management Modals -->
-    <ProjectCostDraftListModal
-      v-if="overview"
-      v-model:open="isDraftListOpen"
-      :project-id="projectId"
-      :categories="overview.categories"
-      @open-create="isDraftCreateOpen = true"
-    />
-
-    <ProjectCostDraftCreateModal
-      v-if="overview"
-      v-model:open="isDraftCreateOpen"
-      :project-id="projectId"
-      :categories="overview.categories"
-      @created="onDraftCreated"
-    />
 
     <ProjectCostDetailDraftListModal
       v-if="overview"
