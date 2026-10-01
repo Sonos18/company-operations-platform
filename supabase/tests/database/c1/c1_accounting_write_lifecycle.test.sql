@@ -73,7 +73,8 @@ begin
   perform set_config('taskovia.c1_finance.actor_id', preparer::text, true); perform set_config('taskovia.c1_finance.request_id', 'c1060000-0000-4000-8000-000000000601', true); perform set_config('taskovia.c1_finance.change_reason', 'fixture', true);
   insert into public.cost_categories(id, tenant_id, company_id, code, name, display_order, posting_strategy, created_by, updated_by) values
     ('c1060000-0000-4000-8000-000000000301', tenant_id, company_id, 'materials', 'Materials', 1, 'ordinary_detail', preparer, preparer),
-    ('c1060000-0000-4000-8000-000000000302', tenant_id, company_id, 'subcontract_labor', 'Subcontract labor', 2, 'subcontract_payment', preparer, preparer);
+    ('c1060000-0000-4000-8000-000000000302', tenant_id, company_id, 'subcontract_labor', 'Subcontract labor', 2, 'subcontract_payment', preparer, preparer),
+    ('c1060000-0000-4000-8000-000000000303', tenant_id, company_id, 'historical_materials', 'Historical materials', 3, 'ordinary_detail', preparer, preparer);
   insert into public.controlled_import_runs(id,tenant_id,company_id,run_id,actor_id,idempotency_key,payload_digest,manifest_digest,input_digests,workbook_family,adapter_id,adapter_version,manifest_snapshot,request_id)
   values('c1060000-0000-4000-8000-000000000501',tenant_id,company_id,'c1060000-0000-4000-8000-000000000502',preparer,'c1060000-0000-4000-8000-000000000503',repeat('a',64),repeat('b',64),array[repeat('c',64)],'c106','c106','1.0.0','{}','c1060000-0000-4000-8000-000000000504');
   insert into public.accounting_sources(id,tenant_id,company_id,code,title,source_system,created_by)
@@ -85,12 +86,14 @@ begin
   insert into public.source_reported_figures(id,tenant_id,company_id,source_selection_id,import_run_id,figure_identity,label,raw_value_text,value_state,amount_text,amount,currency_code,metric_kind,basis,rounding_basis,period_basis,mapping_state,reviewed_mapping,project_id,scope_kind,scope_description,confirmation,status,created_by,shared_by,shared_at)
   values('c1060000-0000-4000-8000-000000000508',tenant_id,company_id,'c1060000-0000-4000-8000-000000000507','c1060000-0000-4000-8000-000000000501',repeat('e',64),'C106 figure','0','known','0',0,'VND','cost_total','net','exact','unknown','confirmed','{}','c1060000-0000-4000-8000-000000000101','whole_project','C106 fixture','unverified','shared',preparer,preparer,now());
   -- A published historical parent remains available for correction and reporting.
-  insert into public.project_cost_items(id,tenant_id,company_id,project_id,description,amount,amount_text,currency_code,work_status,publication_state,publication_origin,published_at,created_by)
-  values('c1060000-0000-4000-8000-000000000201',tenant_id,company_id,'c1060000-0000-4000-8000-000000000101','C106 published',1,'1.0000','VND','unknown','published','legacy_backfill',now(),preparer);
+  insert into public.project_cost_items(id,tenant_id,company_id,project_id,cost_category_id,description,amount,amount_text,currency_code,work_status,publication_state,publication_origin,published_at,created_by)
+  values('c1060000-0000-4000-8000-000000000201',tenant_id,company_id,'c1060000-0000-4000-8000-000000000101','c1060000-0000-4000-8000-000000000303','C106 published',1,'1.0000','VND','unknown','published','legacy_backfill',now(),preparer);
 end;
 $$;
 
-select ok(not exists(select 1 from public.project_cost_items where tenant_id='c1060000-0000-4000-8000-000000000010' and publication_state='draft'),'fixture has no parent drafts');
+select ok(not exists(select 1 from public.project_cost_items where tenant_id='c1060000-0000-4000-8000-000000000010' and publication_state='draft')
+  and exists(select 1 from public.project_cost_items item join public.cost_categories category on category.id=item.cost_category_id and category.tenant_id=item.tenant_id and category.company_id=item.company_id where item.id='c1060000-0000-4000-8000-000000000201' and category.id='c1060000-0000-4000-8000-000000000303' and category.is_active and category.posting_strategy='ordinary_detail'),
+  'fixture has no parent drafts and historical parent has an active ordinary category');
 select ok(not exists(select 1 from unnest(array[
   'public.c1_create_project_cost_draft(uuid,jsonb,uuid,uuid)',
   'public.c1_update_project_cost_draft(uuid,uuid,jsonb,uuid)',

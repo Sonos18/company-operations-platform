@@ -20,10 +20,10 @@ begin
   insert into public.projects(id,tenant_id,company_id,code,name,origin,created_by) values('c1010000-0000-4000-8000-000000000101',tenant_a,company_a,'C101-P1','Project one','manual',manager),('c1010000-0000-4000-8000-000000000103',tenant_b,company_b,'C101-P3','Foreign project','manual',manager),('c1010000-0000-4000-8000-000000000104',tenant_a,company_disabled,'C101-P4','Disabled project','manual',manager),('c1010000-0000-4000-8000-000000000105',tenant_a,company_a,'C101-P5','No-cost project','manual',manager);
   perform set_config('taskovia.c1_finance.actor_id',manager::text,true); perform set_config('taskovia.c1_finance.request_id','c1010000-0000-4000-8000-000000000601',true); perform set_config('taskovia.c1_finance.change_reason','fixture',true);
   insert into public.cost_categories(id,tenant_id,company_id,code,name,display_order,posting_strategy,created_by,updated_by) values('c1010000-0000-4000-8000-000000000301',tenant_a,company_a,'materials','Materials',1,'ordinary_detail',manager,manager);
-  insert into public.project_cost_items(id,tenant_id,company_id,project_id,description,amount,amount_text,currency_code,work_status,publication_state,publication_origin,published_at,created_by) values
-    ('c1010000-0000-4000-8000-000000000801',tenant_b,company_b,'c1010000-0000-4000-8000-000000000103','Foreign official',1,'1','VND','unknown','published','legacy_backfill',now(),manager),
-    ('c1010000-0000-4000-8000-000000000802',tenant_a,company_disabled,'c1010000-0000-4000-8000-000000000104','Disabled official',1,'1','VND','unknown','published','legacy_backfill',now(),manager),
-    ('c1010000-0000-4000-8000-000000000803',tenant_a,company_a,'c1010000-0000-4000-8000-000000000101','High precision official',9007199254740993.0000,'9007199254740993.0000','VND','unknown','published','legacy_backfill',now(),manager);
+  insert into public.project_cost_items(id,tenant_id,company_id,project_id,cost_category_id,description,amount,amount_text,currency_code,work_status,publication_state,publication_origin,published_at,created_by) values
+    ('c1010000-0000-4000-8000-000000000801',tenant_b,company_b,'c1010000-0000-4000-8000-000000000103',null,'Foreign official',1,'1','VND','unknown','published','legacy_backfill',now(),manager),
+    ('c1010000-0000-4000-8000-000000000802',tenant_a,company_disabled,'c1010000-0000-4000-8000-000000000104',null,'Disabled official',1,'1','VND','unknown','published','legacy_backfill',now(),manager),
+    ('c1010000-0000-4000-8000-000000000803',tenant_a,company_a,'c1010000-0000-4000-8000-000000000101','c1010000-0000-4000-8000-000000000301','High precision official',9007199254740993.0000,'9007199254740993.0000','VND','unknown','published','legacy_backfill',now(),manager);
 end $$;
 
 do $$ begin
@@ -36,7 +36,8 @@ do $$ begin
      or to_regprocedure('public.c1_update_project_cost_item(uuid,uuid,jsonb,uuid)') is not null
   then raise exception 'C1_PC_RETIRED_RPC_PRESENT'; end if;
   if not exists(select 1 from public.project_cost_items where id='c1010000-0000-4000-8000-000000000803'
-    and publication_state='published' and amount=9007199254740993.0000
+    and publication_state='published' and cost_category_id='c1010000-0000-4000-8000-000000000301'
+    and amount=9007199254740993.0000
     and amount_text='9007199254740993.0000')
   then raise exception 'C1_PC_DECIMAL_SAFE_AMOUNT'; end if;
 end $$;

@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(29);
+select plan(30);
 
 select has_column('public', 'cost_categories', 'posting_strategy', 'category posting strategy exists');
 select results_eq(
@@ -15,12 +15,19 @@ select has_column('public', 'project_cost_item_details', 'publication_origin', '
 select has_column('public', 'project_cost_item_details', 'published_by', 'detail publisher exists');
 select has_column('public', 'project_cost_item_details', 'published_at', 'detail published timestamp exists');
 select has_column('public', 'project_cost_item_details', 'publication_request_id', 'detail publication request exists');
-select ok(not exists (
-  select 1 from public.project_cost_item_details
-  where publication_state <> 'published'
-     or publication_origin <> 'legacy_backfill'
-     or published_at is distinct from created_at
-), 'existing details backfill as published legacy history without fabricated attribution');
+-- Live metadata check for rows already marked legacy; it cannot identify
+-- every pre-migration row without an independent historical snapshot.
+select ok(
+  exists (select 1 from public.project_cost_item_details where publication_origin = 'legacy_backfill')
+  and not exists (
+    select 1 from public.project_cost_item_details
+    where publication_origin = 'legacy_backfill'
+      and (publication_state is distinct from 'published'
+        or published_by is not null
+        or published_at is distinct from created_at
+        or publication_request_id is not null)
+  ), 'already-labelled legacy details retain published metadata without fabricated attribution'
+);
 select function_returns('private', 'c1_resolve_or_create_ordinary_project_cost_item', array['uuid', 'uuid', 'uuid', 'uuid', 'uuid', 'uuid'], 'uuid', 'ordinary parent resolver is private and returns one parent identity');
 select function_returns('private', 'c1_can_read_project_cost_detail', array['uuid', 'uuid', 'uuid', 'text'], 'boolean', 'detail RLS evaluates the child publication state');
 select ok(pg_catalog.has_function_privilege('authenticated', 'private.c1_can_read_project_cost_detail(uuid,uuid,uuid,text)', 'execute'), 'authenticated can execute the detail RLS helper');
@@ -110,6 +117,15 @@ insert into public.project_cost_item_details(id, tenant_id, company_id, project_
   ('c1f10000-0000-4000-8000-000000000403', 'c1f10000-0000-4000-8000-000000000010', 'c1f10000-0000-4000-8000-000000000020', 'c1f10000-0000-4000-8000-000000000202', 1, 'legacy draft snapshot', '3', 'draft', null, null, 'c1f10000-0000-4000-8000-000000000903'),
   ('c1f10000-0000-4000-8000-000000000404', 'c1f10000-0000-4000-8000-000000000011', 'c1f10000-0000-4000-8000-000000000021', 'c1f10000-0000-4000-8000-000000000203', 1, 'foreign published detail', '7', 'published', 'legacy_backfill', now(), 'c1f10000-0000-4000-8000-000000000903');
 set constraints all immediate;
+select ok(exists (
+  select 1 from public.project_cost_item_details
+  where id = 'c1f10000-0000-4000-8000-000000000402'
+    and publication_state = 'draft'
+    and publication_origin is null
+    and published_by is null
+    and published_at is null
+    and publication_request_id is null
+), 'operational draft detail retains unpublished metadata');
 select is((select amount_text from public.project_cost_items where id = 'c1f10000-0000-4000-8000-000000000201'), '10', 'published aggregate sums published details only');
 select is((select amount_text from public.project_cost_items where id = 'c1f10000-0000-4000-8000-000000000202'), '3', 'deprecated draft parent still sums its complete snapshot');
 update public.project_cost_item_details set amount_text = '99' where id = 'c1f10000-0000-4000-8000-000000000402';
