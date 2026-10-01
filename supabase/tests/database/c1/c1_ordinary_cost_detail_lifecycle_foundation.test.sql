@@ -15,6 +15,8 @@ select has_column('public', 'project_cost_item_details', 'publication_origin', '
 select has_column('public', 'project_cost_item_details', 'published_by', 'detail publisher exists');
 select has_column('public', 'project_cost_item_details', 'published_at', 'detail published timestamp exists');
 select has_column('public', 'project_cost_item_details', 'publication_request_id', 'detail publication request exists');
+-- Live metadata check for rows already marked legacy; it cannot identify
+-- every pre-migration row without an independent historical snapshot.
 select ok(
   exists (select 1 from public.project_cost_item_details where publication_origin = 'legacy_backfill')
   and not exists (
@@ -24,7 +26,7 @@ select ok(
         or published_by is not null
         or published_at is distinct from created_at
         or publication_request_id is not null)
-  ), 'legacy-backfilled details retain published metadata without fabricated attribution'
+  ), 'already-labelled legacy details retain published metadata without fabricated attribution'
 );
 select function_returns('private', 'c1_resolve_or_create_ordinary_project_cost_item', array['uuid', 'uuid', 'uuid', 'uuid', 'uuid', 'uuid'], 'uuid', 'ordinary parent resolver is private and returns one parent identity');
 select function_returns('private', 'c1_can_read_project_cost_detail', array['uuid', 'uuid', 'uuid', 'text'], 'boolean', 'detail RLS evaluates the child publication state');
