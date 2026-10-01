@@ -33,9 +33,13 @@ export function extractErrorMessage(err: unknown, fallbackMessage = 'Đã xảy 
     case 'IDEMPOTENCY_CONFLICT':
       return 'Yêu cầu bị trùng lặp với nội dung khác đã được ghi nhận. Vui lòng thử lại với một yêu cầu mới.'
     case 'COST_NOT_DRAFT':
+    case 'COST_DETAIL_NOT_DRAFT':
       return 'Bản ghi chi phí này không còn ở trạng thái nháp.'
     case 'COST_ALREADY_PUBLISHED':
+    case 'COST_DETAIL_ALREADY_PUBLISHED':
       return 'Chi phí này đã được phát hành chính thức, không thể chỉnh sửa như bản nháp.'
+    case 'COST_DETAIL_NOT_PUBLISHED':
+      return 'Chi tiết này chưa được phát hành, không thể thực hiện hiệu chỉnh.'
     case 'PROJECT_COST_CATEGORY_CONFLICT':
       return 'Đã có Project Cost cho hạng mục này.'
     case 'COST_PUBLISH_NOT_READY':

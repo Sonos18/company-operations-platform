@@ -1,5 +1,34 @@
 import Decimal from 'decimal.js'
 
+export function deriveUnitPrice(amount: string, quantity: string): string | null {
+  try {
+    const qty = new Decimal(quantity)
+    if (!qty.isFinite() || !qty.gt(0)) return null
+    return new Decimal(amount).div(qty).toFixed(4)
+  }
+  catch {
+    return null
+  }
+}
+
+export function deriveRetentionAmount(amount: string, rateBps: number): string | null {
+  try {
+    return new Decimal(amount).mul(rateBps).div(10000).toFixed(4)
+  }
+  catch {
+    return null
+  }
+}
+
+export function isDecimalGreaterThan(left: string, right: string): boolean {
+  try {
+    return new Decimal(left).gt(new Decimal(right))
+  }
+  catch {
+    return false
+  }
+}
+
 export function formatFinanceMoney(
   value: string | number | null | undefined,
   currencyCode?: string,
@@ -569,5 +598,30 @@ export function computeProjectKpiCards(
       currencyCode,
       moneyScale,
     }),
+  }
+}
+
+/**
+ * Exact decimal equality comparison using decimal.js (arbitrary precision).
+ * Unlike Number() or parseFloat(), this does not lose precision beyond 2^53
+ * (e.g. 9007199254740992 and 9007199254740993 are correctly distinguished as different),
+ * while treating equivalent decimal formatting as equal (e.g. '150' and '150.0000', '0' and '0.0000').
+ */
+export function areExactDecimalValuesEqual(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  const normA = (a ?? '').trim()
+  const normB = (b ?? '').trim()
+  if (normA === normB) return true
+  if (normA === '' || normB === '') return false
+
+  try {
+    const decA = new Decimal(normA)
+    const decB = new Decimal(normB)
+    return decA.equals(decB)
+  }
+  catch {
+    return normA === normB
   }
 }
