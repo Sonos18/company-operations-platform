@@ -29,11 +29,16 @@ test('old parent draft deep link explains retirement without reading its parent 
   let parentReads = 0
   let detailReads = 0
   await page.route(`**/api/companies/**/project-costs/${parentId}/draft/operations`, route => { parentReads++; return route.fulfill({ status: 404 }) })
+  await page.route(`**/api/companies/**/project-costs/${parentId}/draft`, route => { parentReads++; return route.fulfill({ status: 403 }) })
   await page.route(`**/api/companies/**/project-cost-details/${parentId}/draft/operations`, route => { detailReads++; return route.fulfill({ status: 404 }) })
 
   await page.goto(`/costs/${projectId}/drafts/${parentId}`)
   await expect(page.getByTestId('legacy-parent-draft-retired')).toBeVisible()
   await expect(page.getByTestId('retired-detail-drafts-link')).toHaveAttribute('href', `/cost-drafts?projectId=${projectId}`)
+  await expect(page.getByTestId('draft-not-found')).toHaveCount(0)
+  await expect(page.getByTestId('draft-permission-denied')).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByTestId('legacy-parent-draft-retired')).toBeVisible()
   expect({ parentReads, detailReads }).toEqual({ parentReads: 0, detailReads: 0 })
 })
 
