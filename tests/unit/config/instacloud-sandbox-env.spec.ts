@@ -47,8 +47,10 @@ describe('InstaCloud sandbox environment guard', () => {
   })
 
   it('rejects missing or swapped public and privileged keys', () => {
-    const withoutServiceRole = validEnvironment()
-    delete withoutServiceRole.NUXT_SUPABASE_SERVICE_ROLE_KEY
+    const {
+      NUXT_SUPABASE_SERVICE_ROLE_KEY: _serviceRoleKey,
+      ...withoutServiceRole
+    } = validEnvironment()
 
     expect(() => assertInstaCloudSandboxEnvironment({
       env: withoutServiceRole,
