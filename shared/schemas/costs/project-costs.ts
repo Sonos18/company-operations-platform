@@ -8,7 +8,6 @@ const version = z.number().int().nonnegative()
 const currencyCode = z.string().trim().length(3)
 const relevantDate = z.string().date()
 const uniqueSourceFigureIds = z.array(uuid).refine(ids => new Set(ids).size === ids.length, 'source figure IDs must be unique')
-const sourceFigureIds = z.array(uuid).min(1).refine(ids => new Set(ids).size === ids.length, 'source figure IDs must be unique')
 
 export const projectCostWorkStatusSchema = z.enum(['unknown', 'in_progress', 'accepted'])
 export const projectCostPublicationStateSchema = z.enum(['draft', 'published'])
@@ -23,77 +22,6 @@ export const projectCostPublishBlockingCodeSchema = z.enum([
 ])
 export const projectCostPublishReadinessSchema = z.object({ ready: z.boolean(), blockingCodes: z.array(projectCostPublishBlockingCodeSchema) }).strict()
 export const costCommandAckSchema = z.object({ id: uuid, version, publicationState: projectCostPublicationStateSchema, replayed: z.boolean() }).strict()
-export const publishProjectCostInputSchema = z.object({ expectedVersion: version }).strict()
-
-export const createProjectCostDraftInputSchema = z.object({
-  projectId: uuid,
-  description: text,
-  costCategoryId: uuid,
-  businessReference: text.optional(),
-  partyId: uuid.optional(),
-  engagementId: uuid.optional(),
-  componentId: uuid.optional(),
-  relevantDate: relevantDate.optional(),
-  workStatus: projectCostWorkStatusSchema.optional(),
-}).strict()
-
-export const updateProjectCostDraftInputSchema = z.object({
-  expectedVersion: version,
-  description: text.optional(),
-  costCategoryId: uuid.optional(),
-  businessReference: text.nullable().optional(),
-  partyId: uuid.nullable().optional(),
-  engagementId: uuid.nullable().optional(),
-  componentId: uuid.nullable().optional(),
-  relevantDate: relevantDate.nullable().optional(),
-  workStatus: projectCostWorkStatusSchema.optional(),
-}).strict().superRefine((value, context) => {
-  if (!['description', 'costCategoryId', 'businessReference', 'partyId', 'engagementId', 'componentId', 'relevantDate', 'workStatus'].some(field => Object.hasOwn(value, field))) context.addIssue({ code: 'custom', message: 'requires a mutable field' })
-})
-
-const projectCostItemFieldsSchema = z.object({
-  description: text,
-  amount: decimalStringSchema,
-  currencyCode,
-  workStatus: projectCostWorkStatusSchema,
-  businessReference: text.nullable().optional(),
-  partyId: uuid.optional(),
-  engagementId: uuid.optional(),
-  componentId: uuid.optional(),
-  relevantDate: relevantDate.optional(),
-})
-
-export const createProjectCostItemInputSchema = projectCostItemFieldsSchema.extend({
-  projectId: uuid,
-  nonOverlapConfirmationReference: text,
-  sourceFigureIds: sourceFigureIds.optional(),
-}).strict()
-
-export const updateProjectCostItemInputSchema = z.object({
-  description: text.optional(),
-  partyId: uuid.nullable().optional(),
-  engagementId: uuid.nullable().optional(),
-  componentId: uuid.nullable().optional(),
-  relevantDate: relevantDate.nullable().optional(),
-  workStatus: projectCostWorkStatusSchema.optional(),
-  expectedVersion: version,
-}).strict().superRefine((value, context) => {
-  if (!['description', 'partyId', 'engagementId', 'componentId', 'relevantDate', 'workStatus'].some(field => Object.hasOwn(value, field))) {
-    context.addIssue({ code: 'custom', message: 'requires a mutable field' })
-  }
-})
-
-export const correctProjectCostItemInputSchema = z.object({
-  expectedVersion: version,
-  reason: text,
-  amount: decimalStringSchema.optional(),
-  workStatus: projectCostWorkStatusSchema.optional(),
-}).strict().superRefine((value, context) => {
-  if (!['amount', 'workStatus'].some(field => Object.hasOwn(value, field))) {
-    context.addIssue({ code: 'custom', message: 'requires a material correction field' })
-  }
-})
-
 const timestamp = z.string().datetime({ offset: true })
 export const projectCostItemSchema = z.object({
   id: uuid,
@@ -195,22 +123,6 @@ export const prepareProjectCostFinancialDetailInputSchema = z.object({
   note: z.string().nullable().optional(),
 }).strict().superRefine(validateRetention)
 
-export const prepareProjectCostFinancialsInputSchema = z.object({
-  expectedVersion: version,
-  currencyCode,
-  details: z.array(prepareProjectCostFinancialDetailInputSchema).min(1),
-  sourceFigureIds: uniqueSourceFigureIds,
-}).strict()
-export const prepareProjectCostFinancialsResultSchema = z.object({
-  id: uuid,
-  version,
-  publicationState: z.literal('draft'),
-  amount: decimalStringSchema,
-  detailCount: z.number().int().positive(),
-  publishReadiness: projectCostPublishReadinessSchema,
-  replayed: z.boolean(),
-}).strict()
-
 const projectCostCorrectionOperationalChangesSchema = z.object({
   description: text.optional(), costCategoryId: uuid.optional(), businessReference: text.nullable().optional(),
   partyId: uuid.nullable().optional(), engagementId: uuid.nullable().optional(), componentId: uuid.nullable().optional(),
@@ -256,32 +168,6 @@ export const projectCostDetailsResponseSchema = z.object({
   details: z.array(projectCostItemDetailSchema),
 }).strict()
 
-export const projectCostDraftSchema = z.object({
-  id: uuid,
-  projectId: uuid,
-  description: text,
-  costCategoryId: uuid,
-  businessReference: text.nullable(),
-  partyId: uuid.nullable(),
-  engagementId: uuid.nullable(),
-  componentId: uuid.nullable(),
-  relevantDate: relevantDate.nullable(),
-  workStatus: projectCostWorkStatusSchema,
-  amount: decimalStringSchema.nullable(),
-  currencyCode,
-  publicationState: z.literal('draft'),
-  version,
-  details: z.array(projectCostItemDetailSchema),
-  sourceFigureIds: uniqueSourceFigureIds,
-  publishReadiness: projectCostPublishReadinessSchema,
-  createdAt: timestamp,
-  updatedAt: timestamp,
-}).strict()
-export const projectCostOperationalDraftSchema = projectCostDraftSchema.pick({
-  id: true, projectId: true, description: true, costCategoryId: true, businessReference: true,
-  partyId: true, engagementId: true, componentId: true, relevantDate: true, workStatus: true,
-  publicationState: true, version: true, createdAt: true, updatedAt: true,
-})
 export const projectCostDraftManagementMetadataSchema = z.object({
   projects: z.array(z.object({ id: uuid, code: text, name: text }).strict()),
   categories: z.array(z.object({ categoryId: uuid, code: text, name: text, isActive: z.boolean(), draftEligible: z.boolean(), postingStrategy: z.enum(['ordinary_detail', 'subcontract_payment']) }).strict()),
@@ -402,15 +288,8 @@ export type ProjectCostPublicationState = z.infer<typeof projectCostPublicationS
 export type ProjectCostPublishBlockingCode = z.infer<typeof projectCostPublishBlockingCodeSchema>
 export type ProjectCostPublishReadiness = z.infer<typeof projectCostPublishReadinessSchema>
 export type CostCommandAck = z.infer<typeof costCommandAckSchema>
-export type PublishProjectCostInput = z.infer<typeof publishProjectCostInputSchema>
-export type CreateProjectCostDraftInput = z.infer<typeof createProjectCostDraftInputSchema>
-export type UpdateProjectCostDraftInput = z.infer<typeof updateProjectCostDraftInputSchema>
 export type PrepareProjectCostFinancialDetailInput = z.infer<typeof prepareProjectCostFinancialDetailInputSchema>
-export type PrepareProjectCostFinancialsInput = z.infer<typeof prepareProjectCostFinancialsInputSchema>
-export type PrepareProjectCostFinancialsResult = z.infer<typeof prepareProjectCostFinancialsResultSchema>
 export type CorrectPublishedProjectCostInput = z.infer<typeof correctPublishedProjectCostInputSchema>
-export type ProjectCostDraft = z.infer<typeof projectCostDraftSchema>
-export type ProjectCostOperationalDraft = z.infer<typeof projectCostOperationalDraftSchema>
 export type ProjectCostDraftManagementMetadata = z.infer<typeof projectCostDraftManagementMetadataSchema>
 export type ProjectCostDraftCategoryOption = { categoryId: string; code: string; name: string; isActive: boolean; draftEligible?: boolean; postingStrategy?: 'ordinary_detail' | 'subcontract_payment' }
 export type CreateProjectCostDetailDraftInput = z.infer<typeof createProjectCostDetailDraftInputSchema>
@@ -422,9 +301,6 @@ export type CorrectPublishedProjectCostDetailInput = z.infer<typeof correctPubli
 export type ProjectCostDetailCommandAck = z.infer<typeof projectCostDetailCommandAckSchema>
 export type ProjectCostDetailDraft = z.infer<typeof projectCostDetailDraftSchema>
 export type ProjectCostDetailOperationalDraft = z.infer<typeof projectCostDetailOperationalDraftSchema>
-export type CreateProjectCostItemInput = z.infer<typeof createProjectCostItemInputSchema>
-export type UpdateProjectCostItemInput = z.infer<typeof updateProjectCostItemInputSchema>
-export type CorrectProjectCostItemInput = z.infer<typeof correctProjectCostItemInputSchema>
 export type ProjectCostItem = z.infer<typeof projectCostItemSchema>
 export type ProjectCostSummary = z.infer<typeof projectCostSummarySchema>
 export type ProjectCostSummaryEntry = z.infer<typeof projectCostSummaryEntrySchema>

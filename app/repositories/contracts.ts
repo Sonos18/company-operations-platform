@@ -34,7 +34,7 @@ import type {
 } from '../../shared/schemas/stage01-config'
 import type { BusinessParty, CompanyCostSettings, CreateBusinessPartyInput, CreateEngagementComponentInput, CreateEngagementInput, CreateProjectRegisterInput, Engagement, EngagementComponent, ProjectRegister, UpdateBusinessPartyInput, UpdateEngagementComponentInput, UpdateEngagementInput, UpdateProjectRegisterInput } from '../../shared/schemas/costs/master-data'
 import type { CostSourceFiguresQuery, CostSourceOverview, CostSourceProjectDetail, CostSourceProvenance, CostSourceFigure } from '../../shared/schemas/costs/source-read-model'
-import type { CostCommandAck, CorrectPublishedProjectCostDetailInput, CorrectPublishedProjectCostInput, CreateAndPublishProjectCostDetailInput, CreateProjectCostDetailDraftInput, PrepareProjectCostDetailFinancialsInput, ProjectCostBreakdown, ProjectCostDetailCommandAck, ProjectCostDetailDraft, ProjectCostDetailOperationalDraft, ProjectCostDetailsResponse, ProjectCostDraftManagementMetadata, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, PublishProjectCostDetailInput, PublishProjectCostInput, UpdateProjectCostDetailDraftInput } from '../../shared/schemas/costs/project-costs'
+import type { CostCommandAck, CorrectPublishedProjectCostDetailInput, CorrectPublishedProjectCostInput, CreateAndPublishProjectCostDetailInput, CreateProjectCostDetailDraftInput, PrepareProjectCostDetailFinancialsInput, ProjectCostBreakdown, ProjectCostDetailCommandAck, ProjectCostDetailDraft, ProjectCostDetailOperationalDraft, ProjectCostDetailsResponse, ProjectCostDraftManagementMetadata, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, PublishProjectCostDetailInput, UpdateProjectCostDetailDraftInput } from '../../shared/schemas/costs/project-costs'
 import type { CostEvidenceCreateIntentInput, CostEvidenceDetailLinkInput, CostEvidenceDetailLinkResult, CostEvidenceFinalizeInput, CostEvidenceFinalized, CostEvidenceLinkInput, CostEvidenceLinkResult, CostEvidenceMetadata, CostEvidenceReadUrl, CostEvidenceReadUrlInput, CostEvidenceUploadIntent } from '../../shared/schemas/costs/cost-evidence'
 import type {
   RecordSubcontractPaymentInput,
@@ -47,7 +47,7 @@ import type { FinanceBudget, FinanceItemDetails, FinanceListQuery, FinanceOwnerA
 
 export type RecordSubcontractPaymentResult = z.infer<typeof recordSubcontractPaymentResultSchema>
 export type VoidSubcontractPaymentResult = z.infer<typeof voidSubcontractPaymentResultSchema>
-export type { CorrectPublishedProjectCostInput, PublishProjectCostInput }
+export type { CorrectPublishedProjectCostInput }
 
 export interface CompanyRepository {
   getCurrent(): Promise<Company>

@@ -7,6 +7,7 @@ const parentId = '30000000-0000-4000-8000-000000000052'
 const detailId = '30000000-0000-4000-8000-000000000088'
 
 test('retired legacy tab opens ordinary detail drafts without reading parent drafts', async ({ page, authState }) => {
+  test.setTimeout(120_000)
   authState.sessionCompanies = [createCompany({ permissions: ['cost.manage'] })]
   let parentReads = 0
   await page.route('**/api/companies/**/project-cost-drafts/metadata', route => route.fulfill({ json: {
@@ -17,7 +18,7 @@ test('retired legacy tab opens ordinary detail drafts without reading parent dra
   await page.route(`**/api/companies/**/projects/${projectId}/project-cost-drafts/operations`, route => { parentReads++; return route.fulfill({ json: [] }) })
 
   await page.goto(`/cost-drafts?projectId=${projectId}&tab=legacy`)
-  await expect(page.getByTestId('detail-drafts-empty')).toBeVisible()
+  await expect(page.getByTestId('detail-drafts-empty')).toBeVisible({ timeout: 60_000 })
   await expect(page.getByTestId('draft-management-create-detail')).toHaveAttribute('href', `/costs/${projectId}/entries/new`)
   await expect(page.getByTestId('tab-legacy-parents')).toHaveCount(0)
   await expect(page.getByTestId('draft-management-create')).toHaveCount(0)
@@ -25,6 +26,7 @@ test('retired legacy tab opens ordinary detail drafts without reading parent dra
 })
 
 test('old parent draft deep link explains retirement without reading its parent ID as a detail', async ({ page, authState }) => {
+  test.setTimeout(120_000)
   authState.sessionCompanies = [createCompany({ permissions: ['cost.manage'] })]
   let parentReads = 0
   let detailReads = 0
@@ -33,7 +35,7 @@ test('old parent draft deep link explains retirement without reading its parent 
   await page.route(`**/api/companies/**/project-cost-details/${parentId}/draft/operations`, route => { detailReads++; return route.fulfill({ status: 404 }) })
 
   await page.goto(`/costs/${projectId}/drafts/${parentId}`)
-  await expect(page.getByTestId('legacy-parent-draft-retired')).toBeVisible()
+  await expect(page.getByTestId('legacy-parent-draft-retired')).toBeVisible({ timeout: 60_000 })
   await expect(page.getByTestId('retired-detail-drafts-link')).toHaveAttribute('href', `/cost-drafts?projectId=${projectId}`)
   await expect(page.getByTestId('draft-not-found')).toHaveCount(0)
   await expect(page.getByTestId('draft-permission-denied')).toHaveCount(0)

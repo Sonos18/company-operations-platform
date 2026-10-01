@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(224);
+select plan(220);
 
 select has_table('public', 'project_cost_item_detail_sources', 'detail source provenance is introduced with the command slice');
 select has_function('public', 'c1_create_project_cost_detail_draft', 'draft-detail create RPC exists');
@@ -24,7 +24,7 @@ select ok(pg_catalog.has_function_privilege('authenticated', 'public.c1_correct_
 select ok(exists (select 1 from pg_indexes where schemaname='public' and indexname='c1fc_cost_item_one_category'), 'canonical one-parent category index remains the sole parent identity constraint');
 select has_function('private', 'c1_project_cost_detail_publish_readiness', array['uuid','uuid','uuid'], 'detail readiness has one persisted-state helper');
 select ok(pg_get_functiondef('private.c1_publish_project_cost_detail(uuid,uuid,jsonb,uuid,uuid)'::regprocedure) ~ 'c1_project_cost_detail_publish_readiness', 'detail publish consumes the canonical readiness helper');
-select ok(pg_get_functiondef('private.c1_project_cost_publish_readiness(uuid,uuid,uuid)'::regprocedure) ~ 'EVIDENCE_NOT_FINALIZED', 'legacy parent readiness retains evidence finalization blocking');
+select has_function('public', 'c1_correct_published_project_cost', 'published-parent correction remains available');
 select has_function('private', 'c1_project_cost_item_has_managed_detail_state', array['uuid','uuid','uuid'], 'parent correction can identify independently managed detail state');
 select ok(exists (select 1 from pg_proc where proname = 'c1_read_project_cost_detail_draft_operational'), 'manage-only projection remains a separate boundary');
 select has_function('private', 'c1_detail_validate_linked_sources', array['uuid', 'uuid', 'uuid'], 'publish and correction revalidate persisted detail sources');
@@ -302,14 +302,6 @@ reset role;
 insert into public.cost_evidence_files(id,tenant_id,company_id,project_id,object_path,original_filename,declared_mime_type,declared_size_bytes,declared_sha256,verified_mime_type,verified_size_bytes,verified_sha256,status,intent_expires_at,created_by,finalized_by,finalized_at) values('c1d10000-0000-4000-8000-000000000505','c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000101','c1d10000-0000-4000-8000-000000000010/c1d10000-0000-4000-8000-000000000020/c1d10000-0000-4000-8000-000000000101/c1d10000-0000-4000-8000-000000000505','fixture.pdf','application/pdf',1,repeat('b',64),'application/pdf',1,repeat('b',64),'finalized',now()+interval '1 hour','c1d10000-0000-4000-8000-000000000901','c1d10000-0000-4000-8000-000000000901',now());
 set local role authenticated;
 select public.c1_link_project_cost_detail_evidence('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_result),jsonb_build_object('evidenceFileId','c1d10000-0000-4000-8000-000000000505','evidenceKind','other'),'c1d10000-0000-4000-8000-000000000754','c1d10000-0000-4000-8000-000000000755');
-create temp table c1d_legacy_a as select public.c1_create_project_cost_draft('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101','costCategoryId','c1d10000-0000-4000-8000-000000000305','description','legacy occupied'),'c1d10000-0000-4000-8000-000000000756','c1d10000-0000-4000-8000-000000000757') result;
-select throws_ok($$select public.c1_create_project_cost_draft('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101','costCategoryId','c1d10000-0000-4000-8000-000000000305','description','legacy occupied duplicate'),'c1d10000-0000-4000-8000-000000000758','c1d10000-0000-4000-8000-000000000759')$$,'P0001','PROJECT_COST_CATEGORY_CONFLICT','legacy create rejects an occupied canonical category scope');
-create temp table c1d_legacy_b as select public.c1_create_project_cost_draft('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101','costCategoryId','c1d10000-0000-4000-8000-000000000306','description','legacy recategorization conflict'),'c1d10000-0000-4000-8000-000000000760','c1d10000-0000-4000-8000-000000000761') result;
-select throws_ok($$select public.c1_update_project_cost_draft('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_legacy_b),jsonb_build_object('expectedVersion',0,'costCategoryId','c1d10000-0000-4000-8000-000000000305'),'c1d10000-0000-4000-8000-000000000762')$$,'P0001','PROJECT_COST_CATEGORY_CONFLICT','legacy recategorization rejects an occupied canonical category scope');
-create temp table c1d_legacy_c as select public.c1_create_project_cost_draft('c1d10000-0000-4000-8000-000000000020',jsonb_build_object('projectId','c1d10000-0000-4000-8000-000000000101','costCategoryId','c1d10000-0000-4000-8000-000000000307','description','legacy recategorization success'),'c1d10000-0000-4000-8000-000000000763','c1d10000-0000-4000-8000-000000000764') result;
-select is((select cost_category_id::text from public.project_cost_items where id=(select (result->>'id')::uuid from c1d_legacy_c)),'c1d10000-0000-4000-8000-000000000307','legacy-only parent remains movable before its safe recategorization');
-create temp table c1d_legacy_c_recategorized as select public.c1_update_project_cost_draft('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_legacy_c),jsonb_build_object('expectedVersion',0,'costCategoryId','c1d10000-0000-4000-8000-000000000308'),'c1d10000-0000-4000-8000-000000000765') result;
-select is((select cost_category_id::text from public.project_cost_items where id=(select (result->>'id')::uuid from c1d_legacy_c_recategorized)),'c1d10000-0000-4000-8000-000000000308','legacy-only parent recategorization succeeds when the target scope is free');
 reset role;
 create temp table c1d_managed_parent_before as select jsonb_build_object(
   'details',(select jsonb_agg(jsonb_build_object('id',detail.id,'amount',detail.amount_text,'version',detail.version) order by detail.id) from public.project_cost_item_details detail where detail.project_cost_item_id=(select (result->>'projectCostItemId')::uuid from c1d_result)),
@@ -538,34 +530,28 @@ select is(private.c1_resolve_or_create_ordinary_project_cost_item('c1d10000-0000
 select is(private.c1_resolve_or_create_ordinary_project_cost_item('c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000101','c1d10000-0000-4000-8000-000000000312','c1d10000-0000-4000-8000-000000000901','c1d10000-0000-4000-8000-000000000974'),'c1d10000-0000-4000-8000-000000000812','coherent nonzero published parent remains reusable');
 
 
--- Coexistence: a prepared legacy parent draft must not break either new detail list.
+-- A preserved published parent must not appear in ordinary detail draft lists.
 reset role;
 insert into public.projects(id,tenant_id,company_id,code,name,origin,created_by)
 values('c1d10000-0000-4000-8000-000000000104','c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','C1D-MIXED','Mixed draft lifecycle fixture','manual','c1d10000-0000-4000-8000-000000000901');
+insert into public.project_cost_items(id,tenant_id,company_id,project_id,cost_category_id,description,amount,amount_text,currency_code,work_status,publication_state,publication_origin,published_at,created_by)
+values('c1d10000-0000-4000-8000-000000000813','c1d10000-0000-4000-8000-000000000010','c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000104','c1d10000-0000-4000-8000-000000000305','Preserved historical parent',0,'0.0000','VND','unknown','published','legacy_backfill',now(),'c1d10000-0000-4000-8000-000000000901');
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"c1d10000-0000-4000-8000-000000000901","role":"authenticated"}', true);
-create temp table c1d_list_legacy as select public.c1_create_project_cost_draft(
-  'c1d10000-0000-4000-8000-000000000020',
-  '{"projectId":"c1d10000-0000-4000-8000-000000000104","costCategoryId":"c1d10000-0000-4000-8000-000000000305","description":"Legacy parent draft"}',
-  'c1d10000-0000-4000-8000-000000000a01','c1d10000-0000-4000-8000-000000000a02') result;
-select public.c1_prepare_project_cost_financials(
-  'c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_list_legacy),
-  '{"expectedVersion":0,"currencyCode":"VND","details":[{"lineNo":1,"detailKind":"line_item","description":"Prepared legacy child","amount":"0.0000"}],"sourceFigureIds":[]}',
-  'c1d10000-0000-4000-8000-000000000a03');
 create temp table c1d_list_ordinary as select public.c1_create_project_cost_detail_draft(
   'c1d10000-0000-4000-8000-000000000020',
   '{"projectId":"c1d10000-0000-4000-8000-000000000104","categoryId":"c1d10000-0000-4000-8000-000000000301","description":"Ordinary draft"}',
   'c1d10000-0000-4000-8000-000000000a04','c1d10000-0000-4000-8000-000000000a05') result;
 select is(public.c1_list_project_cost_detail_drafts('c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000104'),
   jsonb_build_array(public.c1_read_project_cost_detail_draft('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_list_ordinary))),
-  'financial list returns only the eligible ordinary draft alongside a prepared legacy parent draft');
+  'financial list returns only the eligible ordinary draft alongside a historical published parent');
 select is(public.c1_list_project_cost_detail_drafts_operational('c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000104'),
   jsonb_build_array(public.c1_read_project_cost_detail_draft_operational('c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_list_ordinary))),
-  'operational list returns only the eligible ordinary draft alongside a prepared legacy parent draft');
+  'operational list returns only the eligible ordinary draft alongside a historical published parent');
 reset role;
 select is((select jsonb_build_object('state',publication_state,'origin',publication_origin,'amount',amount_text) from public.project_cost_items where id=(select (result->>'projectCostItemId')::uuid from c1d_list_ordinary)),
   '{"state":"published","origin":"command","amount":"0.0000"}'::jsonb,'unpriced ordinary draft has an identifiable command-origin zero shell');
-select is((select count(*) from public.project_cost_item_details where project_cost_item_id=(select (result->>'id')::uuid from c1d_list_legacy) and publication_state='draft'),1::bigint,'legacy preparation actually created a draft child');
+select is((select publication_state from public.project_cost_items where id='c1d10000-0000-4000-8000-000000000813'),'published','historical parent remains published');
 set local role authenticated;
 create temp table c1d_list_zero_prepared as select public.c1_prepare_project_cost_detail_financials(
   'c1d10000-0000-4000-8000-000000000020',(select (result->>'id')::uuid from c1d_list_ordinary),
@@ -579,7 +565,7 @@ select public.c1_publish_project_cost_detail('c1d10000-0000-4000-8000-0000000000
 reset role;
 select is((select amount_text from public.project_cost_item_details where id=(select (result->>'id')::uuid from c1d_list_ordinary) and publication_state='published'),'0.0000','explicit zero becomes an official observation only after publication');
 set local role authenticated;
-select is(public.c1_list_project_cost_detail_drafts('c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000104'),'[]'::jsonb,'published ordinary detail disappears while prepared legacy child remains excluded');
+select is(public.c1_list_project_cost_detail_drafts('c1d10000-0000-4000-8000-000000000020','c1d10000-0000-4000-8000-000000000104'),'[]'::jsonb,'published ordinary detail disappears while historical parent remains excluded');
 reset role;
 
 select * from finish();

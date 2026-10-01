@@ -39,6 +39,7 @@ export function validateC1CloudDevSql(path, sql) {
   if (!/^begin\s*;/iu.test(normalized) || !/rollback\s*;$/iu.test(normalized)) throw new Error('C1 SQL verification must start with begin and end with rollback')
   if (/\bcommit\s*;/iu.test(normalized)) throw new Error('C1 SQL verification cannot commit')
   if (/\b(db\s+reset|migration\s+repair|supabase_migrations|seed|include-seed)\b/iu.test(normalized)) throw new Error('C1 SQL contains a forbidden Cloud DEV operation')
+  if (/\b(?:select|perform|call)\s+(?:public\.(?:c1_(?:create_project_cost_draft|update_project_cost_draft|prepare_project_cost_financials|read_project_cost_draft|list_project_cost_drafts|read_project_cost_draft_operational|list_project_cost_drafts_operational|publish_project_cost|create_project_cost_item|update_project_cost_item))|private\.(?:c1_(?:create_project_cost_draft|update_project_cost_draft|prepare_project_cost_financials|read_project_cost_draft|list_project_cost_drafts|read_project_cost_draft_operational|list_project_cost_drafts_operational|publish_project_cost|project_cost_draft_json|project_cost_draft_operational_json|project_cost_publish_readiness)))\s*\(/iu.test(normalized)) throw new Error('C1 SQL calls a retired parent draft RPC')
   if (/\bVQH\b|10000000-0000-4000-8000-0000000000/iu.test(normalized)) throw new Error('C1 SQL cannot reference real VQH identifiers')
   if (path === 'c1_audited_source_ownership_correction.test.sql') {
     const ids = normalized.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
@@ -89,11 +90,11 @@ function assertC1CloudDevPgTapResult(path, stdout) {
   if (finish) throw new Error(`C1 Cloud DEV SQL verification failed for ${path}: pgTAP finish reported a diagnostic`)
 }
 
-export function runC1CloudDevTests({ cwd = process.cwd(), files, spawn = spawnSync } = {}) {
+export function runC1CloudDevTests({ cwd = process.cwd(), files, spawn = spawnSync, assertTarget = assertCloudDevTarget } = {}) {
   const selected = files ?? allowlist.filter(path => existsSync(resolve(cwd, 'supabase/tests/database/c1', path))).map(path => ({ path, sql: readFileSync(resolve(cwd, 'supabase/tests/database/c1', path), 'utf8') }))
   if (!files && selected.length !== allowlist.length) throw new Error('Missing C1 SQL verification file')
   for (const file of selected) validateC1CloudDevSql(file.path, file.sql)
-  assertCloudDevTarget({ cwd })
+  assertTarget({ cwd })
   const cli = resolve(cwd, 'node_modules/supabase/dist/supabase.js')
   for (const file of selected) {
     const result = spawn(process.execPath, [cli, 'db', 'query', '--linked', '--output-format', 'json', '--file', resolve(cwd, 'supabase/tests/database/c1', file.path)], { cwd, encoding: 'utf8' })

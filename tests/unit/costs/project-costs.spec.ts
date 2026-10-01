@@ -1,20 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   costCommandAckSchema,
-  correctProjectCostItemInputSchema,
-  createProjectCostDraftInputSchema,
-  createProjectCostItemInputSchema,
-  prepareProjectCostFinancialsInputSchema,
   projectCostBreakdownSchema,
-  projectCostDraftSchema,
-  projectCostOperationalDraftSchema,
   projectCostDetailKindSchema,
   projectCostDetailsResponseSchema,
   projectCostItemDetailSchema,
   projectCostItemSchema,
   projectCostSummarySchema,
   projectCostWorkStatusSchema,
-  updateProjectCostItemInputSchema,
 } from '../../../shared/schemas/costs/project-costs'
 
 const ids = {
@@ -50,44 +43,6 @@ const summary = {
 }
 
 describe('project cost contracts', () => {
-  it('keeps draft creation operational and rejects financial or publication fields', () => {
-    const draft = { projectId: ids.project, description: 'Draft', costCategoryId: ids.component, workStatus: 'unknown' }
-    expect(createProjectCostDraftInputSchema.safeParse(draft).success).toBe(true)
-    for (const extra of [{ amount: '1.0000' }, { currencyCode: 'VND' }, { publicationState: 'published' }]) {
-      expect(createProjectCostDraftInputSchema.safeParse({ ...draft, ...extra }).success).toBe(false)
-    }
-  })
-
-  it('requires a complete nonempty financial detail snapshot and accepts explicit zero', () => {
-    const detail = { lineNo: 1, detailKind: 'line_item', description: 'Prepared line', amount: '0.0000' }
-    expect(prepareProjectCostFinancialsInputSchema.safeParse({ expectedVersion: 0, currencyCode: 'VND', details: [detail], sourceFigureIds: [] }).success).toBe(true)
-    expect(prepareProjectCostFinancialsInputSchema.safeParse({ expectedVersion: 0, currencyCode: 'VND', details: [], sourceFigureIds: [] }).success).toBe(false)
-    expect(prepareProjectCostFinancialsInputSchema.safeParse({ expectedVersion: 0, currencyCode: 'VND', details: [{ ...detail, amount: undefined }], sourceFigureIds: [] }).success).toBe(false)
-  })
-
-  it('represents an unprepared draft with a null amount and deterministic readiness', () => {
-    expect(projectCostDraftSchema.parse({
-      id: ids.item, projectId: ids.project, description: 'Draft', costCategoryId: ids.component,
-      businessReference: null, partyId: null, engagementId: null, componentId: null, relevantDate: null,
-      workStatus: 'unknown', amount: null, currencyCode: 'VND', publicationState: 'draft', version: 0,
-      details: [], sourceFigureIds: [], publishReadiness: { ready: false, blockingCodes: ['FINANCIAL_DETAILS_REQUIRED'] },
-      createdAt: '2026-09-22T00:00:00.000Z', updatedAt: '2026-09-22T00:00:00.000Z',
-    }).amount).toBeNull()
-  })
-
-  it('keeps the cost.manage draft projection operational-only', () => {
-    const operational = {
-      id: ids.item, projectId: ids.project, description: 'Draft', costCategoryId: ids.component,
-      businessReference: null, partyId: null, engagementId: null, componentId: null, relevantDate: null,
-      workStatus: 'unknown', publicationState: 'draft', version: 0,
-      createdAt: '2026-09-22T00:00:00.000Z', updatedAt: '2026-09-22T00:00:00.000Z',
-    }
-    expect(projectCostOperationalDraftSchema.parse(operational)).toEqual(operational)
-    for (const financial of [{ amount: '1.0000' }, { currencyCode: 'VND' }, { details: [] }, { sourceFigureIds: [] }, { publishReadiness: { ready: true, blockingCodes: [] } }]) {
-      expect(projectCostOperationalDraftSchema.safeParse({ ...operational, ...financial }).success).toBe(false)
-    }
-  })
-
   it('pins the common lifecycle command acknowledgement', () => {
     expect(costCommandAckSchema.parse({ id: ids.item, version: 1, publicationState: 'draft', replayed: false })).toEqual({ id: ids.item, version: 1, publicationState: 'draft', replayed: false })
     expect(costCommandAckSchema.safeParse({ id: ids.item, version: 1, publicationState: 'draft' }).success).toBe(false)
@@ -98,132 +53,6 @@ describe('project cost contracts', () => {
       expect(projectCostWorkStatusSchema.safeParse(status).success).toBe(true)
     }
     expect(projectCostWorkStatusSchema.safeParse('paid').success).toBe(false)
-  })
-
-  it('accepts known nonnegative decimal amounts including zero', () => {
-    for (const amount of ['0', '0.0000', '100', '100.0000']) {
-      expect(createProjectCostItemInputSchema.safeParse({ ...createInput, amount }).success).toBe(true)
-    }
-  })
-
-  it('rejects negative amounts and precision beyond four decimal places', () => {
-    expect(createProjectCostItemInputSchema.safeParse({ ...createInput, amount: '-1.0000' }).success).toBe(false)
-    expect(createProjectCostItemInputSchema.safeParse({ ...createInput, amount: '1.00001' }).success).toBe(false)
-  })
-
-  it('requires project and approved business fields', () => {
-    for (const field of ['projectId', 'description', 'amount', 'currencyCode', 'workStatus'] as const) {
-      const input = Object.fromEntries(Object.entries(createInput).filter(([key]) => key !== field))
-      expect(createProjectCostItemInputSchema.safeParse(input).success).toBe(false)
-    }
-  })
-
-  it('keeps business reference and hierarchy context optional', () => {
-    expect(createProjectCostItemInputSchema.safeParse(createInput).success).toBe(true)
-    expect(createProjectCostItemInputSchema.safeParse({
-      ...createInput,
-      businessReference: 'RF-01',
-      partyId: ids.party,
-      engagementId: ids.engagement,
-      componentId: ids.component,
-      relevantDate: '2026-09-16',
-    }).success).toBe(true)
-  })
-
-  it('accepts optional unique source figure provenance IDs without exposing them on items', () => {
-    expect(createProjectCostItemInputSchema.safeParse({ ...createInput, sourceFigureIds: [ids.sourceFigure1, ids.sourceFigure2] }).success).toBe(true)
-    expect(createProjectCostItemInputSchema.safeParse(createInput).success).toBe(true)
-    expect(projectCostItemSchema.safeParse({
-      id: ids.item, tenantId: ids.tenant, companyId: ids.company, projectId: ids.project,
-      description: createInput.description, amount: createInput.amount, currencyCode: createInput.currencyCode,
-      workStatus: createInput.workStatus, businessReference: null, partyId: null, engagementId: null,
-      componentId: null, relevantDate: null, version: 0, createdAt: '2026-09-16T00:00:00.000Z',
-      updatedAt: '2026-09-16T00:00:00.000Z', sourceFigureIds: [ids.sourceFigure1],
-    }).success).toBe(false)
-  })
-
-  it.each([{ sourceFigureIds: [] }, { sourceFigureIds: ['not-a-uuid'] }, { sourceFigureIds: [ids.sourceFigure1, ids.sourceFigure1] }])('rejects invalid source figure provenance IDs: $sourceFigureIds', ({ sourceFigureIds }) => {
-    expect(createProjectCostItemInputSchema.safeParse({ ...createInput, sourceFigureIds }).success).toBe(false)
-  })
-
-  it('requires a non-overlap confirmation reference when creating an item', () => {
-    const input: Record<string, unknown> = { ...createInput }
-    delete input.nonOverlapConfirmationReference
-    expect(createProjectCostItemInputSchema.safeParse(input).success).toBe(false)
-  })
-
-  it('rejects empty or whitespace-only non-overlap confirmation references', () => {
-    expect(createProjectCostItemInputSchema.safeParse({ ...createInput, nonOverlapConfirmationReference: '' }).success).toBe(false)
-    expect(createProjectCostItemInputSchema.safeParse({ ...createInput, nonOverlapConfirmationReference: '   ' }).success).toBe(false)
-  })
-
-  it('accepts a non-empty non-overlap confirmation reference', () => {
-    expect(createProjectCostItemInputSchema.safeParse(createInput).success).toBe(true)
-  })
-
-  it('requires expected version for updates', () => {
-    expect(updateProjectCostItemInputSchema.safeParse({ description: 'Corrected framing' }).success).toBe(false)
-    expect(updateProjectCostItemInputSchema.safeParse({
-      description: 'Corrected framing',
-      workStatus: 'accepted',
-      partyId: ids.party,
-      engagementId: ids.engagement,
-      componentId: ids.component,
-      relevantDate: '2026-09-16',
-      expectedVersion: 0,
-    }).success).toBe(true)
-  })
-
-  it('rejects an ordinary update with no mutable field', () => {
-    expect(updateProjectCostItemInputSchema.safeParse({ expectedVersion: 0 }).success).toBe(false)
-  })
-
-  it('accepts each allowed ordinary update field with an expected version', () => {
-    for (const update of [
-      { description: 'Corrected framing' },
-      { partyId: ids.party },
-      { engagementId: ids.engagement },
-      { componentId: ids.component },
-      { relevantDate: '2026-09-16' },
-      { workStatus: 'accepted' },
-    ]) expect(updateProjectCostItemInputSchema.safeParse({ ...update, expectedVersion: 0 }).success).toBe(true)
-  })
-
-  it('accepts an explicit nullable hierarchy clear as an ordinary update', () => {
-    expect(updateProjectCostItemInputSchema.safeParse({ partyId: null, expectedVersion: 0 }).success).toBe(true)
-  })
-
-  it('rejects amount from the ordinary management update contract', () => {
-    expect(updateProjectCostItemInputSchema.safeParse({ amount: '125.0000', expectedVersion: 0 }).success).toBe(false)
-  })
-
-  it('rejects currency from the ordinary management update contract', () => {
-    expect(updateProjectCostItemInputSchema.safeParse({ currencyCode: 'USD', expectedVersion: 0 }).success).toBe(false)
-  })
-
-  it('requires expected version for corrections', () => {
-    expect(correctProjectCostItemInputSchema.safeParse({ reason: 'Correct source transcription', amount: '125.0000' }).success).toBe(false)
-  })
-
-  it('requires a non-empty correction reason', () => {
-    expect(correctProjectCostItemInputSchema.safeParse({ expectedVersion: 0, reason: '', amount: '125.0000' }).success).toBe(false)
-    expect(correctProjectCostItemInputSchema.safeParse({ expectedVersion: 0, reason: '   ', amount: '125.0000' }).success).toBe(false)
-  })
-
-  it('rejects a correction with no material field', () => {
-    expect(correctProjectCostItemInputSchema.safeParse({ expectedVersion: 0, reason: 'Correction requested' }).success).toBe(false)
-  })
-
-  it('accepts a material amount correction', () => {
-    expect(correctProjectCostItemInputSchema.safeParse({ expectedVersion: 0, reason: 'Correct source transcription', amount: '125.0000' }).success).toBe(true)
-  })
-
-  it('accepts a material work-status correction', () => {
-    expect(correctProjectCostItemInputSchema.safeParse({ expectedVersion: 0, reason: 'Acceptance confirmed', workStatus: 'accepted' }).success).toBe(true)
-  })
-
-  it('rejects unsupported accounting fields from corrections', () => {
-    expect(correctProjectCostItemInputSchema.safeParse({ expectedVersion: 0, reason: 'Correct source transcription', amount: '125.0000', paidAmount: '125.0000' }).success).toBe(false)
   })
 
   it('accepts F06 totals from accepted and in-progress values only', () => {
@@ -245,7 +74,6 @@ describe('project cost contracts', () => {
   })
 
   it('rejects unsupported accounting and source semantics', () => {
-    expect(createProjectCostItemInputSchema.safeParse({ ...createInput, paidAmount: '100.0000' }).success).toBe(false)
     expect(projectCostSummarySchema.safeParse({ ...summary, payableValue: '0' }).success).toBe(false)
     expect(projectCostItemSchema.safeParse({
       id: ids.item,

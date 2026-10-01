@@ -26,14 +26,11 @@ afterEach(() => {
 })
 
 describe('C1 ordinary-detail concurrency runner', () => {
-  it('covers the approved resolver and legacy parent identity race outcomes', () => {
+  it('covers surviving resolver, direct publish, and published correction races', () => {
     expect(C1_ORDINARY_DETAIL_CONCURRENCY_SCENARIOS).toEqual([
       { name: 'resolver-resolver', outcome: 'same-parent' },
       { name: 'direct-direct', outcome: 'same-parent' },
       { name: 'descriptive-correction-resolver', outcome: 'same-parent' },
-      { name: 'legacy-create-legacy-create', outcome: 'actor-b-category-conflict' },
-      { name: 'legacy-create-resolver', outcome: 'actor-b-category-conflict' },
-      { name: 'legacy-recateg-resolver', outcome: 'actor-b-category-conflict' },
     ])
   })
 
@@ -65,23 +62,8 @@ describe('C1 ordinary-detail concurrency runner', () => {
     })).rejects.toThrow('C1 ordinary-detail concurrency actor_a failed with status 400 (42501: permission denied for schema private) at PL/pgSQL function private.example() line 4 at SQL statement')
   })
 
-  it('accepts one successful parent and the stable category-conflict loser for a legacy race', async () => {
-    const calls: string[] = []
-    await expect(runC1OrdinaryDetailConcurrency({
-      scenarios: [{ name: 'legacy-create-resolver', outcome: 'actor-b-category-conflict' }],
-      assertTarget: vi.fn(), readPhase: phaseSql,
-      runPhase: async phase => {
-        calls.push(phase)
-        if (phase === 'actor_a') return { parentId: 'c1f10000-0000-4000-8000-000000000201' }
-        if (phase === 'actor_b') return { errorCode: 'PROJECT_COST_CATEGORY_CONFLICT' }
-        if (phase === 'assert') return { parentCount: 1 }
-        return {}
-      },
-    })).resolves.toBeUndefined()
-    expect(calls).toEqual(['cleanup', 'setup', 'actor_a', 'actor_b', 'assert', 'cleanup'])
-  })
-
   it('rejects non-synthetic or unsafe fixture SQL', () => {
+    expect(() => validateC1OrdinaryDetailConcurrencySql('actor_a', "-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE\nselect public.c1_create_project_cost_draft('c1f10000-0000-4000-8000-000000000020');")).toThrow('retired parent draft RPC')
     expect(() => validateC1OrdinaryDetailConcurrencySql('actor_a', '-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE\nselect \'10000000-0000-4000-8000-000000000010\';')).toThrow('reserved synthetic')
     expect(() => validateC1OrdinaryDetailConcurrencySql('cleanup', '-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE\ndelete from public.project_cost_items;')).toThrow('broad delete')
     expect(() => validateC1OrdinaryDetailConcurrencySql('cleanup', '-- C1 ORDINARY DETAIL CONCURRENCY FIXTURE\ndelete from public.tenants where id = \'c1f10000-0000-4000-8000-000000000010\';')).toThrow('exact auth user')
@@ -101,7 +83,11 @@ describe('C1 ordinary-detail concurrency runner', () => {
       'public.company_memberships', 'public.tenant_memberships', 'public.audit_events', 'public.companies',
       'public.tenants', 'auth.users',
     ]) expect(exactCleanupSql).toContain(`delete from ${table}`)
-    expect(exactCleanupSql).toContain("command_name in ('project_cost_draft.create','project_cost.correct','project_cost_detail.create_and_publish')")
+    const receiptCleanup = "delete from public.cost_command_receipts where tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020' and actor_id = 'c1f10000-0000-4000-8000-000000000903' and command_name in ('project_cost_draft.create','project_cost.correct','project_cost_detail.create_and_publish');"
+    expect(exactCleanupSql.split('\n').filter(line => line.includes('command_name in ('))).toEqual([receiptCleanup])
+    expect(runnerCleanupSql).toBe(exactCleanupSql)
+    expect(exactCleanupSql.indexOf(receiptCleanup)).toBeLessThan(exactCleanupSql.indexOf('delete from public.companies'))
+    expect(exactCleanupSql.indexOf(receiptCleanup)).toBeLessThan(exactCleanupSql.indexOf('delete from auth.users'))
   })
 
   it('removes managed detail history before asserting it is gone and deleting fixture parents', () => {
@@ -207,7 +193,6 @@ describe('C1 ordinary-detail concurrency runner', () => {
     })
     expect(calls).toHaveLength(C1_ORDINARY_DETAIL_CONCURRENCY_SCENARIOS.length * 6)
     expect(setups.get('descriptive-correction-resolver')).toContain("'cost.correct'")
-    expect(setups.get('legacy-recateg-resolver')).toContain('legacy recategorization source')
     expect(setups.get('resolver-resolver')).not.toContain("'cost.correct'")
   })
 

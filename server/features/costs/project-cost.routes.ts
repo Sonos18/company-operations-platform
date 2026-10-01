@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3'
 import { getHeader, getRouterParam, readBody } from 'h3'
 import { z } from 'zod'
-import { correctPublishedProjectCostDetailInputSchema, correctPublishedProjectCostInputSchema, createAndPublishProjectCostDetailInputSchema, createProjectCostDetailDraftInputSchema, createProjectCostDraftInputSchema, prepareProjectCostDetailFinancialsInputSchema, prepareProjectCostFinancialsInputSchema, publishProjectCostDetailInputSchema, publishProjectCostInputSchema, updateProjectCostDetailDraftInputSchema, updateProjectCostDraftInputSchema } from '../../../shared/schemas/costs/project-costs'
+import { correctPublishedProjectCostDetailInputSchema, correctPublishedProjectCostInputSchema, createAndPublishProjectCostDetailInputSchema, createProjectCostDetailDraftInputSchema, prepareProjectCostDetailFinancialsInputSchema, publishProjectCostDetailInputSchema, updateProjectCostDetailDraftInputSchema } from '../../../shared/schemas/costs/project-costs'
 import { AppApiError } from '../../utils/api-error'
 import { c1RequestContext } from '../c1-master-data/context'
 import { ProjectCostRepository } from './project-cost.repository'
@@ -19,7 +19,6 @@ function param(event: H3Event, name: string) { const value = uuid.safeParse(getR
 async function body<T>(event: H3Event, schema: z.ZodType<T>) { const value = schema.safeParse(await readBody(event)); if (!value.success) throw new AppApiError(400, 'INPUT_INVALID', 'Dữ liệu yêu cầu không hợp lệ.'); return value.data }
 
 export function createProjectCostRoutes(dependencies: ProjectCostRouteDependencies) {
-  // Deprecated parent lifecycle routes remain only for compatibility; new work uses detail commands below.
   async function resolved(event: H3Event) {
     const context = await dependencies.resolveContext(event, param(event, 'companyId'))
     return { context, service: dependencies.service ?? new ProjectCostService(new ProjectCostRepository(context.db)) }
@@ -28,33 +27,6 @@ export function createProjectCostRoutes(dependencies: ProjectCostRouteDependenci
     async summaries(event: H3Event) { const value = await resolved(event); return value.service.listSummaries(value.context) },
     async project(event: H3Event) { const value = await resolved(event); return value.service.projectSummary(value.context, param(event, 'projectId')) },
     async draftManagementMetadata(event: H3Event) { const value = await resolved(event); return value.service.draftManagementMetadata(value.context) },
-    async create(event: H3Event) {
-      const value = await resolved(event)
-      const projectId = param(event, 'projectId')
-      const input = await body(event, createProjectCostDraftInputSchema)
-      const idempotencyKey = uuid.safeParse(getHeader(event, 'idempotency-key'))
-      if (!idempotencyKey.success || input.projectId !== projectId) throw new AppApiError(400, 'INPUT_INVALID', 'Dữ liệu yêu cầu không hợp lệ.')
-      return value.service.createDraft(value.context, input, idempotencyKey.data)
-    },
-    async patch(event: H3Event) {
-      const value = await resolved(event)
-      const itemId = param(event, 'projectCostItemId')
-      const input = await body(event, updateProjectCostDraftInputSchema)
-      return value.service.updateDraft(value.context, itemId, input)
-    },
-    async financials(event: H3Event) { const value = await resolved(event); return value.service.prepareFinancials(value.context, param(event, 'projectCostItemId'), await body(event, prepareProjectCostFinancialsInputSchema)) },
-    async draft(event: H3Event) { const value = await resolved(event); return value.service.draft(value.context, param(event, 'projectCostItemId')) },
-    async drafts(event: H3Event) { const value = await resolved(event); return value.service.listDrafts(value.context, param(event, 'projectId')) },
-    async operationalDraft(event: H3Event) { const value = await resolved(event); return value.service.operationalDraft(value.context, param(event, 'projectCostItemId')) },
-    async operationalDrafts(event: H3Event) { const value = await resolved(event); return value.service.listOperationalDrafts(value.context, param(event, 'projectId')) },
-    async publish(event: H3Event) {
-      const value = await resolved(event)
-      const itemId = param(event, 'projectCostItemId')
-      const input = await body(event, publishProjectCostInputSchema)
-      const idempotencyKey = uuid.safeParse(getHeader(event, 'idempotency-key'))
-      if (!idempotencyKey.success) invalid()
-      return value.service.publish(value.context, itemId, input, idempotencyKey.data)
-    },
     async correction(event: H3Event) {
       const value = await resolved(event)
       const itemId = param(event, 'projectCostItemId')
@@ -103,14 +75,6 @@ export function createSupabaseProjectCostRoutes(event: H3Event) {
     summaries: () => routes.summaries(event),
     project: () => routes.project(event),
     draftManagementMetadata: () => routes.draftManagementMetadata(event),
-    create: () => routes.create(event),
-    patch: () => routes.patch(event),
-    financials: () => routes.financials(event),
-    draft: () => routes.draft(event),
-    drafts: () => routes.drafts(event),
-    operationalDraft: () => routes.operationalDraft(event),
-    operationalDrafts: () => routes.operationalDrafts(event),
-    publish: () => routes.publish(event),
     correction: () => routes.correction(event),
     details: () => routes.details(event),
     createDetailDraft: () => routes.createDetailDraft(event),
