@@ -14,10 +14,7 @@ import {
 } from '../../shared/schemas/costs/project-finance-writes'
 import {
   costCommandAckSchema,
-  prepareProjectCostFinancialsInputSchema,
   projectCostBreakdownSchema,
-  projectCostDraftSchema,
-  projectCostOperationalDraftSchema,
 } from '../../shared/schemas/costs/project-costs'
 import {
   costEvidenceFinalizedSchema,
@@ -33,7 +30,6 @@ const projectId = '10000000-0000-4000-8000-000000000050'
 const materialCategoryId = '20000000-0000-4000-8000-000000000051'
 const subcontractCategoryId = '20000000-0000-4000-8000-000000000099'
 const publishedItemId = '90000000-0000-4000-8000-000000000001'
-const draftId = '30000000-0000-4000-8000-000000000052'
 const partyId = '40000000-0000-4000-8000-000000000053'
 const subcontractId = '50000000-0000-4000-8000-000000000054'
 const paymentId1 = '60000000-0000-4000-8000-000000000055'
@@ -51,30 +47,6 @@ async function setActivePermissions(page: Page, permissions: string[]) {
     if (!company) throw new Error('Unable to resolve active company')
     company.permissions = nextPermissions
   }, permissions)
-}
-
-function draftFixture(id: string, targetProjectId: string, description: string) {
-  return projectCostDraftSchema.parse({
-    id,
-    projectId: targetProjectId,
-    description,
-    costCategoryId: materialCategoryId,
-    businessReference: null,
-    partyId: null,
-    engagementId: null,
-    componentId: null,
-    relevantDate: '2026-09-22',
-    workStatus: 'in_progress',
-    amount: '10000000.0000',
-    currencyCode: 'VND',
-    publicationState: 'draft',
-    version: 1,
-    details: [],
-    sourceFigureIds: [],
-    publishReadiness: { ready: false, blockingCodes: ['FINANCIAL_DETAILS_REQUIRED'] },
-    createdAt: '2026-09-22T08:00:00.000Z',
-    updatedAt: '2026-09-22T08:00:00.000Z',
-  })
 }
 
 const mockProjectOverview = financeOverviewSchema.parse({
@@ -178,401 +150,61 @@ const mockSubcontractorList = financeSubcontractorListSchema.parse({
 })
 
 test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
-  test('Flow A — Draft / publish: creates draft, edits operational data, prepares financials, uploads evidence and publishes', async ({ page }) => {
-    let currentDraftVersion = 1
-    let currentDescription = 'Cung cấp thép móng D20'
-    let intentCount = 0
-    let storageUploadCount = 0
-    let finalizeCount = 0
-    const linkKeys: Array<string | null> = []
-
-    // Mock project finance overview
-    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => {
-      route.fulfill({ json: mockProjectOverview })
-    })
-
-    // Mock draft list on project overview page
-    await page.route(`**/api/companies/**/projects/${projectId}/project-cost-drafts`, route => {
-      route.fulfill({ json: [] })
-    })
-
-    // Mock create draft: POST /projects/:projectId/project-costs
+  test('Flow A - project overview opens ordinary detail creation without parent draft requests', async ({ page }) => {
+    let parentRequests = 0
+    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
+    await page.route('**/api/companies/**/project-cost-drafts/metadata', route => route.fulfill({ json: {
+      projects: [{ id: projectId, code: 'DA-C1-01', name: 'Project C1' }],
+      categories: [{ categoryId: materialCategoryId, code: 'vat_tu', name: 'Materials', isActive: true, draftEligible: true, postingStrategy: 'ordinary_detail' }],
+    } }))
     await page.route(`**/api/companies/**/projects/${projectId}/project-costs`, route => {
-      if (route.request().method() === 'POST') {
-        route.fulfill({
-          status: 201,
-          json: {
-            id: draftId,
-            version: currentDraftVersion,
-            publicationState: 'draft',
-            replayed: false,
-          },
-        })
-      }
-      else {
-        route.continue()
-      }
-    })
-
-    // Mock get draft: GET /project-costs/:draftId/draft
-    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => {
-      route.fulfill({
-        json: projectCostDraftSchema.parse({
-          id: draftId,
-          projectId,
-          description: currentDescription,
-          costCategoryId: materialCategoryId,
-          businessReference: 'HD-THEP-01',
-          partyId: null,
-          engagementId: null,
-          componentId: null,
-          relevantDate: '2026-09-22',
-          workStatus: 'in_progress',
-          amount: '85000000.0000',
-          currencyCode: 'VND',
-          publicationState: 'draft',
-          version: currentDraftVersion,
-          details: [
-            {
-              id: '80000000-0000-4000-8000-000000000001',
-              projectCostItemId: draftId,
-              lineNo: 1,
-              detailKind: 'line_item',
-              description: 'Thép Hòa Phát phi 20',
-              quantity: '5.0000',
-              unitCode: 'tấn',
-              unitPrice: '17000000.0000',
-              amount: '85000000.0000',
-              retentionKind: null,
-              retentionRateBps: null,
-              retentionAmount: null,
-              relevantDate: '2026-09-22',
-              reference: 'HD-01',
-              note: null,
-              version: currentDraftVersion,
-              createdAt: '2026-09-22T08:00:00.000Z',
-              updatedAt: '2026-09-22T08:00:00.000Z',
-            },
-          ],
-          sourceFigureIds: [],
-          publishReadiness: {
-            ready: true,
-            blockingCodes: [],
-          },
-          createdAt: '2026-09-22T08:00:00.000Z',
-          updatedAt: '2026-09-22T08:00:00.000Z',
-        }),
-      })
-    })
-
-    // Mock update operational draft: PATCH /project-costs/:draftId
-    await page.route(`**/api/companies/**/project-costs/${draftId}`, route => {
-      if (route.request().method() === 'PATCH') {
-        currentDraftVersion = 2
-        currentDescription = 'Cung cấp thép móng D20 đã hiệu chỉnh vận hành'
-        route.fulfill({
-          json: {
-            id: draftId,
-            version: currentDraftVersion,
-            publicationState: 'draft',
-            replayed: false,
-          },
-        })
-      }
-      else {
-        route.continue()
-      }
-    })
-
-    // Mock prepare financials: PUT /project-costs/:draftId/financials
-    await page.route(`**/api/companies/**/project-costs/${draftId}/financials`, route => {
-      currentDraftVersion = 3
-      route.fulfill({
-        json: {
-          id: draftId,
-          version: currentDraftVersion,
-          publicationState: 'draft',
-          amount: '85000000.0000',
-          detailCount: 1,
-          publishReadiness: {
-            ready: true,
-            blockingCodes: [],
-          },
-          replayed: false,
-        },
-      })
-    })
-
-    // Mock evidence list: GET /project-costs/:draftId/evidence
-    const evidenceList: ReturnType<typeof costEvidenceMetadataSchema.parse>[] = []
-    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, async route => {
-      if (route.request().method() === 'GET') {
-        route.fulfill({ json: evidenceList })
-      }
-      else if (route.request().method() === 'POST') {
-        linkKeys.push(await route.request().headerValue('idempotency-key'))
-        if (linkKeys.length === 1) {
-          await route.abort('connectionfailed')
-          return
-        }
-        // Link evidence
-        const newEvidence = costEvidenceMetadataSchema.parse({
-          linkId: linkId1,
-          evidenceFileId: evidenceId,
-          evidenceKind: 'invoice',
-          accountingSourceVersionId: null,
-          originalFilename: 'hoa_don_vat_tu.pdf',
-          sizeBytes: 1024,
-          mimeType: 'application/pdf',
-          sha256: mockSha256,
-          finalizedAt: new Date().toISOString(),
-        })
-        evidenceList.push(newEvidence)
-        route.fulfill({
-          json: costEvidenceLinkResultSchema.parse({
-            linkId: linkId1,
-            costId: draftId,
-            evidenceFileId: evidenceId,
-            evidenceKind: 'invoice',
-            replayed: false,
-          }),
-        })
-      }
-      else {
-        route.continue()
-      }
-    })
-
-    // Mock upload intent: POST /projects/:projectId/evidence/upload-intents
-    await page.route(`**/api/companies/**/projects/${projectId}/evidence/upload-intents`, route => {
-      intentCount += 1
-      route.fulfill({
-        status: 201,
-        json: costEvidenceUploadIntentSchema.parse({
-          evidenceFileId: evidenceId,
-          version: 0,
-          bucketId: 'c1-accounting-evidence',
-          objectPath: mockObjectPath,
-          expiresAt: new Date(Date.now() + 120000).toISOString(),
-          replayed: false,
-        }),
-      })
-    })
-
-    // Mock Supabase storage upload
-    await page.route('**/storage/v1/object/**', route => {
-      storageUploadCount += 1
-      route.fulfill({ status: 200, json: { Key: `c1-accounting-evidence/${mockObjectPath}` } })
-    })
-
-    // Mock finalize evidence: POST /evidence-files/:evidenceFileId/finalize
-    await page.route(`**/api/companies/**/evidence-files/${evidenceId}/finalize`, route => {
-      finalizeCount += 1
-      route.fulfill({
-        json: costEvidenceFinalizedSchema.parse({
-          id: evidenceId,
-          status: 'finalized',
-          originalFilename: 'hoa_don_vat_tu.pdf',
-          mimeType: 'application/pdf',
-          sizeBytes: 1024,
-          sha256: mockSha256,
-          version: 1,
-          finalizedAt: new Date().toISOString(),
-          replayed: false,
-        }),
-      })
-    })
-
-    // Mock publish: POST /project-costs/:draftId/publish
-    await page.route(`**/api/companies/**/project-costs/${draftId}/publish`, route => {
-      route.fulfill({
-        json: {
-          id: draftId,
-          version: 4,
-          publicationState: 'published',
-          replayed: false,
-        },
-      })
-    })
-
-    // 1. Open project costs page
-    await page.goto(`/costs/${projectId}`)
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Dự án Thi công Trung tâm Thương mại')
-
-    // 2. Click create draft
-    const createDraftBtn = page.getByTestId('header-create-draft-btn')
-    await expect(createDraftBtn).toBeVisible()
-    await createDraftBtn.click()
-
-    // 3. Fill draft creation modal
-    await page.getByTestId('draft-create-description').fill('Cung cấp thép móng D20')
-    await page.getByTestId('draft-create-category').selectOption(materialCategoryId)
-    await page.getByTestId('draft-create-submit').click()
-
-    // 4. Navigates to draft workbench
-    await expect(page).toHaveURL(new RegExp(`/costs/${projectId}/drafts/${draftId}`))
-    await expect(page.getByTestId('draft-workbench-page')).toBeVisible()
-    await expect(page.getByTestId('draft-title')).toContainText('Cung cấp thép móng D20')
-
-    // 5. Operational edit
-    await page.getByTestId('draft-op-description').fill('Cung cấp thép móng D20 đã hiệu chỉnh vận hành')
-    const operationalSave = page.waitForResponse(response => response.request().method() === 'PATCH' && response.url().includes(`/project-costs/${draftId}`))
-    await page.getByTestId('draft-op-save-btn').click()
-    await operationalSave
-    await expect(page.getByTestId('draft-title')).toHaveText('Cung cấp thép móng D20 đã hiệu chỉnh vận hành')
-
-    // 6. Financial preparation: save financials
-    const saveFinancialsBtn = page.getByTestId('save-financials-btn')
-    await expect(saveFinancialsBtn).toBeVisible()
-    const financialSave = page.waitForResponse(response => response.request().method() === 'PUT' && response.url().includes(`/project-costs/${draftId}/financials`))
-    await saveFinancialsBtn.click()
-    await financialSave
-    await expect(page.getByTestId('draft-title')).toHaveText('Cung cấp thép móng D20 đã hiệu chỉnh vận hành')
-
-    // 7. Evidence upload: select file and upload
-    const fileInput = page.getByTestId('evidence-file-input')
-    await fileInput.setInputFiles({
-      name: 'hoa_don_vat_tu.pdf',
-      mimeType: 'application/pdf',
-      buffer: Buffer.from('mock pdf content'),
-    })
-    await page.getByTestId('evidence-upload-btn').click()
-    await expect.poll(() => linkKeys.length).toBe(1)
-    await expect(page.getByTestId('upload-error-alert')).toBeVisible()
-    await page.getByTestId('evidence-upload-btn').click()
-    await expect.poll(() => linkKeys.length).toBe(2)
-    await expect(page.getByTestId('evidence-table')).toBeVisible()
-    await expect(page.getByTestId('evidence-filename')).toContainText('hoa_don_vat_tu.pdf')
-    expect(intentCount).toBe(1)
-    expect(storageUploadCount).toBe(1)
-    expect(finalizeCount).toBe(1)
-    expect(linkKeys[1]).toBe(linkKeys[0])
-
-    // 8. Publish: open modal and confirm
-    const openPublishBtn = page.getByTestId('open-publish-modal-btn')
-    await expect(openPublishBtn).toBeEnabled()
-    await openPublishBtn.click()
-    await page.getByTestId('confirm-publish-btn').click()
-
-    // 9. Successfully navigates back to published costs overview
-    await expect(page).toHaveURL(new RegExp(`/costs/${projectId}$`))
-  })
-
-  test('Flow L — draft create retries preserve the logical key and rotate after change or success', async ({ page }) => {
-    const nextDraftId = '30000000-0000-4000-8000-000000000072'
-    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
-    await page.route(`**/api/companies/**/projects/${projectId}/project-cost-drafts`, route => route.fulfill({ json: [] }))
-    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Draft changed payload') }))
-    await page.route(`**/api/companies/**/project-costs/${nextDraftId}/draft`, route => route.fulfill({ json: draftFixture(nextDraftId, projectId, 'Draft after success') }))
-    await page.route('**/api/companies/**/project-costs/*/evidence', route => route.fulfill({ json: [] }))
-
-    const requests: Array<{ body: Record<string, unknown>; idempotencyKey: string | undefined }> = []
-    await page.route(`**/api/companies/**/projects/${projectId}/project-costs`, route => {
-      const request = route.request()
-      if (request.method() !== 'POST') return route.continue()
-      requests.push({ body: request.postDataJSON(), idempotencyKey: request.headers()['idempotency-key'] })
-      if (requests.length <= 2) return route.abort('connectionfailed')
-      const id = requests.length === 3 ? draftId : nextDraftId
-      return route.fulfill({ status: 201, json: costCommandAckSchema.parse({ id, version: 0, publicationState: 'draft', replayed: false }) })
+      parentRequests += 1
+      return route.fulfill({ status: 500 })
     })
 
     await page.goto(`/costs/${projectId}`)
-    await page.getByTestId('header-create-draft-btn').click()
-    await page.getByTestId('draft-create-description').fill('Draft retry payload')
-    await page.getByTestId('draft-create-category').selectOption(materialCategoryId)
-    await page.getByTestId('draft-create-submit').click()
-    await expect(page.getByTestId('draft-create-error')).toBeVisible()
-    await page.getByRole('button', { name: 'Hủy', exact: true }).click()
-    await page.getByTestId('header-create-draft-btn').click()
-    await page.getByTestId('draft-create-description').fill('Draft retry payload')
-    await page.getByTestId('draft-create-category').selectOption(materialCategoryId)
-    await page.getByTestId('draft-create-submit').click()
-    await expect.poll(() => requests.length).toBe(2)
-    expect(requests[1]).toEqual(requests[0])
-
-    await page.getByTestId('draft-create-description').fill('Draft changed payload')
-    await page.getByTestId('draft-create-submit').click()
-    await expect(page).toHaveURL(new RegExp(`/costs/${projectId}/drafts/${draftId}$`))
-    expect(requests[2]?.idempotencyKey).not.toBe(requests[1]?.idempotencyKey)
-
-    await page.goto(`/costs/${projectId}`)
-    await page.getByTestId('header-create-draft-btn').click()
-    await page.getByTestId('draft-create-description').fill('Draft after success')
-    await page.getByTestId('draft-create-category').selectOption(materialCategoryId)
-    await page.getByTestId('draft-create-submit').click()
-    await expect(page).toHaveURL(new RegExp(`/costs/${projectId}/drafts/${nextDraftId}$`))
-    expect(requests[3]?.idempotencyKey).not.toBe(requests[2]?.idempotencyKey)
+    await expect(page.getByTestId('header-create-detail-entry-btn')).toBeVisible()
+    await expect(page.getByTestId('header-create-draft-btn')).toHaveCount(0)
+    await page.getByTestId('header-create-detail-entry-btn').click()
+    await expect(page).toHaveURL(new RegExp(`/costs/${projectId}/entries/new$`))
+    await expect(page.getByTestId('new-cost-detail-page')).toBeVisible()
+    await expect(page.getByTestId('new-category-select').locator('option')).toHaveCount(2)
+    expect(parentRequests).toBe(0)
   })
 
-  test('Flow M — publish retry reuses its key and recovers COST_ALREADY_PUBLISHED', async ({ page }) => {
-    const readyDraft = projectCostDraftSchema.parse({
-      ...draftFixture(draftId, projectId, 'Ready publish retry'),
-      amount: '10000000.0000',
-      details: [{
-        id: '80000000-0000-4000-8000-000000000020', projectCostItemId: draftId, lineNo: 1, detailKind: 'line_item', description: 'Ready line', quantity: null, unitCode: null, unitPrice: null, amount: '10000000.0000', retentionKind: null, retentionRateBps: null, retentionAmount: null, relevantDate: null, reference: null, note: null, version: 1, createdAt: '2026-09-22T08:00:00.000Z', updatedAt: '2026-09-22T08:00:00.000Z',
-      }],
-      publishReadiness: { ready: true, blockingCodes: [] },
+  test('published parent evidence respects metadata and raw-file permission revocation', async ({ page }) => {
+    const ordinary = financeItemDetailsSchema.parse({
+      schemaVersion: 1 as const, kind: 'ordinary' as const,
+      project: mockProjectOverview.project, category: mockProjectOverview.categories[0]!,
+      item: { id: publishedItemId, description: 'Published item', businessReference: null, parentAmount: '750000000.0000', currencyCode: 'VND', version: 3 },
+      details: { rows: [], pagination: { page: 1, pageSize: 25, totalPages: 1, filteredCount: 0, fullCount: 0, filteredAmount: '0.0000', fullAmount: '0.0000' } },
     })
-    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: readyDraft }))
+    let evidenceRequests = 0
     await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
-    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, route => route.fulfill({ json: [] }))
-    const requests: Array<{ body: Record<string, unknown>; idempotencyKey: string | undefined }> = []
-    await page.route(`**/api/companies/**/project-costs/${draftId}/publish`, route => {
-      const request = route.request()
-      requests.push({ body: request.postDataJSON(), idempotencyKey: request.headers()['idempotency-key'] })
-      if (requests.length === 1) return route.abort('connectionfailed')
-      return route.fulfill({ status: 409, json: { error: { code: 'COST_ALREADY_PUBLISHED', message: 'Project Cost đã được công bố.', requestId: 'req-published', details: {} } } })
+    await page.route(`**/api/companies/**/projects/${projectId}/finance/items/${publishedItemId}/**`, route => route.fulfill({ json: ordinary }))
+    await page.route(`**/api/companies/**/project-costs/${publishedItemId}/evidence`, route => {
+      evidenceRequests += 1
+      return route.fulfill({ json: [costEvidenceMetadataSchema.parse({
+        linkId: linkId1, evidenceFileId: evidenceId, evidenceKind: 'invoice', accountingSourceVersionId: null,
+        originalFilename: 'published-evidence.pdf', sizeBytes: 10, mimeType: 'application/pdf',
+        sha256: mockSha256, finalizedAt: '2026-09-23T00:00:00.000Z',
+      })] })
     })
 
-    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
-    await page.getByTestId('open-publish-modal-btn').click()
-    await page.getByTestId('confirm-publish-btn').click()
-    await expect(page.getByTestId('publish-error-alert')).toBeVisible()
-    await page.getByRole('button', { name: 'Hủy', exact: true }).click()
-    await page.getByTestId('open-publish-modal-btn').click()
-    await page.getByTestId('confirm-publish-btn').click()
-    await expect(page).toHaveURL(new RegExp(`/costs/${projectId}$`))
-    expect(requests[1]).toEqual(requests[0])
+    await page.goto(`/costs/${projectId}/categories/${materialCategoryId}`)
+    await page.getByTestId('view-evidence-btn').click()
+    await expect(page.getByTestId('evidence-filename')).toHaveText('published-evidence.pdf')
+    await expect(page.getByTestId('evidence-download-btn')).toBeVisible()
+    const permissions = createCompany().permissions
+    await setActivePermissions(page, permissions.filter(permission => permission !== 'cost.file.read'))
+    await expect(page.getByTestId('evidence-filename')).toHaveText('published-evidence.pdf')
+    await expect(page.getByTestId('evidence-download-btn')).toHaveCount(0)
+    await setActivePermissions(page, permissions.filter(permission => permission !== 'cost.source.read'))
+    await expect(page.getByTestId('evidence-filename')).toHaveCount(0)
+    expect(evidenceRequests).toBe(1)
   })
 
-  test('Flow M — a genuinely changed publish version uses a new key', async ({ page }) => {
-    let version = 1
-    const readyDraft = () => projectCostDraftSchema.parse({
-      ...draftFixture(draftId, projectId, 'Ready publish version'),
-      version,
-      amount: '10000000.0000',
-      details: [{
-        id: '80000000-0000-4000-8000-000000000021', projectCostItemId: draftId, lineNo: 1, detailKind: 'line_item', description: 'Ready line', quantity: null, unitCode: null, unitPrice: null, amount: '10000000.0000', retentionKind: null, retentionRateBps: null, retentionAmount: null, relevantDate: null, reference: null, note: null, version, createdAt: '2026-09-22T08:00:00.000Z', updatedAt: '2026-09-22T08:00:00.000Z',
-      }],
-      publishReadiness: { ready: true, blockingCodes: [] },
-    })
-    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: readyDraft() }))
-    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
-    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, route => route.fulfill({ json: [] }))
-    const requests: Array<{ body: Record<string, unknown>; idempotencyKey: string | undefined }> = []
-    await page.route(`**/api/companies/**/project-costs/${draftId}/publish`, route => {
-      const request = route.request()
-      requests.push({ body: request.postDataJSON(), idempotencyKey: request.headers()['idempotency-key'] })
-      if (requests.length === 1) return route.abort('connectionfailed')
-      return route.fulfill({ json: costCommandAckSchema.parse({ id: draftId, version: 3, publicationState: 'published', replayed: false }) })
-    })
-
-    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
-    await page.getByTestId('open-publish-modal-btn').click()
-    await page.getByTestId('confirm-publish-btn').click()
-    await expect(page.getByTestId('publish-error-alert')).toBeVisible()
-    await page.getByRole('button', { name: 'Hủy' }).click()
-    version = 2
-    await page.reload()
-    await page.getByTestId('open-publish-modal-btn').click()
-    await page.getByTestId('confirm-publish-btn').click()
-    await expect(page).toHaveURL(new RegExp(`/costs/${projectId}$`))
-    expect(requests[0]?.body).toEqual({ expectedVersion: 1 })
-    expect(requests[1]?.body).toEqual({ expectedVersion: 2 })
-    expect(requests[1]?.idempotencyKey).not.toBe(requests[0]?.idempotencyKey)
-  })
-
-  test('Flow B / Flow I — void survives refresh and replacement uses the same payment and contract', async ({ page }) => {
+  test('Flow B / Flow I - void survives refresh and replacement uses the same payment and contract', async ({ page }) => {
     const paymentRows: Array<{
       id: string
       contractId: string
@@ -895,381 +527,6 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     await page.getByTestId('confirm-record-payment-btn').click()
     await expect(page.getByTestId('record-payment-form')).toHaveCount(0)
     expect(requests[3]?.idempotencyKey).not.toBe(requests[2]?.idempotencyKey)
-  })
-
-  test('Flow J — stale draft response cannot overwrite a newer company context', async ({ page, authState }) => {
-    const companyB = '10000000-0000-4000-8000-000000000060'
-    authState.sessionCompanies = [
-      createCompany(),
-      createCompany({ companyId: companyB, companyCode: 'VQH-B', companyName: 'Công ty B' }),
-    ]
-    let releaseDraftA!: () => void
-    const draftAGate = new Promise<void>(resolve => { releaseDraftA = resolve })
-    await page.route(`**/api/companies/${companyId}/project-costs/${draftId}/draft`, async route => {
-      await draftAGate
-      await route.fulfill({ json: draftFixture(draftId, projectId, 'Draft A stale') })
-    })
-    await page.route(`**/api/companies/${companyB}/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Draft B current') }))
-    await page.route(`**/api/companies/${companyId}/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
-    await page.route(`**/api/companies/${companyB}/projects/${projectId}/finance`, route => route.fulfill({ json: { ...mockProjectOverview, project: { ...mockProjectOverview.project, projectCode: 'DA-C1-02', projectName: 'Dự án B' } } }))
-    await page.route('**/api/companies/**/project-costs/*/evidence', route => route.fulfill({ json: [] }))
-
-    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
-    await expect(page.getByText('Đang tải dữ liệu bản nháp…')).toBeVisible()
-    await page.evaluate((targetCompanyId) => {
-      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { selectCompany(companyId: string): boolean } } } } } }
-      const store = root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore
-      if (!store?.selectCompany(targetCompanyId)) throw new Error('Unable to switch company in test')
-    }, companyB)
-    await expect(page.getByTestId('draft-title')).toHaveText('Draft B current')
-
-    const staleResponse = page.waitForResponse(response => response.url().includes(`/project-costs/${draftId}/draft`))
-    releaseDraftA()
-    await staleResponse
-    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
-
-    await expect(page.getByTestId('draft-title')).toHaveText('Draft B current')
-    await expect(page.getByText('DA-C1-02')).toBeVisible()
-    await expect(page.getByLabel('Chuyển công ty')).toHaveValue(companyB)
-  })
-
-  test('Flow J — Draft A resolving last cannot cross Draft B route and evidence context', async ({ page }) => {
-    const projectB = '10000000-0000-4000-8000-000000000070'
-    const draftB = '30000000-0000-4000-8000-000000000071'
-    let releaseDraftA!: () => void
-    const draftAGate = new Promise<void>(resolve => { releaseDraftA = resolve })
-    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, async route => {
-      await draftAGate
-      await route.fulfill({ json: draftFixture(draftId, projectId, 'Draft A stale route') })
-    })
-    await page.route(`**/api/companies/**/project-costs/${draftB}/draft`, route => route.fulfill({ json: draftFixture(draftB, projectB, 'Draft B current route') }))
-    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
-    await page.route(`**/api/companies/**/projects/${projectB}/finance`, route => route.fulfill({ json: { ...mockProjectOverview, project: { ...mockProjectOverview.project, projectId: projectB, projectCode: 'DA-C1-B', projectName: 'Dự án Route B' } } }))
-    const evidenceDraftIds: string[] = []
-    await page.route('**/api/companies/**/project-costs/*/evidence', (route) => {
-      evidenceDraftIds.push(new URL(route.request().url()).pathname.split('/').at(-2)!)
-      route.fulfill({ json: [] })
-    })
-
-    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
-    await expect(page.getByText('Đang tải dữ liệu bản nháp…')).toBeVisible()
-    await page.evaluate(async (path) => {
-      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $router?: { push(target: string): Promise<unknown> } } } } }
-      const router = root.__vue_app__?.config.globalProperties.$router
-      if (!router) throw new Error('Unable to resolve router in test')
-      await router.push(path)
-    }, `/costs/${projectB}/drafts/${draftB}`)
-    await expect(page).toHaveURL(new RegExp(`/costs/${projectB}/drafts/${draftB}$`))
-    await expect(page.getByTestId('draft-title')).toHaveText('Draft B current route')
-    await expect.poll(() => evidenceDraftIds).toContain(draftB)
-
-    const staleResponse = page.waitForResponse(response => response.url().includes(`/project-costs/${draftId}/draft`))
-    releaseDraftA()
-    await staleResponse
-    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
-
-    await expect(page.getByTestId('draft-title')).toHaveText('Draft B current route')
-    await expect(page.getByText('DA-C1-B')).toBeVisible()
-    expect(evidenceDraftIds).toEqual([draftB])
-  })
-
-  test('R5-F1 — financial draft must belong to the routed project before dependent reads', async ({ page }) => {
-    const projectB = '10000000-0000-4000-8000-000000000070'
-    let overviewRequests = 0
-    let evidenceRequests = 0
-    let intentRequests = 0
-    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Draft owned by project A') }))
-    await page.route(`**/api/companies/**/projects/${projectB}/finance`, (route) => { overviewRequests += 1; route.fulfill({ json: mockProjectOverview }) })
-    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, (route) => { evidenceRequests += 1; route.fulfill({ json: [] }) })
-    await page.route(`**/api/companies/**/projects/${projectB}/evidence/upload-intents`, (route) => { intentRequests += 1; route.fulfill({ json: {} }) })
-
-    await page.goto(`/costs/${projectB}/drafts/${draftId}`)
-    await expect(page.getByTestId('draft-not-found')).toBeVisible()
-    await expect(page.getByTestId('draft-title')).toHaveCount(0)
-    expect(overviewRequests).toBe(0)
-    expect(evidenceRequests).toBe(0)
-    expect(intentRequests).toBe(0)
-  })
-
-  test('R5-F1 — operational draft must belong to the routed project before metadata or mutation UI', async ({ page, authState }) => {
-    const projectB = '10000000-0000-4000-8000-000000000070'
-    authState.sessionCompanies = [createCompany({ permissions: ['cost.manage'] })]
-    let metadataRequests = 0
-    const operational = projectCostOperationalDraftSchema.parse({
-      id: draftId, projectId, description: 'Operational draft owned by A', costCategoryId: materialCategoryId,
-      businessReference: null, partyId: null, engagementId: null, componentId: null, relevantDate: '2026-09-22',
-      workStatus: 'in_progress', publicationState: 'draft', version: 1,
-      createdAt: '2026-09-22T08:00:00.000Z', updatedAt: '2026-09-22T08:00:00.000Z',
-    })
-    await page.route(`**/api/companies/**/project-costs/${draftId}/draft/operations`, route => route.fulfill({ json: operational }))
-    await page.route('**/api/companies/**/project-cost-drafts/metadata', (route) => { metadataRequests += 1; route.fulfill({ json: { projects: [], categories: [] } }) })
-
-    await page.goto(`/costs/${projectB}/drafts/${draftId}`)
-    await expect(page.getByTestId('draft-not-found')).toBeVisible()
-    await expect(page.getByTestId('draft-operations-form')).toHaveCount(0)
-    expect(metadataRequests).toBe(0)
-  })
-
-  test('R5-F2 — stale evidence response for item A cannot overwrite item B', async ({ page }) => {
-    const draftB = '30000000-0000-4000-8000-000000000071'
-    let releaseEvidenceA!: () => void
-    let evidenceAStarted!: () => void
-    const evidenceAGate = new Promise<void>(resolve => { releaseEvidenceA = resolve })
-    const evidenceARequest = new Promise<void>(resolve => { evidenceAStarted = resolve })
-    const evidence = (id: string, filename: string) => [costEvidenceMetadataSchema.parse({ linkId: id, evidenceFileId: evidenceId, evidenceKind: 'invoice', accountingSourceVersionId: null, originalFilename: filename, sizeBytes: 10, mimeType: 'application/pdf', sha256: mockSha256, finalizedAt: '2026-09-23T00:00:00.000Z' })]
-    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Draft A') }))
-    await page.route(`**/api/companies/**/project-costs/${draftB}/draft`, route => route.fulfill({ json: draftFixture(draftB, projectId, 'Draft B') }))
-    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
-    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, async (route) => { evidenceAStarted(); await evidenceAGate; await route.fulfill({ json: evidence(linkId1, 'evidence-a.pdf') }) })
-    await page.route(`**/api/companies/**/project-costs/${draftB}/evidence`, route => route.fulfill({ json: evidence('80000000-0000-4000-8000-000000000078', 'evidence-b.pdf') }))
-
-    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
-    await evidenceARequest
-    await page.evaluate(async (path) => {
-      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $router?: { push(target: string): Promise<unknown> } } } } }
-      await root.__vue_app__?.config.globalProperties.$router?.push(path)
-    }, `/costs/${projectId}/drafts/${draftB}`)
-    await expect(page.getByTestId('evidence-filename')).toHaveText('evidence-b.pdf')
-    releaseEvidenceA()
-    await page.waitForTimeout(100)
-    await expect(page.getByTestId('evidence-filename')).toHaveText('evidence-b.pdf')
-    await expect(page.getByText('evidence-a.pdf')).toHaveCount(0)
-  })
-
-  test('R5-F2 — company change rejects old evidence metadata for the same item', async ({ page, authState }) => {
-    const companyB = '10000000-0000-4000-8000-000000000060'
-    authState.sessionCompanies = [createCompany(), createCompany({ companyId: companyB, companyCode: 'VQH-B', companyName: 'Công ty B' })]
-    let releaseEvidenceA!: () => void
-    let evidenceAStarted!: () => void
-    const evidenceAGate = new Promise<void>(resolve => { releaseEvidenceA = resolve })
-    const evidenceARequest = new Promise<void>(resolve => { evidenceAStarted = resolve })
-    const metadata = (id: string, filename: string) => [costEvidenceMetadataSchema.parse({ linkId: id, evidenceFileId: evidenceId, evidenceKind: 'invoice', accountingSourceVersionId: null, originalFilename: filename, sizeBytes: 10, mimeType: 'application/pdf', sha256: mockSha256, finalizedAt: '2026-09-23T00:00:00.000Z' })]
-    await page.route(`**/api/companies/${companyId}/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Company A draft') }))
-    await page.route(`**/api/companies/${companyB}/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Company B draft') }))
-    await page.route(`**/api/companies/*/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
-    await page.route(`**/api/companies/${companyId}/project-costs/${draftId}/evidence`, async (route) => { evidenceAStarted(); await evidenceAGate; await route.fulfill({ json: metadata(linkId1, 'company-a.pdf') }) })
-    await page.route(`**/api/companies/${companyB}/project-costs/${draftId}/evidence`, route => route.fulfill({ json: metadata('80000000-0000-4000-8000-000000000079', 'company-b.pdf') }))
-
-    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
-    await evidenceARequest
-    await page.evaluate((targetCompanyId) => {
-      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { selectCompany(companyId: string): boolean } } } } } }
-      if (!root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore?.selectCompany(targetCompanyId)) throw new Error('Unable to switch company')
-    }, companyB)
-    await expect(page.getByTestId('evidence-filename')).toHaveText('company-b.pdf')
-    releaseEvidenceA()
-    await page.waitForTimeout(100)
-    await expect(page.getByTestId('evidence-filename')).toHaveText('company-b.pdf')
-  })
-
-  test('R5-F2 — revoking source-read clears visible evidence without another request', async ({ page }) => {
-    let evidenceRequests = 0
-    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Permission draft') }))
-    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
-    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, (route) => {
-      evidenceRequests += 1
-      route.fulfill({ json: [costEvidenceMetadataSchema.parse({ linkId: linkId1, evidenceFileId: evidenceId, evidenceKind: 'invoice', accountingSourceVersionId: null, originalFilename: 'visible-before-revoke.pdf', sizeBytes: 10, mimeType: 'application/pdf', sha256: mockSha256, finalizedAt: '2026-09-23T00:00:00.000Z' })] })
-    })
-    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
-    await expect(page.getByTestId('evidence-filename')).toHaveText('visible-before-revoke.pdf')
-    await expect(page.getByTestId('evidence-download-btn')).toBeVisible()
-    const originalPermissions = await page.evaluate(() => {
-      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { companies: Array<{ companyId: string; permissions: string[] }>; activeCompanyId: string } } } } } }
-      const store = root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore
-      const company = store?.companies.find(item => item.companyId === store.activeCompanyId)
-      if (!company) throw new Error('Unable to resolve active company')
-      return company.permissions
-    })
-    await setActivePermissions(page, originalPermissions.filter(permission => permission !== 'cost.file.read'))
-    await expect(page.getByTestId('evidence-filename')).toHaveText('visible-before-revoke.pdf')
-    await expect(page.getByTestId('evidence-download-btn')).toHaveCount(0)
-    await setActivePermissions(page, originalPermissions)
-    await expect(page.getByTestId('evidence-download-btn')).toBeVisible()
-    await setActivePermissions(page, originalPermissions.filter(permission => permission !== 'cost.source.read'))
-    await expect(page.getByTestId('evidence-filename')).toHaveCount(0)
-    await expect(page.getByText('Cần quyền cost.source.read để xem danh sách chứng từ đính kèm.')).toBeVisible()
-    expect(evidenceRequests).toBe(1)
-  })
-
-  test('R5-F2 — unmount invalidates an outstanding evidence metadata request', async ({ page }) => {
-    let releaseEvidence!: () => void
-    let evidenceStarted!: () => void
-    const evidenceGate = new Promise<void>(resolve => { releaseEvidence = resolve })
-    const evidenceRequest = new Promise<void>(resolve => { evidenceStarted = resolve })
-    const pageErrors: Error[] = []
-    page.on('pageerror', error => pageErrors.push(error))
-    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: draftFixture(draftId, projectId, 'Unmount draft') }))
-    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
-    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, async (route) => { evidenceStarted(); await evidenceGate; await route.fulfill({ json: [] }) })
-    await page.route('**/api/companies/**/project-cost-drafts/metadata', route => route.fulfill({ json: { projects: [], categories: [] } }))
-
-    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
-    await evidenceRequest
-    await page.goto('/cost-drafts')
-    releaseEvidence()
-    await page.waitForTimeout(100)
-
-    await expect(page).toHaveURL(/\/cost-drafts$/)
-    expect(pageErrors).toEqual([])
-  })
-
-  test('Sibling race — stale draft-list response cannot cross project routes', async ({ page }) => {
-    const projectB = '10000000-0000-4000-8000-000000000070'
-    const draftB = '30000000-0000-4000-8000-000000000071'
-    let releaseDraftListA!: () => void
-    let draftListAStarted!: () => void
-    const draftListAGate = new Promise<void>(resolve => { releaseDraftListA = resolve })
-    const draftListARequest = new Promise<void>(resolve => { draftListAStarted = resolve })
-    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
-    await page.route(`**/api/companies/**/projects/${projectB}/finance`, route => route.fulfill({ json: { ...mockProjectOverview, project: { ...mockProjectOverview.project, projectId: projectB, projectCode: 'DA-B', projectName: 'Project B' } } }))
-    await page.route(`**/api/companies/**/projects/${projectId}/project-cost-drafts`, async (route) => { draftListAStarted(); await draftListAGate; await route.fulfill({ json: [draftFixture(draftId, projectId, 'Draft list A')] }) })
-    await page.route(`**/api/companies/**/projects/${projectB}/project-cost-drafts`, route => route.fulfill({ json: [draftFixture(draftB, projectB, 'Draft list B')] }))
-
-    await page.goto(`/costs/${projectId}`)
-    await page.getByTestId('open-drafts-list-btn').click()
-    await draftListARequest
-    await page.evaluate(async (path) => {
-      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $router?: { push(target: string): Promise<unknown> } } } } }
-      await root.__vue_app__?.config.globalProperties.$router?.push(path)
-    }, `/costs/${projectB}`)
-    await page.getByTestId('open-drafts-list-btn').click()
-    await expect(page.getByText('Draft list B')).toBeVisible()
-    releaseDraftListA()
-    await page.waitForTimeout(100)
-    await expect(page.getByText('Draft list B')).toBeVisible()
-    await expect(page.getByText('Draft list A')).toHaveCount(0)
-  })
-
-  test('Flow K — removing retention clears local dependents and sends canonical nulls', async ({ page }) => {
-    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: projectCostDraftSchema.parse({
-      id: draftId,
-      projectId,
-      description: 'Draft with retained line',
-      costCategoryId: materialCategoryId,
-      businessReference: null,
-      partyId: null,
-      engagementId: null,
-      componentId: null,
-      relevantDate: '2026-09-22',
-      workStatus: 'in_progress',
-      amount: '20000.0000',
-      currencyCode: 'VND',
-      publicationState: 'draft',
-      version: 1,
-      details: [{
-        id: '80000000-0000-4000-8000-000000000010',
-        projectCostItemId: draftId,
-        lineNo: 1,
-        detailKind: 'line_item',
-        description: 'Retained line',
-        quantity: null,
-        unitCode: null,
-        unitPrice: null,
-        amount: '20000.0000',
-        retentionKind: 'warranty',
-        retentionRateBps: 500,
-        retentionAmount: '1000.0000',
-        relevantDate: null,
-        reference: null,
-        note: null,
-        version: 1,
-        createdAt: '2026-09-22T08:00:00.000Z',
-        updatedAt: '2026-09-22T08:00:00.000Z',
-      }],
-      sourceFigureIds: [],
-      publishReadiness: { ready: true, blockingCodes: [] },
-      createdAt: '2026-09-22T08:00:00.000Z',
-      updatedAt: '2026-09-22T08:00:00.000Z',
-    }) }))
-    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
-    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, route => route.fulfill({ json: [] }))
-    let savedPayload: unknown = null
-    await page.route(`**/api/companies/**/project-costs/${draftId}/financials`, route => {
-      savedPayload = route.request().postDataJSON()
-      route.fulfill({ json: { id: draftId, version: 2, publicationState: 'draft', amount: '20000.0000', detailCount: 1, publishReadiness: { ready: true, blockingCodes: [] }, replayed: false } })
-    })
-
-    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
-    const retention = page.getByTestId('line-retention-select')
-    await expect(retention).toHaveValue('warranty')
-    await expect(page.getByTestId('line-retention-amount-input')).toHaveValue('1000.0000')
-    await retention.selectOption('')
-    await expect(page.getByTestId('line-retention-amount-input')).toHaveCount(0)
-    await retention.selectOption('warranty')
-    await expect(page.getByTestId('line-retention-amount-input')).toHaveValue('')
-    await retention.selectOption('')
-    await expect(retention).toHaveValue('')
-    await page.getByTestId('save-financials-btn').click()
-    await expect.poll(() => savedPayload).not.toBeNull()
-
-    const parsed = prepareProjectCostFinancialsInputSchema.parse(savedPayload)
-    expect(parsed.details[0]).toMatchObject({ retentionKind: null, retentionRateBps: null, retentionAmount: null })
-  })
-
-  test('Permission case: cost.file.read without cost.read does NOT show raw evidence download/open button', async ({ page, authState }) => {
-    // Setup authenticated state without cost.read (has cost.manage, cost.prepare, cost.source.read, cost.file.read)
-    authState.sessionCompanies = [
-      createCompany({
-        permissions: ['cost.manage', 'cost.prepare', 'cost.source.read', 'cost.file.read'],
-      }),
-    ]
-
-    // Mock draft (prepare capability)
-    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => {
-      route.fulfill({
-        json: projectCostDraftSchema.parse({
-          id: draftId,
-          projectId,
-          description: 'Hạng mục chi phí',
-          costCategoryId: materialCategoryId,
-          businessReference: null,
-          partyId: null,
-          engagementId: null,
-          componentId: null,
-          relevantDate: '2026-09-22',
-          workStatus: 'in_progress',
-          amount: '10000000.0000',
-          currencyCode: 'VND',
-          publicationState: 'draft',
-          version: 1,
-          details: [],
-          sourceFigureIds: [],
-          publishReadiness: { ready: false, blockingCodes: ['FINANCIAL_DETAILS_REQUIRED'] },
-          createdAt: '2026-09-22T08:00:00.000Z',
-          updatedAt: '2026-09-22T08:00:00.000Z',
-        }),
-      })
-    })
-
-    // Mock evidence metadata list (allowed under cost.source.read)
-    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, route => {
-      route.fulfill({
-        json: [
-          costEvidenceMetadataSchema.parse({
-            linkId: linkId1,
-            evidenceFileId: evidenceId,
-            evidenceKind: 'invoice',
-            accountingSourceVersionId: null,
-            originalFilename: 'bang_ke_nguon.xlsx',
-            sizeBytes: 2048,
-            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            sha256: mockSha256,
-            finalizedAt: new Date().toISOString(),
-          }),
-        ],
-      })
-    })
-
-    // Navigate to draft workbench directly without cost.read
-    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
-    await expect(page.getByTestId('draft-workbench-page')).toBeVisible()
-
-    // Evidence row is rendered via cost.source.read
-    await expect(page.getByTestId('evidence-filename')).toContainText('bang_ke_nguon.xlsx')
-
-    // Raw download button MUST NOT be present because actor lacks cost.read
-    await expect(page.getByTestId('evidence-download-btn')).toHaveCount(0)
-    await expect(page.getByText('(Cần cost.read + cost.file.read)')).toBeVisible()
   })
 
   test('Flow C — Operational correction: safely diffs published cost operational changes omitting untouched fields and category label fallback', async ({ page }) => {
@@ -2219,46 +1476,6 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     await expect(page.getByTestId(`payment-inactive-contract-hint-${paymentId1}`)).toHaveText('Hợp đồng đã ngừng hoạt động — không thể ghi nhận thanh toán thay thế')
   })
 
-  test('Flow G — Draft canonical error states: displays not-found and permission-denied views based on ClientError.code', async ({ page }) => {
-    // 1. Mock 404 with RESOURCE_NOT_FOUND
-    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => {
-      route.fulfill({
-        status: 404,
-        json: {
-          error: {
-            code: 'RESOURCE_NOT_FOUND',
-            message: 'Bản nháp không tồn tại.',
-            requestId: 'req-404',
-            details: {},
-          },
-        },
-      })
-    })
-
-    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
-    await expect(page.getByTestId('draft-not-found')).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Bản nháp không tồn tại' })).toBeVisible()
-
-    // 2. Mock 403 with PERMISSION_DENIED
-    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => {
-      route.fulfill({
-        status: 403,
-        json: {
-          error: {
-            code: 'PERMISSION_DENIED',
-            message: 'Không có quyền truy cập bản nháp.',
-            requestId: 'req-403',
-            details: {},
-          },
-        },
-      })
-    })
-
-    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
-    await expect(page.getByTestId('draft-permission-denied')).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Không có quyền truy cập bản nháp' })).toBeVisible()
-  })
-
   test('company switch closes an in-flight correction and prevents its A response from closing B', async ({ page, authState }) => {
     const companyB = '10000000-0000-4000-8000-000000000060'
     authState.sessionCompanies = [createCompany(), createCompany({ companyId: companyB, companyCode: 'VQH-B', companyName: 'Công ty B' })]
@@ -2399,77 +1616,6 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     await expect(page.getByTestId('void-reason-input')).toBeVisible()
     await switchCompany(companyB)
     await expect(page.getByTestId('void-reason-input')).toHaveCount(0)
-  })
-
-  test('company switch prevents a pending A publish from navigating or closing B', async ({ page, authState }) => {
-    const companyB = '10000000-0000-4000-8000-000000000060'
-    authState.sessionCompanies = [createCompany(), createCompany({ companyId: companyB, companyCode: 'VQH-B', companyName: 'Công ty B' })]
-    const readyDraft = (description: string) => projectCostDraftSchema.parse({ ...draftFixture(draftId, projectId, description), amount: '10000000.0000', details: [{ id: '80000000-0000-4000-8000-000000000091', projectCostItemId: draftId, lineNo: 1, detailKind: 'line_item', description: 'Ready', quantity: null, unitCode: null, unitPrice: null, amount: '10000000.0000', retentionKind: null, retentionRateBps: null, retentionAmount: null, relevantDate: null, reference: null, note: null, version: 1, createdAt: '2026-09-22T08:00:00.000Z', updatedAt: '2026-09-22T08:00:00.000Z' }], publishReadiness: { ready: true, blockingCodes: [] } })
-    let releaseA!: () => void
-    let startedA!: () => void
-    const aGate = new Promise<void>(resolve => { releaseA = resolve })
-    const aStarted = new Promise<void>(resolve => { startedA = resolve })
-    await page.route(`**/api/companies/${companyId}/project-costs/${draftId}/draft`, route => route.fulfill({ json: readyDraft('Draft A') }))
-    await page.route(`**/api/companies/${companyB}/project-costs/${draftId}/draft`, route => route.fulfill({ json: readyDraft('Draft B') }))
-    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
-    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, route => route.fulfill({ json: [] }))
-    await page.route(`**/api/companies/${companyId}/project-costs/${draftId}/publish`, async route => { startedA(); await aGate; await route.fulfill({ json: costCommandAckSchema.parse({ id: draftId, version: 2, publicationState: 'published', replayed: false }) }) })
-
-    await page.goto(`/costs/${projectId}/drafts/${draftId}`)
-    await page.getByTestId('open-publish-modal-btn').click()
-    await page.getByTestId('confirm-publish-btn').click()
-    await aStarted
-    await page.evaluate((target) => {
-      const root = document.querySelector('#__nuxt') as HTMLElement & { __vue_app__?: { config: { globalProperties: { $nuxt?: { $companyAccessStore?: { selectCompany(companyId: string): boolean } } } } } }
-      if (!root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore?.selectCompany(target)) throw new Error('Unable to switch company')
-    }, companyB)
-    await expect(page.getByTestId('publish-cost-modal')).toHaveCount(0)
-    await page.getByTestId('open-publish-modal-btn').click()
-    releaseA()
-    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
-    await expect(page).toHaveURL(new RegExp(`/costs/${projectId}/drafts/${draftId}$`))
-    await expect(page.getByTestId('publish-cost-modal')).toBeVisible()
-  })
-
-  test('same-company publish revocation closes a pending publish and keeps its response inert after regrant', async ({ page, authState }) => {
-    authState.sessionCompanies = [createCompany({ permissions: ['cost.read', 'cost.prepare', 'cost.publish_import'] })]
-    const readyDraft = projectCostDraftSchema.parse({
-      ...draftFixture(draftId, projectId, 'Publish revocation'),
-      amount: '10000000.0000',
-      details: [{ id: '80000000-0000-4000-8000-000000000091', projectCostItemId: draftId, lineNo: 1, detailKind: 'line_item', description: 'Ready', quantity: null, unitCode: null, unitPrice: null, amount: '10000000.0000', retentionKind: null, retentionRateBps: null, retentionAmount: null, relevantDate: null, reference: null, note: null, version: 1, createdAt: '2026-09-22T08:00:00.000Z', updatedAt: '2026-09-22T08:00:00.000Z' }],
-      publishReadiness: { ready: true, blockingCodes: [] },
-    })
-    let releasePublish!: () => void
-    let publishStarted!: () => void
-    const publishGate = new Promise<void>(resolve => { releasePublish = resolve })
-    const publishRequest = new Promise<void>(resolve => { publishStarted = resolve })
-    await page.route(`**/api/companies/**/project-costs/${draftId}/draft`, route => route.fulfill({ json: readyDraft }))
-    await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
-    await page.route(`**/api/companies/**/project-costs/${draftId}/evidence`, route => route.fulfill({ json: [] }))
-    await page.route(`**/api/companies/**/project-costs/${draftId}/publish`, async route => { publishStarted(); await publishGate; await route.fulfill({ json: costCommandAckSchema.parse({ id: draftId, version: 2, publicationState: 'published', replayed: false }) }) })
-
-    try {
-      await page.goto(`/costs/${projectId}/drafts/${draftId}`)
-      await page.getByTestId('open-publish-modal-btn').click()
-      await page.getByTestId('confirm-publish-btn').click()
-      await publishRequest
-      await setActivePermissions(page, ['cost.read', 'cost.prepare'])
-      await expect(page.getByRole('dialog', { name: 'Xác nhận phát hành chi phí chính thức' })).toHaveCount(0)
-      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
-      expect(await page.getByText('Bạn cần quyền cost.publish_import để kích hoạt bản nháp thành dữ liệu chính thức.').count()).toBe(0)
-
-      await setActivePermissions(page, ['cost.read', 'cost.prepare', 'cost.publish_import'])
-      await expect(page.getByTestId('open-publish-modal-btn')).toBeVisible()
-      await expect(page.getByRole('dialog', { name: 'Xác nhận phát hành chi phí chính thức' })).toHaveCount(0)
-      const response = page.waitForResponse(item => item.url().includes(`/project-costs/${draftId}/publish`) && item.status() === 200)
-      releasePublish()
-      await response
-      await expect(page).toHaveURL(new RegExp(`/costs/${projectId}/drafts/${draftId}$`))
-      await expect(page.getByRole('dialog', { name: 'Xác nhận phát hành chi phí chính thức' })).toHaveCount(0)
-    }
-    finally {
-      releasePublish()
-    }
   })
 
   test('same-company permission revocation closes correction, attachment, and payment write modals', async ({ page, authState }) => {

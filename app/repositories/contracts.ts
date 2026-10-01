@@ -34,7 +34,7 @@ import type {
 } from '../../shared/schemas/stage01-config'
 import type { BusinessParty, CompanyCostSettings, CreateBusinessPartyInput, CreateEngagementComponentInput, CreateEngagementInput, CreateProjectRegisterInput, Engagement, EngagementComponent, ProjectRegister, UpdateBusinessPartyInput, UpdateEngagementComponentInput, UpdateEngagementInput, UpdateProjectRegisterInput } from '../../shared/schemas/costs/master-data'
 import type { CostSourceFiguresQuery, CostSourceOverview, CostSourceProjectDetail, CostSourceProvenance, CostSourceFigure } from '../../shared/schemas/costs/source-read-model'
-import type { CostCommandAck, CorrectPublishedProjectCostDetailInput, CorrectPublishedProjectCostInput, CreateAndPublishProjectCostDetailInput, CreateProjectCostDetailDraftInput, CreateProjectCostDraftInput, PrepareProjectCostDetailFinancialsInput, PrepareProjectCostFinancialsInput, PrepareProjectCostFinancialsResult, ProjectCostBreakdown, ProjectCostDetailCommandAck, ProjectCostDetailDraft, ProjectCostDetailOperationalDraft, ProjectCostDetailsResponse, ProjectCostDraft, ProjectCostDraftManagementMetadata, ProjectCostOperationalDraft, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, PublishProjectCostDetailInput, PublishProjectCostInput, UpdateProjectCostDetailDraftInput, UpdateProjectCostDraftInput } from '../../shared/schemas/costs/project-costs'
+import type { CostCommandAck, CorrectPublishedProjectCostDetailInput, CorrectPublishedProjectCostInput, CreateAndPublishProjectCostDetailInput, CreateProjectCostDetailDraftInput, PrepareProjectCostDetailFinancialsInput, ProjectCostBreakdown, ProjectCostDetailCommandAck, ProjectCostDetailDraft, ProjectCostDetailOperationalDraft, ProjectCostDetailsResponse, ProjectCostDraftManagementMetadata, ProjectCostSummaryEntry as SharedProjectCostSummaryEntry, PublishProjectCostDetailInput, PublishProjectCostInput, UpdateProjectCostDetailDraftInput } from '../../shared/schemas/costs/project-costs'
 import type { CostEvidenceCreateIntentInput, CostEvidenceDetailLinkInput, CostEvidenceDetailLinkResult, CostEvidenceFinalizeInput, CostEvidenceFinalized, CostEvidenceLinkInput, CostEvidenceLinkResult, CostEvidenceMetadata, CostEvidenceReadUrl, CostEvidenceReadUrlInput, CostEvidenceUploadIntent } from '../../shared/schemas/costs/cost-evidence'
 import type {
   RecordSubcontractPaymentInput,
@@ -147,25 +147,13 @@ export interface BusinessPartyRepository { list(): Promise<BusinessParty[]>; get
 export interface EngagementRepository { list(projectId: string): Promise<Engagement[]>; getById(projectId: string, id: string): Promise<Engagement | null>; create(projectId: string, input: CreateEngagementInput): Promise<Engagement>; update(projectId: string, id: string, input: UpdateEngagementInput): Promise<Engagement>; listComponents(engagementId: string): Promise<EngagementComponent[]>; getComponentById(engagementId: string, id: string): Promise<EngagementComponent | null>; addComponent(engagementId: string, input: CreateEngagementComponentInput): Promise<EngagementComponent>; updateComponent(engagementId: string, id: string, input: UpdateEngagementComponentInput): Promise<EngagementComponent> }
 export interface CostSettingsRepository { get(): Promise<CompanyCostSettings> }
 export interface CostSourceReadRepository { overview(): Promise<CostSourceOverview>; project(projectId: string): Promise<CostSourceProjectDetail>; figures(projectId: string, query?: Partial<CostSourceFiguresQuery>): Promise<{ items: CostSourceFigure[]; nextCursor: string | null }>; provenance(figureId: string): Promise<CostSourceProvenance> }
-export type ProjectCostCreateDraft = Omit<CreateProjectCostDraftInput, 'projectId'>
-export type ProjectCostPatchInput = UpdateProjectCostDraftInput
 export type ProjectCostSummaryEntry = SharedProjectCostSummaryEntry
-export type ProjectCostCreateResult = CostCommandAck
-export type ProjectCostMutationResult = CostCommandAck
 export interface IdempotentCommandOptions { idempotencyKey: string }
 export interface ProjectCostRepository {
   summaries(): Promise<ProjectCostSummaryEntry[]>
   project(projectId: string): Promise<ProjectCostBreakdown>
   draftManagementMetadata(): Promise<ProjectCostDraftManagementMetadata>
   details(projectCostItemId: string): Promise<ProjectCostDetailsResponse>
-  create(projectId: string, input: ProjectCostCreateDraft, options: IdempotentCommandOptions): Promise<ProjectCostCreateResult>
-  update(projectCostItemId: string, input: ProjectCostPatchInput): Promise<ProjectCostMutationResult>
-  prepareFinancials(projectCostItemId: string, input: PrepareProjectCostFinancialsInput): Promise<PrepareProjectCostFinancialsResult>
-  draft(projectCostItemId: string): Promise<ProjectCostDraft>
-  listDrafts(projectId: string): Promise<ProjectCostDraft[]>
-  operationalDraft(projectCostItemId: string): Promise<ProjectCostOperationalDraft>
-  listOperationalDrafts(projectId: string): Promise<ProjectCostOperationalDraft[]>
-  publish(projectCostItemId: string, input: PublishProjectCostInput, options: IdempotentCommandOptions): Promise<CostCommandAck>
   correct(projectCostItemId: string, input: CorrectPublishedProjectCostInput, options: IdempotentCommandOptions): Promise<CostCommandAck>
   createDetailDraft(projectId: string, input: CreateProjectCostDetailDraftInput, options: IdempotentCommandOptions): Promise<ProjectCostDetailCommandAck>
   updateDetailDraft(detailId: string, input: UpdateProjectCostDetailDraftInput): Promise<ProjectCostDetailCommandAck>

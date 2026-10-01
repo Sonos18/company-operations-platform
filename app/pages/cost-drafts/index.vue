@@ -3,14 +3,11 @@ import { computed, ref, watch } from 'vue'
 import type {
   ProjectCostDetailDraft,
   ProjectCostDetailOperationalDraft,
-  ProjectCostDraft,
   ProjectCostDraftManagementMetadata,
-  ProjectCostOperationalDraft,
 } from '../../../shared/schemas/costs/project-costs'
 import { extractErrorMessage } from '../../utils/costs/accounting-error-mapper'
 import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 import { formatFinanceMoney } from '../../utils/costs/finance-display'
-import ProjectCostDraftCreateModal from '../../components/costs/ProjectCostDraftCreateModal.vue'
 
 definePageMeta({ requiredAnyPermissions: ['cost.manage', 'cost.prepare'] })
 
@@ -29,24 +26,18 @@ const projectionTier = computed<DraftProjectionTier>(() => {
   return 'none'
 })
 
-// Tab 1.A: Separate Ordinary Details and Legacy Parents tabs
-const activeTab = ref<'details' | 'legacy'>(route.query.tab === 'details' ? 'details' : 'legacy')
+const showRetiredLegacyNotice = computed(() => route.query.tab === 'legacy')
 
 const metadata = ref<ProjectCostDraftManagementMetadata>({ projects: [], categories: [] })
 const selectedProjectId = ref('')
 
-// Legacy drafts
-const legacyDrafts = ref<Array<ProjectCostDraft | ProjectCostOperationalDraft>>([])
-const legacyCreateOpen = ref(false)
-
-// Detail drafts (New ordinary detail lifecycle)
 const detailDrafts = ref<Array<ProjectCostDetailDraft | ProjectCostDetailOperationalDraft>>([])
 
 const loading = ref(true)
 const errorMessage = ref<string | null>(null)
 
 const metadataRequests = createAsyncRequestTracker<{ companyId: string }>()
-const draftRequests = createAsyncRequestTracker<{ companyId: string; projectId: string; tab: string; projectionTier: DraftProjectionTier }>()
+const draftRequests = createAsyncRequestTracker<{ companyId: string; projectId: string; projectionTier: DraftProjectionTier }>()
 
 const requestedProjectId = computed(() => typeof route.query.projectId === 'string' ? route.query.projectId : '')
 const selectedProject = computed(() => metadata.value.projects.find(project => project.id === selectedProjectId.value) ?? null)
@@ -56,7 +47,6 @@ async function loadDrafts() {
   if (!selectedProjectId.value || projectionTier.value === 'none') {
     draftRequests.invalidate()
     detailDrafts.value = []
-    legacyDrafts.value = []
     loading.value = false
     return
   }
@@ -64,32 +54,19 @@ async function loadDrafts() {
   const request = draftRequests.start({
     companyId: companyAccess.activeCompanyId ?? '',
     projectId: selectedProjectId.value,
-    tab: activeTab.value,
     projectionTier: projectionTier.value,
   })
 
   detailDrafts.value = []
-  legacyDrafts.value = []
   loading.value = true
   errorMessage.value = null
 
   try {
-    if (activeTab.value === 'details') {
-      const nextDetailDrafts = request.identity.projectionTier === 'prepare'
-        ? await repositories.projectCosts.listDetailDrafts(selectedProjectId.value)
-        : await repositories.projectCosts.listOperationalDetailDrafts(selectedProjectId.value)
-
-      if (!request.isCurrent()) return
-      detailDrafts.value = nextDetailDrafts
-    }
-    else {
-      const nextLegacyDrafts = request.identity.projectionTier === 'prepare'
-        ? await repositories.projectCosts.listDrafts(selectedProjectId.value)
-        : await repositories.projectCosts.listOperationalDrafts(selectedProjectId.value)
-
-      if (!request.isCurrent()) return
-      legacyDrafts.value = nextLegacyDrafts
-    }
+    const nextDetailDrafts = request.identity.projectionTier === 'prepare'
+      ? await repositories.projectCosts.listDetailDrafts(selectedProjectId.value)
+      : await repositories.projectCosts.listOperationalDetailDrafts(selectedProjectId.value)
+    if (!request.isCurrent()) return
+    detailDrafts.value = nextDetailDrafts
   }
   catch (error: unknown) {
     if (!request.isCurrent()) return
@@ -125,7 +102,6 @@ async function load() {
     if (!request.isCurrent()) return
     metadata.value = { projects: [], categories: [] }
     detailDrafts.value = []
-    legacyDrafts.value = []
     errorMessage.value = extractErrorMessage(error, 'Không thể tải dữ liệu quản lý bản nháp.')
     loading.value = false
   }
@@ -136,22 +112,12 @@ async function onProjectChange() {
   await loadDrafts()
 }
 
-function onLegacyCreated(result: { id: string }) {
-  router.push(`/costs/${selectedProjectId.value}/drafts/${result.id}`)
-}
-
-watch(() => activeTab.value, () => {
-  loadDrafts()
-})
-
 watch(() => companyAccess.activeCompanyId, () => {
   metadataRequests.invalidate()
   draftRequests.invalidate()
   metadata.value = { projects: [], categories: [] }
   selectedProjectId.value = ''
   detailDrafts.value = []
-  legacyDrafts.value = []
-  legacyCreateOpen.value = false
   loading.value = true
   errorMessage.value = null
   load()
@@ -169,8 +135,6 @@ watch(requestedProjectId, (requested) => {
 watch(projectionTier, (tier) => {
   draftRequests.invalidate()
   detailDrafts.value = []
-  legacyDrafts.value = []
-  legacyCreateOpen.value = false
   errorMessage.value = null
   if (tier === 'none') {
     metadataRequests.invalidate()
@@ -183,9 +147,6 @@ watch(projectionTier, (tier) => {
   else loadDrafts()
 }, { flush: 'sync' })
 
-watch(canManage, (allowed) => {
-  if (!allowed) legacyCreateOpen.value = false
-}, { flush: 'sync' })
 </script>
 
 <template>
@@ -202,7 +163,7 @@ watch(canManage, (allowed) => {
       <div class="flex items-center gap-2">
         <!-- New Ordinary Entry Button -->
         <UButton
-          v-if="canManage && selectedProjectId && activeTab === 'details'"
+          v-if="canManage && selectedProjectId"
           :to="`/costs/${selectedProjectId}/entries/new`"
           color="primary"
           icon="i-lucide-plus"
@@ -211,20 +172,10 @@ watch(canManage, (allowed) => {
           Ghi nhận chi phí mới
         </UButton>
 
-        <!-- Legacy Parent Create Button -->
-        <UButton
-          v-else-if="canManage && selectedProjectId && activeTab === 'legacy'"
-          color="primary"
-          icon="i-lucide-plus"
-          data-testid="draft-management-create"
-          @click="() => { legacyCreateOpen = true }"
-        >
-          Tạo bản nháp tổng hợp
-        </UButton>
       </div>
     </header>
 
-    <!-- Project Selector & Tabs -->
+    <!-- Project selector for ordinary detail drafts -->
     <div class="cockpit-card p-4 rounded-lg space-y-4">
       <div class="space-y-1">
         <label for="draft-project" class="block text-xs font-semibold">Dự án</label>
@@ -240,30 +191,16 @@ watch(canManage, (allowed) => {
           </option>
         </select>
       </div>
-
-      <!-- Option 1.A Segmented Tabs -->
-      <div class="flex border-b border-gray-200 dark:border-gray-800 gap-4 text-sm font-semibold" data-testid="draft-tabs">
-        <button
-          type="button"
-          class="pb-2 border-b-2 transition-colors cursor-pointer"
-          :class="activeTab === 'details' ? 'border-primary-600 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
-          data-testid="tab-ordinary-details"
-          @click="activeTab = 'details'"
-        >
-          Chi tiết chi phí (Ordinary Details)
-        </button>
-        <button
-          type="button"
-          class="pb-2 border-b-2 transition-colors cursor-pointer"
-          :class="activeTab === 'legacy' ? 'border-primary-600 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
-          data-testid="tab-legacy-parents"
-          @click="activeTab = 'legacy'"
-        >
-          Bản nháp tổng hợp (Legacy)
-        </button>
-      </div>
     </div>
 
+    <UAlert
+      v-if="showRetiredLegacyNotice"
+      color="info"
+      variant="subtle"
+      title="Bản nháp tổng hợp đã ngừng sử dụng"
+      description="Danh sách bên dưới chỉ gồm bản nháp chi tiết chi phí. Mã bản nháp tổng hợp cũ không được dùng làm mã chi tiết."
+      data-testid="legacy-tab-retired-notice"
+    />
     <UAlert v-if="errorMessage" color="error" variant="subtle" title="Không thể tải bản nháp" :description="errorMessage" />
     <div v-else-if="loading" class="cockpit-card p-8 text-center text-sm text-gray-500" aria-live="polite">
       Đang tải bản nháp…
@@ -272,8 +209,8 @@ watch(canManage, (allowed) => {
       Không có dự án khả dụng cho quản lý bản nháp.
     </div>
 
-    <!-- TAB 1: Ordinary Details (New Lifecycle) -->
-    <div v-else-if="activeTab === 'details'">
+    <!-- Ordinary detail drafts -->
+    <div v-else>
       <div v-if="detailDrafts.length === 0" class="cockpit-card p-8 text-center text-sm text-gray-500" data-testid="detail-drafts-empty">
         Dự án chưa có bản nháp chi tiết chi phí nào.
       </div>
@@ -320,55 +257,6 @@ watch(canManage, (allowed) => {
           </tbody>
         </table>
       </div>
-    </div>
-
-    <!-- TAB 2: Legacy Parent Drafts -->
-    <div v-else-if="activeTab === 'legacy'">
-      <div v-if="legacyDrafts.length === 0" class="cockpit-card p-8 text-center text-sm text-gray-500" data-testid="legacy-drafts-empty">
-        Dự án chưa có bản nháp tổng hợp nào.
-      </div>
-      <div v-else class="cockpit-card overflow-x-auto rounded-lg">
-        <table class="w-full text-left text-sm" data-testid="legacy-drafts-table">
-          <thead class="border-b border-gray-200 dark:border-gray-800">
-            <tr>
-              <th class="p-3">Bản nháp tổng hợp</th>
-              <th class="p-3">Danh mục</th>
-              <th v-if="canPrepare" class="p-3 text-right">Số tiền chuẩn bị</th>
-              <th class="p-3 text-right">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
-            <tr v-for="draft in legacyDrafts" :key="draft.id" :data-testid="`draft-management-row-${draft.id}`">
-              <td class="p-3">
-                <div class="font-semibold">{{ draft.description }}</div>
-                <div class="text-xs text-gray-500">v{{ draft.version }} · {{ draft.workStatus }}</div>
-              </td>
-              <td class="p-3">{{ categoryNames.get(draft.costCategoryId) ?? draft.costCategoryId }}</td>
-              <td v-if="canPrepare" class="p-3 text-right font-mono" data-testid="draft-management-amount">
-                {{ 'amount' in draft ? (draft.amount ?? 'Chưa chuẩn bị') : 'Chưa chuẩn bị' }}
-              </td>
-              <td class="p-3 text-right">
-                <UButton
-                  :to="`/costs/${selectedProjectId}/drafts/${draft.id}`"
-                  size="sm"
-                  variant="outline"
-                  :data-testid="`draft-management-open-${draft.id}`"
-                >
-                  {{ canPrepare ? 'Mở chuẩn bị' : 'Mở vận hành' }}
-                </UButton>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <ProjectCostDraftCreateModal
-        v-if="selectedProjectId"
-        v-model:open="legacyCreateOpen"
-        :project-id="selectedProjectId"
-        :categories="metadata.categories"
-        @created="onLegacyCreated"
-      />
     </div>
   </section>
 </template>
