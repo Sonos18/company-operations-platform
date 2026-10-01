@@ -11,6 +11,7 @@ import ProjectCostCategoryChart from '../../../components/costs/ProjectCostCateg
 import ProjectCostInfoDisclosure from '../../../components/costs/ProjectCostInfoDisclosure.vue'
 import ProjectCostDraftCreateModal from '../../../components/costs/ProjectCostDraftCreateModal.vue'
 import ProjectCostDraftListModal from '../../../components/costs/ProjectCostDraftListModal.vue'
+import ProjectCostDetailDraftListModal from '../../../components/costs/ProjectCostDetailDraftListModal.vue'
 
 definePageMeta({ requiredPermission: 'cost.read' })
 
@@ -28,6 +29,7 @@ const canManage = computed(() => companyAccess.hasPermission('cost.manage'))
 const canPrepare = computed(() => companyAccess.hasPermission('cost.prepare'))
 const isDraftListOpen = ref(false)
 const isDraftCreateOpen = ref(false)
+const isDetailDraftListOpen = ref(false)
 
 function onDraftCreated(result: { id: string }) {
   navigateTo(`/costs/${projectId.value}/drafts/${result.id}`)
@@ -101,7 +103,10 @@ watch(canManage, (allowed) => {
   if (!allowed) isDraftCreateOpen.value = false
 }, { flush: 'sync' })
 watch([canManage, canPrepare], ([manageAllowed, prepareAllowed]) => {
-  if (!manageAllowed && !prepareAllowed) isDraftListOpen.value = false
+  if (!manageAllowed && !prepareAllowed) {
+    isDraftListOpen.value = false
+    isDetailDraftListOpen.value = false
+  }
 }, { flush: 'sync' })
 </script>
 
@@ -182,26 +187,47 @@ watch([canManage, canPrepare], ([manageAllowed, prepareAllowed]) => {
             Chi tiết các hạng mục chi phí công việc đang theo dõi.
           </p>
 
-          <div v-if="canManage || canPrepare" class="draft-actions-bar flex items-center gap-2 pt-3" data-testid="draft-actions-bar">
+          <div v-if="canManage || canPrepare" class="draft-actions-bar flex flex-wrap items-center gap-2 pt-3" data-testid="draft-actions-bar">
+            <UButton
+              color="primary"
+              size="sm"
+              icon="i-lucide-file-stack"
+              data-testid="open-detail-drafts-list-btn"
+              @click="() => { isDetailDraftListOpen = true }"
+            >
+              Danh sách bản nháp chi tiết
+            </UButton>
+            <UButton
+              v-if="canManage"
+              color="primary"
+              variant="outline"
+              size="sm"
+              icon="i-lucide-plus"
+              data-testid="header-create-detail-entry-btn"
+              :to="`/costs/${projectId}/entries/new`"
+            >
+              Ghi nhận chi phí mới
+            </UButton>
             <UButton
               color="neutral"
-              variant="outline"
+              variant="ghost"
               size="sm"
               icon="i-lucide-file-text"
               data-testid="open-drafts-list-btn"
               @click="() => { isDraftListOpen = true }"
             >
-              Danh sách bản nháp
+              Bản nháp tổng hợp (Legacy)
             </UButton>
             <UButton
               v-if="canManage"
-              color="primary"
+              color="neutral"
+              variant="ghost"
               size="sm"
               icon="i-lucide-plus"
               data-testid="header-create-draft-btn"
               @click="() => { isDraftCreateOpen = true }"
             >
-              Tạo bản nháp chi phí
+              Tạo nháp tổng hợp (Legacy)
             </UButton>
           </div>
         </div>
@@ -369,6 +395,14 @@ watch([canManage, canPrepare], ([manageAllowed, prepareAllowed]) => {
       :project-id="projectId"
       :categories="overview.categories"
       @created="onDraftCreated"
+    />
+
+    <ProjectCostDetailDraftListModal
+      v-if="overview"
+      v-model:open="isDetailDraftListOpen"
+      :project-id="projectId"
+      :categories="overview.categories"
+      @open-create="navigateTo(`/costs/${projectId}/entries/new`)"
     />
   </div>
 </template>

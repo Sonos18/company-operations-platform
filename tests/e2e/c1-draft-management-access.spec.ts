@@ -13,8 +13,8 @@ const categoryId = '20000000-0000-4000-8000-000000000051'
 const metadata = projectCostDraftManagementMetadataSchema.parse({
   projects: [{ id: projectId, code: 'DA-C1-01', name: 'Dự án C1' }],
   categories: [
-    { categoryId, code: 'vat_tu', name: 'Vật tư', isActive: true, draftEligible: true },
-    { categoryId: '20000000-0000-4000-8000-000000000099', code: 'subcontract_labor', name: 'Thầu phụ', isActive: true, draftEligible: false },
+    { categoryId, code: 'vat_tu', name: 'Vật tư', isActive: true, draftEligible: true, postingStrategy: 'ordinary_detail' },
+    { categoryId: '20000000-0000-4000-8000-000000000099', code: 'subcontract_labor', name: 'Thầu phụ', isActive: true, draftEligible: false, postingStrategy: 'subcontract_payment' },
   ],
 })
 const operationalDraft = projectCostOperationalDraftSchema.parse({

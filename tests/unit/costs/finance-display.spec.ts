@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  areExactDecimalValuesEqual,
   categoryDisplayName,
   computePageRetentionBreakdown,
   computeProjectKpiCards,
@@ -439,6 +440,39 @@ describe('finance display helpers', () => {
       })
       expect(res.value).toBe('100,000,000 VND')
       expect(res.label).toBe('Lợi nhuận tạm tính')
+    })
+  })
+
+  describe('areExactDecimalValuesEqual', () => {
+    it('distinguishes 9007199254740992 and 9007199254740993 which collide under IEEE-754 Number', () => {
+      // In JS IEEE-754:
+      expect(Number('9007199254740992') === Number('9007199254740993')).toBe(true)
+
+      // With exact arbitrary-precision comparison:
+      expect(areExactDecimalValuesEqual('9007199254740992', '9007199254740993')).toBe(false)
+      expect(areExactDecimalValuesEqual('9007199254740993', '9007199254740992')).toBe(false)
+    })
+
+    it('treats equivalent decimal formatting as equal', () => {
+      expect(areExactDecimalValuesEqual('150', '150.0000')).toBe(true)
+      expect(areExactDecimalValuesEqual('0', '0.0000')).toBe(true)
+      expect(areExactDecimalValuesEqual('9007199254740992', '9007199254740992.0000')).toBe(true)
+      expect(areExactDecimalValuesEqual('0.5', '0.5000')).toBe(true)
+      expect(areExactDecimalValuesEqual('-12345.6700', '-12345.67')).toBe(true)
+    })
+
+    it('treats null, undefined, and empty string as equal', () => {
+      expect(areExactDecimalValuesEqual(null, null)).toBe(true)
+      expect(areExactDecimalValuesEqual('', null)).toBe(true)
+      expect(areExactDecimalValuesEqual(undefined, '')).toBe(true)
+      expect(areExactDecimalValuesEqual('  ', '')).toBe(true)
+    })
+
+    it('treats different numbers as different', () => {
+      expect(areExactDecimalValuesEqual('100', '100.0001')).toBe(false)
+      expect(areExactDecimalValuesEqual('0', '1')).toBe(false)
+      expect(areExactDecimalValuesEqual('100', null)).toBe(false)
+      expect(areExactDecimalValuesEqual(null, '0')).toBe(false)
     })
   })
 })

@@ -34,6 +34,7 @@ const repositories = useRepositories()
 const companyAccess = useNuxtApp().$companyAccessStore
 
 const canRead = computed(() => companyAccess.hasPermission('cost.read'))
+const canManage = computed(() => companyAccess.hasPermission('cost.manage'))
 const canCorrect = computed(() => companyAccess.hasPermission('cost.correct'))
 const canPrepare = computed(() => companyAccess.hasPermission('cost.prepare'))
 const canSourceRead = computed(() => companyAccess.hasPermission('cost.source.read'))
@@ -582,6 +583,16 @@ onUnmounted(() => {
               class="category-actions-bar flex flex-wrap items-center gap-2 pt-2"
               data-testid="ordinary-category-actions"
             >
+              <UButton
+                v-if="canManage"
+                size="xs"
+                color="primary"
+                icon="i-lucide-plus"
+                data-testid="category-add-detail-btn"
+                :to="`/costs/${projectId}/entries/new?categoryId=${categoryId}`"
+              >
+                + Thêm chi tiết chi phí
+              </UButton>
               <UButton
                 v-if="canSourceRead"
                 size="xs"

@@ -571,3 +571,28 @@ export function computeProjectKpiCards(
     }),
   }
 }
+
+/**
+ * Exact decimal equality comparison using decimal.js (arbitrary precision).
+ * Unlike Number() or parseFloat(), this does not lose precision beyond 2^53
+ * (e.g. 9007199254740992 and 9007199254740993 are correctly distinguished as different),
+ * while treating equivalent decimal formatting as equal (e.g. '150' and '150.0000', '0' and '0.0000').
+ */
+export function areExactDecimalValuesEqual(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  const normA = (a ?? '').trim()
+  const normB = (b ?? '').trim()
+  if (normA === normB) return true
+  if (normA === '' || normB === '') return false
+
+  try {
+    const decA = new Decimal(normA)
+    const decB = new Decimal(normB)
+    return decA.equals(decB)
+  }
+  catch {
+    return normA === normB
+  }
+}
