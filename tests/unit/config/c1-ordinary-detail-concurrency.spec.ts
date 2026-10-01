@@ -83,7 +83,11 @@ describe('C1 ordinary-detail concurrency runner', () => {
       'public.company_memberships', 'public.tenant_memberships', 'public.audit_events', 'public.companies',
       'public.tenants', 'auth.users',
     ]) expect(exactCleanupSql).toContain(`delete from ${table}`)
-    expect(exactCleanupSql).toContain("command_name in ('project_cost.correct','project_cost_detail.create_and_publish')")
+    const receiptCleanup = "delete from public.cost_command_receipts where tenant_id = 'c1f10000-0000-4000-8000-000000000010' and company_id = 'c1f10000-0000-4000-8000-000000000020' and actor_id = 'c1f10000-0000-4000-8000-000000000903' and command_name in ('project_cost_draft.create','project_cost.correct','project_cost_detail.create_and_publish');"
+    expect(exactCleanupSql.split('\n').filter(line => line.includes('command_name in ('))).toEqual([receiptCleanup])
+    expect(runnerCleanupSql).toBe(exactCleanupSql)
+    expect(exactCleanupSql.indexOf(receiptCleanup)).toBeLessThan(exactCleanupSql.indexOf('delete from public.companies'))
+    expect(exactCleanupSql.indexOf(receiptCleanup)).toBeLessThan(exactCleanupSql.indexOf('delete from auth.users'))
   })
 
   it('removes managed detail history before asserting it is gone and deleting fixture parents', () => {
