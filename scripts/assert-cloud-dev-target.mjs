@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 
@@ -38,10 +38,22 @@ function isAllowedAnonKey(value) {
   return /^sb_publishable_[A-Za-z0-9._-]+$/.test(value) || isLegacyAnonJwt(value)
 }
 
-export function assertCloudDevEnvironment({ cwd = process.cwd() } = {}) {
-  const envFile = readRequiredFile(resolve(cwd, '.env.local'), '.env.local is missing')
-  const supabaseUrl = readEnvValue(envFile, 'NUXT_PUBLIC_SUPABASE_URL')
-  const anonKey = readEnvValue(envFile, 'NUXT_PUBLIC_SUPABASE_ANON_KEY')
+export function resolveCloudDevConfigSource(env = process.env) {
+  const source = env.TASKOVIA_DEV_CONFIG_SOURCE ?? 'files'
+  if (source !== 'files' && source !== 'environment') {
+    throw new Error('TASKOVIA_DEV_CONFIG_SOURCE must be files or environment')
+  }
+  return source
+}
+
+export function assertCloudDevEnvironment({ cwd = process.cwd(), env = process.env } = {}) {
+  const source = resolveCloudDevConfigSource(env)
+  if (source === 'environment' && (existsSync(resolve(cwd, '.env.local')) || existsSync(resolve(cwd, '.supabase.dev.env.local')))) {
+    throw new Error('Cloud DEV config source conflict: remove local config files in environment mode')
+  }
+  const envFile = source === 'files' ? readRequiredFile(resolve(cwd, '.env.local'), '.env.local is missing') : undefined
+  const supabaseUrl = source === 'files' ? readEnvValue(envFile, 'NUXT_PUBLIC_SUPABASE_URL') : env.NUXT_PUBLIC_SUPABASE_URL
+  const anonKey = source === 'files' ? readEnvValue(envFile, 'NUXT_PUBLIC_SUPABASE_ANON_KEY') : env.NUXT_PUBLIC_SUPABASE_ANON_KEY
 
   let parsedUrl
   try {
@@ -60,11 +72,11 @@ export function assertCloudDevEnvironment({ cwd = process.cwd() } = {}) {
   ) {
     throw new Error('NUXT_PUBLIC_SUPABASE_URL does not match canonical Cloud DEV target')
   }
-  if (!isAllowedAnonKey(anonKey)) throw new Error('NUXT_PUBLIC_SUPABASE_ANON_KEY is invalid')
+  if (!anonKey || !isAllowedAnonKey(anonKey)) throw new Error('NUXT_PUBLIC_SUPABASE_ANON_KEY is invalid')
 }
 
-export function assertCloudDevTarget({ cwd = process.cwd() } = {}) {
-  assertCloudDevEnvironment({ cwd })
+export function assertCloudDevTarget({ cwd = process.cwd(), env = process.env } = {}) {
+  assertCloudDevEnvironment({ cwd, env })
   const linkedProjectRef = readRequiredFile(
     resolve(cwd, 'supabase/.temp/project-ref'),
     'Supabase CLI link state is missing',

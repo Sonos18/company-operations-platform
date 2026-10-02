@@ -27,6 +27,19 @@ Copy-Item .supabase.dev.env.example .supabase.dev.env.local
 
 Set the single `SUPABASE_DEV_ACCESS_TOKEN=` assignment in `.supabase.dev.env.local` to a DEV-project PAT. This ignored file is the authoritative CLI credential source for this worktree; never put a token in `.env.local`, source control, command history, or chat.
 
+## InstaCloud dev-worker environment
+
+The official InstaCloud service environment can supply the Cloud DEV values without local secret files. Scope these variables to the existing `dev-worker` service on the `dev` branch:
+
+- `TASKOVIA_DEV_CONFIG_SOURCE=environment`
+- `NUXT_PUBLIC_SUPABASE_URL` for the canonical Taskovia Cloud DEV project
+- `NUXT_PUBLIC_SUPABASE_ANON_KEY` for that project
+- `SUPABASE_DEV_ACCESS_TOKEN` from a dedicated PAT authorized for that project
+
+Do not copy a complete local `.env.local` into the service. The runner rejects `.env.local` and `.supabase.dev.env.local` if either remains in environment mode, so the source cannot be ambiguous. Without the opt-in variable, the existing file-based workflow remains authoritative. The CLI runner strips ambient `SUPABASE_ACCESS_TOKEN`, database password, and binary override before mapping the dedicated PAT to the isolated CLI. It still checks the canonical URL and, for linked commands, `supabase/.temp/project-ref`. On a fresh worker run `pnpm db:dev:auth-check` and `pnpm db:dev:link` before linked commands. Do not add a service-role key for this CLI setup; Admin operations require a separate decision.
+
+InstaCloud service secret changes may redeploy or start the worker. Review the service, branch, and scope before adding real values. Keep Taskovia Production credentials out of this DEV service.
+
 ## One-time DEV link
 
 Run this once from the repository root after obtaining access and preparing local credentials for the existing canonical Taskovia Cloud DEV project. Do not create or choose another Supabase project.
