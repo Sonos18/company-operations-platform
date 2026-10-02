@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { dirname, join, posix, resolve } from 'node:path'
+import { dirname, join, posix, resolve, win32 } from 'node:path'
 import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { CANONICAL_DEV_PROJECT_REF, assertCloudDevEnvironment, assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
@@ -308,9 +308,9 @@ function runCli(cliArgs, mode, { cwd, env, platform, spawn }) {
 }
 
 export function resolveSupabaseDevHome({ env = process.env, platform = process.platform } = {}) {
-  const path = platform === 'win32' ? { join } : posix
+  const path = platform === 'win32' ? win32 : posix
   const stateHome = platform === 'win32'
-    ? env.LOCALAPPDATA ?? (env.USERPROFILE ? join(env.USERPROFILE, 'AppData', 'Local') : undefined) ?? env.APPDATA
+    ? env.LOCALAPPDATA ?? (env.USERPROFILE ? win32.join(env.USERPROFILE, 'AppData', 'Local') : undefined) ?? env.APPDATA
     : env.XDG_STATE_HOME ?? (env.HOME ? posix.join(env.HOME, '.local', 'state') : undefined)
 
   if (!stateHome) throw new Error('A stable local directory is required for isolated Supabase CLI authentication')

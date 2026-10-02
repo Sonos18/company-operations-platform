@@ -94,6 +94,12 @@ describe('Cloud DEV target guard', () => {
     expect(isolatedHome).not.toBe(defaultAuthHome)
   })
 
+  it('uses the Windows user profile when LOCALAPPDATA is absent, regardless of the host OS', () => {
+    const home = resolveSupabaseDevHome({ env: { USERPROFILE: 'C:\\Users\\developer' }, platform: 'win32' })
+
+    expect(home).toBe('C:\\Users\\developer\\AppData\\Local\\SupabaseCLI\\taskovia-dev')
+  })
+
   it('uses an XDG state directory for the isolated CLI home on Unix', () => {
     const home = resolveSupabaseDevHome({ env: { XDG_STATE_HOME: '/var/state' }, platform: 'linux' })
 
