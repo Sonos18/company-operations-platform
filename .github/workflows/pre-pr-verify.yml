@@ -1,0 +1,82 @@
+name: Pre-PR verify
+
+on:
+  push:
+    branches:
+      - feat/instacloud-agent-sandbox
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-app:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install pnpm
+        run: npm install --global pnpm@10.29.3
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify sandbox target guard
+        env:
+          NUXT_PUBLIC_SUPABASE_URL: https://gtgljlnhwvhqdnwrfdfj.supabase.co
+          NUXT_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_ci-placeholder
+          NUXT_SUPABASE_SERVICE_ROLE_KEY: sb_secret_ci-placeholder
+        run: pnpm instacloud:sandbox:guard
+
+      - name: Verify application
+        run: pnpm verify:app
+
+  verify-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build sandbox container
+        run: docker build --tag taskovia-instacloud-sandbox:ci .
+
+      - name: Reject wrong Supabase target
+        shell: bash
+        run: |
+          if docker run --rm \
+            -e NUXT_PUBLIC_SUPABASE_URL=https://wrongprojectref.supabase.co \
+            -e NUXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_ci-placeholder \
+            -e NUXT_SUPABASE_SERVICE_ROLE_KEY=sb_secret_ci-placeholder \
+            taskovia-instacloud-sandbox:ci; then
+            echo "sandbox unexpectedly accepted a non-canonical Supabase target"
+            exit 1
+          fi
+
+      - name: Smoke-test sandbox health
+        shell: bash
+        run: |
+          docker run -d --name taskovia-sandbox-ci -p 3000:3000 \
+            -e NUXT_PUBLIC_SUPABASE_URL=https://gtgljlnhwvhqdnwrfdfj.supabase.co \
+            -e NUXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_ci-placeholder \
+            -e NUXT_SUPABASE_SERVICE_ROLE_KEY=sb_secret_ci-placeholder \
+            taskovia-instacloud-sandbox:ci
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/api/health | grep -q '"status":"ok"'; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          docker logs taskovia-sandbox-ci
+          exit 1

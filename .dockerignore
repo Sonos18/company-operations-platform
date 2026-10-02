@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+*.local
+node_modules
+.nuxt
+.output
+playwright-report
+test-results
+.superpowers
+.worktrees
+.jev-router-shadow
+.insta/observe
+.insta/audit.jsonl

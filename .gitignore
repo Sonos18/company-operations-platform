@@ -10,3 +10,6 @@ test-results/
 .superpowers/
 .worktrees/
 .jev-router-shadow/
+.insta/link-plane.json
+.insta/observe/
+.insta/audit.jsonl
