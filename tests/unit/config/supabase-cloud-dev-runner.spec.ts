@@ -333,6 +333,7 @@ describe('Cloud DEV fixed-mode runner', () => {
 
     runSupabaseDevMode('status', {
       cwd: root,
+      platform: 'win32',
       env: {
         LOCALAPPDATA: 'C:\\Users\\developer\\AppData\\Local',
         SUPABASE_ACCESS_TOKEN: 'ambient-token',
@@ -531,6 +532,7 @@ describe('Cloud DEV fixed-mode runner', () => {
 
     expect(() => runSupabaseDevMode('stage01-pgtap-diagnostic', {
       cwd: root,
+      platform: 'win32',
       env: {
         LOCALAPPDATA: 'C:\\Users\\developer\\AppData\\Local',
         SUPABASE_ACCESS_TOKEN: 'ambient-token',
