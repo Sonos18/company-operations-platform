@@ -155,7 +155,7 @@ test.describe('C1 Accounting Write Browser Acceptance Suite (F-UI5)', () => {
     let parentRequests = 0
     await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ json: mockProjectOverview }))
     await page.route('**/api/companies/**/project-cost-drafts/metadata', route => route.fulfill({ json: {
-      projects: [{ id: projectId, code: 'DA-C1-01', name: 'Project C1' }],
+      projects: [{ id: projectId, code: 'DA-C1-01', name: 'Project C1', operationalState: 'active' }],
       categories: [{ categoryId: materialCategoryId, code: 'vat_tu', name: 'Materials', isActive: true, draftEligible: true, postingStrategy: 'ordinary_detail' }],
     } }))
     await page.route(`**/api/companies/**/projects/${projectId}/project-costs`, route => {

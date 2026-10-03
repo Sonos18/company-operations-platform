@@ -11,7 +11,7 @@ test('retired legacy tab opens ordinary detail drafts without reading parent dra
   authState.sessionCompanies = [createCompany({ permissions: ['cost.manage'] })]
   let parentReads = 0
   await page.route('**/api/companies/**/project-cost-drafts/metadata', route => route.fulfill({ json: {
-    projects: [{ id: projectId, code: 'DA-C1-01', name: 'Project C1' }],
+    projects: [{ id: projectId, code: 'DA-C1-01', name: 'Project C1', operationalState: 'active' }],
     categories: [{ categoryId: '20000000-0000-4000-8000-000000000051', code: 'vat_tu', name: 'Materials', isActive: true, draftEligible: true, postingStrategy: 'ordinary_detail' }],
   } }))
   await page.route(`**/api/companies/**/projects/${projectId}/cost-entry-drafts/operations`, route => route.fulfill({ json: [] }))
@@ -57,7 +57,7 @@ test('prepare-only lists financial detail drafts without parent reads or create 
   })
   let parentReads = 0
   await page.route('**/api/companies/**/project-cost-drafts/metadata', route => route.fulfill({ json: {
-    projects: [{ id: projectId, code: 'DA-C1-01', name: 'Project C1' }],
+    projects: [{ id: projectId, code: 'DA-C1-01', name: 'Project C1', operationalState: 'active' }],
     categories: [{ categoryId: detail.categoryId, code: 'vat_tu', name: 'Materials', isActive: true, draftEligible: true, postingStrategy: 'ordinary_detail' }],
   } }))
   await page.route(`**/api/companies/**/projects/${projectId}/cost-entry-drafts`, route => route.fulfill({ json: [detail] }))

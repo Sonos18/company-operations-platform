@@ -343,7 +343,7 @@ export function readDedicatedSupabaseDevAccessToken(cwd, { env = process.env } =
   return token
 }
 
-function isolatedSupabaseEnvironment(cwd, env, platform) {
+export function isolatedSupabaseEnvironment(cwd, env, platform) {
   const childEnv = { ...env }
   const supabaseHome = resolveSupabaseDevHome({ env, platform })
   delete childEnv.SUPABASE_ACCESS_TOKEN

@@ -801,6 +801,22 @@ const mockSubcontractAlphaDetail = financeSubcontractDetailSchema.parse({
 })
 
 test.describe('Director Project Finance UI', () => {
+  test('completed project hides writes while keeping financial reads available', async ({ page }) => {
+    await page.route(`**/api/companies/**/projects/${projectIdAlpha}/finance`, route => route.fulfill({ json: { ...mockOverviewAlpha, project: { ...mockProjectAlpha, operationalState: 'completed' } } }))
+    await page.goto(`/costs/${projectIdAlpha}`)
+    await expect(page.getByTestId('completed-project-notice')).toBeVisible()
+    await expect(page.getByTestId('draft-actions-bar')).toHaveCount(0)
+    await expect(page.getByTestId('detail-in-progress')).toContainText('242,562,376 VND')
+  })
+
+  test('project directory shows the canonical last update date in company timezone', async ({ page }) => {
+    const projects = mockProjectListResponse.projects.map(entry => ({ ...entry, project: { ...entry.project, updatedAt: '2026-10-03T00:30:00Z' } }))
+    await page.route('**/api/companies/**/project-finances*', route => route.fulfill({ json: { ...mockProjectListResponse, projects } }))
+    await page.goto('/costs')
+    await expect(page.getByTestId('project-updated-at').first()).toContainText('07:30')
+    await expect(page.getByTestId('project-updated-at').first().locator('time')).toHaveAttribute('datetime', '2026-10-03T00:30:00Z')
+  })
+
   test('renders Project Cost overview on /costs with four field mappings, reasons, and owner-advance disclosure', async ({ page }) => {
     let requestedFinances = false
 

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { compareProjectDirectoryEntries } from '../../../shared/utils/project-directory-order'
 import {
   projectRegisterSchema, type CreateProjectRegisterInput, type ProjectRegister, type UpdateProjectRegisterInput,
 } from '../../../shared/schemas/costs/master-data'
@@ -19,6 +20,9 @@ function mapRow(row: unknown): ProjectRegister {
   return projectRegisterSchema.parse({ id: parsed.data.id, code: parsed.data.code, name: parsed.data.name, origin: parsed.data.origin, operationalState: parsed.data.operational_state, clientDisplayName: parsed.data.client_display_name, locationText: parsed.data.location_text, version: parsed.data.version, createdAt: parsed.data.created_at, updatedAt: parsed.data.updated_at })
 }
 function rpcError(error: unknown): never {
+  const completed = z.object({ message: z.literal('PROJECT_COMPLETED') }).safeParse(error)
+  if (completed.success) throw new AppApiError(409, 'PROJECT_COMPLETED', 'Dự án đã hoàn thành, chỉ được xem dữ liệu.')
+
   const known = z.object({ code: z.string().optional(), message: z.string().optional() }).safeParse(error)
   if (known.success && known.data.code === 'P0001' && known.data.message === 'MODULE_DISABLED') throw new AppApiError(403, 'PERMISSION_DENIED', 'C1 chưa được bật cho công ty này.')
   if (known.success && known.data.code === 'P0001' && known.data.message === 'RESOURCE_NOT_FOUND') throw new AppApiError(404, 'OPPORTUNITY_NOT_FOUND', 'Không tìm thấy Project Register.')
@@ -39,7 +43,7 @@ export function createSupabaseProjectRegisterRepository(db: UserSupabaseClient):
       const { data, error } = await client.from('projects').select('id, tenant_id, company_id, code, name, origin, operational_state, client_display_name, location_text, version, created_at, updated_at').eq('tenant_id', tenantId).eq('company_id', companyId).order('created_at')
       const parsed = z.array(rowSchema).safeParse(data)
       if (error || !parsed.success) return fail('Không thể đọc Project Register.')
-      return parsed.data.map(mapRow)
+      return parsed.data.map(mapRow).sort((a, b) => compareProjectDirectoryEntries({ projectId: a.id, operationalState: a.operationalState, updatedAt: a.updatedAt }, { projectId: b.id, operationalState: b.operationalState, updatedAt: b.updatedAt }))
     },
     get,
     async create(companyId, tenantId, input, requestId) {

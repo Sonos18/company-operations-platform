@@ -11,7 +11,7 @@ const responseClient = (response: unknown) => ({ request: vi.fn().mockImplementa
 
 describe('HTTP Project Cost repository', () => {
   it('uses metadata and published correction endpoints after parent draft retirement', async () => {
-    const metadataResponse = { projects: [{ id: ids.project, code: 'P1', name: 'Project one' }], categories: [{ categoryId: draft.costCategoryId, code: 'vat_tu', name: 'Materials', isActive: true, draftEligible: true, postingStrategy: 'ordinary_detail' }] }
+    const metadataResponse = { projects: [{ id: ids.project, code: 'P1', name: 'Project one', operationalState: 'active' }], categories: [{ categoryId: draft.costCategoryId, code: 'vat_tu', name: 'Materials', isActive: true, draftEligible: true, postingStrategy: 'ordinary_detail' }] }
     const metadataClient = responseClient(metadataResponse)
     await expect(createHttpProjectCostRepository({ companyId: 'company/id', client: metadataClient as never }).draftManagementMetadata()).resolves.toEqual(metadataResponse)
     expect(metadataClient.request).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/companies/company%2Fid/project-cost-drafts/metadata', method: 'GET' }))

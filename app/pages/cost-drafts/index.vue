@@ -163,7 +163,7 @@ watch(projectionTier, (tier) => {
       <div class="flex items-center gap-2">
         <!-- New Ordinary Entry Button -->
         <UButton
-          v-if="canManage && selectedProjectId"
+          v-if="canManage && selectedProjectId && selectedProject?.operationalState !== 'completed'"
           :to="`/costs/${selectedProjectId}/entries/new`"
           color="primary"
           icon="i-lucide-plus"

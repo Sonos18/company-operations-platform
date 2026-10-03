@@ -83,7 +83,7 @@ function discardChanges() {
 }
 
 async function save() {
-  if (!canManage.value) {
+  if (props.disabled || !canManage.value) {
     errorMessage.value = 'Bạn không có quyền cost.manage để cập nhật thông tin vận hành.'
     return
   }

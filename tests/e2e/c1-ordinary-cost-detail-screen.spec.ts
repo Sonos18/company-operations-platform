@@ -22,7 +22,7 @@ const evidenceHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b78
 const evidencePath = `10000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000002/${projectId}/${evidenceId}`
 
 const metadata = projectCostDraftManagementMetadataSchema.parse({
-  projects: [{ id: projectId, code: 'DA-C1-01', name: 'Dự án C1' }],
+  projects: [{ id: projectId, code: 'DA-C1-01', name: 'Dự án C1', operationalState: 'active' }],
   categories: [
     { categoryId: ordinaryCategoryId, code: 'vat_tu', name: 'Vật tư thi công', isActive: true, draftEligible: true, postingStrategy: 'ordinary_detail' },
     { categoryId: subcontractCategoryId, code: 'thau_phu', name: 'Thầu phụ nhân công', isActive: true, draftEligible: false, postingStrategy: 'subcontract_payment' },
@@ -299,6 +299,72 @@ test.describe('C1 Ordinary Cost Detail Screen & Workflows (Phase 1)', () => {
       description: 'Dịch vụ bảo trì không tính phí',
       amount: '0',
     })
+  })
+
+  for (const operation of ['draft', 'publish'] as const) {
+    test(`completed project recovers exact retained ${operation} receipt after response loss`, async ({ page, authState }) => {
+      authState.sessionCompanies = [createCompany({ permissions: ['cost.manage', 'cost.prepare', 'cost.publish_import', 'cost.read'] })]
+      await mockMetadata(page)
+      let completed = false
+      await page.route('**/api/companies/**/project-cost-drafts/metadata', route => route.fulfill({ json: {
+        ...metadata, projects: metadata.projects.map(project => ({ ...project, operationalState: completed ? 'completed' : 'active' })),
+      } }))
+      // Ordinary client navigation preserves the retained in-memory payload.
+      await page.route(`**/api/companies/**/projects/${projectId}/finance`, route => route.fulfill({ status: 404, json: { error: { code: 'RESOURCE_NOT_FOUND', message: 'Not found', requestId: 'receipt-read', details: {} } } }))
+      const commands: { key: string | undefined, payload: unknown }[] = []
+      let freshPrepareWrites = 0
+      await page.route('**/api/companies/**/project-cost-details/**/financials', route => {
+        freshPrepareWrites++
+        return route.abort('failed')
+      })
+      const endpoint = operation === 'draft' ? 'cost-entry-drafts' : 'cost-entries'
+      await page.route(`**/api/companies/**/projects/${projectId}/${endpoint}`, async (route) => {
+        if (route.request().method() !== 'POST') return route.fulfill({ json: [fullDetailDraft] })
+        commands.push({ key: route.request().headers()['idempotency-key'], payload: route.request().postDataJSON() })
+        if (commands.length === 1) return route.abort('failed')
+        await route.fulfill({ status: 201, json: { id: detailId, projectCostItemId: fullDetailDraft.projectCostItemId, version: 1, publicationState: operation === 'draft' ? 'draft' : 'published', replayed: true } })
+      })
+      await page.route(`**/api/companies/**/project-cost-details/${detailId}/draft`, route => route.fulfill({ json: fullDetailDraft }))
+      await page.route(`**/api/companies/**/project-cost-details/${detailId}/evidence`, route => route.fulfill({ json: [] }))
+      // Warm both route modules before retaining an in-memory command; Nuxt dev
+      // dependency optimization can otherwise reload the first new route visit.
+      await page.goto(`/costs/${projectId}`)
+      await expect(page.getByRole('heading', { name: 'Không tìm thấy dữ liệu chi phí dự án' })).toBeVisible()
+      await page.goto(`/costs/${projectId}/entries/new`)
+      await page.getByTestId('new-category-select').selectOption(ordinaryCategoryId)
+      await page.getByTestId('new-desc-input').fill('Receipt recovery after project completion')
+      if (operation === 'publish') await page.getByTestId('new-amount-input').fill('100')
+      await page.getByTestId(operation === 'draft' ? 'save-draft-btn' : 'publish-now-btn').click()
+      await expect(page.getByTestId('retained-payload-replay-banner')).toBeVisible()
+      completed = true
+      await page.getByRole('link', { name: /Quay lại/i }).click()
+      await expect(page).toHaveURL(new RegExp(`/costs/${projectId}$`))
+      await page.goBack()
+      await expect(page.getByTestId('new-page-error')).toContainText('Dự án đã hoàn thành')
+      await expect(page.getByTestId('save-draft-btn')).toHaveCount(0)
+      await expect(page.getByTestId('publish-now-btn')).toHaveCount(0)
+      await page.getByTestId('replay-retained-command-btn').click()
+      await expect(page).toHaveURL(new RegExp(operation === 'draft' ? `/costs/${projectId}/entries/${detailId}$` : `/costs/${projectId}$`))
+      expect(commands).toHaveLength(2)
+      expect(commands[0]!.key).toBeTruthy()
+      expect(commands[1]).toEqual(commands[0])
+      expect(freshPrepareWrites).toBe(0)
+    })
+  }
+
+  test('completed project rejection clears recovery marker for a stale new command', async ({ page, authState }) => {
+    authState.sessionCompanies = [createCompany({ permissions: ['cost.manage'] })]
+    await mockMetadata(page)
+    await page.route(`**/api/companies/**/projects/${projectId}/cost-entry-drafts`, route => route.fulfill({
+      status: 409, json: { error: { code: 'PROJECT_COMPLETED', message: 'Dự án đã hoàn thành, chỉ được xem dữ liệu.', requestId: 'completed-reject', details: {} } },
+    }))
+    await page.goto(`/costs/${projectId}/entries/new`)
+    await page.getByTestId('new-category-select').selectOption(ordinaryCategoryId)
+    await page.getByTestId('new-desc-input').fill('Stale request after completion')
+    await page.getByTestId('save-draft-btn').click()
+    await expect(page.getByTestId('new-entry-form-error')).toContainText('Dự án đã hoàn thành')
+    await expect(page.getByTestId('retained-payload-replay-banner')).toHaveCount(0)
+    await expect(page.getByTestId('save-draft-btn')).toBeEnabled()
   })
 
   test('committed-but-response-lost retries exact payload and key without list guessing', async ({ page, authState }) => {

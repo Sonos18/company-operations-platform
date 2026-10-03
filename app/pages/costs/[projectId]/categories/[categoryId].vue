@@ -34,9 +34,9 @@ const repositories = useRepositories()
 const companyAccess = useNuxtApp().$companyAccessStore
 
 const canRead = computed(() => companyAccess.hasPermission('cost.read'))
-const canManage = computed(() => companyAccess.hasPermission('cost.manage'))
-const canCorrect = computed(() => companyAccess.hasPermission('cost.correct'))
-const canPrepare = computed(() => companyAccess.hasPermission('cost.prepare'))
+const canManage = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && companyAccess.hasPermission('cost.manage'))
+const canCorrect = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && companyAccess.hasPermission('cost.correct'))
+const canPrepare = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && companyAccess.hasPermission('cost.prepare'))
 const canSourceRead = computed(() => companyAccess.hasPermission('cost.source.read'))
 
 const isCorrectionModalOpen = ref(false)

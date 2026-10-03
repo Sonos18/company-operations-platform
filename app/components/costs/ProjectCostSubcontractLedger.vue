@@ -62,7 +62,7 @@ const emit = defineEmits<{
 }>()
 
 const companyAccess = useNuxtApp().$companyAccessStore
-const canRecordCash = computed(() => companyAccess.hasPermission('cost.record_cash'))
+const canRecordCash = computed(() => props.detail !== null && props.detail.project.operationalState !== 'completed' && companyAccess.hasPermission('cost.record_cash'))
 
 interface PaymentToVoidWithContract {
   id: string

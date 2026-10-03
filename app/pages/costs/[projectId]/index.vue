@@ -23,8 +23,8 @@ const status = ref<'loading' | 'ready' | 'module' | 'permission' | 'empty' | 'no
 const requestTracker = createAsyncRequestTracker()
 
 const canRead = computed(() => companyAccess.hasPermission('cost.read'))
-const canManage = computed(() => companyAccess.hasPermission('cost.manage'))
-const canPrepare = computed(() => companyAccess.hasPermission('cost.prepare'))
+const canManage = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && companyAccess.hasPermission('cost.manage'))
+const canPrepare = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && companyAccess.hasPermission('cost.prepare'))
 const isDetailDraftListOpen = ref(false)
 
 const kpis = computed(() => computeProjectKpiCards(overview.value?.summary, overview.value?.project))
@@ -173,6 +173,7 @@ watch([canManage, canPrepare], ([manageAllowed, prepareAllowed]) => {
             Chi tiết các hạng mục chi phí công việc đang theo dõi.
           </p>
 
+          <p v-if="overview?.project.operationalState === 'completed'" role="status" class="text-sm text-muted" data-testid="completed-project-notice">Dự án đã hoàn thành, chỉ được xem dữ liệu.</p>
           <div v-if="canManage || canPrepare" class="draft-actions-bar flex flex-wrap items-center gap-2 pt-3" data-testid="draft-actions-bar">
             <UButton
               color="primary"

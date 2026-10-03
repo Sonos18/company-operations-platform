@@ -18,7 +18,7 @@ describe('C1 finance bounded reads', () => {
     const repository = createSupabaseProjectFinanceRepository({
       rpc: async name => name === 'c1_read_project_cost_read_context'
         ? { data: { projectId: '00000000-0000-4000-8000-000000000030', projectCode: 'P', projectName: 'Project', defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok' }, error: null }
-        : name === 'c1_read_project_finance_directory'
+        : name === 'c1_read_project_finance_directory_v2'
           ? { data: { defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [], nextCursor: null }, error: null }
           : name === 'c1_read_project_finance_operational_states'
             ? { data: [{ projectId: '00000000-0000-4000-8000-000000000030', operationalState: 'unknown' }], error: null }
@@ -55,14 +55,14 @@ describe('C1 finance bounded reads', () => {
     const reader = new ProjectFinanceMetadataReader({
       rpc: async (name, args) => {
         calls.push(name)
-        if (name === 'c1_read_project_finance_directory') return { data: { defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: '00000000-0000-4000-8000-000000000001', projectCode: 'P', projectName: 'Project' }], nextCursor: null }, error: null }
+        if (name === 'c1_read_project_finance_directory_v2') return { data: { defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: '00000000-0000-4000-8000-000000000001', projectCode: 'P', projectName: 'Project', operationalState: 'unknown', updatedAt: '2026-01-01T00:00:00Z' }], nextCursor: null }, error: null }
         expect(args.target_party_ids).toEqual(['00000000-0000-4000-8000-000000000002'])
         return { data: [{ partyId: '00000000-0000-4000-8000-000000000002', code: 'S', displayName: 'Supplier', partyKind: 'organization' }], error: null }
       },
     })
     expect(await reader.directory('00000000-0000-4000-8000-000000000010', null, 25)).toMatchObject({ projects: [{ projectId: '00000000-0000-4000-8000-000000000001' }] })
     expect((await reader.parties('00000000-0000-4000-8000-000000000010', '00000000-0000-4000-8000-000000000001', ['00000000-0000-4000-8000-000000000002']))[0]?.displayName).toBe('Supplier')
-    expect(calls).toEqual(['c1_read_project_finance_directory', 'c1_read_project_finance_parties'])
+    expect(calls).toEqual(['c1_read_project_finance_directory_v2', 'c1_read_project_finance_parties'])
   })
 
   it('reads canonical cost parents with explicit scope through complete keyset pages', async () => {

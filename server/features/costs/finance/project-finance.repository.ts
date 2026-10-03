@@ -114,7 +114,7 @@ export class ConcreteProjectFinanceRepository implements FinanceReadRepository {
         const readSet = readSets.get(project.projectId)
         if (!readSet) throw new AppApiError(500, 'INTERNAL_ERROR', 'Không thể đọc dữ liệu tài chính của dự án.')
         const overview = summarizeFinanceRows({ context: { ...readSet.context, projectCode: project.projectCode, projectName: project.projectName }, rows: readSet })
-        return { project: overview.project, summary: overview.summary }
+        return { project: { ...overview.project, operationalState: project.operationalState, updatedAt: project.updatedAt }, summary: overview.summary }
       })
       return financeProjectListSchema.parse({ schemaVersion: 1, projects, nextCursor: directory.nextCursor })
     } catch (error) { return repositoryError(error) }

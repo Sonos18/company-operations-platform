@@ -244,7 +244,7 @@ export function isDefinitivelyRejectedError(err: unknown): boolean {
   }
 
   // 2. Specific known business / version conflict rejections where server definitely did not mutate
-  if (code === 'VERSION_CONFLICT') return true
+  if (code === 'PROJECT_COMPLETED' || code === 'VERSION_CONFLICT') return true
   if (code === 'COST_DETAIL_PUBLISH_NOT_READY' || code === 'COST_PUBLISH_NOT_READY') return true
   if (code === 'COST_DETAIL_NOT_DRAFT' || code === 'COST_DETAIL_ALREADY_PUBLISHED' || code === 'COST_DETAIL_NOT_PUBLISHED' || code === 'COST_NOT_DRAFT' || code === 'COST_ALREADY_PUBLISHED') return true
   if (code === 'SUBCONTRACT_COST_MODEL_UNSUPPORTED') return true
