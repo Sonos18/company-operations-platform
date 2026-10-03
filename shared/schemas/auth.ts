@@ -3,7 +3,7 @@ import { z } from 'zod'
 const normalizedEmailSchema = z.string().trim().toLowerCase().email()
 const passwordSchema = z.string().min(1)
 const newPasswordSchema = z.string()
-  .min(12)
+  .min(8)
   .max(72)
   .refine(password => /\S/.test(password), 'Password must contain a non-whitespace character.')
 

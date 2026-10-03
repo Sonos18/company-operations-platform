@@ -8,7 +8,7 @@ import {
 } from './fixtures/auth-routes'
 
 const invalidPassword = crypto.randomUUID()
-const shortPassword = crypto.randomUUID().slice(0, 8)
+const shortPassword = crypto.randomUUID().slice(0, 7)
 const recoveryTokenHash = crypto.randomUUID()
 const invalidTokenHash = crypto.randomUUID()
 const surplusTokenHash = crypto.randomUUID()
@@ -148,7 +148,7 @@ test('scrubs callback tokens and denies a recovery session after closing and reo
   await page.getByLabel('Mật khẩu mới', { exact: true }).fill(shortPassword)
   await page.getByLabel('Xác nhận mật khẩu mới', { exact: true }).fill(shortPassword)
   await page.getByRole('button', { name: 'Cập nhật mật khẩu' }).click()
-  await expect(page.getByText('Mật khẩu phải có từ 12 đến 72 ký tự và không chỉ gồm khoảng trắng.')).toBeVisible()
+  await expect(page.getByText('Mật khẩu phải có từ 8 đến 72 ký tự và không chỉ gồm khoảng trắng.')).toBeVisible()
 
   const context = page.context()
   await page.close()
@@ -282,4 +282,29 @@ test('clears the session when logging out from a connection error', async ({ pag
   await expect(page.getByRole('heading', { name: 'Đăng nhập' })).toBeVisible()
   await page.reload()
   await expect(page).toHaveURL(/\/login$/)
+})
+
+test('invite recipient sets an eight-character password and enters their authorized company', async ({ page }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read'] })]
+  let submittedPassword = ''
+  await page.route('**/auth/v1/user', async route => {
+    if (route.request().method() === 'PUT') submittedPassword = route.request().postDataJSON().password
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ user: authState.user }) })
+  })
+  await page.goto('/auth/callback?' + new URLSearchParams({ token_hash: 'synthetic-invite-acceptance', type: 'invite' }))
+  await expect(page).toHaveURL(/\/reset-password$/)
+  await page.getByLabel('Mật khẩu mới', { exact: true }).fill('abcdefgh')
+  await page.getByLabel('Xác nhận mật khẩu mới', { exact: true }).fill('abcdefgh')
+  await page.getByRole('button', { name: 'Cập nhật mật khẩu', exact: true }).click()
+  await expect(page).toHaveURL(/\/projects$/)
+  expect(submittedPassword).toBe('abcdefgh')
+  expect(authState.verifyRequests).toMatchObject([{ token_hash: 'synthetic-invite-acceptance', type: 'invite' }])
+  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('synthetic-invite-acceptance')
+})
+test('expired or consumed invite cannot reach password setting', async ({ page }) => {
+  await page.route('**/auth/v1/verify', route => route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ code: 'otp_expired', message: 'expired synthetic invite' }) }))
+  await page.goto('/auth/callback?' + new URLSearchParams({ token_hash: 'synthetic-expired-invite', type: 'invite' }))
+  await expect(page.getByRole('heading', { name: 'Không thể xác minh liên kết', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/auth\/callback$/)
+  await expect(page.getByLabel('Mật khẩu mới', { exact: true })).toHaveCount(0)
 })

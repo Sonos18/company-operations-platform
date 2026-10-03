@@ -39,7 +39,7 @@ describe('Taskovia Auth email configuration', () => {
       site_url: 'http://127.0.0.1:3000',
       additional_redirect_urls: ['http://127.0.0.1:3000/auth/callback'],
       enable_signup: false,
-      minimum_password_length: 12,
+      minimum_password_length: 8,
       password_requirements: '',
     })
     expect(config['auth.email']).toMatchObject({ enable_signup: false })

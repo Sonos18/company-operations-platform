@@ -17,6 +17,8 @@ The application URL must be an absolute origin without credentials, query, or fr
 
 Cloud DEV CLI operations use only `SUPABASE_DEV_ACCESS_TOKEN` from ignored `.supabase.dev.env.local`, as described in [Cloud DEV backend development](../development/backend-cloud-dev.md). The PAT is not an application variable. Never put a PAT, service-role key, access token, refresh token, password, or email token in source control, logs, tickets, screenshots, or shell history.
 
+For the DEV pilot where HR copies and sends invitations from Gmail, see [HR manual invitations](hr-manual-invitations.md). The automatic email flow below remains separate.
+
 ## Invite and first password
 
 1. An authorized employee administrator starts onboarding through the Taskovia API. Do not create or transmit a password for the invitee.
@@ -83,12 +85,12 @@ The required Auth configuration is:
 | `site_url` | `http://127.0.0.1:3000` |
 | `uri_allow_list` | `http://127.0.0.1:3000/auth/callback` |
 | `disable_signup` | `true` |
-| `password_min_length` | `12` |
+| `password_min_length` | `8` (pilot target; hosted change requires separate authorization) |
 | `password_required_characters` | Empty; no composition rule |
 | Invite/recovery subjects and HTML | Exact committed values in `supabase/config.toml` and `supabase/templates/` |
 | `password_hibp_enabled` | `true` only when the current plan supports it |
 
-As verified on 2026-08-28, the five core fields above match in Cloud DEV. The organization is on the Free plan, so leaked-password protection is unavailable. Supabase also rejects changes to both email subjects and HTML templates for this new Free-plan project using the default email provider. The hosted subjects/templates therefore do not yet match the committed files, and live invite/recovery callback acceptance is blocked until an owner separately authorizes either a paid plan or custom SMTP. Do not change billing or SMTP under this runbook. See Supabase's [Free-tier template restriction](https://supabase.com/changelog/46599-changes-to-email-template-customisation-on-free-tier) and [password security plan requirement](https://supabase.com/docs/guides/auth/password-security).
+As verified on 2026-08-28, the original five core fields matched in Cloud DEV, with password minimum 12. The manual-invitation pilot changes the committed password target to 8; hosted policy has not been changed by this patch. The organization is on the Free plan, so leaked-password protection is unavailable. Supabase also rejects changes to both email subjects and HTML templates for this new Free-plan project using the default email provider. The hosted subjects/templates therefore do not yet match the committed files, and live invite/recovery callback acceptance is blocked until an owner separately authorizes either a paid plan or custom SMTP. Do not change billing or SMTP under this runbook. See Supabase's [Free-tier template restriction](https://supabase.com/changelog/46599-changes-to-email-template-customisation-on-free-tier) and [password security plan requirement](https://supabase.com/docs/guides/auth/password-security).
 
 After any separately authorized Auth-only change, read back only the approved fields without printing template bodies or secrets, then prove no database drift:
 
