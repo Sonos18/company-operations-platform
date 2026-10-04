@@ -25,7 +25,7 @@ For the DEV pilot where HR copies and sends invitations from Gmail, see [HR manu
 2. The server calls Supabase Admin `inviteUserByEmail` with the exact callback `http://127.0.0.1:3000/auth/callback` in local/Cloud DEV.
 3. The versioned invite template must link to `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite`.
 4. `/auth/callback` accepts only one `token_hash` and `type=invite|recovery`, verifies it once with `verifyOtp`, immediately removes the sensitive query from browser history, and sends the user to `/reset-password`.
-5. The user sets a 12–72 character password. Taskovia does not trim it or require a composition rule; whitespace-only and non-matching confirmation are rejected locally.
+5. The user sets an 8–72 character password. Taskovia does not trim it or require a composition rule; whitespace-only and non-matching confirmation are rejected locally.
 6. After update, the recovery marker is removed and Taskovia revalidates the application session before rendering protected content.
 
 Do not paste an invitation URL into logs or tickets. The token hash is single-use sensitive data even though Taskovia never persists it.
@@ -85,12 +85,12 @@ The required Auth configuration is:
 | `site_url` | `http://127.0.0.1:3000` |
 | `uri_allow_list` | `http://127.0.0.1:3000/auth/callback` |
 | `disable_signup` | `true` |
-| `password_min_length` | `8` (pilot target; hosted change requires separate authorization) |
+| `password_min_length` | `8` (verified Cloud DEV; Production is separate) |
 | `password_required_characters` | Empty; no composition rule |
 | Invite/recovery subjects and HTML | Exact committed values in `supabase/config.toml` and `supabase/templates/` |
 | `password_hibp_enabled` | `true` only when the current plan supports it |
 
-As verified on 2026-08-28, the original five core fields matched in Cloud DEV, with password minimum 12. The manual-invitation pilot changes the committed password target to 8; hosted policy has not been changed by this patch. The organization is on the Free plan, so leaked-password protection is unavailable. Supabase also rejects changes to both email subjects and HTML templates for this new Free-plan project using the default email provider. The hosted subjects/templates therefore do not yet match the committed files, and live invite/recovery callback acceptance is blocked until an owner separately authorizes either a paid plan or custom SMTP. Do not change billing or SMTP under this runbook. See Supabase's [Free-tier template restriction](https://supabase.com/changelog/46599-changes-to-email-template-customisation-on-free-tier) and [password security plan requirement](https://supabase.com/docs/guides/auth/password-security).
+As verified on 2026-08-28, the original five core fields matched in Cloud DEV, with password minimum 12. A separate authorized Cloud DEV Auth-only operation on 2026-10-03 changed the hosted password minimum from 12 to 8. Read-only Management API verification on 2026-10-04 at 13:47:02 UTC confirmed `password_min_length=8` and an empty `password_required_characters` for `gtgljlnhwvhqdnwrfdfj`. This is hosted DEV evidence, not a Production policy change. The organization is on the Free plan, so leaked-password protection is unavailable. Supabase also rejects changes to both email subjects and HTML templates for this new Free-plan project using the default email provider. The hosted subjects/templates therefore do not yet match the committed files, and live invite/recovery callback acceptance is blocked until an owner separately authorizes either a paid plan or custom SMTP. Do not change billing or SMTP under this runbook. See Supabase's [Free-tier template restriction](https://supabase.com/changelog/46599-changes-to-email-template-customisation-on-free-tier) and [password security plan requirement](https://supabase.com/docs/guides/auth/password-security).
 
 After any separately authorized Auth-only change, read back only the approved fields without printing template bodies or secrets, then prove no database drift:
 
