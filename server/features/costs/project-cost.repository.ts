@@ -44,6 +44,7 @@ export function summarizeProjectCosts(rows: readonly ProjectCostRow[]): ProjectC
 }
 
 function rpcError(error: unknown): never {
+  if (z.object({ message: z.literal('LEGACY_WORKFLOW_WRITE_DISABLED') }).safeParse(error).success) throw new AppApiError(409, 'LEGACY_WORKFLOW_WRITE_DISABLED', 'Hãy dùng quy trình chi phí có chứng từ.')
   const completed = z.object({ message: z.literal('PROJECT_COMPLETED') }).safeParse(error)
   if (completed.success) throw new AppApiError(409, 'PROJECT_COMPLETED', 'Dự án đã hoàn thành, chỉ được xem dữ liệu.')
 

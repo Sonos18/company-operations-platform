@@ -443,7 +443,7 @@ end;$$;
 create or replace function private.c1_workflow_is_current_manager(target_tenant_id uuid,target_company_id uuid,target_project_id uuid)
 returns boolean language sql stable security definer set search_path='' as $$
  select private.c1_workflow_actor_has_permission(target_tenant_id,target_company_id,'cost.request.decide')
- and (select a.manager_user_id from public.cost_workflow_manager_assignments a where a.tenant_id=target_tenant_id and a.company_id=target_company_id and a.project_id=target_project_id order by a.assignment_version desc limit 1)=auth.uid();
+ and coalesce((select a.manager_user_id from public.cost_workflow_manager_assignments a where a.tenant_id=target_tenant_id and a.company_id=target_company_id and a.project_id=target_project_id order by a.assignment_version desc limit 1)=auth.uid(),false);
 $$;
 create or replace function private.c1_workflow_is_director(target_tenant_id uuid,target_company_id uuid)
 returns boolean language sql stable security definer set search_path='' as $$
@@ -578,9 +578,9 @@ language sql stable security definer set search_path='' as $$
 $$;
 create function private.c1_workflow_payment_view(payment_id uuid) returns jsonb
 language sql stable security definer set search_path='' as $$
- select jsonb_build_object('id',p.id,'amount',coalesce(p.ordinary_amount,canonical.amount)::text,
+ select jsonb_build_object('id',p.id,'amount',coalesce(p.ordinary_amount,canonical.paid_amount)::text,
  'refunded',coalesce((select sum(r.amount) from public.cost_workflow_refunds r where r.source_payment_id=p.id),0)::text,
- 'correctedCash',coalesce((select x.corrected_outgoing from public.cost_workflow_corrections x where x.source_payment_id=p.id order by x.applied_at desc,x.id desc limit 1),coalesce(p.ordinary_amount,canonical.amount))::text,
+ 'correctedCash',coalesce((select x.corrected_outgoing from public.cost_workflow_corrections x where x.source_payment_id=p.id order by x.applied_at desc,x.id desc limit 1),coalesce(p.ordinary_amount,canonical.paid_amount))::text,
  'currencyCode',p.currency_code,'paymentDate',p.payment_date,'evidenceFileIds',p.evidence_file_ids)
  from public.cost_workflow_payments p left join public.project_subcontract_payments canonical
  on canonical.id=p.subcontract_payment_id and canonical.tenant_id=p.tenant_id and canonical.company_id=p.company_id and canonical.project_id=p.project_id where p.id=$1;

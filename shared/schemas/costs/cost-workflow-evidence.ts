@@ -4,7 +4,7 @@ import { workflowUuidSchema } from './cost-workflow'
 export const workflowEvidenceTargetSchema = z.discriminatedUnion('kind', [
  z.object({kind:z.literal('request'),id:workflowUuidSchema.optional()}).strict(),
  z.object({kind:z.literal('payment'),id:workflowUuidSchema}).strict(),
- z.object({kind:z.literal('adjustment'),id:workflowUuidSchema}).strict(),
+ z.object({kind:z.literal('adjustment'),id:workflowUuidSchema.optional(),sourcePaymentId:workflowUuidSchema.optional()}).strict().refine(value=>(value.id===undefined)!==(value.sourcePaymentId===undefined),'Exactly one adjustment or source payment identity is required'),
 ])
 export const workflowEvidenceKindSchema=z.enum([...costEvidenceKindSchema.options,'quotation'])
 export const workflowEvidenceIntentSchema = costEvidenceCreateIntentInputSchema.extend({target:workflowEvidenceTargetSchema,evidenceKind:workflowEvidenceKindSchema.optional()}).strict()

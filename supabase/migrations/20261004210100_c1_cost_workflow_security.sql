@@ -15,9 +15,9 @@ on conflict(code) do nothing;
 create function private.c1_workflow_is_current_manager(target_tenant_id uuid,target_company_id uuid,target_project_id uuid)
 returns boolean language sql stable security definer set search_path = '' as $$
  select private.has_company_permission(target_tenant_id,target_company_id,'cost.request.decide')
- and (select assignment.manager_user_id from public.cost_workflow_manager_assignments assignment
+ and coalesce((select assignment.manager_user_id from public.cost_workflow_manager_assignments assignment
       where assignment.tenant_id=target_tenant_id and assignment.company_id=target_company_id and assignment.project_id=target_project_id
-      order by assignment.assignment_version desc limit 1) = (select auth.uid());
+      order by assignment.assignment_version desc limit 1) = (select auth.uid()),false);
 $$;
 create function private.c1_workflow_is_director(target_tenant_id uuid,target_company_id uuid)
 returns boolean language sql stable security definer set search_path = '' as $$

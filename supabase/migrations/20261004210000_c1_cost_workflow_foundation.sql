@@ -143,7 +143,7 @@ create table public.cost_workflow_refunds (
  source_payment_id uuid not null, request_id uuid not null, decision_id uuid not null,
  amount numeric(20,4) not null check(amount > 0), received_date date not null,
  evidence_file_ids uuid[] not null check(cardinality(evidence_file_ids)>0), confirmed_by uuid not null references auth.users(id), confirmed_at timestamptz not null default now(),
- unique(request_id), foreign key(source_payment_id, tenant_id, company_id, project_id) references public.cost_workflow_payments(id, tenant_id, company_id, project_id) on delete restrict, foreign key(request_id, tenant_id, company_id, project_id) references public.cost_workflow_requests(id, tenant_id, company_id, project_id) on delete restrict, foreign key(decision_id, tenant_id, company_id, project_id) references public.cost_workflow_decisions(id, tenant_id, company_id, project_id) on delete restrict
+ foreign key(source_payment_id, tenant_id, company_id, project_id) references public.cost_workflow_payments(id, tenant_id, company_id, project_id) on delete restrict, foreign key(request_id, tenant_id, company_id, project_id) references public.cost_workflow_requests(id, tenant_id, company_id, project_id) on delete restrict, foreign key(decision_id, tenant_id, company_id, project_id) references public.cost_workflow_decisions(id, tenant_id, company_id, project_id) on delete restrict
 );
 create index cost_workflow_refunds_project_idx on public.cost_workflow_refunds(tenant_id,company_id,project_id);
 

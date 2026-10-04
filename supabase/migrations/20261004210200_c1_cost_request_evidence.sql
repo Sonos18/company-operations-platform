@@ -9,7 +9,7 @@ alter table public.cost_evidence_files
  add column workflow_target_id uuid;
 alter table public.cost_evidence_files add constraint c1_workflow_evidence_target_shape check(
  (not workflow_origin and workflow_evidence_kind is null and workflow_target_kind is null and workflow_target_id is null)
- or (workflow_origin and workflow_evidence_kind is not null and workflow_evidence_kind in('contract','quotation','acceptance_record','invoice','accounting_support','payment_proof','source_workbook','other') and workflow_target_kind is not null and workflow_target_kind in('request','payment','adjustment')
+ or (workflow_origin and workflow_evidence_kind is not null and workflow_evidence_kind in('contract','quotation','acceptance_record','invoice','accounting_support','payment_proof','source_workbook','other') and workflow_target_kind is not null and workflow_target_kind in('request','payment','adjustment','adjustment_source')
      and (workflow_target_kind='request' or workflow_target_id is not null)));
 
 create table public.cost_workflow_request_evidence (
