@@ -16,8 +16,10 @@ const props = withDefaults(defineProps<{
   projectId: string
   detailId: string
   disabled?: boolean
+  readonly?: boolean
 }>(), {
   disabled: false,
+  readonly: false,
 })
 
 const emit = defineEmits<{
@@ -163,7 +165,7 @@ function onFileSelected(event: Event) {
 
 async function startUploadAndLink() {
   if (uploading.value || (!selectedFile.value && !pendingDetailLink.value) || !props.detailId || !props.projectId) return
-  if (!canPrepare.value) {
+  if (props.readonly || !canPrepare.value) {
     uploadError.value = 'Bạn không có quyền cost.prepare để tải lên và liên kết chứng từ.'
     return
   }
@@ -178,7 +180,7 @@ async function startUploadAndLink() {
     && (authStore?.user?.id ?? 'anonymous') === actorId
     && props.projectId === projectId
     && props.detailId === detailId
-    && canPrepare.value
+    && !props.readonly && canPrepare.value
   if (pendingDetailLink.value && (
     pendingDetailLink.value.companyId !== companyId
     || pendingDetailLink.value.actorId !== actorId
@@ -310,7 +312,7 @@ async function openFile(evidenceFileId: string) {
       />
 
       <!-- Evidence Upload Form (cost.prepare) -->
-      <div v-if="canPrepare" class="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg space-y-3" data-testid="evidence-upload-section">
+      <div v-if="canPrepare && !readonly" class="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg space-y-3" data-testid="evidence-upload-section">
         <div class="text-xs font-semibold text-gray-700 dark:text-gray-300">
           Thêm chứng từ mới
         </div>

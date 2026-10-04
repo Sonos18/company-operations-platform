@@ -46,6 +46,8 @@ const projectionTier = computed<DetailProjectionTier>(() => {
   return 'none'
 })
 
+const projectState = ref<'active' | 'paused' | 'unknown' | 'completed' | null>(null)
+const projectWritable = computed(() => projectState.value !== null && projectState.value !== 'completed')
 const loading = ref(true)
 const status = ref<'loading' | 'ready' | 'not_found' | 'permission' | 'error'>('loading')
 const errorMessage = ref<string | null>(null)
@@ -133,7 +135,13 @@ async function fetchDraft(isRefetch = false) {
     return
   }
 
+  projectState.value = null
   try {
+    const metadata = await repositories.projectCosts.draftManagementMetadata()
+    if (!request.isCurrent()) return
+    const project = metadata.projects.find(p => p.id === request.identity.projectId)
+    if (!project) { status.value = 'not_found'; return }
+    projectState.value = project.operationalState
     if (request.identity.tier === 'prepare') {
       const data = await repositories.projectCosts.detailDraft(request.identity.detailId)
       if (!request.isCurrent()) return
@@ -289,6 +297,7 @@ function onPublished() {
 
     <!-- Ready State -->
     <div v-else-if="activeDraft && status === 'ready'" class="space-y-6">
+      <p v-if="projectState === 'completed'" role="status" class="text-sm text-muted" data-testid="completed-project-notice">Dự án đã hoàn thành, chỉ được xem dữ liệu.</p>
       <header class="cockpit-card p-6 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div class="flex items-center gap-2">
@@ -304,7 +313,7 @@ function onPublished() {
         </div>
 
         <!-- Publish Draft Action Button -->
-        <div v-if="canPublish" class="flex items-center gap-3">
+        <div v-if="canPublish && projectWritable" class="flex items-center gap-3">
           <UButton
             color="primary"
             icon="i-lucide-check-check"
@@ -410,7 +419,7 @@ function onPublished() {
       <ProjectCostDetailPublishReadinessPanel
         v-if="canPrepare && readiness"
         :readiness="readiness"
-        :can-publish="canPublish"
+        :can-publish="canPublish && projectWritable"
         @open-publish="() => { isPublishModalOpen = true }"
       />
 
@@ -424,7 +433,7 @@ function onPublished() {
           reference: activeDraft.reference,
           note: activeDraft.note,
         }"
-        :disabled="!canManage"
+        :disabled="!canManage || !projectWritable"
         @saved="onOperationalSaved"
         @refresh-requested="() => fetchDraft(true)"
         @dirty-change="(d) => { isOperationsDirty = d }"
@@ -433,6 +442,7 @@ function onPublished() {
       <!-- Financial Form Component (cost.prepare only) -->
       <ProjectCostDetailFinancialForm
         v-if="canPrepare && financialDraft"
+        :disabled="!projectWritable"
         :detail-id="financialDraft.id"
         :version="financialDraft.version"
         :financials="{
@@ -458,6 +468,7 @@ function onPublished() {
 
       <!-- Evidence Panel Component -->
       <ProjectCostDetailEvidencePanel
+        :readonly="!projectWritable"
         :project-id="projectId"
         :detail-id="activeDraft.id"
         @evidence-linked="onEvidenceLinked"
@@ -465,6 +476,7 @@ function onPublished() {
 
       <!-- Publish Modal -->
       <ProjectCostDetailPublishModal
+        v-if="projectWritable"
         v-model:open="isPublishModalOpen"
         :detail-id="activeDraft.id"
         :version="activeDraft.version"

@@ -21,7 +21,7 @@ function validate(): boolean {
   fieldErrors.value = {}
   for (const issue of parsed.error.issues) {
     const field = issue.path[0]
-    if (field === 'password') fieldErrors.value.password = 'Mật khẩu phải có từ 12 đến 72 ký tự và không chỉ gồm khoảng trắng.'
+    if (field === 'password') fieldErrors.value.password = 'Mật khẩu phải có từ 8 đến 72 ký tự và không chỉ gồm khoảng trắng.'
     if (field === 'confirmation') fieldErrors.value.confirmation = 'Xác nhận mật khẩu phải trùng khớp.'
   }
   focusFirstInvalidField()
@@ -49,7 +49,7 @@ async function submit(): Promise<void> {
 
 <template>
   <form ref="form" class="auth-form" novalidate @submit.prevent="submit">
-    <div><p class="eyebrow">Bảo mật tài khoản</p><h1>Đặt lại mật khẩu</h1><p>Chọn mật khẩu mới có từ 12 đến 72 ký tự.</p></div>
+    <div><p class="eyebrow">Bảo mật tài khoản</p><h1>Đặt lại mật khẩu</h1><p>Chọn mật khẩu mới có từ 8 đến 72 ký tự.</p></div>
     <AuthFormAlert v-if="formError" :message="formError" />
     <PasswordField id="reset-password" v-model="password" label="Mật khẩu mới" name="password" autocomplete="new-password" :disabled="submitting" :error="fieldErrors.password" />
     <PasswordField id="reset-confirmation" v-model="confirmation" label="Xác nhận mật khẩu mới" name="confirmation" autocomplete="new-password" :disabled="submitting" :error="fieldErrors.confirmation" />

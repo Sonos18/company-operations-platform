@@ -10,7 +10,7 @@ describe('Cloud DEV VQH RLS smoke command', () => {
   it('guards the target and proves member and non-member visibility without identity output', () => {
     expect(packageJson.scripts['db:dev:rls-smoke']).toBe('node scripts/run-supabase-dev.mjs rls-smoke')
     expect(packageJson.scripts['db:dev:canonical-check']).toBe('node scripts/run-supabase-dev.mjs canonical-check')
-    expect(runner).toContain("assertCloudDevTarget } from './assert-cloud-dev-target.mjs'")
+    expect(runner).toContain("assertCloudDevTarget, resolveCloudDevConfigSource } from './assert-cloud-dev-target.mjs'")
     expect(runner).toContain("set local role authenticated")
     expect(runner).toContain('90000000-0000-4000-8000-000000000001')
     expect(runner).toContain("select 'PASS' as result;")

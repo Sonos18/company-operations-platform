@@ -169,7 +169,7 @@ export const projectCostDetailsResponseSchema = z.object({
 }).strict()
 
 export const projectCostDraftManagementMetadataSchema = z.object({
-  projects: z.array(z.object({ id: uuid, code: text, name: text }).strict()),
+  projects: z.array(z.object({ id: uuid, code: text, name: text, operationalState: z.enum(['active', 'completed', 'paused', 'unknown']) }).strict()),
   categories: z.array(z.object({ categoryId: uuid, code: text, name: text, isActive: z.boolean(), draftEligible: z.boolean(), postingStrategy: z.enum(['ordinary_detail', 'subcontract_payment']) }).strict()),
 }).strict()
 

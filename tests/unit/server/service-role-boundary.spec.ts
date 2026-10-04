@@ -386,6 +386,8 @@ describe('Supabase Auth admin boundary', () => {
       'nuxt.config.ts',
       'server/features/costs/evidence/cost-evidence.routes.ts',
       'server/features/employees/employee.routes.ts',
+      'server/features/employees/manual-invitation-auth.ts',
+      'server/features/employees/manual-invitation.routes.ts',
       'server/utils/supabase-client.ts',
       'server/utils/supabase-config.ts',
     ])
@@ -401,6 +403,7 @@ describe('Supabase Auth admin boundary', () => {
 
     expect(importers).toEqual([
       'server/features/employees/employee.routes.ts',
+      'server/features/employees/manual-invitation.routes.ts',
       'server/utils/supabase-client.ts',
     ])
   })

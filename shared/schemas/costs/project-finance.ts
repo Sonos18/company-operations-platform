@@ -27,6 +27,7 @@ export const financeProjectContextSchema = z.object({
   moneyScale: z.number().int().min(0).max(4),
   timeZone: text,
   operationalState: z.enum(['active', 'completed', 'paused', 'unknown']),
+  updatedAt: timestamp.optional(),
 }).strict()
 
 export const financeIssueSchema = z.object({

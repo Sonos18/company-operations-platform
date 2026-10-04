@@ -51,7 +51,8 @@ test.describe('employee directory', () => {
 
     await expect(employeeTable(page).getByText('Hồ sơ chưa đầy đủ', { exact: true })).toHaveCount(6)
 
-    await expect(page.getByRole('button', { name: /mời|thêm|chỉnh sửa|phân quyền/i })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Mời nhân viên', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: /thêm|chỉnh sửa|phân quyền/i })).toHaveCount(0)
   })
 
   test('filters employees by search, department, and status', async ({ page }) => {

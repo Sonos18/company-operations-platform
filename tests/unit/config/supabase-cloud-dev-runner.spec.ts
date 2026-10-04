@@ -178,6 +178,37 @@ afterEach(() => {
   for (const root of worktrees.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
+
+describe('environment sourced Cloud DEV runner', () => {
+  const envConfig = { TASKOVIA_DEV_CONFIG_SOURCE: 'environment', NUXT_PUBLIC_SUPABASE_URL: 'https://gtgljlnhwvhqdnwrfdfj.supabase.co', NUXT_PUBLIC_SUPABASE_ANON_KEY: 'sb_publishable_test-key', SUPABASE_DEV_ACCESS_TOKEN: 'fake-dedicated-pat', XDG_STATE_HOME: '/var/state' }
+  function cleanWorktree() {
+    const cwd = makeWorktree()
+    rmSync(join(cwd, '.env.local'))
+    rmSync(join(cwd, '.supabase.dev.env.local'))
+    return cwd
+  }
+  it('uses only the dedicated PAT with isolated CLI home', () => {
+    const cwd = cleanWorktree()
+    let childEnv = {} as Record<string, string | undefined>
+    runSupabaseDevMode('status', { cwd, env: { ...envConfig, SUPABASE_ACCESS_TOKEN: 'ambient-pat', SUPABASE_DB_PASSWORD: 'ambient-password' }, platform: 'linux', spawn: (_file: string, _args: string[], options: { env: Record<string, string | undefined> }) => { childEnv = options.env; return { status: 0 } } })
+    expect(childEnv.SUPABASE_ACCESS_TOKEN).toBe('fake-dedicated-pat')
+    expect(childEnv.SUPABASE_DEV_ACCESS_TOKEN).toBeUndefined()
+    expect(childEnv.SUPABASE_DB_PASSWORD).toBeUndefined()
+    expect(childEnv.SUPABASE_HOME).toBe('/var/state/SupabaseCLI/taskovia-dev')
+  })
+  it('fails before spawning without a dedicated PAT', () => {
+    const cwd = cleanWorktree()
+    let spawned = false
+    expect(() => runSupabaseDevMode('status', { cwd, env: { ...envConfig, SUPABASE_DEV_ACCESS_TOKEN: '', SUPABASE_ACCESS_TOKEN: 'ambient-pat' }, platform: 'linux', spawn: () => { spawned = true; return { status: 0 } } })).toThrow(/SUPABASE_DEV_ACCESS_TOKEN/)
+    expect(spawned).toBe(false)
+  })
+  it('rejects a leftover PAT file', () => {
+    const cwd = cleanWorktree()
+    writeFileSync(join(cwd, '.supabase.dev.env.local'), 'SUPABASE_DEV_ACCESS_TOKEN=fake-file-pat')
+    expect(() => runSupabaseDevMode('status', { cwd, env: envConfig, platform: 'linux', spawn: () => { throw Error('spawned') } })).toThrow(/conflict|source/i)
+  })
+})
+
 describe('Cloud DEV fixed-mode runner', () => {
   it('runs the Yong Mei promotion as a fixed read-only dry run', async () => {
     const root = makeWorktree()

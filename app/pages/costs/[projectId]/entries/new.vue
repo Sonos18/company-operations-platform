@@ -35,6 +35,7 @@ const currentActorId = computed(() => authStore?.user?.id ?? 'anonymous')
 const projectId = computed(() => String(route.params.projectId ?? ''))
 const categoryIdParam = computed(() => (typeof route.query.categoryId === 'string' ? route.query.categoryId : ''))
 
+const projectWritable = ref(false)
 const canManage = computed(() => companyAccess.hasPermission('cost.manage'))
 const canPrepare = computed(() => companyAccess.hasPermission('cost.prepare'))
 const canPublish = computed(() => companyAccess.hasPermission('cost.publish_import'))
@@ -131,6 +132,7 @@ async function loadMetadata() {
   })
 
   loading.value = true
+  projectWritable.value = false
   pageError.value = null
   categoryDeepLinkWarning.value = null
   isSubcontractSelected.value = false
@@ -139,6 +141,10 @@ async function loadMetadata() {
     const meta = await repositories.projectCosts.draftManagementMetadata()
     if (!request.isCurrent()) return
 
+    const project = meta.projects.find(p => p.id === request.identity.projectId)
+    if (!project) { pageError.value = 'Không tìm thấy dự án.'; return }
+    if (project.operationalState === 'completed') { pageError.value = 'Dự án đã hoàn thành, chỉ được xem dữ liệu.'; return }
+    projectWritable.value = true
     allCategories.value = meta.categories
 
     // Decision 2.A: Show only active ordinary_detail categories in dropdown
@@ -283,6 +289,10 @@ async function submitSaveDraft(isReplay = false, retainFinancials = true) {
   }
 
   if (!isReplay) {
+    if (!projectWritable.value) {
+      formError.value = 'Dự án đã hoàn thành hoặc chưa xác minh được trạng thái, không thể tạo lệnh mới.'
+      return
+    }
     if (isSubcontractSelected.value) {
       formError.value = 'Mô hình chi phí thầu phụ không hỗ trợ lưu bản nháp chi phí thông thường.'
       return
@@ -393,7 +403,7 @@ async function submitSaveDraft(isReplay = false, retainFinancials = true) {
     unresolvedState.value = 'none'
 
     // Retain entered financials for subsequent prepare step if requested
-    if (retainFinancials && hasEnteredFinancials.value) {
+    if (retainFinancials && projectWritable.value && hasEnteredFinancials.value) {
       stashDraftFinancials(
         dispatchContext.companyId,
         dispatchContext.projectId,
@@ -449,6 +459,10 @@ async function submitPublishNow(isReplay = false) {
   }
 
   if (!isReplay) {
+    if (!projectWritable.value) {
+      formError.value = 'Dự án đã hoàn thành hoặc chưa xác minh được trạng thái, không thể tạo lệnh mới.'
+      return
+    }
     if (isSubcontractSelected.value) {
       formError.value = 'Mô hình chi phí thầu phụ không hỗ trợ phát hành qua luồng chi phí thông thường.'
       return
@@ -985,7 +999,7 @@ async function submitPublishNow(isReplay = false) {
             Lưu ý: Nút "Lưu bản nháp" chỉ tạo bản nháp vận hành.
           </div>
           <UButton
-            v-if="canManage"
+            v-if="canManage && projectWritable"
             color="neutral"
             variant="outline"
             :loading="submittingAction === 'draft'"
@@ -997,7 +1011,7 @@ async function submitPublishNow(isReplay = false) {
           </UButton>
 
           <UButton
-            v-if="canPublishNow"
+            v-if="canPublishNow && projectWritable"
             color="primary"
             :loading="submittingAction === 'publish'"
             :disabled="Boolean(submittingAction) || unresolvedState !== 'none' || !form.categoryId || !form.description.trim() || !isAmountValid || isSubcontractSelected"

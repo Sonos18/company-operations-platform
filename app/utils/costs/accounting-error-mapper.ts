@@ -28,6 +28,8 @@ export function extractErrorMessage(err: unknown, fallbackMessage = 'Đã xảy 
   const code = clientError.code || clientError.reason
 
   switch (code) {
+    case 'PROJECT_COMPLETED':
+      return 'Dự án đã hoàn thành, chỉ được xem dữ liệu.'
     case 'VERSION_CONFLICT':
       return 'Dữ liệu đã bị thay đổi bởi người dùng khác (xung đột phiên bản). Vui lòng làm mới dữ liệu và đối chiếu trước khi lưu.'
     case 'IDEMPOTENCY_CONFLICT':

@@ -179,6 +179,11 @@ onUnmounted(() => {
             </div>
           </header>
 
+          <p v-if="entry.project.updatedAt" class="text-xs text-muted" data-testid="project-updated-at">
+            Cập nhật lần cuối:
+            <time :datetime="entry.project.updatedAt">{{ new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short', timeZone: entry.project.timeZone }).format(new Date(entry.project.updatedAt)) }}</time>
+          </p>
+
           <!-- Position 1: Lợi nhuận tạm tính -->
           <div
             class="tracked-total-box"

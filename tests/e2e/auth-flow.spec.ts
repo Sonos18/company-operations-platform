@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import {
   createAuthTestState,
   createCompany,
@@ -8,7 +8,7 @@ import {
 } from './fixtures/auth-routes'
 
 const invalidPassword = crypto.randomUUID()
-const shortPassword = crypto.randomUUID().slice(0, 8)
+const shortPassword = crypto.randomUUID().slice(0, 7)
 const recoveryTokenHash = crypto.randomUUID()
 const invalidTokenHash = crypto.randomUUID()
 const surplusTokenHash = crypto.randomUUID()
@@ -26,6 +26,15 @@ const alternateCompany = createCompany({
   permissions: ['project.read', 'employee.read_directory'],
 })
 let authState: AuthTestState
+
+async function openAccountMenu(page: Page): Promise<void> {
+  const avatar = page.getByRole('button', { name: 'Mở menu tài khoản' })
+  const directLogout = page.getByRole('button', { name: 'Đăng xuất', exact: true })
+  await expect(avatar.or(directLogout).first()).toBeVisible()
+  if (!await avatar.count()) return
+  if (await avatar.getAttribute('aria-expanded') !== 'true') await avatar.click()
+  await expect(page.getByRole('dialog', { name: 'Menu tài khoản' })).toBeVisible()
+}
 
 test.beforeEach(async ({ page }) => {
   authState = createAuthTestState({ sessionCompanies: [] })
@@ -81,6 +90,7 @@ test('persists a successful login across reload and clears it after logout', asy
   await page.reload()
   await expect(page).toHaveURL(/\/projects$/)
 
+  await openAccountMenu(page)
   await page.getByRole('button', { name: 'Đăng xuất' }).click()
   await expect(page).toHaveURL(/\/login$/)
   await page.reload()
@@ -97,6 +107,7 @@ test('lands accountant-style and source-only users on their authorized Cost rout
   expect(page.url()).not.toContain('/forbidden')
 
   authState.sessionCompanies = [createCompany({ permissions: ['cost.source.read'] })]
+  await openAccountMenu(page)
   await page.getByRole('button', { name: 'Đăng xuất' }).click()
   await page.getByLabel('Email').fill('source@example.com')
   await page.getByLabel('Mật khẩu', { exact: true }).fill(authState.password)
@@ -148,7 +159,7 @@ test('scrubs callback tokens and denies a recovery session after closing and reo
   await page.getByLabel('Mật khẩu mới', { exact: true }).fill(shortPassword)
   await page.getByLabel('Xác nhận mật khẩu mới', { exact: true }).fill(shortPassword)
   await page.getByRole('button', { name: 'Cập nhật mật khẩu' }).click()
-  await expect(page.getByText('Mật khẩu phải có từ 12 đến 72 ký tự và không chỉ gồm khoảng trắng.')).toBeVisible()
+  await expect(page.getByText('Mật khẩu phải có từ 8 đến 72 ký tự và không chỉ gồm khoảng trắng.')).toBeVisible()
 
   const context = page.context()
   await page.close()
@@ -206,7 +217,7 @@ test('rejects callback queries with surplus fields before calling the provider',
   expect(authState.verifyRequests).toEqual([])
 })
 
-test('requires company selection, switches the header company, and preserves the selected company', async ({ page }) => {
+test('requires company selection, switches company from the account menu, and preserves the selected company', async ({ page }) => {
   authState.sessionCompanies = [grantedCompany, alternateCompany]
   await page.goto('/login')
   await page.getByLabel('Email').fill('anh@example.com')
@@ -217,25 +228,33 @@ test('requires company selection, switches the header company, and preserves the
   await page.getByRole('button', { name: grantedCompany.companyName }).click()
   await expect(page).toHaveURL(/\/projects$/)
 
+  await openAccountMenu(page)
   const switcher = page.getByRole('combobox', { name: 'Chuyển công ty' })
-  await switcher.selectOption(alternateCompany.companyId)
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'load' }),
+    switcher.selectOption(alternateCompany.companyId),
+  ])
+  await openAccountMenu(page)
   await expect(page).toHaveURL(/\/projects$/)
   await expect(switcher).toHaveValue(alternateCompany.companyId)
-  await expect(page.getByTestId('app-header')).toContainText(alternateCompany.companyName)
+  await expect(page.getByRole('dialog', { name: 'Menu tài khoản' })).toContainText(alternateCompany.companyName)
 
   await page.reload()
   await expect(page).toHaveURL(/\/projects$/)
+  await openAccountMenu(page)
   await expect(page.getByRole('combobox', { name: 'Chuyển công ty' })).toHaveValue(alternateCompany.companyId)
-  await expect(page.getByTestId('app-header')).toContainText(alternateCompany.companyName)
+  await expect(page.getByRole('dialog', { name: 'Menu tài khoản' })).toContainText(alternateCompany.companyName)
 
+  await openAccountMenu(page)
   await page.getByRole('button', { name: 'Đăng xuất' }).click()
   await expect(page).toHaveURL(/\/login$/)
   await page.getByLabel('Email').fill('anh@example.com')
   await page.getByLabel('Mật khẩu', { exact: true }).fill(authState.password)
   await page.getByRole('button', { name: 'Đăng nhập' }).click()
   await expect(page).toHaveURL(/\/projects$/)
+  await openAccountMenu(page)
   await expect(page.getByRole('combobox', { name: 'Chuyển công ty' })).toHaveValue(alternateCompany.companyId)
-  await expect(page.getByTestId('app-header')).toContainText(alternateCompany.companyName)
+  await expect(page.getByRole('dialog', { name: 'Menu tài khoản' })).toContainText(alternateCompany.companyName)
 })
 
 test('routes a signed-in user without the page permission to forbidden without logging out', async ({ page }) => {
@@ -248,6 +267,7 @@ test('routes a signed-in user without the page permission to forbidden without l
 
   await page.goto('/employees')
   await expect(page).toHaveURL(/\/forbidden$/)
+  await openAccountMenu(page)
   await expect(page.getByRole('button', { name: 'Đăng xuất' })).toBeVisible()
 })
 
@@ -282,4 +302,29 @@ test('clears the session when logging out from a connection error', async ({ pag
   await expect(page.getByRole('heading', { name: 'Đăng nhập' })).toBeVisible()
   await page.reload()
   await expect(page).toHaveURL(/\/login$/)
+})
+
+test('invite recipient sets an eight-character password and enters their authorized company', async ({ page }) => {
+  authState.sessionCompanies = [createCompany({ permissions: ['project.read'] })]
+  let submittedPassword = ''
+  await page.route('**/auth/v1/user', async route => {
+    if (route.request().method() === 'PUT') submittedPassword = route.request().postDataJSON().password
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ user: authState.user }) })
+  })
+  await page.goto('/auth/callback?' + new URLSearchParams({ token_hash: 'synthetic-invite-acceptance', type: 'invite' }))
+  await expect(page).toHaveURL(/\/reset-password$/)
+  await page.getByLabel('Mật khẩu mới', { exact: true }).fill('abcdefgh')
+  await page.getByLabel('Xác nhận mật khẩu mới', { exact: true }).fill('abcdefgh')
+  await page.getByRole('button', { name: 'Cập nhật mật khẩu', exact: true }).click()
+  await expect(page).toHaveURL(/\/projects$/)
+  expect(submittedPassword).toBe('abcdefgh')
+  expect(authState.verifyRequests).toMatchObject([{ token_hash: 'synthetic-invite-acceptance', type: 'invite' }])
+  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('synthetic-invite-acceptance')
+})
+test('expired or consumed invite cannot reach password setting', async ({ page }) => {
+  await page.route('**/auth/v1/verify', route => route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ code: 'otp_expired', message: 'expired synthetic invite' }) }))
+  await page.goto('/auth/callback?' + new URLSearchParams({ token_hash: 'synthetic-expired-invite', type: 'invite' }))
+  await expect(page.getByRole('heading', { name: 'Không thể xác minh liên kết', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/auth\/callback$/)
+  await expect(page.getByLabel('Mật khẩu mới', { exact: true })).toHaveCount(0)
 })

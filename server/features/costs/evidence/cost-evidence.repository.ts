@@ -19,6 +19,9 @@ const metadataRowSchema = z.object({ id: z.string().uuid(), evidence_file_id: z.
 
 function fail(message: string): never { throw new AppApiError(500, 'INTERNAL_ERROR', message) }
 function rpcError(error: unknown): never {
+  const completed = z.object({ message: z.literal('PROJECT_COMPLETED') }).safeParse(error)
+  if (completed.success) throw new AppApiError(409, 'PROJECT_COMPLETED', 'Dự án đã hoàn thành, chỉ được xem dữ liệu.')
+
   const parsed = z.object({ code: z.string().optional(), message: z.string().optional() }).safeParse(error)
   const code = parsed.success ? parsed.data.message ?? parsed.data.code : undefined
   if (code === 'PERMISSION_DENIED') throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền thực hiện thao tác này.')

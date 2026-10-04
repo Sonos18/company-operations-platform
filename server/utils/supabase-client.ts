@@ -34,7 +34,7 @@ export interface SupabaseAdminClient {
   auth: {
     admin: Pick<
       SupabaseClient<Database>['auth']['admin'],
-      'inviteUserByEmail' | 'listUsers' | 'updateUserById'
+      'inviteUserByEmail' | 'listUsers' | 'updateUserById' | 'generateLink' | 'getUserById' | 'createUser'
     >
   }
 }

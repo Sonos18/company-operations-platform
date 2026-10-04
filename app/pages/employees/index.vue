@@ -1,10 +1,15 @@
 <script setup lang="ts">
+import EmployeeInvitationForm from '../../components/employees/EmployeeInvitationForm.vue'
 import EmployeeTable from '../../components/employees/EmployeeTable.vue'
 import type { EmployeeSummary } from '../../features/employees/employee.types'
 
 definePageMeta({ requiredAnyPermissions: ['employee.read_directory', 'employee.read_all'] })
 
 const repositories = useRepositories()
+const companyAccess = useNuxtApp().$companyAccessStore
+const invitationOpen = ref(false)
+const canInvite = computed(() => companyAccess.permissions.includes('account.invite') && companyAccess.permissions.includes('employee.create'))
+watch(() => companyAccess.activeCompanyId, () => { invitationOpen.value = false })
 const search = ref('')
 const selectedDepartment = ref('all')
 const selectedStatus = ref('all')
@@ -50,8 +55,11 @@ const filteredEmployees = computed(() => {
         <h1 id="employees-heading">Nhân sự</h1>
         <p>Tra cứu nhân sự, tài khoản, phòng ban và các vai trò đang hoạt động trong công ty.</p>
       </div>
+      <UButton v-if="canInvite" color="primary" icon="i-lucide-user-plus" @click="() => { invitationOpen = true }">Mời nhân viên</UButton>
       <div class="employee-count"><strong>{{ employees.length }}</strong><span>nhân sự</span></div>
     </header>
+
+    <EmployeeInvitationForm v-if="invitationOpen && canInvite" :key="companyAccess.activeCompanyId ?? 'none'" @close="invitationOpen = false" @prepared="() => refresh()" />
 
     <div class="directory-controls" aria-label="Lọc danh sách nhân sự">
       <UInput v-model="search" type="search" name="employee-search" aria-label="Tìm nhân sự" placeholder="Tìm theo tên hoặc email" icon="i-lucide-search" size="lg" />

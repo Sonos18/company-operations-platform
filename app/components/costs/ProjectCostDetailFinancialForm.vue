@@ -144,7 +144,7 @@ const isAmountValid = computed(() => {
 })
 
 async function save() {
-  if (!canPrepare.value) {
+  if (props.disabled || !canPrepare.value) {
     errorMessage.value = 'Bạn không có quyền cost.prepare để cập nhật dữ liệu tài chính.'
     return
   }

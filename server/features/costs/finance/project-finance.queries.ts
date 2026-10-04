@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { compareProjectDirectoryEntries } from '../../../../shared/utils/project-directory-order'
 import { financeRowMoneySchema, financeTimestampSchema, financeVersionSchema } from '../../../../shared/schemas/costs/project-finance'
 import { AppApiError } from '../../../utils/api-error'
 import { scanUuidRows } from './read-pages'
@@ -11,7 +12,7 @@ const timestamp = financeTimestampSchema
 const version = financeVersionSchema
 
 export type FinanceProjectContextRow = { projectId: string, projectCode: string, projectName: string, defaultCurrencyCode: string, moneyScale: number, timeZone: string, operationalState: 'active' | 'completed' | 'paused' | 'unknown' }
-export type FinanceDirectory = { defaultCurrencyCode: string, moneyScale: number, timeZone: string, projects: { projectId: string, projectCode: string, projectName: string }[], nextCursor: string | null }
+export type FinanceDirectory = { defaultCurrencyCode: string, moneyScale: number, timeZone: string, projects: { projectId: string, projectCode: string, projectName: string, operationalState: FinanceProjectContextRow['operationalState'], updatedAt: string }[], nextCursor: string | null }
 export type FinancePartyRow = { partyId: string, code: string, displayName: string, partyKind: 'organization' | 'crew' }
 
 export const costCategoryRowSchema = z.object({ id: uuid, tenant_id: uuid, company_id: uuid, code: z.string().min(1), name: z.string().min(1), display_order: z.number().int(), is_active: z.boolean(), version }).strict()
@@ -67,13 +68,13 @@ export type TableQuery = {
   order(column: string, options: { ascending: boolean }): TableQuery
   limit(size: number): Promise<QueryResult>
 }
-type RpcName = 'c1_read_project_finance_directory' | 'c1_read_project_finance_parties' | 'c1_read_project_cost_read_context' | 'c1_read_project_finance_operational_states'
+type RpcName = 'c1_read_project_finance_directory_v2' | 'c1_read_project_finance_parties' | 'c1_read_project_cost_read_context' | 'c1_read_project_finance_operational_states'
 type Rpc = (name: RpcName, args: Record<string, unknown>) => Promise<QueryResult>
 export type FinanceDbClient = { from(table: string): TableQuery, rpc: Rpc }
 
 const directorySchema = z.object({
   defaultCurrencyCode: currency, moneyScale: z.number().int().min(0).max(4), timeZone: z.string().min(1),
-  projects: z.array(z.object({ projectId: uuid, projectCode: z.string().min(1), projectName: z.string().min(1) }).strict()), nextCursor: uuid.nullable(),
+  projects: z.array(z.object({ projectId: uuid, projectCode: z.string().min(1), projectName: z.string().min(1), operationalState: z.enum(['active', 'paused', 'unknown', 'completed']), updatedAt: timestamp }).strict()), nextCursor: uuid.nullable(),
 }).strict()
 const contextSchema = z.object({ projectId: uuid, projectCode: z.string().min(1), projectName: z.string().min(1), defaultCurrencyCode: currency, moneyScale: z.number().int().min(0).max(4), timeZone: z.string().min(1) }).strict()
 const partySchema = z.object({ partyId: uuid, code: z.string().min(1), displayName: z.string().min(1), partyKind: z.enum(['organization', 'crew']) }).strict()
@@ -128,12 +129,12 @@ export class ProjectFinanceMetadataReader {
   }
 
   async directory(companyId: string, afterId: string | null, limit: number): Promise<FinanceDirectory> {
-    const { data, error } = await this.client.rpc('c1_read_project_finance_directory', { target_company_id: companyId, target_after_id: afterId, target_limit: limit })
+    const { data, error } = await this.client.rpc('c1_read_project_finance_directory_v2', { target_company_id: companyId, target_after_id: afterId, target_limit: limit })
     if (error) return mapFinanceReadError(error)
     const parsed = directorySchema.safeParse(data)
     if (!parsed.success) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi metadata không hợp lệ.')
-    if (afterId !== null && parsed.data.projects.some(project => project.projectId <= afterId)) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi metadata không hợp lệ.')
-    for (let index = 1; index < parsed.data.projects.length; index += 1) if (parsed.data.projects[index - 1]!.projectId >= parsed.data.projects[index]!.projectId) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi metadata không hợp lệ.')
+    if (parsed.data.projects.length > limit || new Set(parsed.data.projects.map(p => p.projectId)).size !== parsed.data.projects.length || parsed.data.projects.some(p => p.projectId === afterId)) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi metadata không hợp lệ.')
+    for (let index = 1; index < parsed.data.projects.length; index += 1) if (compareProjectDirectoryEntries(parsed.data.projects[index - 1]!, parsed.data.projects[index]!) >= 0) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi metadata không hợp lệ.')
     if (parsed.data.nextCursor !== null && parsed.data.projects.at(-1)?.projectId !== parsed.data.nextCursor) throw new AppApiError(500, 'INTERNAL_ERROR', 'Phản hồi metadata không hợp lệ.')
     return parsed.data
   }

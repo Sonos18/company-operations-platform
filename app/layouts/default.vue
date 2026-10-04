@@ -6,8 +6,8 @@ const nuxtApp = useNuxtApp()
 const authStore = nuxtApp.$authStore
 const companyAccessStore = nuxtApp.$companyAccessStore
 const unsavedChangesGuard = useUnsavedChangesGuard()
-const headerCollapsed = ref(false)
-const sidebarCollapsed = ref(false)
+const sidebarCollapsed = ref(true)
+
 const companyName = computed(() => companyAccessStore.activeCompany?.companyName ?? 'Đang chọn công ty')
 const signingOut = computed(() => authStore.operations.signOut.status === 'pending')
 
@@ -17,24 +17,17 @@ async function selectCompany(companyId: string, control: HTMLSelectElement): Pro
     control,
     confirmLeave: unsavedChangesGuard.confirmLeave,
     clear: unsavedChangesGuard.clear,
-    actions: {
-      selectCompany: companyAccessStore.selectCompany,
-      clearRuntimeData: clearNuxtData,
-      reloadNuxtApp,
-    },
+    actions: { selectCompany: companyAccessStore.selectCompany, clearRuntimeData: clearNuxtData, reloadNuxtApp },
   })
 }
 
 async function signOut(): Promise<void> {
   if (signingOut.value) return
-
   try {
     await authStore.signOut()
-  }
-  catch {
-    // The auth store clears local Auth and company state even when provider logout fails.
-  }
-  finally {
+  } catch {
+    /* The auth store clears local Auth and company state even when provider logout fails. */
+  } finally {
     clearNuxtData()
     await navigateTo('/login')
   }
@@ -42,12 +35,9 @@ async function signOut(): Promise<void> {
 </script>
 
 <template>
-  <div
-    class="app-shell"
-    :data-header-collapsed="headerCollapsed || undefined"
-    :data-sidebar-collapsed="sidebarCollapsed || undefined"
-  >
-    <AppHeader
+  <div class="app-shell" :data-sidebar-collapsed="sidebarCollapsed || undefined">
+    <AppSidebar
+      :collapsed="sidebarCollapsed"
       :product-name="PRODUCT_BRAND.name"
       :product-mark="PRODUCT_BRAND.mark"
       :company-name="companyName"
@@ -55,14 +45,9 @@ async function signOut(): Promise<void> {
       :companies="companyAccessStore.companies"
       :active-company-id="companyAccessStore.activeCompanyId"
       :signing-out="signingOut"
-      :collapsed="headerCollapsed"
-      @toggle="headerCollapsed = !headerCollapsed"
+      @toggle="sidebarCollapsed = !sidebarCollapsed"
       @select-company="selectCompany"
       @sign-out="signOut"
-    />
-    <AppSidebar
-      :collapsed="sidebarCollapsed"
-      @toggle="sidebarCollapsed = !sidebarCollapsed"
     />
     <main class="app-main" data-testid="app-main">
       <slot />
@@ -72,43 +57,28 @@ async function signOut(): Promise<void> {
 
 <style scoped>
 .app-shell {
-  --shell-header-height: var(--header-height);
-  --shell-sidebar-width: var(--sidebar-width);
+  --shell-sidebar-width: var(--sidebar-width, 224px);
+  --shell-bottom-nav-height: calc(192px + env(safe-area-inset-bottom, 0px));
   min-height: 100vh;
-  background: var(--app-background);
+  background: var(--app-background, var(--color-bg-primary, #f6f5f2));
   background-attachment: fixed;
 }
-
-.app-shell[data-header-collapsed='true'] {
-  --shell-header-height: 44px;
-}
-
-.app-shell[data-sidebar-collapsed='true'] {
+.app-shell[data-sidebar-collapsed] {
   --shell-sidebar-width: 64px;
 }
-
 .app-main {
   min-height: 100vh;
-  padding: calc(var(--shell-header-height) + 24px) 24px 32px calc(var(--shell-sidebar-width) + 24px);
+  padding: 24px 24px 32px calc(var(--shell-sidebar-width) + 24px);
   transition: padding 200ms ease;
 }
-
-@media (max-width: 767px) {
-  .app-shell[data-header-collapsed='true'] {
-    --shell-header-height: var(--header-height);
-  }
-
-  .app-shell[data-sidebar-collapsed='true'] {
-    --shell-sidebar-width: var(--sidebar-width);
-  }
-
+@media (max-width: 767.98px) {
   .app-main {
-    --mobile-nav-bottom-clearance: calc(130px + env(safe-area-inset-bottom, 0px));
-    padding: calc(var(--shell-header-height) + 16px) 14px var(--mobile-nav-bottom-clearance);
+    padding: 16px 14px var(--shell-bottom-nav-height);
   }
 }
-
 @media (prefers-reduced-motion: reduce) {
-  .app-main { transition: none; }
+  .app-main {
+    transition: none;
+  }
 }
 </style>

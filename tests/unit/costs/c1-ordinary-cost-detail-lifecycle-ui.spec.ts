@@ -340,6 +340,15 @@ describe('C1 Ordinary Cost Detail Lifecycle UI & Recovery Contracts', () => {
   })
 
   describe('6. Definitive Rejection vs Unknown Outcome & IDEMPOTENCY_CONFLICT Retention', () => {
+    it('classifies completed-project rejection as definitive while preserving ambiguous/idempotency failures', () => {
+      expect(isDefinitivelyRejectedError({ statusCode: 409, code: 'PROJECT_COMPLETED' })).toBe(true)
+      expect(isDefinitivelyRejectedError({ statusCode: 409, reason: 'PROJECT_COMPLETED' })).toBe(true)
+      expect(isDefinitivelyRejectedError({ statusCode: 409 })).toBe(false)
+      expect(isDefinitivelyRejectedError({ statusCode: 409, code: 'IDEMPOTENCY_CONFLICT' })).toBe(false)
+      expect(isDefinitivelyRejectedError({ statusCode: 409, code: 'PROJECT_COMPLETED', message: 'IDEMPOTENCY_CONFLICT' })).toBe(false)
+      expect(isDefinitivelyRejectedError(new TypeError('Failed to fetch'))).toBe(false)
+    })
+
     it('classifies validation and client errors as definitive rejections, but NEVER generic 409', () => {
       expect(isDefinitivelyRejectedError({ statusCode: 400 })).toBe(true)
       expect(isDefinitivelyRejectedError({ statusCode: 401 })).toBe(true)

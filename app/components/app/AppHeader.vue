@@ -10,17 +10,25 @@ const props = defineProps<{
   companies: readonly CompanyAccess[]
   activeCompanyId: string | null
   signingOut: boolean
-  collapsed: boolean
 }>()
 
 const emit = defineEmits<{
-  toggle: []
   selectCompany: [companyId: string, control: HTMLSelectElement]
   signOut: []
 }>()
 
 const { resetting, resetPrototype } = usePrototypeReset()
 const companyAccessStore = useNuxtApp().$companyAccessStore
+const route = useRoute()
+
+const isOpen = ref(false)
+const avatarButtonRef = ref<HTMLButtonElement | null>(null)
+const popoverRef = ref<HTMLElement | null>(null)
+const menuId = useId()
+const menuMaxHeight = ref<string | null>(null)
+
+let mediaQueryList: MediaQueryList | null = null
+
 const displayValue = computed(() => props.userEmail ?? '')
 const visibleAdminLinks = computed(() => filterNavigationLinks(canonicalAdminLinks, companyAccessStore))
 const initials = computed(() => {
@@ -28,342 +36,283 @@ const initials = computed(() => {
   return parts.slice(0, 2).map(part => part.slice(0, 1).toLocaleUpperCase()).join('') || '?'
 })
 
-function selectCompany(event: Event): void {
+const popoverStyle = computed(() => {
+  if (!menuMaxHeight.value) return undefined
+  return { maxHeight: menuMaxHeight.value }
+})
+
+function updateMenuMaxHeight(): void {
+  if (typeof window === 'undefined' || !avatarButtonRef.value) return
+  const rect = avatarButtonRef.value.getBoundingClientRect()
+  const availableSpace = rect.top - 8 - 12
+  menuMaxHeight.value = `${Math.max(0, Math.floor(availableSpace))}px`
+}
+
+function onWindowResize(): void {
+  if (isOpen.value) {
+    updateMenuMaxHeight()
+  }
+}
+
+function onBreakpointChange(): void {
+  if (isOpen.value) {
+    closeMenu(false)
+  }
+}
+
+function getFocusableElements(): HTMLElement[] {
+  if (!popoverRef.value) return []
+  return Array.from(
+    popoverRef.value.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )
+  )
+}
+
+function openMenu(): void {
+  updateMenuMaxHeight()
+  isOpen.value = true
+  if (typeof document !== 'undefined') {
+    document.addEventListener('click', onDocumentClick)
+    document.addEventListener('keydown', onDocumentKeydown)
+  }
+  nextTick(() => {
+    if (!isOpen.value) return
+    updateMenuMaxHeight()
+    const focusable = getFocusableElements()
+    focusable[0]?.focus()
+  })
+}
+
+function closeMenu(restoreFocus = true): void {
+  if (!isOpen.value) return
+  isOpen.value = false
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('click', onDocumentClick)
+    document.removeEventListener('keydown', onDocumentKeydown)
+  }
+  if (restoreFocus) {
+    avatarButtonRef.value?.focus()
+  }
+}
+
+function toggleMenu(): void {
+  if (isOpen.value) closeMenu(true)
+  else openMenu()
+}
+
+function onDocumentClick(event: MouseEvent): void {
+  const target = event.target as Node | null
+  if (!target) return
+  if (popoverRef.value?.contains(target) || avatarButtonRef.value?.contains(target)) return
+  closeMenu(false)
+}
+
+function onDocumentKeydown(event: KeyboardEvent): void {
+  if (!isOpen.value) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeMenu(true)
+    return
+  }
+  if (event.key === 'Tab') {
+    const elements = getFocusableElements()
+    if (elements.length === 0) {
+      event.preventDefault()
+      return
+    }
+    const first = elements[0]
+    const last = elements[elements.length - 1]
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last?.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first?.focus()
+    }
+  }
+}
+
+watch(() => route.fullPath, () => {
+  if (isOpen.value) closeMenu(false)
+})
+
+onMounted(() => {
+  if (typeof window === 'undefined') return
+  window.addEventListener('resize', onWindowResize)
+  if (typeof window.matchMedia === 'function') {
+    mediaQueryList = window.matchMedia('(min-width: 768px)')
+    mediaQueryList.addEventListener('change', onBreakpointChange)
+  }
+})
+
+function cleanupListeners(): void {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', onWindowResize)
+  }
+  if (mediaQueryList) {
+    mediaQueryList.removeEventListener('change', onBreakpointChange)
+    mediaQueryList = null
+  }
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('click', onDocumentClick)
+    document.removeEventListener('keydown', onDocumentKeydown)
+  }
+}
+
+onBeforeUnmount(cleanupListeners)
+
+function onSelectCompany(event: Event): void {
   const control = event.currentTarget as HTMLSelectElement
-  if (control.value) emit('selectCompany', control.value, control)
+  if (control?.value) emit('selectCompany', control.value, control)
+}
+
+async function onResetPrototype(): Promise<void>
+{
+  await resetPrototype()
+  closeMenu(false)
+}
+
+function onSignOut(): void {
+  closeMenu(false)
+  emit('signOut')
 }
 </script>
 
 <template>
-  <header
-    id="app-header"
-    class="app-header"
-    :class="{ 'app-header--collapsed': collapsed }"
-    data-testid="app-header"
-  >
-    <div class="app-header__primary">
-      <NuxtLink
-        to="/projects"
-        class="brand"
-        :aria-label="`${productName} — Về danh sách dự án`"
-      >
-        <span class="brand__mark" aria-hidden="true">{{ productMark }}</span>
-        <span class="brand__copy">
-          <strong>{{ productName }}</strong>
-          <small>{{ companyName }}</small>
-        </span>
-      </NuxtLink>
-      <button
-        class="navigation-toggle"
-        type="button"
-        aria-controls="app-header"
-        :aria-expanded="!collapsed"
-        :aria-label="collapsed ? 'Mở rộng thanh điều hướng phía trên' : 'Thu gọn thanh điều hướng phía trên'"
-        @click="emit('toggle')"
-      >
-        <UIcon :name="collapsed ? 'i-lucide-panel-top-open' : 'i-lucide-panel-top-close'" aria-hidden="true" />
-      </button>
-    </div>
+  <div class="account-utilities">
+    <button
+      type="button"
+      class="utility-btn utility-bell"
+      aria-label="Mở thông báo"
+      title="Thông báo"
+    >
+      <UIcon name="i-lucide-bell" aria-hidden="true" />
+    </button>
 
-    <div class="app-header__context">
-      <span class="prototype-pill"><span /> Prototype nội bộ</span>
-      <label v-if="companies.length > 1" class="company-switcher" for="company-switcher">
-        <span class="sr-only">Chuyển công ty</span>
-        <select id="company-switcher" :value="activeCompanyId ?? undefined" aria-label="Chuyển công ty" @change="selectCompany">
-          <option v-for="company in companies" :key="company.companyId" :value="company.companyId">{{ company.companyName }}</option>
-        </select>
-      </label>
-      <button class="reset-action" type="button" :disabled="resetting" aria-label="Khôi phục dữ liệu mẫu" @click="resetPrototype">
-        <UIcon name="i-lucide-rotate-ccw" aria-hidden="true" />
-        <span>{{ resetting ? 'Đang khôi phục' : 'Khôi phục dữ liệu mẫu' }}</span>
-      </button>
-      <NuxtLink
-        v-for="link in visibleAdminLinks"
-        :key="link.to"
-        :to="link.to"
-        class="admin-action"
-        :aria-label="link.label"
+    <div class="account-anchor">
+      <button
+        ref="avatarButtonRef"
+        type="button"
+        class="utility-btn utility-avatar"
+        :aria-expanded="isOpen"
+        :aria-controls="menuId"
+        aria-haspopup="dialog"
+        aria-label="Mở menu tài khoản"
+        @click="toggleMenu"
       >
-        <UIcon :name="link.icon" aria-hidden="true" />
-        <span>{{ link.label }}</span>
-      </NuxtLink>
-      <button class="header-action" type="button" aria-label="Mở thông báo">
-        <UIcon name="i-lucide-bell" aria-hidden="true" />
+        <span class="avatar-text">{{ initials }}</span>
       </button>
-      <span class="avatar" :aria-label="displayValue || 'Tài khoản đang xác thực'">{{ initials }}</span>
-      <button class="logout-action" type="button" :disabled="signingOut" aria-label="Đăng xuất" @click="emit('signOut')">
-        <UIcon name="i-lucide-log-out" aria-hidden="true" />
-        <span>{{ signingOut ? 'Đang đăng xuất' : 'Đăng xuất' }}</span>
-      </button>
+
+      <div
+        v-if="isOpen"
+        :id="menuId"
+        ref="popoverRef"
+        class="account-popover"
+        :style="popoverStyle"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Menu tài khoản"
+      >
+        <div class="account-header">
+          <p class="account-email" :title="props.userEmail ?? undefined">{{ props.userEmail || 'Chưa có email' }}</p>
+          <p class="account-company">{{ props.companyName }}</p>
+          <div class="prototype-pill">
+            <UIcon name="i-lucide-flask-conical" aria-hidden="true" />
+            <span>Dữ liệu thử nghiệm nội bộ</span>
+          </div>
+        </div>
+
+        <div v-if="props.companies.length > 1" class="account-group">
+          <label :for="`${menuId}-company-select`" class="account-label">Chuyển công ty</label>
+          <select
+            :id="`${menuId}-company-select`"
+            class="account-select"
+            :value="props.activeCompanyId ?? undefined"
+            aria-label="Chuyển công ty"
+            @change="onSelectCompany"
+          >
+            <option v-for="c in props.companies" :key="c.companyId" :value="c.companyId">
+              {{ c.companyName }}
+            </option>
+          </select>
+        </div>
+
+        <div v-if="visibleAdminLinks.length > 0" class="account-group account-links">
+          <NuxtLink
+            v-for="link in visibleAdminLinks"
+            :key="link.to"
+            :to="link.to"
+            class="account-link"
+            :aria-label="link.label"
+            @click="closeMenu(false)"
+          >
+            <UIcon :name="link.icon" aria-hidden="true" />
+            <span>{{ link.label }}</span>
+          </NuxtLink>
+        </div>
+
+        <div class="account-group">
+          <button
+            type="button"
+            class="account-action-btn"
+            :disabled="resetting"
+            aria-label="Khôi phục dữ liệu mẫu"
+            @click="onResetPrototype"
+          >
+            <UIcon name="i-lucide-rotate-ccw" aria-hidden="true" />
+            <span>{{ resetting ? 'Đang khôi phục...' : 'Khôi phục dữ liệu mẫu' }}</span>
+          </button>
+        </div>
+
+        <div class="account-footer">
+          <button
+            type="button"
+            class="account-logout-btn"
+            :disabled="props.signingOut"
+            aria-label="Đăng xuất"
+            @click="onSignOut"
+          >
+            <UIcon name="i-lucide-log-out" aria-hidden="true" />
+            <span>{{ props.signingOut ? 'Đang đăng xuất' : 'Đăng xuất' }}</span>
+          </button>
+        </div>
+      </div>
     </div>
-  </header>
+  </div>
 </template>
 
 <style scoped>
-.app-header {
-  position: fixed;
-  z-index: 50;
-  inset: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: var(--shell-header-height);
-  padding: 0 20px;
-  border-bottom: 1px solid var(--color-border-light);
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  transition: height 200ms ease, padding 200ms ease;
+.account-utilities { display: flex; align-items: center; justify-content: center; gap: 8px; position: relative; }
+.utility-btn { width: 44px; height: 44px; min-width: 44px; min-height: 44px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; border: none; background: transparent; transition: background 150ms ease; }
+.utility-btn:hover { background: var(--color-hover); }
+.utility-bell { color: var(--color-text-secondary); font-size: 1.2rem; }
+.utility-avatar { background: var(--color-primary-light); color: var(--color-primary); font-weight: 700; font-size: 0.85rem; }
+.utility-avatar:hover { background: var(--color-primary-light); }
+.avatar-text { line-height: 1; }
+.account-anchor { position: relative; }
+.account-popover { position: absolute; bottom: calc(100% + 8px); left: 0; width: 270px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 90px); overflow-y: auto; z-index: 80; background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); padding: 12px; display: flex; flex-direction: column; gap: 10px; box-sizing: border-box; }
+@media (max-width: 767.98px) {
+  .account-popover { left: auto; right: 0; width: min(300px, calc(100vw - 20px)); }
 }
-
-.brand,
-.app-header__context {
-  display: flex;
-  align-items: center;
-}
-
-.app-header__primary {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.brand { gap: 12px; }
-.app-header__context { gap: 10px; }
-.company-switcher select {
-  min-height: 38px;
-  max-width: 180px;
-  padding: 0 28px 0 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: #ffffff;
-  color: var(--color-text-primary);
-  font: inherit;
-  font-size: .72rem;
-  font-weight: 650;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
-}
-.company-switcher select:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: var(--focus-box-shadow);
-}
-
-.navigation-toggle {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  flex: 0 0 44px;
-  place-items: center;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-sm);
-  background: #ffffff;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-.navigation-toggle:hover {
-  background: var(--color-hover);
-  color: var(--color-text-primary);
-  border-color: var(--color-border);
-}
-
-.navigation-toggle :deep(svg) {
-  width: 19px;
-  height: 19px;
-}
-
-.brand__mark {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border-radius: var(--radius-sm);
-  background: var(--gradient-primary);
-  color: white;
-  font-family: var(--font-sans);
-  font-size: 0.84rem;
-  font-weight: 750;
-  letter-spacing: -0.04em;
-  box-shadow: 0 2px 8px rgba(29, 78, 216, 0.25);
-}
-
-.brand__copy { display: grid; line-height: 1.1; }
-.brand__copy strong {
-  color: var(--color-text-primary);
-  font-family: var(--font-sans);
-  font-size: 0.93rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-.brand__copy small {
-  max-width: 330px;
-  overflow: hidden;
-  color: var(--color-text-secondary);
-  font-size: 0.69rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.prototype-pill {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, 0.7);
-  color: var(--color-text-secondary);
-  font-size: 0.74rem;
-  font-weight: 600;
-}
-.prototype-pill span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(14, 165, 165, 0.25);
-}
-
-.reset-action {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 38px;
-  padding: 0 10px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-sm);
-  background: #ffffff;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font: inherit;
-  font-size: .68rem;
-  font-weight: 650;
-  transition: all 150ms ease;
-}
-.reset-action:hover:not(:disabled) {
-  background: var(--color-hover);
-  color: var(--color-text-primary);
-  border-color: var(--color-border);
-}
-.reset-action :deep(svg),
-.reset-action :deep(.iconify) {
-  display: block;
-  width: 17px;
-  height: 17px;
-  flex: 0 0 17px;
-}
-.reset-action :deep(svg) { stroke-width: 2.2; }
-.reset-action:disabled { cursor: wait; opacity: .55; }
-
-.admin-action {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 38px;
-  padding: 0 10px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-sm);
-  background: #ffffff;
-  color: var(--color-text-secondary);
-  font-size: .72rem;
-  font-weight: 650;
-  transition: all 150ms ease;
-}
-.admin-action:hover {
-  background: var(--color-hover);
-  color: var(--color-text-primary);
-  border-color: var(--color-border);
-}
-.admin-action :deep(svg) { width: 17px; height: 17px; }
-
-.header-action,
-.avatar {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border: 1px solid var(--color-border-light);
-  border-radius: 50%;
-  background: #ffffff;
-  transition: all 150ms ease;
-}
-.header-action {
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font-size: 1.05rem;
-}
-.header-action:hover {
-  background: var(--color-hover);
-  color: var(--color-text-primary);
-  border-color: var(--color-border);
-}
-.avatar {
-  border-color: transparent;
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-  font-size: 0.72rem;
-  font-weight: 750;
-}
-
-.logout-action {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 38px;
-  padding: 0 12px;
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: #ffffff;
-  cursor: pointer;
-  font: inherit;
-  font-size: .72rem;
-  font-weight: 650;
-  box-shadow: 0 1px 4px rgba(29, 78, 216, 0.2);
-  transition: all 150ms ease;
-}
-.logout-action:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-}
-.logout-action:disabled { cursor: wait; opacity: .65; }
-.logout-action :deep(svg) { width: 16px; height: 16px; }
-
-.app-header--collapsed {
-  padding-inline: 10px;
-}
-
-.app-header--collapsed .brand__copy,
-.app-header--collapsed .app-header__context {
-  display: none;
-}
-
-.app-header--collapsed .brand__mark {
-  width: 32px;
-  height: 32px;
-}
-
-@media (max-width: 767px) {
-  .app-header { padding: 0 14px; }
-  .navigation-toggle { display: none; }
-  .app-header--collapsed { padding: 0 14px; }
-  .app-header--collapsed .brand__copy { display: grid; }
-  .app-header--collapsed .app-header__context { display: flex; }
-  .app-header--collapsed .brand__mark { width: 38px; height: 38px; }
-  .brand__copy small,
-  .prototype-pill,
-  .reset-action span,
-  .admin-action span,
-  .logout-action span { display: none; }
-  .reset-action { width: 38px; padding: 0; justify-content: center; }
-  .admin-action { width: 38px; padding: 0; justify-content: center; }
-  .logout-action { width: 38px; padding: 0; justify-content: center; }
-  .company-switcher select { max-width: 120px; }
-}
-
+.account-header { padding-bottom: 8px; border-bottom: 1px solid var(--color-border-light); }
+.account-email { font-size: 0.85rem; font-weight: 600; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
+.account-company { font-size: 0.78rem; color: var(--color-text-secondary); margin: 2px 0 0; }
+.prototype-pill { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; padding: 2px 6px; border-radius: var(--radius-sm); background: var(--color-primary-light); color: var(--color-primary); font-size: 0.72rem; font-weight: 600; }
+.account-group { display: flex; flex-direction: column; gap: 4px; }
+.account-label { font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); }
+.account-select { min-height: 44px; width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--color-border); background: var(--color-bg-secondary); color: var(--color-text-primary); padding: 0 8px; font-size: 0.85rem; }
+.account-links { border-top: 1px solid var(--color-border-light); padding-top: 6px; }
+.account-link { min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: var(--radius-sm); color: var(--color-text-secondary); font-size: 0.84rem; text-decoration: none; }
+.account-link:hover { background: var(--color-hover); color: var(--color-text-primary); }
+.account-action-btn { min-height: 44px; width: 100%; display: inline-flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: var(--radius-sm); border: 1px dashed var(--color-border); background: transparent; color: var(--color-text-secondary); font-size: 0.82rem; cursor: pointer; text-align: left; }
+.account-action-btn:hover:not(:disabled) { background: var(--color-hover); }
+.account-action-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.account-footer { border-top: 1px solid var(--color-border-light); padding-top: 8px; }
+.account-logout-btn { width: 100%; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: var(--radius-sm); border: none; background: var(--color-primary); color: #fff; font-size: 0.86rem; font-weight: 600; cursor: pointer; transition: background 150ms ease; }
+.account-logout-btn:hover:not(:disabled) { background: var(--color-primary-hover); }
+.account-logout-btn:disabled { opacity: 0.65; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
-  .app-header { transition: none; }
+  .utility-btn, .account-logout-btn, .account-action-btn, .account-link { transition: none; }
 }
 </style>

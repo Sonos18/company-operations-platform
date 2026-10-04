@@ -1,7 +1,9 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { resolve, join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { isolatedSupabaseEnvironment } from './run-supabase-dev.mjs'
 import { assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
 
 const allowlist = [
@@ -13,6 +15,7 @@ const allowlist = [
   'c1_project_cost_item_details.test.sql',
   'c1_project_finance_metadata_read.test.sql',
   'c1_project_finance_operational_state_read.test.sql',
+  'c1_completed_projects.test.sql',
   'c1_accounting_write_lifecycle.test.sql',
   'c1_accounting_write_evidence.test.sql',
   'c1_accounting_write_cash.test.sql',
@@ -28,6 +31,7 @@ const accountingWriteSyntheticPrefixes = {
 }
 
 const ordinaryCostDetailSyntheticPrefixes = {
+  'c1_completed_projects.test.sql': 'c1f4',
   'c1_ordinary_cost_detail_lifecycle_foundation.test.sql': 'c1f1',
   'c1_ordinary_cost_detail_commands.test.sql': 'c1d1',
   'c1_ordinary_cost_detail_provenance_evidence_reads.test.sql': 'c1f3',
@@ -107,13 +111,48 @@ export function runC1CloudDevTests({ cwd = process.cwd(), files, spawn = spawnSy
   }
 }
 
+// Rehearse the exact pending migration and synthetic policy test in one session.
+// No migration history or schema/data changes survive the final rollback.
+export function runCompletedProjectsRehearsal({ cwd = process.cwd(), env = process.env, spawn = spawnSync, assertTarget = assertCloudDevTarget } = {}) {
+  const path = 'c1_completed_projects.test.sql'
+  const fixture = readFileSync(resolve(cwd, 'supabase/tests/database/c1', path), 'utf8')
+  validateC1CloudDevSql(path, fixture)
+  const migration = readFileSync(resolve(cwd, 'supabase/migrations/20261003065632_completed_projects_readonly.sql'), 'utf8')
+  const sql = 'begin;\n' + migration + '\n' + fixture.trim().replace(/^begin\s*;/iu, '').replace(/rollback\s*;$/iu, '') + "\nselect 'C1_COMPLETED_PROJECTS_REHEARSAL_COMPLETE' as result;\nrollback;\n"
+  validateC1CloudDevSql(path, sql)
+  assertTarget({ cwd, env })
+  const cliEnvironment = isolatedSupabaseEnvironment(cwd, env, process.platform)
+  const directory = mkdtempSync(join(tmpdir(), 'taskovia-completed-rehearsal-'))
+  try {
+    const queryFile = join(directory, 'rehearsal.sql')
+    writeFileSync(queryFile, sql, { mode: 0o600 })
+    const cli = resolve(cwd, 'node_modules/supabase/dist/supabase.js')
+    const result = spawn(process.execPath, [cli, 'db', 'query', '--linked', '--output-format', 'json', '--file', queryFile], { cwd, encoding: 'utf8', timeout: 120_000, env: cliEnvironment })
+    const stdout = String(result.stdout ?? '')
+    const stderr = String(result.stderr ?? '')
+    if (stdout) process.stdout.write(stdout)
+    if (stderr) process.stderr.write(stderr)
+    if (result.status !== 0) throw new Error('Completed-project Cloud DEV rehearsal failed; the database transaction is rolled back on disconnect')
+    const response = JSON.parse(stdout)
+    const rows = Array.isArray(response) ? response : response?.rows
+    if (!Array.isArray(rows) || !rows.some(row => row?.result === 'C1_COMPLETED_PROJECTS_REHEARSAL_COMPLETE')) {
+      throw new Error('Completed-project rehearsal returned no completion evidence')
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+}
+
 export function isC1CloudDevCliInvocation({ argv = process.argv, moduleUrl = import.meta.url } = {}) {
   return typeof argv[1] === 'string' && resolve(argv[1]) === fileURLToPath(moduleUrl)
 }
 
-export function runC1CloudDevCli({ argv = process.argv, moduleUrl = import.meta.url, run = runC1CloudDevTests } = {}) {
+export function runC1CloudDevCli({ argv = process.argv, moduleUrl = import.meta.url, run = runC1CloudDevTests, rehearse = runCompletedProjectsRehearsal } = {}) {
   if (!isC1CloudDevCliInvocation({ argv, moduleUrl })) return false
-  run()
+  const args = argv.slice(2)
+  if (args.length === 1 && args[0] === '--completed-projects-rehearsal') rehearse()
+  else if (args.length === 0) run()
+  else throw new Error('Unknown C1 Cloud DEV verification arguments')
   return true
 }
 

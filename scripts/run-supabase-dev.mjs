@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { dirname, join, posix, resolve, win32 } from 'node:path'
 import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { CANONICAL_DEV_PROJECT_REF, assertCloudDevEnvironment, assertCloudDevTarget } from './assert-cloud-dev-target.mjs'
+import { CANONICAL_DEV_PROJECT_REF, assertCloudDevEnvironment, assertCloudDevTarget, resolveCloudDevConfigSource } from './assert-cloud-dev-target.mjs'
 import { runYongMeiPromotion } from './c1-yong-mei-promotion.mjs'
 
 const SUPABASE_DEV_HOME_SEGMENTS = ['SupabaseCLI', 'taskovia-dev']
@@ -317,7 +317,15 @@ export function resolveSupabaseDevHome({ env = process.env, platform = process.p
   return path.join(stateHome, ...SUPABASE_DEV_HOME_SEGMENTS)
 }
 
-export function readDedicatedSupabaseDevAccessToken(cwd) {
+export function readDedicatedSupabaseDevAccessToken(cwd, { env = process.env } = {}) {
+  if (resolveCloudDevConfigSource(env) === 'environment') {
+    if (existsSync(resolve(cwd, '.supabase.dev.env.local')) || existsSync(resolve(cwd, '.env.local'))) {
+      throw new Error('Cloud DEV config source conflict: remove local config files in environment mode')
+    }
+    const token = env.SUPABASE_DEV_ACCESS_TOKEN?.trim()
+    if (!token) throw new Error('SUPABASE_DEV_ACCESS_TOKEN is missing or empty')
+    return token
+  }
   let contents
   try {
     contents = readFileSync(resolve(cwd, '.supabase.dev.env.local'), 'utf8')
@@ -335,7 +343,7 @@ export function readDedicatedSupabaseDevAccessToken(cwd) {
   return token
 }
 
-function isolatedSupabaseEnvironment(cwd, env, platform) {
+export function isolatedSupabaseEnvironment(cwd, env, platform) {
   const childEnv = { ...env }
   const supabaseHome = resolveSupabaseDevHome({ env, platform })
   delete childEnv.SUPABASE_ACCESS_TOKEN
@@ -344,7 +352,7 @@ function isolatedSupabaseEnvironment(cwd, env, platform) {
   delete childEnv.SUPABASE_DEV_ACCESS_TOKEN
   return {
     ...childEnv,
-    SUPABASE_ACCESS_TOKEN: readDedicatedSupabaseDevAccessToken(cwd),
+    SUPABASE_ACCESS_TOKEN: readDedicatedSupabaseDevAccessToken(cwd, { env }),
     SUPABASE_HOME: supabaseHome,
   }
 }
@@ -396,8 +404,8 @@ export function runSupabaseDevMode(mode, {
     throw new Error('Unsupported Cloud DEV operation')
   }
 
-  if (mode === 'auth-check' || mode === 'link') assertCloudDevEnvironment({ cwd })
-  else assertCloudDevTarget({ cwd })
+  if (mode === 'auth-check' || mode === 'link') assertCloudDevEnvironment({ cwd, env })
+  else assertCloudDevTarget({ cwd, env })
 
   if (isYongMeiPromotion) {
     return runYongMeiPromotion({ execute: promotionExecute, cwd, fetchImpl: fetch })
@@ -416,7 +424,7 @@ export function runSupabaseDevMode(mode, {
   }
 
   const result = runCli(REMOTE_MODE_ARGS[mode], mode, { cwd, env, platform, spawn })
-  if (mode === 'link') assertCloudDevTarget({ cwd })
+  if (mode === 'link') assertCloudDevTarget({ cwd, env })
   if (mode === 'types') writeGeneratedTypes(cwd, String(result.stdout ?? ''))
   if (mode === 'auth-check') assertExactProjectVisibility(String(result.stdout ?? ''))
   return result

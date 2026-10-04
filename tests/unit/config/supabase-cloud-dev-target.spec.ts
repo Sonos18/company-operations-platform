@@ -56,6 +56,31 @@ afterEach(() => {
   for (const root of worktrees.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
+
+const envConfig = { TASKOVIA_DEV_CONFIG_SOURCE: 'environment', NUXT_PUBLIC_SUPABASE_URL: 'https://gtgljlnhwvhqdnwrfdfj.supabase.co', NUXT_PUBLIC_SUPABASE_ANON_KEY: 'sb_publishable_test-key' }
+
+describe('environment sourced Cloud DEV target', () => {
+  it('accepts canonical link without a local env file', () => {
+    const cwd = makeWorktree({ projectRef: CANONICAL_DEV_PROJECT_REF })
+    expect(() => assertCloudDevTarget({ cwd, env: envConfig })).not.toThrow()
+  })
+  it('rejects a different URL and leftover file', () => {
+    const cwd = makeWorktree({ projectRef: CANONICAL_DEV_PROJECT_REF })
+    expect(() => assertCloudDevTarget({ cwd, env: { ...envConfig, NUXT_PUBLIC_SUPABASE_URL: 'https://other.supabase.co' } })).toThrow(/canonical Cloud DEV target/)
+    writeFileSync(join(cwd, '.env.local'), 'NUXT_PUBLIC_SUPABASE_URL=other')
+    expect(() => assertCloudDevTarget({ cwd, env: envConfig })).toThrow(/conflict|source/i)
+  })
+  it('rejects missing anon key and unknown config source', () => {
+    const cwd = makeWorktree({ projectRef: CANONICAL_DEV_PROJECT_REF })
+    expect(() => assertCloudDevTarget({ cwd, env: { ...envConfig, NUXT_PUBLIC_SUPABASE_ANON_KEY: '' } })).toThrow(/NUXT_PUBLIC_SUPABASE_ANON_KEY/)
+    expect(() => assertCloudDevTarget({ cwd, env: { ...envConfig, TASKOVIA_DEV_CONFIG_SOURCE: 'unknown' } })).toThrow(/TASKOVIA_DEV_CONFIG_SOURCE/)
+  })
+  it('rejects a mismatched CLI link', () => {
+    const cwd = makeWorktree({ projectRef: 'other' })
+    expect(() => assertCloudDevTarget({ cwd, env: envConfig })).toThrow(/Linked project ref/)
+  })
+})
+
 describe('Cloud DEV target guard', () => {
   it('does not overlook a separate migration-only Supabase setup root', () => {
     expect(supabaseSetupDirectories([

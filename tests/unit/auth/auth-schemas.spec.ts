@@ -44,6 +44,11 @@ describe('auth schemas', () => {
     }).success).toBe(false)
   })
 
+  it('accepts 8 and rejects 7 characters', () => {
+    for (const size of [8, 72]) expect(resetPasswordInputSchema.safeParse({ password: 'x'.repeat(size), confirmation: 'x'.repeat(size) }).success).toBe(true)
+    for (const size of [7, 73]) expect(resetPasswordInputSchema.safeParse({ password: 'x'.repeat(size), confirmation: 'x'.repeat(size) }).success).toBe(false)
+  })
+
   it('accepts only one token hash and an invite or recovery callback flow', () => {
     expect(authCallbackQuerySchema.parse({
       token_hash: 'opaque-token-hash',

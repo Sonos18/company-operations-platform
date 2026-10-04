@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { compareProjectDirectoryEntries } from '../../../shared/utils/project-directory-order'
 import { financeListQuerySchema, itemDetailQuerySchema, paymentQuerySchema } from '../../../shared/schemas/costs/project-finance'
 import { compareFinanceRows } from '../../../shared/utils/project-finance-dates'
 import { sumFinanceMoney } from '../../../shared/utils/project-finance-money'
@@ -83,7 +84,7 @@ function multiSnapshot(projectId: string, projectCode: string, currencyCode: str
 function concrete(rows: FinanceTableRows & { context: typeof context, parties: readonly { partyId: string, code: string, displayName: string, partyKind: 'organization' }[] }) {
   const source = {
     read: async (_scope: unknown, _projectId: string, _fullDetails?: boolean) => ({ signature: 'stable', readSet: rows, consistent: async () => true }),
-    directory: async () => ({ defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName }], nextCursor: null }),
+    directory: async () => ({ defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName, operationalState: context.operationalState, updatedAt: createdAt }], nextCursor: null }),
     readMany: async () => new Map([[ids.project, rows]]),
   }
   return new ConcreteProjectFinanceRepository(source as never)
@@ -128,7 +129,7 @@ function fakeSupabase(rows: ReturnType<typeof readSet>) {
     async rpc(name: string, args: Record<string, unknown>) {
       if (name === 'c1_read_project_cost_read_context') return { data: { projectId: context.projectId, projectCode: context.projectCode, projectName: context.projectName, defaultCurrencyCode: context.defaultCurrencyCode, moneyScale: context.moneyScale, timeZone: context.timeZone }, error: null }
       if (name === 'c1_read_project_finance_operational_states') return { data: [{ projectId: ids.project, operationalState: context.operationalState }], error: null }
-      if (name === 'c1_read_project_finance_directory') return { data: { defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName }], nextCursor: null }, error: null }
+      if (name === 'c1_read_project_finance_directory_v2') return { data: { defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName, operationalState: context.operationalState, updatedAt: createdAt }], nextCursor: null }, error: null }
       return { data: rows.parties.filter(party => (args.target_party_ids as string[]).includes(party.partyId)), error: null }
     },
   }
@@ -188,12 +189,12 @@ function fakeSupabaseMulti(projectRows: readonly ReturnType<typeof multiSnapshot
         const found = args.target_company_id === ids.company ? projectRows.find(rows => rows.context.projectId === args.target_project_id) : undefined
         return { data: found ? { projectId: found.context.projectId, projectCode: found.context.projectCode, projectName: found.context.projectName, defaultCurrencyCode: found.context.defaultCurrencyCode, moneyScale: found.context.moneyScale, timeZone: found.context.timeZone } : null, error: null }
       }
-      if (name === 'c1_read_project_finance_directory') {
+      if (name === 'c1_read_project_finance_directory_v2') {
         directoryCalls += 1
         if (args.target_company_id !== ids.company) return { data: null, error: { code: 'COMPANY_FORBIDDEN' } }
         const afterId = typeof args.target_after_id === 'string' ? args.target_after_id : null
         const limit = Number(args.target_limit)
-        const projects = projectRows.map(rows => ({ projectId: rows.context.projectId, projectCode: rows.context.projectCode, projectName: rows.context.projectName })).sort((left, right) => left.projectId.localeCompare(right.projectId)).filter(project => afterId === null || project.projectId > afterId).slice(0, limit)
+        const projects = projectRows.map(rows => ({ projectId: rows.context.projectId, projectCode: rows.context.projectCode, projectName: rows.context.projectName, operationalState: rows.context.operationalState, updatedAt: createdAt })).sort(compareProjectDirectoryEntries).filter(project => afterId === null || project.projectId > afterId).slice(0, limit)
         return { data: { defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects, nextCursor: projects.length === limit ? projects.at(-1)?.projectId ?? null : null }, error: null }
       }
       const found = args.target_company_id === ids.company ? projectRows.find(rows => rows.subcontracts.some(contract => contract.project_id === args.target_project_id)) : undefined
@@ -322,7 +323,7 @@ describe('C1 finance review regressions on concrete production readers', () => {
     const maps = [new Map([[ids.project, rows]]), new Map([[ids.project, rows]])]
     let reads = 0
     const repository = new ConcreteProjectFinanceRepository({
-      directory: async () => ({ defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName }], nextCursor: null }),
+      directory: async () => ({ defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName, operationalState: context.operationalState, updatedAt: createdAt }], nextCursor: null }),
       read: async () => ({ signature: 'unused', readSet: rows, consistent: async () => true }),
       readMany: async () => ({ readSets: maps[Math.min(reads++, 1)]!, signature: `v${reads}`, consistent: async () => reads > 1 }),
     } as never)
@@ -334,14 +335,14 @@ describe('C1 finance review regressions on concrete production readers', () => {
     const rows = readSet()
     let attempts = 0
     const unstable = new ConcreteProjectFinanceRepository({
-      directory: async () => ({ defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName }], nextCursor: null }),
+      directory: async () => ({ defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName, operationalState: context.operationalState, updatedAt: createdAt }], nextCursor: null }),
       read: async () => ({ signature: 'unused', readSet: rows, consistent: async () => true }),
       readMany: async () => ({ readSets: new Map([[ids.project, rows]]), signature: `v${++attempts}`, consistent: async () => false }),
     } as never)
     await expect(unstable.listProjects(scope, directoryQuery)).rejects.toMatchObject({ code: 'INTERNAL_ERROR', details: { reason: 'DATA_CONSISTENCY_ERROR' } })
     expect(attempts).toBe(2)
     const failing = new ConcreteProjectFinanceRepository({
-      directory: async () => ({ defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName }], nextCursor: null }),
+      directory: async () => ({ defaultCurrencyCode: 'VND', moneyScale: 4, timeZone: 'Asia/Bangkok', projects: [{ projectId: ids.project, projectCode: context.projectCode, projectName: context.projectName, operationalState: context.operationalState, updatedAt: createdAt }], nextCursor: null }),
       read: async () => ({ signature: 'unused', readSet: rows, consistent: async () => true }),
       readMany: async () => { throw new AppApiError(500, 'INTERNAL_ERROR', 'later page failed') },
     } as never)
