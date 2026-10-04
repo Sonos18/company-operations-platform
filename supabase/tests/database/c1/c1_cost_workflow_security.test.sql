@@ -1,4 +1,6 @@
 begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path=public,extensions;
 select plan(75);
 select ok((select relrowsecurity and relforcerowsecurity from pg_class where oid='public.cost_workflow_companies'::regclass),'cost_workflow_companies forces RLS');
 select ok(not has_table_privilege('authenticated','public.cost_workflow_companies','INSERT,UPDATE,DELETE,TRUNCATE'),'cost_workflow_companies has no direct authenticated DML');

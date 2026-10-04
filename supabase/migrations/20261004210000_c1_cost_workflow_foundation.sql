@@ -177,7 +177,7 @@ create table public.cost_workflow_extractions (
  method_version text not null, status text not null check(status in ('ready','needs_review','unavailable','failed')),
  result jsonb not null, created_by uuid not null references auth.users(id), created_at timestamptz not null default now(),
  foreign key(request_id, tenant_id, company_id, project_id) references public.cost_workflow_requests(id, tenant_id, company_id, project_id) on delete restrict,
- foreign key(evidence_file_id,tenant_id,company_id) references public.cost_evidence_files(id,tenant_id,company_id) on delete restrict
+ foreign key(evidence_file_id,tenant_id,company_id,project_id) references public.cost_evidence_files(id,tenant_id,company_id,project_id) on delete restrict
 );
 create index cost_workflow_extractions_project_idx on public.cost_workflow_extractions(tenant_id,company_id,project_id);
 
