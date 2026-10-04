@@ -13,8 +13,8 @@ describe('manual invitation routes', () => {
   expect(readBody).not.toHaveBeenCalled(); expect(prepare).not.toHaveBeenCalled()
   expect(setResponseHeader).toHaveBeenCalledWith(expect.anything(), 'Cache-Control', 'no-store')
  })
- it('rejects client-supplied company or role in invitation bodies', async () => {
-  readBody.mockResolvedValue({ employeeCode: 'P1', fullName: 'Pilot', workEmail: 'pilot@example.test', departmentId: context.actorId, companyId })
+ it.each(['companyId', 'tenantId', 'roles', 'roleId'])('rejects client-supplied scope or role: %s', async field => {
+  readBody.mockResolvedValue({ employeeCode: 'P1', fullName: 'Pilot', workEmail: 'pilot@example.test', departmentId: context.actorId, [field]: field === 'roles' ? ['hr_manager'] : companyId })
   const prepare = vi.fn()
   const routes = createManualInvitationRoutes({ resolveContext: vi.fn().mockResolvedValue(context), prepare, options: vi.fn(), takeSlot: vi.fn() })
   await expect(routes.prepare({} as never)).rejects.toMatchObject({ code: 'INPUT_INVALID' })
