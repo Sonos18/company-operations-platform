@@ -73,11 +73,11 @@ export function createSupabaseManualInvitationRoutes(event: H3Event) {
       const repository = {
         ...createSupabaseEmployeeRepository(db),
         async findInvitationEmployee(companyId: string, userId: string) {
-          const { data, error } = await db.from('employees').select('employee_code, work_email, employment_status')
+          const { data, error } = await db.from('employees').select('employee_code, work_email, full_name, department_id, position_id, hire_date, employment_status')
             .eq('company_id', companyId).eq('tenant_id', context.tenantId).eq('user_id', userId).maybeSingle()
           if (error) throw new AppApiError(500, 'INTERNAL_ERROR', 'Không thể kiểm tra hồ sơ lời mời.')
           if (!data) return null
-          return { employeeCode: data.employee_code, workEmail: data.work_email, employmentStatus: data.employment_status }
+          return { employeeCode: data.employee_code, workEmail: data.work_email, fullName: data.full_name, departmentId: data.department_id, positionId: data.position_id, hireDate: data.hire_date, employmentStatus: data.employment_status }
         },
       }
       return createManualEmployeeInvitationService(repository, auth, runtime.public.appUrl).prepare(context, input)
