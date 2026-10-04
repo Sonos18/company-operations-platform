@@ -3,13 +3,13 @@ set local statement_timeout = '90s';
 select pg_catalog.pg_advisory_xact_lock(71842, 31);
 -- Permission catalog only: no account, role or membership is assigned by this migration.
 insert into public.permissions(code,module,name,description) values
-('project.cost_manager.assign','costs','project.cost_manager.assign','Document-backed cost workflow capability'),
-('cost.request.submit','costs','cost.request.submit','Document-backed cost workflow capability'),
-('cost.request.decide','costs','cost.request.decide','Document-backed cost workflow capability'),
-('cost.request.read','costs','cost.request.read','Document-backed cost workflow capability'),
-('cost.request.file.read','costs','cost.request.file.read','Document-backed cost workflow capability'),
-('cost.party.read','costs','cost.party.read','Document-backed cost workflow capability'),
-('cost.notification.read','costs','cost.notification.read','Document-backed cost workflow capability')
+('project.cost_manager.assign','costs','Phân công quản lý duyệt chi phí','Quyền trong quy trình chi phí có chứng từ'),
+('cost.request.submit','costs','Lập và gửi yêu cầu chi phí','Quyền trong quy trình chi phí có chứng từ'),
+('cost.request.decide','costs','Duyệt yêu cầu chi phí dự án được phân công','Quyền trong quy trình chi phí có chứng từ'),
+('cost.request.read','costs','Xem yêu cầu chi phí','Quyền trong quy trình chi phí có chứng từ'),
+('cost.request.file.read','costs','Xem và tải chứng từ chi phí','Quyền trong quy trình chi phí có chứng từ'),
+('cost.party.read','costs','Tra cứu đối tác chi phí','Quyền trong quy trình chi phí có chứng từ'),
+('cost.notification.read','costs','Xem thông báo duyệt chi phí','Quyền trong quy trình chi phí có chứng từ')
 on conflict(code) do nothing;
 
 create function private.c1_workflow_is_current_manager(target_tenant_id uuid,target_company_id uuid,target_project_id uuid)

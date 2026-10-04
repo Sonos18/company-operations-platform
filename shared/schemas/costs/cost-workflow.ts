@@ -5,6 +5,7 @@ export const workflowMoneySchema = z.string().regex(/^(?:0|[1-9]\d{0,15})(?:\.\d
 export const workflowCurrencySchema = z.string().regex(/^[A-Z]{3}$/)
 const text = z.string().trim().min(1).max(2000)
 const ids = z.array(workflowUuidSchema).min(1).max(100).refine(values => new Set(values).size === values.length, 'Duplicate evidence identity')
+const timestamp=z.string().datetime({offset:true})
 const version = z.number().int().nonnegative()
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
   const parsed = new Date(value + 'T00:00:00.000Z')
@@ -34,7 +35,7 @@ export const costRequestInputSchema = z.object({
   if (value.basis.kind === 'direct_labor' && (value.partyKind !== 'crew' || value.crewOwnership !== 'vqh_internal')) context.addIssue({ code: 'custom', path: ['partyId'], message: 'Direct labor requires an internal VQH crew' })
   if (value.basis.kind === 'subcontract' && value.crewOwnership === 'vqh_internal') context.addIssue({ code: 'custom', path: ['partyId'], message: 'Internal crews use direct labor basis' })
 })
-export const contractBasisInputSchema = z.object({ partyId: workflowUuidSchema, reference: text, referenceAmount: workflowMoneySchema, currencyCode: workflowCurrencySchema, evidenceFileIds: ids }).strict()
+export const contractBasisInputSchema = z.object({ partyId: workflowUuidSchema, sourceSubcontractId:workflowUuidSchema.optional(), reference: text, referenceAmount: workflowMoneySchema, currencyCode: workflowCurrencySchema, evidenceFileIds: ids }).strict()
 export const contractAdjustmentInputSchema = z.object({ expectedVersion: version, proposedCap: workflowMoneySchema, reason: text, evidenceFileIds: ids }).strict()
 export const cashAdjustmentInputSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('refund'), requestedAmount: workflowMoneySchema, reason: text, evidenceFileIds: ids, expectedVersion: version }).strict(),
@@ -61,8 +62,8 @@ export type WorkflowRefundConfirmation = z.infer<typeof workflowRefundConfirmati
 export type WorkflowManagerAssignmentInput = z.infer<typeof workflowManagerAssignmentSchema>
 export type WorkflowPartyOption = { id: UUID; name: string; kind: 'organization' | 'crew'; crewOwnership: 'vqh_internal' | 'external' | null }
 export type WorkflowPaymentView = { id: UUID; amount: MoneyText; refunded: MoneyText; correctedCash: MoneyText; currencyCode: string; paymentDate: string; evidenceFileIds: UUID[] }
-export type CostRequestView = { id: UUID; version: number; submittedVersionId: UUID | null; status: 'working' | 'submitted' | 'returned' | 'approved'; partyId: UUID; amount: MoneyText; currencyCode: string; evidenceFileIds: UUID[]; assignmentVersion: number | null; basis: CostBasisInput; installment: { id: UUID; authorized: MoneyText; consumed: MoneyText; remaining: MoneyText } | null; payments: WorkflowPaymentView[] }
-export type WorkflowCommandResult = { requestId?: UUID; installmentId?: UUID; paymentId?: UUID; adjustmentId?: UUID; version: number; replayed: boolean }
+export type CostRequestView = z.infer<typeof costRequestViewSchema>
+export type WorkflowCommandResult = { contractId?:UUID;contractVersionId?:UUID;assignmentId?:UUID;notificationId?:UUID; requestId?: UUID; installmentId?: UUID; paymentId?: UUID; adjustmentId?: UUID; version: number; replayed: boolean }
 export type WorkflowCashFacts = {
   currencyCode: string; moneyScale: number
   outgoing: { id: UUID; validAmount: MoneyText }[]
@@ -72,3 +73,19 @@ export type WorkflowCashFacts = {
   coverage: 'complete' | 'partial' | 'not_recorded'
 }
 export type CashSummary = { grossPaid: MoneyText; confirmedRefunds: MoneyText; netCash: string; approvedUnspent: MoneyText; unreconciledCount: number; coverage: WorkflowCashFacts['coverage'] }
+
+export const workflowUpdateRequestInputSchema=costRequestInputSchema.safeExtend({expectedVersion:version})
+export type WorkflowUpdateRequestInput=z.infer<typeof workflowUpdateRequestInputSchema>
+export const workflowCommandResultSchema=z.object({requestId:workflowUuidSchema.optional(),installmentId:workflowUuidSchema.optional(),paymentId:workflowUuidSchema.optional(),adjustmentId:workflowUuidSchema.optional(),contractId:workflowUuidSchema.optional(),contractVersionId:workflowUuidSchema.optional(),assignmentId:workflowUuidSchema.optional(),notificationId:workflowUuidSchema.optional(),version,replayed:z.boolean()}).strict()
+export const workflowPaymentViewSchema=z.object({id:workflowUuidSchema,amount:workflowMoneySchema,refunded:workflowMoneySchema,correctedCash:workflowMoneySchema,currencyCode:workflowCurrencySchema,paymentDate:date,evidenceFileIds:ids}).strict()
+export const workflowDecisionViewSchema=z.object({id:workflowUuidSchema,submittedVersionId:workflowUuidSchema,decision:z.enum(['approve','return']),reason:text.nullable(),assignmentId:workflowUuidSchema,decidedBy:workflowUuidSchema,decidedAt:timestamp}).strict()
+export const costRequestViewSchema=z.object({id:workflowUuidSchema,version,submittedVersionId:workflowUuidSchema.nullable(),status:z.enum(['working','submitted','returned','approved']),partyKind:z.enum(['organization','crew']),crewOwnership:z.enum(['vqh_internal','external']).nullable(),categoryId:workflowUuidSchema,contractVersionId:workflowUuidSchema.nullable(),latestDecision:workflowDecisionViewSchema.nullable(),partyId:workflowUuidSchema,amount:workflowMoneySchema,currencyCode:workflowCurrencySchema,evidenceFileIds:ids,assignmentVersion:version.nullable(),basis:costBasisInputSchema,installment:z.object({id:workflowUuidSchema,authorized:workflowMoneySchema,consumed:workflowMoneySchema,remaining:workflowMoneySchema}).strict().nullable(),payments:z.array(workflowPaymentViewSchema)}).strict()
+export const workflowContractViewSchema=z.object({id:workflowUuidSchema,partyId:workflowUuidSchema,reference:text,currencyCode:workflowCurrencySchema,version:z.number().int().positive(),cap:workflowMoneySchema,evidenceFileIds:ids,sourceSubcontractId:workflowUuidSchema.nullable()}).strict()
+export type WorkflowContractView=z.infer<typeof workflowContractViewSchema>
+export const workflowNotificationViewSchema=z.object({id:workflowUuidSchema,projectId:workflowUuidSchema,decisionId:workflowUuidSchema,recipientId:workflowUuidSchema,deliveryState:z.enum(['available','undelivered']),readAt:timestamp.nullable(),createdAt:timestamp}).strict()
+export type WorkflowNotificationView=z.infer<typeof workflowNotificationViewSchema>
+
+export const workflowAdjustmentViewSchema=z.object({id:workflowUuidSchema,kind:z.enum(['contract_adjustment','refund','correction']),version,submittedVersionId:workflowUuidSchema.nullable(),status:z.enum(['working','submitted','returned','approved']),partyId:workflowUuidSchema,contractId:workflowUuidSchema.nullable(),sourcePaymentId:workflowUuidSchema.nullable(),input:z.union([contractAdjustmentInputSchema,cashAdjustmentInputSchema]),latestDecision:workflowDecisionViewSchema.nullable()}).strict()
+export type WorkflowAdjustmentView=z.infer<typeof workflowAdjustmentViewSchema>
+export const workflowProjectContextSchema=z.object({mode:z.enum(['legacy','document_backed_v1']),operationalState:z.enum(['active','completed','paused','unknown']),manager:z.object({userId:workflowUuidSchema,assignmentId:workflowUuidSchema,version,reason:text}).strict().nullable(),canSubmit:z.boolean(),canDecide:z.boolean(),canAssign:z.boolean(),eligibleManagers:z.array(z.object({userId:workflowUuidSchema,label:text}).strict())}).strict()
+export type WorkflowProjectContext=z.infer<typeof workflowProjectContextSchema>

@@ -119,6 +119,7 @@ language sql stable security definer set search_path='' as $$
  and exists(select 1 from public.cost_evidence_files f where f.id=file_id and f.tenant_id=t and f.company_id=c and f.project_id=p and f.status='finalized'
  and ((f.workflow_origin and f.created_by=(select auth.uid()) and private.has_company_permission(t,c,'cost.request.submit'))
  or exists(select 1 from public.cost_workflow_request_evidence link where link.evidence_file_id=f.id and link.tenant_id=t and link.company_id=c and link.project_id=p)
+ or exists(select 1 from public.cost_workflow_contract_versions basis where f.id=any(basis.evidence_file_ids) and basis.tenant_id=t and basis.company_id=c and basis.project_id=p)
  or (f.workflow_origin and f.workflow_target_id is not null and f.workflow_target_kind in('payment','adjustment'))));
 $$;
 revoke all on function private.c1_workflow_can_read_file(uuid,uuid,uuid,uuid) from public,anon,authenticated,service_role;
@@ -133,7 +134,7 @@ language sql stable security definer set search_path='' as $$
   (not f.workflow_origin and private.c1_can_select_evidence_object_legacy(target_bucket_id,target_object_path))
   or (f.workflow_origin and f.created_by=(select auth.uid()) and f.status='pending_upload' and f.intent_expires_at>now()
       and private.has_company_permission(f.tenant_id,f.company_id,'cost.prepare') and private.has_company_permission(f.tenant_id,f.company_id,'cost.request.submit'))
-  or (f.workflow_origin and private.c1_workflow_can_read_file(f.tenant_id,f.company_id,f.project_id,f.id))));
+  or private.c1_workflow_can_read_file(f.tenant_id,f.company_id,f.project_id,f.id)));
 $$;
 create function private.c1_can_insert_evidence_object(target_bucket_id text,target_object_path text) returns boolean
 language sql stable security definer set search_path='' as $$
@@ -150,6 +151,7 @@ grant execute on function private.c1_can_select_evidence_object(text,text),priva
 alter policy c1_accounting_evidence_objects_insert on storage.objects with check(bucket_id='c1-accounting-evidence' and private.c1_can_insert_evidence_object(bucket_id,name));
 alter policy c1_accounting_evidence_objects_select on storage.objects using(bucket_id='c1-accounting-evidence' and private.c1_can_select_evidence_object(bucket_id,name));
 alter policy c1_cost_evidence_files_select on public.cost_evidence_files using(
+ private.c1_workflow_can_read_file(tenant_id,company_id,project_id,id) or
  (workflow_origin and ((created_by=(select auth.uid()) and private.has_company_permission(tenant_id,company_id,'cost.request.submit') and private.has_company_permission(tenant_id,company_id,'cost.prepare'))
    or private.c1_workflow_can_read_file(tenant_id,company_id,project_id,id)))
  or (not workflow_origin and ((status='pending_upload' and created_by=(select auth.uid()) and private.has_company_permission(tenant_id,company_id,'cost.prepare'))
