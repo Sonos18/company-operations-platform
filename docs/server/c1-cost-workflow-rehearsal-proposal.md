@@ -1,57 +1,63 @@
-# Cloud DEV cost workflow: rollback-only rehearsal proposal
+# Cost workflow Cloud DEV rollback rehearsal — source proposal
 
-Prepared operation only. No database command, pgTAP SQL, fixture insertion, grant, migration application, history repair, reconciliation, workflow activation, Storage upload or provider call has been executed.
+Prepared source only. No SQL has been executed by this runner. This proposal is limited to DEV gtgljlnhwvhqdnwrfdfj, on dev-worker-recovery, from the owned /tmp/taskovia-document-cost-workflow checkout. Production mztakwksmqspjabpaigk, HR worktrees, deployment, provider configuration and actual document bytes are excluded.
 
-Target: Supabase Cloud DEV gtgljlnhwvhqdnwrfdfj. Production mztakwksmqspjabpaigk is excluded. Worktree /tmp/taskovia-document-cost-workflow on dev-worker-recovery; preserve HR main 6990146697b3b15fa57f3fa837333990c7a833dd and its applied migration 20261004140132.
+The package command db:dev:c1:cost-workflow:rehearse defaults to a credential-free local preview. Execute requires both --confirm-manifest-sha256 and TASKOVIA_WORKFLOW_REHEARSAL_APPROVAL to equal the regenerated manifest. Permission to prepare source or enter an Azure key does not authorize execution.
 
-## Exact operation
+## Exact one-batch scope
 
-The guarded package command db:dev:c1:cost-workflow:rehearse defaults to a local source-byte preview with no credential or database lookup. Its proposed execute mode requires BOTH the reviewed manifest SHA-256 in --confirm-manifest-sha256 and the independent TASKOVIA_WORKFLOW_REHEARSAL_APPROVAL environment value. Authorization must identify this DEV target and rollback-only operation. No execution authorization is inferred from permission to prepare code or from a key being entered.
+Freeze the eight ordered migration sources 20261004210000–20261004210700 and four fixture files at the final reviewed hashes. The authorized historical Storage account-ban correction changes migration20261004210400; all earlier packet approvals are invalidated. The four143-assertion fixtures remain byte-identical. Plans are security80, evidence13, requests28 and cash22: 143 assertions. The Azure migration 20261005045710 and its43 assertions are separate and are not included.
 
-The manifest includes runner and guard source hashes, exactly eight ordered migration files 20261004210000 through 20261004210700, and exactly four ordered suites:
+Run the four suites serially. Each begins a new repeatable-read transaction, replays the exact eight migrations, evaluates collision-checked c1f5 synthetic fixtures, verifies historical rows, then explicitly rolls back. The149 direct fixture rows across the three data suites exclude command/trigger appends. Existing real tenant/company memberships, financial rows, Excel/source provenance, original evidence, audit history and applied HR/migration records must remain unchanged. HR migration20261004140132 must be present before writes.
 
-| Suite | Prepared assertions |
-| --- | ---: |
-| c1_cost_workflow_security.test.sql | 80 |
-| c1_cost_workflow_evidence.test.sql | 13 |
-| c1_cost_workflow_requests.test.sql | 28 |
-| c1_cost_workflow_cash.test.sql | 22 |
-| Total | 143 |
+The only authorized nontransactional exception, if separately approved, is unused internal surrogate IDs in exactly two existing identity sequences:
 
-Each suite is a separate transaction: repeatable-read isolation; five-second lock timeout; 90-second statement timeout; existing workflow advisory lock; namespace/history preflight; exact DDL; fixture and pgTAP; history closure; explicit completion markers; ROLLBACK. Four subprocesses run sequentially, each with a 180-second timeout and four-MiB captured-output ceiling. Stop on any SQL/CLI/pgTAP/marker/count/history error. The installed Supabase CLI 2.114.0 --help confirms db query --linked --file and JSON output. Temporary files use a fresh per-invocation directory removed only by its creating invocation.
+| Suite | audit_events_id_seq ceiling | company_role_assignments_id_seq ceiling |
+| --- | ---: | ---: |
+| Security | 0 | 0 |
+| Evidence | 20 | 4 |
+| Requests | 44 | 4 |
+| Cash | 56 | 4 |
+| Batch | 120 | 12 |
 
-## Fixture closure
+Both must be bigint GENERATED ALWAYS identities, correctly owned by their id columns, increment1/cache1/no cycle, with sufficient remaining range. Account for last_value and is_called using PostgreSQL numeric/JavaScript BigInt. No reset, setval, overridden audit function or disabled trigger is allowed. All other observed sequence counters must remain unchanged. Identity gaps can remain after rollback; they are not business contract/invoice/payment numbers.
 
-All explicit fixture UUIDs use c1f5*. Before DDL, the wrapper rejects any existing matching top-level UUID value in public/private/auth/storage/migration-history tables; it never reuses or deletes a colliding fixture.
+Acquire /data/remote-jobs/validation.lock across the complete operation. Acquire the existing workflow advisory transaction lock and SHARE ROW EXCLUSIVE locks on both identity owner tables. A quiet window is required: table locks do not block direct external nextval calls or every schema change. Drift rejects the batch rather than absorbing another process's changes.
 
-The evidence, request and cash suites create synthetic tenant 010, company 020, users 901–904, roles 911–914, memberships and role assignments with an explicit synthetic grant reason, projects 101/102, supplier 201, categories and original-file metadata. Temporary workflow_test_ids records command-created UUIDs. Every generated business row remains bound to that synthetic tenant/company. Test JWT sub and role changes are transaction-local. Fixture grants apply only to those synthetic roles or temporary helper tables. Only the synthetic company enters document_backed_v1; real companies remain at their existing mode.
+## Immutable execution and dependency boundary
 
-The source fixture writes are auth.users plus public.tenants, companies, tenant_memberships, company_memberships, roles, role_permissions, company_role_assignments, company_cost_settings, projects, business_parties, cost_categories, cost_evidence_files and synthetic workflow records. Updates are scoped to synthetic memberships/company workflow state/project completion or a negative immutable-original test. Reviewed commands also append scoped versions, decisions, installments, consumption, cash/proof claims, notifications, receipts and audit records. No fixture DELETE, TRUNCATE, COPY, seed, repair, disabled trigger, Storage byte upload or provider call is permitted.
+The approval manifest hashes all repository .mjs scripts, package.json, pnpm-lock.yaml, supabase/config.toml and its two referenced email templates, every prior migration source, exactly eight new migrations and four suites, the installed Supabase2.114.0 wrapper/native binary/package and the running Node executable/version/platform. It also hashes the derived dependency inventory and records limits/budgets. Source changes invalidate approval. CLI execution uses the frozen native binary directly, avoiding a Node-wrapper orphan.
 
-Security: catalog/RLS/privilege/history-retention assertions. Evidence: required finalized original, cross-project denial, immutable target, current-manager access and old-manager loss of access. Requests: quote cap identity including relabeled same-byte copies, shared genuine support, competing pending installments with cap recheck, sole manager approval, immutable handover without resubmission, amendment limits and completed-project denial. Cash: approval versus payment, mandatory payment proof, duplicate transfer identity, actual refund versus outgoing proof, corrections that never restore authority, and settlement against captured prior authority after completion.
+Each query has a fresh owned temporary directory with a canonical DEV project-ref, explicit --project-ref gtgljlnhwvhqdnwrfdfj Management API query target, and copied hashed config and email templates. This copies files only; no email operation occurs. Foreign target/password environment overrides are removed; the guarded isolated DEV CLI environment supplies credentials only after both approval gates. Child output is bounded and failures never print SQL, existing records or tokens.
 
-Finalized file rows in these SQL fixtures are synthetic metadata. They do not verify actual Storage bytes, signed URLs, MIME detection or Azure transport. Those remain separately verified server/mock or future authorized integration boundaries.
+Source inventory replays function CREATE/ALTER/config/rename/DROP ordering, full input type/return/default-count/body/language/volatility/security/configuration attributes, and trigger timing/events/columns/arguments/enabled/constraint flags. Supported trigger WHEN clauses are simple literal comparisons joined by AND. Unknown syntax blocks source preparation.
 
-## Existing history closure
+Preflight checks both live-to-source and expected-to-live presence. It combines source-qualified function/relation/trigger closure with recursive catalogue dependencies from defaults/generated columns, checks, indexes, policies and reachable routine argument defaults. Implicit calls outside the reviewed source closure and a small pure-core/crypto allowlist reject. Implicit nextval is forbidden: the two approved identities are checked through ownership dependencies, never dynamic regclass expressions. Rewrite rules, unexpected views/foreign/partitioned relations and inheritance children reject. Enabled event triggers reject. Language/namespace/extension implementation ownership edges are excluded from executable dependency traversal; expression, function, operator and type dependencies remain checked. Existing managed auth.uid/role helpers must match fixed pure claim-reading forms.
 
-The wrapper fingerprints row counts and sorted SHA-256 row multisets inside the transaction; it emits no existing row values, hashes or credentials.
+The explicit external trust boundary is existing managed pgTAP, pgcrypto and uuid-ossp extension members. Their catalogue definitions/version/ACL state are frozen within the batch; source preparation does not inspect the provider's extension installation files. pgTAP must already be installed in extensions. No extension install fallback, unknown external function, local database or provider activation is allowed.
 
-A pre-DDL baseline covers existing columns/rows in public/private/auth/storage/migration-history tables, including original ordinary/project costs, Excel provenance, prior evidence, grants/role assignments, canonical cash, audit history and applied HR/migration records. Existing columns are projected when comparing after additive DDL so new columns do not fabricate a history mismatch. The sole pre-DDL table exception is public.permissions: the reviewed security migration adds seven definitions with ON CONFLICT DO NOTHING and assigns no real role. A second baseline after exact DDL covers that catalog and all newly created workflow tables too.
+## Server deadline and owned cancellation
 
-After fixtures the wrapper restores the original SQL role, disables row filtering for the privileged history check, excludes only the collision-checked fixture UUID namespace and checks BOTH baselines before the completion marker. Missing privileged history access, missing history relations, any already-applied workflow migration, changed historical rows or a collision blocks rather than falling back to a local DB or incomplete view. Repeatable-read isolation prevents unrelated concurrent transactions from producing a false row-diff; it is not a concurrency proof.
+Require PostgreSQL17+ transaction_timeout support. Batch limits: transaction150s, statement90s, idle transaction5s, lock5s; native CLI180s and4MiB output. Read-only controls use shorter server/client limits.
 
-The proposed execute operation is BLOCKED on the canonical schema. Source inspection found two concrete nontransactional effects: company_role_assignments.id is GENERATED ALWAYS AS IDENTITY, and all three data-fixture suites insert four synthetic assignments without explicit IDs (12 sequence allocations in total); audit_events.id is also GENERATED ALWAYS AS IDENTITY, and private.c1_workflow_record_command plus original-file intent/finalize commands insert audited events. Failed commands can also allocate sequence values before their subtransaction is rolled back. workflow_node_events has another persistent identity, but these workflow-cost suites do not invoke that node-event path.
+A random nonce appears at the beginning of query text and in transaction-local application_name. Server clock_timestamp admission expires10s after the fresh baseline timestamp, preventing delayed API starts from beginning fixture writes after cleanup. Cleanup waits past this admission expiry. Census includes the early query prefix before application_name assignment; a tagged backend without the complete termination identity blocks cleanup proof instead of being ignored or killed.
 
-The wrapper now raises WORKFLOW_REHEARSAL_NONTRANSACTIONAL_SEQUENCE before DDL or fixture writes if either known identity sequence is present. This is a deliberate blocker, not a test result. Rollback of rows/DDL cannot undo allocated sequence values, so the current two-value hash authorization does not authorize an audit-ID-gap exception. Do not remove that guard, reset/setval a shared sequence, override production audit functions or disable audit triggers to make the fixtures pass.
+Termination requires the exact nonce/query prefix, PID, backend_start, database, username and active transaction. The SQL termination predicate rechecks all identifiers, then a fresh census confirms absence. No generic backend/service cancellation is allowed. An idle pooled backend can remain alive: the required outcome is absence of the owned transaction, verified alongside a post-ROLLBACK no-write-transaction marker. A pre-rollback marker or CLI exit alone is insufficient.
 
-Next decision: approve a specifically bounded nontransactional sequence-allocation exception after full command/trigger accounting, or redesign fixture execution so those allocations cannot affect persistent sequences while retaining meaningful production-command verification. No exception is inferred here. Until that decision and a revised reviewed manifest, do not ask to execute this proposal.
+On timeout, malformed output, failed TAP or missing rollback proof, stop; attempt owned cleanup and a fresh postflight, then report failure. Report sanitized primary, cleanup and postflight failure categories together. Never replay a failed suite automatically. Release the owned lock and remove only the invocation's own temporary directory.
 
-The history guard itself is prepared SQL and has not been runtime-tested; wrapper unit tests use mocked processes and cannot prove Postgres syntax/RLS/history behavior. Authentication-role pgTAP runs with row_security=on; only privileged before/after history checks use row_security=off.
+## Historical and catalogue closure
 
-## Approval and remaining checks
+Within each transaction, retain before-DDL original-column row-multiset baselines and after-DDL baselines. Seven additive permission definitions are the only pre-DDL data exception; no real role grants are assigned. Privileged historical checks use row_security=off; authenticated pgTAP checks use row_security=on.
 
-Review the preview manifest and exact runner/guard/DDL/suite source on the final commit before requesting operation authorization. The latest preview is in the owned ignored artifact directory; regenerate it after any relevant source-byte change. A new Azure storage migration is outside this eight-migration proposal and requires its own updated manifest.
+Fresh read-only snapshots before and after rollback cover all public/private/auth/storage/migration-history tables, roles/memberships, grants/default ACLs, schema/column/index/constraint/policy/trigger/function/type/enum/rewrite/dependency catalogues, extension state and all persistent sequence counters. They output receipts/hashes, never original row values. Reject fixture-namespace collisions.
 
-This rehearsal does not apply migrations, repair migration history, reconcile legacy data, map opening contract caps, assign real managers/roles, enable document_backed_v1, activate OCR, prove live races or authorize deployment. Concurrency scenario preparation and readiness/activation approval remain separate work.
+Compare every next-suite baseline with the previous successful postflight, with zero allowed intervening sequence allocation. Compare final history/catalogue with the original batch baseline. Any history/HR/ACL/migration/metadata/other-sequence drift stops the batch.
 
-References: [installed-command documentation](https://supabase.com/docs/reference/cli/supabase-db-query), [PostgreSQL binary SHA functions](https://www.postgresql.org/docs/current/functions-binarystring.html). Repository commands and exact installed --help output control execution.
+## Verification limits and next approval
+
+Unit tests mock CLI/database results and owned subprocess lifecycle. They cover authorization ordering, manifest changes, exact plans, failed cleanup, foreign ownership, delayed admission, first sequence allocation, budget/metadata/inter-suite drift, ordered function/trigger inventory and sealed-target/timeout/output handling. They do not establish PostgreSQL syntax, actual grants/RLS, managed extension definitions, live races, Storage byte validity or provider behavior.
+
+Regenerate preview on the final reviewed source checkpoint. Any later Azure/schema/runner/dependency change requires another manifest. A precise future user approval must identify this DEV-only rollback batch, the two sequence ceilings, the quiet window and narrowly owned cancellation. Do not execute until that explicit approval. Unsupported or unexpected live metadata blocks before fixture writes rather than widening the boundary.
+
+References: [PostgreSQL sequence rollback behavior](https://www.postgresql.org/docs/current/functions-sequence.html), [PostgreSQL17 session timeouts](https://www.postgresql.org/docs/17/runtime-config-client.html), [backend termination](https://www.postgresql.org/docs/current/functions-admin.html), [Supabase db query](https://supabase.com/docs/reference/cli/supabase-db-query).

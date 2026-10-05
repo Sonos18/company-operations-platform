@@ -1,6 +1,5 @@
 // Reviewed wrapper only: fixture validators never permit these dynamic history reads.
 export const workflowRehearsalSetupSql = String.raw`
-set transaction isolation level repeatable read;
 set local lock_timeout='5s';
 set local statement_timeout='90s';
 set local row_security=off;
@@ -11,9 +10,6 @@ begin
  or pg_catalog.to_regclass('storage.objects') is null
  or pg_catalog.to_regclass('supabase_migrations.schema_migrations') is null
  then raise exception 'WORKFLOW_REHEARSAL_HISTORY_TARGET_MISSING'; end if;
- if pg_catalog.pg_get_serial_sequence('public.audit_events','id') is not null
- or pg_catalog.pg_get_serial_sequence('public.company_role_assignments','id') is not null
- then raise exception 'WORKFLOW_REHEARSAL_NONTRANSACTIONAL_SEQUENCE'; end if;
  if exists(select 1 from supabase_migrations.schema_migrations where version in
  ('20261004210000','20261004210100','20261004210200','20261004210300',
  '20261004210400','20261004210500','20261004210600','20261004210700'))

@@ -410,7 +410,9 @@ $$;
 
 create or replace function private.c1_can_select_evidence_object(target_bucket_id text,target_object_path text) returns boolean
 language sql stable security definer set search_path='' as $$
- select exists(select 1 from public.cost_evidence_files f where f.bucket_id=target_bucket_id and f.object_path=target_object_path and (
+ select exists(select 1 from public.cost_evidence_files f where f.bucket_id=target_bucket_id and f.object_path=target_object_path
+ and exists(select 1 from auth.users account where account.id=(select auth.uid()) and (account.banned_until is null or account.banned_until<=now()))
+ and (
   (not f.workflow_origin and private.c1_can_select_evidence_object_legacy(target_bucket_id,target_object_path))
   or (f.workflow_origin and f.created_by=(select auth.uid()) and f.status='pending_upload' and f.intent_expires_at>now()
       and private.c1_workflow_actor_has_permission(f.tenant_id,f.company_id,'cost.prepare') and private.c1_workflow_actor_has_permission(f.tenant_id,f.company_id,'cost.request.submit'))
