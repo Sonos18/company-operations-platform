@@ -48,6 +48,12 @@ Luồng Auth v1 đã hỗ trợ đăng nhập invite-only, phiên bền vững, 
 
 See [Cloud DEV backend development](docs/development/backend-cloud-dev.md) and [Supabase Cloud and Vercel Production](docs/deployment/supabase-cloud-vercel.md).
 
+## InstaCloud agent sandbox
+
+Taskovia có thể chạy backend/runtime tạm thời trên InstaCloud cho từng feature/task, nhưng Supabase Cloud DEV vẫn là data plane phát triển duy nhất. Sandbox InstaCloud bắt buộc trỏ vào canonical Cloud DEV, không được nhận Production credentials, và task thay đổi database vẫn chạy tuần tự vì các runtime branch hiện dùng chung Cloud DEV.
+
+Xem [InstaCloud agent sandbox](docs/deployment/instacloud-sandbox.md) để bootstrap, deploy, verify và cleanup môi trường theo task.
+
 ## Kiểm thử và build
 
 ```bash

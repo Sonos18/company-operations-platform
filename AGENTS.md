@@ -24,6 +24,9 @@
 - Database migrations are forward-only. Do not edit a migration that has already been applied; add a new corrective migration instead.
 - Do not perform a production deployment, production database mutation, destructive database operation, reset, seed, or migration repair without an explicit current request that identifies the target and operation.
 - Stop and report a blocker before any operation that could destroy data or affect Production without clear authorization.
+- InstaCloud may be used only as a disposable compute/runtime sandbox; Supabase Cloud DEV remains the sole supported development data plane for Database, Auth, RLS, RPC, Storage, and migrations.
+- An InstaCloud sandbox must fail closed unless it targets canonical Supabase Cloud DEV ref `gtgljlnhwvhqdnwrfdfj`, and it must never receive Production Supabase credentials.
+- Because InstaCloud runtime branches currently share the external Cloud DEV database, database-mutating agent tasks must run sequentially until Taskovia adopts isolated database branching.
 
 ## Verification
 
