@@ -49,8 +49,10 @@ export function createWorkflowQuery({cwd,env,binary,spawnProcess=spawn}){
     child.once('error',()=>{clearTimeout(timer);fail('WORKFLOW_REHEARSAL_CLI_UNAVAILABLE')})
     child.once('close',status=>{clearTimeout(timer);if(failed)return;if(status!==0){const errorOutput=stdout+'\n'+stderr;const state=/SQLSTATE ([0-9A-Z]{5})/.exec(errorOutput)?.[1];const category=state?'PG_'+state:/unknown flag|unknown command|Usage:/i.test(errorOutput)?'CLI_INTERFACE':/access token|unauthori[sz]ed|authentication|401|403/i.test(errorOutput)?'AUTH_REJECTED':/project ref|link|config/i.test(errorOutput)?'LINK_CONFIG':/connect|network|dial|TLS|certificate|timeout/i.test(errorOutput)?'CONNECTION':'COMMAND';return reject(new Error('WORKFLOW_REHEARSAL_EXECUTION_FAILED:'+category))};try{resolve(JSON.parse(stdout))}catch{reject(new Error('WORKFLOW_REHEARSAL_RESULT_INVALID'))}})
    })
-   if(!response||!Array.isArray(response.rows))throw new Error('WORKFLOW_REHEARSAL_RESULT_INVALID')
-   return response
+   // CLI 2.114.0 emits row arrays; keep the existing mocked envelope contract.
+   const rows=Array.isArray(response)?response:response?.rows
+   if(!Array.isArray(rows))throw new Error('WORKFLOW_REHEARSAL_RESULT_INVALID')
+   return Array.isArray(response)?{rows}:response
   }finally{rmSync(directory,{recursive:true,force:true})}
  }
 }

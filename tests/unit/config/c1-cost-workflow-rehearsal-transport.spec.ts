@@ -37,3 +37,16 @@ describe('sanitized CLI diagnostic boundaries',()=>{
   await expect(query('select 1;')).rejects.toThrow('WORKFLOW_REHEARSAL_EXECUTION_FAILED:AUTH_REJECTED')
  })
 })
+
+describe('installed CLI JSON envelope compatibility',()=>{
+ it.each([{rows:[]},{rows:[{value:'synthetic-control-result'}]}])('normalizes installed CLI row arrays %j',async({rows})=>{
+  const c=child(),spawnProcess=vi.fn(()=>{queueMicrotask(()=>{c.result.stdout.write(JSON.stringify(rows));c.result.emit('close',0)});return c.result})
+  const query=createWorkflowQuery({cwd:process.cwd(),binary:'/approved/mock',env:{},spawnProcess})
+  await expect(query('select 1;')).resolves.toEqual({rows})
+ })
+ it.each([null,{},{rows:null},'synthetic-invalid'])('refuses malformed envelopes %j',async response=>{
+  const c=child(),spawnProcess=vi.fn(()=>{queueMicrotask(()=>{c.result.stdout.write(JSON.stringify(response));c.result.emit('close',0)});return c.result})
+  const query=createWorkflowQuery({cwd:process.cwd(),binary:'/approved/mock',env:{},spawnProcess})
+  await expect(query('select 1;')).rejects.toThrow('RESULT_INVALID')
+ })
+})

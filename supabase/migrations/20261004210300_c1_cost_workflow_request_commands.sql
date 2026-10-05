@@ -716,8 +716,13 @@ begin
  -- Reactivation delivers the same durable event and recipient once.
  update public.cost_workflow_notifications set delivery_state='available'
  where tenant_id=t and company_id=target_company_id and recipient_id=auth.uid() and delivery_state='undelivered';
- select coalesce(jsonb_agg(jsonb_build_object('id',n.id,'projectId',n.project_id,'decisionId',n.decision_id,'recipientId',n.recipient_id,'deliveryState',n.delivery_state,'readAt',n.read_at,'createdAt',n.created_at) order by n.created_at desc,n.id),'[]'::jsonb) into result
- from public.cost_workflow_notifications n where n.tenant_id=t and n.company_id=target_company_id and n.recipient_id=auth.uid();
+ -- Resolve the immutable decision/version, retaining every tenant/company/project boundary.
+ select coalesce(jsonb_agg(jsonb_build_object('id',n.id,'projectId',n.project_id,'requestId',v.request_id,'submittedVersionId',v.id,'kind',r.kind,'decisionId',n.decision_id,'recipientId',n.recipient_id,'deliveryState',n.delivery_state,'readAt',n.read_at,'createdAt',n.created_at) order by n.created_at desc,n.id),'[]'::jsonb) into result
+ from public.cost_workflow_notifications n
+ join public.cost_workflow_decisions d on d.id=n.decision_id and d.tenant_id=n.tenant_id and d.company_id=n.company_id and d.project_id=n.project_id
+ join public.cost_workflow_request_versions v on v.id=d.submitted_version_id and v.tenant_id=d.tenant_id and v.company_id=d.company_id and v.project_id=d.project_id
+ join public.cost_workflow_requests r on r.id=v.request_id and r.tenant_id=v.tenant_id and r.company_id=v.company_id and r.project_id=v.project_id
+ where n.tenant_id=t and n.company_id=target_company_id and n.recipient_id=auth.uid();
  return result;
 end;$$;
 create function public.c1_workflow_read_notification(target_company_id uuid,target_id uuid,target_input jsonb,target_idempotency_key uuid,target_request_id uuid) returns jsonb
