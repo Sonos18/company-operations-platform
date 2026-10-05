@@ -1,3 +1,5 @@
+import {workflowManagedStorageSources} from './c1-cost-workflow-rehearsal-managed-storage.mjs'
+import {workflowReplayBaselineCorrection,workflowReviewedPolicyRoots,workflowReviewedPolicyScope} from './c1-cost-workflow-rehearsal-baseline.mjs'
 import {createHash} from 'node:crypto'
 import {readFileSync,readdirSync,realpathSync,openSync,readSync,closeSync} from 'node:fs'
 import {dirname,join,resolve,relative} from 'node:path'
@@ -54,6 +56,7 @@ export function workflowFunctionInventory(files){
    else if(config){fn.config=fn.config.filter(c=>!c.startsWith(config[1].toLowerCase()+'='));fn.config.push(config[1].toLowerCase()+'='+config[2].replace(/[\s'"]/g,''));fn.config.sort()}
    else throw new Error('WORKFLOW_REHEARSAL_SOURCE_ALTER_UNSUPPORTED')
   }
+  workflowReplayBaselineCorrection(file,registry,workflowSha)
  }
  return [...registry.values()]
 }
@@ -77,11 +80,12 @@ function workflowWriterText(sql){
  return text
 }
 export function workflowDependencyInventory({baseMigrations,migrations,suites}){
- const functions=workflowFunctionInventory([...baseMigrations,...migrations])
+ const baseline=[...workflowManagedStorageSources,...baseMigrations]
+ const functions=workflowFunctionInventory([...baseline,...migrations])
  const byName=new Map()
  for(const fn of functions){const list=byName.get(fn.name)||[];list.push(fn);byName.set(fn.name,list)}
  const triggers=new Map()
- for(const file of [...baseMigrations,...migrations]){
+ for(const file of [...baseline,...migrations]){
   const events=[]
   for(const m of file.sql.matchAll(/create\s+(?:or\s+replace\s+)?(?:constraint\s+)?trigger\s+(\w+)[\s\S]*?\bon\s+((?:public|private|auth|storage)\.\w+)[\s\S]*?\bexecute\s+(?:function|procedure)\s+([\w.]+)\s*\(([^)]*)\)/gi)){
    const table=m[2].toLowerCase(),name=m[1].toLowerCase(),head=m[0].slice(0,m[0].search(/\bon\s+/i)),types=(/\bfor\s+each\s+row\b/i.test(m[0])?1:0)+(/\bbefore\b/i.test(head)?2:0)+(/\binsert\b/i.test(head)?4:0)+(/\bdelete\b/i.test(head)?8:0)+(/\bupdate\b/i.test(head)?16:0)+(/\btruncate\b/i.test(head)?32:0)+(/\binstead\s+of\b/i.test(head)?64:0)
@@ -98,8 +102,25 @@ export function workflowDependencyInventory({baseMigrations,migrations,suites}){
   for(const event of events){if(event.add)triggers.set(event.key,event);else triggers.delete(event.key)}
  }
  const relations=new Set(),calls=new Set()
- const addRefs=text=>{for(const m of text.matchAll(/\b((?:public|private|auth|storage)\.[a-z_][a-z_0-9]*)\b/gi)){const name=m[1].toLowerCase();if(byName.has(name))calls.add(name);else if(!name.startsWith('auth.')||name==='auth.users')relations.add(name)}}
+ const addRefs=text=>{
+  // SET CONSTRAINTS names a constraint trigger, rather than a relation.
+  // Resolve that exact schema/name to its source-pinned trigger and table.
+  const references=text.replace(/\bset\s+constraints\s+((?:public|private|auth|storage)\.[a-z_][a-z_0-9]*)\s+(?:immediate|deferred)\b/gi,(statement,name)=>{
+   const [schema,constraint]=name.toLowerCase().split('.')
+   const matches=[...triggers.values()].filter(trigger=>trigger.constraint&&trigger.deferrable&&trigger.table.startsWith(schema+'.')&&trigger.key===trigger.table+':'+constraint)
+   if(matches.length!==1)throw new Error('WORKFLOW_REHEARSAL_CONSTRAINT_UNREVIEWED')
+   relations.add(matches[0].table);calls.add(matches[0].fn)
+   return ' '.repeat(statement.length)
+  })
+  for(const m of references.matchAll(/\b((?:public|private|auth|storage)\.[a-z_][a-z_0-9]*)\b/gi)){const name=m[1].toLowerCase();if(byName.has(name))calls.add(name);else if(!name.startsWith('auth.')||name==='auth.users')relations.add(name)}
+ }
  for(const file of [...migrations,...suites])addRefs(file.sql)
+ if(workflowReviewedPolicyScope.some(relation=>relations.has(relation))&&baseMigrations.some(file=>/^\d{14}/.test(file.name||''))){
+  for(const name of workflowReviewedPolicyRoots){
+   if(!byName.has(name))throw new Error('WORKFLOW_REHEARSAL_POLICY_ROOT_MISSING')
+   calls.add(name)
+  }
+ }
  let size=-1
  while(size!==relations.size+calls.size){
   size=relations.size+calls.size

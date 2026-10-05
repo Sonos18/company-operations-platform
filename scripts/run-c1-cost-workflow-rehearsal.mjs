@@ -1,8 +1,11 @@
+import {workflowManagedStorageBaseline} from './c1-cost-workflow-rehearsal-managed-storage.mjs'
+import {workflowReviewedBaselineCorrections,workflowReviewedPolicyRoots,workflowReviewedPolicyScope} from './c1-cost-workflow-rehearsal-baseline.mjs'
 import {readFileSync} from 'node:fs'
 import {resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {randomUUID} from 'node:crypto'
 import {workflowLinkedRoot,readWorkflowLinkMetadata,assertWorkflowLinkUnchanged} from './c1-cost-workflow-rehearsal-link.mjs'
+import {workflowPgTapSetup,workflowPgTapSetupSql} from './c1-cost-workflow-rehearsal-pgtap.mjs'
 import {workflowManagedDdlHandlers} from './c1-cost-workflow-rehearsal-managed-ddl.mjs'
 import {assertCloudDevTarget} from './assert-cloud-dev-target.mjs'
 import {isolatedSupabaseEnvironment} from './run-supabase-dev.mjs'
@@ -38,7 +41,7 @@ export function reviewWorkflowRehearsal({migrations,suites,cwd=workflowSourceRoo
  const baseMigrations=readWorkflowBaseMigrations(cwd)
  const dependencyInventory=workflowDependencyInventory({baseMigrations,migrations,suites})
  const {executionSources,runtime}=workflowExecutionInventory(cwd)
- const manifest={schemaVersion:4,linkedTarget:readWorkflowLinkMetadata(linkRoot),managedDdlHandlers:workflowManagedDdlHandlers,pgTapSetup:{mode:'require-installed',automaticInstallation:false,blocker:'WORKFLOW_REHEARSAL_PGTAP_NOT_INSTALLED'},selectOnlyIdentities:dependencyInventory.selectOnlyIdentities,projectRef:'gtgljlnhwvhqdnwrfdfj',operation:'rollback-only-DDL-and-synthetic-pgTAP-with-bounded-surrogate-gaps',executionSources,runtime,baseMigrations:baseMigrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),dependencyInventorySha256:workflowSha(JSON.stringify(dependencyInventory)),migrations:migrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),suites:suites.map((s,i)=>({name:s.name,sha256:workflowSha(s.sql),assertions:costWorkflowAssertionCounts[i]})),sequenceException:{names:workflowSequenceNames,perSuite:workflowSequenceBudgets,total:workflowCumulativeBudgets,reset:false},timeouts:workflowTimeouts,clientLimits:workflowQueryLimits,lock:'/data/remote-jobs/validation.lock',trustBoundary:'Existing managed pgTAP/pgcrypto/uuid-ossp extension members; catalogues and versions frozen per batch. All six reviewed managed DDL registrations are pinned bidirectionally; unknown or modified registrations, source functions, attached triggers or reachable sequences fail closed. workflow_node_events identity is SELECT-only and has zero allocation/drift allowance.',retention:'Fresh before/after rollback snapshots cover data, catalogues, grants, extension state and all other sequence counters. Stop on any drift or uncertain cleanup.'}
+ const manifest={schemaVersion:5,reviewedPolicyRoots:workflowReviewedPolicyRoots,reviewedPolicyScope:workflowReviewedPolicyScope,managedStorageBaseline:workflowManagedStorageBaseline,reviewedBaselineCorrections:workflowReviewedBaselineCorrections,linkedTarget:readWorkflowLinkMetadata(linkRoot),managedDdlHandlers:workflowManagedDdlHandlers,pgTapSetup:workflowPgTapSetup,selectOnlyIdentities:dependencyInventory.selectOnlyIdentities,projectRef:'gtgljlnhwvhqdnwrfdfj',operation:'rollback-only-DDL-and-synthetic-pgTAP-with-bounded-surrogate-gaps',executionSources,runtime,baseMigrations:baseMigrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),dependencyInventorySha256:workflowSha(JSON.stringify(dependencyInventory)),migrations:migrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),suites:suites.map((s,i)=>({name:s.name,sha256:workflowSha(s.sql),assertions:costWorkflowAssertionCounts[i]})),sequenceException:{names:workflowSequenceNames,perSuite:workflowSequenceBudgets,total:workflowCumulativeBudgets,reset:false},timeouts:workflowTimeouts,clientLimits:workflowQueryLimits,lock:'/data/remote-jobs/validation.lock',trustBoundary:'Managed pgcrypto/uuid-ossp members and exact server-bundled pgTAP 1.3.3 created in extensions inside each rollback transaction; pgTAP must be absent before and after every batch, with existing privileges only. Catalogues and versions frozen per batch. All six reviewed managed DDL registrations are pinned bidirectionally; unknown or modified registrations, source functions, attached triggers or reachable sequences fail closed. workflow_node_events identity is SELECT-only and has zero allocation/drift allowance.',retention:'Fresh before/after rollback snapshots cover data, catalogues, grants, extension state and all other sequence counters. Stop on any drift or uncertain cleanup.'}
  return {...manifest,manifestSha256:workflowSha(JSON.stringify(manifest))}
 }
 function value(value){if(typeof value==='string'){try{return JSON.parse(value)}catch{throw new Error('WORKFLOW_REHEARSAL_RESULT_INVALID')}}return value}
@@ -88,7 +91,7 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
   const dependencies=workflowDependencyInventory({baseMigrations,...sources})
   const baseDependencies=workflowDependencyInventory({baseMigrations,migrations:[],suites:[...sources.suites,{sql:dependencies.relations.join(' ')+' '+dependencies.reachableFunctions.join(' ')}]})
   lease.assertHeld()
-  await runQuery("begin read only; set local statement_timeout='10s'; set local transaction_timeout='15s';"+workflowDependencyPreflightSql(baseDependencies)+"rollback;")
+  await runQuery("begin read only; set local statement_timeout='10s'; set local transaction_timeout='15s';"+workflowDependencyPreflightSql(baseDependencies,{pgTapPhase:'available'})+"rollback;")
   let before=snapshotResult(await runQuery(workflowSnapshotSql))
   const initial=before.snapshot
   let previous=initial
@@ -100,7 +103,7 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
    if(index>0){before=snapshotResult(await runQuery(workflowSnapshotSql));assertWorkflowPostflight(previous,before.snapshot,0,[0n,0n])}
    const owner={nonce:nonceFactory(),serverTime:before.serverTime,database:before.database,username:before.username}
    const test=suite.sql.replace(/^\s*begin\s*;/i,'').replace(/rollback\s*;\s*$/i,'')
-   const body=workflowRehearsalSetupSql+workflowSequenceGuardSql(index)+workflowDependencyPreflightSql(baseDependencies)+workflowHistoryCaptureSql('before-DDL')+sources.migrations.map(m=>m.sql).join('\n')+'\n'+workflowDependencyPreflightSql(dependencies)+workflowHistoryCaptureSql('after-DDL')+"\nset local row_security=on;\n"+test+workflowHistoryClosureSql+workflowSequenceClosureSql(index)
+   const body=workflowRehearsalSetupSql+workflowSequenceGuardSql(index)+workflowDependencyPreflightSql(baseDependencies,{pgTapPhase:'available'})+workflowHistoryCaptureSql('before-DDL')+workflowPgTapSetupSql+sources.migrations.map(m=>m.sql).join('\n')+'\n'+workflowDependencyPreflightSql(dependencies)+workflowHistoryCaptureSql('after-DDL')+"\nset local row_security=on;\n"+test+workflowHistoryClosureSql+workflowSequenceClosureSql(index)
    const wrapped=buildC1MigrationRehearsalSql(body)
    validateC1MigrationRehearsalSql(wrapped)
    const sql=workflowAdmissionSql(owner)+wrapped.replace(/^begin;\s*/i,'').replace(/rollback;\s*$/i,'')+"\nrollback;\nselect 'C1_COST_WORKFLOW_ROLLBACK_CONFIRMED' as result,pg_current_xact_id_if_assigned() is null as no_write_transaction;"

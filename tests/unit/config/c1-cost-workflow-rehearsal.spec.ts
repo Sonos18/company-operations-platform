@@ -1,8 +1,8 @@
 import {describe,expect,it,vi} from 'vitest'
 import {costWorkflowSqlFiles} from '../../../scripts/run-c1-cost-workflow-tests.mjs'
 import {reviewWorkflowRehearsal,runWorkflowRehearsal,costWorkflowMigrationFiles,costWorkflowAssertionCounts,closeOwnedWorkflowBackend} from '../../../scripts/run-c1-cost-workflow-rehearsal.mjs'
-import {workflowSequenceNames,sequenceAllocations,assertWorkflowPostflight,workflowAdmissionSql,workflowTerminateSql,workflowDependencyPreflightSql,workflowBackendCensusSql} from '../../../scripts/c1-cost-workflow-rehearsal-catalog.mjs'
-import {workflowFunctionInventory,workflowDependencyInventory} from '../../../scripts/c1-cost-workflow-rehearsal-inventory.mjs'
+import {workflowSequenceNames,sequenceAllocations,assertWorkflowPostflight,workflowAdmissionSql,workflowTerminateSql,workflowDependencyPreflightSql,workflowBackendCensusSql,workflowAuthHelperExpressions} from '../../../scripts/c1-cost-workflow-rehearsal-catalog.mjs'
+import {workflowFunctionInventory,workflowDependencyInventory,readWorkflowBaseMigrations} from '../../../scripts/c1-cost-workflow-rehearsal-inventory.mjs'
 vi.mock('../../../scripts/run-supabase-dev.mjs',()=>({isolatedSupabaseEnvironment:vi.fn(()=>({}))}))
 const sql="set local lock_timeout='5s'; select 1;"
 const fixture=()=>({migrations:costWorkflowMigrationFiles.map(name=>({name,sql})),suites:costWorkflowSqlFiles.map((name,i)=>({name,sql:"begin; select plan("+costWorkflowAssertionCounts[i]+"); select * from finish(); rollback;"}))})
@@ -146,5 +146,152 @@ describe('reviewed managed DDL and SELECT-only identity admission',()=>{
  it('rejects writers reached through attached triggers',()=>{
   const baseMigrations=[...readOnly,{sql:'create function private.writer() returns trigger language plpgsql as $$begin insert into public.workflow_node_events default values;return new;end$$; create trigger writer after insert on public.other for each row execute function private.writer();'}]
   expect(()=>workflowDependencyInventory({baseMigrations,migrations:[],suites:[{sql:'select private.read_events(); insert into public.other values(1);'}]})).toThrow('WORKFLOW_REHEARSAL_SELECT_ONLY_IDENTITY')
+ })
+})
+
+describe('manifest-authorized transient bundled pgTAP',()=>{
+ it('binds exact bundled version, schema, absence and rollback semantics in preview without a query',async()=>{
+  const query=vi.fn(),result=await runWorkflowRehearsal({...fixture(),query})
+  expect(result.schemaVersion).toBe(5)
+  expect(result.pgTapSetup).toMatchObject({mode:'transactional-create-per-suite',name:'pgtap',version:'1.3.3',schema:'extensions',baseline:'absent',cascade:false,retain:false})
+  expect(result.executionSources.some((source:{name:string})=>source.name==='scripts/c1-cost-workflow-rehearsal-pgtap.mjs')).toBe(true)
+  expect(query).not.toHaveBeenCalled()
+ })
+ it('keeps the read-only initial preflight separate from each versioned extension creation',async()=>{
+  const h=harness();await execute(h)
+  const sql=h.query.mock.calls.map(([s])=>s)
+  expect(sql[0]).toContain('WORKFLOW_REHEARSAL_PGTAP_EXPECT_ABSENT')
+  expect(sql[0]).not.toMatch(/^\s*create\s+extension\b/im)
+  const batches=sql.filter(s=>s.startsWith('/*c1cw-'))
+  expect(batches).toHaveLength(4)
+  for(const batch of batches){
+   const install="create extension pgtap with schema extensions version '1.3.3';"
+   expect(batch.match(/create extension pgtap with schema extensions version '1.3.3';/g)).toHaveLength(1)
+   expect(batch.indexOf('WORKFLOW_REHEARSAL_PGTAP_EXPECT_ABSENT')).toBeLessThan(batch.indexOf(install))
+   expect(batch.indexOf(install)).toBeLessThan(batch.indexOf('WORKFLOW_REHEARSAL_PGTAP_INSTALLED_VERSION'))
+   expect(batch.indexOf(install)).toBeLessThan(batch.indexOf('select plan('))
+   expect(batch.lastIndexOf('rollback;')).toBeGreaterThan(batch.indexOf(install))
+   expect(batch).not.toMatch(/create extension pgtap[^;]*cascade/i)
+  }
+ })
+ it('fails closed before temporary DDL if availability or install privileges have drifted',async()=>{
+  const h=harness((sql,response)=>{if(!sql.startsWith('/*')&&sql.includes('workflow_dependencies'))throw new Error('WORKFLOW_REHEARSAL_PGTAP_PREREQUISITES');return response})
+  await expect(execute(h)).rejects.toThrow('WORKFLOW_REHEARSAL_PGTAP_PREREQUISITES')
+  expect(h.batches()).toBe(0);expect(h.lease.release).toHaveBeenCalledTimes(1)
+ })
+ it('postflights and closes its owned session after temporary extension setup failure without replay',async()=>{
+  const h=harness((sql,response)=>{if(sql.startsWith('/*')&&sql.includes("create extension pgtap with schema extensions version '1.3.3';"))throw new Error('WORKFLOW_REHEARSAL_PGTAP_INSTALLED_VERSION');return response})
+  await expect(execute(h)).rejects.toThrow('WORKFLOW_REHEARSAL_PGTAP_INSTALLED_VERSION')
+  expect(h.batches()).toBe(1)
+  expect(h.query.mock.calls.some(([s])=>s.includes('pg_stat_activity'))).toBe(true)
+  expect(h.query.mock.calls.filter(([s])=>s.includes('workflow_snapshot_result'))).toHaveLength(2)
+  expect(h.lease.release).toHaveBeenCalledTimes(1)
+ })
+ it('distinguishes available-before-install from exact-installed-after-install and refuses unknown phases',()=>{
+  const inventory={functions:[],relations:[],triggers:[]}
+  const available=workflowDependencyPreflightSql(inventory,{pgTapPhase:'available'})
+  expect(available).toContain('pg_available_extension_versions')
+  expect(available).toContain('WORKFLOW_REHEARSAL_PGTAP_EXPECT_ABSENT')
+  expect(available).not.toContain('WORKFLOW_REHEARSAL_PGTAP_NOT_INSTALLED')
+  const installed=workflowDependencyPreflightSql(inventory)
+  expect(installed).toContain('WORKFLOW_REHEARSAL_PGTAP_INSTALLED_VERSION')
+  expect(()=>workflowDependencyPreflightSql(inventory,{pgTapPhase:'unreviewed'})).toThrow('WORKFLOW_REHEARSAL_PGTAP_PHASE')
+ })
+})
+
+describe('reviewed server-managed JWT role expression',()=>{
+ it('recognizes the exact coalesce role helper with redundant text result cast without allowing arbitrary bodies',()=>{
+  const body="select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role'))::text".replace(/[\s;]/g,'').toLowerCase()
+  expect(workflowAuthHelperExpressions.role).toContain(body)
+  expect(workflowAuthHelperExpressions.role).not.toContain("select'authenticated'::text")
+ })
+})
+
+describe('historical dynamic correction provenance',()=>{
+ it('reconstructs existing corrected baseline bodies without modifying raw applied sources',()=>{
+  const baseMigrations=readWorkflowBaseMigrations(),original=JSON.stringify(baseMigrations)
+  const result=workflowDependencyInventory({baseMigrations,migrations:[],suites:[{sql:'select private.c1_link_cost_evidence(); select private.c1_finalize_cost_evidence(); select private.c1_correct_published_project_cost();'}]})
+  for(const [name,sha256] of [
+   ['private.c1_link_cost_evidence','8e27acd5484ac9bb16682dfd0b1f51e265d21e11070ac02916b2c616cc6f2a5a'],
+   ['private.c1_finalize_cost_evidence','03637014cdfa9ba47231f769c895ef08a9ed560c484930eef32387509e11cba9'],
+   ['private.c1_correct_published_project_cost','ae2325a43801386b88c248b8a2830f2238cf446fc5c0799df27065d7806d8d94']
+  ])expect(result.functions.find((fn:{name:string})=>fn.name===name)).toMatchObject({sha256})
+  expect(JSON.stringify(baseMigrations)).toBe(original)
+  expect(result.relations).not.toContain('public.c1_project_cost_item_details_sync')
+  expect(result.relations).toContain('public.project_cost_item_details')
+ })
+ it('rejects changed historical dynamic correction provenance',()=>{
+  const baseMigrations=readWorkflowBaseMigrations()
+  baseMigrations.find((file:{name:string})=>file.name==='20260922092309_c1_accounting_write_evidence_kind_contract_fix.sql')!.sql+=' -- unreviewed change'
+  expect(()=>workflowDependencyInventory({baseMigrations,migrations:[],suites:[]})).toThrow('WORKFLOW_REHEARSAL_BASELINE_CORRECTION_DRIFT')
+ })
+ it('rejects an unresolved schema-qualified constraint reference rather than treating it as a relation',()=>{
+  expect(()=>workflowDependencyInventory({baseMigrations:[],migrations:[],suites:[{sql:'set constraints public.unknown_guard immediate;'}]})).toThrow('WORKFLOW_REHEARSAL_CONSTRAINT_UNREVIEWED')
+ })
+ it('binds the source-only correction profiles and their provenance into the manifest',()=>{
+  const result=reviewWorkflowRehearsal(fixture())
+  expect(result.reviewedBaselineCorrections).toHaveLength(3)
+  expect(result.reviewedBaselineCorrections.every((entry:{provenanceSha256:string})=>/^[a-f0-9]{64}$/.test(entry.provenanceSha256))).toBe(true)
+ })
+})
+
+describe('exact managed Storage dependency baseline',()=>{
+ it('pins managed object delete and update guards without weakening the source-owned completed-project guard',()=>{
+  const result=workflowDependencyInventory({baseMigrations:readWorkflowBaseMigrations(),migrations:[],suites:[{sql:'select 1 from storage.objects; select 1 from storage.buckets;'}]})
+  expect(result.triggers).toEqual(expect.arrayContaining([
+   expect.objectContaining({key:'storage.objects:protect_objects_delete',fn:'storage.protect_delete',type:10,enabled:'O'}),
+   expect.objectContaining({key:'storage.objects:update_objects_updated_at',fn:'storage.update_updated_at_column',type:19,enabled:'O'}),
+   expect.objectContaining({key:'storage.objects:a_c1_completed_project_evidence_guard',fn:'private.c1_guard_completed_project_write',enabled:'O'})
+  ]))
+  expect(result.reachableFunctions).toContain('storage.protect_delete')
+  expect(result.functions.find((fn:{name:string})=>fn.name==='storage.protect_delete')).toMatchObject({definer:false,config:[],language:'plpgsql',strict:false})
+ })
+ it('binds all seven exact managed trigger registrations and five function sources into preview',()=>{
+  const result=reviewWorkflowRehearsal(fixture())
+  expect(result.managedStorageBaseline.triggers).toHaveLength(7)
+  expect(result.managedStorageBaseline.functions).toHaveLength(5)
+  expect(result.executionSources.some((source:{name:string})=>source.name==='scripts/c1-cost-workflow-rehearsal-managed-storage.mjs')).toBe(true)
+ })
+})
+
+describe('live PostgreSQL catalogue alias safety',()=>{
+ it('avoids a SQL alias colliding with the PLpgSQL loop record',()=>{
+  const sql=workflowDependencyPreflightSql({functions:[],relations:[],triggers:[]})
+  expect(sql).not.toContain('from pg_rewrite r ')
+  expect(sql).not.toContain('join dependencies r ')
+  expect(sql).toContain('rewrite_row.ev_class')
+  expect(sql).toContain('dependency_node.classid')
+ })
+})
+
+describe('bounded existing RLS dependency roots',()=>{
+ it('includes the exact nine existing source-reviewed policy helpers and their callees',()=>{
+  const result=workflowDependencyInventory({baseMigrations:readWorkflowBaseMigrations(),migrations:[],suites:[{sql:'select 1 from public.project_cost_items;'}]})
+  for(const name of ['private.c1_can_read_project_cost','private.c1_can_read_project_cost_detail','private.c1_can_read_project_cost_detail_evidence_metadata','private.c1_can_read_project_cost_detail_source','private.c1_can_read_source','private.can_read_role_catalog','private.has_any_active_company_membership','public.is_company_member','public.is_tenant_member'])expect(result.reachableFunctions).toContain(name)
+  expect(reviewWorkflowRehearsal(fixture()).reviewedPolicyRoots).toHaveLength(9)
+ })
+ it('admits implicit Storage calls only through the five exact pinned routine names',()=>{
+  const sql=workflowDependencyPreflightSql({functions:[],relations:[],triggers:[]})
+  expect(sql).toContain('managed_storage ? fn_name')
+  expect(sql).toContain('storage.protect_delete')
+  expect(sql).not.toContain("r.nspname in('public','private','storage')")
+ })
+})
+
+describe('existing SQL conditional expression admission',()=>{
+ it('recognizes LEAST and GREATEST syntax while retaining unknown function rejection',()=>{
+  const sql=workflowDependencyPreflightSql({functions:[],relations:[],triggers:[]})
+  expect(sql).toContain("'coalesce','least','greatest','nullif'")
+  expect(sql).toContain('WORKFLOW_REHEARSAL_IMPLICIT_EXPRESSION_UNREVIEWED')
+ })
+})
+
+describe('recorded existing expression tokens',()=>{
+ it('distinguishes four unqualified SQL keywords and the pure string parser from unknown qualified calls',()=>{
+  const sql=workflowDependencyPreflightSql({functions:[],relations:[],triggers:[]})
+  expect(sql).toContain("token.name in('exists','from','on','where')")
+  expect(sql).toContain("'string_to_array'")
+  expect(sql).toContain("if calls ? token.name or calls ? ('public.'||token.name)")
+  expect(sql).toContain('WORKFLOW_REHEARSAL_IMPLICIT_EXPRESSION_UNREVIEWED')
  })
 })

@@ -1,3 +1,5 @@
+import {workflowManagedStorageBaseline} from './c1-cost-workflow-rehearsal-managed-storage.mjs'
+import {workflowPgTapGuardSql} from './c1-cost-workflow-rehearsal-pgtap.mjs'
 import {workflowManagedDdlGuardSql} from './c1-cost-workflow-rehearsal-managed-ddl.mjs'
 import {workflowSha} from './c1-cost-workflow-rehearsal-inventory.mjs'
 export const workflowAuthHelperExpressions=Object.fromEntries(['uid','role'].map(name=>{
@@ -6,6 +8,8 @@ export const workflowAuthHelperExpressions=Object.fromEntries(['uid','role'].map
   "select coalesce(nullif(current_setting('request.jwt.claim."+claim+"', true), ''), (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> '"+claim+"'))"+cast,
   "select nullif(coalesce(current_setting('request.jwt.claim."+claim+"', true), (current_setting('request.jwt.claims', true)::jsonb ->> '"+claim+"')), '')"+cast,
   "select nullif(current_setting('request.jwt.claim."+claim+"', true), '')"+cast,
+  // Exact managed auth.role() observed on DEV; both branches already return text.
+  ...(name==='role'?["select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role'))::text"]:[]),
  ].map(body=>body.replace(/[\s;]/g,'').toLowerCase())]
 }))
 export const workflowSequenceNames=['public.audit_events_id_seq','public.company_role_assignments_id_seq']
@@ -65,16 +69,17 @@ end;$workflow_snapshot$;
 select value as snapshot,clock_timestamp()::text as server_time,current_database() as database,session_user as username from pg_temp.workflow_snapshot_result;
 rollback;
 `
-export function workflowDependencyPreflightSql(inventory){
+export function workflowDependencyPreflightSql(inventory,{pgTapPhase='installed'}={}){
+ const pgTapGuard=workflowPgTapGuardSql(pgTapPhase)
  const functions=literal(JSON.stringify(inventory.functions)),relations=literal(JSON.stringify(inventory.relations)),triggers=literal(JSON.stringify(inventory.triggers)),calls=literal(JSON.stringify(inventory.reachableFunctions||[])),authExpressions=literal(JSON.stringify(workflowAuthHelperExpressions)),selectOnly=literal(JSON.stringify(inventory.selectOnlyIdentities||[]))
  return `
 do $workflow_dependencies$
-declare r record; expected jsonb=${functions}::jsonb; relations jsonb=${relations}::jsonb; triggers jsonb=${triggers}::jsonb; calls jsonb=${calls}::jsonb; auth jsonb=${authExpressions}::jsonb; select_only jsonb=${selectOnly}::jsonb; fn_name text; extension_name text; token record;
+declare r record; expected jsonb=${functions}::jsonb; relations jsonb=${relations}::jsonb; triggers jsonb=${triggers}::jsonb; calls jsonb=${calls}::jsonb; auth jsonb=${authExpressions}::jsonb; select_only jsonb=${selectOnly}::jsonb; managed_storage jsonb=${literal(JSON.stringify(workflowManagedStorageBaseline.functions.map(fn=>fn.name)))}::jsonb; fn_name text; extension_name text; token record;
 begin
  if current_setting('server_version_num')::integer<170000 or not exists(select 1 from pg_settings where name='transaction_timeout') then raise exception 'WORKFLOW_REHEARSAL_SERVER_TIMEOUT_UNSUPPORTED';end if;
  if not exists(select 1 from supabase_migrations.schema_migrations where version='20261004140132') then raise exception 'WORKFLOW_REHEARSAL_HR_BASELINE_MISSING';end if;
  ${workflowManagedDdlGuardSql}
- if not exists(select 1 from pg_extension e join pg_namespace n on n.oid=e.extnamespace where e.extname='pgtap' and n.nspname='extensions') then raise exception 'WORKFLOW_REHEARSAL_PGTAP_NOT_INSTALLED';end if;
+ ${pgTapGuard}
  for r in select p.*,l.lanname from pg_proc p join pg_namespace n on n.oid=p.pronamespace join pg_language l on l.oid=p.prolang where n.nspname='auth' and p.proname in('uid','role') loop
   if r.pronargs<>0 or r.pronargdefaults<>0 or r.prosecdef or r.lanname<>'sql' or r.provolatile<>'s' or (r.proname='uid' and r.prorettype<>'uuid'::regtype) or (r.proname='role' and r.prorettype<>'text'::regtype) or exists(select 1 from unnest(r.proconfig) c where regexp_replace(replace(c,'"',''),'[[:space:]]','','g')<>'search_path=') then raise exception 'WORKFLOW_REHEARSAL_AUTH_HELPER_UNREVIEWED';end if;
   if not ((auth->r.proname) ? lower(regexp_replace(r.prosrc,'[[:space:];]','','g'))) then raise exception 'WORKFLOW_REHEARSAL_AUTH_HELPER_UNREVIEWED';end if;
@@ -97,7 +102,7 @@ begin
   if not exists(select 1 from pg_trigger t where t.tgrelid=to_regclass(split_part(r.value->>'key',':',1)) and t.tgname=split_part(r.value->>'key',':',2) and not t.tgisinternal) then raise exception 'WORKFLOW_REHEARSAL_TRIGGER_MISSING';end if;
  end loop;
  if exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where relations ? (n.nspname||'.'||c.relname) and c.relkind in('p','v','m','f')) or exists(select 1 from pg_inherits i join pg_class c on c.oid in(i.inhparent,i.inhrelid) join pg_namespace n on n.oid=c.relnamespace where relations ? (n.nspname||'.'||c.relname)) then raise exception 'WORKFLOW_REHEARSAL_RELATION_CLOSURE_UNREVIEWED';end if;
- if exists(select 1 from pg_rewrite r join pg_class c on c.oid=r.ev_class join pg_namespace n on n.oid=c.relnamespace where relations ? (n.nspname||'.'||c.relname)) then raise exception 'WORKFLOW_REHEARSAL_REWRITE_UNREVIEWED';end if;
+ if exists(select 1 from pg_rewrite rewrite_row join pg_class c on c.oid=rewrite_row.ev_class join pg_namespace n on n.oid=c.relnamespace where relations ? (n.nspname||'.'||c.relname)) then raise exception 'WORKFLOW_REHEARSAL_REWRITE_UNREVIEWED';end if;
  for r in
   with recursive roots(classid,objid) as(
    select 'pg_proc'::regclass,p.oid from pg_proc p join pg_namespace n on n.oid=p.pronamespace where calls ? (n.nspname||'.'||p.proname)
@@ -106,13 +111,15 @@ begin
    union select 'pg_class'::regclass,i.indexrelid from pg_index i join pg_class t on t.oid=i.indrelid join pg_namespace n on n.oid=t.relnamespace where relations ? (n.nspname||'.'||t.relname)
    union select 'pg_policy'::regclass,p.oid from pg_policy p join pg_class t on t.oid=p.polrelid join pg_namespace n on n.oid=t.relnamespace where relations ? (n.nspname||'.'||t.relname)
   ),dependencies(classid,objid) as(
-   select * from roots union select d.refclassid,d.refobjid from pg_depend d join dependencies r on d.classid=r.classid and d.objid=r.objid where d.refclassid not in('pg_language'::regclass,'pg_namespace'::regclass,'pg_extension'::regclass)
+   select * from roots union select d.refclassid,d.refobjid from pg_depend d join dependencies dependency_node on d.classid=dependency_node.classid and d.objid=dependency_node.objid where d.refclassid not in('pg_language'::regclass,'pg_namespace'::regclass,'pg_extension'::regclass)
   ) select distinct p.*,n.nspname,l.lanname from dependencies d join pg_proc p on d.classid='pg_proc'::regclass and p.oid=d.objid join pg_namespace n on n.oid=p.pronamespace join pg_language l on l.oid=p.prolang
  loop
   fn_name=r.nspname||'.'||r.proname;
   if r.nspname='pg_catalog' and r.proname in('now','clock_timestamp','gen_random_uuid','jsonb_typeof','jsonb_array_length','array_length','cardinality','btrim','length','char_length','lower','upper','num_nonnulls') then continue;end if;
   if r.nspname='extensions' and r.proname in('digest','gen_random_uuid','uuid_generate_v4') and r.lanname='c' then continue;end if;
   if r.nspname in('public','private') and calls ? fn_name and exists(select 1 from jsonb_array_elements(expected) e where e->>'name'=fn_name) and r.prosrc !~* '\\m(execute|dblink|nextval|setval|lo_export|http|pg_read_file|pg_write_file|pg_terminate_backend|pg_cancel_backend)\\M' then continue;end if;
+  -- Main call validation above has already checked full signatures/attributes/body hashes.
+  if r.nspname='storage' and managed_storage ? fn_name and calls ? fn_name and exists(select 1 from jsonb_array_elements(expected) e where e->>'name'=fn_name) then continue;end if;
   if fn_name in('auth.uid','auth.role') then continue;end if;
   raise exception 'WORKFLOW_REHEARSAL_IMPLICIT_FUNCTION_UNREVIEWED';
  end loop;
@@ -125,7 +132,8 @@ begin
  loop
   if r.expression ~* '\\m(execute|dblink|nextval|setval|lo_export|http|pg_read_file|pg_write_file|pg_terminate_backend|pg_cancel_backend)\\M' then raise exception 'WORKFLOW_REHEARSAL_IMPLICIT_EXPRESSION_UNREVIEWED';end if;
   for token in select lower(m[1]) name from regexp_matches(r.expression,'([a-z_][a-z_0-9]*(?:\\.[a-z_][a-z_0-9]*)?)[[:space:]]*\\(','gi') m loop
-   if replace(token.name,'pg_catalog.','') in('check','any','all','array','row','in','not','and','or','coalesce','nullif','now','clock_timestamp','gen_random_uuid','jsonb_typeof','jsonb_array_length','array_length','cardinality','btrim','length','char_length','lower','upper','num_nonnulls','numeric','varchar','timestamp','timestamptz','character','substring','split_part','current_setting') then continue;end if;
+   if token.name in('exists','from','on','where') then continue;end if;
+   if replace(token.name,'pg_catalog.','') in('check','any','all','array','row','in','not','and','or','coalesce','least','greatest','nullif','now','clock_timestamp','gen_random_uuid','jsonb_typeof','jsonb_array_length','array_length','cardinality','btrim','length','char_length','lower','upper','num_nonnulls','numeric','varchar','timestamp','timestamptz','character','substring','split_part','current_setting','string_to_array') then continue;end if;
    if token.name in('extensions.digest','extensions.gen_random_uuid','extensions.uuid_generate_v4','auth.uid') then continue;end if;
    if calls ? token.name or calls ? ('public.'||token.name) then continue;end if;
    raise exception 'WORKFLOW_REHEARSAL_IMPLICIT_EXPRESSION_UNREVIEWED';
