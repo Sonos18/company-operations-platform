@@ -1,9 +1,11 @@
 import type { PermissionCode } from '../../../../shared/constants/permissions'
-import { contractAdjustmentInputSchema,contractBasisInputSchema,costRequestInputSchema,workflowCommandVersionSchema,workflowDecisionInputSchema,workflowManagerAssignmentSchema,workflowUpdateRequestInputSchema,type ContractAdjustmentInput,type ContractBasisInput,type CostRequestInput,type CostRequestView,type WorkflowCommandResult,type WorkflowCommandVersion,type WorkflowContractView,type WorkflowDecisionInput,type WorkflowManagerAssignmentInput,type WorkflowNotificationView,type WorkflowUpdateRequestInput,type WorkflowAdjustmentView,type WorkflowProjectContext } from '../../../../shared/schemas/costs/cost-workflow'
+import { workflowDirectoryQuerySchema,type WorkflowDirectoryQuery,type WorkflowDirectory,type WorkflowRequestHistory,contractAdjustmentInputSchema,contractBasisInputSchema,costRequestInputSchema,workflowCommandVersionSchema,workflowDecisionInputSchema,workflowManagerAssignmentSchema,workflowUpdateRequestInputSchema,type ContractAdjustmentInput,type ContractBasisInput,type CostRequestInput,type CostRequestView,type WorkflowCommandResult,type WorkflowCommandVersion,type WorkflowContractView,type WorkflowDecisionInput,type WorkflowManagerAssignmentInput,type WorkflowNotificationView,type WorkflowUpdateRequestInput,type WorkflowAdjustmentView,type WorkflowProjectContext } from '../../../../shared/schemas/costs/cost-workflow'
 import { AppApiError } from '../../../utils/api-error'
 import type { WorkflowEvidenceContext } from './cost-workflow-evidence.service'
 export type WorkflowContext=WorkflowEvidenceContext
 export interface WorkflowRepository {
+ readDirectory(c:WorkflowContext,query:WorkflowDirectoryQuery):Promise<WorkflowDirectory>
+ readRequestHistory(c:WorkflowContext,p:string,id:string):Promise<WorkflowRequestHistory>
  assignManager(c:WorkflowContext,p:string,input:WorkflowManagerAssignmentInput,key:string):Promise<WorkflowCommandResult>
  createRequest(c:WorkflowContext,p:string,input:CostRequestInput,key:string):Promise<WorkflowCommandResult>
  updateRequest(c:WorkflowContext,p:string,id:string,input:WorkflowUpdateRequestInput,key:string):Promise<WorkflowCommandResult>
@@ -26,6 +28,8 @@ function permission(c:WorkflowContext,code:PermissionCode){if(!c.permissions.inc
 function parse<T>(schema:{parse(value:unknown):T},value:unknown):T{try{return schema.parse(value)}catch{throw new AppApiError(400,'INPUT_INVALID','Dữ liệu yêu cầu không hợp lệ.')}}
 export class CostWorkflowService {
  constructor(private readonly repository:WorkflowRepository){}
+ async readDirectory(c:WorkflowContext,value:unknown){if(!c.permissions.includes('cost.read')&&!c.permissions.includes('cost.request.read'))permission(c,'cost.request.read');return this.repository.readDirectory(c,parse(workflowDirectoryQuerySchema,value))}
+ async readRequestHistory(c:WorkflowContext,p:string,id:string){permission(c,'cost.request.read');return this.repository.readRequestHistory(c,p,id)}
  async assignManager(c:WorkflowContext,p:string,value:unknown,key:string){permission(c,'project.cost_manager.assign');return this.repository.assignManager(c,p,parse(workflowManagerAssignmentSchema,value),key)}
  async createRequest(c:WorkflowContext,p:string,value:unknown,key:string){permission(c,'cost.request.submit');return this.repository.createRequest(c,p,parse(costRequestInputSchema,value),key)}
  async updateRequest(c:WorkflowContext,p:string,id:string,value:unknown,key:string){permission(c,'cost.request.submit');return this.repository.updateRequest(c,p,id,parse(workflowUpdateRequestInputSchema,value),key)}

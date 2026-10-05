@@ -1,5 +1,5 @@
 import type { H3Event } from 'h3'
-import { getHeader,getRouterParam,readBody } from 'h3'
+import { getHeader,getQuery,getRouterParam,readBody } from 'h3'
 import { z } from 'zod'
 import { contractAdjustmentInputSchema,contractBasisInputSchema,costRequestInputSchema,workflowCommandVersionSchema,workflowDecisionInputSchema,workflowManagerAssignmentSchema,workflowUpdateRequestInputSchema,workflowPaymentInputSchema,cashAdjustmentInputSchema,workflowRefundConfirmationSchema } from '../../../../shared/schemas/costs/cost-workflow'
 import { workflowEvidenceIntentSchema,workflowEvidenceLinkSchema } from '../../../../shared/schemas/costs/cost-workflow-evidence'
@@ -29,6 +29,8 @@ async function body<T>(event:H3Event,schema:z.ZodType<T>){const parsed=schema.sa
 export function createCostWorkflowRoutes(deps:CostWorkflowRouteDependencies){
  async function resolved(event:H3Event,needsFinalizer=false){const context=await deps.resolveContext(event,param(event,'companyId'));return {context,extraction:deps.extractionService??new CostExtractionService(new SupabaseCostExtractionRepository(context.db),new OfflineCostExtractionAdapter()),reporting:deps.reportingService??new CostWorkflowReportingService(new SupabaseWorkflowReportingRepository(context.db)),cash:deps.cashService??new CostWorkflowCashService(new SupabaseWorkflowCashRepository(context.db)),service:deps.service??new CostWorkflowService(new SupabaseWorkflowRepository(context.db)),evidence:deps.evidenceService??new CostWorkflowEvidenceService(new SupabaseWorkflowEvidenceRepository(context.db,deps.finalizer??(needsFinalizer?deps.finalizerFactory?.():undefined)))}}
  return {
+ async readDirectory(event:H3Event){const v=await resolved(event);return v.service.readDirectory(v.context,getQuery(event))},
+ async readRequestHistory(event:H3Event){const v=await resolved(event);return v.service.readRequestHistory(v.context,param(event,'projectId'),param(event,'requestId'))},
  async extractEvidence(event:H3Event){const v=await resolved(event),input=await body(event,costExtractionCommandSchema);return v.extraction.extract(v.context,param(event,'projectId'),input.requestId,param(event,'evidenceFileId'),key(event))},
  async readWorkflowCash(event:H3Event){const v=await resolved(event);return v.reporting.readWorkflowCash(v.context,param(event,'projectId'))},
  async readInventory(event:H3Event){const v=await resolved(event);return v.reporting.readInventory(v.context,param(event,'projectId'))},

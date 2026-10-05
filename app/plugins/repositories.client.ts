@@ -14,6 +14,7 @@ import { createHttpCostSettingsRepository } from '../repositories/http/http-cost
 import { createHttpCostSourceReadRepository } from '../repositories/http/http-cost-source-read-repository'
 import { createHttpProjectCostRepository } from '../repositories/http/http-project-cost-repository'
 import { createHttpCostEvidenceRepository } from '../repositories/http/http-cost-evidence-repository'
+import {createHttpCostWorkflowRepository} from '../repositories/http/http-cost-workflow-repository'
 import { createHttpProjectFinanceRepository } from '../repositories/http/http-project-finance-repository'
 import type { SupabaseAuthRepository } from '../repositories/auth/supabase-auth.repository'
 import type { AuthenticatedHttpClient } from '../repositories/http/authenticated-http-client'
@@ -55,6 +56,7 @@ export default defineNuxtPlugin({
       costSourceRead: createHttpCostSourceReadRepository({ companyId: () => companyAccess.activeCompanyId ?? context.companyId, client }),
       projectCosts: createHttpProjectCostRepository({ companyId: () => companyAccess.activeCompanyId ?? context.companyId, client }),
       costEvidence: createHttpCostEvidenceRepository({ companyId: () => companyAccess.activeCompanyId ?? context.companyId, client }),
+      costWorkflow:createHttpCostWorkflowRepository({companyId:financeCompanyId,client}),
       projectFinance: createHttpProjectFinanceRepository({ companyId: financeCompanyId, client }),
     }
 

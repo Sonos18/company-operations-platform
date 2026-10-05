@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { apiErrorCodeSchema } from '../../../../shared/schemas/api-error'
-import { costRequestViewSchema,workflowAdjustmentViewSchema,workflowCommandResultSchema,workflowContractViewSchema,workflowNotificationViewSchema,workflowProjectContextSchema } from '../../../../shared/schemas/costs/cost-workflow'
+import { workflowDirectorySchema,workflowRequestHistorySchema,costRequestViewSchema,workflowAdjustmentViewSchema,workflowCommandResultSchema,workflowContractViewSchema,workflowNotificationViewSchema,workflowProjectContextSchema } from '../../../../shared/schemas/costs/cost-workflow'
 import type { UserSupabaseClient } from '../../../utils/supabase-client'
 import { AppApiError } from '../../../utils/api-error'
 import type { WorkflowContext,WorkflowRepository } from './cost-workflow.service'
@@ -19,6 +19,8 @@ export class SupabaseWorkflowRepository implements WorkflowRepository {
  private async read<T>(c:WorkflowContext,p:string|undefined,name:string,schema:z.ZodType<T>,targets:Record<string,unknown>={}){
   return workflowResponse(await this.client.rpc(name,{target_company_id:c.companyId,...(p?{target_project_id:p}:{}),...targets}),schema)
  }
+ readDirectory:WorkflowRepository['readDirectory']=(c,q)=>this.read(c,undefined,'c1_workflow_directory',workflowDirectorySchema,{target_after_id:q.afterId??null,target_page_size:q.pageSize})
+ readRequestHistory:WorkflowRepository['readRequestHistory']=(c,p,id)=>this.read(c,p,'c1_workflow_request_history',workflowRequestHistorySchema,{target_id:id})
  assignManager:WorkflowRepository['assignManager']=(c,p,input,key)=>this.command(c,p,'c1_workflow_assign_manager',input,key)
  createRequest:WorkflowRepository['createRequest']=(c,p,input,key)=>this.command(c,p,'c1_workflow_create_request',input,key)
  updateRequest:WorkflowRepository['updateRequest']=(c,p,id,input,key)=>this.command(c,p,'c1_workflow_update_request',input,key,{target_id:id})

@@ -91,3 +91,10 @@ export const workflowAdjustmentViewSchema=z.object({id:workflowUuidSchema,kind:z
 export type WorkflowAdjustmentView=z.infer<typeof workflowAdjustmentViewSchema>
 export const workflowProjectContextSchema=z.object({mode:z.enum(['legacy','document_backed_v1']),operationalState:z.enum(['active','completed','paused','unknown']),manager:z.object({userId:workflowUuidSchema,assignmentId:workflowUuidSchema,version,reason:text}).strict().nullable(),canSubmit:z.boolean(),canDecide:z.boolean(),canAssign:z.boolean(),eligibleManagers:z.array(z.object({userId:workflowUuidSchema,label:text}).strict())}).strict()
 export type WorkflowProjectContext=z.infer<typeof workflowProjectContextSchema>
+
+export const workflowDirectoryQuerySchema=z.object({afterId:workflowUuidSchema.optional(),pageSize:z.coerce.number().int().min(1).max(100).default(25)}).strict()
+export const workflowDirectorySchema=z.object({mode:z.enum(['legacy','document_backed_v1']),projects:z.array(z.object({projectId:workflowUuidSchema,code:text,name:text,operationalState:z.enum(['active','completed','paused','unknown'])}).strict()),nextCursor:workflowUuidSchema.nullable()}).strict()
+export type WorkflowDirectoryQuery=z.infer<typeof workflowDirectoryQuerySchema>
+export type WorkflowDirectory=z.infer<typeof workflowDirectorySchema>
+export const workflowRequestHistorySchema=z.array(z.object({id:workflowUuidSchema,version:z.number().int().positive(),input:z.union([costRequestInputSchema,contractAdjustmentInputSchema,cashAdjustmentInputSchema]),evidenceFileIds:ids,assignmentId:workflowUuidSchema,submittedBy:workflowUuidSchema,submittedAt:timestamp,decision:workflowDecisionViewSchema.nullable()}).strict())
+export type WorkflowRequestHistory=z.infer<typeof workflowRequestHistorySchema>
