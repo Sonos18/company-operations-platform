@@ -20,6 +20,7 @@ export const costBasisInputSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('direct_labor'), weekStart: date, workers: z.array(worker).min(1).max(1000) }).strict(),
   z.object({ kind: z.enum(['machinery', 'other']), lines: z.array(line).min(1).max(1000) }).strict(),
 ])
+export const workflowAccountingBasisSchema=z.object({vatBasis:text.optional(),roundingBasis:text.optional(),allowanceBasis:text.optional()}).strict().refine(value=>Object.keys(value).length>0,'Accounting basis must contain reviewed notes')
 export const costRequestInputSchema = z.object({
   partyId: workflowUuidSchema,
   partyKind: z.enum(['organization', 'crew']),
@@ -29,6 +30,7 @@ export const costRequestInputSchema = z.object({
   amount: workflowMoneySchema,
   currencyCode: workflowCurrencySchema,
   basis: costBasisInputSchema,
+  accountingBasis:workflowAccountingBasisSchema.optional(),
   evidenceFileIds: ids,
 }).strict().superRefine((value, context) => {
   if ((value.partyKind === 'crew') !== (value.crewOwnership !== undefined)) context.addIssue({ code: 'custom', path: ['crewOwnership'], message: 'Crew ownership must be explicit only for a crew' })
@@ -79,7 +81,7 @@ export type WorkflowUpdateRequestInput=z.infer<typeof workflowUpdateRequestInput
 export const workflowCommandResultSchema=z.object({requestId:workflowUuidSchema.optional(),installmentId:workflowUuidSchema.optional(),paymentId:workflowUuidSchema.optional(),adjustmentId:workflowUuidSchema.optional(),contractId:workflowUuidSchema.optional(),contractVersionId:workflowUuidSchema.optional(),assignmentId:workflowUuidSchema.optional(),notificationId:workflowUuidSchema.optional(),reconciliationId:workflowUuidSchema.optional(),version,replayed:z.boolean()}).strict()
 export const workflowPaymentViewSchema=z.object({id:workflowUuidSchema,amount:workflowMoneySchema,refunded:workflowMoneySchema,correctedCash:workflowMoneySchema,currencyCode:workflowCurrencySchema,paymentDate:date,version,evidenceFileIds:ids}).strict()
 export const workflowDecisionViewSchema=z.object({id:workflowUuidSchema,submittedVersionId:workflowUuidSchema,decision:z.enum(['approve','return']),reason:text.nullable(),assignmentId:workflowUuidSchema,decidedBy:workflowUuidSchema,decidedAt:timestamp}).strict()
-export const costRequestViewSchema=z.object({id:workflowUuidSchema,version,submittedVersionId:workflowUuidSchema.nullable(),status:z.enum(['working','submitted','returned','approved']),partyKind:z.enum(['organization','crew']),crewOwnership:z.enum(['vqh_internal','external']).nullable(),categoryId:workflowUuidSchema,contractVersionId:workflowUuidSchema.nullable(),latestDecision:workflowDecisionViewSchema.nullable(),partyId:workflowUuidSchema,amount:workflowMoneySchema,currencyCode:workflowCurrencySchema,evidenceFileIds:ids,assignmentVersion:version.nullable(),basis:costBasisInputSchema,installment:z.object({id:workflowUuidSchema,version,authorized:workflowMoneySchema,consumed:workflowMoneySchema,remaining:workflowMoneySchema}).strict().nullable(),payments:z.array(workflowPaymentViewSchema)}).strict()
+export const costRequestViewSchema=z.object({id:workflowUuidSchema,version,submittedVersionId:workflowUuidSchema.nullable(),status:z.enum(['working','submitted','returned','approved']),partyKind:z.enum(['organization','crew']),crewOwnership:z.enum(['vqh_internal','external']).nullable(),categoryId:workflowUuidSchema,contractVersionId:workflowUuidSchema.nullable(),latestDecision:workflowDecisionViewSchema.nullable(),partyId:workflowUuidSchema,amount:workflowMoneySchema,currencyCode:workflowCurrencySchema,evidenceFileIds:ids,assignmentVersion:version.nullable(),basis:costBasisInputSchema,accountingBasis:workflowAccountingBasisSchema.nullable().optional(),installment:z.object({id:workflowUuidSchema,version,authorized:workflowMoneySchema,consumed:workflowMoneySchema,remaining:workflowMoneySchema}).strict().nullable(),payments:z.array(workflowPaymentViewSchema)}).strict()
 export const workflowContractViewSchema=z.object({id:workflowUuidSchema,partyId:workflowUuidSchema,reference:text,currencyCode:workflowCurrencySchema,version:z.number().int().positive(),cap:workflowMoneySchema,evidenceFileIds:ids,sourceSubcontractId:workflowUuidSchema.nullable()}).strict()
 export type WorkflowContractView=z.infer<typeof workflowContractViewSchema>
 export const workflowNotificationViewSchema=z.object({id:workflowUuidSchema,projectId:workflowUuidSchema,decisionId:workflowUuidSchema,recipientId:workflowUuidSchema,deliveryState:z.enum(['available','undelivered']),readAt:timestamp.nullable(),createdAt:timestamp}).strict()

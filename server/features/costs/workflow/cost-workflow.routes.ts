@@ -8,6 +8,10 @@ import { AppApiError } from '../../../utils/api-error'
 import type { SupabaseEvidenceFinalizer } from '../../../utils/supabase-client'
 import { resolveCostEvidenceFinalizer } from '../evidence/cost-evidence.routes'
 import { c1RequestContext } from '../../c1-master-data/context'
+import {costExtractionCommandSchema} from '../../../../shared/schemas/costs/cost-extraction'
+import {CostExtractionService} from '../extraction/cost-extraction.service'
+import {SupabaseCostExtractionRepository} from '../extraction/cost-extraction.repository'
+import {OfflineCostExtractionAdapter} from '../extraction/cost-extraction-adapter'
 import {CostWorkflowReportingService} from '../finance/cost-workflow-reporting.service'
 import {SupabaseWorkflowReportingRepository} from '../finance/cost-workflow-reporting.repository'
 import { CostWorkflowCashService } from './cost-workflow-cash.service'
@@ -16,15 +20,16 @@ import { CostWorkflowService } from './cost-workflow.service'
 import { SupabaseWorkflowRepository } from './cost-workflow.repository'
 import { CostWorkflowEvidenceService } from './cost-workflow-evidence.service'
 import { SupabaseWorkflowEvidenceRepository } from './cost-workflow-evidence.repository'
-export interface CostWorkflowRouteDependencies {resolveContext(event:H3Event,companyId:string):ReturnType<typeof c1RequestContext>;service?:CostWorkflowService;reportingService?:CostWorkflowReportingService;cashService?:CostWorkflowCashService;evidenceService?:CostWorkflowEvidenceService;finalizer?:SupabaseEvidenceFinalizer;finalizerFactory?:()=>SupabaseEvidenceFinalizer}
+export interface CostWorkflowRouteDependencies {resolveContext(event:H3Event,companyId:string):ReturnType<typeof c1RequestContext>;service?:CostWorkflowService;extractionService?:CostExtractionService;reportingService?:CostWorkflowReportingService;cashService?:CostWorkflowCashService;evidenceService?:CostWorkflowEvidenceService;finalizer?:SupabaseEvidenceFinalizer;finalizerFactory?:()=>SupabaseEvidenceFinalizer}
 const uuid=z.string().uuid()
 function invalid():never{throw new AppApiError(400,'INPUT_INVALID','Dữ liệu yêu cầu không hợp lệ.')}
 function param(event:H3Event,name:string){const parsed=uuid.safeParse(getRouterParam(event,name));return parsed.success?parsed.data:invalid()}
 function key(event:H3Event){const parsed=uuid.safeParse(getHeader(event,'idempotency-key'));return parsed.success?parsed.data:invalid()}
 async function body<T>(event:H3Event,schema:z.ZodType<T>){const parsed=schema.safeParse(await readBody(event));return parsed.success?parsed.data:invalid()}
 export function createCostWorkflowRoutes(deps:CostWorkflowRouteDependencies){
- async function resolved(event:H3Event,needsFinalizer=false){const context=await deps.resolveContext(event,param(event,'companyId'));return {context,reporting:deps.reportingService??new CostWorkflowReportingService(new SupabaseWorkflowReportingRepository(context.db)),cash:deps.cashService??new CostWorkflowCashService(new SupabaseWorkflowCashRepository(context.db)),service:deps.service??new CostWorkflowService(new SupabaseWorkflowRepository(context.db)),evidence:deps.evidenceService??new CostWorkflowEvidenceService(new SupabaseWorkflowEvidenceRepository(context.db,deps.finalizer??(needsFinalizer?deps.finalizerFactory?.():undefined)))}}
+ async function resolved(event:H3Event,needsFinalizer=false){const context=await deps.resolveContext(event,param(event,'companyId'));return {context,extraction:deps.extractionService??new CostExtractionService(new SupabaseCostExtractionRepository(context.db),new OfflineCostExtractionAdapter()),reporting:deps.reportingService??new CostWorkflowReportingService(new SupabaseWorkflowReportingRepository(context.db)),cash:deps.cashService??new CostWorkflowCashService(new SupabaseWorkflowCashRepository(context.db)),service:deps.service??new CostWorkflowService(new SupabaseWorkflowRepository(context.db)),evidence:deps.evidenceService??new CostWorkflowEvidenceService(new SupabaseWorkflowEvidenceRepository(context.db,deps.finalizer??(needsFinalizer?deps.finalizerFactory?.():undefined)))}}
  return {
+ async extractEvidence(event:H3Event){const v=await resolved(event),input=await body(event,costExtractionCommandSchema);return v.extraction.extract(v.context,param(event,'projectId'),input.requestId,param(event,'evidenceFileId'),key(event))},
  async readWorkflowCash(event:H3Event){const v=await resolved(event);return v.reporting.readWorkflowCash(v.context,param(event,'projectId'))},
  async readInventory(event:H3Event){const v=await resolved(event);return v.reporting.readInventory(v.context,param(event,'projectId'))},
  async confirmPayment(event:H3Event){const v=await resolved(event);return v.cash.confirmPayment(v.context,param(event,'projectId'),param(event,'installmentId'),await body(event,workflowPaymentInputSchema),key(event))},
