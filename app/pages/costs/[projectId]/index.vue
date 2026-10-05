@@ -22,9 +22,11 @@ const overview = ref<FinanceOverview | null>(null)
 const status = ref<'loading' | 'ready' | 'module' | 'permission' | 'empty' | 'not_found' | 'error'>('loading')
 const requestTracker = createAsyncRequestTracker()
 
+const legacyWorkflowMode=useCostWorkflowMode()
+const legacyWritable=computed(()=>legacyWorkflowMode.mode.value==='legacy')
 const canRead = computed(() => companyAccess.hasPermission('cost.read'))
-const canManage = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && companyAccess.hasPermission('cost.manage'))
-const canPrepare = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && companyAccess.hasPermission('cost.prepare'))
+const canManage = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && legacyWritable.value && companyAccess.hasPermission('cost.manage'))
+const canPrepare = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && legacyWritable.value && companyAccess.hasPermission('cost.prepare'))
 const isDetailDraftListOpen = ref(false)
 
 const kpis = computed(() => computeProjectKpiCards(overview.value?.summary, overview.value?.project))

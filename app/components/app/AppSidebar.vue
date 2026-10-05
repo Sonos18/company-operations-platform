@@ -21,7 +21,9 @@ const emit = defineEmits<{
 
 const route = useRoute()
 const companyAccessStore = useNuxtApp().$companyAccessStore
-const visibleLinks = computed(() => filterNavigationLinks(canonicalNavigationLinks, companyAccessStore))
+const workflowMode=useCostWorkflowMode()
+watch(workflowMode.scope,()=>{workflowMode.invalidate();void workflowMode.refresh()},{immediate:true,flush:'sync'})
+const visibleLinks = computed(() => filterNavigationLinks(canonicalNavigationLinks, companyAccessStore,workflowMode.mode.value))
 
 function isActive(to: string) {
   if (route.path === to) return true
