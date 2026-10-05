@@ -46,7 +46,9 @@
     "db:dev:hr:concurrency": "node scripts/run-hr-invitation-cloud-dev.mjs concurrency",
     "db:dev:hr:cleanup": "node scripts/run-hr-invitation-cloud-dev.mjs cleanup",
     "db:dev:c1:cost-workflow:test": "node scripts/run-c1-cost-workflow-tests.mjs",
-    "db:dev:c1:cost-workflow:concurrency": "node scripts/run-c1-cost-workflow-concurrency.mjs"
+    "db:dev:c1:cost-workflow:concurrency": "node scripts/run-c1-cost-workflow-concurrency.mjs",
+    "db:dev:c1:cost-workflow:inventory": "node scripts/c1-cost-workflow-inventory.mjs",
+    "db:dev:c1:cost-workflow:reconcile": "node scripts/c1-cost-workflow-reconcile.mjs"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "5.3.0",

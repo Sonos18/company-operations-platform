@@ -1,0 +1,14 @@
+import {describe,expect,it,vi} from 'vitest'
+import {createHash} from 'node:crypto'
+import {reviewManifest,runReconciliation} from '../../../scripts/c1-cost-workflow-reconcile.mjs'
+const id='c1f50000-0000-4000-8000-000000000001'
+const input={legacyKind:'ordinary_detail',legacyId:id,actualOutgoing:'5',actualPaymentDate:'2026-10-04',evidenceFileIds:[id],reason:'Synthetic reviewed transfer',expectedLegacyHash:'a'.repeat(64)}
+const manifest={schemaVersion:1,projectRef:'gtgljlnhwvhqdnwrfdfj',companyId:id,projectId:id,inventoryScopeHash:'b'.repeat(64),review:{accountantReviewed:true,historicalCashOnly:true,noHistoricalApprovalFabricated:true,capMappingReviewed:false},items:[{idempotencyKey:id,input}]}
+const raw=JSON.stringify(manifest),sha=createHash('sha256').update(raw).digest('hex')
+describe('future historical cash reconciliation guard',()=>{
+ it('previews a manifest with scope, changes and unresolved cap without network access',async()=>{const rpc=vi.fn();const r=await runReconciliation({raw,execute:false,rpc});expect(r).toMatchObject({mode:'preview',manifestSha256:sha,changes:manifest.items,capMappingReviewed:false});expect(rpc).not.toHaveBeenCalled()})
+ it('rejects production, missing reviews, duplicate identities, unknown keys and invalid dates',()=>{for(const value of [{...manifest,projectRef:'mztakwksmqspjabpaigk'},{...manifest,review:{...manifest.review,accountantReviewed:false}},{...manifest,items:[...manifest.items,...manifest.items]},{...manifest,actorId:id},{...manifest,items:[{idempotencyKey:id,input:{...input,actualPaymentDate:'2026-02-30'}}]}])expect(()=>reviewManifest(JSON.stringify(value))).toThrow()})
+ it('requires exact reviewed-byte confirmation and independent execution authorization',async()=>{const rpc=vi.fn();for(const options of [{confirmation:'c'.repeat(64),authorization:sha},{confirmation:sha,authorization:''}])await expect(runReconciliation({raw,execute:true,rpc,...options})).rejects.toThrow();expect(rpc).not.toHaveBeenCalled()})
+ it('checks current inventory before any posting and stops on drift',async()=>{const rpc=vi.fn().mockResolvedValue({scopeHash:'c'.repeat(64)});await expect(runReconciliation({raw,execute:true,rpc,confirmation:sha,authorization:sha})).rejects.toThrow('WORKFLOW_INVENTORY_CHANGED');expect(rpc).toHaveBeenCalledTimes(1)})
+ it('resumes with stable per-row keys rather than inventing a new retry payment',async()=>{const rpc=vi.fn().mockResolvedValueOnce({scopeHash:manifest.inventoryScopeHash}).mockResolvedValueOnce({reconciliationId:id,version:1,replayed:true});const result=await runReconciliation({raw,execute:true,rpc,confirmation:sha,authorization:sha});expect(result.mode).toBe('executed');expect(rpc.mock.calls[1]?.[1]).toMatchObject({target_company_id:id,target_project_id:id,target_input:input,target_idempotency_key:id})})
+})
