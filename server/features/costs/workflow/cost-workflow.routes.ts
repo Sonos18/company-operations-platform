@@ -11,7 +11,7 @@ import { c1RequestContext } from '../../c1-master-data/context'
 import {costExtractionCommandSchema} from '../../../../shared/schemas/costs/cost-extraction'
 import {CostExtractionService} from '../extraction/cost-extraction.service'
 import {SupabaseCostExtractionRepository} from '../extraction/cost-extraction.repository'
-import {OfflineCostExtractionAdapter} from '../extraction/cost-extraction-adapter'
+import {createCostExtractionAdapter} from '../extraction/cost-extraction-config'
 import {CostWorkflowReportingService} from '../finance/cost-workflow-reporting.service'
 import {SupabaseWorkflowReportingRepository} from '../finance/cost-workflow-reporting.repository'
 import { CostWorkflowCashService } from './cost-workflow-cash.service'
@@ -27,7 +27,7 @@ function param(event:H3Event,name:string){const parsed=uuid.safeParse(getRouterP
 function key(event:H3Event){const parsed=uuid.safeParse(getHeader(event,'idempotency-key'));return parsed.success?parsed.data:invalid()}
 async function body<T>(event:H3Event,schema:z.ZodType<T>){const parsed=schema.safeParse(await readBody(event));return parsed.success?parsed.data:invalid()}
 export function createCostWorkflowRoutes(deps:CostWorkflowRouteDependencies){
- async function resolved(event:H3Event,needsFinalizer=false){const context=await deps.resolveContext(event,param(event,'companyId'));return {context,extraction:deps.extractionService??new CostExtractionService(new SupabaseCostExtractionRepository(context.db),new OfflineCostExtractionAdapter()),reporting:deps.reportingService??new CostWorkflowReportingService(new SupabaseWorkflowReportingRepository(context.db)),cash:deps.cashService??new CostWorkflowCashService(new SupabaseWorkflowCashRepository(context.db)),service:deps.service??new CostWorkflowService(new SupabaseWorkflowRepository(context.db)),evidence:deps.evidenceService??new CostWorkflowEvidenceService(new SupabaseWorkflowEvidenceRepository(context.db,deps.finalizer??(needsFinalizer?deps.finalizerFactory?.():undefined)))}}
+ async function resolved(event:H3Event,needsFinalizer=false){const context=await deps.resolveContext(event,param(event,'companyId'));return {context,extraction:deps.extractionService??new CostExtractionService(new SupabaseCostExtractionRepository(context.db),createCostExtractionAdapter()),reporting:deps.reportingService??new CostWorkflowReportingService(new SupabaseWorkflowReportingRepository(context.db)),cash:deps.cashService??new CostWorkflowCashService(new SupabaseWorkflowCashRepository(context.db)),service:deps.service??new CostWorkflowService(new SupabaseWorkflowRepository(context.db)),evidence:deps.evidenceService??new CostWorkflowEvidenceService(new SupabaseWorkflowEvidenceRepository(context.db,deps.finalizer??(needsFinalizer?deps.finalizerFactory?.():undefined)))}}
  return {
  async readDirectory(event:H3Event){const v=await resolved(event);return v.service.readDirectory(v.context,getQuery(event))},
  async readRequestHistory(event:H3Event){const v=await resolved(event);return v.service.readRequestHistory(v.context,param(event,'projectId'),param(event,'requestId'))},

@@ -12,12 +12,13 @@ const basis=z.discriminatedUnion('kind',[
 export const costExtractionResultSchema=z.object({
  status:z.enum(['ready','needs_review','unavailable','failed']),reviewRequired:z.literal(true),
  fields:z.object({partyHint:text.optional(),amount:workflowMoneySchema.optional(),currencyCode:workflowCurrencySchema.optional(),basis:basis.optional(),accountingBasis:workflowAccountingBasisSchema.optional()}).strict(),
- warnings:z.array(z.enum(['EXCEL_FILE_INVALID','EXCEL_ACTIVE_CONTENT_UNSUPPORTED','EXCEL_EXTERNAL_LINK_UNSUPPORTED','EXCEL_COORDINATE_LIMIT','EXCEL_LAYOUT_UNRECOGNIZED','EXCEL_MULTIPLE_SHEETS_REQUIRE_REVIEW','FORMULA_NOT_EVALUATED','PARTY_MATCH_REQUIRES_REVIEW','TOTAL_REQUIRES_REVIEW','INVALID_DATE_REQUIRES_REVIEW','NUMBER_FORMAT_REQUIRES_REVIEW','OCR_PROVIDER_NOT_CONFIGURED','LEGACY_XLS_PARSER_UNAVAILABLE','EXTRACTION_FILE_TOO_LARGE','EXTRACTION_RESULT_INVALID'])).max(100),
+ warnings:z.array(z.enum(['EXCEL_FILE_INVALID','EXCEL_ACTIVE_CONTENT_UNSUPPORTED','EXCEL_EXTERNAL_LINK_UNSUPPORTED','EXCEL_COORDINATE_LIMIT','EXCEL_LAYOUT_UNRECOGNIZED','EXCEL_MULTIPLE_SHEETS_REQUIRE_REVIEW','FORMULA_NOT_EVALUATED','PARTY_MATCH_REQUIRES_REVIEW','TOTAL_REQUIRES_REVIEW','INVALID_DATE_REQUIRES_REVIEW','NUMBER_FORMAT_REQUIRES_REVIEW','OCR_PROVIDER_NOT_CONFIGURED','LEGACY_XLS_PARSER_UNAVAILABLE','EXTRACTION_FILE_TOO_LARGE','EXTRACTION_RESULT_INVALID','OCR_PENDING','OCR_SCOPE_CHANGED','OCR_COVERAGE_UNVERIFIED','OCR_FREE_PAGE_LIMIT','OCR_FORMAT_UNSUPPORTED','OCR_FREE_QUOTA_EXHAUSTED','OCR_RATE_LIMITED','OCR_RESPONSE_UNCERTAIN'])).max(100),
  sourceLocations:z.array(z.object({field:z.string().min(1).max(160),sheet:z.string().min(1).max(100),row:z.number().int().min(1).max(5000),column:z.number().int().min(1).max(100)}).strict()).max(10000),
- methodVersion:z.enum(['excel-offline-v1','offline-unavailable-v1','synthetic-fixture-v1']),
+ providerLocations:z.array(z.object({field:z.string().min(1).max(160),pageNumber:z.number().int().min(1).max(2),polygon:z.array(z.number().finite().nonnegative()).min(8).max(32).refine(v=>v.length%2===0),confidence:z.number().finite().min(0).max(1).optional()}).strict()).max(10000).optional(),
+ methodVersion:z.enum(['azure-f0-v1','excel-offline-v1','offline-unavailable-v1','synthetic-fixture-v1']),
 }).strict()
 export type ExtractionResult=z.infer<typeof costExtractionResultSchema>
-export interface CostExtractionInput{fileId:string;mimeType:string;bytes:Uint8Array;scope:WorkflowScope}
+export interface CostExtractionInput{fileId:string;mimeType:string;bytes:Uint8Array;scope:WorkflowScope;documentKind?:string}
 export interface CostExtractionAdapter{extract(input:CostExtractionInput):Promise<ExtractionResult>}
 export const costExtractionCommandSchema=z.object({requestId:workflowUuidSchema.nullable()}).strict()
 export const costExtractionViewSchema=z.object({extractionId:workflowUuidSchema,fileId:workflowUuidSchema,requestId:workflowUuidSchema.nullable(),result:costExtractionResultSchema,replayed:z.boolean()}).strict()

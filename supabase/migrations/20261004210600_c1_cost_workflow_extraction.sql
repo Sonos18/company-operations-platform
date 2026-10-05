@@ -45,12 +45,16 @@ begin
  result:=target_input->'result';
  -- Non-authoritative suggestions only: JSON cannot become a request, grant, party or cash event.
  if octet_length(result::text)>300000 or jsonb_typeof(result) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
- perform private.c1_workflow_require_keys(result,array['status','reviewRequired','fields','warnings','sourceLocations','methodVersion'],array['status','reviewRequired','fields','warnings','sourceLocations','methodVersion']);
+ perform private.c1_workflow_require_keys(result,array['status','reviewRequired','fields','warnings','sourceLocations','methodVersion'],array['status','reviewRequired','fields','warnings','sourceLocations','methodVersion','providerLocations']);
  method:=result->>'methodVersion';state:=result->>'status';
- if method not in('excel-offline-v1','offline-unavailable-v1','synthetic-fixture-v1') or state not in('ready','needs_review','unavailable','failed') or result->'reviewRequired' is distinct from 'true'::jsonb
+ if method not in('azure-f0-v1','excel-offline-v1','offline-unavailable-v1','synthetic-fixture-v1') or state not in('ready','needs_review','unavailable','failed') or result->'reviewRequired' is distinct from 'true'::jsonb
  or jsonb_typeof(result->'fields') is distinct from 'object' or jsonb_typeof(result->'warnings') is distinct from 'array' or jsonb_typeof(result->'sourceLocations') is distinct from 'array'
  then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
  if jsonb_array_length(result->'warnings')>100 or jsonb_array_length(result->'sourceLocations')>10000 then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+ if result ? 'providerLocations' then
+  if method<>'azure-f0-v1' or jsonb_typeof(result->'providerLocations') is distinct from 'array' then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+  if jsonb_array_length(result->'providerLocations')>10000 then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+ end if;
  perform private.c1_workflow_require_keys(result->'fields',array[]::text[],array['partyHint','amount','currencyCode','basis','accountingBasis']);
  hash:=private.c1_workflow_hash(target_project_id,target_id,target_input);receipt:=private.c1_workflow_receipt(t,target_company_id,'cost_workflow.extract',target_idempotency_key,hash);
  if receipt.id is not null then
