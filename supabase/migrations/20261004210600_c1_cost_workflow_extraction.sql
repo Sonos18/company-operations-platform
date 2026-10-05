@@ -109,11 +109,14 @@ begin
   select * into contract from public.cost_workflow_contracts where source_subcontract_id=source_id and tenant_id=t and company_id=c and project_id=p for update;
   if not found then raise exception using errcode='P0001',message='CONTRACT_BASIS_REQUIRED';end if;
  else
-  -- The same original cannot silently be reclassified as a contract-free installment.
+  -- Compare every selected original hash against the existing primary basis.
+  -- Relabeling a copy as invoice/support cannot erase that established identity.
   if exists(select 1 from public.cost_workflow_contract_versions v join public.cost_evidence_files known on known.id=any(v.evidence_file_ids)
-    join public.cost_evidence_files selected on selected.id=any(ids) and selected.verified_sha256=known.verified_sha256 and selected.verified_sha256=any(private.c1_workflow_primary_basis_hashes(t,c,p,ids))
-    join public.cost_workflow_contracts identified on identified.id=v.contract_id and identified.party_id=party.id
-    where v.tenant_id=t and v.company_id=c and v.project_id=p and category.code<>'direct_labor')
+    join public.cost_evidence_files selected on selected.id=any(ids) and selected.verified_sha256=known.verified_sha256
+    where v.tenant_id=t and v.company_id=c and v.project_id=p
+    and known.tenant_id=t and known.company_id=c and known.project_id=p and known.status='finalized'
+    and selected.tenant_id=t and selected.company_id=c and selected.project_id=p and selected.status='finalized'
+    and known.verified_sha256=any(private.c1_workflow_primary_basis_hashes(t,c,p,v.evidence_file_ids)))
   then raise exception using errcode='P0001',message='CONTRACT_BASIS_REQUIRED';end if;
  end if;
  -- Explicit version selection must still refer to the same identified basis.
@@ -122,7 +125,10 @@ begin
   select 1 from public.cost_workflow_contract_versions v join public.cost_evidence_files known on known.id=any(v.evidence_file_ids)
   where v.tenant_id=t and v.company_id=c and v.project_id=p and v.contract_id<>contract.id
   and known.tenant_id=t and known.company_id=c and known.project_id=p
-  and known.verified_sha256=any(private.c1_workflow_primary_basis_hashes(t,c,p,ids))
+  and known.verified_sha256=any(private.c1_workflow_primary_basis_hashes(t,c,p,v.evidence_file_ids))
+  and exists(select 1 from public.cost_evidence_files selected where selected.id=any(ids)
+   and selected.tenant_id=t and selected.company_id=c and selected.project_id=p and selected.status='finalized'
+   and selected.verified_sha256=known.verified_sha256)
  ) then raise exception using errcode='P0001',message='CONTRACT_REFERENCE_CONFLICT';end if;
  if contract.id is not null and (contract.party_id<>party.id or contract.currency_code<>currency or (source_id is not null and contract.source_subcontract_id is distinct from source_id))
  then raise exception using errcode='P0001',message='RESOURCE_NOT_FOUND';end if;
@@ -132,7 +138,7 @@ end;$$;
 create or replace function private.c1_workflow_request_view(request_id uuid) returns jsonb
 language sql stable security definer set search_path='' as $$
  select jsonb_build_object('id',r.id,'version',r.version,'submittedVersionId',r.submitted_version_id,'status',r.state,
- 'partyId',r.party_id,'partyKind',r.working_input->>'partyKind','crewOwnership',r.working_input->>'crewOwnership',
+ 'partyId',r.party_id,'partyName',(select party.display_name from public.business_parties party where party.id=r.party_id and party.tenant_id=r.tenant_id and party.company_id=r.company_id),'partyKind',r.working_input->>'partyKind','crewOwnership',r.working_input->>'crewOwnership',
  'categoryId',r.category_id,'contractVersionId',r.working_input->>'contractVersionId','latestDecision',private.c1_workflow_decision_view(r.submitted_version_id),
  'amount',r.working_input->>'amount','currencyCode',r.working_input->>'currencyCode','evidenceFileIds',r.working_input->'evidenceFileIds','basis',r.working_input->'basis','accountingBasis',r.working_input->'accountingBasis',
  'assignmentVersion',(select a.assignment_version from public.cost_workflow_manager_assignments a where a.tenant_id=r.tenant_id and a.company_id=r.company_id and a.project_id=r.project_id order by a.assignment_version desc limit 1),

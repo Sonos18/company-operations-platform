@@ -48,3 +48,10 @@ end;$$;
 
 revoke all on function public.c1_workflow_directory(uuid,uuid,integer),public.c1_workflow_request_history(uuid,uuid,uuid) from public,anon,authenticated,service_role;
 grant execute on function public.c1_workflow_directory(uuid,uuid,integer),public.c1_workflow_request_history(uuid,uuid,uuid) to authenticated;
+
+-- The request refers to an immutable version, never the parent contract UUID.
+create or replace function private.c1_workflow_contract_view(contract_id uuid) returns jsonb
+language sql stable security definer set search_path='' as $$
+ select jsonb_build_object('id',c.id,'versionId',v.id,'partyId',c.party_id,'reference',c.reference,'currencyCode',c.currency_code,'version',c.current_version,'cap',v.cap::text,'evidenceFileIds',v.evidence_file_ids,'sourceSubcontractId',c.source_subcontract_id)
+ from public.cost_workflow_contracts c join public.cost_workflow_contract_versions v on v.contract_id=c.id and v.version=c.current_version and v.tenant_id=c.tenant_id and v.company_id=c.company_id and v.project_id=c.project_id where c.id=$1;
+$$;

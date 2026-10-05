@@ -104,7 +104,7 @@ begin
  select coalesce(jsonb_agg(x.contract_id order by x.contract_id),'[]'::jsonb) into missing from(
  select distinct contract.id contract_id from public.cost_workflow_contracts contract where contract.tenant_id=t and contract.company_id=c and contract.project_id=p
  and (exists(select 1 from public.project_subcontract_payments a where a.project_subcontract_id=contract.source_subcontract_id and a.status='recorded' and not exists(select 1 from public.cost_workflow_payments w where w.subcontract_payment_id=a.id))
- or exists(select 1 from public.project_cost_items i where i.tenant_id=t and i.company_id=c and i.project_id=p and (i.party_id=contract.party_id or i.party_id is null) and i.publication_state='published' and not exists(select 1 from public.cost_categories excluded where excluded.id=i.category_id and excluded.tenant_id=t and excluded.company_id=c and excluded.code='subcontract_labor')))) x;
+ or exists(select 1 from public.project_cost_items i where i.tenant_id=t and i.company_id=c and i.project_id=p and (i.party_id=contract.party_id or i.party_id is null) and i.publication_state='published' and not exists(select 1 from public.cost_categories excluded where excluded.id=i.cost_category_id and excluded.tenant_id=t and excluded.company_id=c and excluded.code='subcontract_labor')))) x;
  select coalesce(jsonb_agg(jsonb_build_object('kind','same_verified_original','identities',x.ids)),'[]'::jsonb) into duplicates from(
  select jsonb_agg(f.id order by f.id) ids from public.cost_evidence_files f where f.tenant_id=t and f.company_id=c and f.project_id=p and f.verified_sha256 is not null group by f.verified_sha256 having count(*)>1) x;
 
@@ -252,7 +252,7 @@ begin
  then raise exception using errcode='P0001',message='LEGACY_RECONCILIATION_REQUIRED';end if;
  -- Published ordinary history cannot establish the full approved/unpaid cap.
  -- No opening mapping exists yet; cash-only reconciliation never unlocks it.
- if exists(select 1 from public.project_cost_items legacy left join public.cost_categories legacy_category on legacy_category.id=legacy.category_id and legacy_category.tenant_id=t and legacy_category.company_id=c
+ if exists(select 1 from public.project_cost_items legacy left join public.cost_categories legacy_category on legacy_category.id=legacy.cost_category_id and legacy_category.tenant_id=t and legacy_category.company_id=c
  where legacy.tenant_id=t and legacy.company_id=c and legacy.project_id=p
  and (legacy.party_id=contract.party_id or legacy.party_id is null) and legacy.publication_state='published'
  and (legacy_category.code is null or legacy_category.code<>'subcontract_labor'))
