@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(75);
+select plan(80);
 select ok((select relrowsecurity and relforcerowsecurity from pg_class where oid='public.cost_workflow_companies'::regclass),'cost_workflow_companies forces RLS');
 select ok(not has_table_privilege('authenticated','public.cost_workflow_companies','INSERT,UPDATE,DELETE,TRUNCATE'),'cost_workflow_companies has no direct authenticated DML');
 select ok(not has_table_privilege('anon','public.cost_workflow_companies','SELECT,INSERT,UPDATE,DELETE,TRUNCATE'),'cost_workflow_companies has no anonymous privileges');
@@ -77,5 +77,10 @@ select ok(not has_table_privilege('authenticated','public.cost_workflow_extracti
 select ok(not has_table_privilege('anon','public.cost_workflow_extractions','SELECT,INSERT,UPDATE,DELETE,TRUNCATE'),'cost_workflow_extractions has no anonymous privileges');
 select ok(not has_table_privilege('service_role','public.cost_workflow_extractions','SELECT,INSERT,UPDATE,DELETE,TRUNCATE'),'cost_workflow_extractions requires reviewed commands even for service role');
 select ok(exists(select 1 from pg_trigger where tgrelid='public.cost_workflow_extractions'::regclass and not tgisinternal and tgname='cost_workflow_extractions_retain'),'cost_workflow_extractions retains history');
+select ok((select relrowsecurity and relforcerowsecurity from pg_class where oid='public.cost_workflow_cash_proof_claims'::regclass),'cash proof claims force RLS');
+select ok(not has_table_privilege('authenticated','public.cost_workflow_cash_proof_claims','INSERT,UPDATE,DELETE,TRUNCATE'),'cash proof claims have no direct authenticated DML');
+select ok(not has_table_privilege('anon','public.cost_workflow_cash_proof_claims','SELECT,INSERT,UPDATE,DELETE,TRUNCATE'),'cash proof claims have no anonymous privileges');
+select ok(not has_table_privilege('service_role','public.cost_workflow_cash_proof_claims','SELECT,INSERT,UPDATE,DELETE,TRUNCATE'),'cash proof claims require reviewed commands');
+select ok(exists(select 1 from pg_trigger where tgrelid='public.cost_workflow_cash_proof_claims'::regclass and not tgisinternal and tgname='c1_workflow_cash_proof_claims_retain'),'cash proof claims retain history');
 select * from finish();
 rollback;

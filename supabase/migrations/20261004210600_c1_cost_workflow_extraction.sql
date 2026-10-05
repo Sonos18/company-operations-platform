@@ -111,11 +111,19 @@ begin
  else
   -- The same original cannot silently be reclassified as a contract-free installment.
   if exists(select 1 from public.cost_workflow_contract_versions v join public.cost_evidence_files known on known.id=any(v.evidence_file_ids)
-    join public.cost_evidence_files selected on selected.id=any(ids) and selected.verified_sha256=known.verified_sha256
+    join public.cost_evidence_files selected on selected.id=any(ids) and selected.verified_sha256=known.verified_sha256 and selected.verified_sha256=any(private.c1_workflow_primary_basis_hashes(t,c,p,ids))
     join public.cost_workflow_contracts identified on identified.id=v.contract_id and identified.party_id=party.id
     where v.tenant_id=t and v.company_id=c and v.project_id=p and category.code<>'direct_labor')
   then raise exception using errcode='P0001',message='CONTRACT_BASIS_REQUIRED';end if;
  end if;
+ -- Explicit version selection must still refer to the same identified basis.
+ -- Other supporting documents do not establish a separate cap identity.
+ if contract.id is not null and exists(
+  select 1 from public.cost_workflow_contract_versions v join public.cost_evidence_files known on known.id=any(v.evidence_file_ids)
+  where v.tenant_id=t and v.company_id=c and v.project_id=p and v.contract_id<>contract.id
+  and known.tenant_id=t and known.company_id=c and known.project_id=p
+  and known.verified_sha256=any(private.c1_workflow_primary_basis_hashes(t,c,p,ids))
+ ) then raise exception using errcode='P0001',message='CONTRACT_REFERENCE_CONFLICT';end if;
  if contract.id is not null and (contract.party_id<>party.id or contract.currency_code<>currency or (source_id is not null and contract.source_subcontract_id is distinct from source_id))
  then raise exception using errcode='P0001',message='RESOURCE_NOT_FOUND';end if;
  return jsonb_build_object('partyId',party.id,'categoryId',category.id,'contractId',contract.id,'contractVersionId',given_version,'amount',amount::text,'currencyCode',currency,'evidenceFileIds',ids);

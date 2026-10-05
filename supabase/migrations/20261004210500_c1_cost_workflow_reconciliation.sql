@@ -104,7 +104,7 @@ begin
  select coalesce(jsonb_agg(x.contract_id order by x.contract_id),'[]'::jsonb) into missing from(
  select distinct contract.id contract_id from public.cost_workflow_contracts contract where contract.tenant_id=t and contract.company_id=c and contract.project_id=p
  and (exists(select 1 from public.project_subcontract_payments a where a.project_subcontract_id=contract.source_subcontract_id and a.status='recorded' and not exists(select 1 from public.cost_workflow_payments w where w.subcontract_payment_id=a.id))
- or exists(select 1 from public.project_cost_items i where i.tenant_id=t and i.company_id=c and i.project_id=p and i.party_id=contract.party_id and i.publication_state='published'))) x;
+ or exists(select 1 from public.project_cost_items i where i.tenant_id=t and i.company_id=c and i.project_id=p and (i.party_id=contract.party_id or i.party_id is null) and i.publication_state='published' and not exists(select 1 from public.cost_categories excluded where excluded.id=i.category_id and excluded.tenant_id=t and excluded.company_id=c and excluded.code='subcontract_labor')))) x;
  select coalesce(jsonb_agg(jsonb_build_object('kind','same_verified_original','identities',x.ids)),'[]'::jsonb) into duplicates from(
  select jsonb_agg(f.id order by f.id) ids from public.cost_evidence_files f where f.tenant_id=t and f.company_id=c and f.project_id=p and f.verified_sha256 is not null group by f.verified_sha256 having count(*)>1) x;
 
@@ -158,6 +158,7 @@ begin
  end if;
  hash:=private.c1_workflow_hash(target_project_id,legacy_id,target_input);receipt:=private.c1_workflow_receipt(t,target_company_id,'cost_workflow.reconcile_legacy_cash',target_idempotency_key,hash);
  if receipt.id is not null then return jsonb_build_object('reconciliationId',receipt.result_resource_id,'version',receipt.result_version,'replayed',true);end if;
+ if amount>0 then perform private.c1_workflow_require_unused_cash_proof(t,target_company_id,target_project_id,ids);end if;
  -- Serialize against supported legacy commands before testing the exact reviewed snapshot.
  if kind='ordinary_detail' then
   perform 1 from public.project_cost_items i join public.project_cost_item_details d on d.project_cost_item_id=i.id and d.tenant_id=i.tenant_id and d.company_id=i.company_id
@@ -184,6 +185,7 @@ begin
  if payment_id is not null then
   insert into public.cost_workflow_payments(id,tenant_id,company_id,project_id,installment_id,legacy_reconciliation_id,cash_kind,ordinary_amount,subcontract_payment_id,currency_code,payment_date,reference,evidence_file_ids,confirmed_by,cash_event_hash)
   values(payment_id,t,target_company_id,target_project_id,null,mapping_id,case when kind='ordinary_detail' then 'ordinary' else 'subcontract' end,case when kind='ordinary_detail' then amount end,case when kind='subcontract_payment' then legacy_id end,currency,actual_date,'legacy:'||kind||':'||legacy_id::text,ids,auth.uid(),event_hash);
+  perform private.c1_workflow_claim_cash_proof(t,target_company_id,target_project_id,ids,payment_id,null);
   insert into public.cost_workflow_cash_states(payment_id,tenant_id,company_id,project_id) values(payment_id,t,target_company_id,target_project_id);
  end if;
  perform private.c1_workflow_record_command(t,target_company_id,'cost_workflow.reconcile_legacy_cash',target_idempotency_key,hash,mapping_id,1,target_request_id,jsonb_build_object('projectId',target_project_id,'legacyKind',kind,'legacyId',legacy_id,'legacyHash',record->>'legacyHash','actualOutgoing',amount::text,'paymentId',payment_id,'evidenceFileIds',ids,'reason',reason,'historicalApprovalCreated',false));
@@ -247,6 +249,13 @@ begin
  if contract.source_subcontract_id is not null and exists(select 1 from public.project_subcontract_payments old
  where old.project_subcontract_id=contract.source_subcontract_id and old.status='recorded'
  and not exists(select 1 from public.cost_workflow_payments mapped where mapped.subcontract_payment_id=old.id and mapped.installment_id is not null))
+ then raise exception using errcode='P0001',message='LEGACY_RECONCILIATION_REQUIRED';end if;
+ -- Published ordinary history cannot establish the full approved/unpaid cap.
+ -- No opening mapping exists yet; cash-only reconciliation never unlocks it.
+ if exists(select 1 from public.project_cost_items legacy left join public.cost_categories legacy_category on legacy_category.id=legacy.category_id and legacy_category.tenant_id=t and legacy_category.company_id=c
+ where legacy.tenant_id=t and legacy.company_id=c and legacy.project_id=p
+ and (legacy.party_id=contract.party_id or legacy.party_id is null) and legacy.publication_state='published'
+ and (legacy_category.code is null or legacy_category.code<>'subcontract_labor'))
  then raise exception using errcode='P0001',message='LEGACY_RECONCILIATION_REQUIRED';end if;
  select v.cap into cap from public.cost_workflow_contract_versions v where v.contract_id=contract.id and v.version=contract.current_version;
  select coalesce(sum(i.authorized_amount),0) into authorized from public.cost_workflow_installments i where i.contract_id=contract.id and i.tenant_id=t and i.company_id=c and i.project_id=p;

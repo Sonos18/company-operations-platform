@@ -26,6 +26,36 @@ begin
  loop execute format('alter table public.cost_workflow_payments alter constraint %I deferrable initially deferred',f.conname);end loop;
 end;$fk$;
 
+-- A database uniqueness constraint closes proof races even at repeatable-read.
+-- Ambiguous shared transfer proof is blocked pending an explicitly reviewed allocation path.
+create table public.cost_workflow_cash_proof_claims(
+ tenant_id uuid not null,company_id uuid not null,project_id uuid not null,
+ proof_sha256 text not null check(proof_sha256 ~ '^[a-f0-9]{64}$'),
+ payment_id uuid,refund_id uuid,claimed_at timestamptz not null default now(),
+ primary key(tenant_id,company_id,proof_sha256),
+ check((payment_id is not null)::integer+(refund_id is not null)::integer=1),
+ foreign key(project_id,tenant_id,company_id) references public.projects(id,tenant_id,company_id) on delete restrict,
+ foreign key(payment_id,tenant_id,company_id,project_id) references public.cost_workflow_payments(id,tenant_id,company_id,project_id) on delete restrict,
+ foreign key(refund_id,tenant_id,company_id,project_id) references public.cost_workflow_refunds(id,tenant_id,company_id,project_id) on delete restrict
+);
+alter table public.cost_workflow_cash_proof_claims enable row level security;
+alter table public.cost_workflow_cash_proof_claims force row level security;
+revoke all on public.cost_workflow_cash_proof_claims from public,anon,authenticated,service_role;
+grant select on public.cost_workflow_cash_proof_claims to authenticated;
+create policy c1_workflow_cash_proof_claims_read on public.cost_workflow_cash_proof_claims for select to authenticated using(private.c1_workflow_can_read(tenant_id,company_id,project_id));
+create trigger c1_workflow_cash_proof_claims_retain before update or delete on public.cost_workflow_cash_proof_claims for each row execute function private.c1_workflow_retain_history();
+
+create function private.c1_workflow_claim_cash_proof(t uuid,c uuid,p uuid,ids uuid[],outgoing_id uuid,incoming_id uuid) returns void
+language plpgsql volatile security definer set search_path='' as $$
+begin
+ insert into public.cost_workflow_cash_proof_claims(tenant_id,company_id,project_id,proof_sha256,payment_id,refund_id)
+ select distinct t,c,p,f.verified_sha256,outgoing_id,incoming_id from public.cost_evidence_files f
+ where f.id=any(ids) and f.tenant_id=t and f.company_id=c and f.project_id=p and f.status='finalized'
+ and (f.workflow_evidence_kind='payment_proof' or exists(select 1 from public.cost_evidence_links l where l.evidence_file_id=f.id and l.tenant_id=t and l.company_id=c and l.project_id=p and l.evidence_kind='payment_proof'));
+exception when unique_violation then raise exception using errcode='P0001',message='CASH_DUPLICATE_EVENT';
+end;$$;
+revoke all on function private.c1_workflow_claim_cash_proof(uuid,uuid,uuid,uuid[],uuid,uuid) from public,anon,authenticated,service_role;
+
 create function private.c1_workflow_require_cash_proof(t uuid,c uuid,p uuid,ids uuid[]) returns void
 language plpgsql stable security definer set search_path='' as $$
 begin
@@ -34,6 +64,41 @@ begin
  (f.workflow_evidence_kind='payment_proof' or exists(select 1 from public.cost_evidence_links l where l.evidence_file_id=f.id and l.tenant_id=t and l.company_id=c and l.project_id=p and l.evidence_kind='payment_proof')))
  then raise exception using errcode='P0001',message='CASH_PROOF_REQUIRED';end if;
 end;$$;
+-- New cash needs an original filed for this exact payment/refund target.
+-- The existing targetless helper remains only for explicitly reviewed legacy cash.
+create function private.c1_workflow_require_cash_target_proof(t uuid,c uuid,p uuid,ids uuid[],expected_target_kind text,expected_target_id uuid,expected_source_payment_id uuid) returns void
+language plpgsql stable security definer set search_path='' as $$
+begin
+ perform private.c1_workflow_require_cash_proof(t,c,p,ids);
+ if expected_target_id is null or expected_target_kind not in('payment','adjustment') or not exists(
+  select 1 from public.cost_evidence_files f where f.id=any(ids) and f.tenant_id=t and f.company_id=c and f.project_id=p and f.status='finalized'
+  and f.workflow_origin and f.workflow_evidence_kind='payment_proof'
+  and ((f.workflow_target_kind=expected_target_kind and f.workflow_target_id=expected_target_id)
+   or (expected_target_kind='adjustment' and expected_source_payment_id is not null and f.workflow_target_kind='adjustment_source' and f.workflow_target_id=expected_source_payment_id))
+ ) then raise exception using errcode='P0001',message='CASH_PROOF_REQUIRED';end if;
+end;$$;
+revoke all on function private.c1_workflow_require_cash_target_proof(uuid,uuid,uuid,uuid[],text,uuid,uuid) from public,anon,authenticated,service_role;
+-- A used financial proof is an ambiguity/conflict, not an inferred new event.
+-- Reference edits, amount/date edits and duplicate original uploads cannot bypass
+-- this conservative guard. Shared-transfer allocation needs a separately reviewed path.
+create function private.c1_workflow_require_unused_cash_proof(t uuid,c uuid,p uuid,ids uuid[]) returns void
+language plpgsql volatile security definer set search_path='' as $$
+declare proof_hash text;
+begin
+ for proof_hash in select distinct f.verified_sha256 from public.cost_evidence_files f
+ where f.id=any(ids) and f.tenant_id=t and f.company_id=c and f.project_id=p and f.status='finalized'
+ and (f.workflow_evidence_kind='payment_proof' or exists(select 1 from public.cost_evidence_links l where l.evidence_file_id=f.id and l.tenant_id=t and l.company_id=c and l.project_id=p and l.evidence_kind='payment_proof'))
+ order by f.verified_sha256
+ loop
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('c1-workflow-proof:'||t::text||':'||c::text||':'||proof_hash,0));
+  if exists(select 1 from public.cost_workflow_payments previous join public.cost_evidence_files known on known.id=any(previous.evidence_file_ids)
+    where previous.tenant_id=t and previous.company_id=c and known.tenant_id=t and known.company_id=c and known.verified_sha256=proof_hash)
+   or exists(select 1 from public.cost_workflow_refunds previous join public.cost_evidence_files known on known.id=any(previous.evidence_file_ids)
+    where previous.tenant_id=t and previous.company_id=c and known.tenant_id=t and known.company_id=c and known.verified_sha256=proof_hash)
+  then raise exception using errcode='P0001',message='CASH_DUPLICATE_EVENT';end if;
+ end loop;
+end;$$;
+revoke all on function private.c1_workflow_require_unused_cash_proof(uuid,uuid,uuid,uuid[]) from public,anon,authenticated,service_role;
 create function private.c1_workflow_cash_event_hash(t uuid,c uuid,p uuid,kind text,input jsonb,ids uuid[]) returns text
 language sql stable security definer set search_path='' as $$
  select encode(extensions.digest(convert_to(private.c1_jsonb_canonical_text(jsonb_build_object('kind',kind,'input',input,'originalHashes',
@@ -70,7 +135,7 @@ begin
  expected:=private.c1_detail_expected_version(target_input);select money_scale into scale from public.company_cost_settings where tenant_id=t and company_id=target_company_id and enabled;
  amount:=private.c1_workflow_money(target_input->'amount',scale);payment_date:=private.c1_workflow_date(target_input->'paymentDate');reference:=private.c1_workflow_text(target_input->'reference');
  if amount<=0 or private.c1_workflow_text(target_input->'currencyCode')<>installment.currency_code then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
- ids:=private.c1_workflow_evidence_ids(target_input->'evidenceFileIds');perform private.c1_workflow_require_cash_proof(t,target_company_id,target_project_id,ids);
+ ids:=private.c1_workflow_evidence_ids(target_input->'evidenceFileIds');perform private.c1_workflow_require_cash_target_proof(t,target_company_id,target_project_id,ids,'payment',installment.id,null);
  hash:=private.c1_workflow_hash(target_project_id,target_id,target_input);receipt:=private.c1_workflow_receipt(t,target_company_id,'cost_workflow.confirm_payment',target_idempotency_key,hash);
  if receipt.id is not null then return jsonb_build_object('paymentId',receipt.result_resource_id,'version',receipt.result_version,'replayed',true);end if;
  if state='completed' and not exists(select 1 from public.cost_workflow_completion_installments h where h.installment_id=installment.id and h.tenant_id=t and h.company_id=target_company_id and h.project_id=target_project_id)
@@ -79,15 +144,17 @@ begin
  select count(*),coalesce(sum(x.amount),0) into payment_version,consumed from public.cost_workflow_consumptions x where x.installment_id=installment.id;
  if payment_version<>expected then raise exception using errcode='P0001',message='VERSION_CONFLICT';end if;
  if consumed+amount>installment.authorized_amount then raise exception using errcode='P0001',message='CASH_AUTHORITY_EXCEEDED';end if;
- event_hash:=private.c1_workflow_cash_event_hash(t,target_company_id,target_project_id,'payment',jsonb_build_object('amount',amount::numeric(20,4)::text,'currency',installment.currency_code,'date',payment_date,'reference',reference),ids);
+ event_hash:=private.c1_workflow_cash_event_hash(t,target_company_id,target_project_id,'payment',jsonb_build_object('amount',amount::numeric(20,4)::text,'currency',installment.currency_code,'date',payment_date),ids);
  if exists(select 1 from public.cost_workflow_payments p where p.tenant_id=t and p.company_id=target_company_id and p.project_id=target_project_id and p.cash_event_hash=event_hash) then raise exception using errcode='P0001',message='CASH_DUPLICATE_EVENT';end if;
  select v.snapshot->'basis' into basis from public.cost_workflow_request_versions v join public.cost_workflow_requests r on r.submitted_version_id=v.id where r.id=installment.request_id;
  if basis->>'kind'='subcontract' then
   if contract.source_subcontract_id is null or contract.source_subcontract_id is distinct from (basis->>'subcontractId')::uuid then raise exception using errcode='P0001',message='CONTRACT_BASIS_REQUIRED';end if;
   canonical_id:=gen_random_uuid();
  end if;
+ perform private.c1_workflow_require_unused_cash_proof(t,target_company_id,target_project_id,ids);
  insert into public.cost_workflow_payments(tenant_id,company_id,project_id,installment_id,cash_kind,ordinary_amount,subcontract_payment_id,currency_code,payment_date,reference,evidence_file_ids,confirmed_by,cash_event_hash)
  values(t,target_company_id,target_project_id,installment.id,case when canonical_id is null then 'ordinary' else 'subcontract' end,case when canonical_id is null then amount end,canonical_id,installment.currency_code,payment_date,reference,ids,auth.uid(),event_hash) returning * into payment;
+ perform private.c1_workflow_claim_cash_proof(t,target_company_id,target_project_id,ids,payment.id,null);
  insert into public.cost_workflow_consumptions(tenant_id,company_id,project_id,installment_id,payment_id,amount) values(t,target_company_id,target_project_id,installment.id,payment.id,amount);
  insert into public.cost_workflow_cash_states(payment_id,tenant_id,company_id,project_id) values(payment.id,t,target_company_id,target_project_id);
  if canonical_id is not null then
@@ -197,9 +264,10 @@ begin
  expected:=private.c1_detail_expected_version(target_input);select money_scale into scale from public.company_cost_settings where tenant_id=t and company_id=target_company_id and enabled;
  amount:=private.c1_workflow_money(target_input->'amount',scale);received_date:=private.c1_workflow_date(target_input->'receivedDate');ids:=private.c1_workflow_evidence_ids(target_input->'evidenceFileIds');
  if amount<=0 then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
- perform private.c1_workflow_require_cash_proof(t,target_company_id,target_project_id,ids);
+ perform private.c1_workflow_require_cash_target_proof(t,target_company_id,target_project_id,ids,'adjustment',request.id,payment.id);
  hash:=private.c1_workflow_hash(target_project_id,target_id,target_input);receipt:=private.c1_workflow_receipt(t,target_company_id,'cost_workflow.confirm_refund',target_idempotency_key,hash);
  if receipt.id is not null then return jsonb_build_object('adjustmentId',target_id,'paymentId',receipt.result_resource_id,'version',receipt.result_version,'replayed',true);end if;
+ perform private.c1_workflow_require_unused_cash_proof(t,target_company_id,target_project_id,ids);
  select * into cash_state from public.cost_workflow_cash_states where payment_id=payment.id for update;
  if not found then raise exception using errcode='P0001',message='VERSION_CONFLICT';end if;
  select * into request from public.cost_workflow_requests where id=request.id for update;
@@ -213,6 +281,7 @@ begin
  if exists(select 1 from public.cost_workflow_refunds r where r.tenant_id=t and r.company_id=target_company_id and r.project_id=target_project_id and r.cash_event_hash=event_hash) then raise exception using errcode='P0001',message='CASH_DUPLICATE_EVENT';end if;
  insert into public.cost_workflow_refunds(tenant_id,company_id,project_id,source_payment_id,request_id,decision_id,amount,received_date,evidence_file_ids,confirmed_by,cash_event_hash)
  values(t,target_company_id,target_project_id,payment.id,request.id,decision.id,amount,received_date,ids,auth.uid(),event_hash) returning * into refund;
+ perform private.c1_workflow_claim_cash_proof(t,target_company_id,target_project_id,ids,null,refund.id);
  update public.cost_workflow_cash_states set version=version+1 where payment_id=payment.id;
  update public.cost_workflow_requests set version=version+1,updated_at=now() where id=request.id returning * into request;
  perform private.c1_workflow_record_command(t,target_company_id,'cost_workflow.confirm_refund',target_idempotency_key,hash,refund.id,request.version,target_request_id,jsonb_build_object('projectId',target_project_id,'adjustmentId',request.id,'sourcePaymentId',payment.id,'amount',amount::text,'receivedDate',received_date,'evidenceFileIds',ids));

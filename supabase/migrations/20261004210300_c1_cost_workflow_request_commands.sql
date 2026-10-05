@@ -233,11 +233,23 @@ begin
  return jsonb_build_object('assignmentId',created.id,'version',created.assignment_version,'replayed',false);
 end;$$;
 
+-- Only explicit contract/quotation originals identify a hard-cap basis.
+-- Invoices, acceptance and other supporting originals may be shared legitimately.
+create function private.c1_workflow_primary_basis_hashes(t uuid,c uuid,p uuid,ids uuid[]) returns text[]
+language plpgsql stable security definer set search_path='' as $$
+declare hashes text[];
+begin
+ select array_agg(distinct f.verified_sha256 order by f.verified_sha256) into hashes
+ from public.cost_evidence_files f where f.id=any(ids) and f.tenant_id=t and f.company_id=c and f.project_id=p and f.status='finalized'
+ and (f.workflow_evidence_kind in('contract','quotation') or exists(select 1 from public.cost_evidence_links l where l.evidence_file_id=f.id and l.tenant_id=t and l.company_id=c and l.project_id=p and l.evidence_kind='contract'));
+ return coalesce(hashes,array[]::text[]);
+end;$$;
+revoke all on function private.c1_workflow_primary_basis_hashes(uuid,uuid,uuid,uuid[]) from public,anon,authenticated,service_role;
 create function public.c1_workflow_create_contract_basis(target_company_id uuid,target_project_id uuid,target_input jsonb,target_idempotency_key uuid,target_request_id uuid)
 returns jsonb language plpgsql volatile security definer set search_path='' as $$
 declare context jsonb;t uuid;assignment public.cost_workflow_manager_assignments%rowtype;receipt public.cost_command_receipts%rowtype;hash text;
  contract public.cost_workflow_contracts%rowtype;basis public.cost_workflow_contract_versions%rowtype;source public.project_subcontracts%rowtype;
- party uuid;source_id uuid;ids uuid[];scale integer;currency text;basis_reference text;cap numeric;
+ party uuid;source_id uuid;ids uuid[];scale integer;currency text;basis_reference text;cap numeric;original_hashes text[];candidate_count integer;
 begin
  context:=private.c1_workflow_context(target_company_id,'cost.request.submit');t:=(context->>'tenantId')::uuid;
  perform private.c1_workflow_lock_actor(t,target_company_id,'cost.request.submit');perform private.c1_lock_writable_project(t,target_company_id,target_project_id);
@@ -259,7 +271,24 @@ begin
   if not found then raise exception using errcode='P0001',message='RESOURCE_NOT_FOUND';end if;
   if source.contract_value is not null and source.contract_value<>cap then raise exception using errcode='P0001',message='CONTRACT_REFERENCE_CONFLICT';end if;
  end if;
- select * into contract from public.cost_workflow_contracts where tenant_id=t and company_id=target_company_id and project_id=target_project_id and (reference=basis_reference or (source_id is not null and source_subcontract_id=source_id)) for update;
+ original_hashes:=private.c1_workflow_primary_basis_hashes(t,target_company_id,target_project_id,ids);
+ if source_id is null and cardinality(original_hashes)=0 then raise exception using errcode='P0001',message='CONTRACT_BASIS_REQUIRED';end if;
+ -- The assignment mutex serializes identity lookup and insertion in this project.
+ -- A changed free-text reference or re-uploaded original cannot open another cap.
+ select count(*) into candidate_count from public.cost_workflow_contracts identified
+ where identified.tenant_id=t and identified.company_id=target_company_id and identified.project_id=target_project_id
+ and (identified.reference=basis_reference or (source_id is not null and identified.source_subcontract_id=source_id)
+ or exists(select 1 from public.cost_workflow_contract_versions v join public.cost_evidence_files known on known.id=any(v.evidence_file_ids)
+ where v.contract_id=identified.id and v.tenant_id=t and v.company_id=target_company_id and v.project_id=target_project_id
+ and known.tenant_id=t and known.company_id=target_company_id and known.project_id=target_project_id and known.verified_sha256=any(original_hashes)));
+ if candidate_count>1 then raise exception using errcode='P0001',message='CONTRACT_REFERENCE_CONFLICT';end if;
+ select * into contract from public.cost_workflow_contracts identified
+ where identified.tenant_id=t and identified.company_id=target_company_id and identified.project_id=target_project_id
+ and (identified.reference=basis_reference or (source_id is not null and identified.source_subcontract_id=source_id)
+ or exists(select 1 from public.cost_workflow_contract_versions v join public.cost_evidence_files known on known.id=any(v.evidence_file_ids)
+ where v.contract_id=identified.id and v.tenant_id=t and v.company_id=target_company_id and v.project_id=target_project_id
+ and known.tenant_id=t and known.company_id=target_company_id and known.project_id=target_project_id and known.verified_sha256=any(original_hashes))) for update;
+
  -- Identical reviewed references reuse their original identity; ambiguity requires review.
  if found then
   select * into basis from public.cost_workflow_contract_versions where contract_id=contract.id and version=1;
