@@ -5,29 +5,33 @@ import {workflowMoneySchema} from '../../../../shared/schemas/costs/cost-workflo
 import {OfflineCostExtractionAdapter} from './cost-extraction-adapter'
 const apiVersion='2024-11-30'
 const approvedResourceHost='taskovia-doc-intelligence-dev.cognitiveservices.azure.com'
-const callLimits={minIntervalMs:3000,maxCallsPerMinute:20} as const
+
 type Model='prebuilt-invoice'|'prebuilt-layout'
 type Warning=ExtractionResult['warnings'][number]
 export interface AzureF0Job{key:string;state:'reserved'|'sending'|'submitted'|'uncertain'|'complete';operationUrl?:string;pollAfter?:number;result?:ExtractionResult;raw?:unknown}
 /** Required persistent implementation: atomically reserve per RESOURCE/month, never per company.
  * Same key reuses its original reservation; uncertain sends retain pages. claimSend is CAS
- * before POST. claimSlot serializes ALL resource POST and GET across workers at >=3s and
+ * before POST. One resource dispatch lease serializes POST and GET until settled, with >=3s cooldown and
  * <=20 calls/minute (the portal limit is stricter than the published 1 TPS).
  * Results/operation URLs are private, immutable and guarded by original-file role/scope.
  * This port is not an in-memory quota implementation or an activation permission.
  */
+export interface AzureF0DispatchLease{token:string;resourceId:string;kind:'post'|'get';issuedAt:number;expiresAt:number}
+export type AzureF0DispatchOutcome='settled'|'unused'|'uncertain'
+/** No automatic expiry/regrant: an old worker may still be paused or its HTTP outcome unknown. */
 export interface AzureF0JobStore{
  durability:'persistent'
  reserve(input:{key:string;resourceId:string;month:string;pages:number;limit:number;scope:CostExtractionInput['scope'];fileId:string;sha256:string;model:Model;configurationVersion:string}):Promise<{job:AzureF0Job}|{blocked:'quota'|'busy'}>
  claimSend(key:string):Promise<boolean>
- claimSlot(resourceId:string,kind:'post'|'get',now:number,limits:{minIntervalMs:3000;maxCallsPerMinute:20}):Promise<boolean>
+ acquireDispatch(resourceId:string,kind:'post'|'get'):Promise<AzureF0DispatchLease|null>
+ releaseDispatch(lease:AzureF0DispatchLease,outcome:AzureF0DispatchOutcome):Promise<void>
  saveOperation(key:string,url:string,pollAfter:number):Promise<void>
  markUncertain(key:string):Promise<void>
  complete(key:string,raw:unknown,result:ExtractionResult):Promise<void>
 }
 export interface AzureF0Transport{
- post(model:Model,bytes:Uint8Array,pages:number):Promise<{status:number;operationUrl?:string;retryAfterSeconds?:number}>
- poll(url:string):Promise<{status:number;body:unknown;retryAfterSeconds?:number}>
+ post(model:Model,bytes:Uint8Array,pages:number,lease:AzureF0DispatchLease):Promise<{status:number;operationUrl?:string;retryAfterSeconds?:number}>
+ poll(url:string,lease:AzureF0DispatchLease):Promise<{status:number;body:unknown;retryAfterSeconds?:number}>
 }
 export interface DocumentInspection{sha256:string;complete:boolean;pageCount:number;nativeResult?:ExtractionResult}
 export interface AzureF0Options{
@@ -120,29 +124,50 @@ export class AzureF0CostExtractionAdapter implements CostExtractionAdapter{
    }
    if(job.state==='sending'||job.state==='uncertain')return manual('OCR_RESPONSE_UNCERTAIN')
    if(job.state==='reserved'){
-    if(!await this.options.store.claimSlot(config.resourceId,'post',now(),callLimits))return manual('OCR_RATE_LIMITED')
-    if(!await this.options.authorize(input))return manual('OCR_SCOPE_CHANGED')
-    if(!await this.options.store.claimSend(key))return manual('OCR_PENDING')
-    // A revoked scope after CAS leaves a conservative durable sending reservation.
-    if(!await this.options.authorize(input))return manual('OCR_SCOPE_CHANGED')
+    const lease=await this.options.store.acquireDispatch(config.resourceId,'post')
+    if(!lease)return manual('OCR_RATE_LIMITED')
+    let outcome:AzureF0DispatchOutcome='unused'
     try{
-     const response=await this.options.transport.post(model,input.bytes,inspection.pageCount)
-     if(response.status!==202||!response.operationUrl)throw new Error('AZURE_SEND_UNCERTAIN')
-     const url=operation(response.operationUrl,origin,model)
-     const delay=Math.max(2,response.retryAfterSeconds??2)
-     await this.options.store.saveOperation(key,url,now()+delay*1000)
-    }catch{try{await this.options.store.markUncertain(key)}catch{/* sending remains durable: never re-POST */}return manual('OCR_RESPONSE_UNCERTAIN')}
-    return manual('OCR_PENDING')
+     if(!await this.options.authorize(input))return manual('OCR_SCOPE_CHANGED')
+     if(!await this.options.store.claimSend(key))return manual('OCR_PENDING')
+     // A revoked/expired scope after CAS retains the conservative sending reservation.
+     if(!await this.options.authorize(input))return manual('OCR_SCOPE_CHANGED')
+     if(!dispatchCurrent(lease,'post',now()))return manual('OCR_RATE_LIMITED')
+     try{
+      outcome='uncertain'
+      const response=await this.options.transport.post(model,input.bytes,inspection.pageCount,lease)
+      outcome='settled'
+      if(response.status!==202||!response.operationUrl)throw new Error('AZURE_SEND_UNCERTAIN')
+      const url=operation(response.operationUrl,origin,model)
+      const delay=Math.max(2,response.retryAfterSeconds??2)
+      await this.options.store.saveOperation(key,url,now()+delay*1000)
+     }catch(error){
+      if(error instanceof AzureDispatchNotStartedError)outcome='unused'
+      try{await this.options.store.markUncertain(key)}catch{/* sending remains durable: never re-POST */}
+      return manual('OCR_RESPONSE_UNCERTAIN')
+     }
+     return manual('OCR_PENDING')
+    }finally{
+     try{await this.options.store.releaseDispatch(lease,outcome)}catch{/* Unreleased resource lease stays blocked; no expiry/regrant. */}
+    }
    }
    if(!job.operationUrl)return manual('EXTRACTION_RESULT_INVALID')
    const url=operation(job.operationUrl,origin,model)
    if(job.pollAfter===undefined||now()<job.pollAfter)return manual('OCR_PENDING')
-   if(!await this.options.store.claimSlot(config.resourceId,'get',now(),callLimits))return manual('OCR_RATE_LIMITED')
-   if(!await this.options.authorize(input))return manual('OCR_SCOPE_CHANGED')
+   const lease=await this.options.store.acquireDispatch(config.resourceId,'get')
+   if(!lease)return manual('OCR_RATE_LIMITED')
+   let outcome:AzureF0DispatchOutcome='unused'
    let response:Awaited<ReturnType<AzureF0Transport['poll']>>
-   try{response=await this.options.transport.poll(url)}catch{
+   try{
+   if(!await this.options.authorize(input))return manual('OCR_SCOPE_CHANGED')
+   if(!dispatchCurrent(lease,'get',now()))return manual('OCR_RATE_LIMITED')
+   try{outcome='uncertain';response=await this.options.transport.poll(url,lease);outcome='settled'}catch(error){
+    if(error instanceof AzureDispatchNotStartedError)outcome='unused'
     await this.options.store.saveOperation(key,url,now()+5000)
     return manual('OCR_PENDING')
+   }
+   }finally{
+    try{await this.options.store.releaseDispatch(lease,outcome)}catch{/* Unknown lease remains held; operator reconciliation required. */}
    }
    if(response.status===429||response.status>=500){
     const delay=Math.max(2,response.retryAfterSeconds??5)
@@ -163,28 +188,60 @@ export class AzureF0CostExtractionAdapter implements CostExtractionAdapter{
   }catch{return manual('EXTRACTION_RESULT_INVALID')}
  }
 }
-async function boundedJson(response:Response){
+class AzureDispatchNotStartedError extends Error{constructor(){super('AZURE_DISPATCH_NOT_STARTED')}}
+function dispatchCurrent(value:AzureF0DispatchLease,kind:'post'|'get',now:number):boolean{
+ return !!value&&value.resourceId===approvedResourceHost&&value.kind===kind&&z.string().uuid().safeParse(value.token).success
+  &&Number.isSafeInteger(value.issuedAt)&&value.issuedAt>=0&&Number.isSafeInteger(value.expiresAt)
+  &&value.expiresAt-value.issuedAt===20000&&value.expiresAt<=8_640_000_000_000_000&&Number.isSafeInteger(now)&&value.issuedAt<=now&&now<value.expiresAt
+  &&(kind!=='post'||new Date(value.issuedAt).toISOString().slice(0,7)===new Date(now).toISOString().slice(0,7))
+}
+async function boundedJson(response:Response,signal:AbortSignal){
  if(Number(response.headers.get('content-length'))>4_000_000)throw new Error('AZURE_RESULT_TOO_LARGE')
  const reader=response.body?.getReader();if(!reader)throw new Error('AZURE_RESULT_INVALID')
  const chunks:Uint8Array[]=[];let size=0
+ const aborted=()=>{void reader.cancel().catch(()=>{})}
+ if(signal.aborted){await reader.cancel().catch(()=>{});throw new Error('AZURE_DISPATCH_TIMEOUT')}
+ signal.addEventListener('abort',aborted,{once:true})
  try{for(;;){const value=await reader.read();if(value.done)break;size+=value.value.byteLength;if(size>4_000_000)throw new Error('AZURE_RESULT_TOO_LARGE');chunks.push(value.value)}}
  catch(error){await reader.cancel().catch(()=>{});throw error}
+ finally{signal.removeEventListener('abort',aborted);reader.releaseLock()}
+ if(signal.aborted)throw new Error('AZURE_DISPATCH_TIMEOUT')
  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
 }
 export class AzureDocumentIntelligenceTransport implements AzureF0Transport{
  private readonly origin:string
  constructor(resourceEndpoint:string,private readonly credential:()=>string,private readonly fetcher:typeof fetch=fetch){this.origin=azureF0Endpoint(resourceEndpoint)}
- private async request(url:string,init:RequestInit){return this.fetcher(url,{...init,redirect:'error',signal:AbortSignal.timeout(15000),headers:{...init.headers,'Ocp-Apim-Subscription-Key':this.credential()}})}
- async post(model:Model,bytes:Uint8Array,pages:number){
+ private async request<T>(url:string,init:RequestInit,lease:AzureF0DispatchLease,consume:(response:Response,signal:AbortSignal)=>Promise<T>):Promise<T>{
+  const kind=init.method==='POST'?'post':'get'
+  if(!dispatchCurrent(lease,kind,Date.now()))throw new AzureDispatchNotStartedError()
+  const remaining=lease.expiresAt-Date.now(),deadline=performance.now()+remaining
+  const controller=new AbortController()
+  const headers={...init.headers,'Ocp-Apim-Subscription-Key':this.credential()}
+  // No awaited authorization, RPC, credential or body preparation between this check and fetch.
+  if(!dispatchCurrent(lease,kind,Date.now())||performance.now()>=deadline)throw new AzureDispatchNotStartedError()
+  let timer:ReturnType<typeof setTimeout>|undefined
+  const timedOut=new Promise<never>((_resolve,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('AZURE_DISPATCH_TIMEOUT'))},Math.min(15000,remaining))})
+  try{
+   const response=this.fetcher(url,{...init,redirect:'error',signal:controller.signal,headers})
+   return await Promise.race([response.then(value=>consume(value,controller.signal)),timedOut])
+  }finally{if(timer!==undefined)clearTimeout(timer)}
+ }
+ async post(model:Model,bytes:Uint8Array,pages:number,lease:AzureF0DispatchLease){
   if(!Number.isInteger(pages)||pages<1||pages>2||bytes.byteLength===0||bytes.byteLength>4_000_000)throw new Error('AZURE_F0_LIMIT')
   const url=new URL(this.origin+'/documentintelligence/documentModels/'+model+':analyze')
   url.searchParams.set('_overload','analyzeDocument');url.searchParams.set('api-version',apiVersion);url.searchParams.set('pages',pages===1?'1':'1-2');url.searchParams.set('stringIndexType','unicodeCodePoint')
-  const response=await this.request(url.href,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base64Source:Buffer.from(bytes).toString('base64')})})
-  return {status:response.status,operationUrl:response.headers.get('operation-location')??undefined,retryAfterSeconds:retryAfter(response)}
+  return this.request(url.href,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base64Source:Buffer.from(bytes).toString('base64')})},lease,async response=>{
+   const result={status:response.status,operationUrl:response.headers.get('operation-location')??undefined,retryAfterSeconds:retryAfter(response)}
+   await response.body?.cancel()
+   return result
+  })
  }
- async poll(url:string){
-  const response=await this.request(operation(url,this.origin),{method:'GET'})
-  return {status:response.status,body:response.status===200?await boundedJson(response):null,retryAfterSeconds:retryAfter(response)}
+ async poll(url:string,lease:AzureF0DispatchLease){
+  return this.request(operation(url,this.origin),{method:'GET'},lease,async(response,signal)=>{
+   const body=response.status===200?await boundedJson(response,signal):null
+   if(response.status!==200)await response.body?.cancel()
+   return {status:response.status,body,retryAfterSeconds:retryAfter(response)}
+  })
  }
 }
 function retryAfter(response:Response){
