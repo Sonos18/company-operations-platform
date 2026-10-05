@@ -58,6 +58,24 @@ export function workflowFunctionInventory(files){
  return [...registry.values()]
 }
 export const workflowFunctionDescriptor=fn=>Object.fromEntries(Object.entries(fn).filter(([key])=>key!=='body'))
+// Normalize comments and literal values before checking DML targets. Dollar-quoted
+// PL/pgSQL bodies remain visible; only single-quoted SQL data and comments are skipped.
+function workflowWriterText(sql){
+ let text='',commentDepth=0,single=false,line=false
+ for(let i=0;i<sql.length;i++){
+  const c=sql[i],next=sql[i+1]
+  if(line){if(c==='\n'){line=false;text+=' '}continue}
+  if(commentDepth){if(c==='/'&&next==='*'){commentDepth++;i++}else if(c==='*'&&next==='/'){commentDepth--;i++}continue}
+  if(single){if(c==="'"&&next==="'"){i++;continue}if(c==="\\"){i++;continue}if(c==="'")single=false;continue}
+  if(c==='-'&&next==='-'){line=true;i++;text+=' ';continue}
+  if(c==='/'&&next==='*'){commentDepth=1;i++;text+=' ';continue}
+  if(c==="'"){single=true;text+=' ';continue}
+  // Simple quoted identifiers normalize to their unquoted spelling.
+  text+=c==='"'?'':c
+ }
+ if(commentDepth||single)throw new Error('WORKFLOW_REHEARSAL_SELECT_ONLY_IDENTITY')
+ return text
+}
 export function workflowDependencyInventory({baseMigrations,migrations,suites}){
  const functions=workflowFunctionInventory([...baseMigrations,...migrations])
  const byName=new Map()
@@ -91,8 +109,17 @@ export function workflowDependencyInventory({baseMigrations,migrations,suites}){
  const reachable=functions.filter(fn=>calls.has(fn.name))
  // Source allowlists also cover PL/pgSQL calls and trigger bodies, beyond pg_depend.
  if(reachable.some(fn=>/\b(?:execute|nextval|setval|lo_export|pg_write_file)\b|\b(?:net|http|dblink|aws_s3)\s*\./i.test(fn.body)))throw new Error('WORKFLOW_REHEARSAL_DYNAMIC_DEPENDENCY')
+ const selectOnlyIdentities=[]
+ if(relations.has('public.workflow_node_events')){
+  // Check suite/migration DML and every reachable function, including attached triggers.
+  // Ambiguous unqualified writers are rejected too; no allocation exception is created.
+  const sources=[...migrations,...suites,...reachable.map(fn=>({sql:fn.body}))]
+  const writer=/\b(?:insert\s+into|update(?:\s+only)?|delete\s+from|merge\s+into|truncate(?:\s+table)?|copy)\s+(?:only\s+)?(?:(?:"?public"?)\s*\.\s*)?"?workflow_node_events\b/i
+  if(sources.some(file=>{const text=workflowWriterText(file.sql);return writer.test(text)||/\b(?:truncate(?:\s+table)?|drop\s+table)\b[^;]*\bworkflow_node_events\b|\balter\s+table\s+(?:only\s+)?(?:public\.)?workflow_node_events\b/i.test(text)}))throw new Error('WORKFLOW_REHEARSAL_SELECT_ONLY_IDENTITY')
+  selectOnlyIdentities.push({relation:'public.workflow_node_events',column:'id',sequence:'public.workflow_node_events_id_seq'})
+ }
  const sourceFunctions=functions.map(workflowFunctionDescriptor).sort((a,b)=>(a.name+a.sha256).localeCompare(b.name+b.sha256))
- return {functions:sourceFunctions,relations:[...relations].sort(),reachableFunctions:[...calls].sort(),triggers:[...triggers.values()].filter(t=>relations.has(t.table)).map(trigger=>Object.fromEntries(Object.entries(trigger).filter(([key])=>!['at','add','table'].includes(key)))).sort((a,b)=>a.key.localeCompare(b.key))}
+ return {functions:sourceFunctions,selectOnlyIdentities,relations:[...relations].sort(),reachableFunctions:[...calls].sort(),triggers:[...triggers.values()].filter(t=>relations.has(t.table)).map(trigger=>Object.fromEntries(Object.entries(trigger).filter(([key])=>!['at','add','table'].includes(key)))).sort((a,b)=>a.key.localeCompare(b.key))}
 }
 function filesUnder(directory){
  return readdirSync(directory,{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?filesUnder(join(directory,entry.name)):entry.name.endsWith('.mjs')?[join(directory,entry.name)]:[]).sort()

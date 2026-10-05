@@ -185,10 +185,11 @@ const suggestedResult = ref<ExtractionResult | null>(null)
 
 const currentRequestId = ref<string | null>(props.initial?.id || null)
 const expectedVersion = ref<number>(props.initial?.version ?? 0)
+let lifecycleGeneration = 0
 let submission = createSession()
 function createSession(initial:CostRequestView|null=props.initial??null) {
- const captured = {companyId:props.companyId,projectId:props.projectId,permissions:permissionFingerprint()}
- return createReviewedRequestSubmission({projectId:captured.projectId,repository:repo,initial:initial??undefined,isScopeCurrent:()=>scopeCurrent()&&props.companyId===captured.companyId&&props.projectId===captured.projectId&&permissionFingerprint()===captured.permissions&&companyAccess.hasPermission('cost.request.submit')})
+ const captured = {companyId:props.companyId,projectId:props.projectId,permissions:permissionFingerprint(),generation:lifecycleGeneration}
+ return createReviewedRequestSubmission({projectId:captured.projectId,repository:repo,initial:initial??undefined,isScopeCurrent:()=>lifecycleGeneration===captured.generation&&scopeCurrent()&&props.companyId===captured.companyId&&props.projectId===captured.projectId&&permissionFingerprint()===captured.permissions&&companyAccess.hasPermission('cost.request.submit')})
 }
 
 const actionTracker = createAsyncRequestTracker<{ companyId: string; projectId: string }>()
@@ -202,6 +203,7 @@ watch(partyId, () => {
 const scanTracker = createAsyncRequestTracker<{companyId:string;projectId:string;fileId:string;requestId:string|null}>()
 const previewTracker = createAsyncRequestTracker<{companyId:string;projectId:string;fileId:string}>()
 function resetScope() {
+ lifecycleGeneration++
  actionTracker.invalidate();scanTracker.invalidate();previewTracker.invalidate()
  errorMessage.value=''; scanNotice.value='';suggestedResult.value=null; reviewed.value=false
  isSubmitting.value=false;isScanning.value=false;uploadBusy.value=false;retryReady.value=false
@@ -211,7 +213,7 @@ function resetScope() {
  currencyCode.value='VND';basisKind.value='materials';retentionAmount.value='0';currentRequestId.value=null;expectedVersion.value=0;submission=createSession(null)
 }
 watch([()=>props.companyId,()=>props.projectId,()=>companyAccess.activeCompanyId,permissionFingerprint],resetScope,{flush:'sync'})
-onUnmounted(()=>{actionTracker.invalidate();scanTracker.invalidate();previewTracker.invalidate()})
+onUnmounted(()=>{lifecycleGeneration++;actionTracker.invalidate();scanTracker.invalidate();previewTracker.invalidate()})
 
 watch([partyId,categoryId,contractVersionId,amount,currencyCode,basisKind,deliverySite,matLines,subcontractId,acceptanceReference,retentionAmount,weekStart,laborWorkers,genericLines,vatBasis,roundingBasis,allowanceBasis,evidenceList],()=>{reviewed.value=false},{deep:true,flush:'sync'})
 

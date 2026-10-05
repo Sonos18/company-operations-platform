@@ -2,6 +2,8 @@ import {readFileSync} from 'node:fs'
 import {resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {randomUUID} from 'node:crypto'
+import {workflowLinkedRoot,readWorkflowLinkMetadata,assertWorkflowLinkUnchanged} from './c1-cost-workflow-rehearsal-link.mjs'
+import {workflowManagedDdlHandlers} from './c1-cost-workflow-rehearsal-managed-ddl.mjs'
 import {assertCloudDevTarget} from './assert-cloud-dev-target.mjs'
 import {isolatedSupabaseEnvironment} from './run-supabase-dev.mjs'
 import {buildC1MigrationRehearsalSql,validateC1MigrationRehearsalSql} from './run-c1-cloud-dev-migration-rehearsal.mjs'
@@ -24,7 +26,7 @@ export const costWorkflowAssertionCounts=[80,13,28,22]
 export function readWorkflowRehearsal(cwd){
  return {migrations:costWorkflowMigrationFiles.map(name=>({name,sql:readFileSync(resolve(cwd,'supabase/migrations',name),'utf8')})),suites:costWorkflowSqlFiles.map(name=>({name,sql:readFileSync(resolve(cwd,'supabase/tests/database/c1',name),'utf8')}))}
 }
-export function reviewWorkflowRehearsal({migrations,suites,cwd=workflowSourceRoot}){
+export function reviewWorkflowRehearsal({migrations,suites,cwd=workflowSourceRoot,linkRoot=workflowLinkedRoot}){
  if(!Array.isArray(migrations)||migrations.length!==costWorkflowMigrationFiles.length||migrations.some((m,i)=>m.name!==costWorkflowMigrationFiles[i]||typeof m.sql!=='string'||!m.sql.trim()))throw new Error('WORKFLOW_REHEARSAL_MIGRATION_SET')
  buildC1MigrationRehearsalSql(migrations.map(m=>m.sql).join('\n'))
  if(!Array.isArray(suites)||suites.length!==costWorkflowSqlFiles.length||suites.some((s,i)=>s.name!==costWorkflowSqlFiles[i]))throw new Error('WORKFLOW_REHEARSAL_TEST_SET')
@@ -36,7 +38,7 @@ export function reviewWorkflowRehearsal({migrations,suites,cwd=workflowSourceRoo
  const baseMigrations=readWorkflowBaseMigrations(cwd)
  const dependencyInventory=workflowDependencyInventory({baseMigrations,migrations,suites})
  const {executionSources,runtime}=workflowExecutionInventory(cwd)
- const manifest={schemaVersion:3,projectRef:'gtgljlnhwvhqdnwrfdfj',operation:'rollback-only-DDL-and-synthetic-pgTAP-with-bounded-surrogate-gaps',executionSources,runtime,baseMigrations:baseMigrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),dependencyInventorySha256:workflowSha(JSON.stringify(dependencyInventory)),migrations:migrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),suites:suites.map((s,i)=>({name:s.name,sha256:workflowSha(s.sql),assertions:costWorkflowAssertionCounts[i]})),sequenceException:{names:workflowSequenceNames,perSuite:workflowSequenceBudgets,total:workflowCumulativeBudgets,reset:false},timeouts:workflowTimeouts,clientLimits:workflowQueryLimits,lock:'/data/remote-jobs/validation.lock',trustBoundary:'Existing managed pgTAP/pgcrypto/uuid-ossp extension members; catalogues and versions frozen per batch. Unknown event triggers, source functions, attached triggers or reachable sequences fail closed.',retention:'Fresh before/after rollback snapshots cover data, catalogues, grants, extension state and all other sequence counters. Stop on any drift or uncertain cleanup.'}
+ const manifest={schemaVersion:4,linkedTarget:readWorkflowLinkMetadata(linkRoot),managedDdlHandlers:workflowManagedDdlHandlers,pgTapSetup:{mode:'require-installed',automaticInstallation:false,blocker:'WORKFLOW_REHEARSAL_PGTAP_NOT_INSTALLED'},selectOnlyIdentities:dependencyInventory.selectOnlyIdentities,projectRef:'gtgljlnhwvhqdnwrfdfj',operation:'rollback-only-DDL-and-synthetic-pgTAP-with-bounded-surrogate-gaps',executionSources,runtime,baseMigrations:baseMigrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),dependencyInventorySha256:workflowSha(JSON.stringify(dependencyInventory)),migrations:migrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),suites:suites.map((s,i)=>({name:s.name,sha256:workflowSha(s.sql),assertions:costWorkflowAssertionCounts[i]})),sequenceException:{names:workflowSequenceNames,perSuite:workflowSequenceBudgets,total:workflowCumulativeBudgets,reset:false},timeouts:workflowTimeouts,clientLimits:workflowQueryLimits,lock:'/data/remote-jobs/validation.lock',trustBoundary:'Existing managed pgTAP/pgcrypto/uuid-ossp extension members; catalogues and versions frozen per batch. All six reviewed managed DDL registrations are pinned bidirectionally; unknown or modified registrations, source functions, attached triggers or reachable sequences fail closed. workflow_node_events identity is SELECT-only and has zero allocation/drift allowance.',retention:'Fresh before/after rollback snapshots cover data, catalogues, grants, extension state and all other sequence counters. Stop on any drift or uncertain cleanup.'}
  return {...manifest,manifestSha256:workflowSha(JSON.stringify(manifest))}
 }
 function value(value){if(typeof value==='string'){try{return JSON.parse(value)}catch{throw new Error('WORKFLOW_REHEARSAL_RESULT_INVALID')}}return value}
@@ -66,18 +68,22 @@ export async function closeOwnedWorkflowBackend({query,owner,delay=sleep}){
  }
  throw new Error('WORKFLOW_REHEARSAL_CLEANUP_UNCERTAIN')
 }
-export async function runWorkflowRehearsal({cwd=process.cwd(),env=process.env,migrations,suites,execute=false,confirmation,authorization,assertTarget=assertCloudDevTarget,query,acquireLock=acquireWorkflowValidationLock,delay=sleep,nonceFactory=()=> 'c1cw-'+randomUUID()}={}){
+export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowLinkedRoot,env=process.env,migrations,suites,execute=false,confirmation,authorization,assertTarget=assertCloudDevTarget,query,acquireLock=acquireWorkflowValidationLock,delay=sleep,nonceFactory=()=> 'c1cw-'+randomUUID()}={}){
  const sources=migrations&&suites?{migrations,suites}:readWorkflowRehearsal(cwd)
- const manifest=reviewWorkflowRehearsal({...sources,cwd})
+ const manifest=reviewWorkflowRehearsal({...sources,cwd,linkRoot})
  if(!execute)return {mode:'preview',...manifest}
  if(confirmation!==manifest.manifestSha256||authorization!==manifest.manifestSha256)throw new Error('WORKFLOW_REHEARSAL_AUTHORIZATION_REQUIRED')
- assertTarget({cwd,env})
- const cliEnv=isolatedSupabaseEnvironment(cwd,env,process.platform)
+ assertTarget({cwd:linkRoot,env})
+ const cliEnv=isolatedSupabaseEnvironment(linkRoot,env,process.platform)
  const lease=await acquireLock()
  const receipts=[];let cumulative=[0n,0n]
  try{
   const {binary}=workflowExecutionInventory(cwd)
-  const runQuery=query||createWorkflowQuery({cwd,env:cliEnv,binary})
+  const childQuery=query||createWorkflowQuery({linkRoot,linkedMetadata:manifest.linkedTarget,env:cliEnv,binary,assertHeld:()=>lease.assertHeld()})
+  const runQuery=async(...args)=>{
+   lease.assertHeld();assertWorkflowLinkUnchanged(linkRoot,manifest.linkedTarget)
+   try{return await childQuery(...args)}finally{lease.assertHeld();assertWorkflowLinkUnchanged(linkRoot,manifest.linkedTarget)}
+  }
   const baseMigrations=readWorkflowBaseMigrations(cwd)
   const dependencies=workflowDependencyInventory({baseMigrations,...sources})
   const baseDependencies=workflowDependencyInventory({baseMigrations,migrations:[],suites:[...sources.suites,{sql:dependencies.relations.join(' ')+' '+dependencies.reachableFunctions.join(' ')}]})
@@ -89,7 +95,7 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),env=process.env,mi
   const initialSnapshotSha256=workflowSha(JSON.stringify(initial))
   for(const [index,suite] of sources.suites.entries()){
    lease.assertHeld()
-   if(reviewWorkflowRehearsal({...sources,cwd}).manifestSha256!==manifest.manifestSha256)throw new Error('WORKFLOW_REHEARSAL_SOURCE_CHANGED')
+   if(reviewWorkflowRehearsal({...sources,cwd,linkRoot}).manifestSha256!==manifest.manifestSha256)throw new Error('WORKFLOW_REHEARSAL_SOURCE_CHANGED')
    // Fresh server time admits only this bounded invocation, including delayed API starts.
    if(index>0){before=snapshotResult(await runQuery(workflowSnapshotSql));assertWorkflowPostflight(previous,before.snapshot,0,[0n,0n])}
    const owner={nonce:nonceFactory(),serverTime:before.serverTime,database:before.database,username:before.username}

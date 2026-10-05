@@ -1,3 +1,4 @@
+import {workflowManagedDdlGuardSql} from './c1-cost-workflow-rehearsal-managed-ddl.mjs'
 import {workflowSha} from './c1-cost-workflow-rehearsal-inventory.mjs'
 export const workflowAuthHelperExpressions=Object.fromEntries(['uid','role'].map(name=>{
  const claim=name==='uid'?'sub':'role',cast=name==='uid'?'::uuid':''
@@ -65,14 +66,14 @@ select value as snapshot,clock_timestamp()::text as server_time,current_database
 rollback;
 `
 export function workflowDependencyPreflightSql(inventory){
- const functions=literal(JSON.stringify(inventory.functions)),relations=literal(JSON.stringify(inventory.relations)),triggers=literal(JSON.stringify(inventory.triggers)),calls=literal(JSON.stringify(inventory.reachableFunctions||[])),authExpressions=literal(JSON.stringify(workflowAuthHelperExpressions))
+ const functions=literal(JSON.stringify(inventory.functions)),relations=literal(JSON.stringify(inventory.relations)),triggers=literal(JSON.stringify(inventory.triggers)),calls=literal(JSON.stringify(inventory.reachableFunctions||[])),authExpressions=literal(JSON.stringify(workflowAuthHelperExpressions)),selectOnly=literal(JSON.stringify(inventory.selectOnlyIdentities||[]))
  return `
 do $workflow_dependencies$
-declare r record; expected jsonb=${functions}::jsonb; relations jsonb=${relations}::jsonb; triggers jsonb=${triggers}::jsonb; calls jsonb=${calls}::jsonb; auth jsonb=${authExpressions}::jsonb; fn_name text; extension_name text; token record;
+declare r record; expected jsonb=${functions}::jsonb; relations jsonb=${relations}::jsonb; triggers jsonb=${triggers}::jsonb; calls jsonb=${calls}::jsonb; auth jsonb=${authExpressions}::jsonb; select_only jsonb=${selectOnly}::jsonb; fn_name text; extension_name text; token record;
 begin
  if current_setting('server_version_num')::integer<170000 or not exists(select 1 from pg_settings where name='transaction_timeout') then raise exception 'WORKFLOW_REHEARSAL_SERVER_TIMEOUT_UNSUPPORTED';end if;
  if not exists(select 1 from supabase_migrations.schema_migrations where version='20261004140132') then raise exception 'WORKFLOW_REHEARSAL_HR_BASELINE_MISSING';end if;
- if exists(select 1 from pg_event_trigger where evtenabled<>'D') then raise exception 'WORKFLOW_REHEARSAL_EVENT_TRIGGER_UNREVIEWED';end if;
+ ${workflowManagedDdlGuardSql}
  if not exists(select 1 from pg_extension e join pg_namespace n on n.oid=e.extnamespace where e.extname='pgtap' and n.nspname='extensions') then raise exception 'WORKFLOW_REHEARSAL_PGTAP_NOT_INSTALLED';end if;
  for r in select p.*,l.lanname from pg_proc p join pg_namespace n on n.oid=p.pronamespace join pg_language l on l.oid=p.prolang where n.nspname='auth' and p.proname in('uid','role') loop
   if r.pronargs<>0 or r.pronargdefaults<>0 or r.prosecdef or r.lanname<>'sql' or r.provolatile<>'s' or (r.proname='uid' and r.prorettype<>'uuid'::regtype) or (r.proname='role' and r.prorettype<>'text'::regtype) or exists(select 1 from unnest(r.proconfig) c where regexp_replace(replace(c,'"',''),'[[:space:]]','','g')<>'search_path=') then raise exception 'WORKFLOW_REHEARSAL_AUTH_HELPER_UNREVIEWED';end if;
@@ -139,8 +140,10 @@ begin
   or (d.classid='pg_class'::regclass and exists(select 1 from pg_index i join pg_class t on t.oid=i.indrelid join pg_namespace n on n.oid=t.relnamespace where i.indexrelid=d.objid and relations ? (n.nspname||'.'||t.relname)))
  loop if r.name not in('public.audit_events_id_seq','public.company_role_assignments_id_seq') then raise exception 'WORKFLOW_REHEARSAL_SEQUENCE_UNREVIEWED';end if;end loop;
  -- Identity dependencies are stored on the sequence, rather than an attrdef.
- for r in select ns.nspname||'.'||s.relname name from pg_depend d join pg_class s on d.classid='pg_class'::regclass and s.oid=d.objid and s.relkind='S' join pg_namespace ns on ns.oid=s.relnamespace join pg_class owner on d.refclassid='pg_class'::regclass and owner.oid=d.refobjid join pg_namespace os on os.oid=owner.relnamespace where d.deptype in('i','a') and relations ? (os.nspname||'.'||owner.relname) loop
-  if r.name not in('public.audit_events_id_seq','public.company_role_assignments_id_seq') then raise exception 'WORKFLOW_REHEARSAL_SEQUENCE_UNREVIEWED';end if;
+ for r in select ns.nspname||'.'||s.relname name,os.nspname||'.'||owner.relname relation_name,d.refobjsubid column_number from pg_depend d join pg_class s on d.classid='pg_class'::regclass and s.oid=d.objid and s.relkind='S' join pg_namespace ns on ns.oid=s.relnamespace join pg_class owner on d.refclassid='pg_class'::regclass and owner.oid=d.refobjid join pg_namespace os on os.oid=owner.relnamespace where d.deptype in('i','a') and relations ? (os.nspname||'.'||owner.relname) loop
+  if r.name not in('public.audit_events_id_seq','public.company_role_assignments_id_seq') then
+   if r.name<>'public.workflow_node_events_id_seq' or r.relation_name<>'public.workflow_node_events' or not exists(select 1 from jsonb_array_elements(select_only) e where e->>'sequence'=r.name and e->>'relation'=r.relation_name and e->>'column'='id') or not exists(select 1 from pg_attribute where attrelid=to_regclass(r.relation_name) and attnum=r.column_number and attname='id' and attidentity='a' and atttypid='bigint'::regtype) or pg_get_serial_sequence(r.relation_name,'id')::regclass is distinct from r.name::regclass then raise exception 'WORKFLOW_REHEARSAL_SELECT_ONLY_IDENTITY';end if;
+  end if;
  end loop;
 end;$workflow_dependencies$;`
 }

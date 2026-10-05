@@ -124,3 +124,27 @@ describe('reviewed dependency and cleanup evidence boundaries',()=>{
   expect(query).toHaveBeenCalledTimes(1)
  })
 })
+
+describe('reviewed managed DDL and SELECT-only identity admission',()=>{
+ it('pins all six exact managed registrations with source and attribute comparisons',()=>{
+  const sql=workflowDependencyPreflightSql({functions:[],relations:[],triggers:[]})
+  for(const token of ['80e0c97f0a475697c1b517e0d27887bfa0c2baf138229735a58a345d2168505b','pgrst_ddl_watch','issue_pg_net_access','evtname','evtevent','evttags','evtfoid','provolatile','MANAGED_DDL_CHANGED'])expect(sql).toContain(token)
+  expect(sql).not.toContain("where evtenabled<>'D'")
+  expect(sql).toContain('PGTAP_NOT_INSTALLED')
+ })
+ const readOnly=[{sql:'create function private.read_events() returns bigint language sql as $$select count(*) from public.workflow_node_events$$;'}]
+ it('admits only the explicitly SELECT-only workflow-node identity without a gap exception',()=>{
+  const inventory=workflowDependencyInventory({baseMigrations:readOnly,migrations:[],suites:[{sql:'select private.read_events();'}]})
+  expect(inventory.selectOnlyIdentities).toEqual([{relation:'public.workflow_node_events',column:'id',sequence:'public.workflow_node_events_id_seq'}])
+  expect(workflowDependencyPreflightSql(inventory)).toContain('WORKFLOW_REHEARSAL_SELECT_ONLY_IDENTITY')
+  expect(workflowSequenceNames).not.toContain('public.workflow_node_events_id_seq')
+ })
+ it.each(['insert into public.workflow_node_events default values','update workflow_node_events set id=1','delete from public.workflow_node_events','merge into public.workflow_node_events using public.other on false when not matched then insert default values','truncate table public.workflow_node_events','copy public.workflow_node_events from stdin','insert /* nested /* comment */ comment */ into public.workflow_node_events default values','update "public"."workflow_node_events" set id=1','truncate public.other,public.workflow_node_events'])('rejects a reachable writer before the third identity is admitted: %s',writer=>{
+  const baseMigrations=[...readOnly,{sql:'create function private.writer() returns void language sql as $$'+writer+'$$;'}]
+  expect(()=>workflowDependencyInventory({baseMigrations,migrations:[],suites:[{sql:'select private.read_events(); select private.writer();'}]})).toThrow('WORKFLOW_REHEARSAL_SELECT_ONLY_IDENTITY')
+ })
+ it('rejects writers reached through attached triggers',()=>{
+  const baseMigrations=[...readOnly,{sql:'create function private.writer() returns trigger language plpgsql as $$begin insert into public.workflow_node_events default values;return new;end$$; create trigger writer after insert on public.other for each row execute function private.writer();'}]
+  expect(()=>workflowDependencyInventory({baseMigrations,migrations:[],suites:[{sql:'select private.read_events(); insert into public.other values(1);'}]})).toThrow('WORKFLOW_REHEARSAL_SELECT_ONLY_IDENTITY')
+ })
+})

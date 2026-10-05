@@ -2,11 +2,33 @@
   <div class="cockpit-page" data-testid="cost-request-detail">
     <div class="page-header">
       <NuxtLink :to="`/costs/${pId}/requests`">← Danh sách đề nghị</NuxtLink>
-      <h3>Chi tiết Đề nghị khoản chi</h3>
+      <h3>{{ kindLabels[link.kind] }}</h3>
       <span v-if="req" class="cockpit-badge">{{ statusMap[req.status] }}</span>
     </div>
     <div v-if="errorMessage" class="alert error">{{ errorMessage }}</div>
     <div v-if="isCompleted" class="alert info">Dự án đã hoàn thành, chỉ hiển thị đối soát thanh toán hiện hữu.</div>
+
+    <div v-if="adjustment && adjustmentSnapshot" class="detail-grid" data-testid="cost-adjustment-detail">
+      <div class="cockpit-card">
+        <h4>{{ kindLabels[adjustment.kind] }}</h4>
+        <p>Phiên hồ sơ: {{ adjustmentSnapshot.id }}</p>
+        <p v-if="'proposedCap' in adjustmentSnapshot.input">Hạn mức đề xuất: <strong>{{ adjustmentSnapshot.input.proposedCap }}</strong></p>
+        <p v-else-if="'requestedAmount' in adjustmentSnapshot.input">Số tiền đề nghị hoàn: <strong>{{ adjustmentSnapshot.input.requestedAmount }}</strong></p>
+        <p v-else-if="'correctedOutgoing' in adjustmentSnapshot.input">Số tiền chi sau hiệu chỉnh: <strong>{{ adjustmentSnapshot.input.correctedOutgoing }}</strong></p>
+        <p v-if="'reason' in adjustmentSnapshot.input">Lý do: {{ adjustmentSnapshot.input.reason }}</p>
+        <p>Quyết định: {{ adjustmentSnapshot.decision?.decision === 'approve' ? 'Đã duyệt' : adjustmentSnapshot.decision?.decision === 'return' ? 'Trả lại' : 'Chờ duyệt' }}</p>
+        <p v-if="adjustmentSnapshot.decision?.reason">{{ adjustmentSnapshot.decision.reason }}</p>
+        <p>Phê duyệt độc lập với xác nhận thu/chi thực tế. Xử lý thu/chi tại hồ sơ dự án.</p>
+      </div>
+      <div class="cockpit-card">
+        <h4>Hồ sơ chứng từ gốc của phiên đã gửi</h4>
+        <div v-for="id in adjustmentSnapshot.evidenceFileIds" :key="id" class="row">
+          <span>Hồ sơ đã lưu ({{ id.slice(0, 8) }})</span>
+          <button v-if="hasFileRead" type="button" class="cockpit-btn" @click="openEvidence(id)">Xem</button>
+          <button v-if="hasFileRead" type="button" class="cockpit-btn" @click="openEvidence(id, 'attachment')">Tải bản gốc</button>
+        </div>
+      </div>
+    </div>
 
     <CostRequestReviewPanel
       v-if="isEditable && req && context" :key="`${getFingerprint()}::${req.id}::${req.version}`"
@@ -98,7 +120,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from 'vue'
-import { workflowUuidSchema, type CostRequestView, type WorkflowProjectContext, type WorkflowPartyOption, type WorkflowContractView, type WorkflowRequestHistory, type WorkflowDecisionInput } from '../../../../../shared/schemas/costs/cost-workflow'
+import { workflowUuidSchema, type CostRequestView, type WorkflowProjectContext, type WorkflowPartyOption, type WorkflowContractView, type WorkflowRequestHistory, type WorkflowDecisionInput, type WorkflowAdjustmentView } from '../../../../../shared/schemas/costs/cost-workflow'
 import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
 import CostRequestReviewPanel from '../../../../components/costs/CostRequestReviewPanel.vue'
 import CostInstallmentPaymentModal from '../../../../components/costs/CostInstallmentPaymentModal.vue'
@@ -113,7 +135,18 @@ const pId = computed(() => workflowUuidSchema.safeParse(route.params.projectId).
 const rId = computed(() => workflowUuidSchema.safeParse(route.params.requestId).success ? String(route.params.requestId) : '')
 const companyId = computed(() => $companyAccessStore?.activeCompanyId || '')
 
+type RequestKind='installment'|'contract_adjustment'|'refund'|'correction'
+const kindLabels:Record<RequestKind,string>={installment:'Chi tiết Đề nghị khoản chi',contract_adjustment:'Chi tiết Điều chỉnh hạn mức',refund:'Chi tiết Đề nghị hoàn tiền',correction:'Chi tiết Hiệu chỉnh tiền chi'}
+const link=computed(()=>{
+ const rawKind=route.query.kind,rawVersion=route.query.submittedVersionId
+ const kind:RequestKind=typeof rawKind==='string'&&Object.hasOwn(kindLabels,rawKind)?rawKind as RequestKind:'installment'
+ const validKind=rawKind===undefined||(typeof rawKind==='string'&&Object.hasOwn(kindLabels,rawKind))
+ const validVersion=rawVersion===undefined||(typeof rawVersion==='string'&&workflowUuidSchema.safeParse(rawVersion).success)
+ return {kind,versionId:typeof rawVersion==='string'?rawVersion:null,valid:validKind&&validVersion}
+})
 const req = ref<CostRequestView | null>(null)
+const adjustment=ref<WorkflowAdjustmentView|null>(null)
+const adjustmentSnapshot=ref<WorkflowRequestHistory[number]|null>(null)
 const context = ref<WorkflowProjectContext | null>(null)
 const history = ref<WorkflowRequestHistory>([])
 const parties = ref<WorkflowPartyOption[]>([])
@@ -131,7 +164,7 @@ const tracker = createAsyncRequestTracker<{ companyId: string; projectId: string
 
 function getFingerprint() {
   const p = $companyAccessStore?.permissions ? [...$companyAccessStore.permissions].sort().join(',') : ''
-  return `${companyId.value}::${pId.value}::${rId.value}::${p}`
+  return `${companyId.value}::${pId.value}::${rId.value}::${JSON.stringify(route.query.kind)}::${JSON.stringify(route.query.submittedVersionId)}::${p}`
 }
 
 const statusMap={working:'Chưa gửi',submitted:'Chờ duyệt',returned:'Trả lại',approved:'Đã duyệt'}
@@ -140,17 +173,17 @@ const hasFileRead = computed(() => Boolean($companyAccessStore?.permissions?.inc
 const canDecide = computed(() => Boolean(context.value?.canDecide && $companyAccessStore?.permissions?.includes('cost.request.decide')))
 const canRecordCash = computed(() => Boolean(context.value?.mode==='document_backed_v1' && req.value?.installment && /[1-9]/.test(req.value.installment.remaining) && $companyAccessStore.hasPermission('cost.record_cash') && $companyAccessStore.hasPermission('cost.request.submit')))
 const isCompleted = computed(() => context.value?.operationalState === 'completed')
-const isEditable = computed(() => Boolean((req.value?.status === 'working' || req.value?.status === 'returned') && context.value?.canSubmit && !isCompleted.value))
+const isEditable = computed(() => Boolean(!link.value.versionId && (req.value?.status === 'working' || req.value?.status === 'returned') && context.value?.canSubmit && !isCompleted.value))
 
 function clear() {
-  tracker.invalidate(); req.value = null; context.value = null; history.value = []; showPayment.value=false;decisionReason.value='';decPending=null;decisionBusy.value=false;previewTracker.invalidate();decisionTracker.invalidate(); parties.value = []; contracts.value = []; categories.value = []; errorMessage.value = ''
+  tracker.invalidate(); req.value = null; adjustment.value=null;adjustmentSnapshot.value=null; context.value = null; history.value = []; showPayment.value=false;decisionReason.value='';decPending=null;decisionBusy.value=false;previewTracker.invalidate();decisionTracker.invalidate(); parties.value = []; contracts.value = []; categories.value = []; errorMessage.value = ''
 }
 watch([pId, rId, companyId, () => getFingerprint()], () => {clear();void loadData()}, {immediate:true,flush:'sync'})
 onUnmounted(() => {tracker.invalidate();previewTracker.invalidate();decisionTracker.invalidate()})
 
 async function loadData() {
   clear()
-  if (!pId.value || !rId.value || !companyId.value) { errorMessage.value = 'Mã yêu cầu hoặc phiên không hợp lệ.'; return }
+  if (!pId.value || !rId.value || !companyId.value || !link.value.valid) { errorMessage.value = 'Mã yêu cầu hoặc phiên không hợp lệ.'; return }
   const token = tracker.start({ companyId: companyId.value, projectId: pId.value, requestId: rId.value, fp: getFingerprint() })
   try {
     const ctx = await repo.readProjectContext(pId.value)
@@ -158,6 +191,18 @@ async function loadData() {
     context.value = ctx
     if (ctx.mode === 'legacy') return
 
+    if(link.value.kind!=='installment'){
+      const kind=link.value.kind,versionId=link.value.versionId
+      const [aData,hData]=await Promise.all([repo.readAdjustment(token.identity.projectId,token.identity.requestId),repo.readRequestHistory(token.identity.projectId,token.identity.requestId)])
+      if(!token.isCurrent()||getFingerprint()!==token.identity.fp)return
+      const snapshot=hData.find(value=>value.id===(versionId??aData.submittedVersionId))
+      const matchesKind=snapshot&&(kind==='contract_adjustment'?'proposedCap' in snapshot.input:'kind' in snapshot.input&&snapshot.input.kind===kind)
+      if(aData.id!==token.identity.requestId||aData.kind!==kind||!snapshot||!matchesKind||(snapshot.decision&&snapshot.decision.submittedVersionId!==snapshot.id)){
+        errorMessage.value='Không tìm thấy đúng hồ sơ và phiên đã gửi trong liên kết.';return
+      }
+      adjustment.value=aData;adjustmentSnapshot.value=snapshot;history.value=hData
+      return
+    }
     const [rData, hData, cts, cash] = await Promise.all([
       repo.readRequest(pId.value, rId.value),
       repo.readRequestHistory(pId.value, rId.value),
@@ -165,7 +210,17 @@ async function loadData() {
       repo.readCash(pId.value),
     ])
     if (!token.isCurrent() || getFingerprint()!==token.identity.fp) return
-    req.value = rData; history.value = hData
+    if(rData.id!==token.identity.requestId||(link.value.versionId&&rData.submittedVersionId!==link.value.versionId)){
+      errorMessage.value='Không tìm thấy đúng hồ sơ và phiên đã gửi trong liên kết.';return
+    }
+    if(link.value.versionId){
+      const snapshot=hData.find(value=>value.id===link.value.versionId)
+      if(!snapshot||!('basis' in snapshot.input)||(snapshot.decision&&snapshot.decision.submittedVersionId!==snapshot.id)){
+        errorMessage.value='Không tìm thấy đúng hồ sơ và phiên đã gửi trong liên kết.';return
+      }
+      req.value={...rData,...snapshot.input,evidenceFileIds:snapshot.evidenceFileIds,latestDecision:snapshot.decision,status:snapshot.decision?.decision==='return'?'returned':snapshot.decision?.decision==='approve'?'approved':'submitted'}
+    }else req.value=rData
+    history.value = hData
     contracts.value = cts
     categories.value = cash.categories.flatMap(c => c.categoryId ? [{id:c.categoryId,name:c.name}] : [])
     if ($companyAccessStore?.permissions?.includes('cost.party.read')) {

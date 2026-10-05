@@ -28,12 +28,13 @@
           :class="{ unread: n.deliveryState === 'available' && !n.readAt, undelivered: n.deliveryState === 'undelivered' }"
         >
           <div class="item-content">
-            <span class="item-title">Quyết định phê duyệt hồ sơ chi</span>
+            <span class="item-title">{{ kindTitle(n.kind) }}</span>
+            <span>Phê duyệt độc lập với xác nhận thu/chi thực tế.</span>
             <span class="item-date">{{ formatDate(n.createdAt) }}</span>
             <span v-if="n.deliveryState === 'undelivered'" class="pending-tag">Chưa nhận thông báo</span>
           </div>
           <div class="item-actions">
-            <NuxtLink :to="`/costs/${n.projectId}/requests`" class="view-link" @click="markRead(n)">Xem dự án</NuxtLink>
+            <NuxtLink :to="{path: `/costs/${n.projectId}/requests/${n.requestId}`, query: {kind:n.kind,submittedVersionId:n.submittedVersionId}}" class="view-link" @click="markRead(n)">Xem hồ sơ đã duyệt</NuxtLink>
             <button
               v-if="n.deliveryState === 'available' && !n.readAt"
               type="button"
@@ -85,6 +86,9 @@ const unreadCount = computed(() => {
   return notifications.value.filter(n => n.deliveryState === 'available' && !n.readAt).length
 })
 
+function kindTitle(kind:WorkflowNotificationView['kind']):string {
+ return {installment:'Quyết định đề nghị khoản chi',contract_adjustment:'Quyết định điều chỉnh hạn mức',refund:'Quyết định hoàn tiền',correction:'Quyết định hiệu chỉnh tiền chi'}[kind]
+}
 function formatDate(d: string): string {
   try {
     return new Date(d).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })

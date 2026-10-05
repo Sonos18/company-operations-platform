@@ -48,17 +48,20 @@
           </div>
         </div>
 
-        <div v-if="adj.kind === 'refund' && adj.status === 'approved' && hasUnreceivedRefund(adj) && canConfirmRefund" class="action-box">
-          <button v-if="confirmingRefundId !== adj.id" type="button" class="cockpit-btn cockpit-btn--sm" @click="startConfirmRefund(adj)">
+        <div v-if="adj.kind === 'refund' && adj.status === 'approved' && (hasUnreceivedRefund(adj) || pendingRefund?.id === adj.id) && canConfirmRefund" class="action-box">
+          <button v-if="confirmingRefundId !== adj.id" type="button" class="cockpit-btn cockpit-btn--sm" :disabled="isBusy || uploadBusy || Boolean(pendingRefund)" @click="startConfirmRefund(adj)">
             Ghi nhận nhận hoàn tiền thực tế
           </button>
           <div v-else class="confirm-form">
             <h6>Xác nhận nhận tiền hoàn thực tế</h6>
             <div class="grid-2">
-              <input v-model="confirmAmount" type="text" class="cockpit-input" placeholder="Số tiền thực nhận" :disabled="isBusy || uploadBusy" >
-              <input v-model="confirmDate" type="date" class="cockpit-input" :disabled="isBusy || uploadBusy" >
+              <input v-model="confirmAmount" type="text" class="cockpit-input" placeholder="Số tiền thực nhận" :disabled="isBusy || uploadBusy || Boolean(pendingRefund)" >
+              <input v-model="confirmDate" type="date" class="cockpit-input" :disabled="isBusy || uploadBusy || Boolean(pendingRefund)" >
             </div>
+            <p v-if="pendingRefund" class="alert warn">Lệnh xác nhận đang chờ kiểm tra kết quả. Giữ nguyên dữ liệu và bấm Xác nhận hoàn tất để thử lại, hoặc tải lại hồ sơ.</p>
+            <p v-else-if="refundAmountError" class="alert error">{{ refundAmountError }}</p>
             <CostWorkflowOriginalUpload
+              v-if="!pendingRefund"
               :key="adj.id"
               :company-id="companyId"
               :project-id="projectId" :target="{ kind: 'adjustment', id: adj.id }"
@@ -66,7 +69,7 @@
               @finalized="onConfirmFileFinalized" @busy="uploadBusy=$event"
             />
             <div class="actions">
-              <button type="button" class="cockpit-btn cockpit-btn--sm" :disabled="isBusy || uploadBusy" @click="confirmingRefundId = null">Hủy</button>
+              <button type="button" class="cockpit-btn cockpit-btn--sm" :disabled="isBusy || uploadBusy || Boolean(pendingRefund)" @click="confirmingRefundId = null">Hủy</button>
               <button type="button" class="cockpit-btn cockpit-btn--sm cockpit-btn--primary" :disabled="isBusy || !canSubmitConfirmRefund" @click="submitConfirmRefund(adj)">
                 Xác nhận hoàn tất
               </button>
@@ -151,7 +154,7 @@
 <script setup lang="ts">
 import Decimal from 'decimal.js'
 import { createFrozenWorkflowCommand } from '../../utils/costs/frozen-workflow-command'
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, shallowRef, computed, watch, onUnmounted } from 'vue'
 import {
   cashAdjustmentInputSchema,
   workflowRefundConfirmationSchema,
@@ -202,10 +205,12 @@ type EvidenceEntry={id:string;name:string}
 const selectedPaymentId=ref(''),adjKind=ref<'refund'|'correction'>('refund'),adjAmount=ref(''),adjReason=ref(''),adjFiles=ref<EvidenceEntry[]>([])
 const createReviewed=ref(false),decisionReasons=ref<Record<string,string>>({}),confirmingRefundId=ref<string|null>(null),confirmAmount=ref(''),confirmDate=ref(new Date().toISOString().slice(0,10)),confirmRefundFiles=ref<EvidenceEntry[]>([])
 const isBusy=ref(false),uploadBusy=ref(false),actionError=ref(''),frozenCreate=ref(false)
+const pendingRefund=shallowRef<{id:string;input:WorkflowRefundConfirmation}|null>(null)
+let mounted=true
 const tracker=createAsyncRequestTracker<{fp:string}>()
 const previewTracker=createAsyncRequestTracker<{fp:string;projectId:string}>()
 const capturedFp=getFingerprint()
-const commandScope=()=>scopeCurrent()&&getFingerprint()===capturedFp
+const commandScope=()=>mounted&&scopeCurrent()&&getFingerprint()===capturedFp
 const createSession=createFrozenWorkflowCommand<CashAdjustmentInput,unknown>({isScopeCurrent:commandScope,send:(id,input,key)=>repo.createCashAdjustment(props.projectId,id,input,{idempotencyKey:key})})
 const decisionSession=createFrozenWorkflowCommand<{contractId:string|null;kind:string;input:WorkflowDecisionInput},unknown>({isScopeCurrent:commandScope,send:(id,p,key)=>p.kind==='contract_adjustment'&&p.contractId?repo.decideContractAdjustment(props.projectId,p.contractId,id,p.input,{idempotencyKey:key}):repo.decideCashAdjustment(props.projectId,id,p.input,{idempotencyKey:key})})
 const refundSession=createFrozenWorkflowCommand<WorkflowRefundConfirmation,unknown>({isScopeCurrent:commandScope,send:(id,input,key)=>repo.confirmRefund(props.projectId,id,input,{idempotencyKey:key})})
@@ -216,13 +221,13 @@ function getAdjustmentAmount(adj:WorkflowAdjustmentView){const input=adj.input;r
 function getAdjustmentReason(adj:WorkflowAdjustmentView){return adj.input.reason}
 function hasUnreceivedRefund(adj:WorkflowAdjustmentView){return adj.kind==='refund'&&new Decimal(getAdjustmentAmount(adj)).gt(adj.confirmedRefund)}
 function resetCreateForm(){selectedPaymentId.value='';adjAmount.value='';adjReason.value='';adjFiles.value=[];createReviewed.value=false}
-function clearAll(){tracker.invalidate();previewTracker.invalidate();resetCreateForm();decisionReasons.value={};confirmingRefundId.value=null;confirmAmount.value='';confirmRefundFiles.value=[];isBusy.value=false;uploadBusy.value=false;actionError.value=''}
+function clearAll(){tracker.invalidate();previewTracker.invalidate();resetCreateForm();decisionReasons.value={};confirmingRefundId.value=null;confirmAmount.value='';confirmRefundFiles.value=[];pendingRefund.value=null;isBusy.value=false;uploadBusy.value=false;actionError.value=''}
 watch([()=>props.companyId,()=>props.projectId,()=>$companyAccessStore.activeCompanyId,getFingerprint],clearAll,{flush:'sync'})
 watch([selectedPaymentId,adjKind],()=>{adjFiles.value=[];createReviewed.value=false},{flush:'sync'})
 watch([adjAmount,adjReason,adjFiles],()=>{createReviewed.value=false},{deep:true,flush:'sync'})
-onUnmounted(()=>{tracker.invalidate();previewTracker.invalidate()})
+onUnmounted(()=>{mounted=false;tracker.invalidate();previewTracker.invalidate()})
 function onCreateFileFinalized(f:EvidenceEntry){if(scopeCurrent()&&!adjFiles.value.some(e=>e.id===f.id))adjFiles.value.push(f)}
-function onConfirmFileFinalized(f:EvidenceEntry){if(scopeCurrent()&&!confirmRefundFiles.value.some(e=>e.id===f.id))confirmRefundFiles.value.push(f)}
+function onConfirmFileFinalized(f:EvidenceEntry){if(commandScope()&&!pendingRefund.value&&!confirmRefundFiles.value.some(e=>e.id===f.id))confirmRefundFiles.value.push(f)}
 async function openEvidence(fileId:string,disposition:'inline'|'attachment'='inline'){
  if(!canReadFile.value)return
  const token=previewTracker.start({fp:getFingerprint(),projectId:props.projectId})
@@ -248,9 +253,47 @@ async function handleDecide(adj:WorkflowAdjustmentView,decision:'approve'|'retur
  if(adj.kind==='contract_adjustment'&&!adj.contractId)return
  await run(()=>decisionSession.attempt(adj.id,{kind:adj.kind,contractId:adj.contractId,input:input.data}))
 }
-function startConfirmRefund(adj:WorkflowAdjustmentView){if(!canConfirmRefund.value)return;confirmingRefundId.value=adj.id;confirmAmount.value=new Decimal(getAdjustmentAmount(adj)).minus(adj.confirmedRefund).toFixed();confirmDate.value=new Date().toISOString().slice(0,10);confirmRefundFiles.value=[]}
-const canSubmitConfirmRefund=computed(()=>canConfirmRefund.value&&!uploadBusy.value&&confirmRefundFiles.value.length>0&&workflowRefundConfirmationSchema.safeParse({amount:confirmAmount.value.trim(),receivedDate:confirmDate.value,evidenceFileIds:confirmRefundFiles.value.map(f=>f.id),expectedVersion:0}).success)
-async function submitConfirmRefund(adj:WorkflowAdjustmentView){if(!canSubmitConfirmRefund.value||adj.status!=='approved'||adj.kind!=='refund')return;const input=workflowRefundConfirmationSchema.safeParse({amount:confirmAmount.value.trim(),receivedDate:confirmDate.value,evidenceFileIds:confirmRefundFiles.value.map(f=>f.id),expectedVersion:adj.version});if(input.success)await run(()=>refundSession.attempt(adj.id,input.data))}
+function startConfirmRefund(adj:WorkflowAdjustmentView){
+ if(!canConfirmRefund.value||isBusy.value||uploadBusy.value||pendingRefund.value||adj.kind!=='refund'||adj.status!=='approved')return
+ confirmingRefundId.value=adj.id
+ confirmAmount.value=new Decimal(getAdjustmentAmount(adj)).minus(adj.confirmedRefund).toFixed()
+ confirmDate.value=new Date().toISOString().slice(0,10);confirmRefundFiles.value=[]
+}
+const selectedRefund=computed(()=>props.adjustments.find(adj=>adj.id===confirmingRefundId.value&&adj.kind==='refund'&&adj.status==='approved'))
+const refundAmountError=computed(()=>{
+ if(pendingRefund.value)return ''
+ const adj=selectedRefund.value
+ if(!adj)return 'Không tìm thấy đề nghị hoàn tiền đã duyệt.'
+ try{
+  const amount=new Decimal(confirmAmount.value.trim())
+  const remaining=new Decimal(getAdjustmentAmount(adj)).minus(adj.confirmedRefund)
+  if(!amount.isFinite()||amount.lte(0))return 'Số tiền thực nhận phải lớn hơn 0.'
+  if(amount.gt(remaining))return 'Số tiền thực nhận vượt phần hoàn tiền đã duyệt chưa nhận.'
+ }catch{return 'Số tiền thực nhận không hợp lệ.'}
+ return ''
+})
+const canSubmitConfirmRefund=computed(()=>{
+ if(!canConfirmRefund.value||!commandScope()||uploadBusy.value)return false
+ if(pendingRefund.value)return pendingRefund.value.id===confirmingRefundId.value
+ return Boolean(selectedRefund.value)&&!refundAmountError.value&&confirmRefundFiles.value.length>0&&workflowRefundConfirmationSchema.safeParse({amount:confirmAmount.value.trim(),receivedDate:confirmDate.value,evidenceFileIds:confirmRefundFiles.value.map(f=>f.id),expectedVersion:selectedRefund.value?.version}).success
+})
+async function submitConfirmRefund(adj:WorkflowAdjustmentView){
+ if(!canSubmitConfirmRefund.value||isBusy.value||adj.status!=='approved'||adj.kind!=='refund')return
+ if(!pendingRefund.value){
+  const input=workflowRefundConfirmationSchema.safeParse({amount:confirmAmount.value.trim(),receivedDate:confirmDate.value,evidenceFileIds:confirmRefundFiles.value.map(f=>f.id),expectedVersion:adj.version})
+  if(!input.success||refundAmountError.value)return
+  pendingRefund.value={id:adj.id,input:input.data}
+ }
+ const pending=pendingRefund.value
+ if(pending.id!==adj.id)return
+ await run(async()=>{
+  const receipt=await refundSession.attempt(pending.id,pending.input)
+  if(commandScope()&&pendingRefund.value===pending){
+   pendingRefund.value=null;confirmingRefundId.value=null;confirmRefundFiles.value=[]
+  }
+  return receipt
+ })
+}
 async function handleApplyCorrection(adj:WorkflowAdjustmentView){if(!canApplyCorrection.value||adj.status!=='approved'||adj.kind!=='correction'||adj.correctionApplied)return;const input=workflowCommandVersionSchema.parse({expectedVersion:adj.version});await run(()=>correctionSession.attempt(adj.id,input))}
 
 </script>
