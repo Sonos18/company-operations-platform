@@ -74,6 +74,11 @@ function sessionPayload(state: AuthTestState, recovery = false) {
 }
 
 export async function installAuthRoutes(page: Page, state: AuthTestState): Promise<void> {
+  // Existing tests run with the company workflow disabled; workflow-specific tests
+  // override this exact read endpoint. Never reach a live DB from mocked browsers.
+  await page.route(/\/api\/companies\/[^/]+\/cost-workflow\/projects(?:\?.*)?$/,route=>route.fulfill({json:{mode:'legacy',projects:[],nextCursor:null}}))
+  await page.route(/\/api\/companies\/[^/]+\/cost-notifications$/,route=>route.fulfill({json:[]}))
+
   await page.route(`${supabaseAuthUrl}/auth/v1/**`, async (route) => {
     const request = route.request()
     const url = new URL(request.url())

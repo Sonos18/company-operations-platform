@@ -33,11 +33,13 @@ const router = useRouter()
 const repositories = useRepositories()
 const companyAccess = useNuxtApp().$companyAccessStore
 
+const legacyWorkflowMode=useCostWorkflowMode()
+const legacyWritable=computed(()=>legacyWorkflowMode.mode.value==='legacy')
 const canRead = computed(() => companyAccess.hasPermission('cost.read'))
-const canManage = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && companyAccess.hasPermission('cost.manage'))
-const canCorrect = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && companyAccess.hasPermission('cost.correct'))
-const canPrepare = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && companyAccess.hasPermission('cost.prepare'))
-const canSourceRead = computed(() => companyAccess.hasPermission('cost.source.read'))
+const canManage = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && legacyWritable.value && companyAccess.hasPermission('cost.manage'))
+const canCorrect = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && legacyWritable.value && companyAccess.hasPermission('cost.correct'))
+const canPrepare = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && legacyWritable.value && companyAccess.hasPermission('cost.prepare'))
+const canSourceRead = computed(() => legacyWorkflowMode.mode.value!=='document_backed_v1' && companyAccess.hasPermission('cost.source.read'))
 
 const isCorrectionModalOpen = ref(false)
 const isAttachEvidenceOpen = ref(false)

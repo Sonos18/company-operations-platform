@@ -1,0 +1,15 @@
+{
+  "synthetic": true,
+  "images": [
+    {
+      "name": "synthetic-invoice-photo.png",
+      "mimeType": "image/png",
+      "extractionExpected": "unavailable"
+    },
+    {
+      "name": "synthetic-transfer-receipt.jpg",
+      "mimeType": "image/jpeg",
+      "extractionExpected": "unavailable"
+    }
+  ]
+}

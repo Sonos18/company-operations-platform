@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CostNotificationBell from '../components/costs/CostNotificationBell.vue'
 import { PRODUCT_BRAND } from '../../shared/constants/product-brand'
 import { selectCompanyWithUnsavedChanges } from '../components/app/company-switcher'
 
@@ -50,6 +51,7 @@ async function signOut(): Promise<void> {
       @sign-out="signOut"
     />
     <main class="app-main" data-testid="app-main">
+      <div v-if="companyAccessStore.hasPermission('cost.notification.read')" class="cost-notification-toolbar"><CostNotificationBell /></div>
       <slot />
     </main>
   </div>
@@ -66,6 +68,7 @@ async function signOut(): Promise<void> {
 .app-shell[data-sidebar-collapsed] {
   --shell-sidebar-width: 64px;
 }
+.cost-notification-toolbar { display:flex;justify-content:flex-end;margin-bottom:8px; }
 .app-main {
   min-height: 100vh;
   padding: 24px 24px 32px calc(var(--shell-sidebar-width) + 24px);
