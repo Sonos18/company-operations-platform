@@ -1,4 +1,7 @@
+import { createRequire } from 'node:module'
 import { PRODUCT_BRAND } from './shared/constants/product-brand'
+
+const require = createRequire(import.meta.url)
 
 export default defineNuxtConfig({
   compatibilityDate: "2026-08-13",
@@ -16,6 +19,10 @@ export default defineNuxtConfig({
       supabaseUrl: '',
       supabaseAnonKey: '',
     },
+  },
+  nitro: {
+    // Dynamic createRequire decoders must survive detached server deployment.
+    externals: { traceInclude: [require.resolve('pngjs'), require.resolve('jpeg-js')] },
   },
   typescript: {
     strict: true,
