@@ -158,14 +158,30 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
  const receipts=[];let cumulative=[0n,0n]
  const archiveRoot=resolve(cwd,'.superpowers/sdd/2026-10-04-document-backed-installment-approval')
  const runId=randomUUID();let snapshotNumber=0,allSequenceSnapshotNumber=0
- const snapshotArchiveFailures=[]
+ const snapshotArchiveFailures=[],commandDiagnosticArchiveFailures=[]
+ let commandNumber=0,primaryFailure
  const archive=archiveSnapshot||((row,label)=>{mkdirSync(archiveRoot,{recursive:true});writeFileSync(resolve(archiveRoot,'native-'+runId+'-'+label+'.json'),JSON.stringify(row,null,2),{mode:0o600,flag:'wx'})})
  try{
   const {binary}=workflowExecutionInventory(cwd)
   const childQuery=query||createWorkflowQuery({linkRoot,linkedMetadata:manifest.linkedTarget,env:cliEnv,binary,assertHeld:()=>lease.assertHeld(),maximumTapAssertion:azure?124:80})
   const runQuery=async(...args)=>{
    lease.assertHeld();assertWorkflowLinkUnchanged(linkRoot,manifest.linkedTarget)
-   try{return await childQuery(...args)}finally{lease.assertHeld();assertWorkflowLinkUnchanged(linkRoot,manifest.linkedTarget)}
+   const number=++commandNumber
+   let failure,response
+   try{response=await childQuery(...args)}catch(error){
+    failure=error
+    const diagnostic=workflowCliDiagnostic(error)
+    if(diagnostic){
+     try{await archive({...diagnostic,commandNumber:number},'command-diagnostic-'+number)}catch{
+      commandDiagnosticArchiveFailures.push(number)
+      failure=workflowWrapCliFailure('WORKFLOW_REHEARSAL_DIAGNOSTIC_ARCHIVE_FAILED',error)
+     }
+    }
+   }finally{
+    try{lease.assertHeld();assertWorkflowLinkUnchanged(linkRoot,manifest.linkedTarget)}catch(error){failure=workflowWrapCliFailure(error.message,failure)}
+   }
+   if(failure)throw failure
+   return response
   }
   const captureResponse=async(sql,label,decode)=>{const response=await runQuery(sql);try{await archive(response?.rows?.length===1?response.rows[0]:response,label)}catch{snapshotArchiveFailures.push(label)}return decode(response)}
   const capture=()=>captureResponse(workflowNativeSnapshotSql,'snapshot-'+(++snapshotNumber),snapshotResult)
@@ -245,11 +261,13 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
       if(prior&&postflight)cumulativeWithPrior(postflight.cumulative)
      }
     }catch(error){postflightFailure ||=error}
+    if(commandDiagnosticArchiveFailures.length)diagnosticArchiveFailure ||=new Error('WORKFLOW_REHEARSAL_DIAGNOSTIC_ARCHIVE_FAILED')
+    const retainedFailure=[failure,cleanupFailure,postflightFailure].find(error=>workflowCliDiagnostic(error))||failure
     const category=error=>/^WORKFLOW_REHEARSAL_[A-Z_]+(?::[A-Z_0-9]+)?$/.test(error?.message)?error.message:'WORKFLOW_REHEARSAL_OPERATION_FAILED'
     try{await archive({suite:suite.name,cleanup:cleanup||null,postflightConfirmed:!!postflight&&!!allPostflight&&!postflightFailure,allSequenceCount:allPostflight?.allSequenceCount||null,sequenceAllocations:allPostflight?.allocations.map(String)||null,...(prior?{priorCumulativeSequenceAllocations:priorAllocations,cumulativeSequenceAllocations:allPostflight?cumulativeWithPrior(allPostflight.cumulative).map(String):null}:{}),primary:failure?category(failure):null,cleanupFailure:cleanupFailure?category(cleanupFailure):null,postflightFailure:postflightFailure?category(postflightFailure):null,diagnosticArchiveFailure:!!diagnosticArchiveFailure,snapshotArchiveFailures:[...snapshotArchiveFailures]},'closure-'+index)}catch{closureArchiveFailure=new Error('WORKFLOW_REHEARSAL_DIAGNOSTIC_ARCHIVE_FAILED')}
     if(failure||cleanupFailure||postflightFailure||diagnosticArchiveFailure||closureArchiveFailure||snapshotArchiveFailures.length){
      if(!cleanupFailure&&!postflightFailure&&!diagnosticArchiveFailure&&!closureArchiveFailure&&!snapshotArchiveFailures.length)throw workflowWrapCliFailure(category(failure),failure)
-     throw workflowWrapCliFailure('WORKFLOW_REHEARSAL_FAILURES:'+JSON.stringify({primary:failure?category(failure):null,cleanup:cleanupFailure?category(cleanupFailure):null,postflight:postflightFailure?category(postflightFailure):null,...(diagnosticArchiveFailure?{diagnosticArchive:category(diagnosticArchiveFailure)}:{}),...(closureArchiveFailure||snapshotArchiveFailures.length?{snapshotArchive:'WORKFLOW_REHEARSAL_DIAGNOSTIC_ARCHIVE_FAILED'}:{})}),failure)
+     throw workflowWrapCliFailure('WORKFLOW_REHEARSAL_FAILURES:'+JSON.stringify({primary:failure?category(failure):null,cleanup:cleanupFailure?category(cleanupFailure):null,postflight:postflightFailure?category(postflightFailure):null,...(diagnosticArchiveFailure?{diagnosticArchive:category(diagnosticArchiveFailure)}:{}),...(closureArchiveFailure||snapshotArchiveFailures.length?{snapshotArchive:'WORKFLOW_REHEARSAL_DIAGNOSTIC_ARCHIVE_FAILED'}:{})}),retainedFailure)
     }
     if(!cleanup||!postflight||!allPostflight)throw new Error('WORKFLOW_REHEARSAL_CLEANUP_UNCERTAIN')
    lease.assertHeld()
@@ -273,7 +291,9 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
    if(JSON.stringify(finalClosure.allocations.map(String))!==JSON.stringify(cumulative.map(String))||JSON.stringify(allFinalClosure.allocations.map(String))!==JSON.stringify(cumulative.map(String)))throw new Error('WORKFLOW_REHEARSAL_SEQUENCE_BUDGET')
    if(snapshotArchiveFailures.length)throw new Error('WORKFLOW_REHEARSAL_DIAGNOSTIC_ARCHIVE_FAILED')
   return {mode:'executed',...manifest,runId,acceptedBaselineSha256:baseline.sha256,initialSnapshotSha256,receipts,sequenceAllocations:cumulative.map(String),...(prior?{priorCumulativeSequenceAllocations:priorAllocations,cumulativeSequenceAllocations:cumulativeWithPrior(cumulative).map(String)}:{}),snapshotCount:snapshotNumber,allSequenceSnapshotCount:allSequenceSnapshotNumber,finalAllSequenceCount:allFinalClosure.allSequenceCount,finalAllSequenceSha256:allFinalClosure.allSequenceSnapshotSha256,finalCatalogueSha256:final.snapshot.catalogueSha256,finalComparableCatalogueSha256:final.snapshot.catalogueComparableSha256}
- }finally{await lease.release()}
+ }catch(error){primaryFailure=error;throw error}finally{
+  await lease.release().catch(()=>{throw workflowWrapCliFailure('WORKFLOW_REHEARSAL_LOCK_RELEASE_FAILED',primaryFailure)})
+ }
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const args=process.argv.slice(2),execute=args[0]==='--execute',captureBaseline=args[0]==='--capture-baseline'

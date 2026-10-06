@@ -1,0 +1,61 @@
+{
+  "provenance": "Synthetic nonsecret envelopes reconstructed from installed 2.114.0 embedded source. First primary/context independently recovered from scoped DEV log. NOT original captured CLI bytes.",
+  "cases": [
+    {
+      "name": "installed-2.114-json-http-body",
+      "stdout": "{\"_tag\":\"Error\",\"error\":{\"code\":\"LegacyDbQueryUnexpectedStatusError\",\"message\":\"unexpected status 400: {\\\"message\\\": \\\"ERROR: WORKFLOW_REHEARSAL_IMPLICIT_FUNCTION_UNREVIEWED (SQLSTATE P0001)\\\\nCONTEXT: PL/pgSQL function inline_code_block line 80 at RAISE\\\"}\"}}\n",
+      "stderr": "Connecting to remote database...\n",
+      "state": "P0001",
+      "message": "WORKFLOW_REHEARSAL_IMPLICIT_FUNCTION_UNREVIEWED",
+      "line": 80
+    },
+    {
+      "name": "installed-http-error-string",
+      "stdout": "{\"_tag\": \"Error\", \"error\": {\"code\": \"LegacyDbQueryUnexpectedStatusError\", \"message\": \"unexpected status 400: {\\\"error\\\": \\\"ERROR: 23505: duplicate key value violates unique constraint \\\\\\\"customer-private\\\\\\\"\\\\nCONTEXT: PL/pgSQL function inline_code_block line 9 at SQL statement\\\"}\"}}",
+      "stderr": "",
+      "state": "23505",
+      "message": "duplicate key value violates unique constraint [redacted]",
+      "line": 9
+    },
+    {
+      "name": "ordinary-bare-json",
+      "stdout": "",
+      "stderr": "{\"code\": \"42501\", \"message\": \"permission denied for table \\\"secret_table\\\"\", \"context\": \"PL/pgSQL function inline_code_block line 3 at SQL statement\", \"details\": \"SQLSTATE P0001\"}",
+      "state": "42501",
+      "message": "permission denied for table [redacted]",
+      "line": 3
+    },
+    {
+      "name": "typed-cli-auth",
+      "stdout": "{\"_tag\": \"Error\", \"error\": {\"code\": \"ApiAuthenticationError\", \"message\": \"Unauthorized: access token expired\"}}",
+      "stderr": "progress\n",
+      "state": null,
+      "message": "Unauthorized: access token expired",
+      "line": null
+    },
+    {
+      "name": "stream-json-network",
+      "stdout": "{\"type\": \"error\", \"error\": {\"code\": \"NetworkError\", \"message\": \"connection timed out\"}, \"timestamp\": \"2026-10-06T08:18:19Z\"}\n",
+      "stderr": "",
+      "state": null,
+      "message": "connection timed out",
+      "line": null
+    },
+    {
+      "name": "native-non-guard",
+      "stdout": "",
+      "stderr": "ERROR: canceling statement due to statement timeout (SQLSTATE 57014)",
+      "state": "57014",
+      "message": "canceling statement due to statement timeout",
+      "line": null
+    },
+    {
+      "name": "unknown-prose",
+      "stdout": "",
+      "stderr": "unexpected native failure\nSTATEMENT: SQLSTATE P0001",
+      "state": null,
+      "message": "unexpected native failure",
+      "line": null
+    }
+  ]
+}

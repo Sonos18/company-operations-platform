@@ -11,10 +11,20 @@ const retained='.superpowers/sdd/2026-10-04-document-backed-installment-approval
 const raw=JSON.parse(readFileSync(retained+'native-14ad5a8e-6d52-4255-bf6d-d80a0fc4e8e6-snapshot-2.json','utf8'))
 const original={...raw,snapshot:JSON.parse(raw.snapshot)}
 const originalAll=workflowAllSequenceSnapshot({rows:[JSON.parse(readFileSync(retained+'native-14ad5a8e-6d52-4255-bf6d-d80a0fc4e8e6-all-sequences-2.json','utf8'))]})
-function harness(options:{fail?:boolean;audit?:number;catalogueDrift?:boolean}={}){
- let time=Date.parse('2026-10-06T09:00:00Z'),batches=0
+function harness(options:{fail?:boolean;audit?:number;catalogueDrift?:boolean;commandFailureAt?:string}={}){
+ let time=Date.parse('2026-10-06T09:00:00Z'),batches=0,commandFailed=false,snapshotReads=0
  const lease={assertHeld:vi.fn(),release:vi.fn(async()=>{})}
  const query=vi.fn(async(sql:string)=>{
+  const snapshot=sql.includes('workflow_snapshot_result'),all=sql.includes('workflow_all_sequence_census')
+  const at=options.commandFailureAt
+  const fails=at==='batch'&&sql.startsWith('/*c1cw-')||at==='clock'&&sql.includes('workflow_admission_clock')||at==='cleanup'&&sql.includes('pg_stat_activity')||at==='postflight'&&snapshot&&batches>0||at==='all-postflight'&&all&&batches>0||at==='final'&&snapshot&&snapshotReads>=2||at==='preflight'&&!snapshot&&!all&&!sql.includes('workflow_admission_clock')&&!sql.startsWith('/*c1cw-')
+  if(snapshot)snapshotReads++
+  if(fails&&!commandFailed){
+   commandFailed=true
+   if(at==='batch')batches++
+   throw workflowCliFailure({stdout:JSON.stringify({_tag:'Error',error:{code:'LegacyDbQueryUnexpectedStatusError',message:'unexpected status 400: '+JSON.stringify({message:'ERROR: ordinary SQL failure (SQLSTATE 42501)\nCONTEXT: PL/pgSQL function inline_code_block line 80 at RAISE'})}}),stderr:'Connecting to remote database...\n',status:1,sqlSha256:workflowSha(sql),maximumTapAssertion:124})
+  }
+
   if(!sql.startsWith('/*c1cw-')&&sql.includes('workflow_snapshot_result')){
    const row=structuredClone(original);row.server_time=new Date(time).toISOString()
    if(batches&&options.audit)row.snapshot.sequences['public.audit_events_id_seq'].lastValue=String(BigInt(row.snapshot.sequences['public.audit_events_id_seq'].lastValue)+BigInt(options.audit))
@@ -133,4 +143,36 @@ describe('bounded Azure124 primary CLI failure evidence',()=>{
   expect(diagnostic.messageCode).toBe('AZURE_FIXTURE_RESOURCE_NOT_EMPTY')
   expect(JSON.stringify(diagnostic)).not.toContain('internal-sensitive-prose')
  })
+})
+
+describe('command diagnostics reach the actual rehearsal archive at every phase',()=>{
+ it.each(['preflight','clock','batch','cleanup','postflight','all-postflight','final'])('archives %s primary through wrapper/closure',async commandFailureAt=>{
+  const h=harness({commandFailureAt})
+  const error=await h.execute().catch(e=>e)
+  const rows=h.archive.mock.calls.filter(x=>x[1].startsWith('command-diagnostic-')).map(x=>JSON.parse(JSON.stringify(x[0])))
+  expect(rows).toHaveLength(1)
+  expect(rows[0]).toMatchObject({sqlstate:'42501',primaryMessage:'ordinary SQL failure',location:{line:80},commandNumber:expect.any(Number)})
+  expect(workflowCliDiagnostic(error)).toMatchObject({sqlstate:'42501',primaryMessage:'ordinary SQL failure',location:{line:80}})
+  expect(h.lease.release).toHaveBeenCalledTimes(1)
+ },30000)
+})
+
+describe('command archive failure preserves the original diagnostic',()=>{
+ it('fails closed and keeps the command primary when its archive cannot be written',async()=>{
+  const h=harness({commandFailureAt:'preflight'})
+  h.archive.mockImplementation(async(_row,label)=>{if(label.startsWith('command-diagnostic-'))throw Error('synthetic disk error')})
+  const error=await h.execute().catch(e=>e)
+  expect(error.message).toContain('DIAGNOSTIC_ARCHIVE_FAILED')
+  expect(workflowCliDiagnostic(error)).toMatchObject({sqlstate:'42501',primaryMessage:'ordinary SQL failure',location:{line:80}})
+  expect(h.lease.release).toHaveBeenCalledTimes(1)
+ },30000)
+})
+
+describe('lease finalization cannot discard the command primary',()=>{
+ it('keeps primary facts when releasing the owned lease fails',async()=>{
+  const h=harness({commandFailureAt:'preflight'})
+  h.lease.release.mockRejectedValueOnce(Error('synthetic release error'))
+  const error=await h.execute().catch(e=>e)
+  expect(workflowCliDiagnostic(error)).toMatchObject({sqlstate:'42501',primaryMessage:'ordinary SQL failure',location:{line:80}})
+ },30000)
 })
