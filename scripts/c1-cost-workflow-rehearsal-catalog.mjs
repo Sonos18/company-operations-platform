@@ -25,7 +25,6 @@ set local statement_timeout='15s';
 set local idle_in_transaction_session_timeout='5s';
 set local row_security=off;
 set local search_path=pg_catalog,public,extensions;
-create temporary table workflow_snapshot_result(value jsonb) on commit drop;
 do $workflow_snapshot$
 declare r record; tables jsonb='{}'; sequences jsonb='{}'; f jsonb; metadata text;
 begin
@@ -54,19 +53,19 @@ begin
   union all select 'function:'||to_jsonb(p)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in('public','private','auth','storage','supabase_migrations','extensions')
   union all select 'type:'||to_jsonb(t)::text from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname in('public','private','auth','storage','supabase_migrations','extensions')
   union all select 'enum:'||to_jsonb(e)::text from pg_enum e join pg_type t on t.oid=e.enumtypid join pg_namespace n on n.oid=t.typnamespace where n.nspname in('public','private','auth','storage','supabase_migrations','extensions')
-  union all select 'rewrite:'||to_jsonb(r)::text from pg_rewrite r join pg_class c on c.oid=r.ev_class join pg_namespace n on n.oid=c.relnamespace where n.nspname in('public','private','auth','storage','supabase_migrations','extensions')
+  union all select 'rewrite:'||to_jsonb(rewrite_row)::text from pg_rewrite rewrite_row join pg_class c on c.oid=rewrite_row.ev_class join pg_namespace n on n.oid=c.relnamespace where n.nspname in('public','private','auth','storage','supabase_migrations','extensions')
   union all select 'sequence:'||to_jsonb(s)::text from pg_sequence s join pg_class c on c.oid=s.seqrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname in('public','private','auth','storage','supabase_migrations','extensions')
   union all select 'operator:'||to_jsonb(o)::text from pg_operator o join pg_namespace n on n.oid=o.oprnamespace where n.nspname in('public','private','auth','storage','supabase_migrations','extensions')
   union all select 'default_acl:'||to_jsonb(a)::text from pg_default_acl a
   union all select 'event_trigger:'||to_jsonb(t)::text from pg_event_trigger t
   union all select 'extension:'||to_jsonb(e)::text from pg_extension e
   union all select 'dependency:'||to_jsonb(d)::text from pg_depend d where (d.classid='pg_proc'::regclass and exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where p.oid=d.objid and n.nspname in('public','private','auth','storage','supabase_migrations','extensions'))) or (d.classid='pg_class'::regclass and exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.oid=d.objid and n.nspname in('public','private','auth','storage','supabase_migrations','extensions'))) or (d.classid='pg_extension'::regclass)
-  union all select 'role:'||to_jsonb(r)::text from pg_roles r
+  union all select 'role:'||to_jsonb(role_row)::text from pg_roles role_row
   union all select 'role_membership:'||to_jsonb(m)::text from pg_auth_members m
  ) catalogue;
- insert into pg_temp.workflow_snapshot_result values(jsonb_build_object('tables',tables,'sequences',sequences,'catalogueSha256',encode(sha256(convert_to(coalesce(metadata,''),'UTF8')),'hex')));
+ perform pg_catalog.set_config('taskovia.workflow_snapshot_result',jsonb_build_object('tables',tables,'sequences',sequences,'catalogueSha256',encode(sha256(convert_to(coalesce(metadata,''),'UTF8')),'hex'))::text,true);
 end;$workflow_snapshot$;
-select value as snapshot,clock_timestamp()::text as server_time,current_database() as database,session_user as username from pg_temp.workflow_snapshot_result;
+select pg_catalog.current_setting('taskovia.workflow_snapshot_result')::jsonb as snapshot,clock_timestamp()::text as server_time,current_database() as database,session_user as username;
 rollback;
 `
 export function workflowDependencyPreflightSql(inventory,{pgTapPhase='installed'}={}){
@@ -182,7 +181,7 @@ begin
   select * into s from pg_sequence where seqrelid=n::regclass;
   if s.seqincrement<>1 or s.seqcache<>1 or s.seqcycle or s.seqtypid<>'bigint'::regtype then raise exception 'WORKFLOW_REHEARSAL_SEQUENCE_SETTINGS';end if;
   execute format('select last_value,is_called from %s',n::regclass) into v,called;
-  if s.seqmax-v::numeric < case when n='public.audit_events_id_seq' then ${budgets[0]} else ${budgets[1]} end then raise exception 'WORKFLOW_REHEARSAL_SEQUENCE_RANGE';end if;
+  if s.seqmax-v::numeric < (case when n='public.audit_events_id_seq' then ${budgets[0]} else ${budgets[1]} end) then raise exception 'WORKFLOW_REHEARSAL_SEQUENCE_RANGE';end if;
   if not exists(select 1 from pg_attribute where attrelid=(case when n='public.audit_events_id_seq' then 'public.audit_events' else 'public.company_role_assignments' end)::regclass and attname='id' and attidentity='a' and atttypid='bigint'::regtype) then raise exception 'WORKFLOW_REHEARSAL_SEQUENCE_OWNER';end if;
   insert into pg_temp.workflow_sequence_baseline values(n,v::numeric-case when called then 0 else 1 end);
  end loop;

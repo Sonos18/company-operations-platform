@@ -1,6 +1,52 @@
 set local lock_timeout='5s';
 set local statement_timeout='90s';
 select pg_catalog.pg_advisory_xact_lock(71842,31);
+-- Explicit PDF coverage is non-authoritative, original-bound and always partial.
+create function private.c1_workflow_validate_pdf_coverage(p_result jsonb,p_sha text,p_size bigint,p_requested_pages integer) returns void
+language plpgsql immutable set search_path='' as $$
+declare v_coverage jsonb;v_count jsonb;v_returned jsonb;v_requested jsonb;v_match boolean;
+begin
+ v_coverage:=p_result->'azurePdfCoverage';
+ if jsonb_typeof(v_coverage) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+ perform private.c1_workflow_require_keys(v_coverage,
+ array['kind','sourceSha256','sourceByteLength','requestedPages','returnedPages','requestedPagesMatched','sourcePageCount','wholeDocumentComplete','reviewRequired'],
+ array['kind','sourceSha256','sourceByteLength','requestedPages','returnedPages','requestedPagesMatched','sourcePageCount','wholeDocumentComplete','reviewRequired']);
+ v_requested:=v_coverage->'requestedPages';
+ if v_coverage->>'kind' is distinct from 'azure-pdf-scope-v1' or v_coverage->>'sourceSha256' is distinct from p_sha
+ or v_coverage->'sourceByteLength' is distinct from to_jsonb(p_size)
+ or p_size is null or p_size not between 1 and 4000000
+ or (v_requested is distinct from '[1]'::jsonb and v_requested is distinct from '[1,2]'::jsonb)
+ or (p_requested_pages is not null and ((p_requested_pages=1 and v_requested is distinct from '[1]'::jsonb) or (p_requested_pages=2 and v_requested is distinct from '[1,2]'::jsonb) or p_requested_pages not in(1,2)))
+ or v_coverage->'wholeDocumentComplete' is distinct from 'false'::jsonb or v_coverage->'reviewRequired' is distinct from 'true'::jsonb
+ or p_result->>'methodVersion' is distinct from 'azure-f0-v1' or p_result->>'status' is null or p_result->>'status' not in('needs_review','unavailable')
+ then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+ if jsonb_typeof(v_coverage->'returnedPages') is distinct from 'array' then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+ if jsonb_array_length(v_coverage->'returnedPages')>2 or exists(
+  select 1 from jsonb_array_elements(v_coverage->'returnedPages') e(value)
+  where jsonb_typeof(e.value)<>'number' or e.value::text not in('1','2'))
+ then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+ if exists(select 1 from jsonb_array_elements(v_coverage->'returnedPages') e(value) where (e.value::text)::numeric>9007199254740991)
+ then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+ select coalesce(jsonb_agg(e.value order by (e.value::text)::numeric),'[]'::jsonb) into v_returned from jsonb_array_elements(v_coverage->'returnedPages') e(value);
+ v_match:=v_returned=v_requested;
+ if v_coverage->'requestedPagesMatched' is distinct from to_jsonb(v_match) then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+ if (p_result->>'status'='needs_review' and not v_match) or (p_result->>'status'='unavailable' and p_result->'fields' is distinct from '{}'::jsonb) then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+ if not v_match and (p_result->'fields' is distinct from '{}'::jsonb or coalesce(p_result->'providerLocations','[]'::jsonb) is distinct from '[]'::jsonb)
+ then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+ v_count:=v_coverage->'sourcePageCount';
+ if jsonb_typeof(v_count) is distinct from 'object' or v_count->>'kind' is null or v_count->>'kind' not in('unknown','user-declared','trusted-metadata')
+ then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+ if v_count->>'kind'='unknown' then
+  perform private.c1_workflow_require_keys(v_count,array['kind'],array['kind']);
+ else
+  perform private.c1_workflow_require_keys(v_count,array['kind','count'],array['kind','count']);
+  if jsonb_typeof(v_count->'count') is distinct from 'number' or v_count->>'count' is null or v_count->>'count' !~ '^[1-9][0-9]{0,15}$'
+  then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+  if (v_count->>'count')::numeric>9007199254740991 or (v_count->>'count')::numeric<jsonb_array_length(v_requested) then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+ end if;
+end;$$;
+revoke all on function private.c1_workflow_validate_pdf_coverage(jsonb,text,bigint,integer) from public,anon,authenticated,service_role;
+
 -- A staged original can be reviewed before selecting a party or creating a working request.
 alter table public.cost_workflow_extractions alter column request_id drop not null;
 
@@ -16,7 +62,7 @@ begin
   if not found then raise exception using errcode='P0001',message='RESOURCE_NOT_FOUND';end if;
   if request.state not in('working','returned') then raise exception using errcode='P0001',message='VERSION_CONFLICT';end if;
  end if;
- return jsonb_build_object('fileId',f.id,'companyId',c,'projectId',p,'requestId',r,'fileVersion',f.version,'requestVersion',request.version,'sha256',f.verified_sha256,'mimeType',f.verified_mime_type,'sizeBytes',f.verified_size_bytes,'bucketId',f.bucket_id,'objectPath',f.object_path);
+ return jsonb_build_object('fileId',f.id,'companyId',c,'projectId',p,'requestId',r,'fileVersion',f.version,'requestVersion',request.version,'sha256',f.verified_sha256,'mimeType',f.verified_mime_type,'documentKind',f.workflow_evidence_kind,'sizeBytes',f.verified_size_bytes,'bucketId',f.bucket_id,'objectPath',f.object_path);
 end;$$;
 create function public.c1_workflow_extraction_target(target_company_id uuid,target_project_id uuid,target_request_id uuid,target_id uuid) returns jsonb
 language plpgsql stable security definer set search_path='' as $$
@@ -45,7 +91,7 @@ begin
  result:=target_input->'result';
  -- Non-authoritative suggestions only: JSON cannot become a request, grant, party or cash event.
  if octet_length(result::text)>300000 or jsonb_typeof(result) is distinct from 'object' then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
- perform private.c1_workflow_require_keys(result,array['status','reviewRequired','fields','warnings','sourceLocations','methodVersion'],array['status','reviewRequired','fields','warnings','sourceLocations','methodVersion','providerLocations']);
+ perform private.c1_workflow_require_keys(result,array['status','reviewRequired','fields','warnings','sourceLocations','methodVersion'],array['status','reviewRequired','fields','warnings','sourceLocations','methodVersion','providerLocations','azurePdfCoverage']);
  method:=result->>'methodVersion';state:=result->>'status';
  if method not in('azure-f0-v1','excel-offline-v1','offline-unavailable-v1','synthetic-fixture-v1') or state not in('ready','needs_review','unavailable','failed') or result->'reviewRequired' is distinct from 'true'::jsonb
  or jsonb_typeof(result->'fields') is distinct from 'object' or jsonb_typeof(result->'warnings') is distinct from 'array' or jsonb_typeof(result->'sourceLocations') is distinct from 'array'
@@ -54,6 +100,10 @@ begin
  if result ? 'providerLocations' then
   if method<>'azure-f0-v1' or jsonb_typeof(result->'providerLocations') is distinct from 'array' then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
   if jsonb_array_length(result->'providerLocations')>10000 then raise exception using errcode='P0001',message='INPUT_INVALID';end if;
+ end if;
+ if original->>'mimeType'='application/pdf' and method='azure-f0-v1' then
+  perform private.c1_workflow_validate_pdf_coverage(result,original->>'sha256',(original->>'sizeBytes')::bigint,null);
+ elsif result ? 'azurePdfCoverage' then raise exception using errcode='P0001',message='INPUT_INVALID';
  end if;
  perform private.c1_workflow_require_keys(result->'fields',array[]::text[],array['partyHint','amount','currencyCode','basis','accountingBasis']);
  hash:=private.c1_workflow_hash(target_project_id,target_id,target_input);receipt:=private.c1_workflow_receipt(t,target_company_id,'cost_workflow.extract',target_idempotency_key,hash);

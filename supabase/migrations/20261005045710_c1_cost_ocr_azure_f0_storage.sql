@@ -57,7 +57,7 @@ create function public.c1_cost_ocr_azure_f0_job(p_command text,p_binding jsonb,p
 language plpgsql volatile security definer set search_path='' as $$
 declare
  t uuid;c uuid;p uuid;fid uuid;actor uuid;rid uuid;fv integer;rv integer;sha text;
- resource text;key text;expected_key text;month text;model text;config text;pages integer;budget integer;
+ resource text;key text;expected_key text;month text;model text;config text;pages integer;budget integer;source_mime text;source_size bigint;pdf_scope text;
  resource_row private.c1_cost_ocr_azure_resources%rowtype;
  quota private.c1_cost_ocr_azure_months%rowtype;
  job private.c1_cost_ocr_azure_jobs%rowtype;
@@ -85,7 +85,7 @@ begin
   if p_command='acquire' then return '{"lease":null}'::jsonb;end if;
   return '{"ok":false}'::jsonb;
  end if;
- perform 1 from public.cost_evidence_files f where f.id=fid and f.tenant_id=t and f.company_id=c and f.project_id=p
+ select f.verified_mime_type,f.verified_size_bytes into source_mime,source_size from public.cost_evidence_files f where f.id=fid and f.tenant_id=t and f.company_id=c and f.project_id=p
  and f.status='finalized' and f.version=fv and f.verified_sha256=sha and f.verified_size_bytes between 1 and 4000000
  and f.verified_mime_type in('application/pdf','image/png','image/jpeg') for share;
  if not found then raise exception using errcode='P0001',message='AZURE_STORE_SCOPE_CHANGED';end if;
@@ -133,7 +133,7 @@ begin
  if found and (job.resource_id<>resource or job.tenant_id<>t or job.company_id<>c or job.project_id<>p or job.file_id<>fid or job.file_version<>fv or job.sha256<>sha)
  then raise exception using errcode='P0001',message='AZURE_STORE_SCOPE_CHANGED';end if;
  if p_command='reserve' then
-  perform private.c1_workflow_require_keys(p_payload,array['key','resourceId','month','pages','limit','scope','fileId','sha256','model','configurationVersion'],array['key','resourceId','month','pages','limit','scope','fileId','sha256','model','configurationVersion']);
+  perform private.c1_workflow_require_keys(p_payload,array['key','resourceId','month','pages','limit','scope','fileId','sha256','model','configurationVersion'],array['key','resourceId','month','pages','limit','scope','fileId','sha256','model','configurationVersion','pdfPageScope']);
   model:=p_payload->>'model';config:=p_payload->>'configurationVersion';month:=p_payload->>'month';
   begin pages:=(p_payload->>'pages')::integer;budget:=(p_payload->>'limit')::integer;
   exception when invalid_text_representation or numeric_value_out_of_range then raise exception using errcode='P0001',message='AZURE_STORE_INPUT_INVALID';end;
@@ -142,13 +142,26 @@ begin
   or p_payload->>'fileId' is distinct from fid::text or p_payload->>'sha256' is distinct from sha
   or p_payload->'scope' is distinct from jsonb_build_object('companyId',c,'projectId',p)
   then raise exception using errcode='P0001',message='AZURE_STORE_INPUT_INVALID';end if;
+  pdf_scope:=p_payload->>'pdfPageScope';
+  if source_mime='application/pdf' then
+   if pdf_scope is null or pdf_scope not in('1','1-2') or (pdf_scope='1' and pages<>1) or (pdf_scope='1-2' and pages<>2)
+   then raise exception using errcode='P0001',message='AZURE_STORE_INPUT_INVALID';end if;
+  elsif p_payload ? 'pdfPageScope' then raise exception using errcode='P0001',message='AZURE_STORE_INPUT_INVALID';
+  end if;
   -- Match JSON.stringify's compact string array, including escaped configuration strings.
-  expected_key:=encode(extensions.digest(convert_to('['||to_json(resource)::text||','||to_json(config)::text||','||to_json(c::text)::text||','||to_json(p::text)::text||','||to_json(fid::text)::text||','||to_json(sha)::text||','||to_json(model)::text||']','UTF8'),'sha256'),'hex');
+  expected_key:=encode(extensions.digest(convert_to('['||to_json(resource)::text||','||to_json(config)::text||','||to_json(c::text)::text||','||to_json(p::text)::text||','||to_json(fid::text)::text||','||to_json(sha)::text||','||to_json(model)::text||case when source_mime='application/pdf' then ','||to_json('azure-pdf-scope-v1'::text)::text||','||to_json(pdf_scope)::text else '' end||']','UTF8'),'sha256'),'hex');
   if key<>expected_key then raise exception using errcode='P0001',message='AZURE_STORE_INPUT_INVALID';end if;
   if job.job_key is not null then
    if job.model<>model or job.configuration_version<>config or job.pages<>pages then raise exception using errcode='P0001',message='AZURE_STORE_INPUT_INVALID';end if;
    -- Replay retains original month reservation; never recharges at UTC rollover.
   else
+   -- Same immutable original: a new prefix/config/model must not bypass an
+   -- in-flight or uncertain send, or silently replace a legacy completed PDF.
+   if exists(select 1 from private.c1_cost_ocr_azure_jobs other_job where other_job.resource_id=resource
+    and other_job.tenant_id=t and other_job.company_id=c and other_job.project_id=p and other_job.file_id=fid and other_job.sha256=sha
+    and (other_job.state in('sending','submitted','uncertain')
+     or (source_mime='application/pdf' and other_job.state='complete' and other_job.result->'azurePdfCoverage' is null)))
+   then return '{"blocked":"busy"}'::jsonb;end if;
    if month<>to_char(ts at time zone 'UTC','YYYY-MM') then return '{"blocked":"quota"}'::jsonb;end if;
    select * into quota from private.c1_cost_ocr_azure_months where resource_id=resource and utc_month=month for update;
    if not found or quota.reconciled_at>ts or quota.external_pages::bigint+quota.reserved_pages+pages>least(budget,quota.ceiling)
@@ -165,6 +178,16 @@ begin
   if p_command='send' then
    -- A deferred first POST cannot spend a past-month reservation in a new month.
    if job.state<>'reserved' or job.utc_month<>to_char(ts at time zone 'UTC','YYYY-MM') then return '{"ok":false}'::jsonb;end if;
+   if exists(select 1 from private.c1_cost_ocr_azure_jobs other_job where other_job.resource_id=resource
+    and other_job.tenant_id=t and other_job.company_id=c and other_job.project_id=p and other_job.file_id=fid and other_job.sha256=sha
+    and other_job.job_key<>job.job_key and (other_job.state in('sending','submitted','uncertain')
+     or (source_mime='application/pdf' and other_job.state='complete' and other_job.result->'azurePdfCoverage' is null)))
+   then return '{"ok":false}'::jsonb;end if;
+   if source_mime='application/pdf' then
+    -- A paused legacy worker cannot claim a PDF job lacking explicit prefix identity.
+    expected_key:=encode(extensions.digest(convert_to('['||to_json(resource)::text||','||to_json(job.configuration_version)::text||','||to_json(c::text)::text||','||to_json(p::text)::text||','||to_json(fid::text)::text||','||to_json(sha)::text||','||to_json(job.model)::text||','||to_json('azure-pdf-scope-v1'::text)::text||','||to_json((case job.pages when 1 then '1' when 2 then '1-2' end)::text)::text||']','UTF8'),'sha256'),'hex');
+    if job.job_key<>expected_key then return '{"ok":false}'::jsonb;end if;
+   end if;
    update private.c1_cost_ocr_azure_jobs set state='sending',updated_at=ts where job_key=key;
   else
    if job.state='uncertain' then return '{"ok":true}'::jsonb;end if;
@@ -186,10 +209,14 @@ begin
   raw:=p_payload->'raw';v_result:=p_payload->'result';
   if raw is null or raw='null'::jsonb or octet_length(raw::text)>4000000 or v_result is null or octet_length(v_result::text)>300000 or jsonb_typeof(v_result) is distinct from 'object'
   then raise exception using errcode='P0001',message='AZURE_STORE_INPUT_INVALID';end if;
-  perform private.c1_workflow_require_keys(v_result,array['status','reviewRequired','fields','warnings','sourceLocations','methodVersion'],array['status','reviewRequired','fields','warnings','sourceLocations','methodVersion','providerLocations']);
+  perform private.c1_workflow_require_keys(v_result,array['status','reviewRequired','fields','warnings','sourceLocations','methodVersion'],array['status','reviewRequired','fields','warnings','sourceLocations','methodVersion','providerLocations','azurePdfCoverage']);
   if v_result->>'methodVersion' is distinct from 'azure-f0-v1' or v_result->>'status' is null or v_result->>'status' not in('needs_review','unavailable') or v_result->'reviewRequired' is distinct from 'true'::jsonb
   or jsonb_typeof(v_result->'fields') is distinct from 'object' or jsonb_typeof(v_result->'warnings') is distinct from 'array' or jsonb_typeof(v_result->'sourceLocations') is distinct from 'array'
   then raise exception using errcode='P0001',message='AZURE_STORE_INPUT_INVALID';end if;
+  if source_mime='application/pdf' then
+   perform private.c1_workflow_validate_pdf_coverage(v_result,sha,source_size,job.pages);
+  elsif v_result ? 'azurePdfCoverage' then raise exception using errcode='P0001',message='AZURE_STORE_INPUT_INVALID';
+  end if;
   if job.state='complete' then return jsonb_build_object('ok',job.raw_result=raw and job.result=v_result);end if;
   if job.state<>'submitted' then return '{"ok":false}'::jsonb;end if;
   update private.c1_cost_ocr_azure_jobs set state='complete',raw_result=raw,result=v_result,updated_at=ts where job_key=key;

@@ -1,4 +1,4 @@
-import {createHash} from 'node:crypto'
+import {azureF0ReservationKey,type AzureF0Reservation} from './azure-f0-job-identity'
 import {z} from 'zod'
 import {costExtractionResultSchema,type ExtractionResult} from '../../../../shared/schemas/costs/cost-extraction'
 import type {AzureF0Job,AzureF0JobStore} from './azure-f0-cost-extraction'
@@ -18,7 +18,7 @@ const reservationSchema=z.object({
  key:hash,resourceId:z.literal(resource),month:z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
  pages:z.number().int().min(1).max(2),limit:z.number().int().min(1).max(500),
  scope:z.object({companyId:z.string().uuid(),projectId:z.string().uuid()}).strict(),fileId:z.string().uuid(),sha256:hash,
- model:z.enum(['prebuilt-invoice','prebuilt-layout']),configurationVersion:z.string().min(1).max(100),
+ model:z.enum(['prebuilt-invoice','prebuilt-layout']),configurationVersion:z.string().min(1).max(100),pdfPageScope:z.enum(['1','1-2']).optional(),
 }).strict()
 const leaseSchema=z.object({
  token:z.string().uuid(),resourceId:z.literal(resource),kind:z.enum(['post','get']),
@@ -55,7 +55,7 @@ function jsonSnapshot(value:unknown,maxBytes:number):unknown{
  * and frozen actor/file/request versions on every call; service privilege is not user authorization.
  * SQL owns all clocks, locks, quota and job state. No local cache or automatic reconciliation.
  */
-export function createAzureF0JobStore(options:{binding:AzureF0Binding;rpc:AzureF0PrivateRpc;authorize:()=>Promise<boolean>}):AzureF0JobStore{
+export function createAzureF0JobStore(options:{binding:AzureF0Binding;rpc:AzureF0PrivateRpc;authorize:()=>Promise<boolean>}):Omit<AzureF0JobStore,'reserve'>&{reserve(input:AzureF0Reservation):ReturnType<AzureF0JobStore['reserve']>}{
  const binding=Object.freeze(checked(bindingSchema,options.binding))
  async function call(command:string,payload:unknown):Promise<unknown>{
   if(!await options.authorize())throw new Error('AZURE_STORE_SCOPE_CHANGED')
@@ -74,13 +74,19 @@ export function createAzureF0JobStore(options:{binding:AzureF0Binding;rpc:AzureF
  const keyPayload=(key:string)=>({key:checked(hash,key),resourceId:resource})
  return {
   durability:'persistent',
+  pdfScopeContract:'azure-pdf-scope-v1',
   async reserve(input){
    const value=checked(reservationSchema,input)
-   const expected=createHash('sha256').update(JSON.stringify([resource,value.configurationVersion,binding.companyId,binding.projectId,binding.fileId,binding.sha256,value.model])).digest('hex')
+   const expected=azureF0ReservationKey(value)
    if(value.scope.companyId!==binding.companyId||value.scope.projectId!==binding.projectId||value.fileId!==binding.fileId||value.sha256!==binding.sha256||value.key!==expected)throw new Error('AZURE_STORE_INPUT_INVALID')
    const response=await call('reserve',value)
    const parsed=checked(z.union([z.object({blocked:z.enum(['quota','busy'])}).strict(),z.object({job:jobSchema}).strict()]),response,'AZURE_STORE_RESPONSE_INVALID')
    if('job' in parsed&&(parsed.job.key!==value.key||(parsed.job.operationUrl&&!validOperation(parsed.job.operationUrl,value.model))))throw new Error('AZURE_STORE_RESPONSE_INVALID')
+   if(value.pdfPageScope&&'job' in parsed&&parsed.job.state==='complete'){
+    const coverage=parsed.job.result?.azurePdfCoverage
+    const pages=value.pdfPageScope==='1'?[1]:[1,2]
+    if(!coverage||coverage.sourceSha256!==value.sha256||JSON.stringify(coverage.requestedPages)!==JSON.stringify(pages))throw new Error('AZURE_STORE_RESPONSE_INVALID')
+   }
    return parsed as {job:AzureF0Job}|{blocked:'quota'|'busy'}
   },
   claimSend(key){return ack('send',keyPayload(key))},

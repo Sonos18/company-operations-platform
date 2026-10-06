@@ -29,7 +29,7 @@ export interface CostWorkflowRepository{
  finalizeEvidence(projectId:string,id:string,input:CostEvidenceFinalizeInput,command:WorkflowCommand):Promise<CostEvidenceFinalized>
  linkEvidence(projectId:string,id:string,input:WorkflowEvidenceLink,command:WorkflowCommand):Promise<WorkflowCommandResult>
  readEvidenceUrl(projectId:string,id:string,input?:CostEvidenceReadUrlInput):Promise<CostEvidenceReadUrl>
- extractEvidence(projectId:string,id:string,input:{requestId:string|null},command:WorkflowCommand):Promise<CostExtractionView>
+ extractEvidence(projectId:string,id:string,input:{requestId:string|null;pdfPageScope?:'1'|'1-2';pdfDeclaredPageCount?:number},command:WorkflowCommand):Promise<CostExtractionView>
  confirmPayment(projectId:string,id:string,input:WorkflowPaymentInput,command:WorkflowCommand):Promise<WorkflowCommandResult>
  createCashAdjustment(projectId:string,id:string,input:CashAdjustmentInput,command:WorkflowCommand):Promise<WorkflowCommandResult>
  decideCashAdjustment(projectId:string,id:string,input:WorkflowDecisionInput,command:WorkflowCommand):Promise<WorkflowCommandResult>

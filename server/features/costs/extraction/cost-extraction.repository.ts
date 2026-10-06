@@ -5,9 +5,10 @@ import {AppApiError} from '../../../utils/api-error'
 import {workflowResponse} from '../workflow/cost-workflow.repository'
 import type {WorkflowContext} from '../workflow/cost-workflow.service'
 import {costExtractionViewSchema,type ExtractionResult} from '../../../../shared/schemas/costs/cost-extraction'
+import {workflowEvidenceKindSchema} from '../../../../shared/schemas/costs/cost-workflow-evidence'
 import {workflowUuidSchema} from '../../../../shared/schemas/costs/cost-workflow'
 import type {CostExtractionRepository,ExtractionTarget} from './cost-extraction.service'
-const targetSchema=z.object({fileId:workflowUuidSchema,companyId:workflowUuidSchema,projectId:workflowUuidSchema,requestId:workflowUuidSchema.nullable(),fileVersion:z.number().int().positive(),requestVersion:z.number().int().nonnegative().nullable(),sha256:z.string().regex(/^[a-f0-9]{64}$/),mimeType:z.string().min(1),sizeBytes:z.number().int().min(1),bucketId:z.literal('c1-accounting-evidence'),objectPath:z.string().min(1)}).strict()
+const targetSchema=z.object({fileId:workflowUuidSchema,companyId:workflowUuidSchema,projectId:workflowUuidSchema,requestId:workflowUuidSchema.nullable(),fileVersion:z.number().int().positive(),requestVersion:z.number().int().nonnegative().nullable(),sha256:z.string().regex(/^[a-f0-9]{64}$/),mimeType:z.string().min(1),documentKind:workflowEvidenceKindSchema.nullable(),sizeBytes:z.number().int().min(1),bucketId:z.literal('c1-accounting-evidence'),objectPath:z.string().min(1)}).strict()
 interface Client{rpc(name:string,args:Record<string,unknown>):Promise<{data:unknown;error:unknown}>;storage:{from(bucket:string):{download(path:string):Promise<{data:Blob|null;error:unknown}>}}}
 export class SupabaseCostExtractionRepository implements CostExtractionRepository{
  private readonly client:Client
@@ -20,7 +21,7 @@ export class SupabaseCostExtractionRepository implements CostExtractionRepositor
  readTarget:CostExtractionRepository['readTarget']=async(c,p,requestId,fileId)=>this.metadata(c,p,requestId,fileId)
  async download(c:WorkflowContext,p:string,target:ExtractionTarget){
   const value=await this.metadata(c,p,target.requestId,target.fileId)
-  if(value.sha256!==target.sha256||value.fileVersion!==target.fileVersion||value.requestVersion!==target.requestVersion)throw new AppApiError(409,'VERSION_CONFLICT','Chứng từ hoặc yêu cầu đã thay đổi.')
+  if(value.sha256!==target.sha256||value.fileVersion!==target.fileVersion||value.requestVersion!==target.requestVersion||value.documentKind!==target.documentKind)throw new AppApiError(409,'VERSION_CONFLICT','Chứng từ hoặc yêu cầu đã thay đổi.')
   if(value.sizeBytes>5*1024*1024)throw new AppApiError(413,'FILE_TOO_LARGE','Tệp vượt giới hạn quét; bản gốc vẫn được giữ.')
   const response=await this.client.storage.from(value.bucketId).download(value.objectPath)
   if(response.error||!(response.data instanceof Blob))throw new AppApiError(403,'PERMISSION_DENIED','Không thể đọc bản gốc.')

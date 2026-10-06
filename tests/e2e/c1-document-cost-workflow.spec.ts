@@ -24,14 +24,14 @@ const basis={kind:'materials',deliverySite:'Công trường giả lập',lines:[
 const request=costRequestViewSchema.parse({id:requestId,version:1,submittedVersionId:submittedVersion,status:'approved',partyId:party,partyName:'Nhà cung cấp giả lập',partyKind:'organization',crewOwnership:null,categoryId:category,contractVersionId:basisVersion,latestDecision:null,amount:'30',currencyCode:'VND',evidenceFileIds:[fileId],assignmentVersion:1,basis,installment:{id:installment,version:1,authorized:'30',consumed:'10',remaining:'20'},payments:[]})
 const contract=workflowContractViewSchema.parse({id:basisId,versionId:basisVersion,partyId:party,reference:'Báo giá giả lập 100',currencyCode:'VND',version:1,cap:'100',evidenceFileIds:[fileId],sourceSubcontractId:null})
 type Call={path:string;body:unknown;key:string|undefined}
-async function installWorkflow(page:Page,options:{completed?:boolean;canDecide?:boolean;loseManagerResponse?:boolean;losePaymentResponse?:boolean;requestSubmitted?:boolean}={}){
+async function installWorkflow(page:Page,options:{completed?:boolean;canDecide?:boolean;loseManagerResponse?:boolean;losePaymentResponse?:boolean;requestSubmitted?:boolean;pdf?:boolean;loseExtractResponse?:boolean}={}){
  const calls:Call[]=[]
  const shownRequest=options.requestSubmitted?costRequestViewSchema.parse({...request,status:'submitted',installment:null}):request
  const context=workflowProjectContextSchema.parse({mode:'document_backed_v1',operationalState:options.completed?'completed':'active',manager:{userId:manager,assignmentId:assignment,version:1,reason:'Phân công giả lập'},canSubmit:!options.completed,canDecide:options.canDecide??true,canAssign:true,eligibleManagers:[{userId:manager,label:'Quản lý hiện tại'},{userId:nextManager,label:'Quản lý nhận bàn giao'}]})
  const cashSummary={grossPaid:'10.0000',confirmedRefunds:'2.0000',netCash:'8.0000',approvedUnspent:'20.0000',coverage:'partial',unreconciledCount:1}
  const cash=workflowFinanceSchema.parse({schemaVersion:2,project:{projectId:project,projectCode:'SYNTHETIC',projectName:'Dự án giả lập',currencyCode:'VND',moneyScale:0,timeZone:'Asia/Ho_Chi_Minh',operationalState:context.operationalState},workflowCash:cashSummary,categories:[{categoryId:category,code:'materials',name:'Vật tư',displayOrder:1,workflowCash:cashSummary,retention:{state:'not_recorded',amount:null,recordedCount:0}}]})
  let evidence={id:newFileId,status:'finalized',originalFilename:'synthetic.png',mimeType:'image/png',sizeBytes:png.length,sha256:'a'.repeat(64),version:1,finalizedAt:new Date().toISOString(),replayed:false}
- let managerCalls=0,paymentCalls=0
+ let managerCalls=0,paymentCalls=0,extractCalls=0
  await page.route(/\/api\/companies\/[^/]+\/cost-workflow\/projects(?:\?.*)?$/,route=>route.fulfill({json:{mode:'document_backed_v1',projects:[{projectId:project,code:'SYNTHETIC',name:'Dự án giả lập',operationalState:context.operationalState}],nextCursor:null}}))
  await page.route('https://auth.taskovia.test/storage/v1/**',route=>route.fulfill({json:{Key:'synthetic',Id:newFileId},headers:{'Access-Control-Allow-Origin':'*'}}))
  await page.route(/\/api\/companies\/[^/]+\/projects\/[^/]+\/cost-workflow(?:\/.*)?$/,async(route:Route)=>{
@@ -49,11 +49,15 @@ async function installWorkflow(page:Page,options:{completed?:boolean;canDecide?:
    return route.fulfill({json:{assignmentId:assignment,version:2,replayed:managerCalls>1}})
   }
   if(path==='/evidence/upload-intents'){
-   evidence={...evidence,originalFilename:String(body.originalFilename),sizeBytes:Number(body.sizeBytes),sha256:String(body.sha256)}
+   evidence={...evidence,originalFilename:String(body.originalFilename),mimeType:String(body.mimeType),sizeBytes:Number(body.sizeBytes),sha256:String(body.sha256)}
    return route.fulfill({json:{evidenceFileId:newFileId,version:0,bucketId:'c1-accounting-evidence',objectPath:[tenant,company,project,newFileId].join('/'),expiresAt:new Date(Date.now()+60000).toISOString(),replayed:false}})
   }
   if(path==='/evidence/'+newFileId+'/finalize')return route.fulfill({json:evidence})
-  if(path==='/evidence/'+newFileId+'/extract')return route.fulfill({json:{extractionId:newFileId,fileId:newFileId,requestId:null,replayed:false,result:{status:'needs_review',reviewRequired:true,fields:{amount:'30',currencyCode:'VND',partyHint:'Nhà cung cấp giả lập',basis},warnings:['PARTY_MATCH_REQUIRES_REVIEW'],sourceLocations:[],methodVersion:'synthetic-fixture-v1'}}})
+  if(path==='/evidence/'+newFileId+'/extract'){
+   extractCalls++
+   if(options.loseExtractResponse&&extractCalls===1)return route.fulfill({status:500,json:{code:'SYNTHETIC_RESPONSE_LOST',message:'Giả lập mất phản hồi'}})
+   return route.fulfill({json:{extractionId:newFileId,fileId:newFileId,requestId:null,replayed:extractCalls>1,result:{status:'needs_review',reviewRequired:true,fields:{amount:'30',currencyCode:'VND',partyHint:'Nhà cung cấp giả lập',basis},warnings:['PARTY_MATCH_REQUIRES_REVIEW'],sourceLocations:[],methodVersion:options.pdf?'azure-f0-v1':'synthetic-fixture-v1',...(options.pdf?{azurePdfCoverage:{kind:'azure-pdf-scope-v1',sourceSha256:evidence.sha256,sourceByteLength:evidence.sizeBytes,requestedPages:[1,2],returnedPages:[1,2],requestedPagesMatched:true,sourcePageCount:{kind:'user-declared',count:4},wholeDocumentComplete:false,reviewRequired:true}}:{})}}})
+  }
   if(path.endsWith('/read-url'))return route.fulfill({json:{url:'https://original.taskovia.test/synthetic',expiresAt:new Date(Date.now()+60000).toISOString()}})
   if(path==='/requests')return route.fulfill({json:{requestId,version:1,replayed:false}})
   if(path==='/requests/'+requestId+'/submit')return route.fulfill({json:{requestId,version:2,replayed:false}})
@@ -162,4 +166,31 @@ test('handover removes approval controls from a manager without current authorit
  await expect(page.getByText('Chờ duyệt',{exact:true})).toBeVisible()
  await expect(page.getByRole('button',{name:'Phê duyệt',exact:true})).toHaveCount(0)
  expect(state.calls).toHaveLength(0)
+})
+
+test('PDF declared total and partial coverage remain frozen during identical lost-response retry',async({page})=>{
+ const state=await installWorkflow(page,{pdf:true,loseExtractResponse:true})
+ await page.goto('/costs/'+project+'/requests/new')
+ const form=page.locator('.cost-request-panel'),uploadPanel=page.locator('.cost-workflow-original-upload').filter({visible:true})
+ await uploadPanel.locator('input[type=file]').setInputFiles({name:'synthetic.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.7\nsynthetic')})
+ await uploadPanel.getByRole('button',{name:'Tải lên hồ sơ gốc',exact:true}).click()
+ await expect(form.getByText('synthetic.pdf',{exact:true})).toBeVisible()
+ const scan=form.getByRole('button',{name:'Trích xuất gợi ý',exact:true})
+ await expect(scan).toBeDisabled()
+ const scope=form.getByLabel('Phạm vi quét khi tệp là PDF')
+ await scope.selectOption('1-2')
+ const count=form.getByLabel('Tổng số trang theo người tải (tùy chọn)')
+ await count.fill('4')
+ await expect(scan).toBeEnabled()
+ await scan.click()
+ await expect(form.getByRole('button',{name:'Thử lại trích xuất',exact:true})).toBeVisible()
+ await expect(scope).toBeDisabled();await expect(count).toBeDisabled()
+ await expect(form.getByRole('button',{name:'Gỡ',exact:true})).toBeDisabled()
+ await form.getByRole('button',{name:'Thử lại trích xuất',exact:true}).click()
+ await expect(form.getByRole('status')).toContainText('Người tải khai báo 4 trang; chưa xác minh.')
+ await expect(form.getByRole('status')).toContainText('Kết quả chưa xác nhận đầy đủ tài liệu.')
+ const scans=state.calls.filter(call=>call.path.endsWith('/extract'))
+ expect(scans).toHaveLength(2);expect(scans[1]).toEqual(scans[0])
+ expect(scans[0]?.body).toEqual({requestId:null,pdfPageScope:'1-2',pdfDeclaredPageCount:4})
+ expect(state.calls.filter(call=>call.path==='/requests')).toHaveLength(0)
 })

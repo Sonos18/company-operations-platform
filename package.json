@@ -49,7 +49,11 @@
     "db:dev:c1:cost-workflow:concurrency": "node scripts/run-c1-cost-workflow-concurrency.mjs",
     "db:dev:c1:cost-workflow:inventory": "node scripts/c1-cost-workflow-inventory.mjs",
     "db:dev:c1:cost-workflow:reconcile": "node scripts/c1-cost-workflow-reconcile.mjs",
-    "db:dev:c1:cost-workflow:rehearse": "node scripts/run-c1-cost-workflow-rehearsal.mjs"
+    "db:dev:c1:cost-workflow:rehearse": "node scripts/run-c1-cost-workflow-rehearsal.mjs",
+    "db:dev:c1:cost-workflow:remaining-rehearse": "node scripts/run-c1-cost-workflow-remaining-rehearsal.mjs",
+    "db:dev:c1:pgtap:diagnose": "node scripts/run-c1-pgtap-rollback-diagnostic.mjs",
+    "db:dev:c1:cost-workflow:api-rehearse": "node scripts/run-c1-cost-workflow-api-rehearsal.mjs",
+    "db:dev:c1:cost-workflow:cash-rehearse": "node scripts/run-c1-cost-workflow-cash-rehearsal.mjs"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "5.3.0",
@@ -66,9 +70,11 @@
     "echarts": "6.0.0",
     "exceljs": "4.4.0",
     "h3": "1.15.11",
+    "jpeg-js": "0.4.4",
     "jszip": "3.10.2",
     "nuxt": "4.3.1",
     "pinia": "4.0.3",
+    "pngjs": "7.0.0",
     "tailwindcss": "4.1.18",
     "vue": "3.5.28",
     "vue-echarts": "8.0.1",

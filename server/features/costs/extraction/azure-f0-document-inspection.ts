@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto'
+import {hasCompleteAzureF0Image} from './azure-f0-image-inspection'
 import type {DocumentInspection,AzureF0Options} from './azure-f0-cost-extraction'
 
 /** Private original-file metadata, read by an authenticated server closure, never a browser report. */
@@ -29,25 +30,32 @@ function validMetadata(value:Readonly<AzureF0DocumentMetadata>){
  * The reader must re-read original metadata under fresh actor/tenant/company/project permissions;
  * it is not an authorization substitute and must not be built from client-supplied metadata.
  *
- * No installed decoder can establish complete PDF/PNG/JPEG coverage in this environment.
- * All formats therefore remain incomplete with unknown page count (0), including matching files.
- * No positive decoder/report injection, native hints, PDF token counting or image-size shortcut.
- * Replacing this boundary requires a separately approved full decoder and strict coverage tests.
+ * This default boundary uses no decoder: every format remains incomplete with page count 0.
+ * The explicit image factory below adds concrete guarded decoding with separately approved
+ * packages; PDF and unsupported image variants stay incomplete. No injected positive report,
+ * native hints, PDF token counting or image-size shortcut can attest coverage.
  */
 export function createAzureF0DocumentInspector(expected:Readonly<AzureF0DocumentMetadata>,readMetadata:MetadataReader):AzureF0Options['inspect']{
+ return createInspector(expected,readMetadata,false)
+}
+/** Explicit image-only integration, requiring exact approved decoder packages. PDF remains incomplete. */
+export function createAzureF0ImageDocumentInspector(expected:Readonly<AzureF0DocumentMetadata>,readMetadata:MetadataReader):AzureF0Options['inspect']{
+ return createInspector(expected,readMetadata,true)
+}
+function createInspector(expected:Readonly<AzureF0DocumentMetadata>,readMetadata:MetadataReader,images:boolean):AzureF0Options['inspect']{
  const pinned=Object.freeze(Object.fromEntries(metadataKeys.map(key=>[key,expected[key]]))) as Readonly<AzureF0DocumentMetadata>
  return async input=>{
-  const bytes=Uint8Array.from(input.bytes)
+  const bytes=Uint8Array.from(input.bytes),mimeType=input.mimeType
   const sha256=createHash('sha256').update(bytes).digest('hex')
   const incomplete:DocumentInspection={sha256,complete:false,pageCount:0}
   if(!validMetadata(pinned)||input.fileId!==pinned.fileId
    ||input.scope.companyId!==pinned.companyId||input.scope.projectId!==pinned.projectId
-   ||input.mimeType!==pinned.mimeType||bytes.byteLength!==pinned.sizeBytes||sha256!==pinned.sha256)return incomplete
+   ||mimeType!==pinned.mimeType||bytes.byteLength!==pinned.sizeBytes||sha256!==pinned.sha256)return incomplete
   try{
    const fresh=await readMetadata(pinned)
    if(!fresh||!validMetadata(fresh)||metadataKeys.some(key=>fresh[key]!==pinned[key]))return incomplete
   }catch{return incomplete}
-  // Identity and byte integrity are necessary, but never attest decoder coverage.
+  if(images&&hasCompleteAzureF0Image(bytes,mimeType))return {sha256,complete:true,pageCount:1}
   return incomplete
  }
 }

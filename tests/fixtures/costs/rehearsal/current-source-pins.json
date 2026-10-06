@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Test-only comparison of current reviewed source to immutable historical rehearsal sources; does not approve DB execution or replace historical receipts.",
+  "sources": [
+    {
+      "name": "supabase/migrations/20261004210400_c1_cost_workflow_cash_commands.sql",
+      "currentSha256": "c76d25c28e25f0463be81e304025464a7a6b530bb6f7cbad26fe54d8a4df01fd",
+      "historicalSha256": "47319fded433fd83bd8819e4e923baec4603e5ad73a116629c2945c524e9311a"
+    },
+    {
+      "name": "supabase/migrations/20261004210600_c1_cost_workflow_extraction.sql",
+      "currentSha256": "14f373a79bc367cabbb61e45fa19d9f33a47f85f13669ea435ac224317beae1a",
+      "historicalSha256": "48a5dc563ec1afd3c2bc4ab972cd88d38ce43d9b2198171e243cce50fed7e44a"
+    },
+    {
+      "name": "scripts/c1-cost-workflow-rehearsal-transport.mjs",
+      "currentSha256": "335051d639292e227a3c9f868807eaab333fd1c5e540bc520243f7fa09c2db27",
+      "historicalSha256": "c9e2011447b5afcb7ba76dea24172baac2acf46e464bd42cb56c14640f39aa38"
+    }
+  ]
+}

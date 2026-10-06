@@ -27,8 +27,8 @@ insert into public.cost_workflow_companies(company_id,tenant_id,mode) values('c1
 insert into public.projects(id,tenant_id,company_id,code,name,origin,created_by) values
 ('c1f50000-0000-4000-8000-000000000101','c1f50000-0000-4000-8000-000000000010','c1f50000-0000-4000-8000-000000000020','C1F5-P','Synthetic project','manual','c1f50000-0000-4000-8000-000000000901'),
 ('c1f50000-0000-4000-8000-000000000102','c1f50000-0000-4000-8000-000000000010','c1f50000-0000-4000-8000-000000000020','C1F5-P2','Other synthetic project','manual','c1f50000-0000-4000-8000-000000000901');
-insert into public.business_parties(id,tenant_id,company_id,code,display_name,party_kind,created_by,updated_by)
-values('c1f50000-0000-4000-8000-000000000201','c1f50000-0000-4000-8000-000000000010','c1f50000-0000-4000-8000-000000000020','C1F5-S','Synthetic supplier','organization','c1f50000-0000-4000-8000-000000000901','c1f50000-0000-4000-8000-000000000901');
+insert into public.business_parties(id,tenant_id,company_id,code,display_name,party_kind,created_by)
+values('c1f50000-0000-4000-8000-000000000201','c1f50000-0000-4000-8000-000000000010','c1f50000-0000-4000-8000-000000000020','C1F5-S','Synthetic supplier','organization','c1f50000-0000-4000-8000-000000000901');
 insert into public.cost_workflow_contracts(id,tenant_id,company_id,project_id,party_id,reference,currency_code,created_by)
 values('c1f50000-0000-4000-8000-000000000301','c1f50000-0000-4000-8000-000000000010','c1f50000-0000-4000-8000-000000000020','c1f50000-0000-4000-8000-000000000101','c1f50000-0000-4000-8000-000000000201','Synthetic quote','VND','c1f50000-0000-4000-8000-000000000901');
 insert into public.cost_workflow_requests(id,tenant_id,company_id,project_id,party_id,kind,contract_id,working_input,created_by)

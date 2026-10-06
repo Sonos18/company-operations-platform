@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto'
 import {expect,it,vi} from 'vitest'
 import {AzureF0CostExtractionAdapter,AzureDocumentIntelligenceTransport,type AzureF0JobStore,type AzureF0Job,type AzureF0Transport,type AzureF0DispatchLease} from '../../../server/features/costs/extraction/azure-f0-cost-extraction'
 import type {CostExtractionInput} from '../../../shared/schemas/costs/cost-extraction'
-const input:CostExtractionInput={fileId:'11111111-1111-4111-8111-111111111111',mimeType:'application/pdf',bytes:new TextEncoder().encode('synthetic only PDF bytes'),scope:{companyId:'22222222-2222-4222-8222-222222222222',projectId:'33333333-3333-4333-8333-333333333333'},documentKind:'invoice'}
+const input:CostExtractionInput={fileId:'11111111-1111-4111-8111-111111111111',mimeType:'image/png',bytes:new TextEncoder().encode('synthetic only image bytes'),scope:{companyId:'22222222-2222-4222-8222-222222222222',projectId:'33333333-3333-4333-8333-333333333333'},documentKind:'invoice'}
 const hash=createHash('sha256').update(input.bytes).digest('hex')
 const config={enabled:true,sku:'F0',transmissionApproved:true,resourceId:'taskovia-doc-intelligence-dev.cognitiveservices.azure.com',endpoint:'https://taskovia-doc-intelligence-dev.cognitiveservices.azure.com',version:'synthetic-v1',monthlyPageBudget:500} as const
 function dispatchLease(kind:'post'|'get',issuedAt=Date.now()):AzureF0DispatchLease{return {token:'66666666-6666-4666-8666-666666666666',resourceId:config.resourceId,kind,issuedAt,expiresAt:issuedAt+20_000}}
@@ -24,7 +24,7 @@ it('resource-global monthly quota and persistent rate gate deny transport',async
 it('rejects foreign operation URLs and partial result pages',async()=>{const f=fixture();f.post.mockResolvedValue({status:202,operationUrl:'https://attacker.invalid/data',retryAfterSeconds:2});expect((await new AzureF0CostExtractionAdapter(f.options).extract(input)).warnings).toContain('OCR_RESPONSE_UNCERTAIN');expect(f.poll).not.toHaveBeenCalled();const g=fixture();await new AzureF0CostExtractionAdapter(g.options).extract(input);g.next();g.options.inspect.mockResolvedValue({sha256:hash,complete:true,pageCount:2});expect((await new AzureF0CostExtractionAdapter(g.options).extract(input)).warnings).toContain('OCR_COVERAGE_UNVERIFIED')})
 it('ambiguous formatted number does not use provider float or fabricate confidence/currency/basis',async()=>{const f=fixture();await new AzureF0CostExtractionAdapter(f.options).extract(input);f.next();const response=await f.poll();response.body.analyzeResult.documents[0]!.fields.InvoiceTotal.content='1.234,56';delete (response.body.analyzeResult.documents[0]!.fields.InvoiceTotal as {confidence?:number}).confidence;f.poll.mockResolvedValue(response);const result=await new AzureF0CostExtractionAdapter(f.options).extract(input);expect(result.fields.amount).toBeUndefined();expect(result.fields.currencyCode).toBeUndefined();expect(result.fields.basis).toBeUndefined();expect(result.providerLocations?.[0]?.confidence).toBeUndefined();expect(result.warnings).toContain('NUMBER_FORMAT_REQUIRES_REVIEW')})
 it('rechecks fresh scope immediately before send',async()=>{const f=fixture();f.options.authorize.mockResolvedValueOnce(true).mockResolvedValue(false);expect((await new AzureF0CostExtractionAdapter(f.options).extract(input)).warnings).toContain('OCR_SCOPE_CHANGED');expect(f.post).not.toHaveBeenCalled()})
-it('prefers complete native text results, without F0 for a long document',async()=>{const f=fixture();f.options.inspect.mockResolvedValue({sha256:hash,complete:true,pageCount:8,nativeResult:{status:'needs_review',reviewRequired:true,fields:{amount:'100'},warnings:['TOTAL_REQUIRES_REVIEW'],sourceLocations:[],methodVersion:'synthetic-fixture-v1'}} as never);expect((await new AzureF0CostExtractionAdapter(f.options).extract(input)).fields.amount).toBe('100');expect(f.post).not.toHaveBeenCalled()})
+it('prefers complete native text results, without F0 for a long document',async()=>{const f=fixture();f.options.inspect.mockResolvedValue({sha256:hash,complete:true,pageCount:8,nativeResult:{status:'needs_review',reviewRequired:true,fields:{amount:'100'},warnings:['TOTAL_REQUIRES_REVIEW'],sourceLocations:[],methodVersion:'synthetic-fixture-v1'}} as never);expect((await new AzureF0CostExtractionAdapter(f.options).extract({...input,mimeType:'application/pdf'})).fields.amount).toBe('100');expect(f.post).not.toHaveBeenCalled()})
 it('REST sends bytes directly with explicit complete pages and redirect denial',async()=>{const fetcher=vi.fn(async(_url:unknown,request:RequestInit)=>{expect(request.redirect).toBe('error');return new Response('',{status:202,headers:{'operation-location':config.endpoint+'/documentintelligence/documentModels/prebuilt-invoice/analyzeResults/44444444-4444-4444-8444-444444444444?api-version=2024-11-30','retry-after':'2'}})});const transport=new AzureDocumentIntelligenceTransport(config.endpoint,()=> 'synthetic-key',fetcher as typeof fetch);await transport.post('prebuilt-invoice',input.bytes,1,dispatchLease('post'));const [,request]=fetcher.mock.calls[0]!;expect(JSON.parse(request.body as string)).toEqual({base64Source:Buffer.from(input.bytes).toString('base64')});expect(fetcher.mock.calls[0]?.[0]).toContain('pages=1')})
 
 it('pins both transport and quota identity to the approved resource',async()=>{
@@ -76,7 +76,7 @@ it('supports HTTP-date retry-after without shortening the provider delay',async(
  }finally{clock.mockRestore();}
 });
 it('routes quotes and contracts to layout without guessing invoice totals',async()=>{
- for(const documentKind of ['quote','contract']){
+ for(const documentKind of ['quotation','contract']){
  const f=fixture();f.post.mockResolvedValue({status:202,operationUrl:config.endpoint+'/documentintelligence/documentModels/prebuilt-layout/analyzeResults/44444444-4444-4444-8444-444444444444?api-version=2024-11-30',retryAfterSeconds:2});
  const adapter=new AzureF0CostExtractionAdapter(f.options);
  await adapter.extract({...input,documentKind});f.next();
@@ -217,4 +217,29 @@ it('final transport guard refuses a same-TTL POST after UTC rollover',async()=>{
   const transport=new AzureDocumentIntelligenceTransport(config.endpoint,()=>{clock.mockReturnValue(now+3000);return 'synthetic-key'},fetcher as typeof fetch)
   await expect(transport.post('prebuilt-invoice',input.bytes,1,grant)).rejects.toThrow('AZURE_DISPATCH_NOT_STARTED');expect(fetcher).not.toHaveBeenCalled()
  }finally{clock.mockRestore()}
+})
+
+it('pins caller bytes and scope before asynchronous authorization/inspection',async()=>{
+ const f=fixture(),bytes=Uint8Array.from(input.bytes),external={...input,bytes,scope:{...input.scope}}
+ f.options.inspect.mockImplementation(async()=>{
+  external.bytes.fill(0);external.scope.companyId='changed';external.fileId='changed'
+  return {sha256:hash,complete:true,pageCount:1}
+ })
+ await new AzureF0CostExtractionAdapter(f.options).extract(external)
+ expect(f.post.mock.calls[0]?.[1]).toEqual(input.bytes)
+ expect(vi.mocked(f.store.reserve).mock.calls[0]?.[0]).toMatchObject({fileId:input.fileId,scope:input.scope,sha256:hash})
+})
+
+it.each(['invoice','contract','quotation','acceptance_record','accounting_support','payment_proof','source_workbook','other'])('explicit recognized document kind %s chooses the intended durable model',async documentKind=>{
+ const f=fixture();vi.mocked(f.store.reserve).mockResolvedValue({blocked:'quota'})
+ const result=await new AzureF0CostExtractionAdapter(f.options).extract({...input,documentKind})
+ expect(result.warnings).toContain('OCR_FREE_QUOTA_EXHAUSTED')
+ expect(vi.mocked(f.store.reserve).mock.calls[0]?.[0].model).toBe(documentKind==='invoice'?'prebuilt-invoice':'prebuilt-layout')
+ expect(f.post).not.toHaveBeenCalled()
+})
+it.each([undefined,'quote','unexpected'])('unknown document kind %s denies quota and HTTP clearly',async documentKind=>{
+ const f=fixture()
+ const result=await new AzureF0CostExtractionAdapter(f.options).extract({...input,documentKind})
+ expect(result).toMatchObject({status:'unavailable',fields:{},warnings:['OCR_DOCUMENT_KIND_REQUIRED']})
+ expect(f.store.reserve).not.toHaveBeenCalled();expect(f.post).not.toHaveBeenCalled();expect(f.poll).not.toHaveBeenCalled()
 })

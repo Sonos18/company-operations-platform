@@ -273,7 +273,7 @@ begin
  select * into request from public.cost_workflow_requests where id=request.id for update;
  if request.state<>'approved' or request.version<>expected then raise exception using errcode='P0001',message='VERSION_CONFLICT';end if;
  select * into snapshot from public.cost_workflow_request_versions where id=request.submitted_version_id;
- select * into decision from public.cost_workflow_decisions where submitted_version_id=snapshot.id and decision='approve';
+ select d.* into decision from public.cost_workflow_decisions d where d.submitted_version_id=snapshot.id and d.decision='approve';
  if not found then raise exception using errcode='P0001',message='PERMISSION_DENIED';end if;
  select coalesce(sum(r.amount),0),coalesce(sum(r.amount) filter(where r.request_id=request.id),0) into total_refunded,request_refunded from public.cost_workflow_refunds r where r.source_payment_id=payment.id;
  if amount+total_refunded>private.c1_workflow_valid_cash(payment.id) or amount+request_refunded>snapshot.amount then raise exception using errcode='P0001',message='CASH_REFUND_EXCEEDED';end if;
@@ -309,7 +309,7 @@ begin
  select * into request from public.cost_workflow_requests where id=request.id for update;
  if request.state<>'approved' or request.version<>expected or exists(select 1 from public.cost_workflow_corrections x where x.request_id=request.id) then raise exception using errcode='P0001',message='VERSION_CONFLICT';end if;
  select * into snapshot from public.cost_workflow_request_versions where id=request.submitted_version_id;
- select * into decision from public.cost_workflow_decisions where submitted_version_id=snapshot.id and decision='approve';
+ select d.* into decision from public.cost_workflow_decisions d where d.submitted_version_id=snapshot.id and d.decision='approve';
  if not found then raise exception using errcode='P0001',message='PERMISSION_DENIED';end if;
  if cash_state.payment_id is null or cash_state.version is distinct from private.c1_detail_expected_version(snapshot.snapshot) then raise exception using errcode='P0001',message='VERSION_CONFLICT';end if;
  perform private.c1_workflow_require_evidence(t,target_company_id,target_project_id,snapshot.evidence_file_ids);
