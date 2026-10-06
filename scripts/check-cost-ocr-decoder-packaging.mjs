@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { existsSync, readFileSync, readdirSync, realpathSync, lstatSync } from 'node:fs'
 import { resolve, relative, isAbsolute, join } from 'node:path'
@@ -39,6 +40,19 @@ export function checkCostOcrDecoderPackaging(serverDirectory) {
       return { artifactPath: relative(root, realpathSync(path)) }
     })
   }
+  check('original decoder license notices', () => {
+    const notices = [
+      ['pngjs', 'be75ef59c5cf59715588a17a82dff7dd3e83c4dba3c458676bb9311e05fbedc5'],
+      ['jpeg-js', 'c0a8512eabe960492fefd4f287523eb3b5ca1518ca37ef0ec83344cd7f089cb8'],
+    ]
+    for (const [name, sha256] of notices) {
+      const path = join(root, 'node_modules', name, 'LICENSE')
+      if (!inside(path, join(root, 'node_modules')) || createHash('sha256').update(readFileSync(path)).digest('hex') !== sha256) throw new Error('Missing or changed original decoder license notice')
+    }
+    const decoder = join(root, 'node_modules', 'jpeg-js', 'lib', 'decoder.js')
+    if (createHash('sha256').update(readFileSync(decoder)).digest('hex') !== 'a3f175fd6f62d142aad94d3bd90f3a30be4e076baf9b6a6fa31c8e84d9d4aa9f') throw new Error('Changed JPEG decoder source notice')
+    return { noticeFiles: 2, jpegDecoderSourceNoticePreserved: true }
+  })
   check('artifact closure and absolute runtime references', () => {
     let files = 0
     const walk = (directory) => {

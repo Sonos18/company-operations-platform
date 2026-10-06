@@ -22,7 +22,12 @@ export default defineNuxtConfig({
   },
   nitro: {
     // Dynamic createRequire decoders must survive detached server deployment.
-    externals: { traceInclude: [require.resolve('pngjs'), require.resolve('jpeg-js')] },
+    externals: {
+      traceInclude: [
+        require.resolve('pngjs'), require.resolve('jpeg-js'),
+        require.resolve('pngjs/LICENSE'), require.resolve('jpeg-js/LICENSE'),
+      ],
+    },
   },
   typescript: {
     strict: true,

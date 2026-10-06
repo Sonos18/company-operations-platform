@@ -25,7 +25,7 @@ node:worker_threads with resourceLimits and worker.terminate is a smaller IPC im
 
 ## Deployment packaging impact
 
-The current resolved-entry traceInclude correction targets pngjs/jpeg-js server packaging; direct tracer closure is verified, final generated artifact verification remains pending. A child introduces an additional runnable entry that Nitro must explicitly emit with the reviewed decoder implementation. A source-relative TS file or temporary source path is unacceptable.
+The resolved-entry traceInclude correction targets pngjs/jpeg-js runtime modules and original notices; its artifact verification is recorded separately in the release receipts. A child introduces an additional runnable entry that Nitro must explicitly emit with the reviewed decoder implementation. A source-relative TS file or temporary source path is unacceptable.
 
 Keep one small independent worker build entry in the generated server artifact, referencing only bundled relative files/runtime decoder modules. Choose the installed Nitro-supported entry/emission hook after a focused spike; do not copy uncompiled source or rely on build-tree node_modules. Confirm entry and guard are included and notices retained. Extend detached artifact checks to launch the child with NODE_PATH unset, no /tmp or /data source/package fallback, and no network/credential environment. Do not add a worker framework or install a new dependency.
 
