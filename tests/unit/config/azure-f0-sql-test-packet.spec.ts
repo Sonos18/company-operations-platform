@@ -1,3 +1,4 @@
+import {workflowManagedDdlGuardSql,workflowManagedDdlHandlers} from '../../../scripts/c1-cost-workflow-rehearsal-managed-ddl.mjs'
 import {createHash} from 'node:crypto'
 import {readFileSync} from 'node:fs'
 import {describe,it,expect,vi} from 'vitest'
@@ -35,6 +36,12 @@ describe('unexecuted Azure SQL test packet',()=>{
   expect(sql).toContain('legacy submitted blocks new prefix')
   expect(sql).toContain('legacy completed PDF blocks scoped claim')
  })
+ it('uses the same exact six-handler admission as the guarded runner',()=>{
+  expect(workflowManagedDdlHandlers).toHaveLength(6)
+  expect(sql).toContain(workflowManagedDdlGuardSql)
+  expect(sql).not.toContain("where evtenabled<>'D'")
+  for(const field of ['sha256','securityDefiner','config','language','volatility','args','returnType','returnsSet'])expect(workflowManagedDdlGuardSql).toContain(field)
+ })
  it('pins the committed source and labels SQL as unexecuted',()=>{
   const p=packet()
   expect(p.status).toBe('SQL_UNEXECUTED')
@@ -60,7 +67,7 @@ describe('unexecuted Azure SQL test packet',()=>{
   expect(sql).toContain("set local idle_in_transaction_session_timeout='120s';")
   expect(sql).toContain('select * from finish(true);')
   const firstInsert=sql.indexOf('\ninsert into ')
-  for(const guard of ['AZURE_FIXTURE_RESOURCE_NOT_EMPTY','AZURE_FIXTURE_ID_COLLISION','AZURE_FIXTURE_TRIGGER_REVIEW_REQUIRED','AZURE_FIXTURE_SEQUENCE_REVIEW_REQUIRED','AZURE_FIXTURE_MONTH_BOUNDARY','AZURE_FIXTURE_EVENT_TRIGGER_REVIEW_REQUIRED','AZURE_FIXTURE_FRESH_SESSION_REQUIRED'])
+  for(const guard of ['AZURE_FIXTURE_RESOURCE_NOT_EMPTY','AZURE_FIXTURE_ID_COLLISION','AZURE_FIXTURE_TRIGGER_REVIEW_REQUIRED','AZURE_FIXTURE_SEQUENCE_REVIEW_REQUIRED','AZURE_FIXTURE_MONTH_BOUNDARY','WORKFLOW_REHEARSAL_MANAGED_DDL_CHANGED','AZURE_FIXTURE_FRESH_SESSION_REQUIRED'])
    {expect(sql.indexOf(guard),guard).toBeGreaterThanOrEqual(0);expect(sql.indexOf(guard),guard).toBeLessThan(firstInsert)}
   expect(sql).not.toMatch(/^(?:commit|delete|truncate|drop|alter|grant|create extension|create sequence|set session_replication_role)\b/gim)
   expect(sql).not.toMatch(/\b(?:nextval|setval|pg_sleep)\s*\(/i)

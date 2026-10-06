@@ -11,6 +11,7 @@ export const workflowSnapshotOutputAllowance=Object.freeze({sqlSha256:'b486e495f
 
 const cliDiagnostics=new WeakMap()
 const safeGuardMessages=Object.freeze([
+ 'WORKFLOW_REHEARSAL_AZURE_ALREADY_INSTALLED','AZURE_FIXTURE_PGTAP_REQUIRED','AZURE_FIXTURE_PREREQUISITE_REQUIRED','AZURE_FIXTURE_MONTH_BOUNDARY','AZURE_FIXTURE_FRESH_SESSION_REQUIRED','AZURE_FIXTURE_RESOURCE_NOT_EMPTY','AZURE_FIXTURE_ID_COLLISION','AZURE_FIXTURE_SEQUENCE_REVIEW_REQUIRED','AZURE_FIXTURE_TRIGGER_REVIEW_REQUIRED',
  'WORKFLOW_REHEARSAL_TAP_FIRST_FAILURE','WORKFLOW_REHEARSAL_ADMISSION_EXPIRED','WORKFLOW_REHEARSAL_ADMISSION_STATE_CHANGED','WORKFLOW_REHEARSAL_CLI_EXPIRY_BOUND','WORKFLOW_REHEARSAL_ALREADY_APPLIED',
  'WORKFLOW_REHEARSAL_AUTH_HELPER_UNREVIEWED','WORKFLOW_REHEARSAL_FIXTURE_COLLISION',
  'WORKFLOW_REHEARSAL_FOREIGN_TABLE','WORKFLOW_REHEARSAL_FUNCTION_MISSING',
@@ -57,17 +58,18 @@ function primaryCliRecord(value){
  return {primary,context,sqlstate}
 }
 
-export function workflowCliFailure({stdout,stderr,status,sqlSha256}){
+export function workflowCliFailure({stdout,stderr,status,sqlSha256,maximumTapAssertion=80}){
+ if(![80,124].includes(maximumTapAssertion))throw Error('WORKFLOW_REHEARSAL_DIAGNOSTIC_INVALID')
 
  const stderrRecord=primaryCliRecord(stderr),stdoutRecord=primaryCliRecord(stdout)
  const record=stderrRecord.primary||stderrRecord.sqlstate?stderrRecord:stdoutRecord
  const sqlstate=record.sqlstate
  const classifier=record.primary||stderr.split(/\r?\n/)[0]||stdout.split(/\r?\n/)[0]||''
  const category=sqlstate?'PG_'+sqlstate:/unknown flag|unknown command|Usage:/i.test(classifier)?'CLI_INTERFACE':/access token|unauthori[sz]ed|authentication|401|403/i.test(classifier)?'AUTH_REJECTED':/project ref|link|config/i.test(classifier)?'LINK_CONFIG':/connect|network|dial|TLS|certificate|timeout/i.test(classifier)?'CONNECTION':'COMMAND'
- const guard=/^\s*(?:Error:\s*)?(?:Failed to run sql query:\s*)?(?:ERROR:\s*(?:[0-9A-Z]{5}:\s*)?|SQLSTATE\s*[:=]?\s*[0-9A-Z]{5}\s+)(WORKFLOW_REHEARSAL_[A-Z_0-9]+)\b/.exec(record.primary||'')?.[1]
+ const guard=/^\s*(?:Error:\s*)?(?:Failed to run sql query:\s*)?(?:ERROR:\s*(?:[0-9A-Z]{5}:\s*)?|SQLSTATE\s*[:=]?\s*[0-9A-Z]{5}\s+)((?:WORKFLOW_REHEARSAL|AZURE_FIXTURE)_[A-Z_0-9]+)\b/.exec(record.primary||'')?.[1]
  const messageCode=safeGuardMessages.includes(guard)?guard:null
  const tap=messageCode==='WORKFLOW_REHEARSAL_TAP_FIRST_FAILURE'?/WORKFLOW_REHEARSAL_TAP_FIRST_FAILURE assertion=([1-9][0-9]{0,3}) sqlstate=([0-9A-Z]{5}|unknown)(?:\s|$)/.exec(record.primary||''):null
- const firstTapFailure=tap&&Number(tap[1])<=80?Object.freeze({assertion:Number(tap[1]),sqlstate:tap[2]==='unknown'?null:tap[2]}):null
+ const firstTapFailure=tap&&Number(tap[1])<=maximumTapAssertion?Object.freeze({assertion:Number(tap[1]),sqlstate:tap[2]==='unknown'?null:tap[2]}):null
  const match=/^(?:CONTEXT:\s*)?PL\/pgSQL function ([^\r\n]{1,200}?) line ([0-9]{1,6}) at (RAISE|SQL statement|RETURN|assignment|IF|PERFORM)\b/.exec(record.context||'')
  const location=match?Object.freeze({kind:'plpgsql',...(match[1]==='inline_code_block'?{function:'inline_code_block'}:{functionSha256:workflowSha(match[1])}),line:Number(match[2]),operation:match[3]}):null
  // Retain bounded facts, never arbitrary stderr prose, query/context bodies,
@@ -103,7 +105,8 @@ export async function acquireWorkflowValidationLock({spawnProcess=spawn,platform
  }catch(error){await dispose();throw error}
  return {assertHeld(){if(!alive)throw new Error('WORKFLOW_REHEARSAL_LOCK_LOST')},release:dispose}
 }
-export function createWorkflowQuery({linkRoot=workflowLinkedRoot,linkedMetadata=readWorkflowLinkMetadata(linkRoot),env,binary,spawnProcess=spawn,assertHeld=()=>{}}){
+export function createWorkflowQuery({linkRoot=workflowLinkedRoot,linkedMetadata=readWorkflowLinkMetadata(linkRoot),env,binary,spawnProcess=spawn,assertHeld=()=>{},maximumTapAssertion=80}){
+ if(![80,124].includes(maximumTapAssertion))throw Error('WORKFLOW_REHEARSAL_DIAGNOSTIC_INVALID')
  return async function query(sql,{timeoutMs=workflowQueryLimits.controlMs}={}){
   const directory=mkdtempSync(join(tmpdir(),'taskovia-cost-workflow-query-'))
   const file=join(directory,'query.sql')
@@ -134,7 +137,7 @@ export function createWorkflowQuery({linkRoot=workflowLinkedRoot,linkedMetadata=
       output=decoder.decode(Buffer.concat(stdout));errorText=decoder.decode(Buffer.concat(stderr))
      }catch{return reject(new Error('WORKFLOW_REHEARSAL_RESULT_INVALID'))}
      if(status!==0){
-      return reject(workflowCliFailure({stdout:output,stderr:errorText,status,sqlSha256:workflowSha(sql)}))
+      return reject(workflowCliFailure({stdout:output,stderr:errorText,status,sqlSha256:workflowSha(sql),maximumTapAssertion}))
      }
      try{resolve(JSON.parse(output))}catch{reject(new Error('WORKFLOW_REHEARSAL_RESULT_INVALID'))}
     })

@@ -1,3 +1,4 @@
+import {workflowAzureProfile,workflowAzureAssertions,readWorkflowAzureRehearsal,assertWorkflowAzureSources,workflowAzureExecutionScope,workflowAzureSetupSql,workflowAzureHistoryCaptureSql,workflowAzureDependencyPreflightSql,workflowAzureAdmissionSql} from './c1-cost-workflow-rehearsal-azure.mjs'
 import {workflowCashSuiteIndexes,readWorkflowCashProvenance,workflowCashCumulative,workflowCashPriorAllocations,workflowCashCurrentRunBudgets} from './c1-cost-workflow-rehearsal-cash.mjs'
 import {workflowRemainingSuiteIndexes,workflowRemainingTimeouts,workflowRemainingAdmissionPolicy,readWorkflowRemainingProvenance,assertWorkflowRemainingBaseline,workflowRemainingAdmissionSql,workflowRemainingCumulative,workflowRemainingPriorAllocations,workflowRemainingCumulativeBudgets} from './c1-cost-workflow-rehearsal-remaining.mjs'
 import {workflowAllSequencePolicy,workflowAllSequenceSnapshotSql,workflowAllSequenceSnapshot,assertWorkflowAllSequencePostflight,assertWorkflowAllSequenceOverlap,workflowAllSequenceAdmissionSql} from './c1-cost-workflow-rehearsal-all-sequences.mjs'
@@ -33,7 +34,7 @@ export const costWorkflowAssertionCounts=[80,13,28,22]
 
 // Only the four reviewed, single-line TAP statements are wrapped. Command SELECTs,
 // INSERT SELECT bodies and dollar-quoted assertion arguments remain byte-for-byte.
-export function workflowCollectTapSql(test,index){
+export function workflowCollectTapSql(test,index,azure=false){
  let plans=0,assertions=0,finishes=0
  const lines=test.split('\n').map(line=>{
   const head=/^\s*select\s+(plan|ok|is|lives_ok|throws_ok)\(/i.exec(line)
@@ -56,13 +57,13 @@ begin
 end;$workflow_tap_capture$;`
   }
   if(/^\s*select\s+\*\s+from\s+finish\b/i.test(line)){
-   if(!/^\s*select \* from finish\(\);\s*$/i.test(line))throw new Error('WORKFLOW_REHEARSAL_TAP_SOURCE')
+   if(!(azure?/^\s*select \* from finish\(true\);\s*$/i:/^\s*select \* from finish\(\);\s*$/i).test(line))throw new Error('WORKFLOW_REHEARSAL_TAP_SOURCE')
    finishes++
-   return "select pg_catalog.set_config('taskovia.workflow_tap_rows',(pg_catalog.current_setting('taskovia.workflow_tap_rows')::jsonb||coalesce((select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('finish',workflow_finish.value)) from (select * from finish()) workflow_finish(value)),'[]'::jsonb))::text,true);"
+   return ("select pg_catalog.set_config('taskovia.workflow_tap_rows',(pg_catalog.current_setting('taskovia.workflow_tap_rows')::jsonb||coalesce((select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('finish',workflow_finish.value)) from (select * from finish()) workflow_finish(value)),'[]'::jsonb))::text,true);").replace('finish()',azure?'finish(true)':'finish()')
   }
   return line
  })
- if(plans!==1||assertions!==costWorkflowAssertionCounts[index]||finishes!==1)throw new Error('WORKFLOW_REHEARSAL_TAP_SOURCE')
+ if(plans!==1||assertions!==(azure?workflowAzureAssertions:costWorkflowAssertionCounts[index])||finishes!==1)throw new Error('WORKFLOW_REHEARSAL_TAP_SOURCE')
  return "select pg_catalog.set_config('taskovia.workflow_tap_rows','[]',true);\n"+lines.join('\n')
 }
 export const workflowTapEnvelopeSql="select pg_catalog.current_setting('taskovia.workflow_tap_rows')::jsonb as tap_rows,'C1_COST_WORKFLOW_HISTORY_CLOSED' as result;"
@@ -76,6 +77,11 @@ export function readWorkflowRehearsal(cwd){
  return {migrations:costWorkflowMigrationFiles.map(name=>({name,sql:readFileSync(resolve(cwd,'supabase/migrations',name),'utf8')})),suites:costWorkflowSqlFiles.map(name=>({name,sql:readFileSync(resolve(cwd,'supabase/tests/database/c1',name),'utf8')}))}
 }
 export function reviewWorkflowRehearsal({migrations,suites,cwd=workflowSourceRoot,linkRoot=workflowLinkedRoot,profile='full143'}){
+ const azure=profile===workflowAzureProfile
+ if(azure){
+  assertWorkflowAzureSources({migrations,suites})
+  buildC1MigrationRehearsalSql(migrations.map(m=>m.sql).join('\n'))
+ }else{
  if(!Array.isArray(migrations)||migrations.length!==costWorkflowMigrationFiles.length||migrations.some((m,i)=>m.name!==costWorkflowMigrationFiles[i]||typeof m.sql!=='string'||!m.sql.trim()))throw new Error('WORKFLOW_REHEARSAL_MIGRATION_SET')
  buildC1MigrationRehearsalSql(migrations.map(m=>m.sql).join('\n'))
  if(!Array.isArray(suites)||suites.length!==costWorkflowSqlFiles.length||suites.some((s,i)=>s.name!==costWorkflowSqlFiles[i]))throw new Error('WORKFLOW_REHEARSAL_TEST_SET')
@@ -84,14 +90,15 @@ export function reviewWorkflowRehearsal({migrations,suites,cwd=workflowSourceRoo
   const plans=[...suite.sql.matchAll(/select\s+plan\((\d+)\)/gi)]
   if(plans.length!==1||Number(plans[0][1])!==costWorkflowAssertionCounts[index])throw new Error('WORKFLOW_REHEARSAL_PLAN')
  }
- if(!['full143','remaining63','cash22'].includes(profile))throw Error('WORKFLOW_REHEARSAL_PROFILE_INVALID')
+ }
+ if(!['full143','remaining63','cash22',workflowAzureProfile].includes(profile))throw Error('WORKFLOW_REHEARSAL_PROFILE_INVALID')
  const cash=profile==='cash22',prior=cash?readWorkflowCashProvenance(cwd,{migrations,suites}):profile==='remaining63'?readWorkflowRemainingProvenance(cwd,{migrations,suites}):null
  const priorAllocations=cash?workflowCashPriorAllocations:workflowRemainingPriorAllocations
  const baseMigrations=readWorkflowBaseMigrations(cwd)
  const dependencyInventory=workflowDependencyInventory({baseMigrations,migrations,suites})
  const {executionSources,runtime}=workflowExecutionInventory(cwd)
  if(workflowSnapshotOutputAllowance.sqlSha256!==workflowSha(workflowNativeSnapshotSql))throw new Error('WORKFLOW_REHEARSAL_SNAPSHOT_ALLOWANCE_SOURCE_CHANGED')
- const manifest={schemaVersion:cash?11:prior?10:8,...(prior?{executionSuites:(cash?workflowCashSuiteIndexes:workflowRemainingSuiteIndexes).map(index=>({index,name:suites[index].name,sha256:workflowSha(suites[index].sql),assertions:costWorkflowAssertionCounts[index]})),executedAssertionCount:cash?22:63,retainedSecurity:prior.descriptor,cleanupAdmission:{maximumCensusAttempts:30,minimumDelayMs:1035,waitPastSeconds:30}}:{}),allSequencePolicy:workflowAllSequencePolicy,allSequenceSnapshotSqlSha256:workflowSha(workflowAllSequenceSnapshotSql),nativeAdmissionPolicy:prior?workflowRemainingAdmissionPolicy:workflowNativeAdmissionPolicy,nativeAdmissionStateCollectionSqlSha256:workflowSha(workflowNativeStateCollectionSql),nativeAdmissionClockSqlSha256:workflowSha(workflowAdmissionClockSql),snapshotOutputAllowance:workflowSnapshotOutputAllowance,nativeExpiryPolicy:workflowNativeExpiryPolicy,nativeSnapshotSqlSha256:workflowSha(workflowNativeSnapshotSql),reviewedPolicyRoots:workflowReviewedPolicyRoots,reviewedPolicyScope:workflowReviewedPolicyScope,managedStorageBaseline:workflowManagedStorageBaseline,reviewedBaselineCorrections:workflowReviewedBaselineCorrections,linkedTarget:readWorkflowLinkMetadata(linkRoot),managedDdlHandlers:workflowManagedDdlHandlers,pgTapSetup:prior?{...workflowPgTapSetup,installations:cash?1:3}:workflowPgTapSetup,selectOnlyIdentities:dependencyInventory.selectOnlyIdentities,projectRef:'gtgljlnhwvhqdnwrfdfj',operation:cash?'rollback-only-cash22-after-retained121':prior?'rollback-only-remaining63-after-retained80':'rollback-only-DDL-and-synthetic-pgTAP-with-bounded-surrogate-gaps',executionSources,runtime,baseMigrations:baseMigrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),dependencyInventorySha256:workflowSha(JSON.stringify(dependencyInventory)),migrations:migrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),suites:suites.map((s,i)=>({name:s.name,sha256:workflowSha(s.sql),assertions:costWorkflowAssertionCounts[i]})),sequenceException:{names:workflowSequenceNames,perSuite:workflowSequenceBudgets,total:prior?workflowRemainingCumulativeBudgets:workflowCumulativeBudgets,...(prior?{priorCumulativeAllocations:priorAllocations,currentRunTotal:cash?workflowCashCurrentRunBudgets:workflowCumulativeBudgets}:{}),reset:false},timeouts:prior?workflowRemainingTimeouts:workflowTimeouts,clientLimits:workflowQueryLimits,lock:'/data/remote-jobs/validation.lock',trustBoundary:'Managed pgcrypto/uuid-ossp members and exact server-bundled pgTAP 1.3.3 created in extensions inside each rollback transaction; pgTAP must be absent before and after every batch, with existing privileges only. Catalogues and versions frozen per batch. All six reviewed managed DDL registrations are pinned bidirectionally; unknown or modified registrations, source functions, attached triggers or reachable sequences fail closed. workflow_node_events identity is SELECT-only and has zero allocation/drift allowance.',retention:'Fresh before/after rollback snapshots cover data, catalogues, grants, extension state and all other sequence counters. Stop on any drift or uncertain cleanup.'}
+ const manifest={schemaVersion:azure?12:cash?11:prior?10:8,...(azure?{executionSuites:[{index:0,name:suites[0].name,sha256:workflowSha(suites[0].sql),assertions:workflowAzureAssertions}],executedAssertionCount:workflowAzureAssertions,azureExecutionScope:workflowAzureExecutionScope,cleanupAdmission:{maximumCensusAttempts:30,minimumDelayMs:1035,waitPastSeconds:30}}:prior?{executionSuites:(cash?workflowCashSuiteIndexes:workflowRemainingSuiteIndexes).map(index=>({index,name:suites[index].name,sha256:workflowSha(suites[index].sql),assertions:costWorkflowAssertionCounts[index]})),executedAssertionCount:cash?22:63,retainedSecurity:prior.descriptor,cleanupAdmission:{maximumCensusAttempts:30,minimumDelayMs:1035,waitPastSeconds:30}}:{}),allSequencePolicy:azure?{...workflowAllSequencePolicy,perSuite:[[0,0]],total:[0,0]}:workflowAllSequencePolicy,allSequenceSnapshotSqlSha256:workflowSha(workflowAllSequenceSnapshotSql),nativeAdmissionPolicy:azure?{...workflowRemainingAdmissionPolicy,transactionSeconds:120}:prior?workflowRemainingAdmissionPolicy:workflowNativeAdmissionPolicy,nativeAdmissionStateCollectionSqlSha256:workflowSha(workflowNativeStateCollectionSql),nativeAdmissionClockSqlSha256:workflowSha(workflowAdmissionClockSql),snapshotOutputAllowance:workflowSnapshotOutputAllowance,nativeExpiryPolicy:workflowNativeExpiryPolicy,nativeSnapshotSqlSha256:workflowSha(workflowNativeSnapshotSql),reviewedPolicyRoots:workflowReviewedPolicyRoots,reviewedPolicyScope:workflowReviewedPolicyScope,managedStorageBaseline:workflowManagedStorageBaseline,reviewedBaselineCorrections:workflowReviewedBaselineCorrections,linkedTarget:readWorkflowLinkMetadata(linkRoot),managedDdlHandlers:workflowManagedDdlHandlers,pgTapSetup:azure?{...workflowPgTapSetup,installations:1}:prior?{...workflowPgTapSetup,installations:cash?1:3}:workflowPgTapSetup,selectOnlyIdentities:dependencyInventory.selectOnlyIdentities,projectRef:'gtgljlnhwvhqdnwrfdfj',operation:azure?'rollback-only-azure124-and-exact9-unapplied-prerequisites':cash?'rollback-only-cash22-after-retained121':prior?'rollback-only-remaining63-after-retained80':'rollback-only-DDL-and-synthetic-pgTAP-with-bounded-surrogate-gaps',executionSources,runtime,baseMigrations:baseMigrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),dependencyInventorySha256:workflowSha(JSON.stringify(dependencyInventory)),migrations:migrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),suites:suites.map((s,i)=>({name:s.name,sha256:workflowSha(s.sql),assertions:azure?workflowAzureAssertions:costWorkflowAssertionCounts[i]})),sequenceException:{names:workflowSequenceNames,perSuite:azure?[[0,0]]:workflowSequenceBudgets,total:azure?[0,0]:prior?workflowRemainingCumulativeBudgets:workflowCumulativeBudgets,...(prior?{priorCumulativeAllocations:priorAllocations,currentRunTotal:cash?workflowCashCurrentRunBudgets:workflowCumulativeBudgets}:{}),reset:false},timeouts:azure?{...workflowRemainingTimeouts,transactionSeconds:120}:prior?workflowRemainingTimeouts:workflowTimeouts,clientLimits:azure?{...workflowQueryLimits,batchMs:120000}:workflowQueryLimits,lock:'/data/remote-jobs/validation.lock',trustBoundary:'Managed pgcrypto/uuid-ossp members and exact server-bundled pgTAP 1.3.3 created in extensions inside each rollback transaction; pgTAP must be absent before and after every batch, with existing privileges only. Catalogues and versions frozen per batch. All six reviewed managed DDL registrations are pinned bidirectionally; unknown or modified registrations, source functions, attached triggers or reachable sequences fail closed. workflow_node_events identity is SELECT-only and has zero allocation/drift allowance.',retention:'Fresh before/after rollback snapshots cover data, catalogues, grants, extension state and all other sequence counters. Stop on any drift or uncertain cleanup.'}
  return {...manifest,manifestSha256:workflowSha(JSON.stringify(manifest))}
 }
 function value(value){if(typeof value==='string'){try{return JSON.parse(value)}catch{throw new Error('WORKFLOW_REHEARSAL_RESULT_INVALID')}}return value}
@@ -124,19 +131,22 @@ export async function closeOwnedWorkflowBackend({query,owner,delay=sleep,admissi
  }
  throw new Error('WORKFLOW_REHEARSAL_CLEANUP_UNCERTAIN')
 }
-export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowLinkedRoot,env=process.env,migrations,suites,execute=false,captureBaseline=false,confirmation,authorization,baseline,baselineConfirmation,archiveSnapshot,reserveRetry,assertTarget=assertCloudDevTarget,query,acquireLock=acquireWorkflowValidationLock,delay=sleep,nonceFactory=()=> 'c1cw-'+randomUUID(),profile='full143'}={}){
- if(!['full143','remaining63','cash22'].includes(profile))throw Error('WORKFLOW_REHEARSAL_PROFILE_INVALID')
- const sources=migrations&&suites?{migrations,suites}:readWorkflowRehearsal(cwd)
+export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowLinkedRoot,env=process.env,migrations,suites,execute=false,captureBaseline=false,freshBaseline=false,confirmation,authorization,baseline,baselineConfirmation,archiveSnapshot,reserveRetry,assertTarget=assertCloudDevTarget,query,acquireLock=acquireWorkflowValidationLock,delay=sleep,nonceFactory=()=> 'c1cw-'+randomUUID(),profile='full143'}={}){
+ if(!['full143','remaining63','cash22',workflowAzureProfile].includes(profile))throw Error('WORKFLOW_REHEARSAL_PROFILE_INVALID')
+ const azure=profile===workflowAzureProfile
+ const sources=migrations&&suites?{migrations,suites}:azure?readWorkflowAzureRehearsal(cwd):readWorkflowRehearsal(cwd)
  const manifest=reviewWorkflowRehearsal({...sources,cwd,linkRoot,profile})
  if(!execute&&!captureBaseline)return {mode:'preview',...manifest}
  const cash=profile==='cash22',prior=cash?readWorkflowCashProvenance(cwd,sources):profile==='remaining63'?readWorkflowRemainingProvenance(cwd,sources):null
  const priorAllocations=cash?workflowCashPriorAllocations:workflowRemainingPriorAllocations,cumulativeWithPrior=cash?workflowCashCumulative:workflowRemainingCumulative
- const suiteIndexes=cash?workflowCashSuiteIndexes:prior?workflowRemainingSuiteIndexes:[0,1,2,3]
+ const suiteIndexes=azure?[0]:cash?workflowCashSuiteIndexes:prior?workflowRemainingSuiteIndexes:[0,1,2,3]
+ if(freshBaseline&&(!azure||!execute||captureBaseline||baseline||baselineConfirmation))throw Error('WORKFLOW_REHEARSAL_BASELINE_INVALID')
  if(execute&&captureBaseline)throw new Error('WORKFLOW_REHEARSAL_MODE_INVALID')
  if(confirmation!==manifest.manifestSha256||authorization!==manifest.manifestSha256)throw new Error('WORKFLOW_REHEARSAL_AUTHORIZATION_REQUIRED')
+ if(azure&&[env.TASKOVIA_COST_OCR_AZURE_ENABLED,env.TASKOVIA_COST_OCR_AZURE_TRANSMISSION_APPROVED].some(value=>value!==undefined&&value!=='false'))throw Error('WORKFLOW_REHEARSAL_AZURE_GATES_REQUIRED_OFF')
  assertTarget({cwd:linkRoot,env})
  let acceptedAll
- if(execute){
+ if(execute&&!freshBaseline){
   assertWorkflowNativeBaseline(baseline,manifest.manifestSha256,baselineConfirmation)
   if(!baseline.row.allSequences)throw new Error('WORKFLOW_REHEARSAL_ALL_SEQUENCE_BASELINE_REQUIRED')
   acceptedAll=workflowAllSequenceSnapshot({rows:[baseline.row.allSequences]})
@@ -152,7 +162,7 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
  const archive=archiveSnapshot||((row,label)=>{mkdirSync(archiveRoot,{recursive:true});writeFileSync(resolve(archiveRoot,'native-'+runId+'-'+label+'.json'),JSON.stringify(row,null,2),{mode:0o600,flag:'wx'})})
  try{
   const {binary}=workflowExecutionInventory(cwd)
-  const childQuery=query||createWorkflowQuery({linkRoot,linkedMetadata:manifest.linkedTarget,env:cliEnv,binary,assertHeld:()=>lease.assertHeld()})
+  const childQuery=query||createWorkflowQuery({linkRoot,linkedMetadata:manifest.linkedTarget,env:cliEnv,binary,assertHeld:()=>lease.assertHeld(),maximumTapAssertion:azure?124:80})
   const runQuery=async(...args)=>{
    lease.assertHeld();assertWorkflowLinkUnchanged(linkRoot,manifest.linkedTarget)
    try{return await childQuery(...args)}finally{lease.assertHeld();assertWorkflowLinkUnchanged(linkRoot,manifest.linkedTarget)}
@@ -160,17 +170,25 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
   const captureResponse=async(sql,label,decode)=>{const response=await runQuery(sql);try{await archive(response?.rows?.length===1?response.rows[0]:response,label)}catch{snapshotArchiveFailures.push(label)}return decode(response)}
   const capture=()=>captureResponse(workflowNativeSnapshotSql,'snapshot-'+(++snapshotNumber),snapshotResult)
   const captureAll=()=>captureResponse(workflowAllSequenceSnapshotSql,'all-sequences-'+(++allSequenceSnapshotNumber),workflowAllSequenceSnapshot)
+  const dependencyPreflight=azure?workflowAzureDependencyPreflightSql:workflowDependencyPreflightSql
+  const historyCapture=azure?workflowAzureHistoryCaptureSql:workflowHistoryCaptureSql
   const baseMigrations=readWorkflowBaseMigrations(cwd)
   const dependencies=workflowDependencyInventory({baseMigrations,...sources})
   const baseDependencies=workflowDependencyInventory({baseMigrations,migrations:[],suites:[...sources.suites,{sql:dependencies.relations.join(' ')+' '+dependencies.reachableFunctions.join(' ')}]})
   lease.assertHeld()
-  await runQuery("begin read only; set local statement_timeout='10s'; set local transaction_timeout='15s';"+workflowDependencyPreflightSql(baseDependencies,{pgTapPhase:'available'})+"rollback;")
+  await runQuery("begin read only; set local statement_timeout='10s'; set local transaction_timeout='15s';"+dependencyPreflight(baseDependencies,{pgTapPhase:'available'})+"rollback;")
   let before=await capture(),allBefore=await captureAll()
   assertWorkflowAllSequenceOverlap(before,allBefore)
   if(snapshotArchiveFailures.length)throw new Error('WORKFLOW_REHEARSAL_DIAGNOSTIC_ARCHIVE_FAILED')
   if(reviewWorkflowRehearsal({...sources,cwd,linkRoot,profile}).manifestSha256!==manifest.manifestSha256)throw new Error('WORKFLOW_REHEARSAL_SOURCE_CHANGED')
   if(prior)assertWorkflowRemainingBaseline({...before,allSequences:allBefore},prior)
   if(captureBaseline){const captured=workflowNativeBaseline(manifest.manifestSha256,{...before,allSequences:allBefore});await archive(captured,'baseline');return {mode:'baseline-captured',...manifest,baseline:captured}}
+  if(freshBaseline){
+   baseline=workflowNativeBaseline(manifest.manifestSha256,{...before,allSequences:allBefore})
+   acceptedAll=allBefore
+   await archive(baseline,'baseline')
+   assertWorkflowNativeBaseline(baseline,manifest.manifestSha256,baseline.sha256)
+  }
   assertWorkflowNativePostflight(baseline.row,before,0,[0n,0n])
   assertWorkflowAllSequencePostflight(acceptedAll,allBefore,0,[0n,0n])
   const reserve=reserveRetry||(()=>reserveWorkflowNativeRetry(archiveRoot,manifest.manifestSha256,baseline.sha256,runId))
@@ -190,8 +208,9 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
      if(snapshotArchiveFailures.length)throw new Error('WORKFLOW_REHEARSAL_DIAGNOSTIC_ARCHIVE_FAILED')
     }
    const nonce=nonceFactory()
-   const test=workflowCollectTapSql(suite.sql.replace(/^\s*begin\s*;/i,'').replace(/rollback\s*;\s*$/i,''),index)
-   const body=workflowRehearsalSetupSql+workflowSequenceGuardSql(index)+workflowDependencyPreflightSql(baseDependencies,{pgTapPhase:'available'})+workflowHistoryCaptureSql('before-DDL')+workflowPgTapSetupSql+sources.migrations.map(m=>m.sql).join('\n')+'\n'+workflowDependencyPreflightSql(dependencies)+workflowHistoryCaptureSql('after-DDL')+"\nset local row_security=on;\n"+test+workflowHistoryClosureSql+workflowSequenceClosureSql(index)
+   const fixtureBody=azure?suite.sql.replace('\nbegin;\n','\n'):suite.sql.replace(/^\s*begin\s*;/i,'')
+   const test=workflowCollectTapSql(fixtureBody.replace(/rollback\s*;\s*$/i,''),index,azure)
+   const body=(azure?workflowAzureSetupSql:workflowRehearsalSetupSql)+workflowSequenceGuardSql(index)+dependencyPreflight(baseDependencies,{pgTapPhase:'available'})+historyCapture('before-DDL')+workflowPgTapSetupSql+sources.migrations.map(m=>m.sql).join('\n')+'\n'+dependencyPreflight(dependencies)+historyCapture('after-DDL')+"\nset local row_security=on;\n"+test+workflowHistoryClosureSql+workflowSequenceClosureSql(index)
    const wrapped=buildC1MigrationRehearsalSql(body)
    validateC1MigrationRehearsalSql(wrapped)
    // Finish all large/source/state preparation before requesting the tiny clock.
@@ -201,13 +220,13 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
    const clockResponse=await runQuery(workflowAdmissionClockSql),clock=workflowNativeAdmissionClock(clockResponse,before)
     workflowNativeAdmissionClock(clockResponse,allBefore)
    const owner={nonce,...clock}
-   const sql=(prior?workflowRemainingAdmissionSql(owner):workflowAdmissionSql(owner))+stateAdmission+wrapped.replace(/^begin;\s*/i,'').replace(/rollback;\s*$/i,'')+'\n'+workflowTapEnvelopeSql+"\nrollback;"
+   const sql=(azure?workflowAzureAdmissionSql(owner):prior?workflowRemainingAdmissionSql(owner):workflowAdmissionSql(owner))+stateAdmission+wrapped.replace(/^begin;\s*/i,'').replace(/rollback;\s*$/i,'')+'\n'+workflowTapEnvelopeSql+"\nrollback;"
    let failure,response,cleanup,cleanupFailure,after,postflight,postflightFailure,diagnosticArchiveFailure,allAfter,allPostflight,closureArchiveFailure
    try{
-    response=await runQuery(sql,{timeoutMs:workflowQueryLimits.batchMs})
+    response=await runQuery(sql,{timeoutMs:manifest.clientLimits.batchMs})
     await archive(response,'tap-'+index)
     const counts=assertWorkflowTapResult(workflowTapRows(response))
-    if(counts.assertions!==costWorkflowAssertionCounts[index])throw new Error('WORKFLOW_REHEARSAL_RESULT_INVALID')
+    if(counts.assertions!==(azure?workflowAzureAssertions:costWorkflowAssertionCounts[index]))throw new Error('WORKFLOW_REHEARSAL_RESULT_INVALID')
    }catch(error){
     failure=error
     const diagnostic=workflowCliDiagnostic(error)
@@ -239,7 +258,7 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
    previous=after;previousAll=allAfter
    // Command success includes the trailing ROLLBACK. Confirm only after owned
    // transaction absence and fresh exact data/catalogue/sequence postflight.
-   const receipt={suite:suite.name,assertions:costWorkflowAssertionCounts[index],rollbackConfirmed:true,...cleanup,sequenceAllocations:postflight.allocations.map(String),postflightSha256:postflight.snapshotSha256,managedCliExpiryChange:postflight.expiryChange,allSequenceCount:allPostflight.allSequenceCount,unapprovedSequencesUnchanged:true,allSequencePostflightSha256:allPostflight.allSequenceSnapshotSha256}
+   const receipt={suite:suite.name,assertions:azure?workflowAzureAssertions:costWorkflowAssertionCounts[index],rollbackConfirmed:true,...cleanup,sequenceAllocations:postflight.allocations.map(String),postflightSha256:postflight.snapshotSha256,managedCliExpiryChange:postflight.expiryChange,allSequenceCount:allPostflight.allSequenceCount,unapprovedSequencesUnchanged:true,allSequencePostflightSha256:allPostflight.allSequenceSnapshotSha256}
    await archive(receipt,'receipt-'+index)
    receipts.push(receipt)
   }
