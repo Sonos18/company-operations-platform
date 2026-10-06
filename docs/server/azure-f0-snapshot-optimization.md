@@ -1,9 +1,9 @@
 # Azure124 source-only snapshot optimization
 
-Status: source/mock verification pending; SQL and provider execution have not occurred. Base:28a0ca016de62aae2182a782c01860da96c7c56f. This source changes the manifest; conditional fallback approval for the existing13c85 packet does not authorize executing this packet.
+Status: source-only packet verified with184/184 focused tests, scoped lint,4syntax checks, diff and no-DB preview. Full unit suite:2388pass,39skip,1inherited canonical-directory test failure reproduced on unchangedbase; the full suite is not green. SQL and provider execution have not occurred. Base:28a0ca016de62aae2182a782c01860da96c7c56f. This source changes the manifest; conditional fallback approval for the existing13c85 packet does not authorize executing this packet.
 
 ## Behavior
-For Azure124 only, before/postflight/final full snapshots and all-five-sequence censuses share one bounded repeatable-read read-only transaction and one native CLI request. Both original collection bodies are reused byte-for-byte. Original evidence rows are projected losslessly, separately archived and checked by the unchanged native/all-sequence validators and overlap checks. All later boundaries remain present; sequence reads are not MVCC, so overlap and exact postflight checks remain required.
+For Azure124 only, before/postflight/final full snapshots and all-five-sequence censuses share one bounded repeatable-read read-only transaction and one native CLI request. The complete original native transaction prefix, including row_security=off and the pinned search_path, and both original collection bodies are reused byte-for-byte. Original evidence rows are projected losslessly, separately archived and checked by the unchanged native/all-sequence validators and overlap checks. All later boundaries remain present; sequence reads are not MVCC, so overlap and exact postflight checks remain required.
 
 A successful one-suite path makes3 snapshot requests instead of6, and7 total mocked requests instead of10 with the harness's single cleanup census. A batch failure before TAP needs2 paired snapshot requests instead of4. Actual census count and real network timing vary. No measured live SQL speedup is claimed.
 
@@ -24,3 +24,5 @@ Each Azure command receives a private command-timing-N receipt containing only s
 
 ## Verification and release
 Read the exact release-results and source-receipt in /tmp/taskovia-azure124-snapshot-optimization-evidence-20261006 for executed checks, final source refs and immutable manifest. Source/mock proof does not establish PostgreSQL execution, live concurrency, provider behavior or realized elapsed-time savings. A newly frozen packet is reported for review before any database execution authorization.
+
+Independent review of candidate9e814455 identified oneP2: missing native RLS/search-path prefix. The fix reuses the complete original native prefix and was verified by a failed-before/passed-after prefix regression plus final source checks. No other findings were reported; this is not independent approval of live PostgreSQL execution. The canonical-directory failure remains outside this optimization scope; historical fixture SQL files are mistaken for another setup directory by that unchanged test.

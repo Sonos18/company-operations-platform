@@ -7,7 +7,7 @@ import {workflowLinkedRoot,readWorkflowLinkMetadata,assertWorkflowLinkUnchanged}
 
 export const workflowQueryLimits={batchMs:180000,controlMs:20000,outputBytes:4*1024*1024}
 // Only these exact reviewed READ ONLY full-snapshot bytes receive the allowance.
-export const workflowSnapshotPairOutputAllowance=Object.freeze({sqlSha256:'bf92641b7d6bbf2ddaefd0323c41ba09589c7cc1fc071778e5d2e63064301961',outputBytes:8*1024*1024})
+export const workflowSnapshotPairOutputAllowance=Object.freeze({sqlSha256:'be157fe64ca4a142dbc4d11f93677d28b3ef9a284d57fe1b6ca9dcf0477a23d0',outputBytes:8*1024*1024})
 export const workflowSnapshotOutputAllowance=Object.freeze({sqlSha256:'b486e495fd5f1ed26c28fadde7400548a8a94e9c1523d23b515c0e5a48bba66d',outputBytes:8*1024*1024})
 
 const cliDiagnostics=new WeakMap()

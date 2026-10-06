@@ -1,10 +1,17 @@
 import {describe,it,expect} from 'vitest'
 import {workflowSnapshotPairSql,workflowSnapshotPairRows} from '../../../scripts/c1-cost-workflow-rehearsal-snapshot-pair.mjs'
-import {workflowNativeStateCollectionSql} from '../../../scripts/c1-cost-workflow-rehearsal-native.mjs'
+import {workflowNativeSnapshotSql,workflowNativeStateCollectionSql} from '../../../scripts/c1-cost-workflow-rehearsal-native.mjs'
 import {workflowAllSequenceCollectionSql} from '../../../scripts/c1-cost-workflow-rehearsal-all-sequences.mjs'
 const meta={server_time:'2026-10-06T09:00:00Z',database:'postgres',username:'postgres'}
 const row=()=>({...meta,snapshot:'{"complete":"original bytes"}',sequences:'{"all":"original bytes"}'})
 describe('lossless paired read-only snapshot',()=>{
+ it('preserves full native transaction prefix including RLS and namespace guards',()=>{
+  const prefix=workflowNativeSnapshotSql.slice(0,workflowNativeSnapshotSql.indexOf(workflowNativeStateCollectionSql))
+  expect(prefix).toMatch(/set local row_security=off;/i)
+  expect(prefix).toMatch(/set local search_path=pg_catalog,public,extensions;/i)
+  expect(workflowSnapshotPairSql.startsWith(prefix)).toBe(true)
+ })
+
  it('collects untouched bodies once inside one bounded rollback transaction',()=>{
   expect(workflowSnapshotPairSql).toContain(workflowNativeStateCollectionSql)
   expect(workflowSnapshotPairSql).toContain(workflowAllSequenceCollectionSql)
