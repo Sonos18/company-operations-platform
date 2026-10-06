@@ -1,6 +1,6 @@
-# Minimal terminable image decoder boundary — proposal only
+# Minimal terminable image decoder boundary — historical proposal
 
-No runtime behavior change is implemented by this proposal. The accompanying release change fixes decoder packaging only. Keep both Azure gates false. No broad queue, service, DB table, provider/configuration or infrastructure change is proposed.
+This proposal accompanied the packaging-only base commit d0a79105c293756092a1f3faaaf544359a6e69ce. The approved source successor implements the minimal subprocess boundary; see [current implementation and remaining limits](cost-ocr-image-execution-boundary.md). The proposal below is retained as historical design context. Keep both Azure gates false. No broad queue, service, DB table, provider/configuration or infrastructure change is proposed.
 
 ## Problem and recommended boundary
 

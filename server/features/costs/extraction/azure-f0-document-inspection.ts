@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto'
-import {hasCompleteAzureF0Image} from './azure-f0-image-inspection'
+import {decodeAzureF0Image} from './azure-f0-image-inspection'
 import type {DocumentInspection,AzureF0Options} from './azure-f0-cost-extraction'
 
 /** Private original-file metadata, read by an authenticated server closure, never a browser report. */
@@ -55,7 +55,15 @@ function createInspector(expected:Readonly<AzureF0DocumentMetadata>,readMetadata
    const fresh=await readMetadata(pinned)
    if(!fresh||!validMetadata(fresh)||metadataKeys.some(key=>fresh[key]!==pinned[key]))return incomplete
   }catch{return incomplete}
-  if(images&&hasCompleteAzureF0Image(bytes,mimeType))return {sha256,complete:true,pageCount:1}
+  if(images&&await decodeAzureF0Image(bytes,mimeType)){
+   // Decode crosses a process boundary. Revalidate original access/version after
+   // it settles and before issuing the positive coverage attestation.
+   try{
+    const fresh=await readMetadata(pinned)
+    if(!fresh||!validMetadata(fresh)||metadataKeys.some(key=>fresh[key]!==pinned[key]))return incomplete
+   }catch{return incomplete}
+   return {sha256,complete:true,pageCount:1}
+  }
   return incomplete
  }
 }

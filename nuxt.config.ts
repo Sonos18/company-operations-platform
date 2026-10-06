@@ -1,3 +1,6 @@
+import { copyFile, mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { PRODUCT_BRAND } from './shared/constants/product-brand'
 
@@ -21,6 +24,15 @@ export default defineNuxtConfig({
     },
   },
   nitro: {
+    hooks: {
+      async compiled(nitro) {
+        const destination = join(nitro.options.output.serverDir, 'cost-ocr')
+        await mkdir(destination, { recursive: true })
+        for (const name of ['azure-f0-image-worker.mjs', 'azure-f0-image-decoder.mjs', 'azure-f0-image-execution.mjs']) {
+          await copyFile(fileURLToPath(new URL('./server/features/costs/extraction/' + name, import.meta.url)), join(destination, name))
+        }
+      },
+    },
     // Dynamic createRequire decoders must survive detached server deployment.
     externals: {
       traceInclude: [

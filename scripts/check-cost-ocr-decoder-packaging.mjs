@@ -5,7 +5,7 @@ import { resolve, relative, isAbsolute, join } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 
 /** Run against a detached generated Nitro server, never against source node_modules. */
-export function checkCostOcrDecoderPackaging(serverDirectory) {
+export async function checkCostOcrDecoderPackaging(serverDirectory) {
   const root = realpathSync(resolve(serverDirectory))
   const require = createRequire(pathToFileURL(join(root, 'index.mjs')))
   const checks = []
@@ -74,6 +74,17 @@ export function checkCostOcrDecoderPackaging(serverDirectory) {
     walk(root)
     return { files }
   })
+  check('image subprocess runtime files', () => {
+    for (const name of ['azure-f0-image-worker.mjs', 'azure-f0-image-decoder.mjs', 'azure-f0-image-execution.mjs']) {
+      const path = join(root, 'cost-ocr', name)
+      if (!existsSync(path) || !inside(path)) throw new Error('Missing or external image subprocess runtime file')
+    }
+    return { runtimeFiles: 3 }
+  })
+  const checkAsync = async (name, action) => {
+    try { checks.push({ name, passed: true, ...await action() }) }
+    catch (error) { checks.push({ name, passed: false, code: error.code ?? 'PACKAGING_CHECK_FAILED', reason: error.message }) }
+  }
   if (['pngjs/package.json', 'pngjs', 'jpeg-js/package.json', 'jpeg-js'].every((name) => modules.has(name))) {
     const width = 64, height = 64
     const data = Buffer.alloc(width * height * 4)
@@ -94,12 +105,24 @@ export function checkCostOcrDecoderPackaging(serverDirectory) {
       return { width, height, decodedBytes: decoded.data.length }
     })
   }
+  if (modules.has('pngjs') && modules.has('jpeg-js')) {
+    await checkAsync('detached PNG and JPEG subprocess decode', async () => {
+      const execution = await import(pathToFileURL(join(root, 'cost-ocr', 'azure-f0-image-execution.mjs')).href)
+      const width = 64, height = 64, data = Buffer.alloc(width * height * 4, 128)
+      const png = modules.get('pngjs').PNG.sync.write({ width, height, data })
+      const jpeg = modules.get('jpeg-js').encode({ width, height, data }, 80).data
+      if (!await execution.decodeAzureF0Image(png, 'image/png') ||
+          !await execution.decodeAzureF0Image(jpeg, 'image/jpeg')) throw new Error('Detached subprocess did not attest the supported synthetic images')
+      if (await execution.decodeAzureF0Image(Buffer.from('malformed synthetic image'), 'image/png')) throw new Error('Detached subprocess accepted malformed image')
+      return { supportedImages: 2, malformedRejected: true, NODE_PATH: process.env.NODE_PATH ?? null }
+    })
+  }
   return { passed: checks.every((entry) => entry.passed), checks, passedChecks: checks.filter((entry) => entry.passed).length, failedChecks: checks.filter((entry) => !entry.passed).length, NODE_PATH: process.env.NODE_PATH ?? null }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv.length !== 3 || process.env.NODE_PATH) throw new Error('Usage: NODE_PATH unset node scripts/check-cost-ocr-decoder-packaging.mjs DETACHED_SERVER_DIRECTORY')
-  const result = checkCostOcrDecoderPackaging(process.argv[2])
+  const result = await checkCostOcrDecoderPackaging(process.argv[2])
   process.stdout.write(JSON.stringify(result, null, 2) + '\n')
   process.exitCode = result.passed ? 0 : 2
 }
