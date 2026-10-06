@@ -102,7 +102,7 @@ begin
   -- Do not issue a first-POST lease whose fixed TTL could straddle DB UTC-month rollover.
   if dispatch_kind='post' and ts+interval '20 seconds'>=((date_trunc('month',ts at time zone 'UTC')+interval '1 month') at time zone 'UTC')
   then return '{"lease":null}'::jsonb;end if;
-  -- NEVER regrant on expiry: an old worker may be paused or HTTP delivery ambiguous.
+  -- NEVER regrant on expiry: an old worker may be paused or delivery ambiguous.
   if resource_row.lease_token is not null then return '{"lease":null}'::jsonb;end if;
   select coalesce(array_agg(s order by s),array[]::timestamptz[]) into recent from unnest(resource_row.slots) s where s>ts-interval '60 seconds';
   if cardinality(recent)>=20 or (cardinality(recent)>0 and recent[cardinality(recent)]>ts-interval '3 seconds')

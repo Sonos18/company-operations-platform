@@ -45,7 +45,7 @@ export const workflowAzureMigrationPins=Object.freeze([
   },
   {
     "name": "20261005045710_c1_cost_ocr_azure_f0_storage.sql",
-    "sha256": "fa357d4fdde925ae8329399b92bd18315029129b69d7eac07f56e999b64885fe"
+    "sha256": "0afb2e63d656e3d5cb7557b4dbdbed88d9d3c03056161fdb490694a1a592e00a"
   }
 ].map(item=>Object.freeze(item)))
 
