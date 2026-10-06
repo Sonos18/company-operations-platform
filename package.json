@@ -54,7 +54,8 @@
     "db:dev:c1:pgtap:diagnose": "node scripts/run-c1-pgtap-rollback-diagnostic.mjs",
     "db:dev:c1:cost-workflow:api-rehearse": "node scripts/run-c1-cost-workflow-api-rehearsal.mjs",
     "db:dev:c1:cost-workflow:cash-rehearse": "node scripts/run-c1-cost-workflow-cash-rehearsal.mjs",
-    "db:dev:c1:azure124:rehearse": "node scripts/run-c1-azure124-rehearsal.mjs"
+    "db:dev:c1:azure124:rehearse": "node scripts/run-c1-azure124-rehearsal.mjs",
+    "db:dev:c1:cost-workflow:cash-retry109-rehearse": "node scripts/run-c1-cost-workflow-cash-retry109-rehearsal.mjs"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "5.3.0",
