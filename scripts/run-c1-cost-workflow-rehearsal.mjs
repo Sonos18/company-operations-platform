@@ -1,3 +1,5 @@
+import {performance} from 'node:perf_hooks'
+import {workflowSnapshotPairSql,workflowSnapshotPairRows} from './c1-cost-workflow-rehearsal-snapshot-pair.mjs'
 import {workflowAzureProfile,workflowAzureAssertions,readWorkflowAzureRehearsal,assertWorkflowAzureSources,workflowAzureExecutionScope,workflowAzureSetupSql,workflowAzureHistoryCaptureSql,workflowAzureDependencyPreflightSql,workflowAzureAdmissionSql} from './c1-cost-workflow-rehearsal-azure.mjs'
 import {workflowCashSuiteIndexes,readWorkflowCashProvenance,workflowCashCumulative,workflowCashPriorAllocations,workflowCashCurrentRunBudgets} from './c1-cost-workflow-rehearsal-cash.mjs'
 import {workflowRemainingSuiteIndexes,workflowRemainingTimeouts,workflowRemainingAdmissionPolicy,readWorkflowRemainingProvenance,assertWorkflowRemainingBaseline,workflowRemainingAdmissionSql,workflowRemainingCumulative,workflowRemainingPriorAllocations,workflowRemainingCumulativeBudgets} from './c1-cost-workflow-rehearsal-remaining.mjs'
@@ -18,7 +20,7 @@ import {buildC1MigrationRehearsalSql,validateC1MigrationRehearsalSql} from './ru
 import {costWorkflowSqlFiles,validateCostWorkflowSql,assertWorkflowTapResult} from './run-c1-cost-workflow-tests.mjs'
 import {workflowRehearsalSetupSql,workflowHistoryCaptureSql,workflowHistoryClosureSql} from './c1-cost-workflow-rehearsal-guards.mjs'
 import {workflowSourceRoot,workflowSha,workflowExecutionInventory,readWorkflowBaseMigrations,workflowDependencyInventory} from './c1-cost-workflow-rehearsal-inventory.mjs'
-import {acquireWorkflowValidationLock,createWorkflowQuery,workflowQueryLimits,workflowSnapshotOutputAllowance,workflowCliDiagnostic,workflowWrapCliFailure} from './c1-cost-workflow-rehearsal-transport.mjs'
+import {acquireWorkflowValidationLock,createWorkflowQuery,workflowQueryLimits,workflowSnapshotOutputAllowance,workflowSnapshotPairOutputAllowance,workflowCliDiagnostic,workflowWrapCliFailure} from './c1-cost-workflow-rehearsal-transport.mjs'
 import {workflowSequenceNames,workflowSequenceBudgets,workflowCumulativeBudgets,workflowTimeouts,workflowDependencyPreflightSql,workflowAdmissionSql,workflowSequenceGuardSql,workflowSequenceClosureSql,workflowBackendCensusSql,assertOwnedWorkflowBackend,workflowTerminateSql} from './c1-cost-workflow-rehearsal-catalog.mjs'
 export const costWorkflowMigrationFiles=[
  '20261004210000_c1_cost_workflow_foundation.sql',
@@ -98,7 +100,8 @@ export function reviewWorkflowRehearsal({migrations,suites,cwd=workflowSourceRoo
  const dependencyInventory=workflowDependencyInventory({baseMigrations,migrations,suites})
  const {executionSources,runtime}=workflowExecutionInventory(cwd)
  if(workflowSnapshotOutputAllowance.sqlSha256!==workflowSha(workflowNativeSnapshotSql))throw new Error('WORKFLOW_REHEARSAL_SNAPSHOT_ALLOWANCE_SOURCE_CHANGED')
- const manifest={schemaVersion:azure?12:cash?11:prior?10:8,...(azure?{executionSuites:[{index:0,name:suites[0].name,sha256:workflowSha(suites[0].sql),assertions:workflowAzureAssertions}],executedAssertionCount:workflowAzureAssertions,azureExecutionScope:workflowAzureExecutionScope,cleanupAdmission:{maximumCensusAttempts:30,minimumDelayMs:1035,waitPastSeconds:30}}:prior?{executionSuites:(cash?workflowCashSuiteIndexes:workflowRemainingSuiteIndexes).map(index=>({index,name:suites[index].name,sha256:workflowSha(suites[index].sql),assertions:costWorkflowAssertionCounts[index]})),executedAssertionCount:cash?22:63,retainedSecurity:prior.descriptor,cleanupAdmission:{maximumCensusAttempts:30,minimumDelayMs:1035,waitPastSeconds:30}}:{}),allSequencePolicy:azure?{...workflowAllSequencePolicy,perSuite:[[0,0]],total:[0,0]}:workflowAllSequencePolicy,allSequenceSnapshotSqlSha256:workflowSha(workflowAllSequenceSnapshotSql),nativeAdmissionPolicy:azure?{...workflowRemainingAdmissionPolicy,transactionSeconds:120}:prior?workflowRemainingAdmissionPolicy:workflowNativeAdmissionPolicy,nativeAdmissionStateCollectionSqlSha256:workflowSha(workflowNativeStateCollectionSql),nativeAdmissionClockSqlSha256:workflowSha(workflowAdmissionClockSql),snapshotOutputAllowance:workflowSnapshotOutputAllowance,nativeExpiryPolicy:workflowNativeExpiryPolicy,nativeSnapshotSqlSha256:workflowSha(workflowNativeSnapshotSql),reviewedPolicyRoots:workflowReviewedPolicyRoots,reviewedPolicyScope:workflowReviewedPolicyScope,managedStorageBaseline:workflowManagedStorageBaseline,reviewedBaselineCorrections:workflowReviewedBaselineCorrections,linkedTarget:readWorkflowLinkMetadata(linkRoot),managedDdlHandlers:workflowManagedDdlHandlers,pgTapSetup:azure?{...workflowPgTapSetup,installations:1}:prior?{...workflowPgTapSetup,installations:cash?1:3}:workflowPgTapSetup,selectOnlyIdentities:dependencyInventory.selectOnlyIdentities,projectRef:'gtgljlnhwvhqdnwrfdfj',operation:azure?'rollback-only-azure124-and-exact9-unapplied-prerequisites':cash?'rollback-only-cash22-after-retained121':prior?'rollback-only-remaining63-after-retained80':'rollback-only-DDL-and-synthetic-pgTAP-with-bounded-surrogate-gaps',executionSources,runtime,baseMigrations:baseMigrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),dependencyInventorySha256:workflowSha(JSON.stringify(dependencyInventory)),migrations:migrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),suites:suites.map((s,i)=>({name:s.name,sha256:workflowSha(s.sql),assertions:azure?workflowAzureAssertions:costWorkflowAssertionCounts[i]})),sequenceException:{names:workflowSequenceNames,perSuite:azure?[[0,0]]:workflowSequenceBudgets,total:azure?[0,0]:prior?workflowRemainingCumulativeBudgets:workflowCumulativeBudgets,...(prior?{priorCumulativeAllocations:priorAllocations,currentRunTotal:cash?workflowCashCurrentRunBudgets:workflowCumulativeBudgets}:{}),reset:false},timeouts:azure?{...workflowRemainingTimeouts,transactionSeconds:120}:prior?workflowRemainingTimeouts:workflowTimeouts,clientLimits:azure?{...workflowQueryLimits,batchMs:120000}:workflowQueryLimits,lock:'/data/remote-jobs/validation.lock',trustBoundary:'Managed pgcrypto/uuid-ossp members and exact server-bundled pgTAP 1.3.3 created in extensions inside each rollback transaction; pgTAP must be absent before and after every batch, with existing privileges only. Catalogues and versions frozen per batch. All six reviewed managed DDL registrations are pinned bidirectionally; unknown or modified registrations, source functions, attached triggers or reachable sequences fail closed. workflow_node_events identity is SELECT-only and has zero allocation/drift allowance.',retention:'Fresh before/after rollback snapshots cover data, catalogues, grants, extension state and all other sequence counters. Stop on any drift or uncertain cleanup.'}
+ if(azure&&workflowSnapshotPairOutputAllowance.sqlSha256!==workflowSha(workflowSnapshotPairSql))throw new Error('WORKFLOW_REHEARSAL_SNAPSHOT_ALLOWANCE_SOURCE_CHANGED')
+ const manifest={schemaVersion:azure?13:cash?11:prior?10:8,...(azure?{snapshotPair:{sqlSha256:workflowSha(workflowSnapshotPairSql),outputAllowance:workflowSnapshotPairOutputAllowance,transactionSeconds:15,controlMs:workflowQueryLimits.controlMs,independentFallback:true,primaryFailureRetained:true,boundaries:['before','postflight','final']},commandTiming:{schemaVersion:1,archiveEveryCommand:true,monotonicDuration:true,archiveFailure:'fail-closed',sqlOrPayload:false},executionSuites:[{index:0,name:suites[0].name,sha256:workflowSha(suites[0].sql),assertions:workflowAzureAssertions}],executedAssertionCount:workflowAzureAssertions,azureExecutionScope:workflowAzureExecutionScope,cleanupAdmission:{maximumCensusAttempts:30,minimumDelayMs:1035,waitPastSeconds:30}}:prior?{executionSuites:(cash?workflowCashSuiteIndexes:workflowRemainingSuiteIndexes).map(index=>({index,name:suites[index].name,sha256:workflowSha(suites[index].sql),assertions:costWorkflowAssertionCounts[index]})),executedAssertionCount:cash?22:63,retainedSecurity:prior.descriptor,cleanupAdmission:{maximumCensusAttempts:30,minimumDelayMs:1035,waitPastSeconds:30}}:{}),allSequencePolicy:azure?{...workflowAllSequencePolicy,perSuite:[[0,0]],total:[0,0]}:workflowAllSequencePolicy,allSequenceSnapshotSqlSha256:workflowSha(workflowAllSequenceSnapshotSql),nativeAdmissionPolicy:azure?{...workflowRemainingAdmissionPolicy,transactionSeconds:120}:prior?workflowRemainingAdmissionPolicy:workflowNativeAdmissionPolicy,nativeAdmissionStateCollectionSqlSha256:workflowSha(workflowNativeStateCollectionSql),nativeAdmissionClockSqlSha256:workflowSha(workflowAdmissionClockSql),snapshotOutputAllowance:workflowSnapshotOutputAllowance,nativeExpiryPolicy:workflowNativeExpiryPolicy,nativeSnapshotSqlSha256:workflowSha(workflowNativeSnapshotSql),reviewedPolicyRoots:workflowReviewedPolicyRoots,reviewedPolicyScope:workflowReviewedPolicyScope,managedStorageBaseline:workflowManagedStorageBaseline,reviewedBaselineCorrections:workflowReviewedBaselineCorrections,linkedTarget:readWorkflowLinkMetadata(linkRoot),managedDdlHandlers:workflowManagedDdlHandlers,pgTapSetup:azure?{...workflowPgTapSetup,installations:1}:prior?{...workflowPgTapSetup,installations:cash?1:3}:workflowPgTapSetup,selectOnlyIdentities:dependencyInventory.selectOnlyIdentities,projectRef:'gtgljlnhwvhqdnwrfdfj',operation:azure?'rollback-only-azure124-and-exact9-unapplied-prerequisites':cash?'rollback-only-cash22-after-retained121':prior?'rollback-only-remaining63-after-retained80':'rollback-only-DDL-and-synthetic-pgTAP-with-bounded-surrogate-gaps',executionSources,runtime,baseMigrations:baseMigrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),dependencyInventorySha256:workflowSha(JSON.stringify(dependencyInventory)),migrations:migrations.map(m=>({name:m.name,sha256:workflowSha(m.sql)})),suites:suites.map((s,i)=>({name:s.name,sha256:workflowSha(s.sql),assertions:azure?workflowAzureAssertions:costWorkflowAssertionCounts[i]})),sequenceException:{names:workflowSequenceNames,perSuite:azure?[[0,0]]:workflowSequenceBudgets,total:azure?[0,0]:prior?workflowRemainingCumulativeBudgets:workflowCumulativeBudgets,...(prior?{priorCumulativeAllocations:priorAllocations,currentRunTotal:cash?workflowCashCurrentRunBudgets:workflowCumulativeBudgets}:{}),reset:false},timeouts:azure?{...workflowRemainingTimeouts,transactionSeconds:120}:prior?workflowRemainingTimeouts:workflowTimeouts,clientLimits:azure?{...workflowQueryLimits,batchMs:120000}:workflowQueryLimits,lock:'/data/remote-jobs/validation.lock',trustBoundary:'Managed pgcrypto/uuid-ossp members and exact server-bundled pgTAP 1.3.3 created in extensions inside each rollback transaction; pgTAP must be absent before and after every batch, with existing privileges only. Catalogues and versions frozen per batch. All six reviewed managed DDL registrations are pinned bidirectionally; unknown or modified registrations, source functions, attached triggers or reachable sequences fail closed. workflow_node_events identity is SELECT-only and has zero allocation/drift allowance.',retention:'Fresh before/after rollback snapshots cover data, catalogues, grants, extension state and all other sequence counters. Stop on any drift or uncertain cleanup.'}
  return {...manifest,manifestSha256:workflowSha(JSON.stringify(manifest))}
 }
 function value(value){if(typeof value==='string'){try{return JSON.parse(value)}catch{throw new Error('WORKFLOW_REHEARSAL_RESULT_INVALID')}}return value}
@@ -159,14 +162,14 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
  const archiveRoot=resolve(cwd,'.superpowers/sdd/2026-10-04-document-backed-installment-approval')
  const runId=randomUUID();let snapshotNumber=0,allSequenceSnapshotNumber=0
  const snapshotArchiveFailures=[],commandDiagnosticArchiveFailures=[]
- let commandNumber=0,primaryFailure
+ let commandNumber=0,primaryFailure,timingArchiveFailed=false
  const archive=archiveSnapshot||((row,label)=>{mkdirSync(archiveRoot,{recursive:true});writeFileSync(resolve(archiveRoot,'native-'+runId+'-'+label+'.json'),JSON.stringify(row,null,2),{mode:0o600,flag:'wx'})})
  try{
   const {binary}=workflowExecutionInventory(cwd)
   const childQuery=query||createWorkflowQuery({linkRoot,linkedMetadata:manifest.linkedTarget,env:cliEnv,binary,assertHeld:()=>lease.assertHeld(),maximumTapAssertion:azure?124:80})
   const runQuery=async(...args)=>{
    lease.assertHeld();assertWorkflowLinkUnchanged(linkRoot,manifest.linkedTarget)
-   const number=++commandNumber
+   const number=++commandNumber,startedAt=new Date().toISOString(),startedClock=performance.now()
    let failure,response
    try{response=await childQuery(...args)}catch(error){
     failure=error
@@ -179,6 +182,10 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
     }
    }finally{
     try{lease.assertHeld();assertWorkflowLinkUnchanged(linkRoot,manifest.linkedTarget)}catch(error){failure=workflowWrapCliFailure(error.message,failure)}
+    if(azure){
+     const timing={schemaVersion:1,commandNumber:number,sqlSha256:workflowSha(args[0]),startedAt,endedAt:new Date().toISOString(),elapsedMs:Math.max(0,performance.now()-startedClock),status:failure?'failed':'succeeded'}
+     try{await archive(timing,'command-timing-'+number)}catch{timingArchiveFailed=true;failure=workflowWrapCliFailure('WORKFLOW_REHEARSAL_TIMING_ARCHIVE_FAILED',failure)}
+    }
    }
    if(failure)throw failure
    return response
@@ -186,6 +193,26 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
   const captureResponse=async(sql,label,decode)=>{const response=await runQuery(sql);try{await archive(response?.rows?.length===1?response.rows[0]:response,label)}catch{snapshotArchiveFailures.push(label)}return decode(response)}
   const capture=()=>captureResponse(workflowNativeSnapshotSql,'snapshot-'+(++snapshotNumber),snapshotResult)
   const captureAll=()=>captureResponse(workflowAllSequenceSnapshotSql,'all-sequences-'+(++allSequenceSnapshotNumber),workflowAllSequenceSnapshot)
+  const capturePair=async()=>{
+   const fullLabel='snapshot-'+(++snapshotNumber),allLabel='all-sequences-'+(++allSequenceSnapshotNumber)
+   let full,all,error,response
+   try{
+    response=await runQuery(workflowSnapshotPairSql)
+    const pair=workflowSnapshotPairRows(response)
+    try{await archive(pair.fullResponse.rows[0],fullLabel)}catch{snapshotArchiveFailures.push(fullLabel)}
+    try{await archive(pair.allResponse.rows[0],allLabel)}catch{snapshotArchiveFailures.push(allLabel)}
+    full=snapshotResult(pair.fullResponse);all=workflowAllSequenceSnapshot(pair.allResponse)
+    assertWorkflowAllSequenceOverlap(full,all)
+   }catch(primary){
+    error=primary
+    if(response){try{await archive(response,'snapshot-pair-invalid-'+snapshotNumber)}catch{snapshotArchiveFailures.push('snapshot-pair-invalid-'+snapshotNumber)}}
+    // Preserve separate attempts when either collection/query/decode fails.
+    // The original error still fails this invocation; no fixture batch is replayed.
+    try{full=await captureResponse(workflowNativeSnapshotSql,fullLabel+'-fallback',snapshotResult)}catch(secondary){error ||=secondary}
+    try{all=await captureResponse(workflowAllSequenceSnapshotSql,allLabel+'-fallback',workflowAllSequenceSnapshot)}catch(secondary){error ||=secondary}
+   }
+   return {full,all,error}
+  }
   const dependencyPreflight=azure?workflowAzureDependencyPreflightSql:workflowDependencyPreflightSql
   const historyCapture=azure?workflowAzureHistoryCaptureSql:workflowHistoryCaptureSql
   const baseMigrations=readWorkflowBaseMigrations(cwd)
@@ -193,7 +220,9 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
   const baseDependencies=workflowDependencyInventory({baseMigrations,migrations:[],suites:[...sources.suites,{sql:dependencies.relations.join(' ')+' '+dependencies.reachableFunctions.join(' ')}]})
   lease.assertHeld()
   await runQuery("begin read only; set local statement_timeout='10s'; set local transaction_timeout='15s';"+dependencyPreflight(baseDependencies,{pgTapPhase:'available'})+"rollback;")
-  let before=await capture(),allBefore=await captureAll()
+  const initialPair=azure?await capturePair():null
+  if(initialPair?.error)throw initialPair.error
+  let before=azure?initialPair.full:await capture(),allBefore=azure?initialPair.all:await captureAll()
   assertWorkflowAllSequenceOverlap(before,allBefore)
   if(snapshotArchiveFailures.length)throw new Error('WORKFLOW_REHEARSAL_DIAGNOSTIC_ARCHIVE_FAILED')
   if(reviewWorkflowRehearsal({...sources,cwd,linkRoot,profile}).manifestSha256!==manifest.manifestSha256)throw new Error('WORKFLOW_REHEARSAL_SOURCE_CHANGED')
@@ -250,8 +279,11 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
    }
    try{cleanup=await closeOwnedWorkflowBackend({query:runQuery,owner,delay,admissionSeconds:manifest.timeouts.admissionSeconds})}catch(error){cleanupFailure=error}
    // Always attempt fresh postflight, including CLI/parse/timeout/TAP/cleanup failures.
-    try{after=await capture()}catch(error){postflightFailure=error}
-    try{allAfter=await captureAll()}catch(error){postflightFailure ||=error}
+    if(azure){const pair=await capturePair();after=pair.full;allAfter=pair.all;postflightFailure=pair.error}
+    else{
+     try{after=await capture()}catch(error){postflightFailure=error}
+     try{allAfter=await captureAll()}catch(error){postflightFailure ||=error}
+    }
     try{if(after)postflight=assertWorkflowNativePostflight(before,after,index,cumulative)}catch(error){postflightFailure ||=error}
     try{
      if(allAfter){
@@ -281,9 +313,13 @@ export async function runWorkflowRehearsal({cwd=process.cwd(),linkRoot=workflowL
    receipts.push(receipt)
   }
    let final,allFinal,finalCaptureFailure
-   try{final=await capture()}catch(error){finalCaptureFailure=error}
-   try{allFinal=await captureAll()}catch(error){finalCaptureFailure ||=error}
+   if(azure){const pair=await capturePair();final=pair.full;allFinal=pair.all;finalCaptureFailure=pair.error}
+   else{
+    try{final=await capture()}catch(error){finalCaptureFailure=error}
+    try{allFinal=await captureAll()}catch(error){finalCaptureFailure ||=error}
+   }
    if(finalCaptureFailure)throw finalCaptureFailure
+   if(timingArchiveFailed)throw new Error('WORKFLOW_REHEARSAL_TIMING_ARCHIVE_FAILED')
    assertWorkflowNativePostflight(previous,final,0,[0n,0n])
    assertWorkflowAllSequencePostflight(previousAll,allFinal,0,[0n,0n]);assertWorkflowAllSequenceOverlap(final,allFinal)
    const finalClosure=assertWorkflowNativePostflight(baseline.row,final,'total',[0n,0n])

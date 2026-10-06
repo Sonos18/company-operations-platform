@@ -1,3 +1,4 @@
+import {workflowSnapshotPairSql} from '../../../scripts/c1-cost-workflow-rehearsal-snapshot-pair.mjs'
 import {workflowNativeSnapshotSql} from '../../../scripts/c1-cost-workflow-rehearsal-native.mjs'
 import {describe,expect,it,vi} from 'vitest'
 import {EventEmitter} from 'node:events'
@@ -170,4 +171,13 @@ describe('primary diagnostic attribution excludes dumped SQL',()=>{
 
 describe('SQLSTATE attribution excludes quoted message tokens',()=>{
  it.each(['json','native'])('uses explicit state rather than quoted SQLSTATE text in %s error',async(kind)=>{const c=child(),spawnProcess=vi.fn(()=>{queueMicrotask(()=>{c.result.stderr.write(kind==='json'?JSON.stringify({code:'42601',message:'ERROR: syntax error at or near "SQLSTATE P0001"'}):'ERROR: syntax error at or near "SQLSTATE P0001" (SQLSTATE 42601)');c.result.emit('close',1)});return c.result}),q=createWorkflowQuery({binary:'/approved/mock',env:{},spawnProcess});const error=await q('select 1;').catch(e=>e);expect(error.diagnostic.sqlstate).toBe('42601');expect(error.message).toBe('WORKFLOW_REHEARSAL_EXECUTION_FAILED:PG_42601');expect(error.diagnostic.messageCode).toBeNull()})
+})
+
+
+describe('byte-pinned paired-snapshot output allowance',()=>{
+ function payload(bytes:number){const prefix='[{"padding":"',suffix='"}]';return prefix+'x'.repeat(bytes-Buffer.byteLength(prefix+suffix))+suffix}
+ function queryFor(output:string,stderr=''){const c=child(),spawnProcess=vi.fn(()=>{queueMicrotask(()=>{c.result.stdout.write(output);if(stderr)c.result.stderr.write(stderr);c.result.emit('close',0)});return c.result});return {c,query:createWorkflowQuery({binary:'/approved/mock',env:{},spawnProcess})}}
+ it('allows only exact paired SQL above4MiB up to8MiB',async()=>{const q=queryFor(payload(8*1024*1024));expect((await q.query(workflowSnapshotPairSql)).rows).toHaveLength(1);expect(q.c.result.kill).not.toHaveBeenCalled()})
+ it('rejects paired stdout and stderr over8MiB',async()=>{const q=queryFor(payload(8*1024*1024),'x');await expect(q.query(workflowSnapshotPairSql)).rejects.toThrow('OUTPUT_LIMIT');expect(q.c.result.kill).toHaveBeenCalledTimes(1)})
+ it('keeps changed paired SQL at the ordinary4MiB limit',async()=>{const q=queryFor(payload(4*1024*1024+1));await expect(q.query(workflowSnapshotPairSql+'\n')).rejects.toThrow('OUTPUT_LIMIT')})
 })

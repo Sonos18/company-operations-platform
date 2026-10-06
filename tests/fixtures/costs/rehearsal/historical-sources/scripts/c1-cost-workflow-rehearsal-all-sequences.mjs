@@ -11,7 +11,7 @@ export const workflowAllSequencePolicy=Object.freeze({
  baseline:'complete all-sequence census is included in the separately hashed accepted native baseline',
  evidence:'pgtap-99407dbe-f340-4646-a275-6dcc6672c173-all-sequences-after.json',
 })
-export const workflowAllSequenceCollectionSql=String.raw`
+const allSequenceCollectionSql=String.raw`
 do $workflow_all_sequence_census$
 declare r record;state jsonb='{}';value jsonb;
 begin
@@ -25,7 +25,7 @@ begin
  perform pg_catalog.set_config('taskovia.workflow_all_sequences',state::text,true);
 end;$workflow_all_sequence_census$;
 `
-export const workflowAllSequenceSnapshotSql="begin isolation level repeatable read read only;\nset local transaction_timeout='15s';set local statement_timeout='15s';set local lock_timeout='5s';set local idle_in_transaction_session_timeout='5s';\n"+workflowAllSequenceCollectionSql+"select current_setting('taskovia.workflow_all_sequences') as sequences,clock_timestamp()::text as server_time,current_database() as database,session_user as username;\nrollback;"
+export const workflowAllSequenceSnapshotSql="begin isolation level repeatable read read only;\nset local transaction_timeout='15s';set local statement_timeout='15s';set local lock_timeout='5s';set local idle_in_transaction_session_timeout='5s';\n"+allSequenceCollectionSql+"select current_setting('taskovia.workflow_all_sequences') as sequences,clock_timestamp()::text as server_time,current_database() as database,session_user as username;\nrollback;"
 export function workflowAllSequenceSnapshot(response){
  let row,state
  try{
@@ -68,6 +68,6 @@ export function assertWorkflowAllSequenceOverlap(full,all){
 }
 export function workflowAllSequenceAdmissionSql(before){
  const literal="'"+JSON.stringify(before.sequences).replaceAll("'","''")+"'"
- return workflowAllSequenceCollectionSql+"do $workflow_pgtap_sequence_admission$ begin if pg_catalog.current_setting('taskovia.workflow_all_sequences')::jsonb is distinct from "+literal+"::jsonb then raise exception 'WORKFLOW_REHEARSAL_ALL_SEQUENCE_ADMISSION_CHANGED';end if;end;$workflow_pgtap_sequence_admission$;\n"
+ return allSequenceCollectionSql+"do $workflow_pgtap_sequence_admission$ begin if pg_catalog.current_setting('taskovia.workflow_all_sequences')::jsonb is distinct from "+literal+"::jsonb then raise exception 'WORKFLOW_REHEARSAL_ALL_SEQUENCE_ADMISSION_CHANGED';end if;end;$workflow_pgtap_sequence_admission$;\n"
 }
 

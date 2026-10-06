@@ -7,6 +7,7 @@ import {workflowLinkedRoot,readWorkflowLinkMetadata,assertWorkflowLinkUnchanged}
 
 export const workflowQueryLimits={batchMs:180000,controlMs:20000,outputBytes:4*1024*1024}
 // Only these exact reviewed READ ONLY full-snapshot bytes receive the allowance.
+export const workflowSnapshotPairOutputAllowance=Object.freeze({sqlSha256:'bf92641b7d6bbf2ddaefd0323c41ba09589c7cc1fc071778e5d2e63064301961',outputBytes:8*1024*1024})
 export const workflowSnapshotOutputAllowance=Object.freeze({sqlSha256:'b486e495fd5f1ed26c28fadde7400548a8a94e9c1523d23b515c0e5a48bba66d',outputBytes:8*1024*1024})
 
 const cliDiagnostics=new WeakMap()
@@ -172,7 +173,8 @@ export function createWorkflowQuery({linkRoot=workflowLinkedRoot,linkedMetadata=
   const commandError=(code,complete=false)=>{const error=workflowCliFailure({stdout:capturedOut,stderr:capturedErr,status:capturedStatus,sqlSha256:workflowSha(sql),maximumTapAssertion,commandFailure:code,streamsComplete:complete});return workflowWrapCliFailure(code,error)}
   try{
   if(!sql.startsWith('/*c1cw-')&&!/^begin\b/i.test(sql.trim()))sql="begin read only;set local statement_timeout='10s';set local transaction_timeout='15s';"+sql+"rollback;"
-  const outputBytes=workflowSha(sql)===workflowSnapshotOutputAllowance.sqlSha256?workflowSnapshotOutputAllowance.outputBytes:workflowQueryLimits.outputBytes
+  const allowance=[workflowSnapshotOutputAllowance,workflowSnapshotPairOutputAllowance].find(value=>value.sqlSha256===workflowSha(sql))
+   const outputBytes=allowance?.outputBytes??workflowQueryLimits.outputBytes
   writeFileSync(file,sql,{encoding:'utf8',mode:0o600})
    assertHeld();assertWorkflowLinkUnchanged(linkRoot,linkedMetadata)
    const response=await new Promise((resolve,reject)=>{

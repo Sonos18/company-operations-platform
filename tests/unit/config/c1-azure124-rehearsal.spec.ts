@@ -11,7 +11,7 @@ const retained='.superpowers/sdd/2026-10-04-document-backed-installment-approval
 const raw=JSON.parse(readFileSync(retained+'native-14ad5a8e-6d52-4255-bf6d-d80a0fc4e8e6-snapshot-2.json','utf8'))
 const original={...raw,snapshot:JSON.parse(raw.snapshot)}
 const originalAll=workflowAllSequenceSnapshot({rows:[JSON.parse(readFileSync(retained+'native-14ad5a8e-6d52-4255-bf6d-d80a0fc4e8e6-all-sequences-2.json','utf8'))]})
-function harness(options:{fail?:boolean;audit?:number;catalogueDrift?:boolean;commandFailureAt?:string}={}){
+function harness(options:{fail?:boolean;audit?:number;catalogueDrift?:boolean;commandFailureAt?:string;malformedPair?:boolean;otherSequenceDrift?:boolean}={}){
  let time=Date.parse('2026-10-06T09:00:00Z'),batches=0,commandFailed=false,snapshotReads=0
  const lease={assertHeld:vi.fn(),release:vi.fn(async()=>{})}
  const query=vi.fn(async(sql:string)=>{
@@ -28,11 +28,13 @@ function harness(options:{fail?:boolean;audit?:number;catalogueDrift?:boolean;co
   if(!sql.startsWith('/*c1cw-')&&sql.includes('workflow_snapshot_result')){
    const row=structuredClone(original);row.server_time=new Date(time).toISOString()
    if(batches&&options.audit)row.snapshot.sequences['public.audit_events_id_seq'].lastValue=String(BigInt(row.snapshot.sequences['public.audit_events_id_seq'].lastValue)+BigInt(options.audit))
+   if(batches&&options.otherSequenceDrift)row.snapshot.sequences['public.workflow_node_events_id_seq'].lastValue=String(BigInt(row.snapshot.sequences['public.workflow_node_events_id_seq'].lastValue)+1n)
    if(batches&&options.catalogueDrift){
     const object=row.snapshot.catalogueObjects.find((x:{kind:string;identity:string})=>x.kind==='class'&&x.identity==='30098');object.metadata.relpages=4;object.sha256='a'.repeat(64)
     row.snapshot.catalogueObjectHashesSha256=workflowSha(row.snapshot.catalogueObjects.map((x:{sha256:string})=>x.sha256).join('\n'))
     row.snapshot.catalogueSha256='b'.repeat(64);row.snapshot.catalogueComparableSha256='c'.repeat(64)
    }
+   if(all){const sequenceRow=structuredClone(originalAll);sequenceRow.server_time=row.server_time;if(batches&&options.audit)sequenceRow.sequences['20603'].lastValue=String(BigInt(sequenceRow.sequences['20603'].lastValue)+BigInt(options.audit));if(batches&&options.otherSequenceDrift)sequenceRow.sequences['21159'].lastValue=String(BigInt(sequenceRow.sequences['21159'].lastValue)+1n);return {rows:[{...row,sequences:batches&&options.malformedPair?null:sequenceRow.sequences}]}}
    return {rows:[row]}
   }
   if(!sql.startsWith('/*c1cw-')&&sql.includes('workflow_all_sequence_census')){
@@ -174,5 +176,67 @@ describe('lease finalization cannot discard the command primary',()=>{
   h.lease.release.mockRejectedValueOnce(Error('synthetic release error'))
   const error=await h.execute().catch(e=>e)
   expect(workflowCliDiagnostic(error)).toMatchObject({sqlstate:'42501',primaryMessage:'ordinary SQL failure',location:{line:80}})
+ },30000)
+})
+
+
+describe('Azure124 snapshot round-trip optimization',()=>{
+ it('uses three paired captures and retains all original snapshot/all5 archives',async()=>{
+  const h=harness();await h.execute()
+  const captures=h.query.mock.calls.filter(x=>!x[0].startsWith('/*c1cw-')&&(x[0].includes('workflow_snapshot_result')||x[0].includes('workflow_all_sequence_census')))
+  expect(captures).toHaveLength(3)
+  expect(captures.every(x=>x[0].includes('workflow_snapshot_result')&&x[0].includes('workflow_all_sequence_census'))).toBe(true)
+  for(const label of ['snapshot-1','all-sequences-1','snapshot-2','all-sequences-2','snapshot-3','all-sequences-3'])expect(h.archive.mock.calls.some(x=>x[1]===label)).toBe(true)
+  expect(h.query.mock.calls.filter(x=>x[0].startsWith('/*c1cw-'))).toHaveLength(1)
+ },30000)
+ it('keeps independent postflight attempts after a paired failure and retains the primary',async()=>{
+  const h=harness({commandFailureAt:'postflight'});await expect(h.execute()).rejects.toThrow()
+  const after=h.query.mock.calls.filter(x=>!x[0].startsWith('/*c1cw-')&&(x[0].includes('workflow_snapshot_result')||x[0].includes('workflow_all_sequence_census')))
+  expect(after[1]![0]).toContain('workflow_snapshot_result')
+  expect(after[1]![0]).toContain('workflow_all_sequence_census')
+  expect(after.some(x=>x[0].includes('workflow_snapshot_result')&&!x[0].includes('workflow_all_sequence_census'))).toBe(true)
+  expect(after.some(x=>x[0].includes('workflow_all_sequence_census')&&!x[0].includes('workflow_snapshot_result'))).toBe(true)
+  expect(h.archive.mock.calls.find(x=>x[1]==='closure-0')![0]).toMatchObject({postflightConfirmed:false,allSequenceCount:5,sequenceAllocations:['0','0'],cleanup:{admissionExpired:true,ownedTransactionAbsent:true}})
+  expect(h.query.mock.calls.filter(x=>x[0].startsWith('/*c1cw-'))).toHaveLength(1)
+ },30000)
+ it('retains bounded command timing for every successful query without SQL or payload',async()=>{
+  const h=harness();await h.execute()
+  const timings=h.archive.mock.calls.filter(x=>x[1].startsWith('command-timing-')).map(x=>x[0])
+  expect(timings).toHaveLength(h.query.mock.calls.length)
+  expect(timings.every(x=>x.status==='succeeded'&&Number.isFinite(x.elapsedMs)&&x.elapsedMs>=0&&/^[a-f0-9]{64}$/.test(x.sqlSha256))).toBe(true)
+  expect(timings.every(x=>Object.keys(x).sort().join(',')==='commandNumber,elapsedMs,endedAt,schemaVersion,sqlSha256,startedAt,status')).toBe(true)
+ },30000)
+ it('fails closed if timing cannot be archived while preserving the primary CLI facts',async()=>{
+  const h=harness({commandFailureAt:'preflight'})
+  h.archive.mockImplementation(async(_row,label)=>{if(label.startsWith('command-timing-'))throw Error('synthetic timing archive disk failure')})
+  const error=await h.execute().catch(e=>e)
+  expect(error.message).toContain('TIMING_ARCHIVE_FAILED')
+  expect(workflowCliDiagnostic(error)).toMatchObject({sqlstate:'42501',primaryMessage:'ordinary SQL failure'})
+  expect(h.lease.release).toHaveBeenCalledTimes(1)
+ },30000)
+})
+
+
+describe('paired capture failure evidence',()=>{
+ it('archives malformed pair and successful independent fallbacks without overwriting original evidence',async()=>{
+  const h=harness({malformedPair:true});const error=await h.execute().catch(e=>e)
+  expect(error.message).toContain('SNAPSHOT_PAIR_INVALID')
+  const labels=h.archive.mock.calls.map(x=>x[1])
+  for(const label of ['snapshot-pair-invalid-2','snapshot-2-fallback','all-sequences-2-fallback'])expect(labels).toContain(label)
+  expect(new Set(labels).size).toBe(labels.length)
+  expect(h.query.mock.calls.filter(x=>x[0].startsWith('/*c1cw-'))).toHaveLength(1)
+  expect(h.lease.release).toHaveBeenCalledTimes(1)
+ },30000)
+ it('rejects drift in a sequence outside the two approved persistent identities',async()=>{
+  const h=harness({otherSequenceDrift:true});await expect(h.execute()).rejects.toThrow('UNAPPROVED_SEQUENCE_CHANGE')
+  expect(h.query.mock.calls.filter(x=>x[0].startsWith('/*c1cw-'))).toHaveLength(1)
+ },30000)
+ it('fails before batch and before consuming a marker if successful preflight timing cannot be archived',async()=>{
+  const h=harness()
+  h.archive.mockImplementation(async(_row,label)=>{if(label==='command-timing-1')throw Error('synthetic timing archive failure')})
+  await expect(h.execute()).rejects.toThrow('TIMING_ARCHIVE_FAILED')
+  expect(h.query.mock.calls.filter(x=>x[0].startsWith('/*c1cw-'))).toHaveLength(0)
+  expect(h.reserve).not.toHaveBeenCalled()
+  expect(h.lease.release).toHaveBeenCalledTimes(1)
  },30000)
 })

@@ -8,7 +8,7 @@ const fixturePath='tests/fixtures/costs/rehearsal'
 const directory='.superpowers/sdd/2026-10-04-document-backed-installment-approval'
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex')
 export function verifyCurrentRehearsalFixtureSources(cwd,manifest=JSON.parse(readFileSync(resolve(cwd,fixturePath,'current-source-pins.json'),'utf8'))){
- if(manifest.schemaVersion!==1||manifest.sources.length!==3)throw Error('CURRENT_REHEARSAL_FIXTURE_SOURCE_CHANGED')
+ if(manifest.schemaVersion!==1||manifest.sources.length!==4)throw Error('CURRENT_REHEARSAL_FIXTURE_SOURCE_CHANGED')
  for(const source of manifest.sources){
   if(sha(readFileSync(resolve(cwd,source.name)))!==source.currentSha256||sha(readFileSync(resolve(cwd,fixturePath,'historical-sources',source.name)))!==source.historicalSha256)throw Error('CURRENT_REHEARSAL_FIXTURE_SOURCE_CHANGED')
  }
