@@ -1,6 +1,6 @@
 import {z} from 'zod'
 import {costRequestInputSchema,workflowUpdateRequestInputSchema,workflowCommandVersionSchema,workflowDecisionInputSchema,workflowManagerAssignmentSchema,contractBasisInputSchema,contractAdjustmentInputSchema,cashAdjustmentInputSchema,workflowPaymentInputSchema,workflowRefundConfirmationSchema,workflowCommandResultSchema,costRequestViewSchema,workflowContractViewSchema,workflowAdjustmentViewSchema,workflowProjectContextSchema,workflowNotificationViewSchema,workflowUuidSchema,workflowDirectoryQuerySchema,workflowDirectorySchema,workflowRequestHistorySchema,workflowSourceSubcontractOptionSchema} from '../../../shared/schemas/costs/cost-workflow'
-import {workflowEvidenceIntentSchema,workflowEvidenceLinkSchema} from '../../../shared/schemas/costs/cost-workflow-evidence'
+import {workflowEvidenceIntentSchema,workflowEvidenceLinkSchema,workflowQuotationRecoveryInputSchema,workflowRecoverableQuotationsSchema} from '../../../shared/schemas/costs/cost-workflow-evidence'
 import {costEvidenceUploadIntentSchema,costEvidenceFinalizeInputSchema,costEvidenceFinalizedSchema,costEvidenceReadUrlInputSchema,costEvidenceReadUrlSchema} from '../../../shared/schemas/costs/cost-evidence'
 import {workflowFinanceSchema,workflowInventorySchema} from '../../../shared/schemas/costs/cost-workflow-reporting'
 import {costExtractionCommandSchema,costExtractionViewSchema} from '../../../shared/schemas/costs/cost-extraction'
@@ -17,6 +17,12 @@ export function createHttpCostWorkflowRepository(options:{companyId:string|(()=>
   return options.client.request({url,method,body,idempotencyKey,schema})
  }
  const repo:CostWorkflowRepository={
+  async listRecoverableQuotations(p,input){
+   const parsed=workflowQuotationRecoveryInputSchema.parse(input),url=scoped(p)+'/evidence/recoverable-quotations'
+   const params=new URLSearchParams()
+   if(parsed.requestId!==null){params.set('requestId',parsed.requestId);params.set('requestVersion',String(parsed.requestVersion))}
+   return options.client.request({url:url+(params.size?'?'+params.toString():''),method:'GET',schema:workflowRecoverableQuotationsSchema})
+  },
   async readDirectory(query){const url=base()+'/cost-workflow/projects',parsed=workflowDirectoryQuerySchema.parse(query??{}),params=new URLSearchParams();for(const [k,v] of Object.entries(parsed))if(v!==undefined)params.set(k,String(v));return options.client.request({url:url+'?'+params.toString(),method:'GET',schema:workflowDirectorySchema})},
   assignManager:(p,input,key)=>command(p,'/manager',input,workflowManagerAssignmentSchema,workflowCommandResultSchema,key,'PUT'),
   createRequest:(p,input,key)=>command(p,'/requests',input,costRequestInputSchema,workflowCommandResultSchema,key),

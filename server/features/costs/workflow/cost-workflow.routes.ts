@@ -2,7 +2,7 @@ import type { H3Event } from 'h3'
 import { getHeader,getQuery,getRouterParam,readBody } from 'h3'
 import { z } from 'zod'
 import { contractAdjustmentInputSchema,contractBasisInputSchema,costRequestInputSchema,workflowCommandVersionSchema,workflowDecisionInputSchema,workflowManagerAssignmentSchema,workflowUpdateRequestInputSchema,workflowPaymentInputSchema,cashAdjustmentInputSchema,workflowRefundConfirmationSchema } from '../../../../shared/schemas/costs/cost-workflow'
-import { workflowEvidenceIntentSchema,workflowEvidenceLinkSchema } from '../../../../shared/schemas/costs/cost-workflow-evidence'
+import { workflowEvidenceIntentSchema,workflowEvidenceLinkSchema,workflowQuotationRecoveryInputSchema } from '../../../../shared/schemas/costs/cost-workflow-evidence'
 import { costEvidenceFinalizeInputSchema,costEvidenceReadUrlInputSchema } from '../../../../shared/schemas/costs/cost-evidence'
 import { AppApiError } from '../../../utils/api-error'
 import type { SupabaseEvidenceFinalizer } from '../../../utils/supabase-client'
@@ -29,9 +29,22 @@ function invalid():never{throw new AppApiError(400,'INPUT_INVALID','Dữ liệu 
 function param(event:H3Event,name:string){const parsed=uuid.safeParse(getRouterParam(event,name));return parsed.success?parsed.data:invalid()}
 function key(event:H3Event){const parsed=uuid.safeParse(getHeader(event,'idempotency-key'));return parsed.success?parsed.data:invalid()}
 async function body<T>(event:H3Event,schema:z.ZodType<T>){const parsed=schema.safeParse(await readBody(event));return parsed.success?parsed.data:invalid()}
+const quotationRecoveryQuerySchema=z.object({
+ requestId:uuid.optional(),
+ requestVersion:z.string().regex(/^(?:0|[1-9]\d*)$/u).transform(Number).pipe(z.number().int().nonnegative()).optional(),
+}).strict()
 export function createCostWorkflowRoutes(deps:CostWorkflowRouteDependencies){
  async function resolved(event:H3Event,needsFinalizer=false){const context=await deps.resolveContext(event,param(event,'companyId'));return {context,extraction:deps.extractionService??new CostExtractionService(new SupabaseCostExtractionRepository(context.db),createCostExtractionAdapter(),{refresh:async()=>{const fresh=await deps.resolveContext(event,context.companyId);return {context:fresh,repository:new SupabaseCostExtractionRepository(fresh.db)}},...(deps.azureRpcFactory?{adapterFactory:value=>createRequestBoundCostExtractionAdapter(value,{rpcFactory:deps.azureRpcFactory!})}:{})}),reporting:deps.reportingService??new CostWorkflowReportingService(new SupabaseWorkflowReportingRepository(context.db)),cash:deps.cashService??new CostWorkflowCashService(new SupabaseWorkflowCashRepository(context.db)),service:deps.service??new CostWorkflowService(new SupabaseWorkflowRepository(context.db)),evidence:deps.evidenceService??new CostWorkflowEvidenceService(new SupabaseWorkflowEvidenceRepository(context.db,deps.finalizer??(needsFinalizer?deps.finalizerFactory?.():undefined)))}}
  return {
+ async listRecoverableQuotations(event:H3Event){
+  const query=quotationRecoveryQuerySchema.safeParse(getQuery(event))
+  if(!query.success)return invalid()
+  const input=workflowQuotationRecoveryInputSchema.safeParse({requestId:query.data.requestId??null,requestVersion:query.data.requestVersion??null})
+  if(!input.success)return invalid()
+  const companyId=param(event,'companyId'),projectId=param(event,'projectId'),context=await deps.resolveContext(event,companyId)
+  const evidence=deps.evidenceService??new CostWorkflowEvidenceService(new SupabaseWorkflowEvidenceRepository(context.db))
+  return evidence.listRecoverableQuotations(context,projectId,input.data)
+ },
  async listSourceSubcontracts(event:H3Event){const v=await resolved(event);return v.service.listSourceSubcontracts(v.context,param(event,'projectId'))},
  async readDirectory(event:H3Event){const v=await resolved(event);return v.service.readDirectory(v.context,getQuery(event))},
  async readRequestHistory(event:H3Event){const v=await resolved(event);return v.service.readRequestHistory(v.context,param(event,'projectId'),param(event,'requestId'))},
