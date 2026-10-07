@@ -6,8 +6,8 @@ import type { AuthenticatedHttpClient } from '../../repositories/http/authentica
 import ProjectCostManagerAssignmentPanel from '../../components/costs/ProjectCostManagerAssignmentPanel.vue'
 import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 import { workflowCompanyConfigurationSchema, workflowCrewClassificationSchema, workflowCompanyActivationSchema, type WorkflowCutoverSnapshot, type WorkflowCutoverCrew } from '../../../shared/schemas/costs/cost-workflow-cutover'
-import type { WorkflowProjectContext } from '../../../shared/schemas/costs/cost-workflow'
-import type { ProjectRegister } from '../../../shared/schemas/costs/master-data'
+import { readManagerAssignmentProjects } from '../../utils/costs/manager-assignment-projects'
+import type { WorkflowDirectory, WorkflowProjectContext } from '../../../shared/schemas/costs/cost-workflow'
 
 definePageMeta({ requiredAnyPermissions: ['cost.config.manage', 'party.manage', 'project.cost_manager.assign'] })
 
@@ -20,7 +20,7 @@ let scopeGeneration = 0
 let mounted = true
 const snapshot = ref<WorkflowCutoverSnapshot | null>(null)
 const crews = ref<WorkflowCutoverCrew[]>([])
-const projects = ref<ProjectRegister[]>([])
+const projects = ref<WorkflowDirectory['projects']>([])
 const projectId = ref('')
 const projectContext = ref<WorkflowProjectContext | null>(null)
 const loading = ref(false)
@@ -68,7 +68,7 @@ async function load() {
     const [state, list, projectList] = await Promise.all([
       canConfigure.value ? repo.snapshot() : Promise.resolve(null),
       canClassify.value ? repo.crews() : Promise.resolve([]),
-      canAssign.value ? repositories.projectRegister.list() : Promise.resolve([]),
+      canAssign.value ? readManagerAssignmentProjects(repositories.costWorkflow, () => token.isCurrent() && current(fp, generation)) : Promise.resolve([]),
     ])
     if (!token.isCurrent() || !current(fp, generation)) return
     if (state && state.companyId !== access.activeCompanyId) throw new Error('COMPANY_SCOPE_CHANGED')
@@ -76,8 +76,8 @@ async function load() {
     recipientId.value = state?.notificationRecipientId || ''
     crews.value = list
     classification.value = Object.fromEntries(list.map(crew => [crew.id, {ownership: crew.crewOwnership || '', reason: '', confirmed: false}]))
-    projects.value = projectList.filter(project => project.operationalState === 'active')
-    if (!projects.value.some(project => project.id === projectId.value)) projectId.value = ''
+    projects.value = projectList
+    if (!projects.value.some(project => project.projectId === projectId.value)) projectId.value = ''
   }
   catch (caught) { if (token.isCurrent() && current(fp, generation)) error.value = description(caught) }
   finally { if (token.isCurrent() && current(fp, generation)) loading.value = false }
@@ -228,7 +228,7 @@ onBeforeUnmount(() => { mounted = false; scopeGeneration += 1; tracker.invalidat
 
     <section v-if="canAssign" class="cockpit-card preparation-section">
       <h2>3. Phân công quản lý chi phí</h2>
-      <label>Dự án đang hoạt động<select v-model="projectId" :disabled="locked"><option value="">Chọn dự án</option><option v-for="project in projects" :key="project.id" :value="project.id">{{ project.code }} — {{ project.name }}</option></select></label>
+      <label>Dự án đang hoạt động<select v-model="projectId" :disabled="locked"><option value="">Chọn dự án</option><option v-for="project in projects" :key="project.projectId" :value="project.projectId">{{ project.code }} — {{ project.name }}</option></select></label>
       <p v-if="projectLoading">Đang tải hồ sơ phân công…</p>
       <ProjectCostManagerAssignmentPanel v-if="projectContext && projectId" :key="fingerprint + projectId" :company-id="access.activeCompanyId || ''" :project-id="projectId" :context="projectContext" :blocked="writing || loading || uncertain" :stop-on-uncertain="true" @busy="managerBusy = $event" @uncertain="managerUncertain" @changed="managerChanged" />
     </section>
