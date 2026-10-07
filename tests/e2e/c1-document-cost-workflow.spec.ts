@@ -24,20 +24,24 @@ const basis={kind:'materials',deliverySite:'Công trường giả lập',lines:[
 const request=costRequestViewSchema.parse({id:requestId,version:1,submittedVersionId:submittedVersion,status:'approved',partyId:party,partyName:'Nhà cung cấp giả lập',partyKind:'organization',crewOwnership:null,categoryId:category,contractVersionId:basisVersion,latestDecision:null,amount:'30',currencyCode:'VND',evidenceFileIds:[fileId],assignmentVersion:1,basis,installment:{id:installment,version:1,authorized:'30',consumed:'10',remaining:'20'},payments:[]})
 const contract=workflowContractViewSchema.parse({id:basisId,versionId:basisVersion,partyId:party,reference:'Báo giá giả lập 100',currencyCode:'VND',version:1,cap:'100',evidenceFileIds:[fileId],sourceSubcontractId:null})
 type Call={path:string;body:unknown;key:string|undefined}
-async function installWorkflow(page:Page,options:{completed?:boolean;canDecide?:boolean;loseManagerResponse?:boolean;losePaymentResponse?:boolean;requestSubmitted?:boolean;pdf?:boolean;loseExtractResponse?:boolean}={}){
+const sourceId='a0000000-0000-4000-8000-000000000001'
+const otherParty='30000000-0000-4000-8000-000000000002'
+const otherProject='10000000-0000-4000-8000-000000000102'
+const sourceOption={id:sourceId,partyId:party,code:'SUB-SYNTHETIC',contractName:'Hợp đồng phụ giả lập',currencyCode:'VND'}
+async function installWorkflow(page:Page,options:{completed?:boolean;canDecide?:boolean;loseManagerResponse?:boolean;losePaymentResponse?:boolean;requestSubmitted?:boolean;pdf?:boolean;loseExtractResponse?:boolean;sourceOptions?:typeof sourceOption[];noContracts?:boolean;loseBasisResponse?:boolean}={}){
  const calls:Call[]=[]
  const shownRequest=options.requestSubmitted?costRequestViewSchema.parse({...request,status:'submitted',installment:null}):request
  const context=workflowProjectContextSchema.parse({mode:'document_backed_v1',operationalState:options.completed?'completed':'active',manager:{userId:manager,assignmentId:assignment,version:1,reason:'Phân công giả lập'},canSubmit:!options.completed,canDecide:options.canDecide??true,canAssign:true,eligibleManagers:[{userId:manager,label:'Quản lý hiện tại'},{userId:nextManager,label:'Quản lý nhận bàn giao'}]})
  const cashSummary={grossPaid:'10.0000',confirmedRefunds:'2.0000',netCash:'8.0000',approvedUnspent:'20.0000',coverage:'partial',unreconciledCount:1}
  const cash=workflowFinanceSchema.parse({schemaVersion:2,project:{projectId:project,projectCode:'SYNTHETIC',projectName:'Dự án giả lập',currencyCode:'VND',moneyScale:0,timeZone:'Asia/Ho_Chi_Minh',operationalState:context.operationalState},workflowCash:cashSummary,categories:[{categoryId:category,code:'materials',name:'Vật tư',displayOrder:1,workflowCash:cashSummary,retention:{state:'not_recorded',amount:null,recordedCount:0}}]})
  let evidence={id:newFileId,status:'finalized',originalFilename:'synthetic.png',mimeType:'image/png',sizeBytes:png.length,sha256:'a'.repeat(64),version:1,finalizedAt:new Date().toISOString(),replayed:false}
- let managerCalls=0,paymentCalls=0,extractCalls=0
- await page.route(/\/api\/companies\/[^/]+\/cost-workflow\/projects(?:\?.*)?$/,route=>route.fulfill({json:{mode:'document_backed_v1',projects:[{projectId:project,code:'SYNTHETIC',name:'Dự án giả lập',operationalState:context.operationalState}],nextCursor:null}}))
+ let managerCalls=0,paymentCalls=0,extractCalls=0,basisCalls=0
+ await page.route(/\/api\/companies\/[^/]+\/cost-workflow\/projects(?:\?.*)?$/,route=>route.fulfill({json:{mode:'document_backed_v1',projects:[{projectId:project,code:'SYNTHETIC',name:'Dự án giả lập',operationalState:context.operationalState},{projectId:otherProject,code:'SYNTHETIC-B',name:'Dự án thứ hai giả lập',operationalState:'active'}],nextCursor:null}}))
  await page.route('https://auth.taskovia.test/storage/v1/**',route=>route.fulfill({json:{Key:'synthetic',Id:newFileId},headers:{'Access-Control-Allow-Origin':'*'}}))
  await page.route(/\/api\/companies\/[^/]+\/projects\/[^/]+\/cost-workflow(?:\/.*)?$/,async(route:Route)=>{
   const req=route.request(),path=new URL(req.url()).pathname.split('/cost-workflow')[1]??''
   if(req.method()==='GET'){
-   const value=path==='/context'?context:path==='/cash'?cash:path==='/parties'?[{id:party,name:'Nhà cung cấp giả lập',kind:'organization',crewOwnership:null}]:path==='/contracts'?[contract]:path==='/requests'?[shownRequest]:path==='/requests/'+requestId?shownRequest:path==='/requests/'+requestId+'/history'?[]:path==='/adjustments'?[]:null
+   const value=path==='/context'?context:path==='/cash'?cash:path==='/parties'?[{id:party,name:'Nhà cung cấp giả lập',kind:'organization',crewOwnership:null},{id:otherParty,name:'Đối tác thứ hai giả lập',kind:'organization',crewOwnership:null}]:path==='/contracts'?(options.noContracts?[]:[contract]):path==='/source-subcontracts'?(options.sourceOptions??[]):path==='/requests'?[shownRequest]:path==='/requests/'+requestId?shownRequest:path==='/requests/'+requestId+'/history'?[]:path==='/adjustments'?[]:null
    if(value===null)throw new Error('Unexpected mock workflow GET '+path)
    return route.fulfill({json:value})
   }
@@ -59,6 +63,11 @@ async function installWorkflow(page:Page,options:{completed?:boolean;canDecide?:
    return route.fulfill({json:{extractionId:newFileId,fileId:newFileId,requestId:null,replayed:extractCalls>1,result:{status:'needs_review',reviewRequired:true,fields:{amount:'30',currencyCode:'VND',partyHint:'Nhà cung cấp giả lập',basis},warnings:['PARTY_MATCH_REQUIRES_REVIEW'],sourceLocations:[],methodVersion:options.pdf?'azure-f0-v1':'synthetic-fixture-v1',...(options.pdf?{azurePdfCoverage:{kind:'azure-pdf-scope-v1',sourceSha256:evidence.sha256,sourceByteLength:evidence.sizeBytes,requestedPages:[1,2],returnedPages:[1,2],requestedPagesMatched:true,sourcePageCount:{kind:'user-declared',count:4},wholeDocumentComplete:false,reviewRequired:true}}:{})}}})
   }
   if(path.endsWith('/read-url'))return route.fulfill({json:{url:'https://original.taskovia.test/synthetic',expiresAt:new Date(Date.now()+60000).toISOString()}})
+  if(path==='/contracts'){
+   basisCalls++
+   if(options.loseBasisResponse&&basisCalls===1)return route.fulfill({status:500,json:{code:'SYNTHETIC_RESPONSE_LOST',message:'Giả lập mất phản hồi'}})
+   return route.fulfill({json:{contractId:basisId,contractVersionId:basisVersion,version:1,replayed:basisCalls>1}})
+  }
   if(path==='/requests')return route.fulfill({json:{requestId,version:1,replayed:false}})
   if(path==='/requests/'+requestId+'/submit')return route.fulfill({json:{requestId,version:2,replayed:false}})
   if(path==='/installments/'+installment+'/payments'){
@@ -193,4 +202,131 @@ test('PDF declared total and partial coverage remain frozen during identical los
  expect(scans).toHaveLength(2);expect(scans[1]).toEqual(scans[0])
  expect(scans[0]?.body).toEqual({requestId:null,pdfPageScope:'1-2',pdfDeclaredPageCount:4})
  expect(state.calls.filter(call=>call.path==='/requests')).toHaveLength(0)
+})
+
+async function openBasis(page:Page){
+ await page.goto('/costs/'+project+'/requests/new')
+ await page.getByText('Hợp đồng hoặc báo giá dùng chung hạn mức',{exact:true}).click()
+ return page.locator('.contract-basis-panel')
+}
+async function fillBasis(page:Page){
+ const panel=page.locator('.contract-basis-panel')
+ await panel.locator('.create-box select').first().selectOption(party)
+ await panel.getByPlaceholder('Ví dụ: HĐKT-2026/01').fill('SYNTHETIC-BASIS')
+ await panel.getByPlaceholder('Ví dụ: 500000000').fill('100')
+ const uploader=panel.locator('.cost-workflow-original-upload')
+ await uploader.locator('input[type=file]').setInputFiles({name:'synthetic.png',mimeType:'image/png',buffer:png})
+ await uploader.getByRole('button',{name:'Tải lên hồ sơ gốc',exact:true}).click()
+ await expect(panel.getByText('synthetic.png',{exact:true})).toBeVisible()
+ return panel
+}
+test('basis mapping: unmapped canonical subcontract is selectable before any workflow mapping',async({page})=>{
+ const state=await installWorkflow(page,{sourceOptions:[sourceOption],noContracts:true})
+ const panel=await openBasis(page)
+ await expect(panel.getByText('Chưa có hợp đồng hoặc căn cứ nào được thiết lập.')).toBeVisible()
+ await fillBasis(page)
+ await panel.getByLabel('Hợp đồng phụ hiện có').selectOption(sourceId)
+ await panel.locator('.create-box input[type=checkbox]').check()
+ await panel.getByRole('button',{name:'Thiết lập căn cứ hợp đồng',exact:true}).click()
+ await expect.poll(()=>state.calls.filter(c=>c.path==='/contracts').length).toBe(1)
+ expect(state.calls.find(c=>c.path==='/contracts')?.body).toMatchObject({partyId:party,sourceSubcontractId:sourceId,currencyCode:'VND',evidenceFileIds:[newFileId]})
+})
+test('basis mapping: no eligible subcontract leaves ordinary evidence-backed basis available',async({page})=>{
+ const state=await installWorkflow(page,{noContracts:true})
+ const panel=await openBasis(page)
+ await fillBasis(page)
+ await expect(panel.getByLabel('Hợp đồng phụ hiện có').locator('option')).toHaveCount(1)
+ await panel.locator('.create-box input[type=checkbox]').check()
+ await panel.getByRole('button',{name:'Thiết lập căn cứ hợp đồng',exact:true}).click()
+ await expect.poll(()=>state.calls.filter(c=>c.path==='/contracts').length).toBe(1)
+ expect(state.calls.find(c=>c.path==='/contracts')?.body).not.toHaveProperty('sourceSubcontractId')
+})
+test('basis mapping: party and currency changes clear incompatible mapping and document review',async({page})=>{
+ await installWorkflow(page,{sourceOptions:[sourceOption]})
+ const panel=await openBasis(page)
+ await fillBasis(page)
+ const selector=panel.getByLabel('Hợp đồng phụ hiện có'),review=panel.locator('.create-box input[type=checkbox]')
+ await selector.selectOption(sourceId);await review.check()
+ await panel.locator('.create-box select').first().selectOption(otherParty)
+ await expect(selector).toHaveValue('');await expect(review).not.toBeChecked()
+ await expect(selector.locator('option')).toHaveCount(1)
+ await panel.locator('.create-box select').first().selectOption(party)
+ await selector.selectOption(sourceId);await review.check()
+ await panel.getByPlaceholder('VND',{exact:true}).fill('USD')
+ await expect(selector).toHaveValue('');await expect(review).not.toBeChecked()
+ await expect(selector.locator('option')).toHaveCount(1)
+})
+test('basis mapping: uncertain create freezes mapping and retries the identical command',async({page})=>{
+ const state=await installWorkflow(page,{sourceOptions:[sourceOption],loseBasisResponse:true})
+ const panel=await openBasis(page)
+ await fillBasis(page)
+ const selector=panel.getByLabel('Hợp đồng phụ hiện có')
+ await selector.selectOption(sourceId);await panel.locator('.create-box input[type=checkbox]').check()
+ const send=panel.getByRole('button',{name:'Thiết lập căn cứ hợp đồng',exact:true})
+ await send.click()
+ await expect(panel.getByText('Chưa xác định kết quả thiết lập.',{exact:false})).toBeVisible()
+ await expect(selector).toBeDisabled();await expect(panel.locator('.create-box select').first()).toBeDisabled()
+ await expect(panel.getByPlaceholder('VND',{exact:true})).toBeDisabled()
+ await expect(panel.locator('.create-box input[type=checkbox]')).toBeDisabled()
+ await expect(panel.getByRole('button',{name:'Gỡ',exact:true})).toBeDisabled()
+ await expect(panel.locator('.create-box input[type=file]')).toHaveCount(0)
+ await send.click()
+ await expect.poll(()=>state.calls.filter(c=>c.path==='/contracts').length).toBe(2)
+ const calls=state.calls.filter(c=>c.path==='/contracts')
+ expect(calls[0]?.key).toBeTruthy();expect(calls[1]).toEqual(calls[0])
+})
+async function switchBasisProject(page:Page){
+ await page.getByRole('link',{name:'← Quay lại danh sách đề nghị',exact:true}).click()
+ await page.locator('a[href="/costs"]').first().click()
+ await page.locator('a[href="/costs/'+otherProject+'/requests"]').click()
+ await page.locator('a[href="/costs/'+otherProject+'/requests/new"]').click()
+ await page.getByText('Hợp đồng hoặc báo giá dùng chung hạn mức',{exact:true}).click()
+}
+test('basis mapping: late previous-project options cannot enter the new project form',async({page})=>{
+ await installWorkflow(page,{sourceOptions:[sourceOption]})
+ let release!:()=>void
+ const held=new Promise<void>(resolve=>{release=resolve})
+ let started=false
+ let delivered!:()=>void
+ const delivery=new Promise<void>(resolve=>{delivered=resolve})
+ await page.route('**/projects/'+project+'/cost-workflow/source-subcontracts',async route=>{
+  started=true;await held;await route.fulfill({json:[sourceOption]});delivered()
+ })
+ await page.route('**/projects/'+otherProject+'/cost-workflow/source-subcontracts',route=>route.fulfill({json:[]}))
+ const panel=await openBasis(page)
+ await expect.poll(()=>started).toBe(true)
+ await switchBasisProject(page)
+ release()
+ await delivery
+ await page.evaluate(async()=>{await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))})
+ await expect(panel.getByLabel('Hợp đồng phụ hiện có')).toBeVisible()
+ await panel.locator('.create-box select').first().selectOption(party)
+ await expect(panel.getByLabel('Hợp đồng phụ hiện có').locator('option')).toHaveCount(1)
+ await expect(panel.getByLabel('Hợp đồng phụ hiện có')).toHaveValue('')
+})
+test('basis mapping: navigation discards pending selection and old completion feedback',async({page})=>{
+ const state=await installWorkflow(page,{sourceOptions:[sourceOption]})
+ let release!:()=>void
+ const held=new Promise<void>(resolve=>{release=resolve})
+ let started=false
+ let delivered!:()=>void
+ const delivery=new Promise<void>(resolve=>{delivered=resolve})
+ await page.route('**/projects/'+project+'/cost-workflow/contracts',async route=>{
+  if(route.request().method()!=='POST')return route.fallback()
+  started=true;await held
+  await route.fulfill({json:{contractId:basisId,contractVersionId:basisVersion,version:1,replayed:false}});delivered()
+ })
+ await page.route('**/projects/'+otherProject+'/cost-workflow/source-subcontracts',route=>route.fulfill({json:[]}))
+ const panel=await openBasis(page);await fillBasis(page)
+ await panel.getByLabel('Hợp đồng phụ hiện có').selectOption(sourceId)
+ await panel.locator('.create-box input[type=checkbox]').check()
+ await panel.getByRole('button',{name:'Thiết lập căn cứ hợp đồng',exact:true}).click()
+ await expect.poll(()=>started).toBe(true)
+ await switchBasisProject(page)
+ release()
+ await delivery
+ await page.evaluate(async()=>{await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))})
+ await expect(panel.getByLabel('Hợp đồng phụ hiện có')).toHaveValue('')
+ await expect(panel.getByPlaceholder('Ví dụ: HĐKT-2026/01')).toHaveValue('')
+ expect(state.calls.filter(c=>c.path==='/contracts')).toHaveLength(0)
 })

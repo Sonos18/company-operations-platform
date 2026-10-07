@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { apiErrorCodeSchema } from '../../../../shared/schemas/api-error'
-import { workflowDirectorySchema,workflowRequestHistorySchema,costRequestViewSchema,workflowAdjustmentViewSchema,workflowCommandResultSchema,workflowContractViewSchema,workflowNotificationViewSchema,workflowProjectContextSchema } from '../../../../shared/schemas/costs/cost-workflow'
+import { workflowSourceSubcontractOptionSchema,workflowDirectorySchema,workflowRequestHistorySchema,costRequestViewSchema,workflowAdjustmentViewSchema,workflowCommandResultSchema,workflowContractViewSchema,workflowNotificationViewSchema,workflowProjectContextSchema } from '../../../../shared/schemas/costs/cost-workflow'
 import type { UserSupabaseClient } from '../../../utils/supabase-client'
 import { AppApiError } from '../../../utils/api-error'
 import type { WorkflowContext,WorkflowRepository } from './cost-workflow.service'
@@ -31,6 +31,7 @@ export class SupabaseWorkflowRepository implements WorkflowRepository {
  decideContractAdjustment:WorkflowRepository['decideContractAdjustment']=(c,p,contractId,id,input,key)=>this.command(c,p,'c1_workflow_decide_contract_adjustment',input,key,{target_contract_id:contractId,target_id:id})
  listRequests:WorkflowRepository['listRequests']=(c,p)=>this.read(c,p,'c1_workflow_list_requests',z.array(costRequestViewSchema))
  readRequest:WorkflowRepository['readRequest']=(c,p,id)=>this.read(c,p,'c1_workflow_read_request',costRequestViewSchema,{target_id:id})
+ listSourceSubcontracts:WorkflowRepository['listSourceSubcontracts']=(c,p)=>this.read(c,p,'c1_workflow_list_source_subcontracts',z.array(workflowSourceSubcontractOptionSchema))
  listContracts:WorkflowRepository['listContracts']=(c,p)=>this.read(c,p,'c1_workflow_list_contracts',z.array(workflowContractViewSchema))
  readContract:WorkflowRepository['readContract']=(c,p,id)=>this.read(c,p,'c1_workflow_read_contract',workflowContractViewSchema,{target_id:id})
  listAdjustments:WorkflowRepository['listAdjustments']=(c,p)=>this.read(c,p,'c1_workflow_list_adjustments',z.array(workflowAdjustmentViewSchema))

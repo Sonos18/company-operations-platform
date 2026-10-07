@@ -1,4 +1,4 @@
-import type {CostRequestInput,WorkflowUpdateRequestInput,WorkflowCommandVersion,WorkflowDecisionInput,WorkflowManagerAssignmentInput,ContractBasisInput,ContractAdjustmentInput,CashAdjustmentInput,WorkflowPaymentInput,WorkflowRefundConfirmation,WorkflowCommandResult,CostRequestView,WorkflowContractView,WorkflowAdjustmentView,WorkflowProjectContext,WorkflowNotificationView,WorkflowPartyOption,WorkflowDirectoryQuery,WorkflowDirectory,WorkflowRequestHistory} from '../../shared/schemas/costs/cost-workflow'
+import type {CostRequestInput,WorkflowUpdateRequestInput,WorkflowCommandVersion,WorkflowDecisionInput,WorkflowManagerAssignmentInput,ContractBasisInput,ContractAdjustmentInput,CashAdjustmentInput,WorkflowPaymentInput,WorkflowRefundConfirmation,WorkflowCommandResult,CostRequestView,WorkflowContractView,WorkflowAdjustmentView,WorkflowProjectContext,WorkflowNotificationView,WorkflowPartyOption,WorkflowDirectoryQuery,WorkflowDirectory,WorkflowRequestHistory,WorkflowSourceSubcontractOption} from '../../shared/schemas/costs/cost-workflow'
 import type {WorkflowEvidenceIntent,WorkflowEvidenceLink} from '../../shared/schemas/costs/cost-workflow-evidence'
 import type {CostEvidenceUploadIntent,CostEvidenceFinalized,CostEvidenceFinalizeInput,CostEvidenceReadUrl,CostEvidenceReadUrlInput} from '../../shared/schemas/costs/cost-evidence'
 import type {WorkflowFinance,WorkflowInventory} from '../../shared/schemas/costs/cost-workflow-reporting'
@@ -17,6 +17,7 @@ export interface CostWorkflowRepository{
  listRequests(projectId:string):Promise<CostRequestView[]>
  readRequest(projectId:string,id:string):Promise<CostRequestView>
  readRequestHistory(projectId:string,id:string):Promise<WorkflowRequestHistory>
+ listSourceSubcontracts(projectId:string):Promise<WorkflowSourceSubcontractOption[]>
  listContracts(projectId:string):Promise<WorkflowContractView[]>
  readContract(projectId:string,id:string):Promise<WorkflowContractView>
  listAdjustments(projectId:string):Promise<WorkflowAdjustmentView[]>

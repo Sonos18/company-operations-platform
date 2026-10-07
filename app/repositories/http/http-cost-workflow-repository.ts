@@ -1,5 +1,5 @@
 import {z} from 'zod'
-import {costRequestInputSchema,workflowUpdateRequestInputSchema,workflowCommandVersionSchema,workflowDecisionInputSchema,workflowManagerAssignmentSchema,contractBasisInputSchema,contractAdjustmentInputSchema,cashAdjustmentInputSchema,workflowPaymentInputSchema,workflowRefundConfirmationSchema,workflowCommandResultSchema,costRequestViewSchema,workflowContractViewSchema,workflowAdjustmentViewSchema,workflowProjectContextSchema,workflowNotificationViewSchema,workflowUuidSchema,workflowDirectoryQuerySchema,workflowDirectorySchema,workflowRequestHistorySchema} from '../../../shared/schemas/costs/cost-workflow'
+import {costRequestInputSchema,workflowUpdateRequestInputSchema,workflowCommandVersionSchema,workflowDecisionInputSchema,workflowManagerAssignmentSchema,contractBasisInputSchema,contractAdjustmentInputSchema,cashAdjustmentInputSchema,workflowPaymentInputSchema,workflowRefundConfirmationSchema,workflowCommandResultSchema,costRequestViewSchema,workflowContractViewSchema,workflowAdjustmentViewSchema,workflowProjectContextSchema,workflowNotificationViewSchema,workflowUuidSchema,workflowDirectoryQuerySchema,workflowDirectorySchema,workflowRequestHistorySchema,workflowSourceSubcontractOptionSchema} from '../../../shared/schemas/costs/cost-workflow'
 import {workflowEvidenceIntentSchema,workflowEvidenceLinkSchema} from '../../../shared/schemas/costs/cost-workflow-evidence'
 import {costEvidenceUploadIntentSchema,costEvidenceFinalizeInputSchema,costEvidenceFinalizedSchema,costEvidenceReadUrlInputSchema,costEvidenceReadUrlSchema} from '../../../shared/schemas/costs/cost-evidence'
 import {workflowFinanceSchema,workflowInventorySchema} from '../../../shared/schemas/costs/cost-workflow-reporting'
@@ -29,6 +29,7 @@ export function createHttpCostWorkflowRepository(options:{companyId:string|(()=>
   listRequests:p=>read(p,'/requests',z.array(costRequestViewSchema)),
   readRequest:(p,target)=>read(p,'/requests/'+id(target),costRequestViewSchema),
   readRequestHistory:(p,target)=>read(p,'/requests/'+id(target)+'/history',workflowRequestHistorySchema),
+  listSourceSubcontracts:p=>read(p,'/source-subcontracts',z.array(workflowSourceSubcontractOptionSchema)),
   listContracts:p=>read(p,'/contracts',z.array(workflowContractViewSchema)),
   readContract:(p,target)=>read(p,'/contracts/'+id(target),workflowContractViewSchema),
   listAdjustments:p=>read(p,'/adjustments',z.array(workflowAdjustmentViewSchema)),
