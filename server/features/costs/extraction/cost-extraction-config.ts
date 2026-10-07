@@ -15,7 +15,7 @@ export function readAzureF0ServerConfiguration(environment:Environment):ServerCo
  if(!rawEndpoint||!environment.TASKOVIA_COST_OCR_AZURE_API_KEY?.trim())return {enabled:false}
  try{
   const url=new URL(azureF0Endpoint(rawEndpoint))
-  return {enabled:true,config:{enabled:true,sku:'F0',transmissionApproved:true,resourceId:url.hostname,endpoint:url.origin,version:'azure-f0-rest-2024-11-30-v1',monthlyPageBudget:Number(rawBudget)},credential:()=>environment.TASKOVIA_COST_OCR_AZURE_API_KEY??''}
+  return {enabled:true,config:{enabled:true,sku:'F0',transmissionApproved:true,resourceId:url.hostname,endpoint:url.origin,version:'azure-f0-rest-2024-11-30-quotation-v2',monthlyPageBudget:Number(rawBudget)},credential:()=>environment.TASKOVIA_COST_OCR_AZURE_API_KEY??''}
  }catch{return {enabled:false}}
 }
 export function createCostExtractionAdapter(options:{environment?:Environment;azure?:Pick<AzureF0Options,'store'|'inspect'|'authorize'|'now'|'admitPdf'>}={}){
