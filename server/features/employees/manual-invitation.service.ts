@@ -62,9 +62,10 @@ export function createManualEmployeeInvitationService(
         try {
           const employee = employeeDetailSchema.safeParse(await repository.completeEmployeeOnboarding(context.companyId, generated.userId, input))
           if (!employee.success || employee.data.workEmail !== input.workEmail || employee.data.account?.userId !== generated.userId
-            || employee.data.employeeCode !== input.employeeCode || employee.data.employmentStatus === 'terminated') incomplete()
+            || employee.data.account?.email !== input.workEmail || employee.data.employeeCode !== input.employeeCode || employee.data.employmentStatus === 'terminated') incomplete()
           if (!matchesProfile({
             ...employee.data,
+            workEmail: input.workEmail,
             departmentId: employee.data.department.id,
             positionId: employee.data.position?.id ?? null,
           }, input)) profileConflict()

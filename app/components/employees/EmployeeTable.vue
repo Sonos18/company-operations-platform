@@ -1,10 +1,15 @@
 <script setup lang="ts">
+import { employeeAccountSchema } from '../../../shared/schemas/employees'
 import EmployeeRoleBadges from './EmployeeRoleBadges.vue'
 import type { EmployeeSummary } from '../../features/employees/employee.types'
 
 const props = defineProps<{
   employees: EmployeeSummary[]
 }>()
+
+function hasInvalidContact(value: string | null): boolean {
+  return value !== null && !employeeAccountSchema.shape.email.safeParse(value).success
+}
 
 const columns = [
   { accessorKey: 'fullName', header: 'Nhân sự' },
@@ -44,11 +49,12 @@ const statusColors: Record<EmployeeSummary['employmentStatus'], 'success' | 'war
       <template #fullName-cell="{ row }">
         <div class="employee-name">
           <strong>{{ row.original.fullName }}</strong>
-          <span>{{ row.original.workEmail }}</span>
+          <span>{{ row.original.workEmail ?? 'Chưa có email liên hệ' }}</span>
+          <span v-if="hasInvalidContact(row.original.workEmail)" class="incomplete-profile">Email liên hệ chưa hợp lệ</span>
         </div>
       </template>
       <template #account-cell="{ row }">
-        <span v-if="row.original.account">{{ row.original.account.email }}</span>
+        <span v-if="row.original.account">{{ row.original.account.email ?? 'Chưa có email hợp lệ' }}</span>
         <span v-else class="redacted-value"><UIcon name="i-lucide-eye-off" aria-hidden="true" />Tài khoản đã được ẩn</span>
       </template>
       <template #department-cell="{ row }">
@@ -75,11 +81,11 @@ const statusColors: Record<EmployeeSummary['employmentStatus'], 'success' | 'war
     <div class="employee-cards" data-testid="employee-cards">
       <article v-for="employee in props.employees" :key="employee.id" class="employee-card" data-testid="employee-card">
         <header>
-          <div class="employee-name"><h2>{{ employee.fullName }}</h2><span>{{ employee.workEmail }}</span></div>
+          <div class="employee-name"><h2>{{ employee.fullName }}</h2><span>{{ employee.workEmail ?? 'Chưa có email liên hệ' }}</span><span v-if="hasInvalidContact(employee.workEmail)" class="incomplete-profile">Email liên hệ chưa hợp lệ</span></div>
           <UBadge :color="statusColors[employee.employmentStatus]" variant="subtle" size="sm">{{ statusLabels[employee.employmentStatus] }}</UBadge>
         </header>
         <dl>
-          <div><dt>Tài khoản</dt><dd v-if="employee.account">{{ employee.account.email }}</dd><dd v-else class="redacted-value"><UIcon name="i-lucide-eye-off" aria-hidden="true" />Tài khoản đã được ẩn</dd></div>
+          <div><dt>Tài khoản</dt><dd v-if="employee.account">{{ employee.account.email ?? 'Chưa có email hợp lệ' }}</dd><dd v-else class="redacted-value"><UIcon name="i-lucide-eye-off" aria-hidden="true" />Tài khoản đã được ẩn</dd></div>
           <div><dt>Phòng ban</dt><dd>{{ employee.department.name }}</dd></div>
           <div><dt>Vị trí</dt><dd :class="{ 'missing-value': !employee.position }">{{ employee.position?.name ?? 'Chưa cập nhật' }}</dd></div>
           <div><dt>Hồ sơ</dt><dd v-if="employee.profileComplete" class="complete-profile"><UIcon name="i-lucide-circle-check" aria-hidden="true" />Đầy đủ</dd><dd v-else class="incomplete-profile"><UIcon name="i-lucide-circle-alert" aria-hidden="true" />Hồ sơ chưa đầy đủ</dd></div>

@@ -124,3 +124,18 @@ describe('HTTP employee repository', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 })
+
+describe('legacy directory response transport', () => {
+  it.each(['legacy-contact', null])('loads raw contact %s and keeps unknown account email null', async workEmail => {
+    const record = { ...employee, workEmail, account: { ...employee.account, email: null } }
+    const fetch = vi.fn().mockResolvedValue(response({ items: [record], page: 1, pageSize: 100, total: 1 }))
+    const repository = createHttpEmployeeRepository({ companyId, getAccessToken: () => 'token', fetch })
+    await expect(repository.list()).resolves.toEqual([record])
+  })
+  it.each(['legacy-contact', null])('does not send invalid contact %s through PATCH', async workEmail => {
+    const fetch = vi.fn()
+    const repository = createHttpEmployeeRepository({ companyId, getAccessToken: () => 'token', fetch })
+    await expect(repository.update(employeeId, { workEmail } as never)).rejects.toBeDefined()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+})

@@ -245,3 +245,22 @@ describe('employee shared schemas', () => {
     expect(apiErrorCodeSchema.safeParse(code).success).toBe(true)
   })
 })
+
+describe('legacy employee read and write boundaries', () => {
+  it.each(['legacy-contact', null])('retains raw contact %s in read responses', workEmail => {
+    const value = { ...employeeSummary, workEmail, account: { ...employeeSummary.account, email: null } }
+    expect(employeeSummarySchema.parse(value)).toEqual(value)
+    expect(employeeDetailSchema.parse(value)).toEqual(value)
+  })
+  it('rejects invalid text as an account email', () => {
+    expect(employeeSummarySchema.safeParse({
+      ...employeeSummary, account: { ...employeeSummary.account, email: 'legacy-contact' },
+    }).success).toBe(false)
+  })
+  it.each(['legacy-contact', null])('rejects contact %s for updates and invitations', workEmail => {
+    expect(employeeUpdateInputSchema.safeParse({ workEmail }).success).toBe(false)
+    expect(employeeInvitationInputSchema.safeParse({
+      employeeCode: 'NEW', fullName: 'New Employee', departmentId: ids.department, workEmail,
+    }).success).toBe(false)
+  })
+})
