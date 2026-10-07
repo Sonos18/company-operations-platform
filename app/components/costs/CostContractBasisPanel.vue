@@ -99,28 +99,41 @@
         <div class="grid-2">
           <div>
             <label class="label">Đối tác ký kết *</label>
-            <select v-model="createPartyId" class="cockpit-select" :disabled="isBusy || uploadBusy" required>
+            <select v-model="createPartyId" class="cockpit-select" :disabled="createInputsDisabled" required>
               <option value="" disabled>-- Chọn đối tác --</option>
               <option v-for="p in parties" :key="p.id" :value="p.id">{{ p.name }} ({{ formatParty(p) }})</option>
             </select>
           </div>
           <div>
             <label class="label">Số hiệu HĐ / Báo giá *</label>
-            <input v-model="createReference" type="text" class="cockpit-input" placeholder="Ví dụ: HĐKT-2026/01" :disabled="isBusy || uploadBusy" required >
+            <input v-model="createReference" type="text" class="cockpit-input" placeholder="Ví dụ: HĐKT-2026/01" :disabled="createInputsDisabled" required >
           </div>
           <div>
             <label class="label">Hạn mức hợp đồng căn cứ *</label>
-            <input v-model="createAmount" type="text" class="cockpit-input" placeholder="Ví dụ: 500000000" :disabled="isBusy || uploadBusy" required >
+            <input v-model="createAmount" type="text" class="cockpit-input" placeholder="Ví dụ: 500000000" :disabled="createInputsDisabled" required >
           </div>
           <div>
             <label class="label">Loại tiền tệ *</label>
-            <input v-model="createCurrency" type="text" maxlength="3" class="cockpit-input" placeholder="VND" :disabled="isBusy || uploadBusy" required >
+            <input v-model="createCurrency" type="text" maxlength="3" class="cockpit-input" placeholder="VND" :disabled="createInputsDisabled" required >
+          </div>
+          <div v-if="canReadSources">
+            <label :for="sourceInputId" class="label">Hợp đồng phụ hiện có</label>
+            <select :id="sourceInputId" v-model="createSourceSubcontractId" class="cockpit-select" :disabled="createInputsDisabled || sourceLoading">
+              <option value="">Không liên kết hợp đồng phụ</option>
+              <option v-for="source in eligibleSources" :key="source.id" :value="source.id">{{ source.code }} · {{ source.contractName }}</option>
+            </select>
+            <p v-if="sourceLoading" role="status">Đang tải hợp đồng phụ...</p>
+            <div v-if="sourceError" class="alert error" role="alert">
+              {{ sourceError }}
+              <button type="button" class="cockpit-btn cockpit-btn--sm" :disabled="createInputsDisabled" @click="loadSources">Thử lại danh sách hợp đồng phụ</button>
+            </div>
           </div>
         </div>
 
         <div class="upload-wrap">
           <label class="label">Chứng từ gốc hợp đồng / báo giá (tối thiểu 1) *</label>
           <CostWorkflowOriginalUpload
+            v-if="!createPending"
             :company-id="companyId"
             :project-id="projectId"
             :target="{ kind: 'request' }"
@@ -134,14 +147,14 @@
               <div class="btn-group">
                 <button v-if="canReadFile" type="button" class="cockpit-btn cockpit-btn--sm" @click="openEvidence(f.id)">Xem</button>
                 <button v-if="canReadFile" type="button" class="cockpit-btn" @click="openEvidence(f.id, 'attachment')">Tải bản gốc</button>
-                <button type="button" class="cockpit-btn cockpit-btn--sm" :disabled="isBusy || uploadBusy" @click="removeCreateFile(f.id)">Gỡ</button>
+                <button type="button" class="cockpit-btn cockpit-btn--sm" :disabled="createInputsDisabled" @click="removeCreateFile(f.id)">Gỡ</button>
               </div>
             </div>
           </div>
         </div>
 
         <label class="check-row">
-          <input v-model="createReviewed" type="checkbox" :disabled="isBusy || uploadBusy" >
+          <input v-model="createReviewed" type="checkbox" :disabled="createInputsDisabled" >
           <span>Tôi đã rà soát tính hợp pháp và đầy đủ của hồ sơ căn cứ hợp đồng này.</span>
         </label>
 
@@ -163,6 +176,7 @@ import {
   type WorkflowProjectContext,
   type WorkflowPartyOption,
   type WorkflowContractView,
+  type WorkflowSourceSubcontractOption,
   type ContractBasisInput,
   type ContractAdjustmentInput,
 } from '../../../shared/schemas/costs/cost-workflow'
@@ -212,6 +226,20 @@ const createAmount = ref('')
 const createCurrency = ref('VND')
 const createFiles = ref<EvidenceEntry[]>([])
 const createReviewed = ref(false)
+const createPending = ref(false)
+const createInputsDisabled = computed(() => isBusy.value || uploadBusy.value || createPending.value)
+const sourceInputId = useId()
+const createSourceSubcontractId = ref('')
+const sourceOptions = ref<WorkflowSourceSubcontractOption[]>([])
+const sourceLoading = ref(false)
+const sourceError = ref('')
+const canReadSources = computed(() => canSubmitCommands.value && hasPerm('cost.request.read'))
+const sourceTracker = createAsyncRequestTracker<{projectId:string;fp:string}>()
+const eligibleSources = computed(() => sourceOptions.value.filter(source =>
+  source.partyId === createPartyId.value &&
+  source.currencyCode === createCurrency.value.trim().toUpperCase() &&
+  !props.contracts.some(contract => contract.sourceSubcontractId === source.id)
+))
 
 const adjustingContract = ref<WorkflowContractView | null>(null)
 const adjustCap = ref('')
@@ -241,21 +269,57 @@ function formatParty(p: WorkflowPartyOption): string {
 
 function resetForm() {
   actionTracker.invalidate()
+  createPending.value = false; createSourceSubcontractId.value = ''
   createPartyId.value = ''; createReference.value = ''; createAmount.value = ''; createCurrency.value = 'VND'; createFiles.value = []; createReviewed.value = false
   adjustingContract.value = null; adjustCap.value = ''; adjustReason.value = ''; adjustFiles.value = []; adjustReviewed.value = false
   actionError.value = ''; isBusy.value = false;uploadBusy.value=false;previewTracker.invalidate()
   createCmdKey = crypto.randomUUID(); lastCreatePayload = ''; adjustCmdKey = crypto.randomUUID(); lastAdjustPayload = ''
 }
 
-watch([() => props.companyId, () => props.projectId, () => $companyAccessStore.activeCompanyId, () => getFingerprint()], resetForm, {flush:'sync'})
-watch([createPartyId, createReference, createAmount, createCurrency, createFiles], () => { createReviewed.value=false }, { deep: true,flush:'sync' })
+watch([() => getFingerprint(), canSubmitCommands], () => {
+  resetForm()
+  void loadSources()
+}, {immediate:true,flush:'sync'})
+watch([createPartyId, createCurrency, eligibleSources], () => {
+  if (!createPending.value && createSourceSubcontractId.value && !eligibleSources.value.some(source => source.id === createSourceSubcontractId.value)) createSourceSubcontractId.value = ''
+}, {flush:'sync'})
+watch([createPartyId, createReference, createAmount, createCurrency, createFiles, createSourceSubcontractId], () => { createReviewed.value=false }, { deep: true,flush:'sync' })
 watch([adjustCap, adjustReason, adjustFiles], () => { adjustReviewed.value=false }, { deep: true,flush:'sync' })
-onUnmounted(() => {actionTracker.invalidate();previewTracker.invalidate()})
+onUnmounted(() => {actionTracker.invalidate();previewTracker.invalidate();sourceTracker.invalidate()})
+
+async function loadSources() {
+  sourceTracker.invalidate()
+  sourceOptions.value = []; sourceError.value = ''; sourceLoading.value = false
+  if (!canReadSources.value) return
+  const token = sourceTracker.start({projectId:props.projectId,fp:getFingerprint()})
+  sourceLoading.value = true
+  const isCurrent = () => token.isCurrent() && token.identity.fp === getFingerprint() && canReadSources.value
+  try {
+    const result = await repo.listSourceSubcontracts(token.identity.projectId)
+    if (isCurrent()) sourceOptions.value = result
+  } catch {
+    if (isCurrent()) sourceError.value = 'Không thể tải hợp đồng phụ. Kiểm tra quyền truy cập hoặc thử lại.'
+  } finally {
+    if (isCurrent()) sourceLoading.value = false
+  }
+}
+
+function createInput(): ContractBasisInput {
+  return {
+    partyId: createPartyId.value,
+    reference: createReference.value.trim(),
+    referenceAmount: createAmount.value.trim(),
+    currencyCode: createCurrency.value.trim().toUpperCase(),
+    evidenceFileIds: createFiles.value.map(f => f.id),
+    ...(createSourceSubcontractId.value ? {sourceSubcontractId:createSourceSubcontractId.value} : {}),
+  }
+}
 
 function onCreateFileFinalized(f: { id: string; name: string }) {
+  if (createPending.value) return
   if (!createFiles.value.some(e => e.id === f.id)) createFiles.value.push(f)
 }
-function removeCreateFile(id: string) { createFiles.value = createFiles.value.filter(e => e.id !== id) }
+function removeCreateFile(id: string) { if (createInputsDisabled.value) return; createFiles.value = createFiles.value.filter(e => e.id !== id) }
 
 function onAdjustFileFinalized(f: { id: string; name: string }) {
   if (!adjustFiles.value.some(e => e.id === f.id)) adjustFiles.value.push(f)
@@ -278,13 +342,8 @@ function cancelAdjustment() { adjustingContract.value = null; actionError.value 
 
 const canSubmitCreate = computed(() => {
   if (uploadBusy.value || !canSubmitCommands.value || !createReviewed.value || createFiles.value.length === 0) return false
-  const input: ContractBasisInput = {
-    partyId: createPartyId.value,
-    reference: createReference.value.trim(),
-    referenceAmount: createAmount.value.trim(),
-    currencyCode: createCurrency.value.trim().toUpperCase(),
-    evidenceFileIds: createFiles.value.map(f => f.id),
-  }
+  const input = createInput()
+  if (!createPending.value && createSourceSubcontractId.value && !eligibleSources.value.some(source => source.id === createSourceSubcontractId.value)) return false
   return contractBasisInputSchema.safeParse(input).success
 })
 
@@ -303,22 +362,16 @@ async function handleCreateBasis() {
   if (!canSubmitCreate.value || isBusy.value) return
   actionError.value = ''
   const token = actionTracker.start({ companyId: props.companyId, projectId: props.projectId, fp: getFingerprint() })
-  const input: ContractBasisInput = {
-    partyId: createPartyId.value,
-    reference: createReference.value.trim(),
-    referenceAmount: createAmount.value.trim(),
-    currencyCode: createCurrency.value.trim().toUpperCase(),
-    evidenceFileIds: createFiles.value.map(f => f.id),
-  }
+  const input = createInput()
   const payloadStr = JSON.stringify(input)
   if(lastCreatePayload&&lastCreatePayload!==payloadStr){actionError.value='Kết quả thiết lập trước chưa rõ. Thử lại đúng dữ liệu hoặc tải lại trang.';return}
-  lastCreatePayload=payloadStr;isBusy.value=true
+  lastCreatePayload=payloadStr;createPending.value=true;isBusy.value=true
 
   try {
     if (!canSubmitCommands.value) throw new Error('Ngữ cảnh hoặc quyền hạn đã thay đổi.')
     await repo.createContractBasis(token.identity.projectId, input, { idempotencyKey: createCmdKey })
-    if (!token.isCurrent() || getFingerprint()!==token.identity.fp) return
-    createCmdKey = crypto.randomUUID(); lastCreatePayload = ''; resetForm(); emit('changed')
+    if (!token.isCurrent() || getFingerprint()!==token.identity.fp || !canSubmitCommands.value) return
+    createCmdKey = crypto.randomUUID(); lastCreatePayload = ''; resetForm(); void loadSources(); emit('changed')
   } catch {
     if (!token.isCurrent() || getFingerprint()!==token.identity.fp) return
     actionError.value = 'Chưa xác định kết quả thiết lập. Thử lại đúng dữ liệu hoặc tải lại trang.'

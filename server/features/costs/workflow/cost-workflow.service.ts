@@ -1,5 +1,5 @@
 import type { PermissionCode } from '../../../../shared/constants/permissions'
-import { workflowDirectoryQuerySchema,type WorkflowDirectoryQuery,type WorkflowDirectory,type WorkflowRequestHistory,contractAdjustmentInputSchema,contractBasisInputSchema,costRequestInputSchema,workflowCommandVersionSchema,workflowDecisionInputSchema,workflowManagerAssignmentSchema,workflowUpdateRequestInputSchema,type ContractAdjustmentInput,type ContractBasisInput,type CostRequestInput,type CostRequestView,type WorkflowCommandResult,type WorkflowCommandVersion,type WorkflowContractView,type WorkflowDecisionInput,type WorkflowManagerAssignmentInput,type WorkflowNotificationView,type WorkflowUpdateRequestInput,type WorkflowAdjustmentView,type WorkflowProjectContext } from '../../../../shared/schemas/costs/cost-workflow'
+import { workflowUuidSchema,type WorkflowSourceSubcontractOption,workflowDirectoryQuerySchema,type WorkflowDirectoryQuery,type WorkflowDirectory,type WorkflowRequestHistory,contractAdjustmentInputSchema,contractBasisInputSchema,costRequestInputSchema,workflowCommandVersionSchema,workflowDecisionInputSchema,workflowManagerAssignmentSchema,workflowUpdateRequestInputSchema,type ContractAdjustmentInput,type ContractBasisInput,type CostRequestInput,type CostRequestView,type WorkflowCommandResult,type WorkflowCommandVersion,type WorkflowContractView,type WorkflowDecisionInput,type WorkflowManagerAssignmentInput,type WorkflowNotificationView,type WorkflowUpdateRequestInput,type WorkflowAdjustmentView,type WorkflowProjectContext } from '../../../../shared/schemas/costs/cost-workflow'
 import { AppApiError } from '../../../utils/api-error'
 import type { WorkflowEvidenceContext } from './cost-workflow-evidence.service'
 export type WorkflowContext=WorkflowEvidenceContext
@@ -15,6 +15,7 @@ export interface WorkflowRepository {
  submitContractAdjustment(c:WorkflowContext,p:string,id:string,input:ContractAdjustmentInput,key:string):Promise<WorkflowCommandResult>
  decideContractAdjustment(c:WorkflowContext,p:string,contractId:string,id:string,input:WorkflowDecisionInput,key:string):Promise<WorkflowCommandResult>
  readProjectContext(c:WorkflowContext,p:string):Promise<WorkflowProjectContext>
+ listSourceSubcontracts(c:WorkflowContext,p:string):Promise<WorkflowSourceSubcontractOption[]>
  listContracts(c:WorkflowContext,p:string):Promise<WorkflowContractView[]>
  listAdjustments(c:WorkflowContext,p:string):Promise<WorkflowAdjustmentView[]>
  readAdjustment(c:WorkflowContext,p:string,id:string):Promise<WorkflowAdjustmentView>
@@ -39,6 +40,7 @@ export class CostWorkflowService {
  async submitContractAdjustment(c:WorkflowContext,p:string,id:string,value:unknown,key:string){permission(c,'cost.request.submit');return this.repository.submitContractAdjustment(c,p,id,parse(contractAdjustmentInputSchema,value),key)}
  async decideContractAdjustment(c:WorkflowContext,p:string,contractId:string,id:string,value:unknown,key:string){permission(c,'cost.request.decide');return this.repository.decideContractAdjustment(c,p,contractId,id,parse(workflowDecisionInputSchema,value),key)}
  async readProjectContext(c:WorkflowContext,p:string){permission(c,'cost.request.read');return this.repository.readProjectContext(c,p)}
+ async listSourceSubcontracts(c:WorkflowContext,p:string){permission(c,'cost.request.read');permission(c,'cost.request.submit');permission(c,'cost.prepare');return this.repository.listSourceSubcontracts(c,parse(workflowUuidSchema,p))}
  async listContracts(c:WorkflowContext,p:string){permission(c,'cost.request.read');return this.repository.listContracts(c,p)}
  async listAdjustments(c:WorkflowContext,p:string){permission(c,'cost.request.read');return this.repository.listAdjustments(c,p)}
  async readAdjustment(c:WorkflowContext,p:string,id:string){permission(c,'cost.request.read');return this.repository.readAdjustment(c,p,id)}
