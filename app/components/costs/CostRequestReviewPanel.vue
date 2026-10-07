@@ -126,6 +126,20 @@
       </div>
       <div v-if="suggestedResult && suggestedResult.status !== 'unavailable'" class="alert warn">
         Gợi ý: {{ suggestedResult.fields.amount || '' }} {{ suggestedResult.fields.currencyCode || '' }} | Đối tác gợi ý: {{ suggestedResult.fields.partyHint || 'Chưa rõ' }} (chọn thủ công)
+        <p v-if="suggestedResult.fields.amount">Tổng tiền: {{ suggestionSource('amount') }}</p>
+        <p v-if="suggestedResult.fields.accountingBasis?.vatBasis">{{ suggestedResult.fields.accountingBasis.vatBasis }} — {{ suggestionSource('accountingBasis.vatBasis') }}</p>
+        <details v-if="suggestedResult.fields.basis?.kind === 'materials' && suggestedResult.fields.basis.lines.length">
+          <summary>{{ suggestedResult.fields.basis.lines.length }} dòng vật tư gợi ý — kiểm tra bản gốc trước khi áp dụng</summary>
+          <div style="overflow-x:auto">
+            <table>
+              <thead><tr><th scope="col">Tên vật tư</th><th scope="col">SL</th><th scope="col">ĐVT</th><th scope="col">Đơn giá</th><th scope="col">Nguồn và độ tin cậy OCR</th></tr></thead>
+              <tbody><tr v-for="(line, index) in suggestedResult.fields.basis.lines" :key="index">
+                <td>{{ line.description }}</td><td>{{ line.quantity }}</td><td>{{ line.unit }}</td><td>{{ line.unitPrice }}</td>
+                <td>{{ suggestionSource(`basis.lines.${index}.description`) }}; {{ suggestionSource(`basis.lines.${index}.quantity`) }}; {{ suggestionSource(`basis.lines.${index}.unitPrice`) }}</td>
+              </tr></tbody>
+            </table>
+          </div>
+        </details>
         <button v-if="!isReadonly && !retryReady && (!suggestedResult.azurePdfCoverage || suggestedResult.azurePdfCoverage.requestedPagesMatched)" type="button" class="cockpit-btn" @click="applySuggestion">Áp dụng dữ liệu gợi ý</button>
       </div>
 
@@ -277,6 +291,14 @@ async function scanEvidence(fileId:string) {
   scanNotice.value=res.result.status==='unavailable'?'Chưa có dữ liệu nhận dạng hợp lệ; vui lòng kiểm tra bản gốc, nhập và rà soát thủ công.':'Dữ liệu chỉ là gợi ý; vui lòng rà soát trước khi gửi.'}
  catch(e:unknown){if(token.isCurrent()&&scopeCurrent()){scanRetryReady.value=scanSession.pendingFileId!==null;scanNotice.value=e instanceof Error?e.message:'Không thể trích xuất.'}}
  finally {if(token.isCurrent()&&scopeCurrent())isScanning.value=false}
+}
+
+function suggestionSource(field: string): string {
+  const sources = suggestedResult.value?.providerLocations?.filter(source => source.field === field) ?? []
+  if (!sources.length) return 'Nguồn OCR hoặc độ tin cậy chưa xác định'
+  const pages = [...new Set(sources.map(source => source.pageNumber))].join(', ')
+  const known = sources.every(source => source.confidence !== undefined)
+  return `Trang ${pages}; ${known ? `độ tin cậy OCR ${Math.floor(Math.min(...sources.map(source => source.confidence!)) * 100)}%` : 'độ tin cậy OCR chưa xác định'}`
 }
 
 function applySuggestion() {

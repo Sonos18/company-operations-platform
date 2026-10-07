@@ -3,6 +3,7 @@ import {z} from 'zod'
 import {costExtractionResultSchema,type CostExtractionAdapter,type CostExtractionInput,type ExtractionResult} from '../../../../shared/schemas/costs/cost-extraction'
 import {workflowMoneySchema} from '../../../../shared/schemas/costs/cost-workflow'
 import {OfflineCostExtractionAdapter} from './cost-extraction-adapter'
+import {mapQuotationLayout} from './quotation-layout-mapper'
 import {azureF0PdfScopeContract,azureF0PdfAdmissionSchema,azureF0PdfCoverage,azureF0PdfExtractionResultSchema,matchesAzureF0PdfAdmission,type AzureF0PdfAdmission,type AzureF0PdfInput,type AzureF0PdfPageScope,type AzureF0PdfExtractionResult} from './azure-f0-pdf-admission'
 export {createAzureF0PdfAdmission} from './azure-f0-pdf-admission'
 const apiVersion='2024-11-30'
@@ -67,12 +68,13 @@ function manual(code:Warning):ExtractionResult{return {status:'unavailable',revi
 const region=z.object({pageNumber:z.number().int().min(1).max(2),polygon:z.array(z.number().finite().nonnegative()).min(8).max(32).refine(p=>p.length%2===0)}).passthrough()
 const field=z.object({content:z.string().max(2000).optional(),confidence:z.number().finite().min(0).max(1).optional(),boundingRegions:z.array(region).max(100).optional()}).passthrough()
 const completed=z.object({status:z.literal('succeeded'),analyzeResult:z.object({apiVersion:z.literal(apiVersion),modelId:z.enum(['prebuilt-invoice','prebuilt-layout']),pages:z.array(z.object({pageNumber:z.number().int().min(1).max(2)}).passthrough()).min(1).max(2),documents:z.array(z.object({fields:z.record(z.string(),z.unknown()).optional()}).passthrough()).max(100).optional()}).passthrough()}).passthrough()
-function mapped(raw:unknown,model:Model,pages:number):ExtractionResult{
+function mapped(raw:unknown,model:Model,pages:number,documentKind?:string):ExtractionResult{
  const parsed=completed.safeParse(raw)
  if(!parsed.success||parsed.data.analyzeResult.modelId!==model)return manual('EXTRACTION_RESULT_INVALID')
  const numbers=parsed.data.analyzeResult.pages.map(p=>p.pageNumber).sort()
  if(numbers.length!==pages||numbers.some((p,i)=>p!==i+1))return manual('OCR_COVERAGE_UNVERIFIED')
  const result:ExtractionResult={status:'needs_review',reviewRequired:true,fields:{},warnings:['PARTY_MATCH_REQUIRES_REVIEW','TOTAL_REQUIRES_REVIEW'],sourceLocations:[],providerLocations:[],methodVersion:'azure-f0-v1'}
+ if(model==='prebuilt-layout'&&documentKind==='quotation')Object.assign(result,mapQuotationLayout(parsed.data.analyzeResult))
  // Multiple invoice identities and layout text never silently merge into one cost.
  const documents=parsed.data.analyzeResult.documents
  if(model==='prebuilt-invoice'&&documents?.length===1){
@@ -211,7 +213,7 @@ export class AzureF0CostExtractionAdapter implements CostExtractionAdapter{
    }
    const warnings=z.object({analyzeResult:z.object({warnings:z.unknown().optional()}).passthrough()}).passthrough().safeParse(response.body)
    const warned=admission&&warnings.success&&warnings.data.analyzeResult.warnings!==undefined&&(!Array.isArray(warnings.data.analyzeResult.warnings)||warnings.data.analyzeResult.warnings.length>0)
-   const result=withCoverage(warned?manual('OCR_COVERAGE_UNVERIFIED'):mapped(response.body,model,pages),response.body)
+   const result=withCoverage(warned?manual('OCR_COVERAGE_UNVERIFIED'):mapped(response.body,model,pages,input.documentKind),response.body)
    if(!await this.options.authorize(input))return unavailable('OCR_SCOPE_CHANGED')
    // Retain the bounded provider response before exposing any hints; never log its contents.
    await this.options.store.complete(key,response.body,result)

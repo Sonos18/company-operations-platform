@@ -23,7 +23,7 @@
         <input v-model="reason" type="text" placeholder="Nhập lý do phân công" :disabled="isBusy || commandPending" required >
       </div>
       <div class="actions">
-        <button type="submit" class="cockpit-btn cockpit-btn--primary" :disabled="isBusy || !selectedUserId || !reason.trim()">
+        <button type="submit" class="cockpit-btn cockpit-btn--primary" :disabled="isBusy || (stopOnUncertain && commandPending) || !selectedUserId || !reason.trim()">
           {{ isBusy ? 'Đang phân công...' : 'Xác nhận phân công' }}
         </button>
       </div>
@@ -39,8 +39,8 @@ import { workflowManagerAssignmentSchema, type WorkflowProjectContext, type Work
 import type { CostWorkflowRepository } from '../../repositories/cost-workflow.contracts'
 import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 
-const props = defineProps<{ companyId: string; projectId: string; context: WorkflowProjectContext }>()
-const emit = defineEmits<{ (e: 'changed'): void }>()
+const props = defineProps<{ companyId: string; projectId: string; context: WorkflowProjectContext; blocked?: boolean; stopOnUncertain?: boolean }>()
+const emit = defineEmits<{ (e: 'changed' | 'uncertain'): void; (e:'busy',value:boolean):void }>()
 const repo: CostWorkflowRepository = useRepositories().costWorkflow
 const $companyAccessStore = useNuxtApp().$companyAccessStore
 
@@ -54,11 +54,13 @@ const tracker = createAsyncRequestTracker<{ companyId: string; projectId: string
 
 function getFingerprint() {
   const perms = $companyAccessStore?.permissions ? [...$companyAccessStore.permissions].sort().join(',') : ''
-  return `${$companyAccessStore?.activeCompanyId || ''}::${perms}`
+  const auth=useNuxtApp().$authStore
+  return `${$companyAccessStore?.activeCompanyId || ''}::${auth?.user?.id || ''}::${auth?.lifecycle || ''}::${perms}`
 }
 
 const hasAssignPerm = computed(() => $companyAccessStore?.activeCompanyId === props.companyId && Boolean($companyAccessStore?.permissions?.includes('project.cost_manager.assign')))
-const canAssignManager = computed(() => props.context.mode==='document_backed_v1' && props.context.canAssign && hasAssignPerm.value)
+const canAssignManager = computed(() => props.context.canAssign && hasAssignPerm.value && !props.blocked)
+watch(isBusy,value=>emit('busy',value),{flush:'sync'})
 const currentManagerLabel = computed(() => {
   if (!props.context.manager) return 'Chưa phân công quản lý chi phí'
   const match = props.context.eligibleManagers.find(m => m.userId === props.context.manager?.userId)
@@ -80,10 +82,10 @@ function resetState() {
 }
 
 watch([() => props.companyId, () => props.projectId, () => props.context.manager?.version, () => $companyAccessStore?.activeCompanyId, () => getFingerprint()], resetState, { flush: 'sync' })
-onUnmounted(() => tracker.invalidate())
+onUnmounted(() => {tracker.invalidate();emit('busy',false)})
 
 async function handleAssign() {
-  if (!canAssignManager.value || isBusy.value) return
+  if (!canAssignManager.value || isBusy.value || (props.stopOnUncertain && commandPending.value)) return
   const token = tracker.start({ companyId: props.companyId, projectId: props.projectId, fp: getFingerprint() })
   isBusy.value = true
   errorMessage.value = ''
@@ -108,6 +110,7 @@ async function handleAssign() {
   } catch {
     if (!token.isCurrent() || getFingerprint() !== token.identity.fp || props.companyId !== token.identity.companyId || props.projectId !== token.identity.projectId) return
     errorMessage.value = 'Chưa xác định kết quả phân công. Thử lại cùng dữ liệu hoặc tải lại hồ sơ để kiểm tra.'
+    if(props.stopOnUncertain){errorMessage.value='Chưa xác định kết quả phân công. Dừng thao tác và tải lại hồ sơ để kiểm tra.';emit('uncertain')}
   } finally {
     if (token.isCurrent() && getFingerprint() === token.identity.fp) isBusy.value = false
   }

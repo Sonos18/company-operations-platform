@@ -29,6 +29,7 @@ export const canonicalNavigationLinks: readonly NavigationLink[] = [
 ]
 
 export const canonicalAdminLinks: readonly NavigationLink[] = [
+  { to: '/settings/cost-workflow', label: 'Cấu hình chi phí', icon: 'i-lucide-receipt', requiredAnyPermissions: ['cost.config.manage', 'party.manage', 'project.cost_manager.assign'] },
   { to: '/settings/stage-01', label: 'Cấu hình', icon: 'i-lucide-settings-2', requiredPermission: 'stage01.config.read' },
 ]
 
