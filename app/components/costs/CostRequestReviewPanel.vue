@@ -89,7 +89,7 @@
         <label>Ghi chú phụ cấp <input v-model="allowanceBasis" placeholder="Tùy chọn" :disabled="isReadonly || isSubmitting || retryReady" ></label>
       </div>
 
-      <CostWorkflowOriginalUpload v-if="!isReadonly && !retryReady" :company-id="companyId" :project-id="projectId" :target="{ kind: 'request', ...(currentRequestId ? { id: currentRequestId } : {}) }" @finalized="onEvidenceFinalized" @busy="uploadBusy = $event" />
+      <CostWorkflowOriginalUpload v-if="!isReadonly && !retryReady && !isScanning && !scanRetryReady && !ocrPending" :company-id="companyId" :project-id="projectId" :target="{ kind: 'request', ...(currentRequestId ? { id: currentRequestId } : {}) }" @finalized="onEvidenceFinalized" @busy="uploadBusy = $event" />
       <div>
         <strong>Hồ sơ chứng từ gốc ({{ evidenceList.length }}):</strong>
         <div v-for="ev in evidenceList" :key="ev.id" class="evidence-row">
@@ -98,18 +98,18 @@
             <button type="button" class="cockpit-btn" :disabled="!companyAccess.hasPermission('cost.request.file.read')" @click="previewEvidence(ev.id)">Xem</button><button type="button" class="cockpit-btn" :disabled="!companyAccess.hasPermission('cost.request.file.read')" @click="previewEvidence(ev.id,'attachment')">Tải</button>
             <template v-if="!isReadonly && !retryReady">
               <label>Phạm vi quét khi tệp là PDF
-                <select v-model="pdfScopes[ev.id]" :disabled="isScanning || scanRetryReady">
+                <select v-model="pdfScopes[ev.id]" :disabled="isScanning || scanRetryReady || ocrPending">
                   <option value="">-- Chọn trang PDF --</option>
                   <option value="1">Trang 1</option>
                   <option value="1-2">Trang 1–2</option>
                 </select>
               </label>
               <label v-if="pdfScopes[ev.id]">Tổng số trang theo người tải (tùy chọn)
-                <input v-model="pdfCounts[ev.id]" type="number" min="1" step="1" :disabled="isScanning || scanRetryReady">
+                <input v-model="pdfCounts[ev.id]" type="number" min="1" step="1" :disabled="isScanning || scanRetryReady || ocrPending">
               </label>
-              <button type="button" class="cockpit-btn" :disabled="!canScanEvidence(ev)" @click="scanEvidence(ev.id)">{{ scanRetryReady && scanSession.pendingFileId === ev.id ? 'Thử lại trích xuất' : 'Trích xuất gợi ý' }}</button>
+              <button type="button" class="cockpit-btn" :disabled="!canScanEvidence(ev)" @click="scanEvidence(ev.id)">{{ scanRetryReady && scanSession.pendingFileId === ev.id ? 'Thử lại trích xuất' : ocrPollingState.fileId === ev.id ? 'Lấy kết quả' : 'Trích xuất gợi ý' }}</button>
             </template>
-            <button v-if="!isReadonly && !retryReady" type="button" class="cockpit-btn" :disabled="isScanning || scanRetryReady" @click="removeEvidence(ev.id)">Gỡ</button>
+            <button v-if="!isReadonly && !retryReady" type="button" class="cockpit-btn" :disabled="isScanning || scanRetryReady || ocrPending" @click="removeEvidence(ev.id)">Gỡ</button>
           </div>
         </div>
       </div>
@@ -124,11 +124,36 @@
         <span v-else>Tổng số trang từ metadata đã kiểm tra: {{ suggestedResult.azurePdfCoverage.sourcePageCount.count }}.</span>
         Kết quả chưa xác nhận đầy đủ tài liệu. Hãy kiểm tra bản gốc và số liệu trước khi gửi duyệt.
       </div>
-      <div v-if="suggestedResult && suggestedResult.status !== 'unavailable'" class="alert warn">
+      <div v-if="suggestedResult && ['ready', 'needs_review'].includes(suggestedResult.status) && Object.keys(suggestedResult.fields).length" class="alert warn">
         Gợi ý: {{ suggestedResult.fields.amount || '' }} {{ suggestedResult.fields.currencyCode || '' }} | Đối tác gợi ý: {{ suggestedResult.fields.partyHint || 'Chưa rõ' }} (chọn thủ công)
         <p v-if="suggestedResult.fields.amount">Tổng tiền: {{ suggestionSource('amount') }}</p>
         <p v-if="suggestedResult.fields.accountingBasis?.vatBasis">{{ suggestedResult.fields.accountingBasis.vatBasis }} — {{ suggestionSource('accountingBasis.vatBasis') }}</p>
-        <details v-if="suggestedResult.fields.basis?.kind === 'materials' && suggestedResult.fields.basis.lines.length">
+        <section v-if="materialsSourceReview" class="material-source-review" aria-label="Rà soát dòng vật tư từ chứng từ">
+          <p>{{ materialsSourceReview.lines.length }} dòng nguồn: {{ materialsSourceReview.applicableCount }} dòng có thể áp dụng; {{ materialsSourceReview.withheldCount }} dòng giữ lại để rà soát.</p>
+          <p v-if="materialsSourceReview.withheldCount"><strong>Cơ sở vật tư chưa đầy đủ:</strong> {{ materialsSourceReview.withheldCount }} dòng có thành tiền in khác SL × đơn giá nên chưa được áp dụng. Đối chiếu bản gốc và hoàn thiện các dòng này thủ công trước khi xác nhận đã rà soát.</p>
+          <p v-if="suggestedResult.fields.amount">Tổng tiền in trên tài liệu: {{ suggestedResult.fields.amount }} {{ suggestedResult.fields.currencyCode || '' }} (toàn phạm vi trích xuất; {{ suggestionSource('amount') }}).</p>
+          <p>Tổng các dòng có thể áp dụng (chưa VAT): {{ materialsSourceReview.applicableSum }} {{ suggestedResult.fields.currencyCode || '' }}. VND: làm tròn từng dòng đến đồng, half-up.</p>
+          <p>Tổng các dòng vật tư hiện trong biểu mẫu (chưa VAT): {{ currentMaterialsSum ?? 'chưa tính được vì có dữ liệu chưa hợp lệ' }} {{ currencyCode || '' }}. {{ currencyCode === 'VND' ? 'Làm tròn từng dòng đến đồng, half-up.' : 'Cộng chính xác SL × đơn giá, chưa giả định quy tắc làm tròn.' }}</p>
+          <p v-if="materialsSourceReview.withheldCount">Tổng tiền tài liệu không xác nhận khớp với cơ sở vật tư chỉ gồm các dòng được áp dụng. Chưa có dòng bị giữ lại nào được tự sửa hoặc tự thêm vào biểu mẫu.</p>
+          <div style="overflow-x:auto">
+            <table>
+              <caption>Dòng nguồn để kế toán đối chiếu; số tiền in được giữ nguyên</caption>
+              <thead><tr><th scope="col">Tên vật tư</th><th scope="col">SL</th><th scope="col">ĐVT</th><th scope="col">Đơn giá</th><th scope="col">Thành tiền in</th><th scope="col">SL × đơn giá (làm tròn đến đồng)</th><th scope="col">Rà soát</th><th scope="col">Nguồn và độ tin cậy OCR</th></tr></thead>
+              <tbody><tr v-for="(line, index) in materialsSourceReview.lines" :key="`${line.pageNumber}-${line.tableIndex}-${line.rowIndex}`">
+                <td>{{ line.description }}</td><td>{{ line.quantity }}</td><td>{{ line.unit }}</td><td>{{ line.unitPrice }}</td><td>{{ line.printedLineAmount }}</td><td>{{ line.calculatedLineAmount }}</td>
+                <td>{{ line.status === 'reconciled' ? 'Có thể áp dụng' : 'Giữ lại để rà soát' }}</td>
+                <td>Trang {{ line.pageNumber }}, bảng {{ line.tableIndex + 1 }}, dòng {{ line.rowIndex + 1 }};
+                  {{ suggestionSource(`basis.sourceLines.${index}.description`) }};
+                  {{ suggestionSource(`basis.sourceLines.${index}.quantity`) }};
+                  {{ suggestionSource(`basis.sourceLines.${index}.unit`) }};
+                  {{ suggestionSource(`basis.sourceLines.${index}.unitPrice`) }};
+                  {{ suggestionSource(`basis.sourceLines.${index}.printedLineAmount`) }}
+                </td>
+              </tr></tbody>
+            </table>
+          </div>
+        </section>
+        <details v-else-if="suggestedResult.fields.basis?.kind === 'materials' && suggestedResult.fields.basis.lines.length">
           <summary>{{ suggestedResult.fields.basis.lines.length }} dòng vật tư gợi ý — kiểm tra bản gốc trước khi áp dụng</summary>
           <div style="overflow-x:auto">
             <table>
@@ -140,10 +165,10 @@
             </table>
           </div>
         </details>
-        <button v-if="!isReadonly && !retryReady && (!suggestedResult.azurePdfCoverage || suggestedResult.azurePdfCoverage.requestedPagesMatched)" type="button" class="cockpit-btn" @click="applySuggestion">Áp dụng dữ liệu gợi ý</button>
+        <button v-if="canApplySuggestion" type="button" class="cockpit-btn" @click="applySuggestion">Áp dụng dữ liệu gợi ý</button>
       </div>
 
-      <label class="row"><input v-model="reviewed" type="checkbox" :disabled="isReadonly || isSubmitting || retryReady" ><span>Đã rà soát hợp lệ chứng từ và số liệu chi.</span></label>
+      <label class="row"><input v-model="reviewed" type="checkbox" :disabled="isReadonly || isSubmitting || retryReady || isScanning || scanRetryReady || ocrPending" ><span>Đã rà soát hợp lệ chứng từ và số liệu chi.</span></label>
       <div class="actions">
         <button type="button" class="cockpit-btn" :disabled="isSubmitting" @click="$emit('cancel')">Hủy</button>
         <button v-if="!isReadonly" type="submit" class="cockpit-btn cockpit-btn--primary" :disabled="!canSubmit">
@@ -165,10 +190,12 @@ import {
   type WorkflowProjectContext,
   type WorkflowPartyOption,
 } from '../../../shared/schemas/costs/cost-workflow'
-import {costExtractionCommandSchema,type ExtractionResult} from '../../../shared/schemas/costs/cost-extraction'
+import {costExtractionCommandSchema,type CostExtractionView,type ExtractionResult} from '../../../shared/schemas/costs/cost-extraction'
 import type { CostWorkflowRepository } from '../../repositories/cost-workflow.contracts'
 import { createReviewedRequestSubmission } from '../../utils/costs/cost-request-submission'
 import {createEvidenceExtractionSession} from '../../utils/costs/cost-extraction-session'
+import {createEvidenceExtractionPolling,hasApplicableExtractionFields,type EvidenceExtractionPollingState} from '../../utils/costs/cost-extraction-polling'
+import { sumMaterialReviewLines } from '../../utils/costs/cost-extraction-review'
 import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 import CostWorkflowOriginalUpload from './CostWorkflowOriginalUpload.vue'
 
@@ -185,6 +212,7 @@ const props = defineProps<{
 const emit = defineEmits<{ (e: 'submitted', requestId: string): void; (e: 'cancel'): void }>()
 const repo: CostWorkflowRepository = useRepositories().costWorkflow
 const companyAccess = useNuxtApp().$companyAccessStore
+const auth = useNuxtApp().$authStore
 const permissionFingerprint = () => JSON.stringify([...companyAccess.permissions].sort())
 const scopeCurrent = () => companyAccess.activeCompanyId === props.companyId && companyAccess.hasPermission('cost.request.read')
 const uploadBusy = ref(false)
@@ -223,15 +251,34 @@ const suggestedFileId=ref<string|null>(null)
 const pdfScopes=ref<Record<string,string>>(Object.fromEntries(evidenceList.value.map(ev=>[ev.id,''])))
 const pdfCounts=ref<Record<string,string|number>>({})
 const scanRetryReady=ref(false)
+const ocrPollingState=ref<EvidenceExtractionPollingState>({phase:'idle',fileId:null,automaticRequests:0,manualReady:false})
+const ocrPending=computed(()=>ocrPollingState.value.fileId!==null)
 
 const currentRequestId = ref<string | null>(props.initial?.id || null)
 const expectedVersion = ref<number>(props.initial?.version ?? 0)
 let lifecycleGeneration = 0
 let submission = createSession()
 let scanSession=createScanSession()
+let scanPolling=createScanPolling()
+function createScanScopeGuard(){
+ const captured={companyId:props.companyId,projectId:props.projectId,requestId:currentRequestId.value,actorId:auth.user?.id,generation:lifecycleGeneration,permissions:permissionFingerprint()}
+ return ()=>lifecycleGeneration===captured.generation&&scopeCurrent()&&props.companyId===captured.companyId&&props.projectId===captured.projectId&&currentRequestId.value===captured.requestId&&auth.user?.id===captured.actorId&&auth.lifecycle==='authenticated'&&permissionFingerprint()===captured.permissions&&companyAccess.hasPermission('cost.prepare')&&companyAccess.hasPermission('cost.request.submit')&&companyAccess.hasPermission('cost.request.file.read')
+}
 function createScanSession(){
- const captured={companyId:props.companyId,projectId:props.projectId,generation:lifecycleGeneration,permissions:permissionFingerprint()}
- return createEvidenceExtractionSession({projectId:captured.projectId,repository:repo,isScopeCurrent:()=>lifecycleGeneration===captured.generation&&scopeCurrent()&&props.companyId===captured.companyId&&props.projectId===captured.projectId&&permissionFingerprint()===captured.permissions&&companyAccess.hasPermission('cost.prepare')&&companyAccess.hasPermission('cost.request.submit')&&companyAccess.hasPermission('cost.request.file.read')})
+ return createEvidenceExtractionSession({projectId:props.projectId,repository:repo,isScopeCurrent:createScanScopeGuard()})
+}
+function createScanPolling(){
+ const session=scanSession,isScopeCurrent=createScanScopeGuard()
+ return createEvidenceExtractionPolling({
+  scan:(fileId,input)=>session.scan(fileId,input),isScopeCurrent,
+  onStateChange:state=>{
+   if(!isScopeCurrent())return
+   ocrPollingState.value=state;isScanning.value=state.phase==='requesting'
+   if(state.fileId&&state.phase!=='uncertain')scanNotice.value=state.phase==='limited'?'Đang xử lý OCR. Đã tạm dừng tự động lấy kết quả; bấm “Lấy kết quả” để kiểm tra lại.':'Đang xử lý OCR; hệ thống sẽ lấy kết quả trong phạm vi PDF đã chọn.'
+  },
+  onResult:result=>{if(isScopeCurrent())acceptScanResult(result)},
+  onError:error=>{if(isScopeCurrent()){scanRetryReady.value=session.pendingFileId!==null;scanNotice.value=error instanceof Error?error.message:'Chưa xác định kết quả trích xuất. Thử lại với đúng tệp và phạm vi đã chọn.'}},
+ })
 }
 function createSession(initial:CostRequestView|null=props.initial??null) {
  const captured = {companyId:props.companyId,projectId:props.projectId,permissions:permissionFingerprint(),generation:lifecycleGeneration}
@@ -249,24 +296,25 @@ watch(partyId, () => {
 const scanTracker = createAsyncRequestTracker<{companyId:string;projectId:string;fileId:string;requestId:string|null}>()
 const previewTracker = createAsyncRequestTracker<{companyId:string;projectId:string;fileId:string}>()
 function resetScope() {
+ scanPolling.cancel()
  lifecycleGeneration++
  actionTracker.invalidate();scanTracker.invalidate();previewTracker.invalidate()
- errorMessage.value=''; scanNotice.value='';suggestedResult.value=null;suggestedFileId.value=null;pdfScopes.value={};pdfCounts.value={};scanRetryReady.value=false; reviewed.value=false
+ errorMessage.value=''; scanNotice.value='';suggestedResult.value=null;suggestedFileId.value=null;pdfScopes.value={};pdfCounts.value={};scanRetryReady.value=false;ocrPollingState.value={phase:'idle',fileId:null,automaticRequests:0,manualReady:false}; reviewed.value=false
  isSubmitting.value=false;isScanning.value=false;uploadBusy.value=false;retryReady.value=false
  partyId.value='';categoryId.value='';contractVersionId.value='';amount.value='';deliverySite.value='';subcontractId.value='';acceptanceReference.value='';weekStart.value=''
  vatBasis.value='';roundingBasis.value='';allowanceBasis.value='';evidenceList.value=[]
  matLines.value=[{description:'',quantity:'1',unit:'',unitPrice:'0'}];genericLines.value=[{description:'',quantity:'1',unit:'',unitPrice:'0'}];laborWorkers.value=[{workerReference:'',days:'0',dailyRate:'0',allowance:'0'}]
- currencyCode.value='VND';basisKind.value='materials';retentionAmount.value='0';currentRequestId.value=null;expectedVersion.value=0;submission=createSession(null);scanSession=createScanSession()
+ currencyCode.value='VND';basisKind.value='materials';retentionAmount.value='0';currentRequestId.value=null;expectedVersion.value=0;submission=createSession(null);scanSession=createScanSession();scanPolling=createScanPolling()
 }
-watch([()=>props.companyId,()=>props.projectId,()=>companyAccess.activeCompanyId,permissionFingerprint],resetScope,{flush:'sync'})
-onUnmounted(()=>{lifecycleGeneration++;actionTracker.invalidate();scanTracker.invalidate();previewTracker.invalidate()})
+watch([()=>props.companyId,()=>props.projectId,()=>companyAccess.activeCompanyId,permissionFingerprint,()=>auth.user?.id,()=>auth.lifecycle],resetScope,{flush:'sync'})
+onUnmounted(()=>{scanPolling.cancel();lifecycleGeneration++;actionTracker.invalidate();scanTracker.invalidate();previewTracker.invalidate()})
 
 watch([partyId,categoryId,contractVersionId,amount,currencyCode,basisKind,deliverySite,matLines,subcontractId,acceptanceReference,retentionAmount,weekStart,laborWorkers,genericLines,vatBasis,roundingBasis,allowanceBasis,evidenceList],()=>{reviewed.value=false},{deep:true,flush:'sync'})
 
 function onEvidenceFinalized(p: { id: string; name: string }) {
   if (!evidenceList.value.some(e => e.id === p.id)){evidenceList.value.push(p);pdfScopes.value[p.id]=''}
 }
-function removeEvidence(id: string) { if(isScanning.value||scanRetryReady.value)return;evidenceList.value = evidenceList.value.filter(e => e.id !== id);if(suggestedFileId.value===id){suggestedResult.value=null;suggestedFileId.value=null;reviewed.value=false} }
+function removeEvidence(id: string) { if(isScanning.value||scanRetryReady.value||ocrPending.value)return;evidenceList.value = evidenceList.value.filter(e => e.id !== id);if(suggestedFileId.value===id){suggestedResult.value=null;suggestedFileId.value=null;reviewed.value=false} }
 
 async function previewEvidence(fileId:string, disposition:'inline'|'attachment'='inline') {
  if(!scopeCurrent()||!companyAccess.hasPermission('cost.request.file.read'))return
@@ -279,20 +327,44 @@ function scanInput(fileId:string){
  return costExtractionCommandSchema.safeParse({requestId:currentRequestId.value,...(scope?{pdfPageScope:scope}:{}),...(count?{pdfDeclaredPageCount:Number(count)}:{})})
 }
 function canScanEvidence(ev:{id:string;name:string}){
- return !isScanning.value&&(!scanRetryReady.value||scanSession.pendingFileId===ev.id)&&(!/\.pdf$/i.test(ev.name)||!!pdfScopes.value[ev.id])&&scanInput(ev.id).success
+ if(!scopeCurrent()||isSubmitting.value||uploadBusy.value||isScanning.value||!companyAccess.hasPermission('cost.prepare')||!companyAccess.hasPermission('cost.request.submit')||!companyAccess.hasPermission('cost.request.file.read'))return false
+ if(ocrPending.value)return ocrPollingState.value.fileId===ev.id&&ocrPollingState.value.manualReady
+ return (!scanRetryReady.value||scanSession.pendingFileId===ev.id)&&(!/\.pdf$/i.test(ev.name)||!!pdfScopes.value[ev.id])&&scanInput(ev.id).success
 }
-watch([pdfScopes,pdfCounts],()=>{if(!isScanning.value&&!scanRetryReady.value){suggestedResult.value=null;suggestedFileId.value=null;reviewed.value=false}},{deep:true})
+watch([pdfScopes,pdfCounts],()=>{if(!isScanning.value&&!scanRetryReady.value){scanPolling.cancel();suggestedResult.value=null;suggestedFileId.value=null;scanNotice.value='';reviewed.value=false}},{deep:true,flush:'sync'})
+function acceptScanResult(res:CostExtractionView){
+ suggestedResult.value=res.result;suggestedFileId.value=res.fileId;scanRetryReady.value=false;reviewed.value=false
+ if(res.result.warnings.includes('OCR_RESPONSE_UNCERTAIN'))scanNotice.value='Chưa xác định kết quả OCR trước đó. Kiểm tra lại kết quả trước khi tiếp tục.'
+ else if(res.result.warnings.includes('OCR_PROVIDER_NOT_CONFIGURED'))scanNotice.value='Dịch vụ OCR chưa được cấu hình; vui lòng kiểm tra bản gốc, nhập và rà soát thủ công.'
+ else if(res.result.status==='unavailable'||res.result.status==='failed')scanNotice.value='Chưa có dữ liệu nhận dạng hợp lệ; vui lòng kiểm tra bản gốc, nhập và rà soát thủ công.'
+ else if(!hasApplicableExtractionFields(res.result,basisKind.value))scanNotice.value='Chưa có dữ liệu gợi ý có thể áp dụng. Hãy kiểm tra bản gốc và nhập dữ liệu cần thiết trước khi rà soát.'
+ else scanNotice.value='Dữ liệu chỉ là gợi ý; vui lòng rà soát trước khi gửi.'
+}
 async function scanEvidence(fileId:string) {
- if(!scopeCurrent()||isScanning.value||!companyAccess.hasPermission('cost.request.submit')||!companyAccess.hasPermission('cost.request.file.read')||!companyAccess.hasPermission('cost.prepare'))return
+ if(!scopeCurrent()||isSubmitting.value||uploadBusy.value||isScanning.value||!companyAccess.hasPermission('cost.request.submit')||!companyAccess.hasPermission('cost.request.file.read')||!companyAccess.hasPermission('cost.prepare'))return
+ if(ocrPending.value){if(ocrPollingState.value.fileId===fileId)await scanPolling.continue();return}
  const selected=scanInput(fileId);if(!selected.success)return
  const token=scanTracker.start({companyId:props.companyId,projectId:props.projectId,fileId,requestId:currentRequestId.value})
  isScanning.value=true;scanNotice.value='';reviewed.value=false
- try {const res=await scanSession.scan(fileId,selected.data);if(!token.isCurrent()||!scopeCurrent())return;suggestedResult.value=res.result;suggestedFileId.value=fileId;scanRetryReady.value=false
-  scanNotice.value=res.result.status==='unavailable'?'Chưa có dữ liệu nhận dạng hợp lệ; vui lòng kiểm tra bản gốc, nhập và rà soát thủ công.':'Dữ liệu chỉ là gợi ý; vui lòng rà soát trước khi gửi.'}
+ try {
+  const res=await scanSession.scan(fileId,selected.data);if(!token.isCurrent()||!scopeCurrent())return
+  acceptScanResult(res);scanPolling.start(fileId,selected.data,res)
+ }
  catch(e:unknown){if(token.isCurrent()&&scopeCurrent()){scanRetryReady.value=scanSession.pendingFileId!==null;scanNotice.value=e instanceof Error?e.message:'Không thể trích xuất.'}}
  finally {if(token.isCurrent()&&scopeCurrent())isScanning.value=false}
 }
-
+const canApplySuggestion=computed(()=>!!suggestedResult.value&&scopeCurrent()&&!isReadonly.value&&!isSubmitting.value&&!retryReady.value&&!isScanning.value&&!scanRetryReady.value&&!ocrPending.value&&evidenceList.value.some(ev=>ev.id===suggestedFileId.value)&&hasApplicableExtractionFields(suggestedResult.value,basisKind.value))
+const materialsSourceReview = computed(() => {
+  const basis = suggestedResult.value?.fields.basis
+  if (basis?.kind !== 'materials' || !basis.sourceLines?.length) return null
+  return {
+    lines: basis.sourceLines,
+    applicableCount: basis.lines.length,
+    withheldCount: basis.sourceLines.filter(line => line.status === 'printed_amount_mismatch').length,
+    applicableSum: sumMaterialReviewLines(basis.lines, 'VND'),
+  }
+})
+const currentMaterialsSum = computed(() => basisKind.value === 'materials' ? sumMaterialReviewLines(matLines.value, currencyCode.value) : null)
 function suggestionSource(field: string): string {
   const sources = suggestedResult.value?.providerLocations?.filter(source => source.field === field) ?? []
   if (!sources.length) return 'Nguồn OCR hoặc độ tin cậy chưa xác định'
@@ -302,7 +374,7 @@ function suggestionSource(field: string): string {
 }
 
 function applySuggestion() {
-  if (!suggestedResult.value || !scopeCurrent() || isReadonly.value || retryReady.value || !evidenceList.value.some(ev=>ev.id===suggestedFileId.value) || suggestedResult.value.status==='unavailable' || (suggestedResult.value.azurePdfCoverage&&!suggestedResult.value.azurePdfCoverage.requestedPagesMatched)) return
+  if (!suggestedResult.value || !canApplySuggestion.value) return
   reviewed.value=false
   const f = suggestedResult.value.fields
   if (f.amount) amount.value = f.amount
@@ -312,7 +384,7 @@ function applySuggestion() {
   if (f.accountingBasis?.allowanceBasis) allowanceBasis.value = f.accountingBasis.allowanceBasis
   if (f.basis?.kind === 'materials' && basisKind.value === 'materials') {
     if (f.basis.deliverySite) deliverySite.value = f.basis.deliverySite
-    if (f.basis.lines?.length) matLines.value = f.basis.lines.map(l => ({ ...l }))
+    if (f.basis.lines?.length) matLines.value = f.basis.lines.map(l => ({ description: l.description, quantity: l.quantity, unit: l.unit, unitPrice: l.unitPrice }))
   } else if(f.basis?.kind==='direct_labor'&&basisKind.value==='direct_labor'){
     if(f.basis.weekStart)weekStart.value=f.basis.weekStart
     if(f.basis.workers.length)laborWorkers.value=f.basis.workers.map(w=>({...w}))
@@ -351,7 +423,7 @@ function buildInput(): CostRequestInput | null {
   return parsed.success ? parsed.data : null
 }
 
-const canSubmit = computed(() => scopeCurrent() && companyAccess.hasPermission('cost.request.submit') && !uploadBusy.value && !isScanning.value && !scanRetryReady.value && !isReadonly.value && !isSubmitting.value && props.context.canSubmit && props.context.operationalState !== 'completed' && reviewed.value && evidenceList.value.length > 0 && buildInput() !== null)
+const canSubmit = computed(() => scopeCurrent() && companyAccess.hasPermission('cost.request.submit') && !uploadBusy.value && !isScanning.value && !scanRetryReady.value && !ocrPending.value && !isReadonly.value && !isSubmitting.value && props.context.canSubmit && props.context.operationalState !== 'completed' && reviewed.value && evidenceList.value.length > 0 && buildInput() !== null)
 
 async function handleSubmit() {
  const input=buildInput()

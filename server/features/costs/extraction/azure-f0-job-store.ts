@@ -12,7 +12,7 @@ const bindingSchema=z.object({
 export type AzureF0Binding=z.infer<typeof bindingSchema>
 /** Only an already-approved private server client may implement this port. No client/key is constructed here. */
 export interface AzureF0PrivateRpc{
- (name:'c1_cost_ocr_azure_f0_job',args:{p_command:string;p_binding:AzureF0Binding;p_payload:unknown}):PromiseLike<{data:unknown;error:unknown}>
+ (name:'c1_cost_ocr_azure_f0_job'|'c1_cost_ocr_azure_f0_read_result',args:{p_command?:string;p_binding:AzureF0Binding;p_payload:unknown}):PromiseLike<{data:unknown;error:unknown}>
 }
 const reservationSchema=z.object({
  key:hash,resourceId:z.literal(resource),month:z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
@@ -44,12 +44,12 @@ function validOperation(value:string,model?:string):boolean{
 function checked<T>(schema:z.ZodType<T>,value:unknown,code='AZURE_STORE_INPUT_INVALID'):T{
  const parsed=schema.safeParse(value);if(!parsed.success)throw new Error(code);return parsed.data
 }
-function jsonSnapshot(value:unknown,maxBytes:number):unknown{
+function jsonSnapshot(value:unknown,maxBytes:number,code='AZURE_STORE_INPUT_INVALID'):unknown{
  try{
   const text=JSON.stringify(value)
   if(text===undefined||Buffer.byteLength(text)>maxBytes)throw new Error()
   return JSON.parse(text)
- }catch{throw new Error('AZURE_STORE_INPUT_INVALID')}
+ }catch{throw new Error(code)}
 }
 /** Request-bound RPC wrapper. The supplied closure MUST freshly re-read the user's target
  * and frozen actor/file/request versions on every call; service privilege is not user authorization.
@@ -57,15 +57,16 @@ function jsonSnapshot(value:unknown,maxBytes:number):unknown{
  */
 export function createAzureF0JobStore(options:{binding:AzureF0Binding;rpc:AzureF0PrivateRpc;authorize:()=>Promise<boolean>}):Omit<AzureF0JobStore,'reserve'>&{reserve(input:AzureF0Reservation):ReturnType<AzureF0JobStore['reserve']>}{
  const binding=Object.freeze(checked(bindingSchema,options.binding))
- async function call(command:string,payload:unknown):Promise<unknown>{
+ async function request(name:Parameters<AzureF0PrivateRpc>[0],payload:unknown,command?:string):Promise<unknown>{
   if(!await options.authorize())throw new Error('AZURE_STORE_SCOPE_CHANGED')
   let response:{data:unknown;error:unknown}
-  try{response=await options.rpc('c1_cost_ocr_azure_f0_job',{p_command:command,p_binding:{...binding},p_payload:payload})}
+  try{response=await options.rpc(name,{...(command===undefined?{}:{p_command:command}),p_binding:{...binding},p_payload:payload})}
   catch{throw new Error('AZURE_STORE_UNAVAILABLE')}
   if(!response||response.error)throw new Error('AZURE_STORE_UNAVAILABLE')
   if(!await options.authorize())throw new Error('AZURE_STORE_SCOPE_CHANGED')
   return response.data
  }
+ const call=(command:string,payload:unknown)=>request('c1_cost_ocr_azure_f0_job',payload,command)
  async function ack(command:string,payload:unknown,requireSuccess=false):Promise<boolean>{
   const data=checked(z.object({ok:z.boolean()}).strict(),await call(command,payload),'AZURE_STORE_RESPONSE_INVALID')
   if(requireSuccess&&!data.ok)throw new Error('AZURE_STORE_CONFLICT')
@@ -75,6 +76,10 @@ export function createAzureF0JobStore(options:{binding:AzureF0Binding;rpc:AzureF
  return {
   durability:'persistent',
   pdfScopeContract:'azure-pdf-scope-v1',
+  async readCompletedRaw(key){
+   const response=checked(z.object({raw:z.record(z.string(),z.unknown())}).strict(),await request('c1_cost_ocr_azure_f0_read_result',keyPayload(key)),'AZURE_STORE_RESPONSE_INVALID')
+   return jsonSnapshot(response.raw,4_000_000,'AZURE_STORE_RESPONSE_INVALID')
+  },
   async reserve(input){
    const value=checked(reservationSchema,input)
    const expected=azureF0ReservationKey(value)
