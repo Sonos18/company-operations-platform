@@ -90,6 +90,18 @@
       </div>
 
       <CostWorkflowOriginalUpload v-if="!isReadonly && !retryReady && !isScanning && !scanRetryReady && !ocrPending" :company-id="companyId" :project-id="projectId" :target="{ kind: 'request', ...(currentRequestId ? { id: currentRequestId } : {}) }" @finalized="onEvidenceFinalized" @busy="uploadBusy = $event" />
+      <section aria-label="Chọn báo giá đã tải lên">
+        <button type="button" class="cockpit-btn" :disabled="!canPickQuotation || quotationLoading" @click="listQuotations">Chọn báo giá đã tải lên</button>
+        <p v-if="quotationLoading" role="status">Đang tải báo giá…</p>
+        <p v-else-if="quotationError" class="alert error" role="alert">Không thể tải báo giá. Vui lòng thử lại.</p>
+        <p v-else-if="quotationListed && !quotationChoices.length" role="status">Không có báo giá đã tải lên phù hợp.</p>
+        <ul v-else-if="quotationChoices.length">
+          <li v-for="quotation in quotationChoices" :key="quotation.id">
+            <span>{{ quotation.originalFilename }} · Tải lên: <time :datetime="quotation.finalizedAt">{{ quotation.finalizedAt }}</time> · {{ quotation.sizeBytes }} bytes</span>
+            <button type="button" class="cockpit-btn" :data-quotation-id="quotation.id" :disabled="!canPickQuotation || quotationLoading || evidenceList.some(ev => ev.id === quotation.id)" @click="selectQuotation(quotation)">{{ evidenceList.some(ev => ev.id === quotation.id) ? 'Đã thêm' : 'Chọn báo giá' }}</button>
+          </li>
+        </ul>
+      </section>
       <div>
         <strong>Hồ sơ chứng từ gốc ({{ evidenceList.length }}):</strong>
         <div v-for="ev in evidenceList" :key="ev.id" class="evidence-row">
@@ -192,6 +204,7 @@ import {
 } from '../../../shared/schemas/costs/cost-workflow'
 import {costExtractionCommandSchema,type CostExtractionView,type ExtractionResult} from '../../../shared/schemas/costs/cost-extraction'
 import type { CostWorkflowRepository } from '../../repositories/cost-workflow.contracts'
+import type { WorkflowRecoverableQuotation } from '../../../shared/schemas/costs/cost-workflow-evidence'
 import { createReviewedRequestSubmission } from '../../utils/costs/cost-request-submission'
 import {createEvidenceExtractionSession} from '../../utils/costs/cost-extraction-session'
 import {createEvidenceExtractionPolling,hasApplicableExtractionFields,type EvidenceExtractionPollingState} from '../../utils/costs/cost-extraction-polling'
@@ -287,6 +300,53 @@ function createSession(initial:CostRequestView|null=props.initial??null) {
 
 const actionTracker = createAsyncRequestTracker<{ companyId: string; projectId: string }>()
 const isReadonly = computed(() => props.initial?.status === 'approved' || props.initial?.status === 'submitted')
+const quotationChoices = ref<WorkflowRecoverableQuotation[]>([])
+const quotationLoading = ref(false)
+const quotationListed = ref(false)
+const quotationError = ref(false)
+const quotationTracker = createAsyncRequestTracker<{ scope: string; requestId: string | null; requestVersion: number | null }>()
+let quotationChoiceToken: ReturnType<typeof quotationTracker.start> | null = null
+const quotationScope = computed(() => JSON.stringify({
+ actorId: auth.user?.id, authLifecycle: auth.lifecycle, activeCompanyId: companyAccess.activeCompanyId,
+ companyId: props.companyId, projectId: props.projectId, permissions: permissionFingerprint(), generation: lifecycleGeneration,
+ requestId: currentRequestId.value, requestVersion: expectedVersion.value,
+ initialId: props.initial?.id, initialVersion: props.initial?.version, initialStatus: props.initial?.status,
+ mode: props.context.mode, operationalState: props.context.operationalState, canSubmit: props.context.canSubmit,
+}))
+const quotationBusy = computed(() => isReadonly.value || isSubmitting.value || retryReady.value || uploadBusy.value || isScanning.value || scanRetryReady.value || ocrPending.value)
+const canPickQuotation = computed(() => scopeCurrent() && !!auth.user?.id && auth.lifecycle === 'authenticated'
+ && companyAccess.hasPermission('cost.prepare') && companyAccess.hasPermission('cost.request.submit') && companyAccess.hasPermission('cost.request.file.read')
+ && props.context.mode === 'document_backed_v1' && props.context.operationalState === 'active' && props.context.canSubmit && !quotationBusy.value
+ && (!props.initial || (props.initial.id === currentRequestId.value && props.initial.version === expectedVersion.value)))
+function clearQuotationChoices() {
+ quotationTracker.invalidate(); quotationChoiceToken = null
+ quotationChoices.value = []; quotationLoading.value = false; quotationListed.value = false; quotationError.value = false
+}
+watch([quotationScope, quotationBusy], clearQuotationChoices, { flush: 'sync' })
+function quotationTokenCurrent(token: ReturnType<typeof quotationTracker.start>) {
+ return token.isCurrent() && token.identity.scope === quotationScope.value && canPickQuotation.value
+}
+async function listQuotations() {
+ if (!canPickQuotation.value || quotationLoading.value) return
+ clearQuotationChoices()
+ const token = quotationTracker.start({ scope: quotationScope.value, requestId: currentRequestId.value, requestVersion: currentRequestId.value === null ? null : expectedVersion.value })
+ quotationLoading.value = true
+ try {
+  const choices = await repo.listRecoverableQuotations(props.projectId, { requestId: token.identity.requestId, requestVersion: token.identity.requestVersion })
+  if (!quotationTokenCurrent(token)) return
+  // Copy each response so retained buttons cannot reuse a row from a later list.
+  quotationChoices.value = choices.map(quotation => ({ ...quotation })); quotationChoiceToken = token; quotationListed.value = true
+ } catch {
+  if (quotationTokenCurrent(token)) quotationError.value = true
+ } finally {
+  if (quotationTokenCurrent(token)) quotationLoading.value = false
+ }
+}
+function selectQuotation(quotation: WorkflowRecoverableQuotation) {
+ if (!quotationChoiceToken || !quotationTokenCurrent(quotationChoiceToken) || quotationLoading.value || !quotationChoices.value.includes(quotation) || evidenceList.value.some(ev => ev.id === quotation.id)) return
+ onEvidenceFinalized({ id: quotation.id, name: quotation.originalFilename })
+ Reflect.deleteProperty(pdfCounts.value, quotation.id)
+}
 const selectedParty = computed(() => props.parties.find(p => p.id === partyId.value))
 const filteredContracts = computed(() => (!partyId.value ? props.contracts : props.contracts.filter(c => c.partyId === partyId.value)))
 
@@ -307,7 +367,7 @@ function resetScope() {
  currencyCode.value='VND';basisKind.value='materials';retentionAmount.value='0';currentRequestId.value=null;expectedVersion.value=0;submission=createSession(null);scanSession=createScanSession();scanPolling=createScanPolling()
 }
 watch([()=>props.companyId,()=>props.projectId,()=>companyAccess.activeCompanyId,permissionFingerprint,()=>auth.user?.id,()=>auth.lifecycle],resetScope,{flush:'sync'})
-onUnmounted(()=>{scanPolling.cancel();lifecycleGeneration++;actionTracker.invalidate();scanTracker.invalidate();previewTracker.invalidate()})
+onUnmounted(()=>{scanPolling.cancel();lifecycleGeneration++;actionTracker.invalidate();scanTracker.invalidate();previewTracker.invalidate();clearQuotationChoices()})
 
 watch([partyId,categoryId,contractVersionId,amount,currencyCode,basisKind,deliverySite,matLines,subcontractId,acceptanceReference,retentionAmount,weekStart,laborWorkers,genericLines,vatBasis,roundingBasis,allowanceBasis,evidenceList],()=>{reviewed.value=false},{deep:true,flush:'sync'})
 

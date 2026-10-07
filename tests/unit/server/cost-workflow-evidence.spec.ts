@@ -4,7 +4,7 @@ const id='c1f50000-0000-4000-8000-000000000001'
 const other='c1f50000-0000-4000-8000-000000000002'
 const context={actorId:id,tenantId:id,companyId:id,requestId:id,permissions:['cost.request.submit','cost.prepare','cost.request.read','cost.request.file.read'] as const}
 const intent={originalFilename:'quotation.pdf',mimeType:'application/pdf',sizeBytes:12,sha256:'a'.repeat(64),target:{kind:'request'}}
-function repo(){return {createIntent:vi.fn(async()=>({evidenceFileId:id})),finalize:vi.fn(),linkRequestEvidence:vi.fn(),createReadUrl:vi.fn(async()=>({url:'https://example.invalid/file'})),listWorkflowParties:vi.fn(async()=>[])}}
+function repo(){return {listRecoverableQuotations:vi.fn(async()=>[]),createIntent:vi.fn(async()=>({evidenceFileId:id})),finalize:vi.fn(),linkRequestEvidence:vi.fn(),createReadUrl:vi.fn(async()=>({url:'https://example.invalid/file'})),listWorkflowParties:vi.fn(async()=>[])}}
 describe('scoped workflow evidence boundary',()=>{
  it('permits staged quotation upload only with accountant and existing integrity capability',async()=>{const r=repo();const s=new CostWorkflowEvidenceService(r);await s.createIntent(context,id,intent,id);expect(r.createIntent).toHaveBeenCalledWith(context,id,intent,id)})
  it('does not reuse old viewer permission for preapproval files',async()=>{const r=repo();await expect(new CostWorkflowEvidenceService(r).createReadUrl({...context,permissions:['cost.read','cost.file.read']},id,id,{disposition:'inline'})).rejects.toMatchObject({statusCode:403});expect(r.createReadUrl).not.toHaveBeenCalled()})

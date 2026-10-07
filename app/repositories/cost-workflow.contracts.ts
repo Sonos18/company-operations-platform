@@ -1,10 +1,11 @@
 import type {CostRequestInput,WorkflowUpdateRequestInput,WorkflowCommandVersion,WorkflowDecisionInput,WorkflowManagerAssignmentInput,ContractBasisInput,ContractAdjustmentInput,CashAdjustmentInput,WorkflowPaymentInput,WorkflowRefundConfirmation,WorkflowCommandResult,CostRequestView,WorkflowContractView,WorkflowAdjustmentView,WorkflowProjectContext,WorkflowNotificationView,WorkflowPartyOption,WorkflowDirectoryQuery,WorkflowDirectory,WorkflowRequestHistory,WorkflowSourceSubcontractOption} from '../../shared/schemas/costs/cost-workflow'
-import type {WorkflowEvidenceIntent,WorkflowEvidenceLink} from '../../shared/schemas/costs/cost-workflow-evidence'
+import type {WorkflowEvidenceIntent,WorkflowEvidenceLink,WorkflowQuotationRecoveryInput,WorkflowRecoverableQuotation} from '../../shared/schemas/costs/cost-workflow-evidence'
 import type {CostEvidenceUploadIntent,CostEvidenceFinalized,CostEvidenceFinalizeInput,CostEvidenceReadUrl,CostEvidenceReadUrlInput} from '../../shared/schemas/costs/cost-evidence'
 import type {WorkflowFinance,WorkflowInventory} from '../../shared/schemas/costs/cost-workflow-reporting'
 import type {CostExtractionView} from '../../shared/schemas/costs/cost-extraction'
 export type WorkflowCommand={idempotencyKey:string}
 export interface CostWorkflowRepository{
+ listRecoverableQuotations(projectId:string,input:WorkflowQuotationRecoveryInput):Promise<WorkflowRecoverableQuotation[]>
  readDirectory(query?:Partial<WorkflowDirectoryQuery>):Promise<WorkflowDirectory>
  assignManager(projectId:string,input:WorkflowManagerAssignmentInput,command:WorkflowCommand):Promise<WorkflowCommandResult>
  createRequest(projectId:string,input:CostRequestInput,command:WorkflowCommand):Promise<WorkflowCommandResult>
