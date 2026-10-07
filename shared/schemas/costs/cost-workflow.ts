@@ -1,3 +1,4 @@
+import { isoTimestampSchema } from '../iso-timestamp'
 import { z } from 'zod'
 
 export const workflowUuidSchema = z.string().uuid()
@@ -5,7 +6,7 @@ export const workflowMoneySchema = z.string().regex(/^(?:0|[1-9]\d{0,15})(?:\.\d
 export const workflowCurrencySchema = z.string().regex(/^[A-Z]{3}$/)
 const text = z.string().trim().min(1).max(2000)
 const ids = z.array(workflowUuidSchema).min(1).max(100).refine(values => new Set(values).size === values.length, 'Duplicate evidence identity')
-const timestamp=z.string().datetime({offset:true})
+const timestamp=isoTimestampSchema
 const version = z.number().int().nonnegative()
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
   const parsed = new Date(value + 'T00:00:00.000Z')

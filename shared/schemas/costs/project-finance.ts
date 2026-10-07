@@ -1,10 +1,11 @@
+import { isoTimestampSchema } from '../iso-timestamp'
 import { z } from 'zod'
 
 const uuid = z.string().uuid()
 const text = z.string().trim().min(1)
 const currencyCode = z.string().trim().length(3)
 const date = z.string().date()
-const timestamp = z.string().datetime({ offset: true })
+const timestamp = isoTimestampSchema
 const rowMoney = z.string().regex(/^\d{1,16}(?:\.\d{1,4})?$/)
 const aggregateMoney = z.string().regex(/^\d{1,30}\.\d{4}$/)
 const signedAggregateMoney = z.string().regex(/^-?\d{1,30}\.\d{4}$/)

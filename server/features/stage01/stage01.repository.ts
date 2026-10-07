@@ -1,3 +1,4 @@
+import { isoTimestampSchema } from '../../../shared/schemas/iso-timestamp'
 import { z } from 'zod'
 import {
   stage01ClarificationReturnSchema,
@@ -60,7 +61,7 @@ interface Stage01DataClient {
 
 const uuid = z.string().uuid()
 const version = z.number().int().nonnegative()
-const timestamp = z.string().datetime({ offset: true })
+const timestamp = isoTimestampSchema
 const cycleRowSchema = z.object({
   id: uuid, opportunity_id: uuid, node_execution_id: uuid, cycle_no: z.number().int().positive(),
   decision_authority_user_id: uuid.nullable(), authority_resolution_event_id: uuid.nullable().default(null), authority_resolution_reference: z.string().trim().min(1).nullable(),

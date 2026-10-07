@@ -1,3 +1,4 @@
+import { isoTimestampSchema } from '../../../shared/schemas/iso-timestamp'
 import { z } from 'zod'
 import {
   workflowBlockerSchema,
@@ -53,7 +54,7 @@ interface WorkflowDataClient {
 
 const uuid = z.string().uuid()
 const version = z.number().int().nonnegative()
-const timestamp = z.string().datetime({ offset: true })
+const timestamp = isoTimestampSchema
 const workflowInstanceRowSchema = z.object({ id: uuid, subject_id: uuid, definition_snapshot_id: uuid }).strict()
 const nodeRowSchema = z.object({ id: uuid, workflow_instance_id: uuid, node_key: z.enum(['01.1', '01.2']), node_type: z.string().trim().min(1) }).strict()
 const executionRowSchema = z.object({

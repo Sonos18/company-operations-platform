@@ -1,8 +1,9 @@
+import { isoTimestampSchema } from '../../../shared/schemas/iso-timestamp'
 import { z } from 'zod'
 import { businessPartySchema, type BusinessParty, type CreateBusinessPartyInput, type UpdateBusinessPartyInput } from '../../../shared/schemas/costs/master-data'
 import { AppApiError } from '../../utils/api-error'
 import type { UserSupabaseClient } from '../../utils/supabase-client'
-const row = z.object({ id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), code: z.string(), display_name: z.string(), party_kind: z.enum(['crew', 'organization']), tax_identifier: z.string().nullable(), contact_display_name: z.string().nullable(), contact_phone: z.string().nullable(), is_active: z.boolean(), version: z.number().int().nonnegative(), created_at: z.string().datetime(), updated_at: z.string().datetime() }).strict()
+const row = z.object({ id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), code: z.string(), display_name: z.string(), party_kind: z.enum(['crew', 'organization']), tax_identifier: z.string().nullable(), contact_display_name: z.string().nullable(), contact_phone: z.string().nullable(), is_active: z.boolean(), version: z.number().int().nonnegative(), created_at: isoTimestampSchema, updated_at: isoTimestampSchema }).strict()
 interface Query { select(columns: string): Query; eq(column: string, value: string): Query; order(column: string): PromiseLike<{ data: unknown; error: unknown }>; maybeSingle(): Promise<{ data: unknown; error: unknown }> }
 interface Client { from(table: 'business_parties'): Query; rpc(name: 'c1_create_business_party' | 'c1_update_business_party', args: Record<string, unknown>): Promise<{ data: unknown; error: unknown }> }
 function fail(message: string): never { throw new AppApiError(500, 'INTERNAL_ERROR', message) }

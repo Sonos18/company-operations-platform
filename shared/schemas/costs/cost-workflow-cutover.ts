@@ -1,3 +1,4 @@
+import { isoTimestampSchema } from '../iso-timestamp'
 import { z } from 'zod'
 import { workflowUuidSchema } from './cost-workflow'
 const version=z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
@@ -15,6 +16,6 @@ export type WorkflowCompanyCommandResult=z.infer<typeof workflowCompanyCommandRe
 export type WorkflowClassificationResult=z.infer<typeof workflowClassificationResultSchema>
 export type WorkflowCutoverSnapshot=z.infer<typeof workflowCutoverSnapshotSchema>
 
-export const workflowCutoverCrewSchema=z.object({id:workflowUuidSchema,code:z.string().min(1),name:z.string().min(1),partyVersion:version,classificationVersion:version,crewOwnership:z.enum(['vqh_internal','external']).nullable(),classificationReviewedAt:z.string().datetime({offset:true}).nullable()}).strict()
+export const workflowCutoverCrewSchema=z.object({id:workflowUuidSchema,code:z.string().min(1),name:z.string().min(1),partyVersion:version,classificationVersion:version,crewOwnership:z.enum(['vqh_internal','external']).nullable(),classificationReviewedAt:isoTimestampSchema.nullable()}).strict()
 export const workflowCutoverCrewsSchema=z.array(workflowCutoverCrewSchema).max(1000)
 export type WorkflowCutoverCrew=z.infer<typeof workflowCutoverCrewSchema>

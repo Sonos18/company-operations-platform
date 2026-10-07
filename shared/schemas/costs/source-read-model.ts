@@ -1,8 +1,9 @@
+import { isoTimestampSchema } from '../iso-timestamp'
 import { z } from 'zod'
 
 const uuid = z.string().uuid()
 const decimal = z.string().regex(/^-?\d{1,16}(?:\.\d{1,4})?$/)
-export const isoTimestampSchema = z.string().datetime({ offset: true })
+export { isoTimestampSchema } from '../iso-timestamp'
 const locator = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('cell_range'), sheetName: z.string(), range: z.string() }).strict(),
   z.object({ kind: z.literal('logical_section'), section: z.string() }).strict(),

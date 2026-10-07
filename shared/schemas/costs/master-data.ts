@@ -1,3 +1,4 @@
+import { isoTimestampSchema } from '../iso-timestamp'
 import { z } from 'zod'
 
 const uuid = z.string().uuid()
@@ -31,7 +32,7 @@ export type UpdateEngagementInput = z.infer<typeof updateEngagementInputSchema>
 export type CreateEngagementComponentInput = z.infer<typeof createEngagementComponentInputSchema>
 export type UpdateEngagementComponentInput = z.infer<typeof updateEngagementComponentInputSchema>
 
-const timestamp = z.string().datetime()
+const timestamp = isoTimestampSchema
 export const projectRegisterSchema = z.object({
   id: uuid, code: text, name: text, origin: projectOriginSchema, operationalState: projectOperationalStateSchema,
   clientDisplayName: z.string().nullable(), locationText: z.string().nullable(), version, createdAt: timestamp, updatedAt: timestamp,
