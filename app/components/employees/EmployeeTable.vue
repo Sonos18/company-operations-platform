@@ -98,7 +98,8 @@ const statusColors: Record<EmployeeSummary['employmentStatus'], 'success' | 'war
 
 <style scoped>
 .employee-directory { min-width: 0; }
-.employee-table-wrap :deep([data-slot='base']) { min-width: 1040px; }
+.employee-table-wrap { min-width: 0; max-width: 100%; overflow-x: auto; }
+.employee-table-wrap :deep(table[data-slot='base']) { min-width: 1040px; }
 .employee-table-wrap :deep([data-slot='th']) { color: var(--ink-muted); font-size: .65rem; font-weight: 750; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; }
 .employee-table-wrap :deep([data-slot='td']) { vertical-align: top; font-size: .76rem; }
 .employee-table-wrap :deep([data-slot='td']:last-child) { min-width: 190px; }

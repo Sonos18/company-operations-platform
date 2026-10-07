@@ -80,6 +80,7 @@ function isActive(to: string) {
 
     <div class="sidebar-utilities">
       <AppHeader
+        :show-notification-bell="false"
         :product-name="props.productName"
         :product-mark="props.productMark"
         :company-name="props.companyName"

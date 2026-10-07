@@ -2,7 +2,7 @@
 import type { CompanyAccess } from '../../../shared/schemas/session'
 import { canonicalAdminLinks, filterNavigationLinks } from './navigation-permissions'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   productName: string
   productMark: string
   companyName: string
@@ -10,7 +10,8 @@ const props = defineProps<{
   companies: readonly CompanyAccess[]
   activeCompanyId: string | null
   signingOut: boolean
-}>()
+  showNotificationBell?: boolean
+}>(), { showNotificationBell: true })
 
 const emit = defineEmits<{
   selectCompany: [companyId: string, control: HTMLSelectElement]
@@ -182,6 +183,7 @@ function onSignOut(): void {
 <template>
   <div class="account-utilities">
     <button
+      v-if="props.showNotificationBell !== false"
       type="button"
       class="utility-btn utility-bell"
       aria-label="Mở thông báo"
