@@ -1,3 +1,4 @@
+import { isoTimestampSchema } from './iso-timestamp'
 import { z } from 'zod'
 import { stage01CriterionDefinitionSchema, stage01DimensionSchema } from './stage01'
 
@@ -5,7 +6,7 @@ const uuidSchema = z.string().uuid()
 const versionSchema = z.number().int().nonnegative()
 const positiveVersionSchema = z.number().int().positive()
 const meaningfulTextSchema = z.string().trim().min(1)
-const timestampSchema = z.string().datetime({ offset: true })
+const timestampSchema = isoTimestampSchema
 
 export const stage01WorkflowKeySchema = z.literal('vqh.stage01')
 

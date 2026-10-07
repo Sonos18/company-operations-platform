@@ -1,3 +1,4 @@
+import { isoTimestampSchema } from '../../../shared/schemas/iso-timestamp'
 import { isProjectCostObservation } from './project-cost-observation'
 import Decimal from 'decimal.js'
 import { z } from 'zod'
@@ -7,14 +8,14 @@ import type { UserSupabaseClient } from '../../utils/supabase-client'
 
 const columns = 'id,tenant_id,company_id,project_id,description,amount_text,currency_code,work_status,business_reference,party_id,engagement_id,component_id,relevant_date,publication_state,publication_origin,version,created_by,created_at,updated_at'
 const rowSchema = z.object({
-  id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), project_id: z.string().uuid(), description: z.string(), amount_text: z.string(), currency_code: z.string().length(3), work_status: z.enum(['unknown', 'in_progress', 'accepted']), business_reference: z.string().nullable(), party_id: z.string().uuid().nullable(), engagement_id: z.string().uuid().nullable(), component_id: z.string().uuid().nullable(), relevant_date: z.string().date().nullable(), publication_state: z.enum(['draft', 'published']).optional(), publication_origin: z.enum(['command', 'legacy_backfill']), version: z.number().int().nonnegative(), created_by: z.string().uuid(), created_at: z.string().datetime({ offset: true }), updated_at: z.string().datetime({ offset: true }),
+  id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), project_id: z.string().uuid(), description: z.string(), amount_text: z.string(), currency_code: z.string().length(3), work_status: z.enum(['unknown', 'in_progress', 'accepted']), business_reference: z.string().nullable(), party_id: z.string().uuid().nullable(), engagement_id: z.string().uuid().nullable(), component_id: z.string().uuid().nullable(), relevant_date: z.string().date().nullable(), publication_state: z.enum(['draft', 'published']).optional(), publication_origin: z.enum(['command', 'legacy_backfill']), version: z.number().int().nonnegative(), created_by: z.string().uuid(), created_at: isoTimestampSchema, updated_at: isoTimestampSchema,
 }).strict()
 const parentRowSchema = z.object({
   id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), amount_text: z.string(), currency_code: z.string().length(3),
 }).passthrough()
 const detailColumns = 'id,tenant_id,company_id,project_cost_item_id,line_no,detail_kind,description,quantity_text,unit_code,unit_price_text,amount_text,retention_kind,retention_rate_bps,retention_amount_text,relevant_date,reference,note,version,created_by,created_at,updated_at'
 const detailRowSchema = z.object({
-  id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), project_cost_item_id: z.string().uuid(), line_no: z.number().int().positive(), detail_kind: z.enum(['opening_balance', 'line_item']), description: z.string().trim().min(1), quantity_text: z.string().nullable(), unit_code: z.string().nullable(), unit_price_text: z.string().nullable(), amount_text: z.string(), retention_kind: z.enum(['warranty', 'other']).nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), retention_amount_text: z.string().nullable(), relevant_date: z.string().date().nullable(), reference: z.string().nullable(), note: z.string().nullable(), version: z.number().int().nonnegative(), created_by: z.string().uuid(), created_at: z.string().datetime({ offset: true }), updated_at: z.string().datetime({ offset: true }),
+  id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), project_cost_item_id: z.string().uuid(), line_no: z.number().int().positive(), detail_kind: z.enum(['opening_balance', 'line_item']), description: z.string().trim().min(1), quantity_text: z.string().nullable(), unit_code: z.string().nullable(), unit_price_text: z.string().nullable(), amount_text: z.string(), retention_kind: z.enum(['warranty', 'other']).nullable(), retention_rate_bps: z.number().int().min(0).max(10000).nullable(), retention_amount_text: z.string().nullable(), relevant_date: z.string().date().nullable(), reference: z.string().nullable(), note: z.string().nullable(), version: z.number().int().nonnegative(), created_by: z.string().uuid(), created_at: isoTimestampSchema, updated_at: isoTimestampSchema,
 }).strict()
 
 type ProjectCostRow = z.infer<typeof rowSchema>

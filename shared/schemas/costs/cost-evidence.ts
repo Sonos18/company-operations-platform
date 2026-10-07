@@ -1,7 +1,8 @@
+import { isoTimestampSchema } from '../iso-timestamp'
 import { z } from 'zod'
 
 const uuid = z.string().uuid()
-const timestamp = z.string().datetime({ offset: true })
+const timestamp = isoTimestampSchema
 const sha256 = z.string().regex(/^[a-f0-9]{64}$/u)
 const version = z.number().int().nonnegative()
 export const COST_EVIDENCE_MAX_BYTES = 25 * 1024 * 1024

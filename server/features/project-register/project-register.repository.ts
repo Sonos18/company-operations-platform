@@ -1,3 +1,4 @@
+import { isoTimestampSchema } from '../../../shared/schemas/iso-timestamp'
 import { z } from 'zod'
 import { compareProjectDirectoryEntries } from '../../../shared/utils/project-directory-order'
 import {
@@ -8,7 +9,7 @@ import type { UserSupabaseClient } from '../../utils/supabase-client'
 
 const rowSchema = z.object({
   id: z.string().uuid(), tenant_id: z.string().uuid(), company_id: z.string().uuid(), code: z.string(), name: z.string(), origin: z.enum(['legacy_import', 'manual', 'opportunity_conversion']), operational_state: z.enum(['active', 'completed', 'paused', 'unknown']),
-  client_display_name: z.string().nullable(), location_text: z.string().nullable(), version: z.number().int().nonnegative(), created_at: z.string().datetime(), updated_at: z.string().datetime(),
+  client_display_name: z.string().nullable(), location_text: z.string().nullable(), version: z.number().int().nonnegative(), created_at: isoTimestampSchema, updated_at: isoTimestampSchema,
 }).strict()
 interface Query { select(columns: string): Query; eq(column: string, value: string): Query; order(column: string): PromiseLike<{ data: unknown; error: unknown }>; maybeSingle(): Promise<{ data: unknown; error: unknown }> }
 interface Client { from(table: 'projects'): Query; rpc(name: 'c1_create_project' | 'c1_update_project', args: Record<string, unknown>): Promise<{ data: unknown; error: unknown }> }

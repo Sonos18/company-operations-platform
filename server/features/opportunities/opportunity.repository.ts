@@ -1,3 +1,4 @@
+import { isoTimestampSchema } from '../../../shared/schemas/iso-timestamp'
 import { z } from 'zod'
 import {
   contactMethodSchema,
@@ -123,48 +124,48 @@ const opportunityRowSchema = z.object({
   timeline_note: z.string().trim().min(1).nullable(),
   priority_code: z.string().trim().min(1).nullable(),
   version,
-  created_at: z.string().datetime({ offset: true }),
-  updated_at: z.string().datetime({ offset: true }),
+  created_at: isoTimestampSchema,
+  updated_at: isoTimestampSchema,
 }).strict()
 
 const contactRowSchema = z.object({
   id: uuid, display_name: z.string().trim().min(1), notes: z.string().trim().min(1).nullable(),
-  version, created_at: z.string().datetime({ offset: true }), updated_at: z.string().datetime({ offset: true }),
+  version, created_at: isoTimestampSchema, updated_at: isoTimestampSchema,
 }).strict()
 const contactMethodRowSchema = z.object({
   id: uuid, contact_id: uuid, method_type: z.enum(['phone', 'email', 'other']), value: z.string().trim().min(1),
   is_usable: z.boolean(), reliability_state: z.enum(['unverified', 'confirmed', 'disputed']).nullable(),
-  created_at: z.string().datetime({ offset: true }), updated_at: z.string().datetime({ offset: true }),
+  created_at: isoTimestampSchema, updated_at: isoTimestampSchema,
 }).strict()
 const relationshipRowSchema = z.object({
   id: uuid, opportunity_id: uuid, contact_id: uuid, relationship_code: z.string().trim().min(1),
   is_primary: z.boolean(), reliability_state: z.enum(['unverified', 'confirmed', 'disputed']).nullable(),
-  created_at: z.string().datetime({ offset: true }), ended_at: z.string().datetime({ offset: true }).nullable(),
+  created_at: isoTimestampSchema, ended_at: isoTimestampSchema.nullable(),
   end_reason: z.string().trim().min(1).nullable(),
 }).strict()
 const scopeRowSchema = z.object({
   id: uuid, opportunity_id: uuid, scope_code: z.string().trim().min(1), note: z.string().trim().min(1).nullable(),
   reliability_state: z.enum(['unverified', 'confirmed', 'disputed']).nullable(),
-  created_at: z.string().datetime({ offset: true }), retired_at: z.string().datetime({ offset: true }).nullable(),
+  created_at: isoTimestampSchema, retired_at: isoTimestampSchema.nullable(),
   retire_reason: z.string().trim().min(1).nullable(),
 }).strict()
 const referrerRowSchema = z.object({
   id: uuid, opportunity_id: uuid, referrer_type_code: z.string().trim().min(1), display_name: z.string().trim().min(1),
   contact_id: uuid.nullable(), note: z.string().trim().min(1).nullable(),
   reliability_state: z.enum(['unverified', 'confirmed', 'disputed']).nullable(), is_primary: z.boolean(),
-  created_at: z.string().datetime({ offset: true }), ended_at: z.string().datetime({ offset: true }).nullable(),
+  created_at: isoTimestampSchema, ended_at: isoTimestampSchema.nullable(),
   end_reason: z.string().trim().min(1).nullable(),
 }).strict()
 const intakeRowSchema = z.object({
   id: uuid, opportunity_id: uuid, channel_code: z.string().trim().min(1), summary: z.string().trim().min(1),
   correction_of_record_id: uuid.nullable(), correction_reason: z.string().trim().min(1).nullable(),
-  created_at: z.string().datetime({ offset: true }),
+  created_at: isoTimestampSchema,
 }).strict()
 const duplicateRowSchema = z.object({
   id: uuid, opportunity_id: uuid, suspected_duplicate_opportunity_id: uuid.nullable(), description: z.string().trim().min(1),
   resolution: z.enum(['same_need', 'different_need']).nullable(), canonical_opportunity_id: uuid.nullable(),
-  resolution_note: z.string().trim().min(1).nullable(), raised_at: z.string().datetime({ offset: true }),
-  resolved_at: z.string().datetime({ offset: true }).nullable(),
+  resolution_note: z.string().trim().min(1).nullable(), raised_at: isoTimestampSchema,
+  resolved_at: isoTimestampSchema.nullable(),
 }).strict()
 
 const opportunityColumns = 'id, validity_state, canonical_opportunity_id, primary_customer_name, customer_type_code, need_description, location_status, location_text, primary_lead_source_code, engagement_status_code, budget_status_code, budget_min, budget_max, currency_code, budget_note, timeline_status_code, timeline_start_date, timeline_end_date, timeline_note, priority_code, version, created_at, updated_at'

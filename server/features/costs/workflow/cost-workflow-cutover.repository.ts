@@ -1,3 +1,4 @@
+import { isoTimestampSchema } from '../../../../shared/schemas/iso-timestamp'
 import { z } from 'zod'
 import { workflowUuidSchema } from '../../../../shared/schemas/costs/cost-workflow'
 import { workflowCompanyCommandResultSchema,workflowClassificationResultSchema,workflowCutoverSnapshotSchema,workflowCutoverCrewsSchema } from '../../../../shared/schemas/costs/cost-workflow-cutover'
@@ -11,7 +12,7 @@ interface Client {rpc(name:string,args:Record<string,unknown>):Promise<{data:unk
 const scope={tenant_id:workflowUuidSchema,company_id:workflowUuidSchema}
 const version=z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 const partiesSchema=z.array(z.object({...scope,id:workflowUuidSchema,code:z.string().min(1),display_name:z.string().min(1),version}).strict()).max(1000)
-const classificationsSchema=z.array(z.object({...scope,party_id:workflowUuidSchema,version,crew_ownership:z.enum(['vqh_internal','external']),reviewed_at:z.string().datetime({offset:true})}).strict()).max(10000)
+const classificationsSchema=z.array(z.object({...scope,party_id:workflowUuidSchema,version,crew_ownership:z.enum(['vqh_internal','external']),reviewed_at:isoTimestampSchema}).strict()).max(10000)
 export class SupabaseWorkflowCutoverRepository implements WorkflowCutoverRepository {
  private readonly client:Client
  constructor(client:UserSupabaseClient){this.client=client as unknown as Client}

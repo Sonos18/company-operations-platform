@@ -1,9 +1,10 @@
+import { isoTimestampSchema } from '../iso-timestamp'
 import { z } from 'zod'
 
 const uuid = z.string().uuid()
 const text = z.string().trim().min(1)
 const version = z.number().int().nonnegative()
-const timestamp = z.string().datetime()
+const timestamp = isoTimestampSchema
 export const sourceStatusSchema = z.enum(['draft', 'shared'])
 export const sourceSelectionRoleSchema = z.enum(['unknown', 'detail', 'subtotal', 'report_total', 'duplicate_presentation', 'supporting'])
 export const sourceSelectionHandlingSchema = z.enum(['pending', 'ready_for_normalization', 'reference_only', 'excluded'])

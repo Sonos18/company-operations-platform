@@ -1,3 +1,4 @@
+import { isoTimestampSchema } from '../iso-timestamp'
 import Decimal from 'decimal.js'
 import { z } from 'zod'
 import { decimalStringSchema } from './master-data'
@@ -22,7 +23,7 @@ export const projectCostPublishBlockingCodeSchema = z.enum([
 ])
 export const projectCostPublishReadinessSchema = z.object({ ready: z.boolean(), blockingCodes: z.array(projectCostPublishBlockingCodeSchema) }).strict()
 export const costCommandAckSchema = z.object({ id: uuid, version, publicationState: projectCostPublicationStateSchema, replayed: z.boolean() }).strict()
-const timestamp = z.string().datetime({ offset: true })
+const timestamp = isoTimestampSchema
 export const projectCostItemSchema = z.object({
   id: uuid,
   tenantId: uuid,

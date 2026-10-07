@@ -1,9 +1,10 @@
+import { isoTimestampSchema } from './iso-timestamp'
 import { z } from 'zod'
 
 const uuidSchema = z.string().uuid()
 const versionSchema = z.number().int().nonnegative()
 const meaningfulTextSchema = z.string().trim().min(1)
-const timestampSchema = z.string().datetime({ offset: true })
+const timestampSchema = isoTimestampSchema
 const nullableTextSchema = meaningfulTextSchema.nullable()
 
 export const reliabilityStateSchema = z.enum(['unverified', 'confirmed', 'disputed'])

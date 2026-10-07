@@ -1,3 +1,4 @@
+import { isoTimestampSchema } from './iso-timestamp'
 import { z } from 'zod'
 import { opportunityDetailSchema } from './opportunities'
 import { gateReportSchema, workflowNodeRuntimeSchema } from './workflow'
@@ -6,7 +7,7 @@ import { opportunityDecisionAuthorityProjectionSchema } from './opportunity-deci
 const uuidSchema = z.string().uuid()
 const versionSchema = z.number().int().nonnegative()
 const meaningfulTextSchema = z.string().trim().min(1)
-const timestampSchema = z.string().datetime({ offset: true })
+const timestampSchema = isoTimestampSchema
 
 export const stage01DimensionSchema = z.enum([
   'customer_need',

@@ -1,3 +1,4 @@
+import { isoTimestampSchema } from '../../../shared/schemas/iso-timestamp'
 import { z } from 'zod'
 import {
   createStage01ConfigDraftInputSchema,
@@ -49,7 +50,7 @@ const uuidSchema = z.string().uuid()
 const versionSchema = z.number().int().nonnegative()
 const positiveVersionSchema = z.number().int().positive()
 const meaningfulTextSchema = z.string().trim().min(1)
-const timestampSchema = z.string().datetime({ offset: true })
+const timestampSchema = isoTimestampSchema
 const rawTaxonomyEntrySchema = z.object({
   code: meaningfulTextSchema,
   label: meaningfulTextSchema,

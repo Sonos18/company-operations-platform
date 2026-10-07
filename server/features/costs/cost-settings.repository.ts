@@ -1,8 +1,9 @@
+import { isoTimestampSchema } from '../../../shared/schemas/iso-timestamp'
 import { z } from 'zod'
 import { companyCostSettingsSchema, type CompanyCostSettings } from '../../../shared/schemas/costs/master-data'
 import { AppApiError } from '../../utils/api-error'
 import type { UserSupabaseClient } from '../../utils/supabase-client'
-const row = z.object({ company_id: z.string().uuid(), tenant_id: z.string().uuid(), enabled: z.boolean(), default_currency_code: z.string().length(3), money_scale: z.number().int().min(0).max(4), time_zone: z.string().min(1), version: z.number().int().nonnegative(), created_at: z.string().datetime(), updated_at: z.string().datetime() }).strict()
+const row = z.object({ company_id: z.string().uuid(), tenant_id: z.string().uuid(), enabled: z.boolean(), default_currency_code: z.string().length(3), money_scale: z.number().int().min(0).max(4), time_zone: z.string().min(1), version: z.number().int().nonnegative(), created_at: isoTimestampSchema, updated_at: isoTimestampSchema }).strict()
 interface Query { select(columns: string): Query; eq(column: string, value: string): Query; maybeSingle(): Promise<{ data: unknown; error: unknown }> }
 interface Client { from(table: 'company_cost_settings'): Query }
 export interface CostSettingsDataRepository { get(companyId: string, tenantId: string): Promise<CompanyCostSettings | null> }
