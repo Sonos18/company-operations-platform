@@ -33,6 +33,8 @@ export interface AzureF0JobStore{
  saveOperation(key:string,url:string,pollAfter:number):Promise<void>
  markUncertain(key:string):Promise<void>
  complete(key:string,raw:unknown,result:ExtractionResult):Promise<void>
+ /** Private, bounded completed evidence; authorization before/after every read. Never reserves or rewrites a job. */
+ readCompletedRaw?(key:string):Promise<unknown>
 }
 export interface AzureF0Transport{
  post(model:Model,bytes:Uint8Array,pages:number,lease:AzureF0DispatchLease):Promise<{status:number;operationUrl?:string;retryAfterSeconds?:number}>
@@ -147,12 +149,29 @@ export class AzureF0CostExtractionAdapter implements CostExtractionAdapter{
    if(job.key!==key)return unavailable('EXTRACTION_RESULT_INVALID')
    if(job.state==='complete'){
     if(!await this.options.authorize(input))return unavailable('OCR_SCOPE_CHANGED')
+    let cached:ExtractionResult|AzureF0PdfExtractionResult
     if(admission){
-     const cached=azureF0PdfExtractionResultSchema.safeParse(job.result)
-     if(!cached.success||!matchesAzureF0PdfAdmission(cached.data.azurePdfCoverage,admission))return unavailable('OCR_COVERAGE_UNVERIFIED')
-     return cached.data
-    }
-    return costExtractionResultSchema.parse(job.result)
+     const checked=azureF0PdfExtractionResultSchema.safeParse(job.result)
+     if(!checked.success||!matchesAzureF0PdfAdmission(checked.data.azurePdfCoverage,admission))return unavailable('OCR_COVERAGE_UNVERIFIED')
+     cached=checked.data
+    }else cached=costExtractionResultSchema.parse(job.result)
+    if(input.documentKind!=='quotation')return cached
+    if(admission&&!cached.azurePdfCoverage?.requestedPagesMatched)return unavailable('OCR_COVERAGE_UNVERIFIED')
+    if(!this.options.store.readCompletedRaw)return unavailable('EXTRACTION_RESULT_INVALID')
+    // Explicit extraction action only: immutable retained evidence is mapped with the current
+    // mapper. A missing/denied read cannot enter dispatch or complete/persist the job again.
+    const raw=await this.options.store.readCompletedRaw(key)
+    if(!await this.options.authorize(input))return unavailable('OCR_SCOPE_CHANGED')
+    const serialized=JSON.stringify(raw)
+    if(serialized===undefined||Buffer.byteLength(serialized)>4_000_000)return unavailable('EXTRACTION_RESULT_INVALID')
+    const snapshot:unknown=JSON.parse(serialized)
+    if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot))return unavailable('EXTRACTION_RESULT_INVALID')
+    if(admission&&JSON.stringify(azureF0PdfCoverage(admission,snapshot))!==JSON.stringify(cached.azurePdfCoverage))return unavailable('OCR_COVERAGE_UNVERIFIED')
+    const warnings=z.object({analyzeResult:z.object({warnings:z.unknown().optional()}).passthrough()}).passthrough().safeParse(snapshot)
+    const warned=admission&&warnings.success&&warnings.data.analyzeResult.warnings!==undefined&&(!Array.isArray(warnings.data.analyzeResult.warnings)||warnings.data.analyzeResult.warnings.length>0)
+    const result=withCoverage(warned?manual('OCR_COVERAGE_UNVERIFIED'):mapped(snapshot,model,pages,input.documentKind),snapshot)
+    if(!await this.options.authorize(input))return unavailable('OCR_SCOPE_CHANGED')
+    return result
    }
    if(job.state==='sending'||job.state==='uncertain')return unavailable('OCR_RESPONSE_UNCERTAIN')
    if(job.state==='reserved'){

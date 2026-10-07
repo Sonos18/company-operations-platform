@@ -86,14 +86,17 @@ export function createSupabaseEvidenceFinalizer(config: SupabaseAdminConfig): Su
   }
 }
 
-/** Narrow private quota/job port; never used to authorize or read user evidence. */
+/** Narrow private job/completed-result port; fresh user authorization is supplied by its request-bound wrapper. */
 export function resolveSupabaseAzureF0PrivateRpc(event:H3Event):AzureF0PrivateRpc{
  const runtime=useRuntimeConfig(event)
  return createSupabaseAzureF0PrivateRpc(parseSupabaseAdminConfig({url:runtime.public.supabaseUrl,serviceRoleKey:runtime.supabaseServiceRoleKey}))
 }
 export function createSupabaseAzureF0PrivateRpc(config:SupabaseAdminConfig):AzureF0PrivateRpc{
  const client=createClient(config.url,config.serviceRoleKey,{auth})
- return (name,args)=>client.rpc(name,args)
+ return (name,args)=>{
+  if(name!=='c1_cost_ocr_azure_f0_job'&&name!=='c1_cost_ocr_azure_f0_read_result')throw new Error('AZURE_STORE_INPUT_INVALID')
+  return client.rpc(name,args)
+ }
 }
 
 export function createSupabaseInvitationAuthAdmin(
