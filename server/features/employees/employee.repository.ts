@@ -1,4 +1,5 @@
 import {
+  employeeAccountSchema,
   employeeOffboardingResultSchema,
 } from '../../../shared/schemas/employees'
 import type {
@@ -102,7 +103,7 @@ const employeeRowSchema = z.object({
   id: z.string().uuid(),
   employee_code: z.string().trim().min(1),
   full_name: z.string().trim().min(1),
-  work_email: z.string().email(),
+  work_email: z.string().nullable(),
   department_id: z.string().uuid(),
   position_id: z.string().uuid().nullable(),
   hire_date: z.string().date().nullable(),
@@ -258,9 +259,10 @@ function mapEmployee(
   if (link && link.role_codes.some(code => !rolesByCode.has(code))) {
     failDatabase('Không thể đọc vai trò nhân viên.')
   }
+  const accountEmail = employeeAccountSchema.shape.email.safeParse(row.work_email)
   const access = link
     ? {
-        account: { email: row.work_email, userId: link.user_id },
+        account: { email: accountEmail.success ? accountEmail.data : null, userId: link.user_id },
         roles: link.role_codes.map(code => {
           const role = rolesByCode.get(code)
           if (!role) failDatabase('Không thể đọc vai trò nhân viên.')

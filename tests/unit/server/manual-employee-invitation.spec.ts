@@ -186,3 +186,27 @@ describe('final invitation profile read failure', () => {
   await expect(service.prepare(context, input)).rejects.toMatchObject({ code: 'ONBOARDING_INCOMPLETE' })
  })
 })
+
+describe('legacy contact invitation boundary', () => {
+ it.each(['legacy-contact', null])('rejects invalid invitation input %s before Auth', async workEmail => {
+  const { service, auth, complete } = setup()
+  await expect(service.prepare(context, { ...input, workEmail } as never)).rejects.toBeDefined()
+  expect(auth.inspect).not.toHaveBeenCalled()
+  expect(auth.generate).not.toHaveBeenCalled()
+  expect(complete).not.toHaveBeenCalled()
+ })
+ it.each(['legacy-contact', null])('releases no invite for returned legacy contact %s', async workEmail => {
+  const { service, auth, complete, findInvitationEmployee } = setup()
+  complete.mockResolvedValue({ ...employee, workEmail, account: { userId, email: null } } as never)
+  await expect(service.prepare(context, input)).rejects.toMatchObject({ code: 'ONBOARDING_INCOMPLETE' })
+  expect(auth.assertPending).not.toHaveBeenCalled()
+  expect(findInvitationEmployee).not.toHaveBeenCalled()
+ })
+ it.each(['legacy-contact', null])('releases no invite when returned account email is %s', async email => {
+  const { service, auth, complete, findInvitationEmployee } = setup()
+  complete.mockResolvedValue({ ...employee, account: { userId, email } } as never)
+  await expect(service.prepare(context, input)).rejects.toMatchObject({ code: 'ONBOARDING_INCOMPLETE' })
+  expect(auth.assertPending).not.toHaveBeenCalled()
+  expect(findInvitationEmployee).not.toHaveBeenCalled()
+ })
+})

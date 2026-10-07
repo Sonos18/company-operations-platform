@@ -30,7 +30,8 @@ export const positionSummarySchema = z.object({
 export type PositionSummary = z.infer<typeof positionSummarySchema>
 
 export const employeeAccountSchema = z.object({
-  email: normalizedEmailSchema,
+  // Contact text is never promoted to an account address unless it is valid.
+  email: normalizedEmailSchema.nullable(),
   userId: uuidSchema.optional(),
 }).strict()
 export type EmployeeAccount = z.infer<typeof employeeAccountSchema>
@@ -53,7 +54,8 @@ export const employeeSummarySchema = z.object({
   id: uuidSchema,
   employeeCode: z.string().trim().min(1),
   fullName: z.string().trim().min(1),
-  workEmail: normalizedEmailSchema,
+  // Preserve legacy contact data on reads; writes and invitations remain strict.
+  workEmail: z.string().nullable(),
   account: employeeAccountSchema.optional(),
   department: departmentSummarySchema,
   position: positionSummarySchema.nullable(),

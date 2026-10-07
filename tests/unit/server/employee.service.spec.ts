@@ -597,3 +597,22 @@ describe('employee service', () => {
     expect(auth.disableUser).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('legacy contact onboarding boundary', () => {
+  it.each(['legacy-contact', null])('rejects an exposed account email %s after onboarding', async email => {
+    const employeeRepository = repository({
+      completeEmployeeOnboarding: vi.fn().mockResolvedValue({
+        ...invitedEmployee(), account: { email, userId: otherUserId },
+      }),
+    })
+    const auth = {
+      inviteUser: vi.fn().mockResolvedValue({ kind: 'invited', userId: otherUserId }),
+      findUserByEmail: vi.fn(),
+    }
+    await expect(createEmployeeService(employeeRepository).invite(
+      context(['account.invite', 'employee.create']),
+      { employeeCode: 'VQH-NEW', fullName: 'Nguyễn Mới', workEmail: 'new@vqh.local', departmentId: summary.department.id },
+      auth,
+    )).rejects.toMatchObject({ code: 'ONBOARDING_INCOMPLETE' })
+  })
+})

@@ -213,3 +213,40 @@ describe('Supabase employee repository', () => {
     await expect(result).rejects.not.toThrow(/untrusted database diagnostic/)
   })
 })
+
+describe('legacy directory contact email', () => {
+  it.each([
+    ['legacy-contact', null],
+    ['valid@example.test', 'valid@example.test'],
+    [null, null],
+  ])('preserves contact %s without inventing an account email', async (workEmail, accountEmail) => {
+    const employees = query({ data: [{ ...employeeRow, work_email: workEmail }], error: null, count: 1 })
+    const roles = query({ data: [employeeRole], error: null })
+    const db = {
+      from: vi.fn((table: string) => table === 'employees' ? employees : roles),
+      rpc: vi.fn().mockResolvedValue({
+        data: [{ employee_id: employeeId, user_id: userId, role_codes: ['employee'] }],
+        error: null,
+      }),
+    }
+    const result = await createSupabaseEmployeeRepository(db as never).listDirectory(companyId, 1, 25)
+    expect(result).toMatchObject({
+      items: [{ workEmail, account: { email: accountEmail, userId }, roles: [{ code: 'employee' }] }],
+      total: 1,
+    })
+    expect(employees.eq).toHaveBeenCalledWith('company_id', companyId)
+    expect(db.rpc).toHaveBeenCalledWith('get_company_employee_access_links', expect.objectContaining({
+      target_company_id: companyId,
+    }))
+  })
+
+  it.each([42, undefined])('still rejects a malformed contact field type: %s', async workEmail => {
+    const db = {
+      from: vi.fn().mockReturnValue(query({ data: [{ ...employeeRow, work_email: workEmail }], error: null, count: 1 })),
+      rpc: vi.fn(),
+    }
+    await expect(createSupabaseEmployeeRepository(db as never).listDirectory(companyId, 1, 25))
+      .rejects.toMatchObject({ statusCode: 500, code: 'INTERNAL_ERROR' })
+    expect(db.rpc).not.toHaveBeenCalled()
+  })
+})

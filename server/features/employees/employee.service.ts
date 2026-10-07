@@ -79,7 +79,8 @@ function validatedOnboardingResult(
 ): EmployeeDetail {
   const parsed = employeeDetailSchema.safeParse(employee)
   if (!parsed.success
-    || parsed.data.workEmail !== workEmail) {
+    || parsed.data.workEmail !== workEmail
+    || (parsed.data.account !== undefined && parsed.data.account.email !== workEmail)) {
     return onboardingIncomplete()
   }
   return parsed.data
