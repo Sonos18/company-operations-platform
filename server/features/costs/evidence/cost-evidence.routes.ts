@@ -29,8 +29,12 @@ export function createCostEvidenceRoutes(dependencies: CostEvidenceRouteDependen
   }
 }
 
-export function createSupabaseCostEvidenceRoutes(event: H3Event) {
+export function resolveCostEvidenceFinalizer(event: H3Event): SupabaseEvidenceFinalizer {
   const runtime = useRuntimeConfig(event)
   const config = parseSupabaseAdminConfig({ url: runtime.public.supabaseUrl, serviceRoleKey: runtime.supabaseServiceRoleKey })
-  return createCostEvidenceRoutes({ resolveContext: c1RequestContext, finalizer: createSupabaseEvidenceFinalizer(config) })
+  return createSupabaseEvidenceFinalizer(config)
+}
+
+export function createSupabaseCostEvidenceRoutes(event: H3Event) {
+  return createCostEvidenceRoutes({ resolveContext: c1RequestContext, finalizer: resolveCostEvidenceFinalizer(event) })
 }

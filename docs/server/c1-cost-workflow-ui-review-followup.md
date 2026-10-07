@@ -1,0 +1,15 @@
+# UI review follow-up and retained DEV runner
+
+The UI now stops an old returned-request submit stage after its review panel is reset or unmounted. Refund confirmation freezes amount, date, proof and cancellation while its receipt is uncertain, retries the original helper-owned command, and rejects a new amount above the approved unreceived remainder. The pending refund uses a shallow ref so the immutable command remains compatible with structuredClone.
+
+All four notification kinds link to the exact request and submitted version. Detail routes reject malformed, repeated or missing-value query parameters when supplied. Adjustments display their selected immutable history input and evidence, with no installment approval or payment controls. An installment link requires a matching current submitted version and history snapshot; an unavailable version is reported explicitly. Evidence still uses a fresh scoped read URL per click. Approval is described separately from actual cash confirmation.
+
+The approved AGY follow-up used conversation 96b6bb4a-aecd-477a-859f-e682f9ec2d33, gemini-3.8-flash-high, high effort, the frozen 5935-byte prompt SHA256 e55576a8555ece7a3693b26df7eb49840dbde97c6945c9bbc3f6fd9976d59208. The user consent recorded at 2026-10-05 08:01 UTC authorized this exact retry. Its successful response contained 13 proposals across the four UI files. Codex adapted them to the current source and preserved the existing scoped submission, frozen-command and async tracking helpers. CLI logs contained no tool call markers; the prompt instructed the model to use no tools.
+
+The retained DEV runner uses the existing verified linked root, freezes its nonsecret target metadata, pins all six reviewed managed DDL handlers, and checks link and lock continuity around every query. The workflow_node_events identity is SELECT-only with zero permitted allocation or drift. No sequence reset or broader allocation exception was added.
+
+The runner still requires pgTAP already installed. Read-only catalog evidence says pgTAP is absent and version 1.3.3 is available, requires the installed plpgsql extension, and is relocatable. The connected nonsuperuser postgres role reports CREATE privileges on the database and extensions schema. This is readiness evidence, not an installation result or authorization. Any transactional extension setup must be included in a separately reviewed source/manifest and exact DEV execution approval.
+
+Verification artifacts are retained in the ignored .superpowers/sdd/2026-10-04-document-backed-installment-approval directory. The external reviewer's original workflow and regression tests were preserved byte-for-byte. The first integrated browser run found the Vue Proxy clone defect; the corrected run passed all 37 cases. Additional final cases exercise query-only navigation with delayed old history and an installment snapshot differing from the current body.
+
+No migration or fixture SQL has been executed for this follow-up. No extension, dependency, credential, runtime gate, provider call, push or deployment change is included.

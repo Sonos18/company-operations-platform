@@ -1,3 +1,6 @@
+import type {H3Event} from 'h3'
+import {parseSupabaseAdminConfig} from './supabase-config'
+import type {AzureF0PrivateRpc} from '../features/costs/extraction/azure-f0-job-store'
 import { createClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
@@ -81,6 +84,16 @@ export function createSupabaseEvidenceFinalizer(config: SupabaseAdminConfig): Su
   return {
     finalize: async args => await client.rpc('c1_finalize_cost_evidence_server', args),
   }
+}
+
+/** Narrow private quota/job port; never used to authorize or read user evidence. */
+export function resolveSupabaseAzureF0PrivateRpc(event:H3Event):AzureF0PrivateRpc{
+ const runtime=useRuntimeConfig(event)
+ return createSupabaseAzureF0PrivateRpc(parseSupabaseAdminConfig({url:runtime.public.supabaseUrl,serviceRoleKey:runtime.supabaseServiceRoleKey}))
+}
+export function createSupabaseAzureF0PrivateRpc(config:SupabaseAdminConfig):AzureF0PrivateRpc{
+ const client=createClient(config.url,config.serviceRoleKey,{auth})
+ return (name,args)=>client.rpc(name,args)
 }
 
 export function createSupabaseInvitationAuthAdmin(

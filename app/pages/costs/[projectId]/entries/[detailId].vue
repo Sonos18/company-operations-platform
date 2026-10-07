@@ -34,9 +34,11 @@ const projectId = computed(() => String(route.params.projectId ?? ''))
 const detailId = computed(() => String(route.params.detailId ?? ''))
 const currentActorId = computed(() => authStore?.user?.id ?? 'anonymous')
 
-const canManage = computed(() => companyAccess.hasPermission('cost.manage'))
-const canPrepare = computed(() => companyAccess.hasPermission('cost.prepare'))
-const canPublish = computed(() => companyAccess.hasPermission('cost.publish_import'))
+const canManage = computed(() => legacyWritable.value && companyAccess.hasPermission('cost.manage'))
+const canPrepare = computed(() => legacyWritable.value && companyAccess.hasPermission('cost.prepare'))
+const canPublish = computed(() => legacyWritable.value && companyAccess.hasPermission('cost.publish_import'))
+const legacyWorkflowMode=useCostWorkflowMode()
+const legacyWritable=computed(()=>legacyWorkflowMode.mode.value==='legacy')
 const canRead = computed(() => companyAccess.hasPermission('cost.read'))
 
 type DetailProjectionTier = 'prepare' | 'manage' | 'none'

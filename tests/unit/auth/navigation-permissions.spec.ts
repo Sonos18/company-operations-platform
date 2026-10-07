@@ -63,7 +63,7 @@ describe('navigation permissions', () => {
       { to: '/my-work', label: 'Công việc của tôi', icon: 'i-lucide-circle-check-big', requiredPermission: 'task.read_assigned' },
       { to: '/employees', label: 'Nhân sự', icon: 'i-lucide-users-round', requiredAnyPermissions: ['employee.read_directory', 'employee.read_all'] },
       { to: '/opportunities', label: 'Cơ hội', icon: 'i-lucide-target', requiredPermission: 'opportunity.read' },
-      { to: '/costs', label: 'Chi phí dự án', icon: 'i-lucide-receipt', requiredPermission: 'cost.read' },
+      { to: '/costs', label: 'Chi phí dự án', icon: 'i-lucide-receipt', requiredAnyPermissions: ['cost.read', 'cost.request.read'] },
       { to: '/cost-drafts', label: 'Bản nháp chi phí', icon: 'i-lucide-file-pen-line', requiredAnyPermissions: ['cost.manage', 'cost.prepare'] },
       { to: '/costs/sources', label: 'Nguồn chi phí', icon: 'i-lucide-database-zap', requiredPermission: 'cost.source.read' },
     ])

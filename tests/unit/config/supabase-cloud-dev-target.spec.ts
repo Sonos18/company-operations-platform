@@ -17,7 +17,10 @@ function supabaseSetupDirectories(trackedPaths: string[]) {
     return migrationsIndex === -1 ? [] : [path.slice(0, migrationsIndex)]
   })
 
-  return [...new Set(directories)].sort()
+  // The retained historical source tree supplies immutable test inputs.
+  const historicalSupabaseFixtureRoot = 'tests/fixtures/costs/rehearsal/historical-sources/supabase'
+  const setupDirectories = directories.filter(directory => directory !== historicalSupabaseFixtureRoot)
+  return [...new Set(setupDirectories)].sort()
 }
 
 function trackedSupabaseSetupDirectories() {
@@ -87,6 +90,34 @@ describe('Cloud DEV target guard', () => {
       'supabase/config.toml',
       'supabase-vqh/migrations/20260827000000_init.sql',
     ])).toEqual(['supabase', 'supabase-vqh'])
+  })
+
+  it('does not count the retained historical Supabase fixture as an executable setup root', () => {
+    expect(supabaseSetupDirectories([
+      'supabase/config.toml',
+      'tests/fixtures/costs/rehearsal/historical-sources/supabase/config.toml',
+      'tests/fixtures/costs/rehearsal/historical-sources/supabase/migrations/20260827000000_init.sql',
+    ])).toEqual(['supabase'])
+  })
+
+  it('still detects a separate setup beside the retained historical fixture', () => {
+    expect(supabaseSetupDirectories([
+      'supabase/config.toml',
+      'tests/fixtures/costs/rehearsal/historical-sources/supabase-vqh/config.toml',
+      'tests/fixtures/costs/rehearsal/historical-sources/supabase-vqh/migrations/20260827000000_init.sql',
+    ])).toEqual(['supabase', 'tests/fixtures/costs/rehearsal/historical-sources/supabase-vqh'])
+  })
+
+  it('still detects other fixtures and setup roots nested inside the historical fixture', () => {
+    expect(supabaseSetupDirectories([
+      'supabase/config.toml',
+      'tests/fixtures/another/supabase/migrations/20260827000000_init.sql',
+      'tests/fixtures/costs/rehearsal/historical-sources/supabase/tools/supabase/config.toml',
+    ])).toEqual([
+      'supabase',
+      'tests/fixtures/another/supabase',
+      'tests/fixtures/costs/rehearsal/historical-sources/supabase/tools/supabase',
+    ])
   })
 
   it('uses Taskovia as the single canonical Cloud DEV database project', () => {

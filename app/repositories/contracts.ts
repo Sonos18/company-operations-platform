@@ -45,6 +45,8 @@ import type {
 import type { z } from 'zod'
 import type { FinanceBudget, FinanceItemDetails, FinanceListQuery, FinanceOwnerAdvances, FinanceOverview, FinanceProjectList, FinanceSubcontractDetail, FinanceSubcontractorDetail, FinanceSubcontractorList, ItemDetailQuery, PaymentQuery, ProjectDirectoryQuery } from '../../shared/schemas/costs/project-finance'
 
+import type {CostWorkflowRepository} from './cost-workflow.contracts'
+
 export type RecordSubcontractPaymentResult = z.infer<typeof recordSubcontractPaymentResultSchema>
 export type VoidSubcontractPaymentResult = z.infer<typeof voidSubcontractPaymentResultSchema>
 export type { CorrectPublishedProjectCostInput }
@@ -188,7 +190,6 @@ export interface ProjectFinanceRepository {
   voidSubcontractPayment(projectId: string, subcontractId: string, paymentId: string, input: VoidSubcontractPaymentInput, options: IdempotentCommandOptions): Promise<VoidSubcontractPaymentResult>
 }
 export type { FinanceBudget, FinanceItemDetails, FinanceOwnerAdvances, FinanceOverview, FinanceProjectList, FinanceSubcontractDetail, FinanceSubcontractorDetail, FinanceSubcontractorList }
-
 export interface RepositoryRegistry {
   context: Readonly<CompanyContext>
   company: CompanyRepository
@@ -208,8 +209,9 @@ export interface RepositoryRegistry {
   costSourceRead: CostSourceReadRepository
   projectCosts: ProjectCostRepository
   costEvidence: CostEvidenceRepository
+  costWorkflow:CostWorkflowRepository
   projectFinance: ProjectFinanceRepository
   prototype: PrototypeRepository
 }
 
-export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01' | 'stage01Config' | 'projectRegister' | 'businessParties' | 'engagements' | 'costSettings' | 'costSourceRead' | 'projectCosts' | 'costEvidence' | 'projectFinance'>
+export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01' | 'stage01Config' | 'projectRegister' | 'businessParties' | 'engagements' | 'costSettings' | 'costSourceRead' | 'projectCosts' | 'costEvidence' | 'projectFinance' | 'costWorkflow'>

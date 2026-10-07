@@ -75,6 +75,13 @@ export const permissionCodes = [
   'cost.file.read',
   'cost.coverage.assert',
   'cost.config.manage',
+  'project.cost_manager.assign',
+  'cost.request.submit',
+  'cost.request.decide',
+  'cost.request.read',
+  'cost.request.file.read',
+  'cost.party.read',
+  'cost.notification.read',
 ] as const
 
 export type PermissionCode = (typeof permissionCodes)[number]

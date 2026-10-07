@@ -1,0 +1,79 @@
+{
+  "synthetic": true,
+  "records": [
+    {
+      "path": "tests/fixtures/costs/extraction/materials.synthetic.xlsx",
+      "bytes": 6799,
+      "sha256": "69db24f7081424fb1315cf6ff4fc484874643c82bfb97135d7a638d1d3da423a",
+      "members": [
+        "[Content_Types].xml",
+        "_rels/",
+        "_rels/.rels",
+        "docProps/",
+        "docProps/app.xml",
+        "docProps/core.xml",
+        "xl/",
+        "xl/_rels/",
+        "xl/_rels/workbook.xml.rels",
+        "xl/sharedStrings.xml",
+        "xl/styles.xml",
+        "xl/theme/",
+        "xl/theme/theme1.xml",
+        "xl/workbook.xml",
+        "xl/worksheets/",
+        "xl/worksheets/sheet1.xml"
+      ]
+    },
+    {
+      "path": "tests/fixtures/costs/extraction/subcontract.synthetic.xlsx",
+      "bytes": 6674,
+      "sha256": "59cab77be9ac66fca81d2407cf92bcc20c4738d2eb9614b3d796322280e30547",
+      "members": [
+        "[Content_Types].xml",
+        "_rels/",
+        "_rels/.rels",
+        "docProps/",
+        "docProps/app.xml",
+        "docProps/core.xml",
+        "xl/",
+        "xl/_rels/",
+        "xl/_rels/workbook.xml.rels",
+        "xl/sharedStrings.xml",
+        "xl/styles.xml",
+        "xl/theme/",
+        "xl/theme/theme1.xml",
+        "xl/workbook.xml",
+        "xl/worksheets/",
+        "xl/worksheets/sheet1.xml"
+      ]
+    },
+    {
+      "path": "tests/fixtures/costs/extraction/crew.synthetic.xlsx",
+      "bytes": 6735,
+      "sha256": "e6d573f530788a2184936ed5e2fbffc2fc4f770164f3ce26038246fddefe15e1",
+      "members": [
+        "[Content_Types].xml",
+        "_rels/",
+        "_rels/.rels",
+        "docProps/",
+        "docProps/app.xml",
+        "docProps/core.xml",
+        "xl/",
+        "xl/_rels/",
+        "xl/_rels/workbook.xml.rels",
+        "xl/sharedStrings.xml",
+        "xl/styles.xml",
+        "xl/theme/",
+        "xl/theme/theme1.xml",
+        "xl/workbook.xml",
+        "xl/worksheets/",
+        "xl/worksheets/sheet1.xml"
+      ]
+    },
+    {
+      "path": "tests/fixtures/costs/extraction/quotation.synthetic.pdf",
+      "bytes": 632,
+      "sha256": "a8819ce7608a7c98fb2b4f59cc02dd46eb5f111904f34d4f01532945ae9b2386"
+    }
+  ]
+}

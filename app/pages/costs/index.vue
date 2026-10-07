@@ -9,11 +9,12 @@ import { mapCostsApiError } from '../../utils/costs/costs-error-mapper'
 import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 import ProjectCostInfoDisclosure from '../../components/costs/ProjectCostInfoDisclosure.vue'
 
-definePageMeta({ requiredPermission: 'cost.read' })
+definePageMeta({ requiredAnyPermissions: ['cost.read','cost.request.read'] })
 
 const repositories = useRepositories()
 const companyAccess = useNuxtApp().$companyAccessStore
-const canRead = computed(() => companyAccess.hasPermission('cost.read'))
+const canRead = computed(() => companyAccess.hasAnyPermission(['cost.read','cost.request.read']))
+const workflowDirectory=ref<import('../../../shared/schemas/costs/cost-workflow').WorkflowDirectory|null>(null)
 const projects = ref<FinanceProjectList['projects']>([])
 const nextCursor = ref<string | null>(null)
 const loadingMore = ref(false)
@@ -37,7 +38,7 @@ function onCardClick(projectId: string, event: MouseEvent) {
 async function load() {
   if (!canRead.value) {
     requestTracker.invalidate()
-    projects.value = []
+    projects.value = [];workflowDirectory.value=null
     nextCursor.value = null
     loadingMore.value = false
     status.value = 'permission'
@@ -47,8 +48,16 @@ async function load() {
   status.value = 'loading'
   projects.value = []
   nextCursor.value = null
+  workflowDirectory.value=null
 
   try {
+    const directory=await repositories.costWorkflow.readDirectory()
+    if(!token.isCurrent())return
+    if(directory.mode==='document_backed_v1'){
+      workflowDirectory.value=directory;nextCursor.value=directory.nextCursor
+      status.value=directory.projects.length?'ready':'empty';return
+    }
+    if(!companyAccess.hasPermission('cost.read')){status.value='permission';return}
     const value = await repositories.projectFinance.listProjects()
     if (!token.isCurrent()) return
     projects.value = value.projects
@@ -69,6 +78,11 @@ async function loadMore() {
   loadingMore.value = true
 
   try {
+    if(workflowDirectory.value){
+      const directory=await repositories.costWorkflow.readDirectory({afterId:nextCursor.value})
+      if(requestTracker.generation!==currentGen)return
+      workflowDirectory.value={...directory,projects:[...workflowDirectory.value.projects,...directory.projects]};nextCursor.value=directory.nextCursor;return
+    }
     const value = await repositories.projectFinance.listProjects({ afterId: nextCursor.value })
     if (requestTracker.generation !== currentGen) return
     projects.value = [...projects.value, ...value.projects]
@@ -84,7 +98,7 @@ async function loadMore() {
   }
 }
 
-watch([() => companyAccess.activeCompanyId, canRead], () => {
+watch([() => companyAccess.activeCompanyId, canRead,()=>JSON.stringify([...companyAccess.permissions].sort())], () => {
   requestTracker.invalidate()
   projects.value = []
   nextCursor.value = null
@@ -108,7 +122,7 @@ onUnmounted(() => {
       <div class="heading-badge">
         <span class="cockpit-badge cockpit-badge--primary">
           <UIcon name="i-lucide-receipt" aria-hidden="true" />
-          {{ projects.length }} dự án
+          {{ workflowDirectory?.projects.length ?? projects.length }} dự án
         </span>
       </div>
     </header>
@@ -143,6 +157,15 @@ onUnmounted(() => {
       <button type="button" class="cockpit-btn cockpit-btn--primary" @click="load">Thử lại</button>
     </div>
 
+    <div v-else-if="status==='ready'&&workflowDirectory" class="project-directory-wrapper" data-testid="workflow-project-directory">
+      <div class="project-grid">
+        <NuxtLink v-for="project in workflowDirectory.projects" :key="project.projectId" :to="'/costs/'+project.projectId+'/requests'" class="cockpit-card project-card">
+          <span class="project-code">{{ project.code }}</span><h2>{{ project.name }}</h2>
+          <p>{{ formatOperationalState(project.operationalState).label }}</p><span>Xem đề nghị và dòng tiền</span>
+        </NuxtLink>
+      </div>
+      <button v-if="nextCursor" class="cockpit-btn" :disabled="loadingMore" @click="loadMore">Tải thêm dự án</button>
+    </div>
     <div v-else-if="status === 'ready'" class="project-directory-wrapper">
       <div class="project-grid" aria-label="Danh sách dự án theo dõi chi phí">
         <article
