@@ -159,10 +159,11 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import type {
   MaterialProjectOption,
   MaterialProposalView,
-  MaterialReviewState,
-} from '../../../../shared/schemas/costs/material-procurement'
-import { workflowUuidSchema } from '../../../../shared/schemas/costs/cost-workflow'
-import { createAsyncRequestTracker } from '../../../utils/costs/async-request-tracker'
+} from '../../../../../shared/schemas/costs/material-procurement'
+import { workflowUuidSchema } from '../../../../../shared/schemas/costs/cost-workflow'
+import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
+
+type MaterialReviewState = MaterialProposalView['reviewState']
 
 definePageMeta({ requiredPermission: 'material.read' })
 
@@ -189,7 +190,7 @@ const errorMessage = ref('')
 const tracker = createAsyncRequestTracker<{ companyId: string; projectId: string }>()
 
 const statusCounts = computed(() => {
-  const counts = {
+  const counts: Record<'all' | MaterialReviewState, number> = {
     all: proposals.value.length,
     draft: 0,
     submitted: 0,
@@ -206,7 +207,7 @@ const statusCounts = computed(() => {
 
 const filteredProposals = computed(() => {
   if (selectedTab.value === 'all') return proposals.value
-  return proposals.value.filter(p => p.reviewState === selectedTab.value)
+  return proposals.value.filter((p: MaterialProposalView) => p.reviewState === selectedTab.value)
 })
 
 function isAuthorAndEditable(prop: MaterialProposalView): boolean {

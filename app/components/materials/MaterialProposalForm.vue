@@ -309,11 +309,12 @@ import type {
   MaterialProjectOption,
   MaterialView,
   MaterialProposalView,
-  MaterialProposalLineView,
   MaterialCommandResult,
 } from '../../../shared/schemas/costs/material-procurement'
 import { workflowMoneySchema } from '../../../shared/schemas/costs/cost-workflow'
 import { ClientError } from '../../errors/client-error'
+
+type MaterialProposalLineView = MaterialProposalView['lines'][number]
 
 interface FormLine {
   lineId: string

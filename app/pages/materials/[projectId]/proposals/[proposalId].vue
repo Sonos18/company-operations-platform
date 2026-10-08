@@ -155,13 +155,14 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import Decimal from 'decimal.js'
 import type {
   MaterialProposalView,
-  MaterialProposalLineView,
-  MaterialReviewState,
   MaterialCommandResult,
-} from '../../../../shared/schemas/costs/material-procurement'
-import { workflowUuidSchema } from '../../../../shared/schemas/costs/cost-workflow'
-import { createAsyncRequestTracker } from '../../../utils/costs/async-request-tracker'
-import MaterialProposalForm from '../../../components/materials/MaterialProposalForm.vue'
+} from '../../../../../shared/schemas/costs/material-procurement'
+import { workflowUuidSchema } from '../../../../../shared/schemas/costs/cost-workflow'
+import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
+import MaterialProposalForm from '../../../../components/materials/MaterialProposalForm.vue'
+
+type MaterialProposalLineView = MaterialProposalView['lines'][number]
+type MaterialReviewState = MaterialProposalView['reviewState']
 
 definePageMeta({ requiredPermission: 'material.read' })
 
@@ -230,7 +231,7 @@ const readOnlyNoticeMessage = computed(() => {
 })
 
 const hasSignedLines = computed(() => {
-  return Boolean(proposal.value?.lines?.some(l => isLineSigned(l)))
+  return Boolean(proposal.value?.lines?.some((l: MaterialProposalLineView) => isLineSigned(l)))
 })
 
 function isLineSigned(line: MaterialProposalLineView): boolean {

@@ -48,9 +48,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
-import type { MaterialProjectOption, MaterialCommandResult } from '../../../../shared/schemas/costs/material-procurement'
-import { workflowUuidSchema } from '../../../../shared/schemas/costs/cost-workflow'
-import MaterialProposalForm from '../../../components/materials/MaterialProposalForm.vue'
+import type { MaterialProjectOption, MaterialCommandResult } from '../../../../../shared/schemas/costs/material-procurement'
+import { workflowUuidSchema } from '../../../../../shared/schemas/costs/cost-workflow'
+import MaterialProposalForm from '../../../../components/materials/MaterialProposalForm.vue'
 
 definePageMeta({ requiredPermission: 'material.read' })
 
