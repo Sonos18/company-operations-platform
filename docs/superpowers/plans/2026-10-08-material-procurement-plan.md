@@ -6,7 +6,7 @@
 **Architecture:** Module material-procurement riêng dùng project/business-party/evidence/RBAC có sẵn. Signed contract tạo direct authorization liên kết vào cost_workflow_installments/payments; dữ liệu cũ giữ lịch sử và chuyển quyền chi bằng explicit absorption, không tạo approval giả.
 **Tech Stack:** Nuxt 4.3.1, Vue 3.5.28, TypeScript 5.9.3, Nuxt UI 4.4.0, Supabase/Postgres, decimal.js 10.6.0, Vitest 4.1.9, Playwright 1.61.1; Node 24.x / pnpm 10.29.3; không thêm dependency.
 **Spec:** ../specs/2026-10-08-material-procurement-design.md
-**Status:** Plan để review; các checkbox chưa chạy. Agent được phép cho planning; chưa thực thi code/migration.
+**Status:** Plan để review; các checkbox chưa chạy. User đã cho phép thực thi code bằng GPT-5.6 Sol ultra; Cloud mutation chưa được phép.
 **Code evidence:** origin/dev b00f0eb48effed49930f2aea6c090d77c2c175a5; feature trước tài liệu 1da87fe988a7300de58d206b65af6c14283d7d24.
 **Scope decision:** Task hiện tại vật tư/hợp đồng ký. Bỏ duyệt đợt chi toàn bộ loại khác là follow-up F1; câu trả lời mới nhất loại nhân công nội bộ/khoản không hợp đồng khỏi task này.
 
@@ -86,15 +86,15 @@ Commands nhận scope từ session, input typed và idempotencyKey; result {reso
 | ID | Deliverable | Phụ thuộc | Có thể song song | Owner/model | Trạng thái |
 |---|---|---|---|---|---|
 | T0 | Đồng bộ nền, khóa spec và baseline | Không | Tuần tự | Integrator / Sol high | Chưa triển khai |
-| T1 | Đóng băng DTO, API và permissions | T0 | Tuần tự | Core worker / Terra high | Chưa triển khai |
-| T2 | Schema, RLS và RPC vật tư | T1 | Cùng T3 | DB worker / Terra high + DB review | Chưa triển khai |
-| T3 | API và client cho danh mục, phiếu, xét duyệt | T1; tích hợp cần T2 | Cùng T2, dùng mocked RPC | Backend worker / Terra high | Chưa triển khai |
-| T4 | Đơn mua, phân bổ và đối chiếu báo giá | T2,T3 | Cùng T5 | Backend worker / Terra high | Chưa triển khai |
-| T5 | UI kỹ sư và danh mục | T1,T3 | Cùng T4 | UI worker / Terra high | Chưa triển khai |
-| T6 | Hồ sơ ký, căn cứ chi trực tiếp và thực chi vật tư | T2,T4 | Cùng T7 | Finance worker / Terra high + deep review | Chưa triển khai |
-| T7 | UI mua hàng: hộp phiếu, duyệt/trả, tách đơn | T1,T3,T4,T5 | Cùng T6 | UI worker / Terra high | Chưa triển khai |
-| T8 | UI kế toán: hợp đồng, hóa đơn và chuyển khoản | T1,T4,T6 | Cùng T9 phần report; shared hooks tích hợp cuối | UI worker / Terra high | Chưa triển khai |
-| T9 | Báo cáo, notification và tích hợp shared hooks | T6; integration đợi T5,T7,T8 | Report implementation cùng T8; hook merge tuần tự | Integrator / worker Terra high | Chưa triển khai |
+| T1 | Đóng băng DTO, API và permissions | T0 | Tuần tự | Core worker / GPT-5.6 Sol ultra | Chưa triển khai |
+| T2 | Schema, RLS và RPC vật tư | T1 | Cùng T3 | DB worker / GPT-5.6 Sol ultra + DB review | Chưa triển khai |
+| T3 | API và client cho danh mục, phiếu, xét duyệt | T1; tích hợp cần T2 | Cùng T2, dùng mocked RPC | Backend worker / GPT-5.6 Sol ultra | Chưa triển khai |
+| T4 | Đơn mua, phân bổ và đối chiếu báo giá | T2,T3 | Cùng T5 | Backend worker / GPT-5.6 Sol ultra | Chưa triển khai |
+| T5 | UI kỹ sư và danh mục | T1,T3 | Cùng T4 | UI worker / GPT-5.6 Sol ultra | Chưa triển khai |
+| T6 | Hồ sơ ký, căn cứ chi trực tiếp và thực chi vật tư | T2,T4 | Cùng T7 | Finance worker / GPT-5.6 Sol ultra + deep review | Chưa triển khai |
+| T7 | UI mua hàng: hộp phiếu, duyệt/trả, tách đơn | T1,T3,T4,T5 | Cùng T6 | UI worker / GPT-5.6 Sol ultra | Chưa triển khai |
+| T8 | UI kế toán: hợp đồng, hóa đơn và chuyển khoản | T1,T4,T6 | Cùng T9 phần report; shared hooks tích hợp cuối | UI worker / GPT-5.6 Sol ultra | Chưa triển khai |
+| T9 | Báo cáo, notification và tích hợp shared hooks | T6; integration đợi T5,T7,T8 | Report implementation cùng T8; hook merge tuần tự | Integrator / worker GPT-5.6 Sol ultra | Chưa triển khai |
 | T10 | Review tích hợp, Cloud DEV rehearsal và acceptance preview | T2–T9 | Security và regression review có thể song song; DB/build/e2e deployment tuần tự | Integrator + 2 read-only reviewers; Cloud single operator | Chưa triển khai |
 
 ## Các đợt agent
@@ -135,7 +135,7 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 - Native app worktree local không thay remote workflow; remote worktrees thực hiện bằng cơ chế phù hợp trên worker.
 - Không tạo thêm InstaCloud branches/services nếu không cần; không coi worktree/compute isolation là DB isolation.
 - Brief chỉ gồm spec requirements của task, exact interfaces/files, acceptance commands, dependencies và scope. fork_turns=none.
-- Bounded implementer: worker (GPT-5.6 Terra high); parent integrator/planner GPT-5.6 Sol high theo working agreement.
+- Bounded implementer: worker (GPT-5.6 GPT-5.6 Sol ultra); parent integrator/planner GPT-5.6 Sol high theo working agreement.
 - Xhigh/deep_worker chỉ khi task high chưa xử lý được hoặc financial debugging thật sự liên quan nhiều subsystem. Financial design có deep_planner review.
 - Mỗi task tự review + scoped reviewer gate. Chỉ integrator merge/cherry-pick reviewed commits; không agents tự push dev/main.
 - Báo cáo mỗi agent: task ID; base/head SHA; changed files; commands thật chạy/exit; invariant proved vs unverified; remaining risk; handoff.
@@ -143,7 +143,7 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 ## Chi tiết task
 
-### T0: Đồng bộ nền, khóa spec và baseline
+### Task 0: (T0) Đồng bộ nền, khóa spec và baseline
 
 **Owner / dependency:** Integrator / Sol high; Không.
 **Files:** Modify docs của task; không reset/rewrite published history.
@@ -157,9 +157,9 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 **Done:** Có SHA nền chính xác và baseline ledger; lỗi cũ được phân loại, không sửa/disable ngoài task.
 
-### T1: Đóng băng DTO, API và permissions
+### Task 1: (T1) Đóng băng DTO, API và permissions
 
-**Owner / dependency:** Core worker / Terra high; T0.
+**Owner / dependency:** Core worker / GPT-5.6 Sol ultra; T0.
 **Files:** Create shared/schemas/costs/material-procurement.ts; shared/schemas/costs/direct-contract-authority.ts; tests/unit/material-procurement/fixtures.ts; tests/unit/shared/material-procurement.spec.ts. Modify shared/constants/permissions.ts.
 **Interfaces:** MaterialProposalInput/View, ProposalDecisionInput, CreateMaterialOrderInput/View, CommitMaterialContractInput, MaterialCommandResult, MaterialQuotationComparisonInput/View; DirectContractAuthorityView; CanonicalMaterialPaymentInput; MaterialProcurementRepository.
 
@@ -171,9 +171,9 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 **Done:** Schema tests pass; interfaces được review trước khi chia agent; chỉ integrator thay contracts sau mốc này.
 
-### T2: Schema, RLS và RPC vật tư
+### Task 2: (T2) Schema, RLS và RPC vật tư
 
-**Owner / dependency:** DB worker / Terra high + DB review; T1.
+**Owner / dependency:** DB worker / GPT-5.6 Sol ultra + DB review; T1.
 **Files:** Create new migrations bằng supabase migration new c1_material_procurement_foundation / security / commands; supabase/tests/database/c1/c1_material_procurement.test.sql; supabase/tests/database/c1/c1_material_procurement_security.test.sql; tests/unit/config/c1-material-procurement-guard.spec.ts.
 **Interfaces:** Tables material_items, material_supplier_names, material_proposals, proposal revisions/lines, decisions, orders/allocations/order_contract links. RPC c1_material_record_supplier, create_proposal, update_proposal, submit_proposal, decide_proposal, create_order; scoped tenant/company/project.
 
@@ -185,9 +185,9 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 **Done:** DDL/RPC reviewed + guard tests pass; đánh dấu invariants Cloud chưa xác minh cho đến T10.
 
-### T3: API và client cho danh mục, phiếu, xét duyệt
+### Task 3: (T3) API và client cho danh mục, phiếu, xét duyệt
 
-**Owner / dependency:** Backend worker / Terra high; T1; tích hợp cần T2.
+**Owner / dependency:** Backend worker / GPT-5.6 Sol ultra; T1; tích hợp cần T2.
 **Files:** Create server/features/costs/material-procurement/{repository,service,routes}.ts; route files theo endpoint manifest; app/repositories/material-procurement.contracts.ts; app/repositories/http/http-material-procurement-repository.ts. Tests tests/unit/server/material-proposals.spec.ts; tests/unit/repositories/http-material-procurement-repository.spec.ts.
 **Interfaces:** Repository listMaterials/listProjects/resolveSupplier/createProposal/updateProposal/submitProposal/decideProposal; commands (scope,input,idempotencyKey) -> MaterialCommandResult.
 
@@ -199,9 +199,9 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 **Done:** RBAC/version/idempotency tests pass; adapters compile với DTO frozen; không cần Cloud để test mocks. Integrator đăng ký repository/type hooks sau review T3 trước khi T5 bắt đầu.
 
-### T4: Đơn mua, phân bổ và đối chiếu báo giá
+### Task 4: (T4) Đơn mua, phân bổ và đối chiếu báo giá
 
-**Owner / dependency:** Backend worker / Terra high; T2,T3.
+**Owner / dependency:** Backend worker / GPT-5.6 Sol ultra; T2,T3.
 **Files:** Extend server/features/costs/material-procurement and its client repository; Create shared/utils/material-quotation-comparison.ts; tests/unit/material-procurement/quotation-comparison.spec.ts; tests/unit/server/material-orders.spec.ts.
 **Interfaces:** createOrder/listOrders/readOrder; reconcileMaterialQuotation(input: MaterialQuotationComparisonInput) -> MaterialQuotationComparisonView; allocation identity = proposalLineId + approvedRevisionId + orderLineId.
 
@@ -213,9 +213,9 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 **Done:** Case 20->10A+10B đúng, quantity/spec mismatch hiển thị, buyer không sửa proposal, retries không tạo đơn trùng.
 
-### T5: UI kỹ sư và danh mục
+### Task 5: (T5) UI kỹ sư và danh mục
 
-**Owner / dependency:** UI worker / Terra high; T1,T3.
+**Owner / dependency:** UI worker / GPT-5.6 Sol ultra; T1,T3.
 **Files:** Create app/pages/materials/index.vue; app/pages/materials/[projectId]/proposals/{index,new,[proposalId]}.vue; app/components/materials/MaterialMasterPanel.vue; MaterialProposalForm.vue; tests/e2e/material-proposal.spec.ts.
 **Interfaces:** Dùng MaterialProcurementRepository frozen; mocked HTTP fixtures cho vòng form trong khi T4 đang chạy; shared navigation/plugin hooks thuộc T9.
 
@@ -227,9 +227,9 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 **Done:** Mocked E2E pass địa chỉ default/edit, role form, returned resubmission; không seed Cloud.
 
-### T6: Hồ sơ ký, căn cứ chi trực tiếp và thực chi vật tư
+### Task 6: (T6) Hồ sơ ký, căn cứ chi trực tiếp và thực chi vật tư
 
-**Owner / dependency:** Finance worker / Terra high + deep review; T2,T4.
+**Owner / dependency:** Finance worker / GPT-5.6 Sol ultra + deep review; T2,T4.
 **Files:** Create fresh forward migrations c1_material_contract_authority / cash_compatibility; server/features/costs/workflow/direct-contract-authority.{repository,service}.ts; tests/unit/server/direct-contract-authority.spec.ts; supabase/tests/database/c1/c1_direct_contract_authority.test.sql. Modify cost-workflow-cash.service.ts, canonical cash RPC via corrective migration, evidence source/target support.
 **Interfaces:** recordMaterialContract(scope,orderId,CommitMaterialContractInput,key) -> {contractId,authorizationId,installmentId,notificationId,replayed}; confirmPayment remains canonical installment payment endpoint; direct_contract source has no manager decision.
 
@@ -241,9 +241,9 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 **Done:** Unit/regression reviewed; legacy history preserved; all new material cash goes through canonical ledger; Cloud invariants not claimed before T10.
 
-### T7: UI mua hàng: hộp phiếu, duyệt/trả, tách đơn
+### Task 7: (T7) UI mua hàng: hộp phiếu, duyệt/trả, tách đơn
 
-**Owner / dependency:** UI worker / Terra high; T1,T3,T4,T5.
+**Owner / dependency:** UI worker / GPT-5.6 Sol ultra; T1,T3,T4,T5.
 **Files:** Create app/components/materials/MaterialProposalDecisionPanel.vue; MaterialOrderCreatePanel.vue; MaterialQuotationComparisonPanel.vue; purchasing views under app/pages/materials/[projectId]/proposals; tests/e2e/material-purchasing.spec.ts.
 **Interfaces:** Dùng decideProposal/createOrder/readOrder; không updateProposal ở buyer screen; các đoạn proposal UI dùng shared readonly view từ T5 sau integration.
 
@@ -255,9 +255,9 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 **Done:** Mocked browser scenarios pass; APIs real tích hợp tại T9/T10; readonly engineer fields enforced server-side.
 
-### T8: UI kế toán: hợp đồng, hóa đơn và chuyển khoản
+### Task 8: (T8) UI kế toán: hợp đồng, hóa đơn và chuyển khoản
 
-**Owner / dependency:** UI worker / Terra high; T1,T4,T6.
+**Owner / dependency:** UI worker / GPT-5.6 Sol ultra; T1,T4,T6.
 **Files:** Create app/pages/materials/[projectId]/orders/{index,[orderId]}.vue; MaterialContractRecordPanel.vue; MaterialOrderPaymentPanel.vue; tests/e2e/material-contract-payment.spec.ts. Reuse CostInstallmentPaymentModal only through reviewed minimal adapter if its contract fits.
 **Interfaces:** Order signed command returns canonical installmentId; existing canonical confirmPayment with invoice+proof and invoiceNames mapping; no new material-only payment ledger/endpoint.
 
@@ -269,9 +269,9 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 **Done:** Mocked accountant flow passes, files/new forms isolated from T7; legacy accounting UI not overwritten.
 
-### T9: Báo cáo, notification và tích hợp shared hooks
+### Task 9: (T9) Báo cáo, notification và tích hợp shared hooks
 
-**Owner / dependency:** Integrator / worker Terra high; T6; integration đợi T5,T7,T8.
+**Owner / dependency:** Integrator / worker GPT-5.6 Sol ultra; T6; integration đợi T5,T7,T8.
 **Files:** Modify shared/schemas/costs/cost-workflow-reporting.ts; server/features/costs/finance/cost-workflow-summary.ts; cost-workflow-money.ts; notification routing; app finance display. Sole owner app/repositories/contracts.ts, app/plugins/repositories.client.ts, app/components/app/navigation-permissions.ts, app/layouts/default.vue, package.json và generated types. Tests tests/unit/server/material-commitment-summary.spec.ts; tests/unit/repositories/cost-workflow-notification-links.spec.ts.
 **Interfaces:** summarizeMaterialCommitments(input: MaterialCommitmentFacts) -> MaterialCommitmentSummary; committedMaterialCost + materialCommitmentRemaining + canonical grossPaid/netCash; notification source union manager_decision | material_signed_contract; order deep-link for new source.
 
@@ -283,7 +283,7 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 **Done:** Totals/notification/old links correct; all shared hooks integrated by one owner; source diff scope reviewed.
 
-### T10: Review tích hợp, Cloud DEV rehearsal và acceptance preview
+### Task 10: (T10) Review tích hợp, Cloud DEV rehearsal và acceptance preview
 
 **Owner / dependency:** Integrator + 2 read-only reviewers; Cloud single operator; T2–T9.
 **Files:** Create tests/e2e/material-procurement-flow.spec.ts; tests/unit/config/material-procurement-cloud-guard.spec.ts; scripts/run-c1-material-procurement-tests.mjs / concurrency.mjs; package hooks do T9/integrator own; docs/server/material-procurement.md; generated shared/types/database.types.ts only after authorized db:dev:types.
