@@ -9,16 +9,18 @@ import { mapCostsApiError } from '../../utils/costs/costs-error-mapper'
 import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 import ProjectCostInfoDisclosure from '../../components/costs/ProjectCostInfoDisclosure.vue'
 
-definePageMeta({ requiredAnyPermissions: ['cost.read','cost.request.read'] })
+definePageMeta({ alias: ['/cost-requests'], requiredAnyPermissions: ['cost.read','cost.request.read'] })
 
+const route = useRoute()
 const repositories = useRepositories()
 const companyAccess = useNuxtApp().$companyAccessStore
-const canRead = computed(() => companyAccess.hasAnyPermission(['cost.read','cost.request.read']))
+const isRequestDirectory = computed(() => route.path.replace(/\/$/, '') === '/cost-requests')
+const canRead = computed(() => isRequestDirectory.value ? companyAccess.hasPermission('cost.request.read') : companyAccess.hasPermission('cost.read'))
 const workflowDirectory=ref<import('../../../shared/schemas/costs/cost-workflow').WorkflowDirectory|null>(null)
 const projects = ref<FinanceProjectList['projects']>([])
 const nextCursor = ref<string | null>(null)
 const loadingMore = ref(false)
-const status = ref<'loading' | 'ready' | 'module' | 'permission' | 'empty' | 'error'>('loading')
+const status = ref<'loading' | 'ready' | 'module' | 'permission' | 'workflow' | 'empty' | 'error'>('loading')
 const requestTracker = createAsyncRequestTracker()
 
 // Single typed 4-KPI view model computed once per project card (Maintainability B)
@@ -51,13 +53,13 @@ async function load() {
   workflowDirectory.value=null
 
   try {
-    const directory=await repositories.costWorkflow.readDirectory()
-    if(!token.isCurrent())return
-    if(directory.mode==='document_backed_v1'){
+    if (isRequestDirectory.value) {
+      const directory=await repositories.costWorkflow.readDirectory()
+      if(!token.isCurrent())return
+      if(directory.mode!=='document_backed_v1'){status.value='workflow';return}
       workflowDirectory.value=directory;nextCursor.value=directory.nextCursor
       status.value=directory.projects.length?'ready':'empty';return
     }
-    if(!companyAccess.hasPermission('cost.read')){status.value='permission';return}
     const value = await repositories.projectFinance.listProjects()
     if (!token.isCurrent()) return
     projects.value = value.projects
@@ -78,7 +80,7 @@ async function loadMore() {
   loadingMore.value = true
 
   try {
-    if(workflowDirectory.value){
+    if(isRequestDirectory.value&&workflowDirectory.value){
       const directory=await repositories.costWorkflow.readDirectory({afterId:nextCursor.value})
       if(requestTracker.generation!==currentGen)return
       workflowDirectory.value={...directory,projects:[...workflowDirectory.value.projects,...directory.projects]};nextCursor.value=directory.nextCursor;return
@@ -98,7 +100,7 @@ async function loadMore() {
   }
 }
 
-watch([() => companyAccess.activeCompanyId, canRead,()=>JSON.stringify([...companyAccess.permissions].sort())], () => {
+watch([() => companyAccess.activeCompanyId, canRead, isRequestDirectory,()=>JSON.stringify([...companyAccess.permissions].sort())], () => {
   requestTracker.invalidate()
   projects.value = []
   nextCursor.value = null
@@ -116,13 +118,13 @@ onUnmounted(() => {
     <header class="page-heading cockpit-card">
       <div class="heading-copy">
         <p class="eyebrow">Quản trị chi phí · Director View</p>
-        <h1>Chi phí dự án</h1>
-        <p class="subtitle">Theo dõi giá trị công việc theo từng dự án.</p>
+        <h1>{{ isRequestDirectory ? 'Đề nghị chi' : 'Chi phí dự án' }}</h1>
+        <p class="subtitle">{{ isRequestDirectory ? 'Theo dõi đề nghị chi theo từng dự án.' : 'Theo dõi giá trị công việc theo từng dự án.' }}</p>
       </div>
       <div class="heading-badge">
         <span class="cockpit-badge cockpit-badge--primary">
           <UIcon name="i-lucide-receipt" aria-hidden="true" />
-          {{ workflowDirectory?.projects.length ?? projects.length }} dự án
+          {{ isRequestDirectory ? (workflowDirectory?.projects.length ?? 0) : projects.length }} dự án
         </span>
       </div>
     </header>
@@ -144,20 +146,26 @@ onUnmounted(() => {
       <p>Bạn cần quyền đọc chi phí dự án để xem dữ liệu này.</p>
     </div>
 
+    <div v-else-if="status === 'workflow'" class="state-panel cockpit-card">
+      <UIcon name="i-lucide-toggle-left" aria-hidden="true" />
+      <h2>Quy trình đề nghị chi chưa được bật</h2>
+      <p>Đề nghị chi theo hồ sơ chứng từ chỉ khả dụng khi quy trình này được bật cho công ty.</p>
+    </div>
+
     <div v-else-if="status === 'empty'" class="state-panel cockpit-card">
       <UIcon name="i-lucide-inbox" aria-hidden="true" />
-      <h2>Chưa có chi phí dự án</h2>
-      <p>Dữ liệu chi phí dự án sẽ xuất hiện tại đây khi có ghi nhận công việc cho công ty.</p>
+      <h2>{{ isRequestDirectory ? 'Chưa có đề nghị chi' : 'Chưa có chi phí dự án' }}</h2>
+      <p>{{ isRequestDirectory ? 'Đề nghị chi sẽ xuất hiện tại đây khi có hồ sơ cho công ty.' : 'Dữ liệu chi phí dự án sẽ xuất hiện tại đây khi có ghi nhận công việc cho công ty.' }}</p>
     </div>
 
     <div v-else-if="status === 'error'" class="state-panel cockpit-card">
       <UIcon name="i-lucide-circle-alert" aria-hidden="true" />
-      <h2>Không thể tải dữ liệu</h2>
-      <p>Đã xảy ra lỗi khi lấy danh sách chi phí dự án.</p>
+      <h2>{{ isRequestDirectory ? 'Không thể tải đề nghị chi' : 'Không thể tải dữ liệu' }}</h2>
+      <p>{{ isRequestDirectory ? 'Đã xảy ra lỗi khi lấy danh sách đề nghị chi.' : 'Đã xảy ra lỗi khi lấy danh sách chi phí dự án.' }}</p>
       <button type="button" class="cockpit-btn cockpit-btn--primary" @click="load">Thử lại</button>
     </div>
 
-    <div v-else-if="status==='ready'&&workflowDirectory" class="project-directory-wrapper" data-testid="workflow-project-directory">
+    <div v-else-if="status==='ready'&&isRequestDirectory&&workflowDirectory" class="project-directory-wrapper" data-testid="workflow-project-directory">
       <div class="project-grid">
         <NuxtLink v-for="project in workflowDirectory.projects" :key="project.projectId" :to="'/costs/'+project.projectId+'/requests'" class="cockpit-card project-card">
           <span class="project-code">{{ project.code }}</span><h2>{{ project.name }}</h2>

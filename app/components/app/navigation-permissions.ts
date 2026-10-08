@@ -23,7 +23,8 @@ export const canonicalNavigationLinks: readonly NavigationLink[] = [
     requiredAnyPermissions: ['employee.read_directory', 'employee.read_all'],
   },
   { to: '/opportunities', label: 'Cơ hội', icon: 'i-lucide-target', requiredPermission: 'opportunity.read' },
-  { to: '/costs', label: 'Chi phí dự án', icon: 'i-lucide-receipt', requiredAnyPermissions: ['cost.read', 'cost.request.read'] },
+  { to: '/costs', label: 'Chi phí dự án', icon: 'i-lucide-receipt', requiredPermission: 'cost.read' },
+  { to: '/cost-requests', label: 'Đề nghị chi', icon: 'i-lucide-receipt', requiredPermission: 'cost.request.read' },
   { to: '/cost-drafts', label: 'Bản nháp chi phí', icon: 'i-lucide-file-pen-line', requiredAnyPermissions: ['cost.manage', 'cost.prepare'] },
   { to: '/costs/sources', label: 'Nguồn chi phí', icon: 'i-lucide-database-zap', requiredPermission: 'cost.source.read' },
 ]
@@ -43,5 +44,5 @@ export function filterNavigationLinks(
   access: NavigationPermissionAccess,
   workflowMode: 'legacy' | 'document_backed_v1' | null = null,
 ): NavigationLink[] {
-  return links.filter(link => hasNavigationPermission(link, access) && !(workflowMode === 'document_backed_v1' && ['/cost-drafts', '/costs/sources'].includes(link.to)))
+  return links.filter(link => hasNavigationPermission(link, access) && (workflowMode === 'legacy' || !['/cost-drafts', '/costs/sources'].includes(link.to)))
 }

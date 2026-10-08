@@ -28,7 +28,8 @@ const visibleLinks = computed(() => filterNavigationLinks(canonicalNavigationLin
 function isActive(to: string) {
   if (route.path === to) return true
   if (to === '/projects') return route.path.startsWith('/projects/')
-  if (to === '/costs') return route.path.startsWith('/costs/') && !route.path.startsWith('/costs/sources') && !route.path.startsWith('/costs/projects/')
+  if (to === '/costs') return route.path.startsWith('/costs/') && !route.path.startsWith('/costs/sources') && !route.path.startsWith('/costs/projects/') && !/^\/costs\/[^/]+\/requests(?:\/|$)/.test(route.path)
+  if (to === '/cost-requests') return route.path.replace(/\/$/, '') === '/cost-requests' || /^\/costs\/[^/]+\/requests(?:\/|$)/.test(route.path)
   if (to === '/costs/sources') return route.path.startsWith('/costs/projects/')
   return false
 }

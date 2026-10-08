@@ -8,7 +8,7 @@ export function useCostWorkflowMode(){
   const captured=scope()
   if(!force&&state.value.scope===captured&&state.value.status==='ready')return mode.value
   const generation=state.value.generation+1
-  state.value={scope:captured,mode:null,generation,status:'loading'}
+  state.value={scope:captured,mode:state.value.scope===captured?state.value.mode:null,generation,status:'loading'}
   if(!access.activeCompanyId||!access.hasAnyPermission(['cost.read','cost.request.read'])||!app.$repositories){
    state.value.status='error';return null
   }

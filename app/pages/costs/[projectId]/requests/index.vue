@@ -2,7 +2,10 @@
   <div class="cockpit-page">
     <div class="page-header">
       <h2>Danh sách Đề nghị khoản chi</h2>
-      <NuxtLink v-if="canCreate" :to="`/costs/${pId}/requests/new`" class="cockpit-btn cockpit-btn--primary">+ Tạo đề nghị mới</NuxtLink>
+      <div class="flex flex-wrap gap-2">
+        <NuxtLink v-if="$companyAccessStore.hasPermission('cost.read')" :to="'/costs/'+pId" class="cockpit-btn cockpit-btn--secondary">Chi phí dự án</NuxtLink>
+        <NuxtLink v-if="canCreate" :to="'/costs/'+pId+'/requests/new'" class="cockpit-btn cockpit-btn--primary">+ Tạo đề nghị mới</NuxtLink>
+      </div>
     </div>
     <div v-if="errorMessage" class="alert error">{{ errorMessage }}</div>
     <div v-if="isLegacy" class="alert warn">Quy trình chứng từ chưa được bật cho công ty này.</div>

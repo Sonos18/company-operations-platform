@@ -24,6 +24,7 @@ const requestTracker = createAsyncRequestTracker()
 
 const legacyWorkflowMode=useCostWorkflowMode()
 const legacyWritable=computed(()=>legacyWorkflowMode.mode.value==='legacy')
+const canReadRequests=computed(()=>legacyWorkflowMode.mode.value==='document_backed_v1'&&companyAccess.hasPermission('cost.request.read'))
 const canRead = computed(() => companyAccess.hasPermission('cost.read'))
 const canManage = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && legacyWritable.value && companyAccess.hasPermission('cost.manage'))
 const canPrepare = computed(() => overview.value?.project.operationalState !== 'completed' && overview.value !== null && legacyWritable.value && companyAccess.hasPermission('cost.prepare'))
@@ -174,6 +175,9 @@ watch([canManage, canPrepare], ([manageAllowed, prepareAllowed]) => {
           <p class="subtitle">
             Chi tiết các hạng mục chi phí công việc đang theo dõi.
           </p>
+          <NuxtLink v-if="canReadRequests" :to="'/costs/'+projectId+'/requests'" class="cockpit-btn cockpit-btn--secondary">
+            Xem đề nghị chi và dòng tiền
+          </NuxtLink>
 
           <p v-if="overview?.project.operationalState === 'completed'" role="status" class="text-sm text-muted" data-testid="completed-project-notice">Dự án đã hoàn thành, chỉ được xem dữ liệu.</p>
           <div v-if="canManage || canPrepare" class="draft-actions-bar flex flex-wrap items-center gap-2 pt-3" data-testid="draft-actions-bar">

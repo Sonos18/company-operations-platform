@@ -7,11 +7,10 @@ export default defineNuxtRouteMiddleware(async to=>{
  if(!access.hasAnyPermission(['cost.read','cost.request.read']))return
  const captured=JSON.stringify([access.activeCompanyId,[...access.permissions].sort()])
  const workflow=useCostWorkflowMode()
- const mode=await workflow.refresh(true)
+ const mode=await workflow.refresh()
  if(captured!==JSON.stringify([access.activeCompanyId,[...access.permissions].sort()]))return abortNavigation()
  if(mode!=='document_backed_v1')return
- const oldOverview=/^\/costs\/[0-9a-f-]{36}\/?$/i.test(to.path)
- const oldWriter=oldOverview||to.path.startsWith('/cost-drafts')||to.path.startsWith('/costs/sources')||to.path.startsWith('/costs/projects/')||/\/(?:drafts|entries\/new)(?:\/|$)/.test(to.path)
+ const oldWriter=to.path.startsWith('/cost-drafts')||to.path.startsWith('/costs/sources')||to.path.startsWith('/costs/projects/')||/\/(?:drafts|entries\/new)(?:\/|$)/.test(to.path)
  if(!oldWriter)return
  const candidate=to.path.split('/')[2]
  const project=workflowUuidSchema.safeParse(candidate)
