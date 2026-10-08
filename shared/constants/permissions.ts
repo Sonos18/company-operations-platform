@@ -82,6 +82,13 @@ export const permissionCodes = [
   'cost.request.file.read',
   'cost.party.read',
   'cost.notification.read',
+  'material.read',
+  'material.manage',
+  'material.proposal.submit',
+  'material.proposal.decide',
+  'material.order.manage',
+  'material.supplier.record',
+  'material.contract.record',
 ] as const
 
 export type PermissionCode = (typeof permissionCodes)[number]
