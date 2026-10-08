@@ -31,6 +31,17 @@ const projectCards = computed(() => {
   }))
 })
 
+const sortedWorkflowProjects = computed(() => {
+  if (!workflowDirectory.value?.projects) return []
+  const order: Record<string, number> = { active: 1, paused: 2, unknown: 3, completed: 4 }
+  return [...workflowDirectory.value.projects].sort((a, b) => {
+    const orderA = order[a.operationalState] ?? 5
+    const orderB = order[b.operationalState] ?? 5
+    if (orderA !== orderB) return orderA - orderB
+    return a.code.localeCompare(b.code)
+  })
+})
+
 function onCardClick(projectId: string, event: MouseEvent) {
   const target = event.target as HTMLElement | null
   if (target?.closest('.info-disclosure-anchor')) return
@@ -117,9 +128,9 @@ onUnmounted(() => {
   <section class="project-costs-page" data-testid="project-costs-overview">
     <header class="page-heading cockpit-card">
       <div class="heading-copy">
-        <p class="eyebrow">Quản trị chi phí · Director View</p>
+        <p class="eyebrow">{{ isRequestDirectory ? 'Quy trình chi phí' : 'Quản trị chi phí · Director View' }}</p>
         <h1>{{ isRequestDirectory ? 'Đề nghị chi' : 'Chi phí dự án' }}</h1>
-        <p class="subtitle">{{ isRequestDirectory ? 'Theo dõi đề nghị chi theo từng dự án.' : 'Theo dõi giá trị công việc theo từng dự án.' }}</p>
+        <p class="subtitle">{{ isRequestDirectory ? 'Theo dõi và lập đề nghị chi theo từng dự án.' : 'Theo dõi giá trị công việc theo từng dự án.' }}</p>
       </div>
       <div class="heading-badge">
         <span class="cockpit-badge cockpit-badge--primary">
@@ -166,13 +177,38 @@ onUnmounted(() => {
     </div>
 
     <div v-else-if="status==='ready'&&isRequestDirectory&&workflowDirectory" class="project-directory-wrapper" data-testid="workflow-project-directory">
-      <div class="project-grid">
-        <NuxtLink v-for="project in workflowDirectory.projects" :key="project.projectId" :to="'/costs/'+project.projectId+'/requests'" class="cockpit-card project-card">
-          <span class="project-code">{{ project.code }}</span><h2>{{ project.name }}</h2>
-          <p>{{ formatOperationalState(project.operationalState).label }}</p><span>Xem đề nghị và dòng tiền</span>
+      <div class="workflow-project-grid">
+        <NuxtLink
+          v-for="project in sortedWorkflowProjects"
+          :key="project.projectId"
+          :to="'/costs/'+project.projectId+'/requests'"
+          class="cockpit-card workflow-project-card"
+          :class="{ 'is-completed': project.operationalState === 'completed' }"
+          :data-testid="`workflow-project-card-${project.projectId}`"
+        >
+          <header class="workflow-card-header">
+            <span class="project-code">{{ project.code }}</span>
+            <span
+              class="cockpit-badge"
+              :class="formatOperationalState(project.operationalState).badgeVariant"
+            >
+              {{ formatOperationalState(project.operationalState).label }}
+            </span>
+          </header>
+          <h2 class="workflow-project-name">{{ project.name }}</h2>
+          <footer class="workflow-card-footer">
+            <span class="workflow-card-action">
+              <span>Xem đề nghị chi</span>
+              <UIcon name="i-lucide-arrow-right" class="action-icon" aria-hidden="true" />
+            </span>
+          </footer>
         </NuxtLink>
       </div>
-      <button v-if="nextCursor" class="cockpit-btn" :disabled="loadingMore" @click="loadMore">Tải thêm dự án</button>
+      <div v-if="nextCursor" class="load-more-wrapper">
+        <button class="cockpit-btn cockpit-btn--secondary" :disabled="loadingMore" @click="loadMore">
+          {{ loadingMore ? 'Đang tải thêm...' : 'Tải thêm dự án' }}
+        </button>
+      </div>
     </div>
     <div v-else-if="status === 'ready'" class="project-directory-wrapper">
       <div class="project-grid" aria-label="Danh sách dự án theo dõi chi phí">
@@ -785,6 +821,86 @@ onUnmounted(() => {
 
 .spin {
   animation: spin 1s linear infinite;
+}
+
+.workflow-project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 14px;
+}
+
+.workflow-project-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--cockpit-border, #e2e8f0);
+  background: var(--cockpit-card-bg, #ffffff);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.workflow-project-card:hover {
+  transform: translateY(-2px);
+  border-color: #2563eb;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.workflow-project-card.is-completed {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  opacity: 0.9;
+}
+
+.workflow-project-card.is-completed:hover {
+  border-color: #94a3b8;
+}
+
+.workflow-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.workflow-project-name {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0;
+  color: #0f172a;
+}
+
+.workflow-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px dashed #f1f5f9;
+}
+
+.workflow-card-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #2563eb;
+}
+
+.workflow-project-card:hover .workflow-card-action .action-icon {
+  transform: translateX(3px);
+  transition: transform 0.15s ease;
+}
+
+.load-more-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
 }
 
 @media (max-width: 768px) {

@@ -3,7 +3,7 @@
     <div class="page-header">
       <NuxtLink :to="`/costs/${pId}/requests`">← Danh sách đề nghị</NuxtLink>
       <h3>{{ kindLabels[link.kind] }}</h3>
-      <span v-if="req" class="cockpit-badge">{{ statusMap[req.status] }}</span>
+      <span v-if="req" class="cockpit-badge" :class="statusBadgeClass">{{ statusText }}</span>
     </div>
     <div v-if="errorMessage" class="alert error">{{ errorMessage }}</div>
     <div v-if="isCompleted" class="alert info">Dự án đã hoàn thành, chỉ hiển thị đối soát thanh toán hiện hữu.</div>
@@ -47,20 +47,20 @@
         <h4>Thông tin chung</h4>
         <p>Đối tác: {{ req.partyName || 'Đối tác trong hồ sơ' }}</p>
         <p v-if="req.latestDecision?.reason">Lý do trả lại: {{ req.latestDecision.reason }}</p>
-        <p>Số tiền: <strong>{{ req.amount }} {{ req.currencyCode }}</strong> | Cơ sở: <strong>{{ basisLabels[req.basis.kind] }}</strong></p>
+        <p>Số tiền: <strong>{{ formatFinanceMoney(req.amount, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }}</strong> | Cơ sở: <strong>{{ basisLabels[req.basis.kind] }}</strong></p>
         <div v-if="req.basis.kind === 'materials'">
           <p>Nơi giao: {{ req.basis.deliverySite }}</p>
-          <div v-for="(l, i) in req.basis.lines" :key="i">- {{ l.description }}: {{ l.quantity }} {{ l.unit }} x {{ l.unitPrice }}</div>
+          <div v-for="(l, i) in req.basis.lines" :key="i">- {{ l.description }}: {{ l.quantity }} {{ l.unit }} x {{ formatFinanceMoney(l.unitPrice, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }}</div>
         </div>
         <div v-else-if="req.basis.kind === 'subcontract'">
-          <p>Nghiệm thu: {{ req.basis.acceptanceReference }} | Giữ lại: {{ req.basis.retentionAmount }}</p>
+          <p>Nghiệm thu: {{ req.basis.acceptanceReference }} | Giữ lại: {{ formatFinanceMoney(req.basis.retentionAmount, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }}</p>
         </div>
         <div v-else-if="req.basis.kind === 'direct_labor'">
           <p>Tuần: {{ req.basis.weekStart }}</p>
-          <div v-for="(w, i) in req.basis.workers" :key="i">- {{ w.workerReference }}: {{ w.days }} công x {{ w.dailyRate }} (+{{ w.allowance }})</div>
+          <div v-for="(w, i) in req.basis.workers" :key="i">- {{ w.workerReference }}: {{ w.days }} công x {{ formatFinanceMoney(w.dailyRate, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }} (+{{ formatFinanceMoney(w.allowance, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }})</div>
         </div>
         <div v-else>
-          <div v-for="(l, i) in req.basis.lines" :key="i">- {{ l.description }}: {{ l.quantity }} {{ l.unit }} x {{ l.unitPrice }}</div>
+          <div v-for="(l, i) in req.basis.lines" :key="i">- {{ l.description }}: {{ l.quantity }} {{ l.unit }} x {{ formatFinanceMoney(l.unitPrice, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }}</div>
         </div>
       </div>
 
@@ -84,10 +84,10 @@
 
       <div v-if="req.installment" class="cockpit-card">
         <h4>Đợt giải ngân</h4>
-        <p>Hạn mức: {{ req.installment.authorized }} | Đã chi: {{ req.installment.consumed }} | Còn lại: {{ req.installment.remaining }}</p>
-        <button v-if="canRecordCash" type="button" class="cockpit-btn" @click="showPayment = true">Ghi nhận thanh toán</button>
+        <p>Hạn mức: {{ formatFinanceMoney(req.installment.authorized, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }} | Đã chi: {{ formatFinanceMoney(req.installment.consumed, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }} | Còn lại: {{ formatFinanceMoney(req.installment.remaining, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }}</p>
+        <button v-if="canRecordCash" type="button" class="cockpit-btn cockpit-btn--primary" @click="showPayment = true">Ghi nhận thanh toán</button>
         <div v-for="pay in req.payments" :key="pay.id">
-          <p>{{ pay.paymentDate }}: {{ pay.amount }} {{ pay.currencyCode }} (Hiệu chỉnh: {{ pay.correctedCash }}, Hoàn: {{ pay.refunded }})</p>
+          <p>{{ pay.paymentDate }}: {{ formatFinanceMoney(pay.amount, pay.currencyCode, pay.currencyCode === 'VND' ? 0 : 2) }} (Hiệu chỉnh: {{ formatFinanceMoney(pay.correctedCash, pay.currencyCode, pay.currencyCode === 'VND' ? 0 : 2) }}, Hoàn: {{ formatFinanceMoney(pay.refunded, pay.currencyCode, pay.currencyCode === 'VND' ? 0 : 2) }})</p>
           <div v-for="(fileId, index) in pay.evidenceFileIds" :key="fileId" class="row">
             <span>Chứng từ thanh toán #{{ index + 1 }}</span>
             <button v-if="hasFileRead" type="button" class="cockpit-btn" @click="openEvidence(fileId)">Xem</button>
@@ -124,6 +124,7 @@ import { workflowUuidSchema, type CostRequestView, type WorkflowProjectContext, 
 import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
 import CostRequestReviewPanel from '../../../../components/costs/CostRequestReviewPanel.vue'
 import CostInstallmentPaymentModal from '../../../../components/costs/CostInstallmentPaymentModal.vue'
+import { formatFinanceMoney } from '../../../../utils/costs/finance-display'
 
 definePageMeta({ requiredPermission: 'cost.request.read' })
 
@@ -168,6 +169,26 @@ function getFingerprint() {
 }
 
 const statusMap={working:'Chưa gửi',submitted:'Chờ duyệt',returned:'Trả lại',approved:'Đã duyệt'}
+const statusText = computed(() => {
+  if (!req.value) return ''
+  if (req.value.status === 'approved') {
+    if (!req.value.payments || req.value.payments.length === 0) return 'Đã duyệt (Chờ chi)'
+    if (req.value.installment?.remaining === '0.0000' || (req.value.installment?.consumed && req.value.installment?.authorized && req.value.installment?.consumed === req.value.installment?.authorized)) return 'Đã thanh toán'
+    return 'Đã chi một phần'
+  }
+  return statusMap[req.value.status] || req.value.status
+})
+const statusBadgeClass = computed(() => {
+  if (!req.value) return ''
+  if (req.value.status === 'working') return 'cockpit-badge--neutral'
+  if (req.value.status === 'submitted') return 'cockpit-badge--warning'
+  if (req.value.status === 'returned') return 'cockpit-badge--danger'
+  if (req.value.status === 'approved') {
+    if (!req.value.payments || req.value.payments.length === 0) return 'cockpit-badge--primary'
+    return 'cockpit-badge--success'
+  }
+  return ''
+})
 const basisLabels={materials:'Vật tư',subcontract:'Thầu phụ',direct_labor:'Nhân công VQH',machinery:'Máy móc',other:'Chi phí khác'}
 const hasFileRead = computed(() => Boolean($companyAccessStore?.permissions?.includes('cost.request.file.read')))
 const canDecide = computed(() => Boolean(context.value?.canDecide && $companyAccessStore?.permissions?.includes('cost.request.decide')))
