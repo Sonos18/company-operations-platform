@@ -87,7 +87,7 @@
               class="cockpit-input"
               :disabled="readOnly"
               required
-            />
+            >
             <span v-if="validationErrors.neededOn" class="field-error">{{ validationErrors.neededOn }}</span>
           </div>
         </div>
@@ -104,7 +104,7 @@
             placeholder="Nhập địa chỉ giao hàng tại công trường..."
             required
             maxlength="2000"
-          />
+          >
           <small class="field-hint">
             Địa chỉ này chỉ áp dụng riêng cho phiếu yêu cầu hiện tại, không thay đổi địa chỉ mặc định của dự án.
           </small>
@@ -122,7 +122,7 @@
             rows="2"
             placeholder="Ghi chú thêm về yêu cầu vận chuyển, thời gian hạ hàng (nếu có)..."
             maxlength="2000"
-          ></textarea>
+          />
         </div>
       </div>
 
@@ -215,7 +215,7 @@
                       placeholder="VD: 20 hoặc 15.5"
                       required
                       @input="markDirty"
-                    />
+                    >
                     <small v-if="isLineSigned(line)" class="signed-limit-text">
                       Tối thiểu: {{ line.signedQuantity }}
                     </small>
@@ -303,7 +303,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import Decimal from 'decimal.js'
 import type {
   MaterialProjectOption,
@@ -313,8 +313,6 @@ import type {
 } from '../../../shared/schemas/costs/material-procurement'
 import { workflowMoneySchema } from '../../../shared/schemas/costs/cost-workflow'
 import { ClientError } from '../../errors/client-error'
-
-type MaterialProposalLineView = MaterialProposalView['lines'][number]
 
 interface FormLine {
   lineId: string
@@ -346,7 +344,6 @@ const emit = defineEmits<{
 
 const repositories = useRepositories()
 const repo = repositories.materialProcurement
-const companyAccess = useNuxtApp().$companyAccessStore
 
 // Master Data
 const projectOptions = ref<MaterialProjectOption[]>([])
@@ -465,7 +462,7 @@ function removeLine(index: number) {
   markDirty()
 }
 
-function onMaterialChange(line: FormLine) {
+function onMaterialChange(_line: FormLine) {
   markDirty()
 }
 
@@ -670,7 +667,10 @@ async function handleMutationError(err: unknown) {
   // Check for 409 / Conflict
   const isConflict =
     (err instanceof ClientError && (err.code === 'VERSION_CONFLICT' || err.code === 'IDEMPOTENCY_CONFLICT')) ||
-    (typeof err === 'object' && err !== null && ('statusCode' in err || 'status' in err) && ((err as any).statusCode === 409 || (err as any).status === 409))
+    (typeof err === 'object' && err !== null && (
+      ('statusCode' in err && (err as { statusCode?: number }).statusCode === 409) ||
+      ('status' in err && (err as { status?: number }).status === 409)
+    ))
 
   if (isConflict && existingProposalId.value) {
     conflictNotice.value = true
@@ -716,7 +716,7 @@ async function loadMasterData() {
         formDeliveryAddress.value = p.locationText
       }
     }
-  } catch (err: unknown) {
+  } catch {
     errorMessage.value = 'Không thể nạp dữ liệu danh mục dự án hoặc vật tư.'
   }
 }

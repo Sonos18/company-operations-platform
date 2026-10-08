@@ -36,7 +36,7 @@
           class="cockpit-input search-input"
           placeholder="Tìm kiếm công trình theo mã hoặc tên..."
           aria-label="Tìm kiếm công trình"
-        />
+        >
         <div class="filter-stats">
           <span>Tổng số: <strong>{{ filteredProjects.length }}</strong> công trình</span>
         </div>

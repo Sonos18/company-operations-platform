@@ -40,7 +40,7 @@
               placeholder="VD: VT-THEP-01"
               required
               maxlength="200"
-            />
+            >
           </div>
           <div class="form-group">
             <label for="material-name">Tên vật tư chuẩn <span class="required">*</span></label>
@@ -52,7 +52,7 @@
               placeholder="VD: Thép cuộn phi 8"
               required
               maxlength="200"
-            />
+            >
           </div>
           <div class="form-group">
             <label for="material-unit">Đơn vị tính chuẩn <span class="required">*</span></label>
@@ -64,7 +64,7 @@
               placeholder="VD: kg, tấn, bao, m3"
               required
               maxlength="200"
-            />
+            >
           </div>
           <div v-if="editingId" class="form-group form-group--checkbox">
             <label class="checkbox-label">
@@ -72,7 +72,7 @@
                 v-model="formData.isActive"
                 type="checkbox"
                 class="cockpit-checkbox"
-              />
+              >
               Đang sử dụng (Khả dụng trên phiếu yêu cầu)
             </label>
           </div>
@@ -88,7 +88,7 @@
             placeholder="VD: Mác thép CB240-T, TCVN 1651-1:2018"
             required
             maxlength="2000"
-          ></textarea>
+          />
         </div>
 
         <div class="editor-actions">
@@ -119,7 +119,7 @@
         class="cockpit-input search-input"
         placeholder="Tìm kiếm theo mã, tên hoặc quy cách vật tư..."
         aria-label="Tìm kiếm vật tư chuẩn"
-      />
+      >
       <span class="count-badge">{{ filteredMaterials.length }} vật tư</span>
     </div>
 
@@ -224,7 +224,7 @@
                   placeholder="VD: VT-THEP-01"
                   required
                   maxlength="200"
-                />
+                >
               </div>
               <div class="form-group">
                 <label for="modal-mat-name">Tên vật tư chuẩn <span class="required">*</span></label>
@@ -236,7 +236,7 @@
                   placeholder="VD: Thép cuộn phi 8"
                   required
                   maxlength="200"
-                />
+                >
               </div>
               <div class="form-group">
                 <label for="modal-mat-unit">Đơn vị tính chuẩn <span class="required">*</span></label>
@@ -248,7 +248,7 @@
                   placeholder="VD: kg, tấn, bao, m3"
                   required
                   maxlength="200"
-                />
+                >
               </div>
               <div v-if="editingId" class="form-group form-group--checkbox">
                 <label class="checkbox-label">
@@ -256,7 +256,7 @@
                     v-model="formData.isActive"
                     type="checkbox"
                     class="cockpit-checkbox"
-                  />
+                  >
                   Đang sử dụng
                 </label>
               </div>
@@ -272,7 +272,7 @@
                 placeholder="VD: Mác thép CB240-T, TCVN 1651-1:2018"
                 required
                 maxlength="2000"
-              ></textarea>
+              />
             </div>
 
             <div class="editor-actions">
@@ -303,7 +303,7 @@
             class="cockpit-input search-input"
             placeholder="Tìm kiếm theo mã, tên hoặc quy cách vật tư..."
             aria-label="Tìm kiếm vật tư chuẩn"
-          />
+          >
           <span class="count-badge">{{ filteredMaterials.length }} vật tư</span>
         </div>
 

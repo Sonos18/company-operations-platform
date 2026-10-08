@@ -8,7 +8,6 @@ import {
   type MaterialProposalView,
 } from '../../shared/schemas/costs/material-procurement'
 
-const companyId = '10000000-0000-4000-8000-000000000002'
 const engineerId = '11111111-1111-4111-8111-111111111111'
 const buyerId = '22222222-2222-4222-8222-222222222222'
 
@@ -20,6 +19,27 @@ const material2Id = '40000000-0000-4000-8000-000000000002'
 
 const proposalId = '50000000-0000-4000-8000-000000000001'
 const line1Id = '60000000-0000-4000-8000-000000000001'
+
+interface RawProposalLine {
+  lineId: string
+  materialId: string
+  quantity: string
+}
+
+interface RawProposalBody {
+  neededOn: string
+  deliveryAddress: string
+  notes?: string | null
+  lines: RawProposalLine[]
+  expectedVersion?: number
+}
+
+interface CapturedRequest {
+  method: string
+  url: string
+  body: unknown
+  headers: Record<string, string>
+}
 
 const mockProjects: MaterialProjectOption[] = [
   {
@@ -93,12 +113,7 @@ function createMockProposal(overrides: Partial<MaterialProposalView> = {}): Mate
 interface MockRouteOptions {
   currentProposal?: MaterialProposalView
   failWith409OnUpdate?: boolean
-  capturedRequests?: Array<{
-    method: string
-    url: string
-    body: any
-    headers: Record<string, string>
-  }>
+  capturedRequests?: CapturedRequest[]
 }
 
 async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
@@ -124,7 +139,7 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
     }
 
     if (req.method() === 'POST') {
-      const body = req.postDataJSON()
+      const body = req.postDataJSON() as RawProposalBody
       captured.push({
         method: req.method(),
         url: req.url(),
@@ -138,7 +153,7 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
         neededOn: body.neededOn,
         deliveryAddress: body.deliveryAddress,
         notes: body.notes || null,
-        lines: body.lines.map((l: any) => ({
+        lines: body.lines.map((l: RawProposalLine) => ({
           lineId: l.lineId,
           materialId: l.materialId,
           materialName: mockMaterials.find(m => m.id === l.materialId)?.name || 'Vật tư',
@@ -173,7 +188,7 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
     }
 
     if (req.method() === 'PATCH') {
-      const body = req.postDataJSON()
+      const body = req.postDataJSON() as RawProposalBody
       captured.push({
         method: req.method(),
         url: req.url(),
@@ -198,7 +213,7 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
         neededOn: body.neededOn,
         deliveryAddress: body.deliveryAddress,
         notes: body.notes || null,
-        lines: body.lines.map((l: any) => ({
+        lines: body.lines.map((l: RawProposalLine) => ({
           lineId: l.lineId,
           materialId: l.materialId,
           materialName: mockMaterials.find(m => m.id === l.materialId)?.name || 'Vật tư',
@@ -277,7 +292,7 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư', () => {
   })
 
   test('2. Engineer lập draft -> Lưu nháp -> Gửi mua hàng -> DOM hiển thị "Đã gửi"', async ({ page }) => {
-    const capturedRequests: Array<{ method: string; url: string; body: any; headers: Record<string, string> }> = []
+    const capturedRequests: CapturedRequest[] = []
     await setupMaterialMocks(page, { capturedRequests })
 
     await page.goto(`/materials/${projectId}/proposals/new`)
@@ -307,7 +322,8 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư', () => {
     const createReq = capturedRequests.find(r => r.method === 'POST' && r.url.endsWith('/proposals'))
     expect(createReq).toBeDefined()
     expect(createReq?.headers['idempotency-key']).toBeTruthy()
-    expect(createReq?.body.lines[0].quantity).toBe('25.5000')
+    const createBody = createReq?.body as RawProposalBody
+    expect(createBody.lines[0].quantity).toBe('25.5000')
 
     // Click "Gửi mua hàng"
     const submitButton = page.getByRole('button', { name: 'Gửi mua hàng' })
@@ -341,7 +357,7 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư', () => {
       ],
     })
 
-    const capturedRequests: Array<{ method: string; url: string; body: any; headers: Record<string, string> }> = []
+    const capturedRequests: CapturedRequest[] = []
     await setupMaterialMocks(page, {
       currentProposal: returnedProposal,
       capturedRequests,
@@ -363,8 +379,9 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư', () => {
     // Verify PATCH request maintained stable lineId!
     const patchReq = capturedRequests.find(r => r.method === 'PATCH')
     expect(patchReq).toBeDefined()
-    expect(patchReq?.body.lines[0].lineId).toBe(line1Id)
-    expect(patchReq?.body.lines[0].quantity).toBe('40.0000')
+    const patchBody = patchReq?.body as RawProposalBody
+    expect(patchBody.lines[0].lineId).toBe(line1Id)
+    expect(patchBody.lines[0].quantity).toBe('40.0000')
 
     // DOM reflects fresh submitted state
     await expect(page.locator('.cockpit-badge', { hasText: 'Đã gửi' }).first()).toBeVisible()
@@ -401,7 +418,7 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư', () => {
   })
 
   test('5. 409 Xung đột giữ nguyên bản nhập của người dùng và hiển thị cảnh báo; retry cùng payload giữ nguyên key', async ({ page }) => {
-    const capturedRequests: Array<{ method: string; url: string; body: any; headers: Record<string, string> }> = []
+    const capturedRequests: CapturedRequest[] = []
     await setupMaterialMocks(page, {
       failWith409OnUpdate: true,
       capturedRequests,
