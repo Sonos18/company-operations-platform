@@ -231,7 +231,7 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 ### Task 6: (T6) Hồ sơ ký, căn cứ chi trực tiếp và thực chi vật tư
 
-**Owner / dependency:** Finance worker / GPT-5.6 Sol ultra + deep review; T2,T4.
+**Owner / dependency:** Finance worker / GPT-6 Sol high + independent review; T2,T4.
 **Files:** Create fresh forward migrations c1_material_contract_authority / cash_compatibility; server/features/costs/workflow/direct-contract-authority.{repository,service}.ts; tests/unit/server/direct-contract-authority.spec.ts; supabase/tests/database/c1/c1_direct_contract_authority.test.sql. Modify cost-workflow-cash.service.ts, canonical cash RPC via corrective migration, evidence source/target support.
 **Interfaces:** recordMaterialContract(scope,orderId,CommitMaterialContractInput,key) -> {contractId,authorizationId,installmentId,notificationId,replayed}; confirmPayment remains canonical installment payment endpoint; direct_contract source has no manager decision.
 
@@ -273,7 +273,7 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 ### Task 9: (T9) Báo cáo, notification và tích hợp shared hooks
 
-**Owner / dependency:** Backend/integrator GPT-5.6 Sol ultra; UI báo cáo/thông báo AGY theo prompt riêng; T6; integration đợi T5,T7,T8.
+**Owner / dependency:** Backend/integrator GPT-6 Sol high; UI báo cáo/thông báo AGY theo prompt riêng; T6; integration đợi T5,T7,T8.
 **Files:** Modify shared/schemas/costs/cost-workflow-reporting.ts; server/features/costs/finance/cost-workflow-summary.ts; cost-workflow-money.ts; notification routing; app finance display. Sole owner app/repositories/contracts.ts, app/plugins/repositories.client.ts, app/components/app/navigation-permissions.ts, app/layouts/default.vue, package.json và generated types. Tests tests/unit/server/material-commitment-summary.spec.ts; tests/unit/repositories/cost-workflow-notification-links.spec.ts.
 **Interfaces:** summarizeMaterialCommitments(input: MaterialCommitmentFacts) -> MaterialCommitmentSummary; committedMaterialCost + materialCommitmentRemaining + canonical grossPaid/netCash; notification source union manager_decision | material_signed_contract; order deep-link for new source.
 
@@ -339,3 +339,7 @@ Không đánh dấu F1/F2 đã thực hiện.
 ## Execution override 2026-10-08 — UI AGY
 
 Người dùng yêu cầu khi đến task UI phải viết prompt cho AGY. Codex không dispatch implementation worker cho T5/T7/T8 hoặc phần UI T9. Codex tiếp tục SQL/API/financial/report backend và review after-wave. Khi API/DTO sẵn, integrator sinh prompt riêng với immutable base SHA, approved spec, file ownership, mocked/live acceptance và no-DB/no-parent-preview boundaries. Chỉ viết prompt, không tự nhắn AGY hoặc giả lập AGY bằng Codex agent. Backend có thể tiếp tục trong khi chờ UI; full UI acceptance không được báo complete trước khi nhận diff AGY và review.
+
+## Cập nhật model khi thực thi
+
+Theo chỉ dẫn tiếp theo của người dùng: mọi worker và lượt review mới dùng GPT-6 Sol high. Giữ model đã dùng trong lịch sử T0–T4; không đổi claim về các command/review đã chạy. T5 đã gửi AGY; T7/T8/UI T9 tiếp tục qua prompt có SHA nền đã review.
