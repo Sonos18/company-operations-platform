@@ -9,22 +9,22 @@
     <div v-if="errorMessage" class="alert error">{{ errorMessage }}</div>
     <div v-if="scanNotice" class="alert warn">{{ scanNotice }}</div>
 
-    <form @submit.prevent="handleSubmit">
+    <form class="request-form" @submit.prevent="handleSubmit">
       <div class="grid">
         <label>Đối tác *
-          <select v-model="partyId" :disabled="isReadonly || isSubmitting || retryReady">
+          <select v-model="partyId" class="cockpit-select" :disabled="isReadonly || isSubmitting || retryReady">
             <option value="">-- Chọn đối tác --</option>
             <option v-for="p in parties" :key="p.id" :value="p.id">{{ p.name }} ({{ p.kind === 'crew' ? (p.crewOwnership === 'vqh_internal' ? 'VQH' : p.crewOwnership==='external'?'Ngoài':'Chưa phân loại') : 'NCC' }})</option>
           </select>
         </label>
         <label>Hạng mục *
-          <select v-model="categoryId" :disabled="isReadonly || isSubmitting || retryReady">
+          <select v-model="categoryId" class="cockpit-select" :disabled="isReadonly || isSubmitting || retryReady">
             <option value="">-- Chọn hạng mục --</option>
             <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
         </label>
         <label>Hợp đồng căn cứ
-          <select v-model="contractVersionId" :disabled="isReadonly || isSubmitting || retryReady">
+          <select v-model="contractVersionId" class="cockpit-select" :disabled="isReadonly || isSubmitting || retryReady">
             <option value="">-- Không gắn HĐ --</option>
             <option v-for="ct in filteredContracts" :key="ct.id" :value="ct.versionId">{{ ct.reference }} ({{ ct.cap }} {{ ct.currencyCode }})</option>
           </select>
@@ -32,10 +32,10 @@
       </div>
 
       <div class="grid">
-        <label>Số tiền * <input v-model="amount" type="text" placeholder="1000000" :disabled="isReadonly || isSubmitting || retryReady" ></label>
-        <label>Tiền tệ * <input v-model="currencyCode" type="text" maxlength="3" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+        <label>Số tiền * <input v-model="amount" class="cockpit-input" type="text" placeholder="1000000" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+        <label>Tiền tệ * <input v-model="currencyCode" class="cockpit-input" type="text" maxlength="3" :disabled="isReadonly || isSubmitting || retryReady" ></label>
         <label>Phân loại cơ sở chi *
-          <select v-model="basisKind" :disabled="isReadonly || isSubmitting || retryReady">
+          <select v-model="basisKind" class="cockpit-select" :disabled="isReadonly || isSubmitting || retryReady">
             <option value="materials">Vật tư</option>
             <option value="subcontract">Hợp đồng phụ</option>
             <option value="direct_labor">Nhân công VQH</option>
@@ -46,51 +46,51 @@
       </div>
 
       <div v-if="basisKind === 'materials'">
-        <label>Địa điểm giao * <input v-model="deliverySite" :disabled="isReadonly || isSubmitting || retryReady" ></label>
-        <div v-for="(l, i) in matLines" :key="i" class="row">
-          <input v-model="l.description" placeholder="Tên vật tư" :disabled="isReadonly || isSubmitting || retryReady" >
-          <input v-model="l.quantity" placeholder="SL" style="width:70px" :disabled="isReadonly || isSubmitting || retryReady" >
-          <input v-model="l.unit" placeholder="ĐVT" style="width:60px" :disabled="isReadonly || isSubmitting || retryReady" >
-          <input v-model="l.unitPrice" placeholder="Đơn giá" style="width:110px" :disabled="isReadonly || isSubmitting || retryReady" >
-          <button v-if="!isReadonly && matLines.length > 1" type="button" @click="matLines.splice(i, 1)">Xóa</button>
+        <label>Địa điểm giao * <input v-model="deliverySite" class="cockpit-input" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+        <div v-for="(l, i) in matLines" :key="i" class="line-grid">
+          <label>Tên vật tư <input v-model="l.description" class="cockpit-input" placeholder="Tên vật tư" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+          <label>Số lượng <input v-model="l.quantity" class="cockpit-input" placeholder="SL" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+          <label>Đơn vị tính <input v-model="l.unit" class="cockpit-input" placeholder="ĐVT" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+          <label>Đơn giá <input v-model="l.unitPrice" class="cockpit-input" placeholder="Đơn giá" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+          <button v-if="!isReadonly && matLines.length > 1" type="button" class="cockpit-btn" @click="matLines.splice(i, 1)">Xóa</button>
         </div>
         <button v-if="!isReadonly && !retryReady" type="button" class="cockpit-btn" @click="matLines.push({ description: '', quantity: '1', unit: 'cái', unitPrice: '0' })">+ Thêm dòng</button>
       </div>
       <div v-else-if="basisKind === 'subcontract'" class="grid">
-        <label>Hợp đồng phụ * <select v-model="subcontractId" :disabled="isReadonly || isSubmitting || retryReady"><option value="">Chọn hợp đồng phụ</option><option v-for="contract in filteredContracts.filter(item => item.sourceSubcontractId)" :key="contract.id" :value="contract.sourceSubcontractId">{{ contract.reference }}</option></select></label>
-        <label>Số BB nghiệm thu * <input v-model="acceptanceReference" :disabled="isReadonly || isSubmitting || retryReady" ></label>
-        <label>Tiền giữ lại * <input v-model="retentionAmount" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+        <label>Hợp đồng phụ * <select v-model="subcontractId" class="cockpit-select" :disabled="isReadonly || isSubmitting || retryReady"><option value="">Chọn hợp đồng phụ</option><option v-for="contract in filteredContracts.filter(item => item.sourceSubcontractId)" :key="contract.id" :value="contract.sourceSubcontractId">{{ contract.reference }}</option></select></label>
+        <label>Số BB nghiệm thu * <input v-model="acceptanceReference" class="cockpit-input" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+        <label>Tiền giữ lại * <input v-model="retentionAmount" class="cockpit-input" :disabled="isReadonly || isSubmitting || retryReady" ></label>
       </div>
       <div v-else-if="basisKind === 'direct_labor'">
-        <label>Ngày đầu tuần (YYYY-MM-DD) * <input v-model="weekStart" type="date" :disabled="isReadonly || isSubmitting || retryReady" ></label>
-        <div v-for="(w, i) in laborWorkers" :key="i" class="row">
-          <input v-model="w.workerReference" placeholder="Thợ" :disabled="isReadonly || isSubmitting || retryReady" >
-          <input v-model="w.days" placeholder="Công" style="width:60px" :disabled="isReadonly || isSubmitting || retryReady" >
-          <input v-model="w.dailyRate" placeholder="Đơn giá" style="width:100px" :disabled="isReadonly || isSubmitting || retryReady" >
-          <input v-model="w.allowance" placeholder="Phụ cấp" style="width:100px" :disabled="isReadonly || isSubmitting || retryReady" >
-          <button v-if="!isReadonly && laborWorkers.length > 1" type="button" @click="laborWorkers.splice(i, 1)">Xóa</button>
+        <label>Ngày đầu tuần (YYYY-MM-DD) * <input v-model="weekStart" class="cockpit-input" type="date" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+        <div v-for="(w, i) in laborWorkers" :key="i" class="line-grid">
+          <label>Thợ <input v-model="w.workerReference" class="cockpit-input" placeholder="Thợ" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+          <label>Số công <input v-model="w.days" class="cockpit-input" placeholder="Công" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+          <label>Đơn giá <input v-model="w.dailyRate" class="cockpit-input" placeholder="Đơn giá" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+          <label>Phụ cấp <input v-model="w.allowance" class="cockpit-input" placeholder="Phụ cấp" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+          <button v-if="!isReadonly && laborWorkers.length > 1" type="button" class="cockpit-btn" @click="laborWorkers.splice(i, 1)">Xóa</button>
         </div>
         <button v-if="!isReadonly && !retryReady" type="button" class="cockpit-btn" @click="laborWorkers.push({ workerReference: '', days: '1', dailyRate: '0', allowance: '0' })">+ Thêm thợ</button>
       </div>
       <div v-else>
-        <div v-for="(l, i) in genericLines" :key="i" class="row">
-          <input v-model="l.description" placeholder="Diễn giải" :disabled="isReadonly || isSubmitting || retryReady" >
-          <input v-model="l.quantity" placeholder="SL" style="width:70px" :disabled="isReadonly || isSubmitting || retryReady" >
-          <input v-model="l.unit" placeholder="ĐVT" style="width:60px" :disabled="isReadonly || isSubmitting || retryReady" >
-          <input v-model="l.unitPrice" placeholder="Đơn giá" style="width:110px" :disabled="isReadonly || isSubmitting || retryReady" >
-          <button v-if="!isReadonly && genericLines.length > 1" type="button" @click="genericLines.splice(i, 1)">Xóa</button>
+        <div v-for="(l, i) in genericLines" :key="i" class="line-grid">
+          <label>Diễn giải <input v-model="l.description" class="cockpit-input" placeholder="Diễn giải" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+          <label>Số lượng <input v-model="l.quantity" class="cockpit-input" placeholder="SL" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+          <label>Đơn vị tính <input v-model="l.unit" class="cockpit-input" placeholder="ĐVT" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+          <label>Đơn giá <input v-model="l.unitPrice" class="cockpit-input" placeholder="Đơn giá" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+          <button v-if="!isReadonly && genericLines.length > 1" type="button" class="cockpit-btn" @click="genericLines.splice(i, 1)">Xóa</button>
         </div>
         <button v-if="!isReadonly && !retryReady" type="button" class="cockpit-btn" @click="genericLines.push({ description: '', quantity: '1', unit: 'lần', unitPrice: '0' })">+ Thêm dòng</button>
       </div>
 
       <div class="grid">
-        <label>Ghi chú VAT <input v-model="vatBasis" placeholder="Tùy chọn" :disabled="isReadonly || isSubmitting || retryReady" ></label>
-        <label>Ghi chú làm tròn <input v-model="roundingBasis" placeholder="Tùy chọn" :disabled="isReadonly || isSubmitting || retryReady" ></label>
-        <label>Ghi chú phụ cấp <input v-model="allowanceBasis" placeholder="Tùy chọn" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+        <label>Ghi chú VAT <input v-model="vatBasis" class="cockpit-input" placeholder="Tùy chọn" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+        <label>Ghi chú làm tròn <input v-model="roundingBasis" class="cockpit-input" placeholder="Tùy chọn" :disabled="isReadonly || isSubmitting || retryReady" ></label>
+        <label>Ghi chú phụ cấp <input v-model="allowanceBasis" class="cockpit-input" placeholder="Tùy chọn" :disabled="isReadonly || isSubmitting || retryReady" ></label>
       </div>
 
       <CostWorkflowOriginalUpload v-if="!isReadonly && !retryReady && !isScanning && !scanRetryReady && !ocrPending" :company-id="companyId" :project-id="projectId" :target="{ kind: 'request', ...(currentRequestId ? { id: currentRequestId } : {}) }" @finalized="onEvidenceFinalized" @busy="uploadBusy = $event" />
-      <section aria-label="Chọn báo giá đã tải lên">
+      <section class="quotation-picker" aria-label="Chọn báo giá đã tải lên">
         <button type="button" class="cockpit-btn" :disabled="!canPickQuotation || quotationLoading" @click="listQuotations">Chọn báo giá đã tải lên</button>
         <p v-if="quotationLoading" role="status">Đang tải báo giá…</p>
         <p v-else-if="quotationError" class="alert error" role="alert">Không thể tải báo giá. Vui lòng thử lại.</p>
@@ -105,19 +105,19 @@
       <div>
         <strong>Hồ sơ chứng từ gốc ({{ evidenceList.length }}):</strong>
         <div v-for="ev in evidenceList" :key="ev.id" class="evidence-row">
-          <span>{{ ev.name }}</span>
-          <div>
+          <span class="evidence-name">{{ ev.name }}</span>
+          <div class="evidence-actions">
             <button type="button" class="cockpit-btn" :disabled="!companyAccess.hasPermission('cost.request.file.read')" @click="previewEvidence(ev.id)">Xem</button><button type="button" class="cockpit-btn" :disabled="!companyAccess.hasPermission('cost.request.file.read')" @click="previewEvidence(ev.id,'attachment')">Tải</button>
             <template v-if="!isReadonly && !retryReady">
               <label>Phạm vi quét khi tệp là PDF
-                <select v-model="pdfScopes[ev.id]" :disabled="isScanning || scanRetryReady || ocrPending">
+                <select v-model="pdfScopes[ev.id]" class="cockpit-select" :disabled="isScanning || scanRetryReady || ocrPending">
                   <option value="">-- Chọn trang PDF --</option>
                   <option value="1">Trang 1</option>
                   <option value="1-2">Trang 1–2</option>
                 </select>
               </label>
               <label v-if="pdfScopes[ev.id]">Tổng số trang theo người tải (tùy chọn)
-                <input v-model="pdfCounts[ev.id]" type="number" min="1" step="1" :disabled="isScanning || scanRetryReady || ocrPending">
+                <input v-model="pdfCounts[ev.id]" class="cockpit-input" type="number" min="1" step="1" :disabled="isScanning || scanRetryReady || ocrPending">
               </label>
               <button type="button" class="cockpit-btn" :disabled="!canScanEvidence(ev)" @click="scanEvidence(ev.id)">{{ scanRetryReady && scanSession.pendingFileId === ev.id ? 'Thử lại trích xuất' : ocrPollingState.fileId === ev.id ? 'Lấy kết quả' : 'Trích xuất gợi ý' }}</button>
             </template>
@@ -396,6 +396,7 @@ function acceptScanResult(res:CostExtractionView){
  suggestedResult.value=res.result;suggestedFileId.value=res.fileId;scanRetryReady.value=false;reviewed.value=false
  if(res.result.warnings.includes('OCR_RESPONSE_UNCERTAIN'))scanNotice.value='Chưa xác định kết quả OCR trước đó. Kiểm tra lại kết quả trước khi tiếp tục.'
  else if(res.result.warnings.includes('OCR_PROVIDER_NOT_CONFIGURED'))scanNotice.value='Dịch vụ OCR chưa được cấu hình; vui lòng kiểm tra bản gốc, nhập và rà soát thủ công.'
+ else if(res.result.warnings.includes('OCR_FREE_QUOTA_EXHAUSTED'))scanNotice.value='Đã đạt trần OCR nội bộ của môi trường DEV. Trần vận hành này tách biệt với hạn mức Azure F0. Bạn có thể dùng kết quả đã lưu hoặc kiểm tra bản gốc, nhập và rà soát thủ công.'
  else if(res.result.status==='unavailable'||res.result.status==='failed')scanNotice.value='Chưa có dữ liệu nhận dạng hợp lệ; vui lòng kiểm tra bản gốc, nhập và rà soát thủ công.'
  else if(!hasApplicableExtractionFields(res.result,basisKind.value))scanNotice.value='Chưa có dữ liệu gợi ý có thể áp dụng. Hãy kiểm tra bản gốc và nhập dữ liệu cần thiết trước khi rà soát.'
  else scanNotice.value='Dữ liệu chỉ là gợi ý; vui lòng rà soát trước khi gửi.'
@@ -498,12 +499,29 @@ async function handleSubmit() {
 </script>
 
 <style scoped>
-.cost-request-panel { display: flex; flex-direction: column; gap: 12px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
-.row { display: flex; flex-wrap: wrap; gap: 8px; gap: 6px; align-items: center; margin-top: 4px; }
+.cost-request-panel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.request-form { display: flex; flex-direction: column; gap: 20px; }
+.cost-request-panel label:not(.row) { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 13px; font-weight: 500; }
+.cost-request-panel h4 { margin: 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 16px; }
+.line-grid { display: grid; grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)) auto; align-items: end; gap: 12px; margin: 12px 0; }
+.line-grid .cockpit-input { min-width: 0; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
 .alert { padding: 8px; border-radius: 4px; font-size: 13px; }
 .alert.warn { background: #fef3c7; color: #92400e; }
 .alert.error { background: #fee2e2; color: #991b1b; }
-.evidence-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #f1f5f9; }
-.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.evidence-row { display: flex; flex-direction: column; gap: 12px; padding: 12px 0; border-bottom: 1px solid #f1f5f9; min-width: 0; }
+.evidence-name { overflow-wrap: anywhere; }
+.evidence-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; min-width: 0; }
+.evidence-actions label { flex: 1 1 220px; }
+.quotation-picker li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; }
+.quotation-picker li span { min-width: 0; overflow-wrap: anywhere; }
+.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+@media (max-width: 768px) {
+  .line-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .line-grid > label:first-child { grid-column: 1 / -1; }
+}
+@media (max-width: 480px) {
+  .evidence-actions > .cockpit-btn, .actions > .cockpit-btn { flex: 1 1 auto; }
+}
 </style>
