@@ -46,6 +46,49 @@ const returnedProposal = {
 const missingReturnReason = { ...returnedProposal } as Record<string, unknown>
 delete missingReturnReason.returnReason
 
+const orderInput = {
+  approvedRevisionId: ids.proposalRevision,
+  supplierId: ids.supplier,
+  currencyCode: 'VND' as const,
+  unsignedQuotationEvidenceFileId: ids.unsignedQuotation,
+  allocations: [{
+    proposalLineId: ids.proposalLine,
+    quantity: '10.0000',
+    unitPrice: '12.5000',
+    quotationMaterialName: 'Supplier steel',
+    mappingConfirmed: true as const,
+  }],
+}
+const orderView = {
+  id: ids.order,
+  version: 1,
+  orderState: 'active' as const,
+  proposalId: ids.proposal,
+  approvedRevisionId: ids.proposalRevision,
+  supplierId: ids.supplier,
+  supplierName: 'Supplier A',
+  currencyCode: 'VND' as const,
+  allocations: [{
+    orderLineId: ids.orderLine,
+    ...orderInput.allocations[0],
+    materialId: ids.material,
+    materialName: 'Steel',
+    specification: 'D10',
+    unit: 'bag',
+  }],
+  unsignedQuotationEvidenceFileId: ids.unsignedQuotation,
+  contract: null,
+  cash: { grossPaid: '0.0000', availableToPay: '0.0000' },
+}
+const materialEvidence = {
+  originalFilename: 'quotation.pdf',
+  mimeType: 'application/pdf' as const,
+  sizeBytes: 128,
+  sha256: 'a'.repeat(64),
+  evidenceRole: 'unsigned_quotation' as const,
+  target: { kind: 'material_proposal' as const, proposalId: ids.proposal, revisionId: ids.proposalRevision },
+}
+
 function response(data: unknown) {
   return {
     request: vi.fn(async ({ schema }: { schema: { parse(value: unknown): unknown } }) => schema.parse(data)),
@@ -219,19 +262,92 @@ describe('material procurement HTTP repository', () => {
     }))
   })
 
-  it('keeps future order, contract, and evidence methods explicitly unavailable', async () => {
-    const client = response(result)
+  it('uses exact scoped order and cancellation routes', async () => {
+    const commandClient = response({ ...result, resourceId: ids.order })
     const repository = createHttpMaterialProcurementRepository({
       companyId,
-      client: client as never,
+      client: commandClient as never,
     })
 
-    await expect(repository.createOrder(ids.project, ids.proposal, {} as never, command))
-      .rejects.toThrow('MATERIAL_PROCUREMENT_NOT_IMPLEMENTED: createOrder')
+    await repository.createOrder(ids.project, ids.proposal, orderInput, command)
+    await repository.cancelOrder(ids.project, ids.order, {
+      expectedOrderVersion: 1,
+      reason: 'Supplier unavailable',
+    }, command)
+
+    expect(commandClient.request.mock.calls.map(call => call[0])).toEqual([
+      expect.objectContaining({
+        method: 'POST',
+        url: '/api/companies/' + companyId + '/projects/' + ids.project + '/material-procurement/proposals/' + ids.proposal + '/orders',
+        body: orderInput,
+        idempotencyKey: key,
+      }),
+      expect.objectContaining({
+        method: 'POST',
+        url: '/api/companies/' + companyId + '/projects/' + ids.project + '/material-procurement/orders/' + ids.order + '/cancellations',
+        body: { expectedOrderVersion: 1, reason: 'Supplier unavailable' },
+        idempotencyKey: key,
+      }),
+    ])
+
+    const list = response([orderView])
+    await createHttpMaterialProcurementRepository({ companyId, client: list as never }).listOrders(ids.project)
+    expect(list.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'GET',
+      url: '/api/companies/' + companyId + '/projects/' + ids.project + '/material-procurement/orders',
+    }))
+
+    const read = response(orderView)
+    await createHttpMaterialProcurementRepository({ companyId, client: read as never }).readOrder(ids.project, ids.order)
+    expect(read.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'GET',
+      url: '/api/companies/' + companyId + '/projects/' + ids.project + '/material-procurement/orders/' + ids.order,
+    }))
+  })
+
+  it('uses material PDF evidence routes and leaves the future contract method unavailable', async () => {
+    const intent = {
+      evidenceFileId: ids.unsignedQuotation,
+      version: 0,
+      bucketId: 'c1-accounting-evidence',
+      objectPath: companyId + '/' + companyId + '/' + ids.project + '/' + ids.unsignedQuotation,
+      expiresAt: '2026-10-08T08:15:00.000Z',
+      replayed: false,
+    }
+    const intentClient = response(intent)
+    await createHttpMaterialProcurementRepository({ companyId, client: intentClient as never })
+      .createEvidenceIntent(ids.project, materialEvidence, command)
+    expect(intentClient.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'POST',
+      url: '/api/companies/' + companyId + '/projects/' + ids.project + '/material-procurement/evidence/upload-intents',
+      body: materialEvidence,
+    }))
+
+    const finalizedClient = response({
+      id: ids.unsignedQuotation, status: 'finalized', originalFilename: 'quotation.pdf',
+      mimeType: 'application/pdf', sizeBytes: 128, sha256: 'a'.repeat(64), version: 1,
+      finalizedAt: '2026-10-08T08:00:00.000Z', replayed: false,
+    })
+    await createHttpMaterialProcurementRepository({ companyId, client: finalizedClient as never })
+      .finalizeEvidence(ids.project, ids.unsignedQuotation, { expectedVersion: 0 }, command)
+    expect(finalizedClient.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'POST',
+      url: '/api/companies/' + companyId + '/projects/' + ids.project + '/material-procurement/evidence/' + ids.unsignedQuotation + '/finalize',
+    }))
+
+    const readClient = response({ url: 'https://example.invalid/material', expiresAt: '2026-10-08T08:01:00.000Z' })
+    await createHttpMaterialProcurementRepository({ companyId, client: readClient as never })
+      .readEvidenceUrl(ids.project, ids.unsignedQuotation, { disposition: 'attachment' })
+    expect(readClient.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'POST',
+      url: '/api/companies/' + companyId + '/projects/' + ids.project + '/material-procurement/evidence/' + ids.unsignedQuotation + '/read-url',
+      body: { disposition: 'attachment' },
+    }))
+
+    const client = response(result)
+    const repository = createHttpMaterialProcurementRepository({ companyId, client: client as never })
     await expect(repository.recordContract(ids.project, ids.order, {} as never, command))
       .rejects.toThrow('MATERIAL_PROCUREMENT_NOT_IMPLEMENTED: recordContract')
-    await expect(repository.createEvidenceIntent(ids.project, {} as never, command))
-      .rejects.toThrow('MATERIAL_PROCUREMENT_NOT_IMPLEMENTED: createEvidenceIntent')
     expect(client.request).not.toHaveBeenCalled()
   })
 

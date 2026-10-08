@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(86);
+select plan(104);
 
 select ok(
   coalesce((select relation.relrowsecurity and relation.relforcerowsecurity from pg_class as relation where relation.oid=to_regclass(table_name)),false),
@@ -18,7 +18,8 @@ from unnest(array[
   'public.material_orders',
   'public.material_order_allocations',
   'public.material_order_contracts',
-  'public.material_evidence_scopes'
+  'public.material_evidence_scopes',
+  'public.material_order_cancellations'
 ]) as listed(table_name);
 
 select ok(
@@ -36,7 +37,8 @@ from unnest(array[
   'public.material_orders',
   'public.material_order_allocations',
   'public.material_order_contracts',
-  'public.material_evidence_scopes'
+  'public.material_evidence_scopes',
+  'public.material_order_cancellations'
 ]) as listed(table_name);
 
 select ok(
@@ -54,7 +56,8 @@ from unnest(array[
   'public.material_orders',
   'public.material_order_allocations',
   'public.material_order_contracts',
-  'public.material_evidence_scopes'
+  'public.material_evidence_scopes',
+  'public.material_order_cancellations'
 ]) as listed(table_name);
 
 select ok(
@@ -81,7 +84,12 @@ from unnest(array[
   'public.c1_material_decide_proposal(uuid,uuid,uuid,jsonb,uuid,uuid)',
   'public.c1_material_create_order(uuid,uuid,uuid,jsonb,uuid,uuid)',
   'public.c1_material_list_orders(uuid,uuid)',
-  'public.c1_material_read_order(uuid,uuid,uuid)'
+  'public.c1_material_read_order(uuid,uuid,uuid)',
+  'public.c1_material_cancel_order(uuid,uuid,uuid,jsonb,uuid,uuid)',
+  'public.c1_material_create_evidence_intent(uuid,uuid,jsonb,uuid,uuid)',
+  'public.c1_material_evidence_finalization_target(uuid,uuid,uuid)',
+  'public.c1_material_evidence_read_target(uuid,uuid,uuid)',
+  'public.c1_finalize_material_evidence_server(uuid,uuid,uuid,uuid,jsonb,uuid,uuid)'
 ]) as listed(signature);
 
 select ok(
@@ -104,7 +112,11 @@ from unnest(array[
   'public.c1_material_decide_proposal(uuid,uuid,uuid,jsonb,uuid,uuid)',
   'public.c1_material_create_order(uuid,uuid,uuid,jsonb,uuid,uuid)',
   'public.c1_material_list_orders(uuid,uuid)',
-  'public.c1_material_read_order(uuid,uuid,uuid)'
+  'public.c1_material_read_order(uuid,uuid,uuid)',
+  'public.c1_material_cancel_order(uuid,uuid,uuid,jsonb,uuid,uuid)',
+  'public.c1_material_create_evidence_intent(uuid,uuid,jsonb,uuid,uuid)',
+  'public.c1_material_evidence_finalization_target(uuid,uuid,uuid)',
+  'public.c1_material_evidence_read_target(uuid,uuid,uuid)'
 ]) as listed(signature);
 
 select ok(
@@ -127,8 +139,22 @@ from unnest(array[
   'public.c1_material_decide_proposal(uuid,uuid,uuid,jsonb,uuid,uuid)',
   'public.c1_material_create_order(uuid,uuid,uuid,jsonb,uuid,uuid)',
   'public.c1_material_list_orders(uuid,uuid)',
-  'public.c1_material_read_order(uuid,uuid,uuid)'
+  'public.c1_material_read_order(uuid,uuid,uuid)',
+  'public.c1_material_cancel_order(uuid,uuid,uuid,jsonb,uuid,uuid)',
+  'public.c1_material_create_evidence_intent(uuid,uuid,jsonb,uuid,uuid)',
+  'public.c1_material_evidence_finalization_target(uuid,uuid,uuid)',
+  'public.c1_material_evidence_read_target(uuid,uuid,uuid)'
 ]) as listed(signature);
+
+select ok(
+  has_function_privilege('service_role','public.c1_finalize_material_evidence_server(uuid,uuid,uuid,uuid,jsonb,uuid,uuid)','EXECUTE'),
+  'service role executes material evidence finalizer'
+);
+select ok(
+  not has_function_privilege('authenticated','public.c1_finalize_material_evidence_server(uuid,uuid,uuid,uuid,jsonb,uuid,uuid)','EXECUTE')
+    and not has_function_privilege('anon','public.c1_finalize_material_evidence_server(uuid,uuid,uuid,uuid,jsonb,uuid,uuid)','EXECUTE'),
+  'API roles cannot execute material evidence finalizer'
+);
 
 insert into auth.users(id,email) values
 ('c1210000-0000-4000-8000-000000000901','security-engineer@test.invalid'),

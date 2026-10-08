@@ -93,6 +93,13 @@ function repository(overrides: Partial<MaterialProcurementDataRepository> = {}):
     updateProposal: vi.fn(async () => submitted),
     submitProposal: vi.fn(async () => submitted),
     decideProposal: vi.fn(async () => ({ ...submitted, reviewState: 'approved' as const })),
+    createOrder: vi.fn(async () => submitted),
+    listOrders: vi.fn(async () => []),
+    readOrder: vi.fn(),
+    cancelOrder: vi.fn(async () => submitted),
+    createEvidenceIntent: vi.fn(),
+    finalizeEvidence: vi.fn(),
+    readEvidenceUrl: vi.fn(),
     ...overrides,
   }
 }

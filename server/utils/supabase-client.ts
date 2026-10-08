@@ -53,6 +53,18 @@ export type SupabaseEvidenceFinalizer = {
   }): Promise<{ data: unknown, error: unknown }>
 }
 
+export type SupabaseMaterialEvidenceFinalizer = {
+  finalize(args: {
+    target_actor_id: string
+    target_company_id: string
+    target_project_id: string
+    target_id: string
+    target_input: Record<string, unknown>
+    target_idempotency_key: string
+    target_request_id: string
+  }): Promise<{ data: unknown, error: unknown }>
+}
+
 const authUserIdSchema = z.string().uuid()
 const duplicateInviteErrorSchema = z.object({
   code: z.enum(['email_exists', 'user_already_exists']),
@@ -83,6 +95,13 @@ export function createSupabaseEvidenceFinalizer(config: SupabaseAdminConfig): Su
   const client = createClient(config.url, config.serviceRoleKey, { auth })
   return {
     finalize: async args => await client.rpc('c1_finalize_cost_evidence_server', args),
+  }
+}
+
+export function createSupabaseMaterialEvidenceFinalizer(config: SupabaseAdminConfig): SupabaseMaterialEvidenceFinalizer {
+  const client = createClient(config.url, config.serviceRoleKey, { auth })
+  return {
+    finalize: async args => await client.rpc('c1_finalize_material_evidence_server', args),
   }
 }
 

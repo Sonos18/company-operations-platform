@@ -87,6 +87,15 @@ async function evidenceFinalizerFactory() {
     : undefined
 }
 
+async function materialEvidenceFinalizerFactory() {
+  const module = await import('../../../server/utils/supabase-client') as Record<string, unknown>
+  const factory = module.createSupabaseMaterialEvidenceFinalizer
+  expect(factory).toBeTypeOf('function')
+  return typeof factory === 'function'
+    ? factory as (config: { url: string, serviceRoleKey: string }) => { finalize(args: Record<string, unknown>): Promise<unknown> }
+    : undefined
+}
+
 async function invitationAuthAdapter() {
   const module = await import('../../../server/utils/supabase-client') as Record<string, unknown>
   const factory = module.createSupabaseInvitationAuthAdmin
@@ -179,6 +188,24 @@ describe('Supabase Auth admin boundary', () => {
     expect(finalizer).not.toHaveProperty('from')
     expect(finalizer).not.toHaveProperty('storage')
     expect(JSON.stringify(finalizer)).not.toContain(adminSecret)
+  })
+
+  it('exposes only the material evidence finalize RPC through its server-only façade', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { replayed: false }, error: null })
+    createClient.mockReturnValue({ rpc, from: vi.fn(), storage: { from: vi.fn() }, auth: { admin: {} } })
+    const factory = await materialEvidenceFinalizerFactory()
+    if (!factory) return
+    const finalizer = factory({ url: 'http://127.0.0.1:54321', serviceRoleKey: adminSecret })
+    const args = {
+      target_actor_id: authUser(1).id,
+      target_company_id: authUser(2).id,
+      target_project_id: authUser(3).id,
+      target_id: authUser(4).id,
+    }
+
+    await finalizer.finalize(args)
+    expect(rpc).toHaveBeenCalledWith('c1_finalize_material_evidence_server', args)
+    expect(finalizer).toEqual({ finalize: expect.any(Function) })
   })
 
   it('resolves one exact normalized retry user only after completing a valid page traversal', async () => {
