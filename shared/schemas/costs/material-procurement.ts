@@ -210,7 +210,7 @@ export const materialQuotationComparisonViewSchema = materialQuotationComparison
 }).strict()
 
 export const materialCommandSchema = z.object({
-  idempotencyKey: z.string().trim().min(1).max(200),
+  idempotencyKey: workflowUuidSchema,
 }).strict()
 
 export const materialCommandResultSchema = z.object({

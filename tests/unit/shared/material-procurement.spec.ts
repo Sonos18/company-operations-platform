@@ -238,7 +238,8 @@ describe('material procurement contracts', () => {
   })
 
   it('freezes command keys, receipts, and the endpoint manifest around the canonical payment route', () => {
-    expect(materialCommandSchema.safeParse({ idempotencyKey: 'material-order-001' }).success).toBe(true)
+    expect(materialCommandSchema.safeParse({ idempotencyKey: ids.order }).success).toBe(true)
+    expect(materialCommandSchema.safeParse({ idempotencyKey: 'material-order-001' }).success).toBe(false)
     expect(materialCommandSchema.safeParse({ idempotencyKey: '' }).success).toBe(false)
 
     expect(materialCommandResultSchema.safeParse({
