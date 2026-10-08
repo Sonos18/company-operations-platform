@@ -130,6 +130,7 @@ export const materialProposalViewSchema = z.object({
   id: workflowUuidSchema,
   version,
   reviewState: materialReviewStateSchema,
+  returnReason: text.nullable(),
   approvedRevisionId: workflowUuidSchema.nullable(),
   projectId: workflowUuidSchema,
   createdBy: workflowUuidSchema,

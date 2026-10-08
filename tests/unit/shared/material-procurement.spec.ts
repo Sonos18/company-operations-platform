@@ -63,6 +63,23 @@ describe('material procurement contracts', () => {
     }).success).toBe(false)
   })
 
+  it('exposes the buyer return reason to engineers and rejects missing or blank reason fields', () => {
+    const returned = {
+      id: ids.proposal, version: 3, reviewState: 'returned', returnReason: 'Kiem tra lai quy cach xi mang',
+      approvedRevisionId: null, projectId: ids.project, createdBy: ids.user,
+      neededOn: validProposal.neededOn, deliveryAddress: validProposal.deliveryAddress, notes: null,
+      lines: [{ ...validLine, materialName: 'Xi mang', specification: 'PCB40', unit: 'bao',
+        allocatedQuantity: '0.0000', signedQuantity: '0.0000', remainingQuantity: '20.0000' }],
+      orderProgress: { orderCount: 0, signedOrderCount: 0 },
+    }
+    expect(materialProposalViewSchema.safeParse(returned).success).toBe(true)
+    expect(materialProposalViewSchema.safeParse({ ...returned, reviewState: 'draft', returnReason: null }).success).toBe(true)
+    const missingReason = { ...returned } as Record<string, unknown>
+    delete missingReason.returnReason
+    expect(materialProposalViewSchema.safeParse(missingReason).success).toBe(false)
+    expect(materialProposalViewSchema.safeParse({ ...returned, returnReason: '  ' }).success).toBe(false)
+  })
+
   it('freezes split-order allocation and signed-contract inputs', () => {
     const order = {
       approvedRevisionId: ids.proposalRevision,
@@ -93,6 +110,7 @@ describe('material procurement contracts', () => {
       id: ids.proposal,
       version: 3,
       reviewState: 'approved',
+      returnReason: null,
       approvedRevisionId: ids.proposalRevision,
       projectId: ids.project,
       createdBy: ids.user,
