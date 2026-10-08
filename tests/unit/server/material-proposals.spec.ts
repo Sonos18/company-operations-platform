@@ -34,8 +34,13 @@ function context(permissions: readonly PermissionCode[]): MaterialProcurementCon
   }
 }
 
-const revised: UpdateMaterialProposalInput = {
+const proposalInput = {
   ...validProposal,
+  lines: validProposal.lines.map(line => ({ ...line })),
+}
+
+const revised: UpdateMaterialProposalInput = {
+  ...proposalInput,
   expectedVersion: 2,
 }
 
@@ -44,6 +49,32 @@ const submitted: MaterialCommandResult = {
   version: 3,
   replayed: false,
   reviewState: 'submitted',
+}
+
+const returnedProposal = {
+  id: ids.proposal,
+  version: 4,
+  reviewState: 'returned',
+  returnReason: 'Recheck specification',
+  approvedRevisionId: null,
+  projectId: ids.project,
+  createdBy: ids.user,
+  neededOn: proposalInput.neededOn,
+  deliveryAddress: proposalInput.deliveryAddress,
+  notes: proposalInput.notes,
+  lines: [{
+    ...proposalInput.lines[0]!,
+    materialName: 'Cement',
+    specification: 'PCB40',
+    unit: 'bag',
+    allocatedQuantity: '0.0000',
+    signedQuantity: '0.0000',
+    remainingQuantity: '20.0000',
+  }],
+  orderProgress: {
+    orderCount: 0,
+    signedOrderCount: 0,
+  },
 }
 
 function repository(overrides: Partial<MaterialProcurementDataRepository> = {}): MaterialProcurementDataRepository {
@@ -60,7 +91,7 @@ function repository(overrides: Partial<MaterialProcurementDataRepository> = {}):
     createProposal: vi.fn(async () => submitted),
     updateProposal: vi.fn(async () => submitted),
     submitProposal: vi.fn(async () => submitted),
-    decideProposal: vi.fn(async () => ({ ...submitted, reviewState: 'approved' })),
+    decideProposal: vi.fn(async () => ({ ...submitted, reviewState: 'approved' as const })),
     ...overrides,
   }
 }
@@ -123,12 +154,12 @@ describe('material proposal service', () => {
     const data = repository()
     const service = new MaterialProcurementService(data)
     const forged = {
-      ...validProposal,
+      ...proposalInput,
       supplierId: ids.supplier,
       actorId: ids.user,
       tenantId,
       companyId: otherCompanyId,
-      lines: [{ ...validProposal.lines[0], unitPrice: '12.5000' }],
+      lines: [{ ...proposalInput.lines[0]!, unitPrice: '12.5000' }],
     }
 
     await expect(service.createProposal(
@@ -173,14 +204,14 @@ describe('material proposal RPC boundary', () => {
     })
     const data = new SupabaseMaterialProcurementRepository({ rpc } as never)
 
-    await expect(data.createProposal(context(engineerRoleScope), ids.project, validProposal, key))
+    await expect(data.createProposal(context(engineerRoleScope), ids.project, proposalInput, key))
       .resolves.toMatchObject({ replayed: false, resourceId: ids.proposal })
-    await expect(data.createProposal(context(engineerRoleScope), ids.project, validProposal, key))
+    await expect(data.createProposal(context(engineerRoleScope), ids.project, proposalInput, key))
       .resolves.toMatchObject({ replayed: true, resourceId: ids.proposal })
     await expect(data.createProposal(
       context(engineerRoleScope),
       ids.project,
-      { ...validProposal, deliveryAddress: 'Other site' } as MaterialProposalInput,
+      { ...proposalInput, deliveryAddress: 'Other site' } as MaterialProposalInput,
       key,
     )).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT', statusCode: 409 })
 
@@ -189,12 +220,66 @@ describe('material proposal RPC boundary', () => {
       {
         target_company_id: companyId,
         target_project_id: ids.project,
-        target_input: validProposal,
+        target_input: proposalInput,
         target_idempotency_key: key,
         target_request_id: requestId,
       },
     ])
   })
+
+  it('propagates the buyer return reason through proposal read and list responses', async () => {
+    const rpc = vi.fn(async (name: string) => ({
+      data: name === 'c1_material_list_proposals' ? [returnedProposal] : returnedProposal,
+      error: null,
+    }))
+    const data = new SupabaseMaterialProcurementRepository({ rpc } as never)
+
+    await expect(data.readProposal(context(engineerRoleScope), ids.project, ids.proposal))
+      .resolves.toMatchObject({
+        reviewState: 'returned',
+        returnReason: 'Recheck specification',
+      })
+    await expect(data.listProposals(context(engineerRoleScope), ids.project))
+      .resolves.toEqual([
+        expect.objectContaining({ returnReason: 'Recheck specification' }),
+      ])
+  })
+
+  it.each(['draft', 'submitted', 'approved'] as const)(
+    'accepts %s proposal responses only with a null return reason',
+    async (reviewState) => {
+      const rpc = vi.fn(async () => ({
+        data: { ...returnedProposal, reviewState, returnReason: null },
+        error: null,
+      }))
+      const data = new SupabaseMaterialProcurementRepository({ rpc } as never)
+
+      await expect(data.readProposal(context(engineerRoleScope), ids.project, ids.proposal))
+        .resolves.toMatchObject({ reviewState, returnReason: null })
+    },
+  )
+
+  it.each([
+    ['returned', null],
+    ['draft', 'Stale buyer reason'],
+    ['submitted', 'Stale buyer reason'],
+    ['approved', 'Stale buyer reason'],
+  ] as const)(
+    'rejects %s proposal responses with inconsistent return reason %s',
+    async (reviewState, returnReason) => {
+      const rpc = vi.fn(async () => ({
+        data: { ...returnedProposal, reviewState, returnReason },
+        error: null,
+      }))
+      const data = new SupabaseMaterialProcurementRepository({ rpc } as never)
+
+      await expect(data.readProposal(context(engineerRoleScope), ids.project, ids.proposal))
+        .rejects.toMatchObject({
+          statusCode: 500,
+          code: 'INTERNAL_ERROR',
+        })
+    },
+  )
 
   it('rejects malformed or non-camelCase RPC payloads', async () => {
     const rpc = vi.fn(async () => ({
