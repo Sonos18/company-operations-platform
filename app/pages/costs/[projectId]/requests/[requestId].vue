@@ -34,6 +34,7 @@
       v-if="isEditable && req && context" :key="`${getFingerprint()}::${req.id}::${req.version}`"
       :company-id="companyId"
       :project-id="pId"
+      :project="projectInfo"
       :context="context"
       :parties="parties"
       :categories="categories"
@@ -47,20 +48,20 @@
         <h4>Thông tin chung</h4>
         <p>Đối tác: {{ req.partyName || 'Đối tác trong hồ sơ' }}</p>
         <p v-if="req.latestDecision?.reason">Lý do trả lại: {{ req.latestDecision.reason }}</p>
-        <p>Số tiền: <strong>{{ formatFinanceMoney(req.amount, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }}</strong> | Cơ sở: <strong>{{ basisLabels[req.basis.kind] }}</strong></p>
+        <p>Số tiền: <strong>{{ formatFinanceMoney(req.amount, req.currencyCode, projectInfo?.moneyScale) }}</strong> | Cơ sở: <strong>{{ basisLabels[req.basis.kind] }}</strong></p>
         <div v-if="req.basis.kind === 'materials'">
           <p>Nơi giao: {{ req.basis.deliverySite }}</p>
-          <div v-for="(l, i) in req.basis.lines" :key="i">- {{ l.description }}: {{ l.quantity }} {{ l.unit }} x {{ formatFinanceMoney(l.unitPrice, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }}</div>
+          <div v-for="(l, i) in req.basis.lines" :key="i">- {{ l.description }}: {{ l.quantity }} {{ l.unit }} x {{ formatFinanceMoney(l.unitPrice, req.currencyCode, projectInfo?.moneyScale) }}</div>
         </div>
         <div v-else-if="req.basis.kind === 'subcontract'">
-          <p>Nghiệm thu: {{ req.basis.acceptanceReference }} | Giữ lại: {{ formatFinanceMoney(req.basis.retentionAmount, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }}</p>
+          <p>Nghiệm thu: {{ req.basis.acceptanceReference }} | Giữ lại: {{ formatFinanceMoney(req.basis.retentionAmount, req.currencyCode, projectInfo?.moneyScale) }}</p>
         </div>
         <div v-else-if="req.basis.kind === 'direct_labor'">
           <p>Tuần: {{ req.basis.weekStart }}</p>
-          <div v-for="(w, i) in req.basis.workers" :key="i">- {{ w.workerReference }}: {{ w.days }} công x {{ formatFinanceMoney(w.dailyRate, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }} (+{{ formatFinanceMoney(w.allowance, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }})</div>
+          <div v-for="(w, i) in req.basis.workers" :key="i">- {{ w.workerReference }}: {{ w.days }} công x {{ formatFinanceMoney(w.dailyRate, req.currencyCode, projectInfo?.moneyScale) }} (+{{ formatFinanceMoney(w.allowance, req.currencyCode, projectInfo?.moneyScale) }})</div>
         </div>
         <div v-else>
-          <div v-for="(l, i) in req.basis.lines" :key="i">- {{ l.description }}: {{ l.quantity }} {{ l.unit }} x {{ formatFinanceMoney(l.unitPrice, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }}</div>
+          <div v-for="(l, i) in req.basis.lines" :key="i">- {{ l.description }}: {{ l.quantity }} {{ l.unit }} x {{ formatFinanceMoney(l.unitPrice, req.currencyCode, projectInfo?.moneyScale) }}</div>
         </div>
       </div>
 
@@ -84,10 +85,10 @@
 
       <div v-if="req.installment" class="cockpit-card">
         <h4>Đợt giải ngân</h4>
-        <p>Hạn mức: {{ formatFinanceMoney(req.installment.authorized, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }} | Đã chi: {{ formatFinanceMoney(req.installment.consumed, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }} | Còn lại: {{ formatFinanceMoney(req.installment.remaining, req.currencyCode, req.currencyCode === 'VND' ? 0 : 2) }}</p>
+        <p>Hạn mức: {{ formatFinanceMoney(req.installment.authorized, req.currencyCode, projectInfo?.moneyScale) }} | Đã chi: {{ formatFinanceMoney(req.installment.consumed, req.currencyCode, projectInfo?.moneyScale) }} | Còn lại: {{ formatFinanceMoney(req.installment.remaining, req.currencyCode, projectInfo?.moneyScale) }}</p>
         <button v-if="canRecordCash" type="button" class="cockpit-btn cockpit-btn--primary" @click="showPayment = true">Ghi nhận thanh toán</button>
         <div v-for="pay in req.payments" :key="pay.id">
-          <p>{{ pay.paymentDate }}: {{ formatFinanceMoney(pay.amount, pay.currencyCode, pay.currencyCode === 'VND' ? 0 : 2) }} (Hiệu chỉnh: {{ formatFinanceMoney(pay.correctedCash, pay.currencyCode, pay.currencyCode === 'VND' ? 0 : 2) }}, Hoàn: {{ formatFinanceMoney(pay.refunded, pay.currencyCode, pay.currencyCode === 'VND' ? 0 : 2) }})</p>
+          <p>{{ pay.paymentDate }}: {{ formatFinanceMoney(pay.amount, pay.currencyCode, projectInfo?.moneyScale) }} (Hiệu chỉnh: {{ formatFinanceMoney(pay.correctedCash, pay.currencyCode, projectInfo?.moneyScale) }}, Hoàn: {{ formatFinanceMoney(pay.refunded, pay.currencyCode, projectInfo?.moneyScale) }})</p>
           <div v-for="(fileId, index) in pay.evidenceFileIds" :key="fileId" class="row">
             <span>Chứng từ thanh toán #{{ index + 1 }}</span>
             <button v-if="hasFileRead" type="button" class="cockpit-btn" @click="openEvidence(fileId)">Xem</button>
@@ -150,6 +151,7 @@ const adjustment=ref<WorkflowAdjustmentView|null>(null)
 const adjustmentSnapshot=ref<WorkflowRequestHistory[number]|null>(null)
 const context = ref<WorkflowProjectContext | null>(null)
 const history = ref<WorkflowRequestHistory>([])
+const projectInfo = ref<{ projectCode?: string; projectName?: string; currencyCode?: string; moneyScale?: number } | null>(null)
 const parties = ref<WorkflowPartyOption[]>([])
 const contracts = ref<WorkflowContractView[]>([])
 const categories = ref<Array<{ id: string; name: string }>>([])
@@ -197,7 +199,7 @@ const isCompleted = computed(() => context.value?.operationalState === 'complete
 const isEditable = computed(() => Boolean(!link.value.versionId && (req.value?.status === 'working' || req.value?.status === 'returned') && context.value?.canSubmit && !isCompleted.value))
 
 function clear() {
-  tracker.invalidate(); req.value = null; adjustment.value=null;adjustmentSnapshot.value=null; context.value = null; history.value = []; showPayment.value=false;decisionReason.value='';decPending=null;decisionBusy.value=false;previewTracker.invalidate();decisionTracker.invalidate(); parties.value = []; contracts.value = []; categories.value = []; errorMessage.value = ''
+  tracker.invalidate(); req.value = null; adjustment.value=null;adjustmentSnapshot.value=null; context.value = null; history.value = []; projectInfo.value = null; showPayment.value=false;decisionReason.value='';decPending=null;decisionBusy.value=false;previewTracker.invalidate();decisionTracker.invalidate(); parties.value = []; contracts.value = []; categories.value = []; errorMessage.value = ''
 }
 watch([pId, rId, companyId, () => getFingerprint()], () => {clear();void loadData()}, {immediate:true,flush:'sync'})
 onUnmounted(() => {tracker.invalidate();previewTracker.invalidate();decisionTracker.invalidate()})
@@ -231,6 +233,14 @@ async function loadData() {
       repo.readCash(pId.value),
     ])
     if (!token.isCurrent() || getFingerprint()!==token.identity.fp) return
+    if (cash?.project) {
+      projectInfo.value = {
+        projectCode: cash.project.projectCode,
+        projectName: cash.project.projectName,
+        currencyCode: cash.project.currencyCode,
+        moneyScale: cash.project.moneyScale,
+      }
+    }
     if(rData.id!==token.identity.requestId||(link.value.versionId&&rData.submittedVersionId!==link.value.versionId)){
       errorMessage.value='Không tìm thấy đúng hồ sơ và phiên đã gửi trong liên kết.';return
     }

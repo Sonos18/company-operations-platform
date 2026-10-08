@@ -182,6 +182,8 @@ async function loadData() {
       projectInfo.value = {
         projectCode: cash.project.projectCode,
         projectName: cash.project.projectName,
+        currencyCode: cash.project.currencyCode,
+        moneyScale: cash.project.moneyScale,
       }
     }
 

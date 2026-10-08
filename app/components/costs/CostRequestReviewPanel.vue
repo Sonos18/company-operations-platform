@@ -67,7 +67,7 @@
             <select v-model="contractVersionId" class="cockpit-select" :disabled="isReadonly || isSubmitting || retryReady">
               <option value="">-- Không gắn HĐ căn cứ --</option>
               <option v-for="ct in filteredContracts" :key="ct.id" :value="ct.versionId">
-                {{ ct.reference }} (Hạn mức: {{ formatFinanceMoney(ct.cap, ct.currencyCode, ct.currencyCode === 'VND' ? 0 : 2) }})
+                {{ ct.reference }} (Hạn mức: {{ formatFinanceMoney(ct.cap, ct.currencyCode, props.project?.moneyScale) }})
               </option>
             </select>
           </label>
@@ -188,18 +188,18 @@
         </div>
 
         <!-- So sánh đối chiếu tổng các dòng vs Số tiền đề nghị -->
-        <div v-if="linesSumFormatted !== null" class="lines-reconciliation-panel">
+        <div v-if="linesSumDisplayText !== null" class="lines-reconciliation-panel">
           <div class="reconciliation-row">
             <div class="reconciliation-item">
               <span class="reconciliation-label">Tổng các dòng chi tiết:</span>
-              <strong class="reconciliation-val">{{ linesSumFormatted }}</strong>
+              <strong class="reconciliation-val" :class="{ 'text-muted text-sm font-normal': hasIncompleteLines }">{{ linesSumDisplayText }}</strong>
             </div>
             <div class="reconciliation-item">
               <span class="reconciliation-label">Số tiền đề nghị:</span>
               <strong class="reconciliation-val">{{ amountFormatted || 'Chưa nhập' }}</strong>
             </div>
           </div>
-          <p v-if="isLinesSumDifferent" class="reconciliation-note">
+          <p v-if="calculatedLinesSum !== null && isLinesSumDifferent" class="reconciliation-note">
             <UIcon name="i-lucide-info" class="inline-icon" aria-hidden="true" />
             Lưu ý đối chiếu: Tổng các dòng chi tiết và số tiền đề nghị có chênh lệch. Điều này được cho phép nếu chênh lệch do thuế VAT, phụ cấp hoặc các chi phí được giải trình bên dưới.
           </p>
@@ -396,8 +396,10 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from 'vue'
 import Decimal from 'decimal.js'
+import type { z } from 'zod'
 import {
   costRequestInputSchema,
+  workflowMoneySchema,
   type CostRequestInput,
   type CostBasisInput,
   type CostRequestView,
@@ -416,10 +418,27 @@ import { createAsyncRequestTracker } from '../../utils/costs/async-request-track
 import { formatFinanceMoney } from '../../utils/costs/finance-display'
 import CostWorkflowOriginalUpload from './CostWorkflowOriginalUpload.vue'
 
+const ExactDecimal = Decimal.clone({ precision: 80 })
+
+function sumLaborReviewLines(workers: ReadonlyArray<{ days: string; dailyRate: string; allowance: string }>, curr: string): string | null {
+  let total = new ExactDecimal(0)
+  for (const w of workers) {
+    if (!workflowMoneySchema.safeParse(w.days).success || !workflowMoneySchema.safeParse(w.dailyRate).success || !workflowMoneySchema.safeParse(w.allowance).success) {
+      return null
+    }
+    const days = new ExactDecimal(w.days)
+    const rate = new ExactDecimal(w.dailyRate)
+    const allowance = new ExactDecimal(w.allowance)
+    const lineVal = days.times(rate).plus(allowance)
+    total = total.plus(curr === 'VND' ? lineVal.toDecimalPlaces(0, ExactDecimal.ROUND_HALF_UP) : lineVal)
+  }
+  return total.toFixed()
+}
+
 const props = defineProps<{
   companyId: string
   projectId: string
-  project?: { projectCode?: string; projectName?: string } | null
+  project?: { projectCode?: string; projectName?: string; currencyCode?: string; moneyScale?: number } | null
   context: WorkflowProjectContext
   parties: WorkflowPartyOption[]
   categories: Array<{ id: string; name: string }>
@@ -484,18 +503,34 @@ let submission = createSession()
 let scanSession = createScanSession()
 let scanPolling = createScanPolling()
 
-// Track dirty state to warn user on leave
+// Track dirty state by comparing full input state with initial snapshot
+function getFormSnapshot(): string {
+  return JSON.stringify({
+    partyId: partyId.value,
+    categoryId: categoryId.value,
+    contractVersionId: contractVersionId.value,
+    amount: amount.value,
+    currencyCode: currencyCode.value,
+    basisKind: basisKind.value,
+    deliverySite: deliverySite.value,
+    matLines: matLines.value,
+    subcontractId: subcontractId.value,
+    acceptanceReference: acceptanceReference.value,
+    retentionAmount: retentionAmount.value,
+    weekStart: weekStart.value,
+    laborWorkers: laborWorkers.value,
+    genericLines: genericLines.value,
+    vatBasis: vatBasis.value,
+    roundingBasis: roundingBasis.value,
+    allowanceBasis: allowanceBasis.value,
+    evidenceIds: evidenceList.value.map(e => e.id),
+  })
+}
+const initialSnapshot = ref<string>(getFormSnapshot())
+
 const isFormDirty = computed(() => {
   if (props.initial) return false
-  return Boolean(
-    partyId.value ||
-    categoryId.value ||
-    (amount.value && amount.value !== '0') ||
-    evidenceList.value.length > 0 ||
-    vatBasis.value ||
-    roundingBasis.value ||
-    allowanceBasis.value
-  )
+  return getFormSnapshot() !== initialSnapshot.value
 })
 watch(isFormDirty, dirty => emit('dirty', dirty), { immediate: true })
 
@@ -531,55 +566,38 @@ const selectedPartyDuplicateNotice = computed(() => {
 // Amount formatted
 const amountFormatted = computed(() => {
   if (!amount.value) return ''
-  return formatFinanceMoney(amount.value, currencyCode.value, currencyCode.value === 'VND' ? 0 : 2)
+  return formatFinanceMoney(amount.value, currencyCode.value, props.project?.moneyScale)
 })
 
 // Lines reconciliation
 const calculatedLinesSum = computed(() => {
   try {
-    let sum = new Decimal(0)
     if (basisKind.value === 'materials') {
-      for (const l of matLines.value) {
-        if (!l.quantity || !l.unitPrice) continue
-        const q = new Decimal(l.quantity)
-        const p = new Decimal(l.unitPrice)
-        if (q.isFinite() && p.isFinite()) {
-          const lineVal = currencyCode.value === 'VND' ? q.mul(p).round() : q.mul(p)
-          sum = sum.add(lineVal)
-        }
-      }
-    } else if (basisKind.value === 'direct_labor') {
-      for (const w of laborWorkers.value) {
-        const d = new Decimal(w.days || 0)
-        const r = new Decimal(w.dailyRate || 0)
-        const a = new Decimal(w.allowance || 0)
-        if (d.isFinite() && r.isFinite() && a.isFinite()) {
-          const lineVal = currencyCode.value === 'VND' ? d.mul(r).add(a).round() : d.mul(r).add(a)
-          sum = sum.add(lineVal)
-        }
-      }
-    } else if (basisKind.value === 'machinery' || basisKind.value === 'other') {
-      for (const l of genericLines.value) {
-        if (!l.quantity || !l.unitPrice) continue
-        const q = new Decimal(l.quantity)
-        const p = new Decimal(l.unitPrice)
-        if (q.isFinite() && p.isFinite()) {
-          const lineVal = currencyCode.value === 'VND' ? q.mul(p).round() : q.mul(p)
-          sum = sum.add(lineVal)
-        }
-      }
-    } else {
-      return null
+      return sumMaterialReviewLines(matLines.value, currencyCode.value)
     }
-    return sum.toString()
+    if (basisKind.value === 'direct_labor') {
+      return sumLaborReviewLines(laborWorkers.value, currencyCode.value)
+    }
+    if (basisKind.value === 'machinery' || basisKind.value === 'other') {
+      return sumMaterialReviewLines(genericLines.value, currencyCode.value)
+    }
+    return null
   } catch {
     return null
   }
 })
 
-const linesSumFormatted = computed(() => {
-  if (calculatedLinesSum.value === null) return null
-  return formatFinanceMoney(calculatedLinesSum.value, currencyCode.value, currencyCode.value === 'VND' ? 0 : 2)
+const hasIncompleteLines = computed(() => {
+  if (basisKind.value === 'subcontract') return false
+  return calculatedLinesSum.value === null
+})
+
+const linesSumDisplayText = computed(() => {
+  if (basisKind.value === 'subcontract') return null
+  if (calculatedLinesSum.value !== null) {
+    return formatFinanceMoney(calculatedLinesSum.value, currencyCode.value, props.project?.moneyScale)
+  }
+  return 'Chưa tính được — có dòng chưa hợp lệ'
 })
 
 const isLinesSumDifferent = computed(() => {
@@ -590,6 +608,85 @@ const isLinesSumDifferent = computed(() => {
     return false
   }
 })
+
+function getCandidateInput() {
+  const p = selectedParty.value
+  const acc = {
+    ...(vatBasis.value ? { vatBasis: vatBasis.value } : {}),
+    ...(roundingBasis.value ? { roundingBasis: roundingBasis.value } : {}),
+    ...(allowanceBasis.value ? { allowanceBasis: allowanceBasis.value } : {}),
+  }
+  return {
+    partyId: p?.id ?? '',
+    partyKind: p?.kind ?? 'organization',
+    ...(p?.kind === 'crew' ? { crewOwnership: p.crewOwnership } : {}),
+    categoryId: categoryId.value,
+    ...(contractVersionId.value ? { contractVersionId: contractVersionId.value } : {}),
+    amount: amount.value,
+    currencyCode: currencyCode.value,
+    basis: buildBasis(),
+    ...(Object.keys(acc).length > 0 ? { accountingBasis: acc } : {}),
+    evidenceFileIds: evidenceList.value.map(e => e.id),
+  }
+}
+
+function mapSchemaIssueToMessage(issue: z.ZodIssue): string {
+  const path = issue.path
+  const first = path[0]
+  if (first === 'partyId') {
+    if (issue.message && issue.message.includes('Direct labor')) {
+      return 'Nhân công trực tiếp yêu cầu chọn tổ đội nội bộ VQH'
+    }
+    if (issue.message && issue.message.includes('Internal crews')) {
+      return 'Tổ đội nội bộ VQH chỉ dùng cơ sở chi nhân công trực tiếp'
+    }
+    return 'Chưa chọn đối tác nhận chi hợp lệ'
+  }
+  if (first === 'crewOwnership') return 'Thông tin hình thức sở hữu tổ đội chưa hợp lệ'
+  if (first === 'categoryId') return 'Chưa chọn hạng mục chi phí'
+  if (first === 'contractVersionId') return 'Hợp đồng căn cứ không hợp lệ'
+  if (first === 'amount') {
+    return 'Số tiền đề nghị không hợp lệ (phải là số không âm, tối đa 4 chữ số thập phân)'
+  }
+  if (first === 'currencyCode') return 'Mã tiền tệ không hợp lệ (phải gồm 3 chữ cái in hoa, ví dụ: VND)'
+  if (first === 'evidenceFileIds') {
+    if (issue.message?.includes('Duplicate')) return 'Hồ sơ chứng từ gốc bị trùng lặp'
+    return 'Chưa đính kèm hồ sơ chứng từ gốc'
+  }
+  if (first === 'accountingBasis') return 'Căn cứ hạch toán không hợp lệ'
+
+  if (first === 'basis') {
+    const second = path[1]
+    if (second === 'deliverySite') return 'Địa điểm giao hàng vật tư không được để trống'
+    if (second === 'subcontractId') return 'Chưa chọn hợp đồng phụ hoặc mã hợp đồng phụ không hợp lệ'
+    if (second === 'acceptanceReference') return 'Số biên bản nghiệm thu không được để trống'
+    if (second === 'retentionAmount') return 'Tiền giữ lại bảo hành không hợp lệ (phải là số không âm, tối đa 4 chữ số thập phân)'
+    if (second === 'weekStart') return 'Ngày đầu tuần chấm công không hợp lệ (định dạng YYYY-MM-DD)'
+    if (second === 'lines') {
+      if (path.length === 2) return 'Cần ít nhất một dòng chi tiết cơ sở chi'
+      const lineIdx = (typeof path[2] === 'number' ? path[2] : 0) + 1
+      const field = path[3]
+      if (field === 'description') return `Dòng #${lineIdx}: Tên mô tả không được để trống`
+      if (field === 'quantity') return `Dòng #${lineIdx}: Số lượng không hợp lệ (phải là số không âm, tối đa 4 chữ số thập phân)`
+      if (field === 'unit') return `Dòng #${lineIdx}: Đơn vị tính không được để trống`
+      if (field === 'unitPrice') return `Dòng #${lineIdx}: Đơn giá không hợp lệ (phải là số không âm, tối đa 4 chữ số thập phân)`
+      return `Dòng #${lineIdx}: Thông tin dòng chi tiết chưa hợp lệ`
+    }
+    if (second === 'workers') {
+      if (path.length === 2) return 'Cần ít nhất một dòng chấm công nhân công'
+      const workerIdx = (typeof path[2] === 'number' ? path[2] : 0) + 1
+      const field = path[3]
+      if (field === 'workerReference') return `Nhân công #${workerIdx}: Tên hoặc mã nhân công không được để trống`
+      if (field === 'days') return `Nhân công #${workerIdx}: Số công không hợp lệ (phải là số không âm, tối đa 4 chữ số thập phân)`
+      if (field === 'dailyRate') return `Nhân công #${workerIdx}: Đơn giá ngày công không hợp lệ (phải là số không âm, tối đa 4 chữ số thập phân)`
+      if (field === 'allowance') return `Nhân công #${workerIdx}: Phụ cấp không hợp lệ (phải là số không âm, tối đa 4 chữ số thập phân)`
+      return `Nhân công #${workerIdx}: Thông tin nhân công chưa hợp lệ`
+    }
+    return 'Thông tin cơ sở chi chưa hợp lệ theo quy định'
+  }
+
+  return issue.message || 'Dữ liệu nhập vào chưa hợp lệ'
+}
 
 // Submission disabled reasons
 const submitDisabledReasons = computed(() => {
@@ -608,22 +705,18 @@ const submitDisabledReasons = computed(() => {
     reasons.push('Số tiền đề nghị chưa hợp lệ (phải là số dương)')
   }
   if (evidenceList.value.length === 0) reasons.push('Chưa đính kèm hồ sơ chứng từ gốc')
-  if (buildInput() === null) {
-    if (basisKind.value === 'materials') {
-      if (!deliverySite.value.trim()) reasons.push('Thiếu địa điểm giao hàng vật tư')
-      if (matLines.value.some(l => !l.description.trim() || !l.quantity || !l.unit.trim() || !l.unitPrice)) {
-        reasons.push('Dòng vật tư thiếu thông tin (tên, số lượng, ĐVT hoặc đơn giá)')
-      }
-    } else if (basisKind.value === 'subcontract') {
-      if (!subcontractId.value) reasons.push('Chưa chọn hợp đồng phụ')
-      if (!acceptanceReference.value.trim()) reasons.push('Chưa nhập số biên bản nghiệm thu')
-    } else if (basisKind.value === 'direct_labor') {
-      if (!weekStart.value) reasons.push('Chưa chọn ngày đầu tuần chấm công')
-      if (selectedParty.value?.kind !== 'crew' || selectedParty.value?.crewOwnership !== 'vqh_internal') {
-        reasons.push('Nhân công trực tiếp yêu cầu chọn tổ đội nội bộ VQH')
+
+  const candidate = getCandidateInput()
+  const parsed = costRequestInputSchema.safeParse(candidate)
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      const msg = mapSchemaIssueToMessage(issue)
+      if (!reasons.includes(msg)) {
+        reasons.push(msg)
       }
     }
   }
+
   if (!reviewed.value) reasons.push('Chưa tích xác nhận đã rà soát chứng từ và số liệu')
   return reasons
 })
@@ -824,6 +917,7 @@ function resetScope() {
   submission = createSession(null)
   scanSession = createScanSession()
   scanPolling = createScanPolling()
+  initialSnapshot.value = getFormSnapshot()
 }
 
 watch([() => props.companyId, () => props.projectId, () => companyAccess.activeCompanyId, permissionFingerprint, () => auth.user?.id, () => auth.lifecycle], resetScope, { flush: 'sync' })
@@ -996,21 +1090,8 @@ function buildBasis(): CostBasisInput {
 }
 
 function buildInput(): CostRequestInput | null {
-  const p = selectedParty.value
-  if (!p) return null
-  const acc = { ...(vatBasis.value ? { vatBasis: vatBasis.value } : {}), ...(roundingBasis.value ? { roundingBasis: roundingBasis.value } : {}), ...(allowanceBasis.value ? { allowanceBasis: allowanceBasis.value } : {}) }
-  const candidate = {
-    partyId: p.id,
-    partyKind: p.kind,
-    ...(p.kind === 'crew' ? { crewOwnership: p.crewOwnership } : {}),
-    categoryId: categoryId.value,
-    ...(contractVersionId.value ? { contractVersionId: contractVersionId.value } : {}),
-    amount: amount.value,
-    currencyCode: currencyCode.value,
-    basis: buildBasis(),
-    ...(Object.keys(acc).length > 0 ? { accountingBasis: acc } : {}),
-    evidenceFileIds: evidenceList.value.map(e => e.id),
-  }
+  if (!selectedParty.value) return null
+  const candidate = getCandidateInput()
   const parsed = costRequestInputSchema.safeParse(candidate)
   return parsed.success ? parsed.data : null
 }
@@ -1029,6 +1110,7 @@ async function handleSubmit() {
     currentRequestId.value = receipt.requestId
     expectedVersion.value = receipt.result.version
     retryReady.value = false
+    initialSnapshot.value = getFormSnapshot()
     emit('submitted', receipt.requestId)
   } catch (e: unknown) {
     if (!token.isCurrent() || !scopeCurrent()) return

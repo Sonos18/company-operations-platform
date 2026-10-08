@@ -57,6 +57,14 @@
           <button
             type="button"
             class="filter-tab"
+            :class="{ active: selectedStatus === 'paid_partial' }"
+            @click="selectedStatus = 'paid_partial'"
+          >
+            Đã chi một phần <span class="tab-count">({{ statusCounts.paid_partial }})</span>
+          </button>
+          <button
+            type="button"
+            class="filter-tab"
             :class="{ active: selectedStatus === 'paid' }"
             @click="selectedStatus = 'paid'"
           >
@@ -129,7 +137,7 @@
                 <span class="basis-label">{{ basisLabels[r.basis.kind] || r.basis.kind }}</span>
               </td>
               <td>
-                <span class="amount-value font-medium">{{ formatFinanceMoney(r.amount, r.currencyCode, r.currencyCode === 'VND' ? 0 : 2) }}</span>
+                <span class="amount-value font-medium">{{ formatFinanceMoney(r.amount, r.currencyCode, cash?.project?.moneyScale) }}</span>
               </td>
               <td>
                 <span v-if="r.status === 'working'" class="cockpit-badge cockpit-badge--neutral">Bản nháp</span>
@@ -156,19 +164,19 @@
       <div class="grid-4">
         <div class="cash-stat-card">
           <span class="cash-stat-label">Đã chi</span>
-          <strong class="cash-stat-val text-success">{{ formatFinanceMoney(cash.workflowCash.grossPaid, cash.project.currencyCode, cash.project.currencyCode === 'VND' ? 0 : cash.project.moneyScale) || '0' }}</strong>
+          <strong class="cash-stat-val text-success">{{ formatFinanceMoney(cash.workflowCash.grossPaid, cash.project.currencyCode, cash.project.moneyScale) || '0' }}</strong>
         </div>
         <div class="cash-stat-card">
           <span class="cash-stat-label">Hoàn tiền</span>
-          <strong class="cash-stat-val">{{ formatFinanceMoney(cash.workflowCash.confirmedRefunds, cash.project.currencyCode, cash.project.currencyCode === 'VND' ? 0 : cash.project.moneyScale) || '0' }}</strong>
+          <strong class="cash-stat-val">{{ formatFinanceMoney(cash.workflowCash.confirmedRefunds, cash.project.currencyCode, cash.project.moneyScale) || '0' }}</strong>
         </div>
         <div class="cash-stat-card">
           <span class="cash-stat-label">Thực chi thuần</span>
-          <strong class="cash-stat-val text-primary">{{ formatFinanceMoney(cash.workflowCash.netCash, cash.project.currencyCode, cash.project.currencyCode === 'VND' ? 0 : cash.project.moneyScale) || '0' }}</strong>
+          <strong class="cash-stat-val text-primary">{{ formatFinanceMoney(cash.workflowCash.netCash, cash.project.currencyCode, cash.project.moneyScale) || '0' }}</strong>
         </div>
         <div class="cash-stat-card">
           <span class="cash-stat-label">Chưa chi (đã duyệt)</span>
-          <strong class="cash-stat-val text-warning">{{ formatFinanceMoney(cash.workflowCash.approvedUnspent, cash.project.currencyCode, cash.project.currencyCode === 'VND' ? 0 : cash.project.moneyScale) || '0' }}</strong>
+          <strong class="cash-stat-val text-warning">{{ formatFinanceMoney(cash.workflowCash.approvedUnspent, cash.project.currencyCode, cash.project.moneyScale) || '0' }}</strong>
         </div>
       </div>
       <p class="cash-note">
@@ -268,7 +276,7 @@ const cash = ref<WorkflowFinance | null>(null)
 const isLegacy = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
-const selectedStatus = ref<'all' | 'submitted' | 'approved_pending' | 'paid' | 'returned' | 'working'>('all')
+const selectedStatus = ref<'all' | 'submitted' | 'approved_pending' | 'paid_partial' | 'paid' | 'returned' | 'working'>('all')
 
 const coverageLabel = {
   complete: 'Đã đối soát đầy đủ chứng từ thanh toán',
@@ -297,12 +305,13 @@ function getRequestDetailedStatus(r: CostRequestView): 'working' | 'submitted' |
 }
 
 const statusCounts = computed(() => {
-  const counts = { all: requests.value.length, submitted: 0, approved_pending: 0, paid: 0, returned: 0, working: 0 }
+  const counts = { all: requests.value.length, submitted: 0, approved_pending: 0, paid_partial: 0, paid: 0, returned: 0, working: 0 }
   for (const r of requests.value) {
     const s = getRequestDetailedStatus(r)
     if (s === 'submitted') counts.submitted++
     else if (s === 'approved_pending') counts.approved_pending++
-    else if (s === 'paid' || s === 'paid_partial') counts.paid++
+    else if (s === 'paid_partial') counts.paid_partial++
+    else if (s === 'paid') counts.paid++
     else if (s === 'returned') counts.returned++
     else if (s === 'working') counts.working++
   }
@@ -315,7 +324,8 @@ const filteredRequests = computed(() => {
     const s = getRequestDetailedStatus(r)
     if (selectedStatus.value === 'submitted') return s === 'submitted'
     if (selectedStatus.value === 'approved_pending') return s === 'approved_pending'
-    if (selectedStatus.value === 'paid') return s === 'paid' || s === 'paid_partial'
+    if (selectedStatus.value === 'paid_partial') return s === 'paid_partial'
+    if (selectedStatus.value === 'paid') return s === 'paid'
     if (selectedStatus.value === 'returned') return s === 'returned'
     if (selectedStatus.value === 'working') return s === 'working'
     return true
