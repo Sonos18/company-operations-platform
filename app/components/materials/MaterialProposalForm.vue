@@ -557,7 +557,7 @@ function buildProposalPayload() {
   }
 }
 
-async function handleSaveDraft(options: { silent?: boolean } = {}): Promise<MaterialCommandResult | null> {
+async function saveProposalDraft(options: { silent?: boolean } = {}): Promise<MaterialCommandResult | null> {
   errorMessage.value = ''
   successMessage.value = ''
   conflictNotice.value = false
@@ -620,6 +620,10 @@ async function handleSaveDraft(options: { silent?: boolean } = {}): Promise<Mate
   }
 }
 
+async function handleSaveDraft(): Promise<void> {
+  await saveProposalDraft({ silent: false })
+}
+
 function hasFormModifications(): boolean {
   if (!props.proposal) return true
   if (formNeededOn.value !== props.proposal.neededOn) return true
@@ -652,7 +656,7 @@ async function handleSubmit() {
     // Step 1: If brand new, dirty, returned, or has unsaved edits, save draft first to obtain canonical version
     const needsSave = !existingProposalId.value || isDirty.value || isReturnedState.value || hasFormModifications()
     if (needsSave) {
-      const saveResult = await handleSaveDraft({ silent: true })
+      const saveResult = await saveProposalDraft({ silent: true })
       if (!saveResult) {
         isSubmitting.value = false
         return
