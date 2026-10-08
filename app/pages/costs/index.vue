@@ -9,7 +9,7 @@ import { mapCostsApiError } from '../../utils/costs/costs-error-mapper'
 import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 import ProjectCostInfoDisclosure from '../../components/costs/ProjectCostInfoDisclosure.vue'
 
-definePageMeta({ alias: ['/cost-requests'], requiredAnyPermissions: ['cost.read','cost.request.read'] })
+definePageMeta({ requiredPermission: 'cost.read' })
 
 const route = useRoute()
 const repositories = useRepositories()
