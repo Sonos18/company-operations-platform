@@ -25,6 +25,7 @@ const uniqueBy = <T>(values: T[], identity: (value: T) => string) =>
   new Set(values.map(identity)).size === values.length
 
 export const materialReviewStateSchema = z.enum(['draft', 'submitted', 'approved', 'returned'])
+export const materialOrderStateSchema = z.enum(['active', 'suspended', 'cancelled'])
 
 export const chosenSupplierInputSchema = createBusinessPartyInputSchema.extend({
   partyKind: z.literal('organization'),
@@ -168,6 +169,15 @@ export const createMaterialOrderInputSchema = z.object({
 
 export const materialOrderAllocationViewSchema = materialOrderAllocationInputSchema.extend({
   orderLineId: workflowUuidSchema,
+  materialId: workflowUuidSchema,
+  materialName: shortText,
+  specification: text,
+  unit: shortText,
+}).strict()
+
+export const cancelMaterialOrderInputSchema = z.object({
+  expectedOrderVersion: version,
+  reason: text,
 }).strict()
 
 export const commitMaterialContractInputSchema = z.object({
@@ -183,9 +193,11 @@ export const commitMaterialContractInputSchema = z.object({
 export const materialOrderViewSchema = z.object({
   id: workflowUuidSchema,
   version,
+  orderState: materialOrderStateSchema,
   proposalId: workflowUuidSchema,
   approvedRevisionId: workflowUuidSchema,
   supplierId: workflowUuidSchema,
+  supplierName: shortText,
   currencyCode: workflowCurrencySchema,
   allocations: z.array(materialOrderAllocationViewSchema).min(1).max(1000),
   unsignedQuotationEvidenceFileId: workflowUuidSchema,
@@ -239,9 +251,18 @@ export const materialEvidenceTargetSchema = z.discriminatedUnion('kind', [
   }).strict(),
 ])
 
+export const materialEvidenceRoleSchema = z.enum(['unsigned_quotation', 'signed_quotation', 'signed_contract'])
+
 export const materialEvidenceIntentInputSchema = costEvidenceCreateIntentInputSchema.extend({
+  mimeType: z.literal('application/pdf'),
+  evidenceRole: materialEvidenceRoleSchema,
   target: materialEvidenceTargetSchema,
-}).strict()
+}).strict().superRefine((value, context) => {
+  const valid = value.target.kind === 'material_proposal'
+    ? value.evidenceRole === 'unsigned_quotation'
+    : value.evidenceRole === 'signed_quotation' || value.evidenceRole === 'signed_contract'
+  if (!valid) context.addIssue({ code: 'custom', path: ['evidenceRole'], message: 'Evidence role does not match target' })
+})
 
 export const materialProcurementEndpointManifest = {
   projects: { method: 'GET', path: '/api/companies/:companyId/material-procurement/projects' },
@@ -260,6 +281,7 @@ export const materialProcurementEndpointManifest = {
   createOrder: { method: 'POST', path: '/api/companies/:companyId/projects/:projectId/material-procurement/proposals/:proposalId/orders' },
   listOrders: { method: 'GET', path: '/api/companies/:companyId/projects/:projectId/material-procurement/orders' },
   readOrder: { method: 'GET', path: '/api/companies/:companyId/projects/:projectId/material-procurement/orders/:orderId' },
+  cancelOrder: { method: 'POST', path: '/api/companies/:companyId/projects/:projectId/material-procurement/orders/:orderId/cancellations' },
   recordContract: { method: 'POST', path: '/api/companies/:companyId/projects/:projectId/material-procurement/orders/:orderId/contract' },
   createEvidenceIntent: { method: 'POST', path: '/api/companies/:companyId/projects/:projectId/material-procurement/evidence/upload-intents' },
   finalizeEvidence: { method: 'POST', path: '/api/companies/:companyId/projects/:projectId/material-procurement/evidence/:fileId/finalize' },
@@ -282,12 +304,15 @@ export type ProposalDecisionInput = z.infer<typeof materialProposalDecisionInput
 export type MaterialProposalView = z.infer<typeof materialProposalViewSchema>
 export type MaterialOrderAllocationInput = z.infer<typeof materialOrderAllocationInputSchema>
 export type CreateMaterialOrderInput = z.infer<typeof createMaterialOrderInputSchema>
+export type CancelMaterialOrderInput = z.infer<typeof cancelMaterialOrderInputSchema>
+export type MaterialOrderState = z.infer<typeof materialOrderStateSchema>
 export type MaterialOrderView = z.infer<typeof materialOrderViewSchema>
 export type CommitMaterialContractInput = z.infer<typeof commitMaterialContractInputSchema>
 export type MaterialQuotationComparisonInput = z.infer<typeof materialQuotationComparisonInputSchema>
 export type MaterialQuotationComparisonView = z.infer<typeof materialQuotationComparisonViewSchema>
 export type MaterialCommand = z.infer<typeof materialCommandSchema>
 export type MaterialCommandResult = z.infer<typeof materialCommandResultSchema>
+export type MaterialEvidenceRole = z.infer<typeof materialEvidenceRoleSchema>
 export type MaterialEvidenceIntentInput = z.infer<typeof materialEvidenceIntentInputSchema>
 
 export interface MaterialProcurementRepository {
@@ -307,6 +332,7 @@ export interface MaterialProcurementRepository {
   createOrder(projectId: string, proposalId: string, input: CreateMaterialOrderInput, command: MaterialCommand): Promise<MaterialCommandResult>
   listOrders(projectId: string): Promise<MaterialOrderView[]>
   readOrder(projectId: string, orderId: string): Promise<MaterialOrderView>
+  cancelOrder(projectId: string, orderId: string, input: CancelMaterialOrderInput, command: MaterialCommand): Promise<MaterialCommandResult>
   recordContract(projectId: string, orderId: string, input: CommitMaterialContractInput, command: MaterialCommand): Promise<MaterialCommandResult>
   createEvidenceIntent(projectId: string, input: MaterialEvidenceIntentInput, command: MaterialCommand): Promise<CostEvidenceUploadIntent>
   finalizeEvidence(projectId: string, fileId: string, input: CostEvidenceFinalizeInput, command: MaterialCommand): Promise<CostEvidenceFinalized>

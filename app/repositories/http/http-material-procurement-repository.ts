@@ -1,9 +1,20 @@
 import { z } from 'zod'
 import {
+  costEvidenceFinalizeInputSchema,
+  costEvidenceFinalizedSchema,
+  costEvidenceReadUrlInputSchema,
+  costEvidenceReadUrlSchema,
+  costEvidenceUploadIntentSchema,
+} from '../../../shared/schemas/costs/cost-evidence'
+import {
+  cancelMaterialOrderInputSchema,
+  createMaterialOrderInputSchema,
   chosenSupplierInputSchema,
   createMaterialInputSchema,
   materialCommandSchema,
   materialCommandResultSchema,
+  materialEvidenceIntentInputSchema,
+  materialOrderViewSchema,
   materialProjectOptionSchema,
   materialProposalCommandVersionSchema,
   materialProposalDecisionInputSchema,
@@ -75,12 +86,18 @@ export function createHttpMaterialProcurementRepository(options: {
     updateProposal: async (projectId, id, input, cmd) => command(project(projectId, '/proposals/' + targetId(id)), input, updateMaterialProposalInputSchema, materialCommandResultSchema, cmd, 'PATCH'),
     submitProposal: async (projectId, id, input, cmd) => command(project(projectId, '/proposals/' + targetId(id) + '/submit'), input, materialProposalCommandVersionSchema, materialCommandResultSchema, cmd),
     decideProposal: async (projectId, id, input, cmd) => command(project(projectId, '/proposals/' + targetId(id) + '/decisions'), input, materialProposalDecisionInputSchema, materialCommandResultSchema, cmd),
-    createOrder: () => unsupported('createOrder'),
-    listOrders: () => unsupported('listOrders'),
-    readOrder: () => unsupported('readOrder'),
+    createOrder: async (projectId, proposalId, input, cmd) => command(project(projectId, '/proposals/' + targetId(proposalId) + '/orders'), input, createMaterialOrderInputSchema, materialCommandResultSchema, cmd),
+    listOrders: async projectId => read(project(projectId, '/orders'), z.array(materialOrderViewSchema)),
+    readOrder: async (projectId, orderId) => read(project(projectId, '/orders/' + targetId(orderId)), materialOrderViewSchema),
+    cancelOrder: async (projectId, orderId, input, cmd) => command(project(projectId, '/orders/' + targetId(orderId) + '/cancellations'), input, cancelMaterialOrderInputSchema, materialCommandResultSchema, cmd),
     recordContract: () => unsupported('recordContract'),
-    createEvidenceIntent: () => unsupported('createEvidenceIntent'),
-    finalizeEvidence: () => unsupported('finalizeEvidence'),
-    readEvidenceUrl: () => unsupported('readEvidenceUrl'),
+    createEvidenceIntent: async (projectId, input, cmd) => command(project(projectId, '/evidence/upload-intents'), input, materialEvidenceIntentInputSchema, costEvidenceUploadIntentSchema, cmd),
+    finalizeEvidence: async (projectId, fileId, input, cmd) => command(project(projectId, '/evidence/' + targetId(fileId) + '/finalize'), input, costEvidenceFinalizeInputSchema, costEvidenceFinalizedSchema, cmd),
+    readEvidenceUrl: async (projectId, fileId, input = { disposition: 'inline' }) => options.client.request({
+      url: project(projectId, '/evidence/' + targetId(fileId) + '/read-url'),
+      method: 'POST',
+      body: costEvidenceReadUrlInputSchema.parse(input),
+      schema: costEvidenceReadUrlSchema,
+    }),
   }
 }

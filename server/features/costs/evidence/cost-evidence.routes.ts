@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { costEvidenceCreateIntentInputSchema, costEvidenceDetailLinkInputSchema, costEvidenceFinalizeInputSchema, costEvidenceLinkInputSchema, costEvidenceReadUrlInputSchema } from '../../../../shared/schemas/costs/cost-evidence'
 import { AppApiError } from '../../../utils/api-error'
 import { parseSupabaseAdminConfig } from '../../../utils/supabase-config'
-import { createSupabaseEvidenceFinalizer, type SupabaseEvidenceFinalizer } from '../../../utils/supabase-client'
+import { createSupabaseEvidenceFinalizer, createSupabaseMaterialEvidenceFinalizer, type SupabaseEvidenceFinalizer, type SupabaseMaterialEvidenceFinalizer } from '../../../utils/supabase-client'
 import { c1RequestContext } from '../../c1-master-data/context'
 import { CostEvidenceRepository } from './cost-evidence.repository'
 import { CostEvidenceService } from './cost-evidence.service'
@@ -33,6 +33,12 @@ export function resolveCostEvidenceFinalizer(event: H3Event): SupabaseEvidenceFi
   const runtime = useRuntimeConfig(event)
   const config = parseSupabaseAdminConfig({ url: runtime.public.supabaseUrl, serviceRoleKey: runtime.supabaseServiceRoleKey })
   return createSupabaseEvidenceFinalizer(config)
+}
+
+export function resolveMaterialEvidenceFinalizer(event: H3Event): SupabaseMaterialEvidenceFinalizer {
+  const runtime = useRuntimeConfig(event)
+  const config = parseSupabaseAdminConfig({ url: runtime.public.supabaseUrl, serviceRoleKey: runtime.supabaseServiceRoleKey })
+  return createSupabaseMaterialEvidenceFinalizer(config)
 }
 
 export function createSupabaseCostEvidenceRoutes(event: H3Event) {

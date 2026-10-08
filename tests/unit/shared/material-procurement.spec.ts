@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { permissionCodes } from '../../../shared/constants/permissions'
 import {
+  cancelMaterialOrderInputSchema,
   chosenSupplierInputSchema,
   commitMaterialContractInputSchema,
   createMaterialOrderInputSchema,
+  materialEvidenceIntentInputSchema,
   materialCommandResultSchema,
   materialCommandSchema,
   materialOrderViewSchema,
@@ -15,6 +17,7 @@ import {
   materialQuotationComparisonInputSchema,
   materialQuotationComparisonViewSchema,
 } from '../../../shared/schemas/costs/material-procurement'
+import { costEvidenceCreateIntentInputSchema } from '../../../shared/schemas/costs/cost-evidence'
 import {
   canonicalMaterialPaymentInputSchema,
   directContractAuthorityViewSchema,
@@ -134,13 +137,19 @@ describe('material procurement contracts', () => {
     expect(materialOrderViewSchema.safeParse({
       id: ids.order,
       version: 2,
+      orderState: 'active',
       proposalId: ids.proposal,
       approvedRevisionId: ids.proposalRevision,
       supplierId: ids.supplier,
+      supplierName: 'Nha cung cap A',
       currencyCode: 'VND',
       allocations: [{
         orderLineId: ids.orderLine,
         ...split10Of20.allocations[0],
+        materialId: ids.material,
+        materialName: 'Thep hop',
+        specification: '100 x 100 mm',
+        unit: 'cay',
       }],
       unsignedQuotationEvidenceFileId: ids.unsignedQuotation,
       contract: {
@@ -155,6 +164,57 @@ describe('material procurement contracts', () => {
         availableToPay: signed100Paid30.availableToPay,
       },
     }).success).toBe(true)
+  })
+
+  it('freezes buyer cancellation and material PDF role/target pairs without narrowing canonical evidence', () => {
+    expect(cancelMaterialOrderInputSchema.safeParse({
+      expectedOrderVersion: 2,
+      reason: 'Nha cung cap khong con kha nang giao hang',
+    }).success).toBe(true)
+    expect(cancelMaterialOrderInputSchema.safeParse({ expectedOrderVersion: 2, reason: '  ' }).success).toBe(false)
+
+    const evidence = {
+      originalFilename: 'bao-gia.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 128,
+      sha256: 'a'.repeat(64),
+    } as const
+    expect(materialEvidenceIntentInputSchema.safeParse({
+      ...evidence,
+      evidenceRole: 'unsigned_quotation',
+      target: { kind: 'material_proposal', proposalId: ids.proposal, revisionId: ids.proposalRevision },
+    }).success).toBe(true)
+    expect(materialEvidenceIntentInputSchema.safeParse({
+      ...evidence,
+      evidenceRole: 'signed_contract',
+      target: { kind: 'material_proposal', proposalId: ids.proposal, revisionId: ids.proposalRevision },
+    }).success).toBe(false)
+    expect(materialEvidenceIntentInputSchema.safeParse({
+      ...evidence,
+      evidenceRole: 'signed_quotation',
+      target: { kind: 'material_order', orderId: ids.order },
+    }).success).toBe(true)
+    expect(materialEvidenceIntentInputSchema.safeParse({
+      ...evidence,
+      evidenceRole: 'unsigned_quotation',
+      target: { kind: 'material_order', orderId: ids.order },
+    }).success).toBe(false)
+    expect(materialEvidenceIntentInputSchema.safeParse({
+      ...evidence,
+      mimeType: 'image/png',
+      evidenceRole: 'unsigned_quotation',
+      target: { kind: 'material_proposal', proposalId: ids.proposal, revisionId: ids.proposalRevision },
+    }).success).toBe(false)
+    expect(costEvidenceCreateIntentInputSchema.safeParse({
+      ...evidence,
+      originalFilename: 'invoice.png',
+      mimeType: 'image/png',
+    }).success).toBe(true)
+
+    expect(materialProcurementEndpointManifest.cancelOrder).toEqual({
+      method: 'POST',
+      path: '/api/companies/:companyId/projects/:projectId/material-procurement/orders/:orderId/cancellations',
+    })
   })
 
   it('compares a quotation against its allocation and keeps the mismatch explicit', () => {
