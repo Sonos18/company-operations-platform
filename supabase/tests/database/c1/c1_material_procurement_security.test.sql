@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(108);
+select plan(116);
 
 select ok(
   coalesce((select relation.relrowsecurity and relation.relforcerowsecurity from pg_class as relation where relation.oid=to_regclass(table_name)),false),
@@ -304,6 +304,117 @@ select throws_ok($$
     'c1210000-0000-4000-8000-000000000502'
   )
 $$,'P0001','PERMISSION_DENIED','generic cost read target rejects material namespace');
+
+
+-- A historical workflow array containing a material ID must not confer file authority.
+set local role none;
+insert into auth.users(id,email)
+values('c1210000-0000-4000-8000-000000000903','workflow-reader@test.invalid');
+insert into public.tenant_memberships(user_id,tenant_id,roles)
+values('c1210000-0000-4000-8000-000000000903','c1210000-0000-4000-8000-000000000010',array['member']);
+insert into public.company_memberships(user_id,tenant_id,company_id,roles,is_active)
+values('c1210000-0000-4000-8000-000000000903','c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020',array['member'],true);
+insert into public.roles(id,tenant_id,company_id,code,name,description,is_system)
+values('c1210000-0000-4000-8000-000000000913','c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020','security_workflow_reader','Workflow reader','test',false);
+insert into public.role_permissions(role_id,permission_code) values
+('c1210000-0000-4000-8000-000000000913','cost.request.read'),
+('c1210000-0000-4000-8000-000000000913','cost.request.file.read'),
+('c1210000-0000-4000-8000-000000000913','cost.request.submit'),
+('c1210000-0000-4000-8000-000000000913','cost.file.read'),
+('c1210000-0000-4000-8000-000000000913','cost.source.read');
+insert into public.company_role_assignments(
+  tenant_id,company_id,user_id,role_id,granted_by,grant_reason
+) values(
+  'c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020',
+  'c1210000-0000-4000-8000-000000000903','c1210000-0000-4000-8000-000000000913',
+  'c1210000-0000-4000-8000-000000000902','test'
+);
+insert into public.cost_workflow_companies(tenant_id,company_id,mode)
+values('c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020','document_backed_v1');
+insert into public.cost_workflow_contracts(
+  id,tenant_id,company_id,project_id,party_id,reference,currency_code,created_by
+) values(
+  'c1210000-0000-4000-8000-000000000611',
+  'c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020',
+  'c1210000-0000-4000-8000-000000000101','c1210000-0000-4000-8000-000000000202',
+  'historical contaminated basis','VND','c1210000-0000-4000-8000-000000000903'
+);
+insert into public.cost_workflow_contract_versions(
+  id,tenant_id,company_id,project_id,contract_id,version,cap,evidence_file_ids,basis_state,reviewed_by
+) values(
+  'c1210000-0000-4000-8000-000000000612',
+  'c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020',
+  'c1210000-0000-4000-8000-000000000101','c1210000-0000-4000-8000-000000000611',
+  1,1.0000,array['c1210000-0000-4000-8000-000000000502']::uuid[],
+  'reviewed_reference','c1210000-0000-4000-8000-000000000903'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1210000-0000-4000-8000-000000000903","role":"authenticated"}',true);
+select throws_ok($$
+  select public.c1_workflow_create_contract_basis(
+    'c1210000-0000-4000-8000-000000000020','c1210000-0000-4000-8000-000000000101',
+    '{"partyId":"c1210000-0000-4000-8000-000000000202","reference":"rejected basis","referenceAmount":"1.0000","currencyCode":"VND","evidenceFileIds":["c1210000-0000-4000-8000-000000000502"]}',
+    'c1210000-0000-4000-8000-000000000621','c1210000-0000-4000-8000-000000000721'
+  )
+$$,'P0001','EVIDENCE_UPLOAD_MISMATCH','workflow basis rejects material evidence ID');
+select ok(not private.c1_workflow_can_read_file(
+  'c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020',
+  'c1210000-0000-4000-8000-000000000101','c1210000-0000-4000-8000-000000000502'
+),'material file in historical basis array still denies workflow read');
+select throws_ok($$
+  select public.c1_workflow_evidence_read_target(
+    'c1210000-0000-4000-8000-000000000020',
+    'c1210000-0000-4000-8000-000000000101',
+    'c1210000-0000-4000-8000-000000000502'
+  )
+$$,'P0001','PERMISSION_DENIED','workflow read target rejects material evidence');
+select throws_ok($$
+  select public.c1_get_cost_evidence_read_target(
+    'c1210000-0000-4000-8000-000000000020',
+    'c1210000-0000-4000-8000-000000000502'
+  )
+$$,'P0001','PERMISSION_DENIED','generic cost read target still rejects material evidence after array attachment');
+select ok(not private.c1_can_select_evidence_object(
+  'c1-accounting-evidence',
+  'c1210000-0000-4000-8000-000000000010/c1210000-0000-4000-8000-000000000020/c1210000-0000-4000-8000-000000000101/c1210000-0000-4000-8000-000000000502'
+),'workflow Storage predicate rejects material evidence');
+
+-- The creator retains cost.prepare, but the proposal target is no longer approved.
+set local role none;
+update public.material_proposals
+set review_state='returned',approved_revision_id=null
+where id='c1210000-0000-4000-8000-000000000303';
+insert into public.cost_command_receipts(
+  tenant_id,company_id,actor_id,command_name,idempotency_key,request_hash,result_resource_id,result_version
+) values(
+  'c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020',
+  'c1210000-0000-4000-8000-000000000901','cost_evidence.finalize',
+  'c1210000-0000-4000-8000-000000000622',repeat('a',64),
+  'c1210000-0000-4000-8000-000000000502',1
+);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1210000-0000-4000-8000-000000000901","role":"authenticated"}',true);
+select ok(not private.c1_material_can_upload_evidence(
+  'c1210000-0000-4000-8000-000000000501'
+),'changed proposal makes pending material target ineligible');
+set local role service_role;
+select set_config('request.jwt.claims','{"sub":"c1210000-0000-4000-8000-000000000901","role":"service_role"}',true);
+select throws_ok($$
+  select public.c1_finalize_cost_evidence_server(
+    'c1210000-0000-4000-8000-000000000901','c1210000-0000-4000-8000-000000000020',
+    'c1210000-0000-4000-8000-000000000501',
+    '{"expectedVersion":0,"mimeType":"application/pdf","sizeBytes":8,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}',
+    'c1210000-0000-4000-8000-000000000623','c1210000-0000-4000-8000-000000000723'
+  )
+$$,'P0001','PERMISSION_DENIED','generic finalizer rejects ineligible material pending intent');
+select throws_ok($$
+  select public.c1_finalize_cost_evidence_server(
+    'c1210000-0000-4000-8000-000000000901','c1210000-0000-4000-8000-000000000020',
+    'c1210000-0000-4000-8000-000000000502','{"expectedVersion":0}',
+    'c1210000-0000-4000-8000-000000000622','c1210000-0000-4000-8000-000000000724'
+  )
+$$,'P0001','PERMISSION_DENIED','generic finalizer replay rejects material namespace');
 
 select * from finish();
 rollback;

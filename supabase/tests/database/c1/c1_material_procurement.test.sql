@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(59);
+select plan(60);
 
 insert into auth.users(id,email) values
 ('c1200000-0000-4000-8000-000000000901','material-engineer@test.invalid'),
@@ -838,6 +838,16 @@ select throws_ok($$
     'c1200000-0000-4000-8000-000000000645','c1200000-0000-4000-8000-000000000745'
   )
 $$,'P0001','INPUT_INVALID','partial verified finalizer replay is input invalid');
+
+select set_config('request.jwt.claims','{"sub":"c1200000-0000-4000-8000-000000000902","role":"service_role"}',true);
+select throws_ok($$
+  select public.c1_finalize_material_evidence_server(
+    'c1200000-0000-4000-8000-000000000902','c1200000-0000-4000-8000-000000000020',
+    'c1200000-0000-4000-8000-000000000101','c1200000-0000-4000-8000-000000000501',
+    '{"expectedVersion":9223372036854775807}',
+    'c1200000-0000-4000-8000-000000000645','c1200000-0000-4000-8000-000000000745'
+  )
+$$,'P0001','INPUT_INVALID','max bigint finalizer replay is controlled input invalid');
 
 select * from finish();
 rollback;
