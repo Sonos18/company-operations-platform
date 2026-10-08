@@ -616,6 +616,22 @@ async function handleSaveDraft(): Promise<MaterialCommandResult | null> {
   }
 }
 
+function hasFormModifications(): boolean {
+  if (!props.proposal) return true
+  if (formNeededOn.value !== props.proposal.neededOn) return true
+  if (formDeliveryAddress.value.trim() !== props.proposal.deliveryAddress) return true
+  if ((formNotes.value.trim() || undefined) !== (props.proposal.notes || undefined)) return true
+  if (lines.value.length !== props.proposal.lines.length) return true
+  for (let i = 0; i < lines.value.length; i++) {
+    const fl = lines.value[i]
+    const pl = props.proposal.lines[i]
+    if (!fl || !pl || fl.lineId !== pl.lineId || fl.materialId !== pl.materialId || fl.quantity.trim() !== pl.quantity) {
+      return true
+    }
+  }
+  return false
+}
+
 async function handleSubmit() {
   errorMessage.value = ''
   successMessage.value = ''
@@ -629,8 +645,9 @@ async function handleSubmit() {
   isSubmitting.value = true
 
   try {
-    // Step 1: If brand new or dirty, save draft first to obtain canonical version
-    if (!existingProposalId.value || isDirty.value) {
+    // Step 1: If brand new, dirty, returned, or has unsaved edits, save draft first to obtain canonical version
+    const needsSave = !existingProposalId.value || isDirty.value || isReturnedState.value || hasFormModifications()
+    if (needsSave) {
       const saveResult = await handleSaveDraft()
       if (!saveResult) {
         isSubmitting.value = false
