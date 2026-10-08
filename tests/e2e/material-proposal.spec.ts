@@ -200,8 +200,12 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
         await route.fulfill({
           status: 409,
           json: {
-            code: 'VERSION_CONFLICT',
-            message: 'Phiên bản không khớp (xung đột dữ liệu).',
+            error: {
+              code: 'VERSION_CONFLICT',
+              message: 'Phiên bản không khớp (xung đột dữ liệu).',
+              requestId: 'mock-req-409',
+              details: {},
+            },
           },
         })
         return
