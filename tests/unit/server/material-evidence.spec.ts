@@ -95,8 +95,9 @@ describe('material evidence repository', () => {
       error: null,
     }))
     const finalizer = { finalize: vi.fn(async () => ({ data: finalized, error: null })) }
+    const resolveFinalizer = vi.fn(() => finalizer)
     const client = { rpc, storage: { from: vi.fn(() => ({ download, createSignedUrl: vi.fn() })) } }
-    const repository = new SupabaseMaterialProcurementRepository(client as never, finalizer)
+    const repository = new SupabaseMaterialProcurementRepository(client as never, resolveFinalizer)
 
     await expect(repository.finalizeEvidence(context(purchasingRoleScope), ids.project, ids.unsignedQuotation, { expectedVersion: 0 }, key))
       .resolves.toEqual(finalized)
@@ -114,6 +115,10 @@ describe('material evidence repository', () => {
       target_idempotency_key: key,
       target_request_id: requestId,
     })
+    expect(resolveFinalizer).toHaveBeenCalledOnce()
+    expect(rpc.mock.invocationCallOrder[0]).toBeLessThan(download.mock.invocationCallOrder[0]!)
+    expect(download.mock.invocationCallOrder[0]).toBeLessThan(resolveFinalizer.mock.invocationCallOrder[0]!)
+    expect(resolveFinalizer.mock.invocationCallOrder[0]).toBeLessThan(finalizer.finalize.mock.invocationCallOrder[0]!)
   })
 
   it('replays an already finalized file without downloading it again', async () => {
@@ -121,12 +126,14 @@ describe('material evidence repository', () => {
     const rpc = vi.fn(async () => ({ data: { status: 'finalized' }, error: null }))
     const finalizer = { finalize: vi.fn(async () => ({ data: { ...finalized, replayed: true }, error: null })) }
     const client = { rpc, storage: { from: vi.fn(() => ({ download })) } }
-    const repository = new SupabaseMaterialProcurementRepository(client as never, finalizer)
+    const resolveFinalizer = vi.fn(() => finalizer)
+    const repository = new SupabaseMaterialProcurementRepository(client as never, resolveFinalizer)
 
     await expect(repository.finalizeEvidence(context(purchasingRoleScope), ids.project, ids.unsignedQuotation, { expectedVersion: 0 }, key))
       .resolves.toMatchObject({ replayed: true })
     expect(download).not.toHaveBeenCalled()
     expect(finalizer.finalize).toHaveBeenCalledWith(expect.objectContaining({ target_input: { expectedVersion: 0 } }))
+    expect(rpc.mock.invocationCallOrder[0]).toBeLessThan(resolveFinalizer.mock.invocationCallOrder[0]!)
   })
 
   it('signs only the guarded material read target for 60 seconds', async () => {

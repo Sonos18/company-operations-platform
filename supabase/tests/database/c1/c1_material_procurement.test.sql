@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(51);
+select plan(59);
 
 insert into auth.users(id,email) values
 ('c1200000-0000-4000-8000-000000000901','material-engineer@test.invalid'),
@@ -761,6 +761,83 @@ select is((
     (select value from material_test_ids where name='order1')
   )->'allocations'->0->>'unit'
 ),'bag','old order keeps approved unit after resubmission and master rename');
+
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1200000-0000-4000-8000-000000000902","role":"authenticated"}',true);
+select throws_ok($$
+  select public.c1_material_create_evidence_intent(
+    'c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101',
+    jsonb_build_object('originalFilename','bad.pdf','mimeType','application/pdf','sizeBytes',8,'sha256',repeat('d',64),
+      'evidenceRole',null,'target',jsonb_build_object('kind','material_proposal','proposalId',(select value from material_test_ids where name='proposal1'),'revisionId','c1200000-0000-4000-8000-000000000412')),
+    'c1200000-0000-4000-8000-000000000641','c1200000-0000-4000-8000-000000000741'
+  )
+$$,'P0001','INPUT_INVALID','null evidence role is controlled input invalid');
+select throws_ok($$
+  select public.c1_material_create_evidence_intent(
+    'c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101',
+    jsonb_build_object('originalFilename','bad.pdf','mimeType','application/pdf','sizeBytes',8,'sha256',repeat('d',64),
+      'evidenceRole','unsigned_quotation','target',jsonb_build_object('kind',null,'proposalId',(select value from material_test_ids where name='proposal1'),'revisionId','c1200000-0000-4000-8000-000000000412')),
+    'c1200000-0000-4000-8000-000000000642','c1200000-0000-4000-8000-000000000742'
+  )
+$$,'P0001','INPUT_INVALID','null target kind is controlled input invalid');
+select throws_ok($$
+  select public.c1_material_create_evidence_intent(
+    'c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101',
+    jsonb_build_object('originalFilename','bad.pdf','mimeType','application/pdf','sizeBytes',9999999999999999999999999999999999999999,'sha256',repeat('d',64),
+      'evidenceRole','unsigned_quotation','target',jsonb_build_object('kind','material_proposal','proposalId',(select value from material_test_ids where name='proposal1'),'revisionId','c1200000-0000-4000-8000-000000000412')),
+    'c1200000-0000-4000-8000-000000000643','c1200000-0000-4000-8000-000000000743'
+  )
+$$,'P0001','INPUT_INVALID','out of range evidence size is controlled input invalid');
+select throws_ok($$
+  select public.c1_material_cancel_order(
+    'c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101',
+    (select value from material_test_ids where name='order2'),
+    '{"expectedOrderVersion":9999999999999999999999999999999999999999,"reason":"invalid"}',
+    'c1200000-0000-4000-8000-000000000644','c1200000-0000-4000-8000-000000000744'
+  )
+$$,'P0001','INPUT_INVALID','out of range version is controlled input invalid');
+
+set local role none;
+insert into public.cost_command_receipts(
+  tenant_id,company_id,actor_id,command_name,idempotency_key,request_hash,result_resource_id,result_version
+) values (
+  'c1200000-0000-4000-8000-000000000010','c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000902',
+  'material.evidence_finalize','c1200000-0000-4000-8000-000000000645',
+  private.c1_workflow_hash(
+    'c1200000-0000-4000-8000-000000000101','c1200000-0000-4000-8000-000000000501',
+    '{"expectedVersion":0,"mimeType":"application/pdf","sizeBytes":8,"sha256":"1111111111111111111111111111111111111111111111111111111111111111"}'::jsonb
+  ),
+  'c1200000-0000-4000-8000-000000000501',1
+);
+
+set local role service_role;
+select set_config('request.jwt.claims','{"sub":"c1200000-0000-4000-8000-000000000902","role":"service_role"}',true);
+select is((public.c1_finalize_material_evidence_server(
+  'c1200000-0000-4000-8000-000000000902','c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101','c1200000-0000-4000-8000-000000000501',
+  '{"expectedVersion":0}'::jsonb,'c1200000-0000-4000-8000-000000000645','c1200000-0000-4000-8000-000000000745'
+)->>'replayed'),'true','expected-version-only finalizer replay succeeds');
+select set_config('request.jwt.claims','{"sub":"c1200000-0000-4000-8000-000000000902","role":"service_role"}',true);
+select is((public.c1_finalize_material_evidence_server(
+  'c1200000-0000-4000-8000-000000000902','c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101','c1200000-0000-4000-8000-000000000501',
+  '{"expectedVersion":0,"mimeType":"application/pdf","sizeBytes":8,"sha256":"1111111111111111111111111111111111111111111111111111111111111111"}'::jsonb,
+  'c1200000-0000-4000-8000-000000000645','c1200000-0000-4000-8000-000000000745'
+)->>'replayed'),'true','exact full verified finalizer replay succeeds');
+select set_config('request.jwt.claims','{"sub":"c1200000-0000-4000-8000-000000000902","role":"service_role"}',true);
+select throws_ok($$
+  select public.c1_finalize_material_evidence_server(
+    'c1200000-0000-4000-8000-000000000902','c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101','c1200000-0000-4000-8000-000000000501',
+    '{"expectedVersion":0,"mimeType":"application/pdf","sizeBytes":8,"sha256":"2222222222222222222222222222222222222222222222222222222222222222"}',
+    'c1200000-0000-4000-8000-000000000645','c1200000-0000-4000-8000-000000000745'
+  )
+$$,'P0001','IDEMPOTENCY_CONFLICT','changed full verified finalizer replay conflicts');
+select set_config('request.jwt.claims','{"sub":"c1200000-0000-4000-8000-000000000902","role":"service_role"}',true);
+select throws_ok($$
+  select public.c1_finalize_material_evidence_server(
+    'c1200000-0000-4000-8000-000000000902','c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101','c1200000-0000-4000-8000-000000000501',
+    '{"expectedVersion":0,"mimeType":"application/pdf"}',
+    'c1200000-0000-4000-8000-000000000645','c1200000-0000-4000-8000-000000000745'
+  )
+$$,'P0001','INPUT_INVALID','partial verified finalizer replay is input invalid');
 
 select * from finish();
 rollback;

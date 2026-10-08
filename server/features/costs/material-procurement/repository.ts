@@ -75,7 +75,7 @@ const readTargetSchema = z.object({ bucketId: z.literal('c1-accounting-evidence'
 export class SupabaseMaterialProcurementRepository implements MaterialProcurementDataRepository {
   private readonly client: Client
 
-  constructor(client: UserSupabaseClient, private readonly finalizer?: SupabaseMaterialEvidenceFinalizer) {
+  constructor(client: UserSupabaseClient, private readonly resolveFinalizer?: () => SupabaseMaterialEvidenceFinalizer) {
     this.client = client as unknown as Client
   }
 
@@ -204,8 +204,9 @@ export class SupabaseMaterialProcurementRepository implements MaterialProcuremen
       }
       finalInput = { ...input, ...identity }
     }
-    if (!this.finalizer) throw new AppApiError(500, 'INTERNAL_ERROR', 'Dịch vụ hoàn tất chứng từ chưa được cấu hình.')
-    return workflowResponse(await this.finalizer.finalize({
+    const finalizer = this.resolveFinalizer?.()
+    if (!finalizer) throw new AppApiError(500, 'INTERNAL_ERROR', 'Dịch vụ hoàn tất chứng từ chưa được cấu hình.')
+    return workflowResponse(await finalizer.finalize({
       target_actor_id: context.actorId,
       target_company_id: context.companyId,
       target_project_id: projectId,

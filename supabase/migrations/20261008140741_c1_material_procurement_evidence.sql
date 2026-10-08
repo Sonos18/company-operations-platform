@@ -19,6 +19,56 @@ alter table public.material_evidence_scopes
     or (target_kind = 'material_order' and evidence_role in ('signed_quotation','signed_contract'))
   );
 
+create function private.c1_material_evidence_file(target_file_id uuid)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1 from public.material_evidence_scopes as scope
+    where scope.evidence_file_id = target_file_id
+  );
+$$;
+
+create function private.c1_material_size_bytes(target_value jsonb)
+returns bigint language plpgsql immutable set search_path = '' as $$
+declare v_text text; v_value bigint;
+begin
+  v_text := target_value#>>'{}';
+  if jsonb_typeof(target_value) is distinct from 'number'
+    or v_text !~ '^[1-9][0-9]{0,7}$'
+  then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  v_value := v_text::bigint;
+  if v_value > 26214400 then raise exception using errcode = 'P0001', message = 'FILE_TOO_LARGE'; end if;
+  return v_value;
+end;
+$$;
+
+create or replace function private.c1_material_version(target_value jsonb)
+returns bigint language plpgsql immutable set search_path = '' as $$
+declare v_text text;
+begin
+  v_text := target_value#>>'{}';
+  if jsonb_typeof(target_value) is distinct from 'number'
+    or v_text !~ '^(0|[1-9][0-9]{0,18})$'
+    or char_length(v_text) > 19
+    or (char_length(v_text) = 19 and v_text > '9223372036854775807')
+  then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  return v_text::bigint;
+end;
+$$;
+
+create function private.c1_material_reject_generic_evidence_link()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if private.c1_material_evidence_file(new.evidence_file_id) then
+    raise exception using errcode = 'P0001', message = 'PERMISSION_DENIED';
+  end if;
+  return new;
+end;
+$$;
+create trigger c1_material_reject_cost_evidence_link before insert or update on public.cost_evidence_links
+for each row execute function private.c1_material_reject_generic_evidence_link();
+create trigger c1_material_reject_workflow_evidence_link before insert or update on public.cost_workflow_request_evidence
+for each row execute function private.c1_material_reject_generic_evidence_link();
+
 create function private.c1_material_can_upload_evidence(target_file_id uuid)
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists (
@@ -94,6 +144,7 @@ declare
   v_proposal_id uuid;
   v_revision_id uuid;
   v_order_id uuid;
+  v_size_bytes bigint;
   v_file_id uuid := gen_random_uuid();
   v_path text;
   v_hash text;
@@ -110,21 +161,23 @@ begin
   if jsonb_typeof(target_input->'originalFilename') is distinct from 'string'
     or btrim(target_input->>'originalFilename') = ''
     or jsonb_typeof(target_input->'mimeType') is distinct from 'string'
-    or target_input->>'mimeType' <> 'application/pdf'
-    or jsonb_typeof(target_input->'sizeBytes') is distinct from 'number'
-    or target_input->>'sizeBytes' !~ '^[1-9][0-9]*$'
-    or (target_input->>'sizeBytes')::bigint > 26214400
+    or target_input->>'mimeType' is distinct from 'application/pdf'
     or jsonb_typeof(target_input->'sha256') is distinct from 'string'
     or target_input->>'sha256' !~ '^[a-f0-9]{64}$'
     or jsonb_typeof(target_input->'target') is distinct from 'object'
-    or v_role not in ('unsigned_quotation','signed_quotation','signed_contract')
-    or v_target_kind not in ('material_proposal','material_order')
+    or jsonb_typeof(target_input->'evidenceRole') is distinct from 'string'
+    or jsonb_typeof(target_input#>'{target,kind}') is distinct from 'string'
+    or v_role is null
+    or v_role <> all(array['unsigned_quotation','signed_quotation','signed_contract'])
+    or v_target_kind is null
+    or v_target_kind <> all(array['material_proposal','material_order'])
   then
     if target_input->>'mimeType' is distinct from 'application/pdf' then
       raise exception using errcode = 'P0001', message = 'FILE_TYPE_UNSUPPORTED';
     end if;
     raise exception using errcode = 'P0001', message = 'INPUT_INVALID';
   end if;
+  v_size_bytes := private.c1_material_size_bytes(target_input->'sizeBytes');
 
   if v_target_kind = 'material_proposal' then
     perform private.c1_workflow_require_keys(
@@ -214,7 +267,7 @@ begin
   ) values (
     v_file_id, v_tenant_id, target_company_id, target_project_id, v_path,
     btrim(target_input->>'originalFilename'), 'application/pdf',
-    (target_input->>'sizeBytes')::bigint, target_input->>'sha256',
+    v_size_bytes, target_input->>'sha256',
     now() + interval '15 minutes', v_actor_id
   ) returning * into v_file;
 
@@ -322,6 +375,8 @@ declare
   v_expected_version bigint;
   v_hash text;
   v_receipt public.cost_command_receipts%rowtype;
+  v_verified_field_count integer;
+  v_size_bytes bigint;
 begin
   if target_idempotency_key is null or target_request_id is null
     or jsonb_typeof(target_input) is distinct from 'object'
@@ -329,6 +384,21 @@ begin
     or exists (select 1 from jsonb_object_keys(target_input) as key where key not in ('expectedVersion','mimeType','sizeBytes','sha256'))
   then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
   v_expected_version := private.c1_material_version(target_input->'expectedVersion');
+  v_verified_field_count := (target_input ? 'mimeType')::integer
+    + (target_input ? 'sizeBytes')::integer
+    + (target_input ? 'sha256')::integer;
+  if v_verified_field_count not in (0,3) then
+    raise exception using errcode = 'P0001', message = 'INPUT_INVALID';
+  end if;
+  if v_verified_field_count = 3 then
+    if jsonb_typeof(target_input->'mimeType') is distinct from 'string'
+      or target_input->>'mimeType' is distinct from 'application/pdf'
+      or jsonb_typeof(target_input->'sha256') is distinct from 'string'
+      or target_input->>'sha256' !~ '^[a-f0-9]{64}$'
+    then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+    v_size_bytes := private.c1_material_size_bytes(target_input->'sizeBytes');
+    v_hash := private.c1_workflow_hash(target_project_id, target_id, target_input);
+  end if;
 
   perform pg_advisory_xact_lock(hashtextextended(
     'c1_material:evidence_finalize:' || target_company_id::text || ':' || v_actor_id::text || ':' || target_idempotency_key::text, 0
@@ -342,6 +412,9 @@ begin
   for update;
   if found then
     if v_receipt.result_resource_id <> target_id or v_receipt.result_version <> v_expected_version + 1 then
+      raise exception using errcode = 'P0001', message = 'IDEMPOTENCY_CONFLICT';
+    end if;
+    if v_verified_field_count = 3 and v_receipt.request_hash <> v_hash then
       raise exception using errcode = 'P0001', message = 'IDEMPOTENCY_CONFLICT';
     end if;
     select evidence.* into v_file
@@ -360,14 +433,8 @@ begin
     );
   end if;
 
-  if not (target_input ?& array['mimeType','sizeBytes','sha256'])
-    or jsonb_object_length(target_input) <> 4
-    or target_input->>'mimeType' <> 'application/pdf'
-    or jsonb_typeof(target_input->'sizeBytes') is distinct from 'number'
-    or target_input->>'sizeBytes' !~ '^[1-9][0-9]*$'
-    or jsonb_typeof(target_input->'sha256') is distinct from 'string'
-    or target_input->>'sha256' !~ '^[a-f0-9]{64}$'
-  then raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
+  if v_verified_field_count <> 3 then
+    raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
 
   select evidence, scope into v_file, v_scope
   from public.cost_evidence_files as evidence
@@ -392,7 +459,7 @@ begin
     raise exception using errcode = 'P0001', message = 'VERSION_CONFLICT';
   end if;
   if v_file.declared_mime_type <> target_input->>'mimeType'
-    or v_file.declared_size_bytes <> (target_input->>'sizeBytes')::bigint
+    or v_file.declared_size_bytes <> v_size_bytes
     or v_file.declared_sha256 <> target_input->>'sha256'
   then raise exception using errcode = 'P0001', message = 'EVIDENCE_UPLOAD_MISMATCH'; end if;
 
@@ -401,7 +468,7 @@ begin
   update public.cost_evidence_files as evidence
   set status = 'finalized',
       verified_mime_type = target_input->>'mimeType',
-      verified_size_bytes = (target_input->>'sizeBytes')::bigint,
+      verified_size_bytes = v_size_bytes,
       verified_sha256 = target_input->>'sha256',
       finalized_by = v_actor_id,
       finalized_at = now(),
@@ -504,12 +571,16 @@ returns boolean language sql stable security definer set search_path = '' as $$
       )
       and (
         private.c1_material_can_upload_evidence(evidence.id)
-        or (not evidence.workflow_origin and private.c1_can_select_evidence_object_legacy(target_bucket_id,target_object_path))
-        or (evidence.workflow_origin and evidence.created_by = auth.uid()
-          and evidence.status = 'pending_upload' and evidence.intent_expires_at > now()
-          and private.c1_workflow_actor_has_permission(evidence.tenant_id,evidence.company_id,'cost.prepare')
-          and private.c1_workflow_actor_has_permission(evidence.tenant_id,evidence.company_id,'cost.request.submit'))
-        or private.c1_workflow_can_read_file(evidence.tenant_id,evidence.company_id,evidence.project_id,evidence.id)
+        or (private.c1_material_evidence_file(evidence.id)
+          and private.c1_workflow_can_read_file(evidence.tenant_id,evidence.company_id,evidence.project_id,evidence.id))
+        or (not private.c1_material_evidence_file(evidence.id) and (
+          (not evidence.workflow_origin and private.c1_can_select_evidence_object_legacy(target_bucket_id,target_object_path))
+          or (evidence.workflow_origin and evidence.created_by = auth.uid()
+            and evidence.status = 'pending_upload' and evidence.intent_expires_at > now()
+            and private.c1_workflow_actor_has_permission(evidence.tenant_id,evidence.company_id,'cost.prepare')
+            and private.c1_workflow_actor_has_permission(evidence.tenant_id,evidence.company_id,'cost.request.submit'))
+          or private.c1_workflow_can_read_file(evidence.tenant_id,evidence.company_id,evidence.project_id,evidence.id)
+        ))
       )
   );
 $$;
@@ -527,27 +598,68 @@ returns boolean language sql stable security definer set search_path = '' as $$
       and evidence.object_path = target_object_path
       and (
         private.c1_material_can_upload_evidence(evidence.id)
-        or (not evidence.workflow_origin
-          and not exists (
-            select 1 from public.cost_workflow_companies as workflow
-            where workflow.tenant_id = evidence.tenant_id
-              and workflow.company_id = evidence.company_id
-              and workflow.mode = 'document_backed_v1'
-          )
-          and private.c1_can_insert_evidence_object_legacy(target_bucket_id,target_object_path))
-        or (evidence.workflow_origin and evidence.created_by = auth.uid()
-          and evidence.status = 'pending_upload' and evidence.intent_expires_at > now()
-          and private.c1_workflow_actor_has_permission(evidence.tenant_id,evidence.company_id,'cost.prepare')
-          and private.c1_workflow_actor_has_permission(evidence.tenant_id,evidence.company_id,'cost.request.submit')
-          and private.c1_workflow_evidence_target_allowed(
-            evidence.tenant_id,evidence.company_id,evidence.project_id,
-            evidence.workflow_target_kind,evidence.workflow_target_id,project.operational_state = 'completed'
-          ))
+        or (not private.c1_material_evidence_file(evidence.id) and (
+          (not evidence.workflow_origin
+            and not exists (
+              select 1 from public.cost_workflow_companies as workflow
+              where workflow.tenant_id = evidence.tenant_id
+                and workflow.company_id = evidence.company_id
+                and workflow.mode = 'document_backed_v1'
+            )
+            and private.c1_can_insert_evidence_object_legacy(target_bucket_id,target_object_path))
+          or (evidence.workflow_origin and evidence.created_by = auth.uid()
+            and evidence.status = 'pending_upload' and evidence.intent_expires_at > now()
+            and private.c1_workflow_actor_has_permission(evidence.tenant_id,evidence.company_id,'cost.prepare')
+            and private.c1_workflow_actor_has_permission(evidence.tenant_id,evidence.company_id,'cost.request.submit')
+            and private.c1_workflow_evidence_target_allowed(
+              evidence.tenant_id,evidence.company_id,evidence.project_id,
+              evidence.workflow_target_kind,evidence.workflow_target_id,project.operational_state = 'completed'
+            ))
+        ))
       )
   );
 $$;
 
+alter policy c1_cost_evidence_files_select on public.cost_evidence_files using (
+  not private.c1_material_evidence_file(id)
+  and (
+    private.c1_workflow_can_read_file(tenant_id,company_id,project_id,id)
+    or (workflow_origin and (
+      (created_by = auth.uid()
+        and private.c1_workflow_actor_has_permission(tenant_id,company_id,'cost.request.submit')
+        and private.c1_workflow_actor_has_permission(tenant_id,company_id,'cost.prepare'))
+      or private.c1_workflow_can_read_file(tenant_id,company_id,project_id,id)
+    ))
+    or (not workflow_origin and (
+      (status = 'pending_upload' and created_by = auth.uid()
+        and private.c1_workflow_actor_has_permission(tenant_id,company_id,'cost.prepare'))
+      or (status = 'finalized'
+        and private.c1_workflow_actor_has_permission(tenant_id,company_id,'cost.source.read'))
+    ))
+  )
+);
+
+create or replace function private.c1_get_cost_evidence_read_target(target_company_id uuid,target_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare v_context jsonb; v_tenant_id uuid; v_file public.cost_evidence_files%rowtype;
+begin
+  if auth.uid() is null or private.c1_material_evidence_file(target_id) then
+    raise exception using errcode = 'P0001', message = 'PERMISSION_DENIED';
+  end if;
+  v_context := private.c1_master_context(target_company_id,'cost.file.read');
+  v_tenant_id := (v_context->>'tenantId')::uuid;
+  select file.* into v_file from public.cost_evidence_files as file
+  where file.id = target_id and file.tenant_id = v_tenant_id and file.company_id = target_company_id
+    and file.status = 'finalized' and private.c1_can_select_evidence_object(file.bucket_id,file.object_path);
+  if not found then raise exception using errcode = 'P0001', message = 'RESOURCE_NOT_FOUND'; end if;
+  return jsonb_build_object('bucketId',v_file.bucket_id,'objectPath',v_file.object_path);
+end;
+$$;
+
 revoke all on function
+  private.c1_material_evidence_file(uuid),
+  private.c1_material_size_bytes(jsonb),
+  private.c1_material_reject_generic_evidence_link(),
   private.c1_material_can_upload_evidence(uuid),
   private.c1_material_create_evidence_intent(uuid,uuid,jsonb,uuid,uuid),
   private.c1_material_evidence_finalization_target(uuid,uuid,uuid),

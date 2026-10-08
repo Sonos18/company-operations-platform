@@ -33,7 +33,7 @@ const orderView = {
   currencyCode: 'VND' as const,
   allocations: [{
     orderLineId: ids.orderLine,
-    ...orderInput.allocations[0],
+    ...orderInput.allocations[0]!,
     materialId: ids.material,
     materialName: 'Steel',
     specification: 'D10',
@@ -86,6 +86,16 @@ describe('material order service', () => {
       .rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
     expect(data.listOrders).not.toHaveBeenCalled()
     expect(data.readOrder).not.toHaveBeenCalled()
+
+    for (const partial of [
+      ['material.order.manage'],
+      ['material.contract.record'],
+      ['cost.notification.read'],
+    ] as PermissionCode[][]) {
+      await expect(service.listOrders(context(partial), ids.project))
+        .rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    }
+    expect(data.listOrders).not.toHaveBeenCalled()
 
     await expect(service.listOrders(context(purchasingRoleScope), ids.project)).resolves.toEqual([orderView])
     await expect(service.readOrder(context(accountantRoleScope), ids.project, ids.order)).resolves.toEqual(orderView)

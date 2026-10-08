@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(104);
+select plan(108);
 
 select ok(
   coalesce((select relation.relrowsecurity and relation.relforcerowsecurity from pg_class as relation where relation.oid=to_regclass(table_name)),false),
@@ -175,6 +175,9 @@ insert into public.roles(id,tenant_id,company_id,code,name,description,is_system
 insert into public.role_permissions(role_id,permission_code) values
 ('c1210000-0000-4000-8000-000000000911','material.read'),
 ('c1210000-0000-4000-8000-000000000911','material.proposal.submit'),
+('c1210000-0000-4000-8000-000000000911','cost.prepare'),
+('c1210000-0000-4000-8000-000000000911','cost.file.read'),
+('c1210000-0000-4000-8000-000000000911','cost.source.read'),
 ('c1210000-0000-4000-8000-000000000912','material.read'),
 ('c1210000-0000-4000-8000-000000000912','material.manage'),
 ('c1210000-0000-4000-8000-000000000912','material.proposal.decide'),
@@ -224,6 +227,21 @@ insert into public.material_proposal_lines(
   20,'c1210000-0000-4000-8000-000000000901'
 );
 
+insert into public.material_proposals(id,tenant_id,company_id,project_id,needed_on,delivery_address,created_by)
+values('c1210000-0000-4000-8000-000000000303','c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020','c1210000-0000-4000-8000-000000000101','2026-10-30','Site A','c1210000-0000-4000-8000-000000000902');
+insert into public.material_proposal_revisions(id,tenant_id,company_id,project_id,proposal_id,revision_no,needed_on,delivery_address,submitted_by)
+values('c1210000-0000-4000-8000-000000000403','c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020','c1210000-0000-4000-8000-000000000101','c1210000-0000-4000-8000-000000000303',1,'2026-10-30','Site A','c1210000-0000-4000-8000-000000000902');
+update public.material_proposals set review_state='approved',current_revision_id='c1210000-0000-4000-8000-000000000403',approved_revision_id='c1210000-0000-4000-8000-000000000403' where id='c1210000-0000-4000-8000-000000000303';
+insert into public.cost_evidence_files(
+ id,tenant_id,company_id,project_id,object_path,original_filename,declared_mime_type,declared_size_bytes,declared_sha256,
+ verified_mime_type,verified_size_bytes,verified_sha256,status,intent_expires_at,created_by,finalized_by,finalized_at,version
+) values
+('c1210000-0000-4000-8000-000000000501','c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020','c1210000-0000-4000-8000-000000000101','c1210000-0000-4000-8000-000000000010/c1210000-0000-4000-8000-000000000020/c1210000-0000-4000-8000-000000000101/c1210000-0000-4000-8000-000000000501','pending.pdf','application/pdf',8,repeat('a',64),null,null,null,'pending_upload',now()+interval '15 minutes','c1210000-0000-4000-8000-000000000901',null,null,0),
+('c1210000-0000-4000-8000-000000000502','c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020','c1210000-0000-4000-8000-000000000101','c1210000-0000-4000-8000-000000000010/c1210000-0000-4000-8000-000000000020/c1210000-0000-4000-8000-000000000101/c1210000-0000-4000-8000-000000000502','final.pdf','application/pdf',8,repeat('b',64),'application/pdf',8,repeat('b',64),'finalized',now()+interval '15 minutes','c1210000-0000-4000-8000-000000000901','c1210000-0000-4000-8000-000000000901',now(),1);
+insert into public.material_evidence_scopes(evidence_file_id,tenant_id,company_id,project_id,target_kind,proposal_id,revision_id,evidence_role,created_by) values
+('c1210000-0000-4000-8000-000000000501','c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020','c1210000-0000-4000-8000-000000000101','material_proposal','c1210000-0000-4000-8000-000000000303','c1210000-0000-4000-8000-000000000403','unsigned_quotation','c1210000-0000-4000-8000-000000000901'),
+('c1210000-0000-4000-8000-000000000502','c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020','c1210000-0000-4000-8000-000000000101','material_proposal','c1210000-0000-4000-8000-000000000303','c1210000-0000-4000-8000-000000000403','unsigned_quotation','c1210000-0000-4000-8000-000000000901');
+
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"c1210000-0000-4000-8000-000000000902","role":"authenticated"}',true);
 select throws_ok($$
@@ -267,6 +285,25 @@ select throws_ok($$
     'c1210000-0000-4000-8000-000000000999'
   )
 $$,'P0001','PERMISSION_DENIED','engineer cannot read order financials');
+
+select ok(not private.c1_can_insert_evidence_object(
+  'c1-accounting-evidence',
+  'c1210000-0000-4000-8000-000000000010/c1210000-0000-4000-8000-000000000020/c1210000-0000-4000-8000-000000000101/c1210000-0000-4000-8000-000000000501'
+),'generic cost.prepare cannot upload a material-scoped pending object');
+select ok(not private.c1_can_select_evidence_object(
+  'c1-accounting-evidence',
+  'c1210000-0000-4000-8000-000000000010/c1210000-0000-4000-8000-000000000020/c1210000-0000-4000-8000-000000000101/c1210000-0000-4000-8000-000000000501'
+),'generic cost.file.read cannot select a material-scoped pending object');
+select is((
+  select count(*) from public.cost_evidence_files
+  where id='c1210000-0000-4000-8000-000000000502'
+),0::bigint,'generic cost.source.read cannot read finalized material metadata');
+select throws_ok($$
+  select public.c1_get_cost_evidence_read_target(
+    'c1210000-0000-4000-8000-000000000020',
+    'c1210000-0000-4000-8000-000000000502'
+  )
+$$,'P0001','PERMISSION_DENIED','generic cost read target rejects material namespace');
 
 select * from finish();
 rollback;

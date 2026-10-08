@@ -79,6 +79,7 @@ function requirePermission(context: MaterialProcurementContext, permission: Perm
 }
 
 function requireOrderRead(context: MaterialProcurementContext): void {
+  requirePermission(context, 'material.read')
   if (!context.permissions.some(permission => [
     'material.order.manage', 'material.contract.record', 'cost.notification.read',
   ].includes(permission))) requirePermission(context, 'material.order.manage')

@@ -25,7 +25,7 @@ import { MaterialProcurementService } from './service'
 export interface MaterialProcurementRouteDependencies {
   resolveContext(event: H3Event, companyId: string): ReturnType<typeof c1RequestContext>
   service?: MaterialProcurementService
-  finalizer?: SupabaseMaterialEvidenceFinalizer
+  resolveFinalizer?: (event: H3Event) => SupabaseMaterialEvidenceFinalizer
 }
 
 const uuid = z.string().uuid()
@@ -55,7 +55,10 @@ export function createMaterialProcurementRoutes(dependencies: MaterialProcuremen
     return {
       context,
       service: dependencies.service
-        ?? new MaterialProcurementService(new SupabaseMaterialProcurementRepository(context.db, dependencies.finalizer)),
+        ?? new MaterialProcurementService(new SupabaseMaterialProcurementRepository(
+          context.db,
+          dependencies.resolveFinalizer ? () => dependencies.resolveFinalizer!(event) : undefined,
+        )),
     }
   }
 
@@ -83,6 +86,6 @@ export function createMaterialProcurementRoutes(dependencies: MaterialProcuremen
   }
 }
 
-export function createSupabaseMaterialProcurementRoutes(event: H3Event) {
-  return createMaterialProcurementRoutes({ resolveContext: c1RequestContext, finalizer: resolveMaterialEvidenceFinalizer(event) })
+export function createSupabaseMaterialProcurementRoutes(_event: H3Event) {
+  return createMaterialProcurementRoutes({ resolveContext: c1RequestContext, resolveFinalizer: resolveMaterialEvidenceFinalizer })
 }

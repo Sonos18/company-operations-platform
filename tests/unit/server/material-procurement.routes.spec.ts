@@ -43,7 +43,7 @@ describe('material procurement order and evidence routes', () => {
       proposalId: ids.proposal,
       orderId: ids.order,
       fileId: ids.unsignedQuotation,
-    }[name]))
+    } as Record<string, string>)[String(name)])
   })
 
   it('binds exact route IDs and command keys for orders and evidence', async () => {
@@ -83,5 +83,24 @@ describe('material procurement order and evidence routes', () => {
 
     await expect(routes.createEvidenceIntent({} as never)).rejects.toMatchObject({ code: 'INPUT_INVALID' })
     expect(service.createEvidenceIntent).not.toHaveBeenCalled()
+  })
+
+  it('never resolves service-role capability for auth failures or non-finalize routes', async () => {
+    const resolveFinalizer = vi.fn()
+    const authFailure = createMaterialProcurementRoutes({
+      resolveContext: vi.fn().mockRejectedValue(new Error('AUTH_REQUIRED')),
+      resolveFinalizer,
+    })
+    await expect(authFailure.listOrders({} as never)).rejects.toThrow('AUTH_REQUIRED')
+    expect(resolveFinalizer).not.toHaveBeenCalled()
+
+    const service = { listOrders: vi.fn(async () => []) }
+    const normal = createMaterialProcurementRoutes({
+      resolveContext: vi.fn().mockResolvedValue(context),
+      resolveFinalizer,
+      service: service as never,
+    })
+    await normal.listOrders({} as never)
+    expect(resolveFinalizer).not.toHaveBeenCalled()
   })
 })
