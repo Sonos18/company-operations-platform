@@ -557,7 +557,7 @@ function buildProposalPayload() {
   }
 }
 
-async function handleSaveDraft(): Promise<MaterialCommandResult | null> {
+async function handleSaveDraft(options: { silent?: boolean } = {}): Promise<MaterialCommandResult | null> {
   errorMessage.value = ''
   successMessage.value = ''
   conflictNotice.value = false
@@ -590,10 +590,12 @@ async function handleSaveDraft(): Promise<MaterialCommandResult | null> {
         { idempotencyKey: saveIdempotencyKey.value },
       )
       currentVersion.value = result.version
-      successMessage.value = 'Đã lưu nháp phiếu yêu cầu thành công.'
       isDirty.value = false
       emit('dirty', false)
-      emit('saved', result, existingProposalId.value)
+      if (!options.silent) {
+        successMessage.value = 'Đã lưu nháp phiếu yêu cầu thành công.'
+        emit('saved', result, existingProposalId.value)
+      }
     } else {
       result = await repo.createProposal(
         formProjectId.value,
@@ -602,10 +604,12 @@ async function handleSaveDraft(): Promise<MaterialCommandResult | null> {
       )
       existingProposalId.value = result.resourceId
       currentVersion.value = result.version
-      successMessage.value = 'Đã tạo phiếu yêu cầu mới thành công.'
       isDirty.value = false
       emit('dirty', false)
-      emit('saved', result, result.resourceId)
+      if (!options.silent) {
+        successMessage.value = 'Đã tạo phiếu yêu cầu mới thành công.'
+        emit('saved', result, result.resourceId)
+      }
     }
     return result
   } catch (err: unknown) {
@@ -648,7 +652,7 @@ async function handleSubmit() {
     // Step 1: If brand new, dirty, returned, or has unsaved edits, save draft first to obtain canonical version
     const needsSave = !existingProposalId.value || isDirty.value || isReturnedState.value || hasFormModifications()
     if (needsSave) {
-      const saveResult = await handleSaveDraft()
+      const saveResult = await handleSaveDraft({ silent: true })
       if (!saveResult) {
         isSubmitting.value = false
         return

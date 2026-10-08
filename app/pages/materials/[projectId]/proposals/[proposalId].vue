@@ -263,7 +263,7 @@ function statusBadgeClass(state: MaterialReviewState): string {
   }
 }
 
-async function loadProposal() {
+async function loadProposal(silent = false) {
   const activeCompanyId = companyAccess?.activeCompanyId
   if (!activeCompanyId || !pId.value || !propId.value) {
     proposal.value = null
@@ -272,7 +272,9 @@ async function loadProposal() {
   }
 
   const token = tracker.start({ companyId: activeCompanyId, proposalId: propId.value })
-  isLoading.value = true
+  if (!silent && !proposal.value) {
+    isLoading.value = true
+  }
   errorMessage.value = ''
   shapeErrorMessage.value = ''
 
