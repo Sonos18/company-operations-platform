@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { ClientError } from '../../../app/errors/client-error'
 import { createAuthenticatedHttpClient } from '../../../app/repositories/http/authenticated-http-client'
 import { createHttpMaterialProcurementRepository } from '../../../app/repositories/http/http-material-procurement-repository'
 import { ids, validProposal } from '../material-procurement/fixtures'
@@ -42,6 +43,9 @@ const returnedProposal = {
   orderProgress: { orderCount: 0, signedOrderCount: 0 },
 }
 
+const missingReturnReason = { ...returnedProposal } as Record<string, unknown>
+delete missingReturnReason.returnReason
+
 function response(data: unknown) {
   return {
     request: vi.fn(async ({ schema }: { schema: { parse(value: unknown): unknown } }) => schema.parse(data)),
@@ -70,7 +74,7 @@ describe('material procurement HTTP repository', () => {
     }))
   })
 
-  it('propagates return reasons through HTTP reads and rejects inconsistent responses', async () => {
+  it('propagates return reasons through valid HTTP list and read responses', async () => {
     const listRepository = createHttpMaterialProcurementRepository({
       companyId,
       client: response([returnedProposal]) as never,
@@ -91,17 +95,31 @@ describe('material procurement HTTP repository', () => {
         reviewState: 'returned',
         returnReason: 'Recheck specification',
       })
+  })
 
-    for (const malformed of [
-      { ...returnedProposal, returnReason: null },
-      { ...returnedProposal, reviewState: 'approved', returnReason: 'Stale buyer reason' },
-    ]) {
-      const malformedRepository = createHttpMaterialProcurementRepository({
-        companyId,
-        client: response(malformed) as never,
-      })
-      await expect(malformedRepository.readProposal(ids.project, ids.proposal)).rejects.toThrow()
-    }
+  it.each([
+    ['missing returnReason', missingReturnReason],
+    ['returned with null reason', { ...returnedProposal, returnReason: null }],
+    ['draft with stale reason', { ...returnedProposal, reviewState: 'draft' }],
+    ['submitted with stale reason', { ...returnedProposal, reviewState: 'submitted' }],
+    ['approved with stale reason', { ...returnedProposal, reviewState: 'approved' }],
+  ] as const)('maps malformed HTTP success payload: %s', async (_case, payload) => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    const client = createAuthenticatedHttpClient({
+      getAccessToken: () => 'synthetic-session-token',
+      fetch,
+    })
+    const repository = createHttpMaterialProcurementRepository({ companyId, client })
+    const request = repository.readProposal(ids.project, ids.proposal)
+
+    await expect(request).rejects.toBeInstanceOf(ClientError)
+    await expect(request).rejects.toMatchObject({
+      code: 'MALFORMED_RESPONSE',
+    })
+    expect(fetch).toHaveBeenCalledOnce()
   })
 
   it('does not issue a request without valid company and resource scope', async () => {

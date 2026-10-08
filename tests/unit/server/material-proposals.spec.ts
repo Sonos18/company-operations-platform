@@ -12,6 +12,7 @@ import {
 } from '../../../server/features/costs/material-procurement/service'
 import { SupabaseMaterialProcurementRepository } from '../../../server/features/costs/material-procurement/repository'
 import {
+  accountantRoleScope,
   engineerRoleScope,
   ids,
   purchasingRoleScope,
@@ -169,6 +170,24 @@ describe('material proposal service', () => {
       key,
     )).rejects.toMatchObject({ statusCode: 400, code: 'INPUT_INVALID' })
     expect(data.createProposal).not.toHaveBeenCalled()
+  })
+
+  it('restricts supplier aliases to supplier-record buyers or contract-record accountants', async () => {
+    const data = repository()
+    const service = new MaterialProcurementService(data)
+
+    await expect(service.listSupplierNames(context(engineerRoleScope), ids.material))
+      .rejects.toMatchObject({
+        statusCode: 403,
+        code: 'PERMISSION_DENIED',
+      })
+    expect(data.listSupplierNames).not.toHaveBeenCalled()
+
+    await expect(service.listSupplierNames(context(purchasingRoleScope), ids.material))
+      .resolves.toEqual([])
+    await expect(service.listSupplierNames(context(accountantRoleScope), ids.material))
+      .resolves.toEqual([])
+    expect(data.listSupplierNames).toHaveBeenCalledTimes(2)
   })
 })
 

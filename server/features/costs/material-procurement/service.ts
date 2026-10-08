@@ -55,6 +55,13 @@ function requirePermission(context: MaterialProcurementContext, permission: Perm
   }
 }
 
+function requireSupplierNameRead(context: MaterialProcurementContext): void {
+  if (!context.permissions.includes('material.supplier.record')
+    && !context.permissions.includes('material.contract.record')) {
+    requirePermission(context, 'material.supplier.record')
+  }
+}
+
 function parse<T>(schema: { parse(value: unknown): T }, value: unknown): T {
   try {
     return schema.parse(value)
@@ -90,7 +97,7 @@ export class MaterialProcurementService {
   }
 
   async listSupplierNames(context: MaterialProcurementContext, materialId: string) {
-    requirePermission(context, 'material.read')
+    requireSupplierNameRead(context)
     return this.repository.listSupplierNames(context, id(materialId))
   }
 
