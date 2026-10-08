@@ -66,7 +66,7 @@ const pId = computed(() => {
 const companyId = computed(() => store?.activeCompanyId || '')
 
 const context = ref<WorkflowProjectContext | null>(null)
-const projectInfo = ref<{ projectCode?: string; projectName?: string } | null>(null)
+const projectInfo = ref<{ projectCode?: string; projectName?: string; currencyCode?: string; moneyScale?: number } | null>(null)
 const parties = ref<WorkflowPartyOption[]>([])
 const categories = ref<Array<{ id: string; name: string }>>([])
 const contracts = ref<WorkflowContractView[]>([])
