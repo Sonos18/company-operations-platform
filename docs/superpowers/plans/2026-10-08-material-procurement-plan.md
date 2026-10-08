@@ -333,3 +333,7 @@ Không đánh dấu F1/F2 đã thực hiện.
 - Owner duy nhất cho shared hooks/migrations apply; schedule không chạy 3 implementers khi runtime chỉ có 3 slots kể cả root.
 - Baseline 36 lỗi cũ và Cloud gate được ghi đúng; không có claim tests mới đã pass.
 - Project Playwright chromium đã được đối chiếu với config tại b00f0eb; migration filenames luôn từ CLI, không có timestamp bịa.
+
+## Execution override 2026-10-08 — UI AGY
+
+Người dùng yêu cầu khi đến task UI phải viết prompt cho AGY. Codex không dispatch implementation worker cho T5/T7/T8 hoặc phần UI T9. Codex tiếp tục SQL/API/financial/report backend và review after-wave. Khi API/DTO sẵn, integrator sinh prompt riêng với immutable base SHA, approved spec, file ownership, mocked/live acceptance và no-DB/no-parent-preview boundaries. Chỉ viết prompt, không tự nhắn AGY hoặc giả lập AGY bằng Codex agent. Backend có thể tiếp tục trong khi chờ UI; full UI acceptance không được báo complete trước khi nhận diff AGY và review.
