@@ -168,7 +168,10 @@ create policy material_items_read on public.material_items for select to authent
 using (private.c1_material_actor_has_permission(tenant_id, company_id, 'material.read'));
 
 create policy material_supplier_names_read on public.material_supplier_names for select to authenticated
-using (private.c1_material_actor_has_permission(tenant_id, company_id, 'material.read'));
+using (
+  private.c1_material_actor_has_permission(tenant_id, company_id, 'material.supplier.record')
+  or private.c1_material_actor_has_permission(tenant_id, company_id, 'material.contract.record')
+);
 
 create policy material_proposals_read on public.material_proposals for select to authenticated
 using (private.c1_material_can_read_proposal(tenant_id, company_id, project_id, id));
@@ -215,53 +218,53 @@ for select to authenticated using (
 );
 
 create or replace function private.c1_workflow_can_read_file(
-  target_tenant_id uuid,
-  target_company_id uuid,
-  target_project_id uuid,
-  target_file_id uuid
+  t uuid,
+  c uuid,
+  p uuid,
+  file_id uuid
 )
 returns boolean language sql stable security definer set search_path='' as $$
   select (
-    private.c1_workflow_actor_has_permission(target_tenant_id,target_company_id,'cost.request.file.read')
-    and private.c1_workflow_can_read(target_tenant_id,target_company_id,target_project_id)
+    private.c1_workflow_actor_has_permission(t,c,'cost.request.file.read')
+    and private.c1_workflow_can_read(t,c,p)
     and exists (
       select 1
       from public.cost_evidence_files as evidence
-      where evidence.id=target_file_id
-        and evidence.tenant_id=target_tenant_id
-        and evidence.company_id=target_company_id
-        and evidence.project_id=target_project_id
+      where evidence.id=file_id
+        and evidence.tenant_id=t
+        and evidence.company_id=c
+        and evidence.project_id=p
         and evidence.status='finalized'
         and (
           (evidence.workflow_origin and evidence.created_by=(select auth.uid())
-            and private.c1_workflow_actor_has_permission(target_tenant_id,target_company_id,'cost.request.submit'))
+            and private.c1_workflow_actor_has_permission(t,c,'cost.request.submit'))
           or exists (
             select 1 from public.cost_workflow_request_evidence as request_evidence
             where request_evidence.evidence_file_id=evidence.id
-              and request_evidence.tenant_id=target_tenant_id
-              and request_evidence.company_id=target_company_id
-              and request_evidence.project_id=target_project_id
+              and request_evidence.tenant_id=t
+              and request_evidence.company_id=c
+              and request_evidence.project_id=p
           )
           or exists (
             select 1 from public.cost_workflow_contract_versions as basis
             where evidence.id=any(basis.evidence_file_ids)
-              and basis.tenant_id=target_tenant_id
-              and basis.company_id=target_company_id
-              and basis.project_id=target_project_id
+              and basis.tenant_id=t
+              and basis.company_id=c
+              and basis.project_id=p
           )
           or exists (
             select 1 from public.cost_workflow_legacy_cash_reconciliation as mapping
             where evidence.id=any(mapping.evidence_file_ids)
-              and mapping.tenant_id=target_tenant_id
-              and mapping.company_id=target_company_id
-              and mapping.project_id=target_project_id
+              and mapping.tenant_id=t
+              and mapping.company_id=c
+              and mapping.project_id=p
           )
           or exists (
             select 1 from public.cost_workflow_payments as payment
             where evidence.id=any(payment.evidence_file_ids)
-              and payment.tenant_id=target_tenant_id
-              and payment.company_id=target_company_id
-              and payment.project_id=target_project_id
+              and payment.tenant_id=t
+              and payment.company_id=c
+              and payment.project_id=p
           )
           or (
             evidence.workflow_origin
@@ -271,7 +274,7 @@ returns boolean language sql stable security definer set search_path='' as $$
         )
     )
   ) or (
-    private.c1_material_can_read_order(target_tenant_id,target_company_id,target_project_id)
+    private.c1_material_can_read_order(t,c,p)
     and exists (
       select 1
       from public.cost_evidence_files as evidence
@@ -280,10 +283,10 @@ returns boolean language sql stable security definer set search_path='' as $$
        and evidence_scope.tenant_id=evidence.tenant_id
        and evidence_scope.company_id=evidence.company_id
        and evidence_scope.project_id=evidence.project_id
-      where evidence.id=target_file_id
-        and evidence.tenant_id=target_tenant_id
-        and evidence.company_id=target_company_id
-        and evidence.project_id=target_project_id
+      where evidence.id=file_id
+        and evidence.tenant_id=t
+        and evidence.company_id=c
+        and evidence.project_id=p
         and evidence.status='finalized'
     )
   );

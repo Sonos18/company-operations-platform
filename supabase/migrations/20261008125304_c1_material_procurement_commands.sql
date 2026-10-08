@@ -524,6 +524,12 @@ declare v_context jsonb; v_tenant_id uuid; v_result jsonb;
 begin
   v_context := private.c1_material_context(target_company_id, 'material.read');
   v_tenant_id := (v_context->>'tenantId')::uuid;
+  if not (
+    private.c1_material_actor_has_permission(v_tenant_id, target_company_id, 'material.supplier.record')
+    or private.c1_material_actor_has_permission(v_tenant_id, target_company_id, 'material.contract.record')
+  ) then
+    raise exception using errcode='P0001', message='PERMISSION_DENIED';
+  end if;
   if not exists (
     select 1 from public.material_items as item
     where item.id = target_id and item.tenant_id = v_tenant_id and item.company_id = target_company_id
@@ -899,6 +905,7 @@ declare
   v_material_id uuid;
   v_quantity numeric;
   v_signed_quantity numeric;
+  v_reserved_quantity numeric;
   v_seen_ids uuid[] := array[]::uuid[];
 begin
   v_context := private.c1_material_context(target_company_id, 'material.proposal.submit');
@@ -1009,6 +1016,23 @@ begin
       raise exception using errcode='P0001', message='SIGNED_QUANTITY_CONFLICT';
     end if;
 
+    select coalesce(sum(allocation.quantity), 0)
+    into v_reserved_quantity
+    from public.material_order_allocations as allocation
+    join public.material_orders as existing_order
+      on existing_order.id = allocation.order_id
+     and existing_order.tenant_id = allocation.tenant_id
+     and existing_order.company_id = allocation.company_id
+     and existing_order.project_id = allocation.project_id
+    where allocation.proposal_line_id = v_line_id
+      and allocation.tenant_id = v_tenant_id
+      and allocation.company_id = target_company_id
+      and allocation.project_id = target_project_id
+      and existing_order.state <> 'cancelled';
+    if v_quantity < v_reserved_quantity then
+      raise exception using errcode='P0001', message='MATERIAL_ALLOCATION_EXCEEDED';
+    end if;
+
     if v_existing_line.id is null then
       insert into public.material_proposal_lines(
         id, tenant_id, company_id, project_id, proposal_id, material_id, quantity, created_by
@@ -1044,6 +1068,30 @@ begin
       and line.id <> all(v_seen_ids)
   ) then
     raise exception using errcode='P0001', message='SIGNED_QUANTITY_CONFLICT';
+  end if;
+
+  if exists (
+    select 1
+    from public.material_proposal_lines as line
+    join public.material_order_allocations as allocation
+      on allocation.proposal_line_id = line.id
+     and allocation.tenant_id = line.tenant_id
+     and allocation.company_id = line.company_id
+     and allocation.project_id = line.project_id
+    join public.material_orders as existing_order
+      on existing_order.id = allocation.order_id
+     and existing_order.tenant_id = allocation.tenant_id
+     and existing_order.company_id = allocation.company_id
+     and existing_order.project_id = allocation.project_id
+    where line.proposal_id = v_proposal.id
+      and line.tenant_id = v_tenant_id
+      and line.company_id = target_company_id
+      and line.project_id = target_project_id
+      and line.is_active
+      and line.id <> all(v_seen_ids)
+      and existing_order.state <> 'cancelled'
+  ) then
+    raise exception using errcode='P0001', message='MATERIAL_ALLOCATION_EXCEEDED';
   end if;
 
   update public.material_proposal_lines as line
@@ -1171,6 +1219,30 @@ begin
     having (not bool_and(line.is_active)) or sum(allocation.quantity) > line.quantity
   ) then
     raise exception using errcode='P0001', message='SIGNED_QUANTITY_CONFLICT';
+  end if;
+
+  if exists (
+    select 1
+    from public.material_proposal_lines as line
+    join public.material_order_allocations as allocation
+      on allocation.proposal_line_id = line.id
+     and allocation.tenant_id = line.tenant_id
+     and allocation.company_id = line.company_id
+     and allocation.project_id = line.project_id
+    join public.material_orders as existing_order
+      on existing_order.id = allocation.order_id
+     and existing_order.tenant_id = allocation.tenant_id
+     and existing_order.company_id = allocation.company_id
+     and existing_order.project_id = allocation.project_id
+    where line.proposal_id = v_proposal.id
+      and line.tenant_id = v_tenant_id
+      and line.company_id = target_company_id
+      and line.project_id = target_project_id
+      and existing_order.state <> 'cancelled'
+    group by line.id, line.quantity
+    having (not bool_and(line.is_active)) or sum(allocation.quantity) > line.quantity
+  ) then
+    raise exception using errcode='P0001', message='MATERIAL_ALLOCATION_EXCEEDED';
   end if;
 
   select coalesce(max(revision.revision_no), 0) + 1

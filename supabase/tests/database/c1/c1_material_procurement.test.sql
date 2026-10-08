@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(26);
+select plan(31);
 
 insert into auth.users(id,email) values
 ('c1200000-0000-4000-8000-000000000901','material-engineer@test.invalid'),
@@ -311,6 +311,7 @@ insert into public.material_proposal_lines(
   id,tenant_id,company_id,project_id,proposal_id,material_id,quantity,created_by
 ) values
 ('c1200000-0000-4000-8000-000000000302','c1200000-0000-4000-8000-000000000010','c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101','c1200000-0000-4000-8000-000000000402',(select value from material_test_ids where name='material'),20,'c1200000-0000-4000-8000-000000000901'),
+('c1200000-0000-4000-8000-000000000304','c1200000-0000-4000-8000-000000000010','c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101','c1200000-0000-4000-8000-000000000402',(select value from material_test_ids where name='material'),5,'c1200000-0000-4000-8000-000000000901'),
 ('c1200000-0000-4000-8000-000000000303','c1200000-0000-4000-8000-000000000010','c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101','c1200000-0000-4000-8000-000000000403',(select value from material_test_ids where name='material'),20,'c1200000-0000-4000-8000-000000000901');
 insert into public.material_proposal_revisions(
   id,tenant_id,company_id,project_id,proposal_id,revision_no,needed_on,delivery_address,submitted_by
@@ -321,6 +322,7 @@ insert into public.material_proposal_revision_lines(
   revision_id,proposal_line_id,proposal_id,tenant_id,company_id,project_id,material_id,material_name,specification,unit,quantity
 ) values
 ('c1200000-0000-4000-8000-000000000412','c1200000-0000-4000-8000-000000000302','c1200000-0000-4000-8000-000000000402','c1200000-0000-4000-8000-000000000010','c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101',(select value from material_test_ids where name='material'),'Steel','D10','bag',20),
+('c1200000-0000-4000-8000-000000000412','c1200000-0000-4000-8000-000000000304','c1200000-0000-4000-8000-000000000402','c1200000-0000-4000-8000-000000000010','c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101',(select value from material_test_ids where name='material'),'Steel','D10','bag',5),
 ('c1200000-0000-4000-8000-000000000413','c1200000-0000-4000-8000-000000000303','c1200000-0000-4000-8000-000000000403','c1200000-0000-4000-8000-000000000010','c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101',(select value from material_test_ids where name='material'),'Steel','D10','bag',20);
 update public.material_proposals set review_state='approved',current_revision_id='c1200000-0000-4000-8000-000000000412',approved_revision_id='c1200000-0000-4000-8000-000000000412',version=2 where id='c1200000-0000-4000-8000-000000000402';
 update public.material_proposals set review_state='approved',current_revision_id='c1200000-0000-4000-8000-000000000413',approved_revision_id='c1200000-0000-4000-8000-000000000413',version=2 where id='c1200000-0000-4000-8000-000000000403';
@@ -367,7 +369,106 @@ select ok(
   'concurrent 11 + 11 locks stable proposal line IDs before summing'
 );
 
+select lives_ok($$
+  select public.c1_material_decide_proposal(
+    'c1200000-0000-4000-8000-000000000020',
+    'c1200000-0000-4000-8000-000000000101',
+    'c1200000-0000-4000-8000-000000000402',
+    '{"expectedVersion":2,"decision":"return","reason":"revise unsigned reservation"}',
+    'c1200000-0000-4000-8000-000000000621',
+    'c1200000-0000-4000-8000-000000000721'
+  )
+$$,'returned proposal keeps unsigned allocation reserved');
+
+select set_config('request.jwt.claims','{"sub":"c1200000-0000-4000-8000-000000000901","role":"authenticated"}',true);
+select throws_ok($$
+  select public.c1_material_update_proposal(
+    'c1200000-0000-4000-8000-000000000020',
+    'c1200000-0000-4000-8000-000000000101',
+    'c1200000-0000-4000-8000-000000000402',
+    jsonb_build_object(
+      'expectedVersion',3,
+      'neededOn','2026-10-30',
+      'deliveryAddress','Site A',
+      'lines',jsonb_build_array(
+        jsonb_build_object(
+          'lineId','c1200000-0000-4000-8000-000000000302',
+          'materialId',(select value from material_test_ids where name='material'),
+          'quantity','8.0000'
+        ),
+        jsonb_build_object(
+          'lineId','c1200000-0000-4000-8000-000000000304',
+          'materialId',(select value from material_test_ids where name='material'),
+          'quantity','5.0000'
+        )
+      )
+    ),
+    'c1200000-0000-4000-8000-000000000622',
+    'c1200000-0000-4000-8000-000000000722'
+  )
+$$,'P0001','MATERIAL_ALLOCATION_EXCEEDED','unsigned reserved quantity cannot be reduced');
+
+select throws_ok($$
+  select public.c1_material_update_proposal(
+    'c1200000-0000-4000-8000-000000000020',
+    'c1200000-0000-4000-8000-000000000101',
+    'c1200000-0000-4000-8000-000000000402',
+    jsonb_build_object(
+      'expectedVersion',3,
+      'neededOn','2026-10-30',
+      'deliveryAddress','Site A',
+      'lines',jsonb_build_array(
+        jsonb_build_object(
+          'lineId','c1200000-0000-4000-8000-000000000304',
+          'materialId',(select value from material_test_ids where name='material'),
+          'quantity','5.0000'
+        )
+      )
+    ),
+    'c1200000-0000-4000-8000-000000000623',
+    'c1200000-0000-4000-8000-000000000723'
+  )
+$$,'P0001','MATERIAL_ALLOCATION_EXCEEDED','reserved proposal line cannot be omitted');
+
 set local role none;
+update public.material_proposal_lines
+set quantity=8
+where id='c1200000-0000-4000-8000-000000000302';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1200000-0000-4000-8000-000000000901","role":"authenticated"}',true);
+select throws_ok($$
+  select public.c1_material_submit_proposal(
+    'c1200000-0000-4000-8000-000000000020',
+    'c1200000-0000-4000-8000-000000000101',
+    'c1200000-0000-4000-8000-000000000402',
+    '{"expectedVersion":3}',
+    'c1200000-0000-4000-8000-000000000624',
+    'c1200000-0000-4000-8000-000000000724'
+  )
+$$,'P0001','MATERIAL_ALLOCATION_EXCEEDED','submit rejects reduced reserved quantity');
+
+set local role none;
+update public.material_proposal_lines
+set quantity=20,is_active=false
+where id='c1200000-0000-4000-8000-000000000302';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1200000-0000-4000-8000-000000000901","role":"authenticated"}',true);
+select throws_ok($$
+  select public.c1_material_submit_proposal(
+    'c1200000-0000-4000-8000-000000000020',
+    'c1200000-0000-4000-8000-000000000101',
+    'c1200000-0000-4000-8000-000000000402',
+    '{"expectedVersion":3}',
+    'c1200000-0000-4000-8000-000000000625',
+    'c1200000-0000-4000-8000-000000000725'
+  )
+$$,'P0001','MATERIAL_ALLOCATION_EXCEEDED','submit rejects omitted reserved line');
+
+set local role none;
+update public.material_proposal_lines
+set is_active=true
+where id='c1200000-0000-4000-8000-000000000302';
+
 insert into public.cost_workflow_contracts(
   id,tenant_id,company_id,project_id,party_id,reference,currency_code,created_by
 ) values (

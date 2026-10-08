@@ -130,4 +130,63 @@ describe('C1 material procurement forward-only contract', () => {
     expect(security).toContain('engineer cannot read order financials')
     expect(security).toContain('direct table dml denied')
   })
+  it('preserves the existing evidence-helper parameter identity while extending its body', () => {
+    const security = compact(migration('c1_material_procurement_security'))
+    const helper = security.slice(
+      security.indexOf('create or replace function private.c1_workflow_can_read_file'),
+      security.indexOf('revoke all on function private.c1_workflow_can_read_file'),
+    )
+
+    expect(helper).toMatch(/c1_workflow_can_read_file\(\s*t uuid,\s*c uuid,\s*p uuid,\s*file_id uuid\s*\)/u)
+    expect(helper).not.toContain('target_tenant_id uuid')
+    expect(helper).toContain("'cost.request.file.read'")
+    expect(helper).toContain('material_evidence_scopes')
+  })
+
+  it('keeps supplier aliases out of engineer material.read access', () => {
+    const security = compact(migration('c1_material_procurement_security'))
+    const commands = compact(migration('c1_material_procurement_commands'))
+    const policy = security.slice(
+      security.indexOf('create policy material_supplier_names_read'),
+      security.indexOf('create policy material_proposals_read'),
+    )
+    const listRpc = commands.slice(
+      commands.indexOf('create function private.c1_material_list_supplier_names'),
+      commands.indexOf('create function private.c1_material_record_supplier_name'),
+    )
+
+    for (const sql of [policy, listRpc]) {
+      expect(sql).toContain("'material.supplier.record'")
+      expect(sql).toContain("'material.contract.record'")
+    }
+    expect(policy).not.toContain("'material.read'")
+    expect(listRpc).toContain('permission_denied')
+
+    const runtime = compact(read('supabase/tests/database/c1/c1_material_procurement_security.test.sql'))
+    expect(runtime).toContain('engineer supplier alias rls returns no rows')
+    expect(runtime).toContain('engineer supplier alias rpc is denied')
+  })
+
+  it('guards returned edits and submission against every non-cancelled reservation', () => {
+    const commands = compact(migration('c1_material_procurement_commands'))
+    const update = commands.slice(
+      commands.indexOf('create function private.c1_material_update_proposal'),
+      commands.indexOf('create function private.c1_material_submit_proposal'),
+    )
+    const submit = commands.slice(
+      commands.indexOf('create function private.c1_material_submit_proposal'),
+      commands.indexOf('create function private.c1_material_decide_proposal'),
+    )
+
+    for (const sql of [update, submit]) {
+      expect(sql).toContain("existing_order.state <> 'cancelled'")
+      expect(sql).toContain('material_allocation_exceeded')
+    }
+
+    const runtime = compact(read('supabase/tests/database/c1/c1_material_procurement.test.sql'))
+    expect(runtime).toContain('unsigned reserved quantity cannot be reduced')
+    expect(runtime).toContain('reserved proposal line cannot be omitted')
+    expect(runtime).toContain('submit rejects reduced reserved quantity')
+    expect(runtime).toContain('submit rejects omitted reserved line')
+  })
 })

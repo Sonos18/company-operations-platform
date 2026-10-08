@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(84);
+select plan(86);
 
 select ok(
   coalesce((select relation.relrowsecurity and relation.relforcerowsecurity from pg_class as relation where relation.oid=to_regclass(table_name)),false),
@@ -165,6 +165,18 @@ insert into public.projects(id,tenant_id,company_id,code,name,origin,created_by)
 values('c1210000-0000-4000-8000-000000000101','c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020','SEC-P','Security project','manual','c1210000-0000-4000-8000-000000000902');
 insert into public.material_items(id,tenant_id,company_id,code,name,specification,unit,created_by)
 values('c1210000-0000-4000-8000-000000000201','c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020','SEC-M','Steel','D10','bag','c1210000-0000-4000-8000-000000000902');
+insert into public.business_parties(id,tenant_id,company_id,code,display_name,party_kind,created_by)
+values('c1210000-0000-4000-8000-000000000202','c1210000-0000-4000-8000-000000000010','c1210000-0000-4000-8000-000000000020','SEC-S','Hidden supplier','organization','c1210000-0000-4000-8000-000000000902');
+insert into public.material_supplier_names(
+  id,tenant_id,company_id,material_id,supplier_id,document_kind,name,created_by
+) values (
+  'c1210000-0000-4000-8000-000000000203',
+  'c1210000-0000-4000-8000-000000000010',
+  'c1210000-0000-4000-8000-000000000020',
+  'c1210000-0000-4000-8000-000000000201',
+  'c1210000-0000-4000-8000-000000000202',
+  'quotation','Supplier steel alias','c1210000-0000-4000-8000-000000000902'
+);
 insert into public.material_proposals(
   id,tenant_id,company_id,project_id,needed_on,delivery_address,created_by
 ) values (
@@ -210,6 +222,17 @@ select lives_ok($$
     'c1210000-0000-4000-8000-000000000702'
   )
 $$,'own engineer can update draft');
+
+select is((
+  select count(*) from public.material_supplier_names
+  where material_id='c1210000-0000-4000-8000-000000000201'
+),0::bigint,'engineer supplier alias RLS returns no rows');
+select throws_ok($$
+  select public.c1_material_list_supplier_names(
+    'c1210000-0000-4000-8000-000000000020',
+    'c1210000-0000-4000-8000-000000000201'
+  )
+$$,'P0001','PERMISSION_DENIED','engineer supplier alias RPC is denied');
 
 select throws_ok($$
   select public.c1_material_read_order(
