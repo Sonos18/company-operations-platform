@@ -757,7 +757,7 @@ async function listQuotations() {
     if (!quotationTokenCurrent(token)) return
     quotationChoices.value = choices.map(quotation => ({ ...quotation }))
     quotationChoiceToken = token
-    quotationListed = true
+    quotationListed.value = true
   } catch {
     if (quotationTokenCurrent(token)) quotationError.value = true
   } finally {
