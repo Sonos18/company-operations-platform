@@ -45,7 +45,7 @@ function materialSourceReviewResult(): ExtractionResult {
   })
 }
 
-async function panel(result: ExtractionResult, following: ExtractionResult[] = [], submitting = false) {
+async function panel(result: ExtractionResult, following: ExtractionResult[] = [], submitting = false, beforeScan?: (nodes: () => TestNode[]) => void) {
   let call = 0
   const extractEvidence = vi.fn(async () => view(call++ === 0 ? result : following.shift() ?? result))
   const permissions = ['cost.request.read', 'cost.request.submit', 'cost.request.file.read', 'cost.prepare']
@@ -58,6 +58,10 @@ async function panel(result: ExtractionResult, following: ExtractionResult[] = [
   const modules: Record<string, unknown> = {
     vue: { ...vue, withDirectives: (vnode: vue.VNode, directives: vue.DirectiveArguments) => {
       vnode.props = { ...vnode.props, modelValue: directives[0]?.[1] }
+      // The real DOM directive updates input values on every render. Mirror that
+      // update in this host renderer, even when compiler dynamic props omit value.
+      vnode.patchFlag |= 8
+      vnode.dynamicProps = [...new Set([...(vnode.dynamicProps ?? []), 'modelValue'])]
       return vnode
     } },
     '../../../shared/schemas/costs/cost-workflow': workflow,
@@ -99,6 +103,8 @@ async function panel(result: ExtractionResult, following: ExtractionResult[] = [
   const select = nodes().find(el => el.tag === 'select' && el.children.some(child => child.props.value === '1-2'))!
   ;(select.props['onUpdate:modelValue'] as (value: string) => void)('1-2')
   await vue.nextTick()
+  beforeScan?.(nodes)
+  await vue.nextTick()
   const scan = nodes().find(el => el.tag === 'button' && typeof el.props.onClick === 'function' && String(el.props.onClick).includes('scanEvidence'))!
   await (scan.props.onClick as () => Promise<void>)()
   await vue.nextTick()
@@ -106,6 +112,60 @@ async function panel(result: ExtractionResult, following: ExtractionResult[] = [
 }
 
 describe('OCR review panel result handling', () => {
+  it('explains an internal DEV quota rejection without claiming Azure F0 quota exhaustion', async () => {
+    const rendered = await panel({ ...pending, warnings: ['OCR_FREE_QUOTA_EXHAUSTED'] })
+    expect(rendered.text()).toContain('trần OCR nội bộ')
+    expect(rendered.text()).toContain('môi trường DEV')
+    expect(rendered.text()).not.toContain('Chưa có dữ liệu nhận dạng hợp lệ')
+    expect(rendered.text()).not.toContain('Azure F0 đã hết')
+    expect(rendered.extractEvidence).toHaveBeenCalledTimes(1)
+    expect(rendered.nodes().find(el => el.tag === 'button' && el.props.type === 'submit')!.props.disabled).toBe(true)
+  })
+
+  it.each([
+    ['OCR_PROVIDER_NOT_CONFIGURED', 'Dịch vụ OCR chưa được cấu hình'],
+    ['OCR_RESPONSE_UNCERTAIN', 'Chưa xác định kết quả OCR trước đó'],
+  ] as const)('keeps %s ahead of an internal quota warning', async (warning, notice) => {
+    const rendered = await panel({ ...pending, warnings: [warning, 'OCR_FREE_QUOTA_EXHAUSTED'] })
+    expect(rendered.text()).toContain(notice)
+    expect(rendered.text()).not.toContain('trần OCR nội bộ')
+  })
+
+  it.each(['unavailable', 'failed'] as const)('preserves the manual-review fallback for %s without quota', async status => {
+    const rendered = await panel({ ...pending, status, warnings: ['EXTRACTION_RESULT_INVALID'] })
+    expect(rendered.text()).toContain('Chưa có dữ liệu nhận dạng hợp lệ')
+    expect(rendered.text()).not.toContain('trần OCR nội bộ')
+  })
+
+  it.each(['quota', 'config', 'failed', 'pending'] as const)('retains entered values and the selected file/PDF scope after %s', async scenario => {
+    if (scenario === 'pending') vi.useFakeTimers()
+    const result: ExtractionResult = { ...pending,
+      status: scenario === 'failed' ? 'failed' : 'unavailable',
+      warnings: [scenario === 'quota' ? 'OCR_FREE_QUOTA_EXHAUSTED' : scenario === 'config' ? 'OCR_PROVIDER_NOT_CONFIGURED' : scenario === 'failed' ? 'EXTRACTION_RESULT_INVALID' : 'OCR_PENDING'],
+    }
+    const rendered = await panel(result, [], false, nodes => {
+      const amount = nodes().find(el => el.tag === 'input' && el.props.placeholder === '1000000')!
+      ;(amount.props['onUpdate:modelValue'] as (value: string) => void)('123456')
+      const notes = nodes().find(el => el.tag === 'input' && el.props.placeholder === 'Tùy chọn')!
+      ;(notes.props['onUpdate:modelValue'] as (value: string) => void)('Reviewed note')
+    })
+    expect(rendered.nodes().find(el => el.tag === 'input' && el.props.placeholder === '1000000')!.props.modelValue).toBe('123456')
+    expect(rendered.nodes().find(el => el.tag === 'input' && el.props.placeholder === 'Tùy chọn')!.props.modelValue).toBe('Reviewed note')
+    expect(rendered.nodes().filter(el => el.props.class === 'evidence-row')).toHaveLength(1)
+    expect(rendered.nodes().find(el => el.tag === 'select' && el.children.some(child => child.props.value === '1-2'))!.props.modelValue).toBe('1-2')
+    expect(rendered.extractEvidence).toHaveBeenCalledTimes(1)
+    expect(rendered.extractEvidence).toHaveBeenCalledWith(id, id, expect.objectContaining({ pdfPageScope: '1-2', requestId: id }), expect.objectContaining({ idempotencyKey: expect.any(String) }))
+    expect(rendered.nodes().find(el => el.tag === 'input' && el.props.type === 'checkbox')!.props.modelValue).toBe(false)
+    expect(rendered.nodes().find(el => el.tag === 'button' && el.props.type === 'submit')!.props.disabled).toBe(true)
+  })
+
+  it('renders the active form inputs and selectors with the existing Cockpit control primitives', async () => {
+    const rendered = await panel({ ...pending, warnings: ['OCR_FREE_QUOTA_EXHAUSTED'] })
+    const controls = rendered.nodes().filter(el => (el.tag === 'input' && el.props.type !== 'checkbox') || el.tag === 'select')
+    expect(controls.length).toBeGreaterThan(10)
+    for (const control of controls) expect(String(control.props.class)).toContain(control.tag === 'select' ? 'cockpit-select' : 'cockpit-input')
+  })
+
   it('shows every original material candidate and distinguishes printed total from the partial applicable sum', async () => {
     const rendered = await panel(materialSourceReviewResult())
     expect(rendered.text()).toContain('3 dòng nguồn: 2 dòng có thể áp dụng; 1 dòng giữ lại để rà soát')
