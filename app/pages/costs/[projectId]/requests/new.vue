@@ -1,8 +1,12 @@
 <template>
   <div class="cockpit-page">
-    <div class="page-header">
+    <div class="page-header cockpit-card">
       <NuxtLink :to="`/costs/${pId}/requests`" class="back-link">← Quay lại danh sách đề nghị</NuxtLink>
-      <h2>Tạo đề nghị khoản chi mới</h2>
+      <div class="header-title-row">
+        <h2>Tạo đề nghị khoản chi · {{ projectInfo?.projectName || projectInfo?.projectCode || 'Dự án' }}</h2>
+        <span v-if="projectInfo?.projectCode" class="cockpit-badge cockpit-badge--neutral">{{ projectInfo.projectCode }}</span>
+      </div>
+      <p class="subtitle">Lập hồ sơ đề nghị chi và đính kèm chứng từ gốc để gửi duyệt.</p>
     </div>
 
     <div v-if="loading" class="cockpit-alert cockpit-alert--info">Đang nạp dữ liệu ngữ cảnh dự án...</div>
@@ -17,26 +21,30 @@
     </div>
 
     <details v-if="isAuthorized && context && !loading" class="cockpit-card">
-      <summary>Hợp đồng hoặc báo giá dùng chung hạn mức</summary>
+      <summary class="font-medium cursor-pointer">Hợp đồng hoặc báo giá dùng chung hạn mức</summary>
       <CostContractBasisPanel :key="getFingerprint()" :company-id="companyId" :project-id="pId" :context="context" :parties="parties" :contracts="contracts" @changed="loadData"/>
     </details>
 
     <CostRequestReviewPanel
-      v-if="isAuthorized && context && pId && companyId && !loading" :key="getFingerprint()"
+      v-if="isAuthorized && context && pId && companyId && !loading"
+      :key="getFingerprint()"
       :company-id="companyId"
       :project-id="pId"
+      :project="projectInfo"
       :context="context"
       :parties="parties"
       :categories="categories"
       :contracts="contracts"
       @submitted="onSubmitted"
       @cancel="onCancel"
+      @dirty="isFormDirty = $event"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { workflowUuidSchema, type WorkflowProjectContext, type WorkflowPartyOption, type WorkflowContractView } from '../../../../../shared/schemas/costs/cost-workflow'
 import type { CostWorkflowRepository } from '../../../../repositories/cost-workflow.contracts'
 import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
@@ -44,7 +52,6 @@ import CostContractBasisPanel from '../../../../components/costs/CostContractBas
 import CostRequestReviewPanel from '../../../../components/costs/CostRequestReviewPanel.vue'
 
 definePageMeta({ requiredPermission: 'cost.request.submit' })
-
 
 const route = useRoute()
 const repo: CostWorkflowRepository = useRepositories().costWorkflow
@@ -59,12 +66,15 @@ const pId = computed(() => {
 const companyId = computed(() => store?.activeCompanyId || '')
 
 const context = ref<WorkflowProjectContext | null>(null)
+const projectInfo = ref<{ projectCode?: string; projectName?: string; currencyCode?: string; moneyScale?: number } | null>(null)
 const parties = ref<WorkflowPartyOption[]>([])
 const categories = ref<Array<{ id: string; name: string }>>([])
 const contracts = ref<WorkflowContractView[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
 const partyNotice = ref('')
+const isSubmitted = ref(false)
+const isFormDirty = ref(false)
 
 const tracker = createAsyncRequestTracker<{ companyId: string; projectId: string; fp: string }>()
 
@@ -85,20 +95,55 @@ const isAuthorized = computed(() => {
 function clearData() {
   tracker.invalidate()
   context.value = null
+  projectInfo.value = null
   parties.value = []
   categories.value = []
   contracts.value = []
   errorMessage.value = ''
-  partyNotice.value = '';loading.value=false
+  partyNotice.value = ''
+  loading.value = false
+  isSubmitted.value = false
+  isFormDirty.value = false
 }
 
 watch([pId, companyId, () => getFingerprint()], () => {
   clearData()
   void loadData()
-}, {immediate:true,flush:'sync'})
+}, { immediate: true, flush: 'sync' })
 
 onUnmounted(() => {
   tracker.invalidate()
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('beforeunload', handleBeforeUnload)
+  }
+})
+
+function handleBeforeUnload(e: BeforeUnloadEvent) {
+  if (isFormDirty.value && !isSubmitted.value) {
+    e.preventDefault()
+    e.returnValue = ''
+  }
+}
+
+onMounted(() => {
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', handleBeforeUnload)
+  }
+})
+
+onBeforeRouteLeave((to, from, next) => {
+  if (isSubmitted.value) {
+    next()
+    return
+  }
+  if (isFormDirty.value) {
+    const confirmLeave = window.confirm('Bạn có thông tin đề nghị chi chưa gửi duyệt. Rời đi lúc này sẽ làm mất dữ liệu đã nhập. Bạn có chắc muốn rời đi?')
+    if (!confirmLeave) {
+      next(false)
+      return
+    }
+  }
+  next()
 })
 
 async function loadData() {
@@ -133,6 +178,15 @@ async function loadData() {
 
     if (!token.isCurrent() || getFingerprint() !== capturedFp) return
 
+    if (cash?.project) {
+      projectInfo.value = {
+        projectCode: cash.project.projectCode,
+        projectName: cash.project.projectName,
+        currencyCode: cash.project.currencyCode,
+        moneyScale: cash.project.moneyScale,
+      }
+    }
+
     parties.value = partyList
     if (!hasPartyRead) {
       partyNotice.value = 'Cần quyền xem danh sách đối tác để chọn đơn vị nhận khoản chi.'
@@ -141,7 +195,7 @@ async function loadData() {
     contracts.value = contractList
 
     if (cash && Array.isArray(cash.categories)) {
-      categories.value = cash.categories.flatMap(c => c.categoryId ? [{id:c.categoryId,name:c.name}] : [])
+      categories.value = cash.categories.flatMap(c => c.categoryId ? [{ id: c.categoryId, name: c.name }] : [])
     } else {
       categories.value = []
     }
@@ -156,9 +210,9 @@ async function loadData() {
   }
 }
 
-
 async function onSubmitted(requestId: string) {
-  if (isAuthorized.value && tracker.identity?.fp===getFingerprint() && workflowUuidSchema.safeParse(requestId).success) {
+  isSubmitted.value = true
+  if (isAuthorized.value && tracker.identity?.fp === getFingerprint() && workflowUuidSchema.safeParse(requestId).success) {
     await navigateTo(`/costs/${pId.value}/requests/${requestId}`)
   }
 }
@@ -171,12 +225,75 @@ async function onCancel() {
 </script>
 
 <style scoped>
-.cockpit-page { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-.page-header { display: flex; flex-direction: column; gap: 4px; }
-.back-link { font-size: 13px; color: #2563eb; text-decoration: none; }
-.back-link:hover { text-decoration: underline; }
-.cockpit-alert { padding: 8px 12px; border-radius: 6px; font-size: 13px; }
-.cockpit-alert--info { background-color: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
-.cockpit-alert--warning { background-color: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
-.cockpit-alert--danger { background-color: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+.cockpit-page {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 20px;
+}
+
+.header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.header-title-row h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.back-link {
+  font-size: 13px;
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 500;
+  align-self: flex-start;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+}
+
+.cockpit-alert {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.cockpit-alert--info {
+  background-color: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+
+.cockpit-alert--warning {
+  background-color: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.cockpit-alert--danger {
+  background-color: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
 </style>
