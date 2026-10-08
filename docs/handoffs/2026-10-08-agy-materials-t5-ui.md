@@ -1,12 +1,12 @@
 # AGY — T5 UI kỹ sư yêu cầu vật tư
 
-Trạng thái: READY cho T5, từ SHA nền bên dưới. T3 API và contract đã review; repository `materialProcurement` đã đăng ký. Typecheck/lint/build đã chạy thành công trên tree này. T2 SQL vẫn đang review, chưa áp dụng Cloud DEV; kiểm thử UI bằng HTTP/auth mocks.
+Trạng thái: READY cho T5, từ SHA nền bên dưới. API danh mục/phiếu dùng trong T5 và contract đã review; repository `materialProcurement` đã đăng ký. Typecheck/lint/build đã chạy thành công trên tree này. T2 SQL và quyền đọc alias NCC đã đóng source review; chưa áp dụng Cloud DEV hoặc kiểm thử SQL runtime. Kiểm thử UI bằng HTTP/auth mocks. Không gọi supplier/alias endpoints trong T5.
 
 ## Mục tiêu và nền
 
 Triển khai UI T5 theo `docs/superpowers/specs/2026-10-08-material-procurement-design.md` và `docs/superpowers/plans/2026-10-08-material-procurement-plan.md`.
 Nhánh tích hợp Git: `codex/site-engineer-material-request`. InstaCloud: `site-engineer-material-request`, worker `dev-worker-recovery`.
-SHA nền đã review: `7960ba4f506312d7a0281bb336ceae94d81cce67`. Checkout worktree riêng từ SHA này và ghi lại base/head khi bàn giao.
+SHA nền đã review: `0837198afb31fbfbfcf833373b07237dbcc9a3dd`. Checkout worktree riêng từ SHA này và ghi lại base/head khi bàn giao. Nếu đã bắt đầu từ checkpoint 7960ba4, giữ nhánh và thay đổi UI hiện có; không reset. Codex tích hợp các backend fixes trước khi nhận UI, các method T5 giữ cùng contract.
 Giữ nguyên công việc UI đang làm trên parent `dev-preview`; làm nhánh/worktree riêng từ SHA được bàn giao, không reset/stash/clean công việc khác.
 Source/tests/build theo remote workflow đã được duyệt. Không dùng local DB, seed, migration push, cấp permission, deploy/promote hoặc tác động Production. Các kiểm thử UI dùng HTTP/auth fixtures; Cloud DEV chưa áp dụng migrations.
 
@@ -61,7 +61,7 @@ Dùng mock HTTP fixtures typed đúng schemas, không mock repository thành d�
 Pre-arm POST/PATCH + canonical GET trước click; chờ fresh DOM, không dùng sleep cố định.
 
 Chạy focused E2E trên remote, port riêng:
-`PLAYWRIGHT_PORT=4321 pnpm exec playwright test tests/e2e/material-proposal.spec.ts --project=chromium`.
+`env -u TASKOVIA_DEV_CONFIG_SOURCE -u SUPABASE_DEV_ACCESS_TOKEN -u NUXT_PUBLIC_SUPABASE_URL -u NUXT_PUBLIC_SUPABASE_ANON_KEY PLAYWRIGHT_PORT=4321 pnpm exec playwright test tests/e2e/material-proposal.spec.ts --project=chromium`.
 Chạy lint/typecheck/build theo package.json, tuần tự với Codex để tránh heavy checks trùng. Chỉ báo PASS khi command thật exit0 trên exact head.
 Full unit baseline tại checkpoint 69761c6 còn 86 failures không thuộc feature; không disable/sửa ngoài scope hoặc gọi full suite green.
 

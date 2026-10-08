@@ -213,9 +213,11 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 **Done:** Case 20->10A+10B đúng, quantity/spec mismatch hiển thị, buyer không sửa proposal, retries không tạo đơn trùng.
 
+**Ruling khi review T2:** Bổ sung command hủy đơn chưa ký có reason/audit/expectedVersion/idempotency, buyer-only, để giải phóng phân bổ đang reserved. Trả phiếu hoặc sửa phiếu không tự giải phóng. T4 thêm corrective migration mới + RPC/API/contract tối thiểu qua integrator review; deny hủy đơn đã liên kết hợp đồng. Giữ quantity/presence guard với toàn bộ allocations chưa cancelled tại update và submit.
+
 ### Task 5: (T5) UI kỹ sư và danh mục
 
-**Owner / dependency:** UI worker / GPT-5.6 Sol ultra; T1,T3.
+**Owner / dependency:** AGY theo prompt bàn giao đã review; T1,T3.
 **Files:** Create app/pages/materials/index.vue; app/pages/materials/[projectId]/proposals/{index,new,[proposalId]}.vue; app/components/materials/MaterialMasterPanel.vue; MaterialProposalForm.vue; tests/e2e/material-proposal.spec.ts.
 **Interfaces:** Dùng MaterialProcurementRepository frozen; mocked HTTP fixtures cho vòng form trong khi T4 đang chạy; shared navigation/plugin hooks thuộc T9.
 
@@ -243,7 +245,7 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 ### Task 7: (T7) UI mua hàng: hộp phiếu, duyệt/trả, tách đơn
 
-**Owner / dependency:** UI worker / GPT-5.6 Sol ultra; T1,T3,T4,T5.
+**Owner / dependency:** AGY theo prompt bàn giao đã review; T1,T3,T4,T5.
 **Files:** Create app/components/materials/MaterialProposalDecisionPanel.vue; MaterialOrderCreatePanel.vue; MaterialQuotationComparisonPanel.vue; purchasing views under app/pages/materials/[projectId]/proposals; tests/e2e/material-purchasing.spec.ts.
 **Interfaces:** Dùng decideProposal/createOrder/readOrder; không updateProposal ở buyer screen; các đoạn proposal UI dùng shared readonly view từ T5 sau integration.
 
@@ -257,7 +259,7 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 ### Task 8: (T8) UI kế toán: hợp đồng, hóa đơn và chuyển khoản
 
-**Owner / dependency:** UI worker / GPT-5.6 Sol ultra; T1,T4,T6.
+**Owner / dependency:** AGY theo prompt bàn giao đã review; T1,T4,T6.
 **Files:** Create app/pages/materials/[projectId]/orders/{index,[orderId]}.vue; MaterialContractRecordPanel.vue; MaterialOrderPaymentPanel.vue; tests/e2e/material-contract-payment.spec.ts. Reuse CostInstallmentPaymentModal only through reviewed minimal adapter if its contract fits.
 **Interfaces:** Order signed command returns canonical installmentId; existing canonical confirmPayment with invoice+proof and invoiceNames mapping; no new material-only payment ledger/endpoint.
 
@@ -271,7 +273,7 @@ Không chạy song song: T0/T1 schema contract decisions; edits shared constants
 
 ### Task 9: (T9) Báo cáo, notification và tích hợp shared hooks
 
-**Owner / dependency:** Integrator / worker GPT-5.6 Sol ultra; T6; integration đợi T5,T7,T8.
+**Owner / dependency:** Backend/integrator GPT-5.6 Sol ultra; UI báo cáo/thông báo AGY theo prompt riêng; T6; integration đợi T5,T7,T8.
 **Files:** Modify shared/schemas/costs/cost-workflow-reporting.ts; server/features/costs/finance/cost-workflow-summary.ts; cost-workflow-money.ts; notification routing; app finance display. Sole owner app/repositories/contracts.ts, app/plugins/repositories.client.ts, app/components/app/navigation-permissions.ts, app/layouts/default.vue, package.json và generated types. Tests tests/unit/server/material-commitment-summary.spec.ts; tests/unit/repositories/cost-workflow-notification-links.spec.ts.
 **Interfaces:** summarizeMaterialCommitments(input: MaterialCommitmentFacts) -> MaterialCommitmentSummary; committedMaterialCost + materialCommitmentRemaining + canonical grossPaid/netCash; notification source union manager_decision | material_signed_contract; order deep-link for new source.
 
@@ -331,7 +333,7 @@ Không đánh dấu F1/F2 đã thực hiện.
 - Finance direct-source branch dùng canonical cash và giữ lịch sử; invoices/target proofs/caps có tests.
 - Mua hàng không sửa proposal; split quantities/revisions/signed allocations có coverage.
 - Owner duy nhất cho shared hooks/migrations apply; schedule không chạy 3 implementers khi runtime chỉ có 3 slots kể cả root.
-- Baseline 36 lỗi cũ và Cloud gate được ghi đúng; không có claim tests mới đã pass.
+- Baseline trước đồng bộ có 36 lỗi; sau merge reviewed dev, T0/T1 ghi nhận 86 failures baseline. Source mới được báo cáo theo command/exit và reviewer gate, Cloud vẫn chưa chạy.
 - Project Playwright chromium đã được đối chiếu với config tại b00f0eb; migration filenames luôn từ CLI, không có timestamp bịa.
 
 ## Execution override 2026-10-08 — UI AGY
