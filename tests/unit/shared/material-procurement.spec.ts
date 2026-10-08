@@ -78,6 +78,8 @@ describe('material procurement contracts', () => {
     delete missingReason.returnReason
     expect(materialProposalViewSchema.safeParse(missingReason).success).toBe(false)
     expect(materialProposalViewSchema.safeParse({ ...returned, returnReason: '  ' }).success).toBe(false)
+    expect(materialProposalViewSchema.safeParse({ ...returned, returnReason: null }).success).toBe(false)
+    expect(materialProposalViewSchema.safeParse({ ...returned, reviewState: 'submitted' }).success).toBe(false)
   })
 
   it('freezes split-order allocation and signed-contract inputs', () => {

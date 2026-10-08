@@ -142,7 +142,10 @@ export const materialProposalViewSchema = z.object({
     orderCount: z.number().int().nonnegative(),
     signedOrderCount: z.number().int().nonnegative(),
   }).strict(),
-}).strict()
+}).strict().refine(
+  value => (value.reviewState === 'returned') === (value.returnReason !== null),
+  { path: ['returnReason'], message: 'Only returned proposals require a return reason' },
+)
 
 export const materialOrderAllocationInputSchema = z.object({
   proposalLineId: workflowUuidSchema,
