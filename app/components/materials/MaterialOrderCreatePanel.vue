@@ -207,9 +207,19 @@
 
     <!-- Alert 7: General Action Error Banner -->
     <div v-else-if="generalError" class="cockpit-alert cockpit-alert--danger mt-4" role="alert">
-      <div class="flex items-start gap-2">
-        <UIcon name="i-lucide-alert-circle" class="text-rose-600 text-base shrink-0 mt-0.5" aria-hidden="true" />
-        <p class="font-semibold text-rose-900 flex-1">{{ generalError }}</p>
+      <div class="flex items-start justify-between gap-2">
+        <div class="flex items-start gap-2 flex-1">
+          <UIcon name="i-lucide-alert-circle" class="text-rose-600 text-base shrink-0 mt-0.5" aria-hidden="true" />
+          <p class="font-semibold text-rose-900 flex-1">{{ generalError }}</p>
+        </div>
+        <button
+          type="button"
+          class="text-rose-600 hover:text-rose-800 text-xs p-1"
+          aria-label="Đóng thông báo lỗi"
+          @click="generalError = ''"
+        >
+          <UIcon name="i-lucide-x" class="text-sm" aria-hidden="true" />
+        </button>
       </div>
     </div>
 
@@ -466,6 +476,19 @@
           />
         </div>
 
+        <!-- Line Validation Errors Alert -->
+        <div v-if="lineValidationErrors.length > 0" class="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-800 space-y-1" role="alert">
+          <div class="font-semibold text-rose-900 flex items-center gap-1.5">
+            <UIcon name="i-lucide-alert-circle" class="text-sm shrink-0" aria-hidden="true" />
+            Có {{ lineValidationErrors.length }} lỗi phân bổ dòng vật tư:
+          </div>
+          <ul class="list-disc list-inside space-y-0.5 text-rose-700">
+            <li v-for="err in lineValidationErrors" :key="err.lineId + err.message">
+              {{ err.message }}
+            </li>
+          </ul>
+        </div>
+
         <!-- Order Creation Summary Bar -->
         <div class="order-submit-bar mt-4 p-4 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-4 flex-wrap">
           <div class="summary-details">
@@ -708,7 +731,7 @@ import {
   chosenSupplierInputSchema,
   createMaterialOrderInputSchema,
 } from '../../../shared/schemas/costs/material-procurement'
-import { workflowUuidSchema } from '../../../shared/schemas/costs/cost-workflow'
+import { workflowUuidSchema, workflowMoneySchema } from '../../../shared/schemas/costs/cost-workflow'
 import { ClientError } from '../../errors/client-error'
 import { formatMaterialQuantity } from '../../utils/materials/quantity-display'
 import {
@@ -856,6 +879,7 @@ function parseApiError(err: unknown): { code?: string; status?: number; kind?: s
 function isApiDenialOrConflict(errInfo: { code?: string; status?: number; kind?: string }): boolean {
   return (
     errInfo.status === 409 ||
+    errInfo.code === 'PROJECT_COMPLETED' ||
     errInfo.code === 'VERSION_CONFLICT' ||
     errInfo.code === 'IDEMPOTENCY_CONFLICT' ||
     errInfo.code === 'MATERIAL_ALLOCATION_EXCEEDED' ||
@@ -1198,7 +1222,9 @@ function handleReturnRequested() {
 
 function isValidPositiveDecimalString(val: string): boolean {
   const trimmed = (val ?? '').trim()
-  if (!trimmed || !/^\d+(\.\d{1,4})?$/.test(trimmed)) return false
+  if (!trimmed) return false
+  const parseRes = workflowMoneySchema.safeParse(trimmed)
+  if (!parseRes.success) return false
   try {
     return new Decimal(trimmed).gt(0)
   } catch {
@@ -1206,7 +1232,7 @@ function isValidPositiveDecimalString(val: string): boolean {
   }
 }
 
-// F7: Strict line validation - only completely blank allocation is considered unselected.
+// C3: Strict line validation - only completely blank allocation is considered unselected.
 // Any non-blank row with invalid quantity/price/quotationName/mapping must error on that specific line.
 interface LineValidationError {
   lineId: string
@@ -1224,11 +1250,12 @@ const lineValidationErrors = computed<LineValidationError[]>(() => {
     const allocRaw = (form.allocationQuantity ?? '').trim()
     if (allocRaw === '') continue // Unselected
 
-    if (!/^\d+(\.\d{1,4})?$/.test(allocRaw)) {
+    const allocParse = workflowMoneySchema.safeParse(allocRaw)
+    if (!allocParse.success) {
       errors.push({
         lineId: line.lineId,
         materialName: line.materialName,
-        message: `Dòng "${line.materialName}": Số lượng phân bổ "${allocRaw}" không hợp lệ (cần là số thập phân dương, tối đa 4 chữ số thập phân).`,
+        message: `Dòng "${line.materialName}": Số lượng phân bổ "${allocRaw}" không hợp lệ (tối đa 16 chữ số nguyên, tối đa 4 chữ số thập phân, không chứa số 0 ở đầu).`,
       })
       continue
     }
@@ -1274,11 +1301,12 @@ const lineValidationErrors = computed<LineValidationError[]>(() => {
     }
 
     const priceRaw = (form.unitPrice ?? '').trim()
-    if (!priceRaw || !/^\d+(\.\d{1,4})?$/.test(priceRaw)) {
+    const priceParse = workflowMoneySchema.safeParse(priceRaw)
+    if (!priceParse.success) {
       errors.push({
         lineId: line.lineId,
         materialName: line.materialName,
-        message: `Dòng "${line.materialName}": Đơn giá "${priceRaw}" không hợp lệ (cần là số thập phân dương, tối đa 4 chữ số thập phân).`,
+        message: `Dòng "${line.materialName}": Đơn giá "${priceRaw}" không hợp lệ (tối đa 16 chữ số nguyên, tối đa 4 chữ số thập phân, không chứa số 0 ở đầu).`,
       })
       continue
     }
@@ -1390,6 +1418,9 @@ function startCreateOrder() {
   if (!canCreateOrder.value || pendingCreateOrderCommand.value) return
   if (!isLiveScopeValid() || !props.proposal.approvedRevisionId || !resolvedSupplierId.value || !canonicalCurrency.value || !finalizedEvidenceFileId.value) return
 
+  generalError.value = ''
+  createActionError.value = ''
+
   const inputPayload: CreateMaterialOrderInput = {
     approvedRevisionId: props.proposal.approvedRevisionId,
     supplierId: resolvedSupplierId.value,
@@ -1406,7 +1437,9 @@ function startCreateOrder() {
 
   const parsed = createMaterialOrderInputSchema.safeParse(inputPayload)
   if (!parsed.success) {
-    createActionError.value = parsed.error.issues[0]?.message || 'Dữ liệu tạo đơn không hợp lệ.'
+    const errorMsg = parsed.error.issues[0]?.message || 'Dữ liệu tạo đơn không hợp lệ.'
+    generalError.value = `Lỗi dữ liệu tạo đơn: ${errorMsg}`
+    createActionError.value = errorMsg
     return
   }
 
@@ -1454,7 +1487,9 @@ async function executeCreateOrder(cmd: CreateOrderCommand) {
       const errInfo = parseApiError(err)
       if (isApiDenialOrConflict(errInfo)) {
         isCreatePostRejected.value = true
-        if (errInfo.code === 'VERSION_CONFLICT' || errInfo.status === 409) {
+        if (errInfo.code === 'PROJECT_COMPLETED') {
+          createActionError.value = 'Dự án đã hoàn tất (PROJECT_COMPLETED): Không thể tạo đơn mua hàng.'
+        } else if (errInfo.code === 'VERSION_CONFLICT' || errInfo.status === 409) {
           createActionError.value = 'Xung đột phiên bản (409): Dữ liệu phiếu đã thay đổi hoặc số lượng còn lại không đủ.'
         } else if (errInfo.code === 'MATERIAL_ALLOCATION_EXCEEDED') {
           createActionError.value = 'Số lượng đặt mua vượt quá hạn mức còn lại được duyệt (MATERIAL_ALLOCATION_EXCEEDED).'
@@ -1487,11 +1522,23 @@ async function executeCreateOrder(cmd: CreateOrderCommand) {
       ])
       if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
 
-      if (canonicalProp.id !== cmd.proposalId || readOrd.id !== createdOrderId.value) {
-        throw new Error('CANONICAL_IDENTITY_MISMATCH')
+      // C2: Check readOrd identity, proposalId, and frozen revision against captured command
+      if (
+        readOrd.id !== createdOrderId.value ||
+        readOrd.proposalId !== cmd.proposalId ||
+        readOrd.approvedRevisionId !== cmd.approvedRevisionId
+      ) {
+        throw new Error('ORDER_IDENTITY_OR_REVISION_MISMATCH')
       }
-      if (canonicalProp.approvedRevisionId !== cmd.approvedRevisionId) {
-        throw new Error('REVISION_MISMATCH')
+
+      // C2: Check canonical proposal identity and project against captured command
+      // Note: canonicalProp.approvedRevisionId may be returned or reapproved as R2;
+      // we do not force it back to R1 or reject here.
+      if (
+        canonicalProp.id !== cmd.proposalId ||
+        canonicalProp.projectId !== cmd.projectId
+      ) {
+        throw new Error('PROPOSAL_IDENTITY_MISMATCH')
       }
 
       orders.value = freshOrders.filter(o => o.proposalId === cmd.proposalId)
@@ -1507,6 +1554,7 @@ async function executeCreateOrder(cmd: CreateOrderCommand) {
       selectedFile.value = null
       finalizedEvidenceFileId.value = null
       uploadSession.value = null
+      supplierResolutionKey.value = crypto.randomUUID()
 
       emit('canonical', canonicalProp)
       emitBusy(false)
@@ -1631,7 +1679,9 @@ async function executeCancelOrder(cmd: CancelOrderCommand) {
       const errInfo = parseApiError(err)
       if (isApiDenialOrConflict(errInfo)) {
         isCancelPostRejected.value = true
-        if (errInfo.code === 'VERSION_CONFLICT' || errInfo.status === 409) {
+        if (errInfo.code === 'PROJECT_COMPLETED') {
+          cancelActionError.value = 'Dự án đã hoàn tất (PROJECT_COMPLETED): Không thể hủy đơn mua hàng.'
+        } else if (errInfo.code === 'VERSION_CONFLICT' || errInfo.status === 409) {
           cancelActionError.value = 'Xung đột khi hủy đơn (409): Trạng thái đơn mua đã bị thay đổi hoặc đã ký hợp đồng.'
         } else {
           cancelActionError.value = errInfo.message || 'Yêu cầu hủy đơn bị từ chối.'
@@ -1656,9 +1706,21 @@ async function executeCancelOrder(cmd: CancelOrderCommand) {
       ])
       if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
 
-      // F2-F4: Verify readOrd confirms cancellation
-      if (readOrd.id !== cmd.orderId || readOrd.orderState !== 'cancelled') {
+      // C2: Verify readOrd confirms cancellation and matches captured proposal
+      if (
+        readOrd.id !== cmd.orderId ||
+        readOrd.proposalId !== cmd.proposalId ||
+        readOrd.orderState !== 'cancelled'
+      ) {
         throw new Error('CANCEL_CONFIRMATION_FAILED')
+      }
+
+      // C2: Verify canonical proposal identity and project
+      if (
+        canonicalProp.id !== cmd.proposalId ||
+        canonicalProp.projectId !== cmd.projectId
+      ) {
+        throw new Error('PROPOSAL_IDENTITY_MISMATCH')
       }
 
       orders.value = freshOrders.filter(o => o.proposalId === cmd.proposalId)
@@ -1717,7 +1779,10 @@ async function runRejectionCanonicalRefresh(cmd: {
     ])
     if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
 
-    if (canonicalProp.id !== cmd.proposalId) {
+    if (
+      canonicalProp.id !== cmd.proposalId ||
+      canonicalProp.projectId !== cmd.projectId
+    ) {
       throw new Error('CANONICAL_IDENTITY_MISMATCH')
     }
 

@@ -80,12 +80,16 @@
             :id="'quote-qty-' + line.lineId"
             type="text"
             class="cockpit-input text-sm w-full font-mono"
+            :class="{ 'border-rose-400 text-rose-700': isQuoteQtyFormatInvalid }"
             placeholder="VD: 10.0000"
             :value="quotedQuantity"
             :disabled="disabled || isLineExhausted"
             @input="onUpdateQuotedQuantity"
           >
-          <span class="field-hint text-xs text-slate-400">Số lượng ghi trên báo giá PDF</span>
+          <span v-if="isQuoteQtyFormatInvalid" class="text-xs text-rose-600 font-medium" role="alert">
+            Số lượng không hợp lệ (tối đa 16 số nguyên, 4 số thập phân, không số 0 ở đầu)
+          </span>
+          <span v-else class="field-hint text-xs text-slate-400">Số lượng ghi trên báo giá PDF</span>
         </div>
 
         <!-- 3. Allocation Quantity for this Order -->
@@ -97,7 +101,7 @@
             :id="'alloc-qty-' + line.lineId"
             type="text"
             class="cockpit-input text-sm w-full font-mono"
-            :class="{ 'border-rose-400 text-rose-700': exceedsRemaining }"
+            :class="{ 'border-rose-400 text-rose-700': exceedsRemaining || isAllocQtyFormatInvalid }"
             placeholder="VD: 10.0000"
             :value="allocationQuantity"
             :disabled="disabled || isLineExhausted"
@@ -105,6 +109,9 @@
           >
           <span v-if="exceedsRemaining" class="text-xs text-rose-600 font-medium" role="alert">
             Vượt quá còn lại ({{ formatMaterialQuantity(line.remainingQuantity) }})
+          </span>
+          <span v-else-if="isAllocQtyFormatInvalid" class="text-xs text-rose-600 font-medium" role="alert">
+            Số lượng phân bổ không hợp lệ (tối đa 16 số nguyên, 4 số thập phân, không số 0 ở đầu)
           </span>
           <span v-else class="field-hint text-xs text-slate-400">Tối đa: {{ formatMaterialQuantity(line.remainingQuantity) }}</span>
         </div>
@@ -118,12 +125,16 @@
             :id="'unit-price-' + line.lineId"
             type="text"
             class="cockpit-input text-sm w-full font-mono"
+            :class="{ 'border-rose-400 text-rose-700': isUnitPriceFormatInvalid }"
             placeholder="VD: 18500"
             :value="unitPrice"
             :disabled="disabled || isLineExhausted"
             @input="onUpdateUnitPrice"
           >
-          <span v-if="lineTotalEstimate" class="field-hint text-xs text-slate-600 font-mono font-medium">
+          <span v-if="isUnitPriceFormatInvalid" class="text-xs text-rose-600 font-medium" role="alert">
+            Đơn giá không hợp lệ (tối đa 16 số nguyên, 4 số thập phân, không số 0 ở đầu)
+          </span>
+          <span v-else-if="lineTotalEstimate" class="field-hint text-xs text-slate-600 font-mono font-medium">
             Thành tiền: {{ lineTotalEstimate }}
           </span>
           <span v-else class="field-hint text-xs text-slate-400">Đơn giá chưa VAT / theo báo giá</span>
@@ -202,6 +213,7 @@
 import { computed } from 'vue'
 import Decimal from 'decimal.js'
 import type { MaterialProposalView } from '../../../shared/schemas/costs/material-procurement'
+import { workflowMoneySchema } from '../../../shared/schemas/costs/cost-workflow'
 import { compareMaterialQuotation } from '../../../shared/utils/material-quotation-comparison'
 import { formatMaterialQuantity } from '../../utils/materials/quantity-display'
 
@@ -232,13 +244,33 @@ const emit = defineEmits<{
 
 function isValidPositiveDecimal(val: string): boolean {
   const trimmed = (val ?? '').trim()
-  if (!trimmed || !/^\d+(\.\d{1,4})?$/.test(trimmed)) return false
+  if (!trimmed) return false
+  const parseRes = workflowMoneySchema.safeParse(trimmed)
+  if (!parseRes.success) return false
   try {
     return new Decimal(trimmed).gt(0)
   } catch {
     return false
   }
 }
+
+const isAllocQtyFormatInvalid = computed(() => {
+  const trimmed = (props.allocationQuantity ?? '').trim()
+  if (!trimmed) return false
+  return !isValidPositiveDecimal(trimmed)
+})
+
+const isQuoteQtyFormatInvalid = computed(() => {
+  const trimmed = (props.quotedQuantity ?? '').trim()
+  if (!trimmed) return false
+  return !isValidPositiveDecimal(trimmed)
+})
+
+const isUnitPriceFormatInvalid = computed(() => {
+  const trimmed = (props.unitPrice ?? '').trim()
+  if (!trimmed) return false
+  return !isValidPositiveDecimal(trimmed)
+})
 
 const isLineExhausted = computed(() => {
   try {
