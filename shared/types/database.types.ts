@@ -895,6 +895,10 @@ export type Database = {
           verified_sha256: string | null
           verified_size_bytes: number | null
           version: number
+          workflow_evidence_kind: string | null
+          workflow_origin: boolean
+          workflow_target_id: string | null
+          workflow_target_kind: string | null
         }
         Insert: {
           bucket_id?: string
@@ -917,6 +921,10 @@ export type Database = {
           verified_sha256?: string | null
           verified_size_bytes?: number | null
           version?: number
+          workflow_evidence_kind?: string | null
+          workflow_origin?: boolean
+          workflow_target_id?: string | null
+          workflow_target_kind?: string | null
         }
         Update: {
           bucket_id?: string
@@ -939,6 +947,10 @@ export type Database = {
           verified_sha256?: string | null
           verified_size_bytes?: number | null
           version?: number
+          workflow_evidence_kind?: string | null
+          workflow_origin?: boolean
+          workflow_target_id?: string | null
+          workflow_target_kind?: string | null
         }
         Relationships: [
           {
@@ -1055,6 +1067,1348 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "project_subcontract_payments"
             referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      cost_workflow_cash_proof_claims: {
+        Row: {
+          claimed_at: string
+          company_id: string
+          payment_id: string | null
+          project_id: string
+          proof_sha256: string
+          refund_id: string | null
+          tenant_id: string
+        }
+        Insert: {
+          claimed_at?: string
+          company_id: string
+          payment_id?: string | null
+          project_id: string
+          proof_sha256: string
+          refund_id?: string | null
+          tenant_id: string
+        }
+        Update: {
+          claimed_at?: string
+          company_id?: string
+          payment_id?: string | null
+          project_id?: string
+          proof_sha256?: string
+          refund_id?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_cash_proof_clai_payment_id_tenant_id_company_fkey"
+            columns: ["payment_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_payments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_cash_proof_clai_project_id_tenant_id_company_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_cash_proof_clai_refund_id_tenant_id_company__fkey"
+            columns: ["refund_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_refunds"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      cost_workflow_cash_states: {
+        Row: {
+          company_id: string
+          payment_id: string
+          project_id: string
+          tenant_id: string
+          version: number
+        }
+        Insert: {
+          company_id: string
+          payment_id: string
+          project_id: string
+          tenant_id: string
+          version?: number
+        }
+        Update: {
+          company_id?: string
+          payment_id?: string
+          project_id?: string
+          tenant_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_cash_states_payment_id_tenant_id_company_id__fkey"
+            columns: ["payment_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_payments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      cost_workflow_companies: {
+        Row: {
+          company_id: string
+          mode: string
+          notification_recipient_id: string | null
+          tenant_id: string
+          version: number
+        }
+        Insert: {
+          company_id: string
+          mode?: string
+          notification_recipient_id?: string | null
+          tenant_id: string
+          version?: number
+        }
+        Update: {
+          company_id?: string
+          mode?: string
+          notification_recipient_id?: string | null
+          tenant_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_companies_company_id_tenant_id_fkey"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+        ]
+      }
+      cost_workflow_completion_installments: {
+        Row: {
+          captured_at: string
+          company_id: string
+          installment_id: string
+          project_id: string
+          tenant_id: string
+        }
+        Insert: {
+          captured_at?: string
+          company_id: string
+          installment_id: string
+          project_id: string
+          tenant_id: string
+        }
+        Update: {
+          captured_at?: string
+          company_id?: string
+          installment_id?: string
+          project_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_completion_inst_installment_id_tenant_id_com_fkey"
+            columns: ["installment_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_installments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      cost_workflow_consumptions: {
+        Row: {
+          amount: number
+          company_id: string
+          consumed_at: string
+          id: string
+          installment_id: string
+          payment_id: string
+          project_id: string
+          tenant_id: string
+        }
+        Insert: {
+          amount: number
+          company_id: string
+          consumed_at?: string
+          id?: string
+          installment_id: string
+          payment_id: string
+          project_id: string
+          tenant_id: string
+        }
+        Update: {
+          amount?: number
+          company_id?: string
+          consumed_at?: string
+          id?: string
+          installment_id?: string
+          payment_id?: string
+          project_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_consumptions_installment_id_tenant_id_compan_fkey"
+            columns: ["installment_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_installments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_consumptions_payment_id_tenant_id_company_id_fkey"
+            columns: ["payment_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_payments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_consumptions_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      cost_workflow_contract_versions: {
+        Row: {
+          approval_decision_id: string | null
+          approved_by: string | null
+          basis_state: string
+          cap: number
+          company_id: string
+          contract_id: string
+          created_at: string
+          evidence_file_ids: string[]
+          id: string
+          project_id: string
+          reason: string | null
+          reviewed_by: string
+          tenant_id: string
+          version: number
+        }
+        Insert: {
+          approval_decision_id?: string | null
+          approved_by?: string | null
+          basis_state: string
+          cap: number
+          company_id: string
+          contract_id: string
+          created_at?: string
+          evidence_file_ids: string[]
+          id?: string
+          project_id: string
+          reason?: string | null
+          reviewed_by: string
+          tenant_id: string
+          version: number
+        }
+        Update: {
+          approval_decision_id?: string | null
+          approved_by?: string | null
+          basis_state?: string
+          cap?: number
+          company_id?: string
+          contract_id?: string
+          created_at?: string
+          evidence_file_ids?: string[]
+          id?: string
+          project_id?: string
+          reason?: string | null
+          reviewed_by?: string
+          tenant_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "c1_workflow_contract_decision_fk"
+            columns: [
+              "approval_decision_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_decisions"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_contract_versio_contract_id_tenant_id_compan_fkey"
+            columns: ["contract_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_contracts"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_contract_versio_project_id_tenant_id_company_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      cost_workflow_contracts: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string
+          currency_code: string
+          current_version: number
+          id: string
+          party_id: string
+          project_id: string
+          reference: string
+          source_subcontract_id: string | null
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by: string
+          currency_code: string
+          current_version?: number
+          id?: string
+          party_id: string
+          project_id: string
+          reference: string
+          source_subcontract_id?: string | null
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          currency_code?: string
+          current_version?: number
+          id?: string
+          party_id?: string
+          project_id?: string
+          reference?: string
+          source_subcontract_id?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "c1_workflow_canonical_subcontract_fk"
+            columns: [
+              "source_subcontract_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+              "currency_code",
+            ]
+            isOneToOne: false
+            referencedRelation: "project_subcontracts"
+            referencedColumns: [
+              "id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+              "currency_code",
+            ]
+          },
+          {
+            foreignKeyName: "cost_workflow_contracts_party_id_tenant_id_company_id_fkey"
+            columns: ["party_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "business_parties"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_contracts_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      cost_workflow_corrections: {
+        Row: {
+          applied_at: string
+          applied_by: string
+          company_id: string
+          corrected_outgoing: number
+          decision_id: string
+          event_sequence: number
+          evidence_file_ids: string[]
+          id: string
+          project_id: string
+          request_id: string
+          source_payment_id: string
+          tenant_id: string
+        }
+        Insert: {
+          applied_at?: string
+          applied_by: string
+          company_id: string
+          corrected_outgoing: number
+          decision_id: string
+          event_sequence: number
+          evidence_file_ids: string[]
+          id?: string
+          project_id: string
+          request_id: string
+          source_payment_id: string
+          tenant_id: string
+        }
+        Update: {
+          applied_at?: string
+          applied_by?: string
+          company_id?: string
+          corrected_outgoing?: number
+          decision_id?: string
+          event_sequence?: number
+          evidence_file_ids?: string[]
+          id?: string
+          project_id?: string
+          request_id?: string
+          source_payment_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_corrections_decision_id_tenant_id_company_id_fkey"
+            columns: ["decision_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_decisions"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_corrections_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_corrections_request_id_tenant_id_company_id__fkey"
+            columns: ["request_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_requests"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_corrections_source_payment_id_tenant_id_comp_fkey"
+            columns: [
+              "source_payment_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_payments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      cost_workflow_decisions: {
+        Row: {
+          company_id: string
+          decided_at: string
+          decided_by: string
+          decision: string
+          id: string
+          manager_assignment_id: string
+          project_id: string
+          reason: string | null
+          submitted_version_id: string
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          decided_at?: string
+          decided_by: string
+          decision: string
+          id?: string
+          manager_assignment_id: string
+          project_id: string
+          reason?: string | null
+          submitted_version_id: string
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          decided_at?: string
+          decided_by?: string
+          decision?: string
+          id?: string
+          manager_assignment_id?: string
+          project_id?: string
+          reason?: string | null
+          submitted_version_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_decisions_manager_assignment_id_tenant_id_co_fkey"
+            columns: [
+              "manager_assignment_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_manager_assignments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_decisions_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_decisions_submitted_version_id_tenant_id_com_fkey"
+            columns: [
+              "submitted_version_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_request_versions"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      cost_workflow_extractions: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string
+          evidence_file_id: string
+          id: string
+          method_version: string
+          project_id: string
+          request_id: string | null
+          result: Json
+          status: string
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by: string
+          evidence_file_id: string
+          id?: string
+          method_version: string
+          project_id: string
+          request_id?: string | null
+          result: Json
+          status: string
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          evidence_file_id?: string
+          id?: string
+          method_version?: string
+          project_id?: string
+          request_id?: string | null
+          result?: Json
+          status?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_extractions_evidence_file_id_tenant_id_compa_fkey"
+            columns: [
+              "evidence_file_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_evidence_files"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_extractions_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_extractions_request_id_tenant_id_company_id__fkey"
+            columns: ["request_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_requests"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      cost_workflow_installments: {
+        Row: {
+          approved_at: string
+          authorized_amount: number
+          category_id: string
+          company_id: string
+          contract_id: string | null
+          contract_version_id: string | null
+          currency_code: string
+          decision_id: string
+          id: string
+          party_id: string
+          project_id: string
+          request_id: string
+          tenant_id: string
+        }
+        Insert: {
+          approved_at: string
+          authorized_amount: number
+          category_id: string
+          company_id: string
+          contract_id?: string | null
+          contract_version_id?: string | null
+          currency_code: string
+          decision_id: string
+          id?: string
+          party_id: string
+          project_id: string
+          request_id: string
+          tenant_id: string
+        }
+        Update: {
+          approved_at?: string
+          authorized_amount?: number
+          category_id?: string
+          company_id?: string
+          contract_id?: string | null
+          contract_version_id?: string | null
+          currency_code?: string
+          decision_id?: string
+          id?: string
+          party_id?: string
+          project_id?: string
+          request_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_installments_category_id_tenant_id_company_i_fkey"
+            columns: ["category_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "cost_categories"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_installments_contract_id_tenant_id_company_i_fkey"
+            columns: ["contract_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_contracts"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_installments_contract_version_id_tenant_id_c_fkey"
+            columns: [
+              "contract_version_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_contract_versions"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_installments_decision_id_tenant_id_company_i_fkey"
+            columns: ["decision_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_decisions"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_installments_party_id_tenant_id_company_id_fkey"
+            columns: ["party_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "business_parties"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_installments_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_installments_request_id_tenant_id_company_id_fkey"
+            columns: ["request_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_requests"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      cost_workflow_legacy_cash_reconciliation: {
+        Row: {
+          actual_outgoing: number
+          actual_payment_date: string | null
+          category_id: string
+          company_id: string
+          evidence_file_ids: string[]
+          id: string
+          legacy_hash: string
+          ordinary_detail_id: string | null
+          party_id: string
+          payment_id: string | null
+          project_id: string
+          reason: string
+          reviewed_at: string
+          reviewed_by: string
+          subcontract_payment_id: string | null
+          tenant_id: string
+        }
+        Insert: {
+          actual_outgoing: number
+          actual_payment_date?: string | null
+          category_id: string
+          company_id: string
+          evidence_file_ids: string[]
+          id?: string
+          legacy_hash: string
+          ordinary_detail_id?: string | null
+          party_id: string
+          payment_id?: string | null
+          project_id: string
+          reason: string
+          reviewed_at?: string
+          reviewed_by: string
+          subcontract_payment_id?: string | null
+          tenant_id: string
+        }
+        Update: {
+          actual_outgoing?: number
+          actual_payment_date?: string | null
+          category_id?: string
+          company_id?: string
+          evidence_file_ids?: string[]
+          id?: string
+          legacy_hash?: string
+          ordinary_detail_id?: string | null
+          party_id?: string
+          payment_id?: string | null
+          project_id?: string
+          reason?: string
+          reviewed_at?: string
+          reviewed_by?: string
+          subcontract_payment_id?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_legacy_cash_rec_category_id_tenant_id_compan_fkey"
+            columns: ["category_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "cost_categories"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_legacy_cash_rec_ordinary_detail_id_tenant_id_fkey"
+            columns: ["ordinary_detail_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "project_cost_item_details"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_legacy_cash_rec_party_id_tenant_id_company_i_fkey"
+            columns: ["party_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "business_parties"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_legacy_cash_rec_payment_id_tenant_id_company_fkey"
+            columns: ["payment_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_payments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_legacy_cash_rec_project_id_tenant_id_company_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_legacy_cash_rec_subcontract_payment_id_tenan_fkey"
+            columns: [
+              "subcontract_payment_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "project_subcontract_payments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      cost_workflow_manager_assignments: {
+        Row: {
+          assigned_by: string
+          assignment_version: number
+          company_id: string
+          created_at: string
+          id: string
+          manager_user_id: string
+          project_id: string
+          reason: string
+          tenant_id: string
+        }
+        Insert: {
+          assigned_by: string
+          assignment_version: number
+          company_id: string
+          created_at?: string
+          id?: string
+          manager_user_id: string
+          project_id: string
+          reason: string
+          tenant_id: string
+        }
+        Update: {
+          assigned_by?: string
+          assignment_version?: number
+          company_id?: string
+          created_at?: string
+          id?: string
+          manager_user_id?: string
+          project_id?: string
+          reason?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_manager_assignm_project_id_tenant_id_company_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      cost_workflow_notifications: {
+        Row: {
+          company_id: string
+          created_at: string
+          decision_id: string
+          delivery_state: string
+          id: string
+          project_id: string
+          read_at: string | null
+          recipient_id: string
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          decision_id: string
+          delivery_state: string
+          id?: string
+          project_id: string
+          read_at?: string | null
+          recipient_id: string
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          decision_id?: string
+          delivery_state?: string
+          id?: string
+          project_id?: string
+          read_at?: string | null
+          recipient_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_notifications_decision_id_tenant_id_company__fkey"
+            columns: ["decision_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_decisions"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_notifications_project_id_tenant_id_company_i_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      cost_workflow_party_classifications: {
+        Row: {
+          company_id: string
+          crew_ownership: string
+          id: string
+          party_id: string
+          reviewed_at: string
+          reviewed_by: string
+          tenant_id: string
+          version: number
+        }
+        Insert: {
+          company_id: string
+          crew_ownership: string
+          id?: string
+          party_id: string
+          reviewed_at?: string
+          reviewed_by: string
+          tenant_id: string
+          version: number
+        }
+        Update: {
+          company_id?: string
+          crew_ownership?: string
+          id?: string
+          party_id?: string
+          reviewed_at?: string
+          reviewed_by?: string
+          tenant_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_party_classific_party_id_tenant_id_company_i_fkey"
+            columns: ["party_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "business_parties"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      cost_workflow_payments: {
+        Row: {
+          cash_event_hash: string
+          cash_kind: string
+          company_id: string
+          confirmed_at: string
+          confirmed_by: string
+          currency_code: string
+          evidence_file_ids: string[]
+          id: string
+          installment_id: string | null
+          legacy_reconciliation_id: string | null
+          ordinary_amount: number | null
+          payment_date: string
+          project_id: string
+          reference: string
+          subcontract_payment_id: string | null
+          tenant_id: string
+        }
+        Insert: {
+          cash_event_hash: string
+          cash_kind: string
+          company_id: string
+          confirmed_at?: string
+          confirmed_by: string
+          currency_code: string
+          evidence_file_ids: string[]
+          id?: string
+          installment_id?: string | null
+          legacy_reconciliation_id?: string | null
+          ordinary_amount?: number | null
+          payment_date: string
+          project_id: string
+          reference: string
+          subcontract_payment_id?: string | null
+          tenant_id: string
+        }
+        Update: {
+          cash_event_hash?: string
+          cash_kind?: string
+          company_id?: string
+          confirmed_at?: string
+          confirmed_by?: string
+          currency_code?: string
+          evidence_file_ids?: string[]
+          id?: string
+          installment_id?: string | null
+          legacy_reconciliation_id?: string | null
+          ordinary_amount?: number | null
+          payment_date?: string
+          project_id?: string
+          reference?: string
+          subcontract_payment_id?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "c1_workflow_payment_reconciliation_fk"
+            columns: [
+              "legacy_reconciliation_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_legacy_cash_reconciliation"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_payments_installment_id_tenant_id_company_id_fkey"
+            columns: ["installment_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_installments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_payments_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_payments_subcontract_payment_id_tenant_id_co_fkey"
+            columns: [
+              "subcontract_payment_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "project_subcontract_payments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      cost_workflow_refunds: {
+        Row: {
+          amount: number
+          cash_event_hash: string
+          company_id: string
+          confirmed_at: string
+          confirmed_by: string
+          decision_id: string
+          evidence_file_ids: string[]
+          id: string
+          project_id: string
+          received_date: string
+          request_id: string
+          source_payment_id: string
+          tenant_id: string
+        }
+        Insert: {
+          amount: number
+          cash_event_hash: string
+          company_id: string
+          confirmed_at?: string
+          confirmed_by: string
+          decision_id: string
+          evidence_file_ids: string[]
+          id?: string
+          project_id: string
+          received_date: string
+          request_id: string
+          source_payment_id: string
+          tenant_id: string
+        }
+        Update: {
+          amount?: number
+          cash_event_hash?: string
+          company_id?: string
+          confirmed_at?: string
+          confirmed_by?: string
+          decision_id?: string
+          evidence_file_ids?: string[]
+          id?: string
+          project_id?: string
+          received_date?: string
+          request_id?: string
+          source_payment_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_refunds_decision_id_tenant_id_company_id_pro_fkey"
+            columns: ["decision_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_decisions"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_refunds_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_refunds_request_id_tenant_id_company_id_proj_fkey"
+            columns: ["request_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_requests"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_refunds_source_payment_id_tenant_id_company__fkey"
+            columns: [
+              "source_payment_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_payments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      cost_workflow_request_evidence: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string
+          evidence_file_id: string
+          evidence_kind: string
+          id: string
+          project_id: string
+          request_id: string
+          request_version: number
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by: string
+          evidence_file_id: string
+          evidence_kind?: string
+          id?: string
+          project_id: string
+          request_id: string
+          request_version: number
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          evidence_file_id?: string
+          evidence_kind?: string
+          id?: string
+          project_id?: string
+          request_id?: string
+          request_version?: number
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_request_evidenc_evidence_file_id_tenant_id_c_fkey"
+            columns: [
+              "evidence_file_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_evidence_files"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_request_evidenc_request_id_tenant_id_company_fkey"
+            columns: ["request_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_requests"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      cost_workflow_request_versions: {
+        Row: {
+          amount: number
+          company_id: string
+          currency_code: string
+          evidence_file_ids: string[]
+          id: string
+          manager_assignment_id: string
+          project_id: string
+          request_id: string
+          snapshot: Json
+          submitted_at: string
+          submitted_by: string
+          tenant_id: string
+          version: number
+        }
+        Insert: {
+          amount: number
+          company_id: string
+          currency_code: string
+          evidence_file_ids: string[]
+          id?: string
+          manager_assignment_id: string
+          project_id: string
+          request_id: string
+          snapshot: Json
+          submitted_at?: string
+          submitted_by: string
+          tenant_id: string
+          version: number
+        }
+        Update: {
+          amount?: number
+          company_id?: string
+          currency_code?: string
+          evidence_file_ids?: string[]
+          id?: string
+          manager_assignment_id?: string
+          project_id?: string
+          request_id?: string
+          snapshot?: Json
+          submitted_at?: string
+          submitted_by?: string
+          tenant_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_request_version_manager_assignment_id_tenant_fkey"
+            columns: [
+              "manager_assignment_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_manager_assignments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_request_version_project_id_tenant_id_company_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_request_version_request_id_tenant_id_company_fkey"
+            columns: ["request_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_requests"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      cost_workflow_requests: {
+        Row: {
+          category_id: string | null
+          company_id: string
+          contract_id: string | null
+          created_at: string
+          created_by: string
+          id: string
+          kind: string
+          party_id: string
+          project_id: string
+          source_payment_id: string | null
+          state: string
+          submitted_version_id: string | null
+          tenant_id: string
+          updated_at: string
+          version: number
+          working_input: Json
+        }
+        Insert: {
+          category_id?: string | null
+          company_id: string
+          contract_id?: string | null
+          created_at?: string
+          created_by: string
+          id?: string
+          kind: string
+          party_id: string
+          project_id: string
+          source_payment_id?: string | null
+          state?: string
+          submitted_version_id?: string | null
+          tenant_id: string
+          updated_at?: string
+          version?: number
+          working_input: Json
+        }
+        Update: {
+          category_id?: string | null
+          company_id?: string
+          contract_id?: string | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          kind?: string
+          party_id?: string
+          project_id?: string
+          source_payment_id?: string | null
+          state?: string
+          submitted_version_id?: string | null
+          tenant_id?: string
+          updated_at?: string
+          version?: number
+          working_input?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_workflow_request_payment_fk"
+            columns: [
+              "source_payment_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_payments"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_request_submitted_fk"
+            columns: [
+              "submitted_version_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_request_versions"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_requests_category_id_tenant_id_company_id_fkey"
+            columns: ["category_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "cost_categories"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_requests_contract_id_tenant_id_company_id_pr_fkey"
+            columns: ["contract_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_contracts"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_requests_party_id_tenant_id_company_id_fkey"
+            columns: ["party_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "business_parties"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "cost_workflow_requests_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
           },
         ]
       }
@@ -1315,6 +2669,836 @@ export type Database = {
             columns: ["engagement_id", "tenant_id", "company_id"]
             isOneToOne: false
             referencedRelation: "project_engagements"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      material_evidence_scopes: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string
+          evidence_file_id: string
+          evidence_role: string
+          order_id: string | null
+          project_id: string
+          proposal_id: string | null
+          revision_id: string | null
+          target_kind: string
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by: string
+          evidence_file_id: string
+          evidence_role: string
+          order_id?: string | null
+          project_id: string
+          proposal_id?: string | null
+          revision_id?: string | null
+          target_kind: string
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          evidence_file_id?: string
+          evidence_role?: string
+          order_id?: string | null
+          project_id?: string
+          proposal_id?: string | null
+          revision_id?: string | null
+          target_kind?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_evidence_scopes_evidence_file_id_tenant_id_compan_fkey"
+            columns: [
+              "evidence_file_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_evidence_files"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_evidence_scopes_order_id_tenant_id_company_id_pro_fkey"
+            columns: ["order_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "material_orders"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_evidence_scopes_revision_id_proposal_id_tenant_id_fkey"
+            columns: [
+              "revision_id",
+              "proposal_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "material_proposal_revisions"
+            referencedColumns: [
+              "id",
+              "proposal_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+          },
+        ]
+      }
+      material_items: {
+        Row: {
+          code: string
+          company_id: string
+          created_at: string
+          created_by: string
+          id: string
+          is_active: boolean
+          name: string
+          specification: string
+          tenant_id: string
+          unit: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          code: string
+          company_id: string
+          created_at?: string
+          created_by: string
+          id?: string
+          is_active?: boolean
+          name: string
+          specification: string
+          tenant_id: string
+          unit: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          code?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          specification?: string
+          tenant_id?: string
+          unit?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_items_company_id_tenant_id_fkey"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+        ]
+      }
+      material_order_allocations: {
+        Row: {
+          approved_revision_id: string
+          company_id: string
+          created_at: string
+          id: string
+          mapping_confirmed: boolean
+          order_id: string
+          project_id: string
+          proposal_id: string
+          proposal_line_id: string
+          quantity: number
+          quotation_material_name: string
+          tenant_id: string
+          unit_price: number
+        }
+        Insert: {
+          approved_revision_id: string
+          company_id: string
+          created_at?: string
+          id?: string
+          mapping_confirmed: boolean
+          order_id: string
+          project_id: string
+          proposal_id: string
+          proposal_line_id: string
+          quantity: number
+          quotation_material_name: string
+          tenant_id: string
+          unit_price: number
+        }
+        Update: {
+          approved_revision_id?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          mapping_confirmed?: boolean
+          order_id?: string
+          project_id?: string
+          proposal_id?: string
+          proposal_line_id?: string
+          quantity?: number
+          quotation_material_name?: string
+          tenant_id?: string
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_order_allocations_approved_revision_id_proposal_l_fkey"
+            columns: [
+              "approved_revision_id",
+              "proposal_line_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "material_proposal_revision_lines"
+            referencedColumns: [
+              "revision_id",
+              "proposal_line_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+          },
+          {
+            foreignKeyName: "material_order_allocations_order_id_proposal_id_approved_r_fkey"
+            columns: [
+              "order_id",
+              "proposal_id",
+              "approved_revision_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "material_orders"
+            referencedColumns: [
+              "id",
+              "proposal_id",
+              "approved_revision_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+          },
+        ]
+      }
+      material_order_cancellations: {
+        Row: {
+          cancelled_at: string
+          cancelled_by: string
+          command_idempotency_key: string
+          company_id: string
+          id: string
+          order_id: string
+          order_version: number
+          project_id: string
+          reason: string
+          request_id: string
+          tenant_id: string
+        }
+        Insert: {
+          cancelled_at?: string
+          cancelled_by: string
+          command_idempotency_key: string
+          company_id: string
+          id?: string
+          order_id: string
+          order_version: number
+          project_id: string
+          reason: string
+          request_id: string
+          tenant_id: string
+        }
+        Update: {
+          cancelled_at?: string
+          cancelled_by?: string
+          command_idempotency_key?: string
+          company_id?: string
+          id?: string
+          order_id?: string
+          order_version?: number
+          project_id?: string
+          reason?: string
+          request_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_order_cancellations_order_id_tenant_id_company_id_fkey"
+            columns: ["order_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "material_orders"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      material_order_contracts: {
+        Row: {
+          company_id: string
+          contract_id: string
+          created_at: string
+          created_by: string
+          order_id: string
+          project_id: string
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          contract_id: string
+          created_at?: string
+          created_by: string
+          order_id: string
+          project_id: string
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          contract_id?: string
+          created_at?: string
+          created_by?: string
+          order_id?: string
+          project_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_order_contracts_contract_id_tenant_id_company_id__fkey"
+            columns: ["contract_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_workflow_contracts"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_order_contracts_order_id_tenant_id_company_id_pro_fkey"
+            columns: ["order_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: true
+            referencedRelation: "material_orders"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      material_orders: {
+        Row: {
+          approved_revision_id: string
+          company_id: string
+          created_at: string
+          created_by: string
+          currency_code: string
+          id: string
+          project_id: string
+          proposal_id: string
+          state: string
+          supplier_id: string
+          tenant_id: string
+          unsigned_quotation_evidence_file_id: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          approved_revision_id: string
+          company_id: string
+          created_at?: string
+          created_by: string
+          currency_code: string
+          id?: string
+          project_id: string
+          proposal_id: string
+          state?: string
+          supplier_id: string
+          tenant_id: string
+          unsigned_quotation_evidence_file_id: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          approved_revision_id?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          currency_code?: string
+          id?: string
+          project_id?: string
+          proposal_id?: string
+          state?: string
+          supplier_id?: string
+          tenant_id?: string
+          unsigned_quotation_evidence_file_id?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_orders_approved_revision_id_proposal_id_tenant_id_fkey"
+            columns: [
+              "approved_revision_id",
+              "proposal_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "material_proposal_revisions"
+            referencedColumns: [
+              "id",
+              "proposal_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+          },
+          {
+            foreignKeyName: "material_orders_proposal_id_tenant_id_company_id_project_i_fkey"
+            columns: ["proposal_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "material_proposals"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_orders_supplier_id_tenant_id_company_id_fkey"
+            columns: ["supplier_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "business_parties"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "material_orders_unsigned_quotation_evidence_file_id_tenant_fkey"
+            columns: [
+              "unsigned_quotation_evidence_file_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_evidence_files"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      material_proposal_decisions: {
+        Row: {
+          company_id: string
+          decided_at: string
+          decided_by: string
+          decision: string
+          id: string
+          project_id: string
+          proposal_id: string
+          proposal_version: number
+          reason: string | null
+          revision_id: string
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          decided_at?: string
+          decided_by: string
+          decision: string
+          id?: string
+          project_id: string
+          proposal_id: string
+          proposal_version: number
+          reason?: string | null
+          revision_id: string
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          decided_at?: string
+          decided_by?: string
+          decision?: string
+          id?: string
+          project_id?: string
+          proposal_id?: string
+          proposal_version?: number
+          reason?: string | null
+          revision_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_proposal_decisions_proposal_id_tenant_id_company__fkey"
+            columns: ["proposal_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "material_proposals"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_proposal_decisions_revision_id_proposal_id_tenant_fkey"
+            columns: [
+              "revision_id",
+              "proposal_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "material_proposal_revisions"
+            referencedColumns: [
+              "id",
+              "proposal_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+          },
+        ]
+      }
+      material_proposal_lines: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string
+          id: string
+          is_active: boolean
+          material_id: string
+          project_id: string
+          proposal_id: string
+          quantity: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by: string
+          id: string
+          is_active?: boolean
+          material_id: string
+          project_id: string
+          proposal_id: string
+          quantity: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          is_active?: boolean
+          material_id?: string
+          project_id?: string
+          proposal_id?: string
+          quantity?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_proposal_lines_material_id_tenant_id_company_id_fkey"
+            columns: ["material_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "material_items"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "material_proposal_lines_proposal_id_tenant_id_company_id_p_fkey"
+            columns: ["proposal_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "material_proposals"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      material_proposal_revision_lines: {
+        Row: {
+          company_id: string
+          material_id: string
+          material_name: string
+          project_id: string
+          proposal_id: string
+          proposal_line_id: string
+          quantity: number
+          revision_id: string
+          specification: string
+          tenant_id: string
+          unit: string
+        }
+        Insert: {
+          company_id: string
+          material_id: string
+          material_name: string
+          project_id: string
+          proposal_id: string
+          proposal_line_id: string
+          quantity: number
+          revision_id: string
+          specification: string
+          tenant_id: string
+          unit: string
+        }
+        Update: {
+          company_id?: string
+          material_id?: string
+          material_name?: string
+          project_id?: string
+          proposal_id?: string
+          proposal_line_id?: string
+          quantity?: number
+          revision_id?: string
+          specification?: string
+          tenant_id?: string
+          unit?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_proposal_revision_li_material_id_tenant_id_compan_fkey"
+            columns: ["material_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "material_items"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "material_proposal_revision_li_proposal_line_id_proposal_id_fkey"
+            columns: [
+              "proposal_line_id",
+              "proposal_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "material_proposal_lines"
+            referencedColumns: [
+              "id",
+              "proposal_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+          },
+          {
+            foreignKeyName: "material_proposal_revision_li_revision_id_proposal_id_tena_fkey"
+            columns: [
+              "revision_id",
+              "proposal_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "material_proposal_revisions"
+            referencedColumns: [
+              "id",
+              "proposal_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+          },
+        ]
+      }
+      material_proposal_revisions: {
+        Row: {
+          company_id: string
+          delivery_address: string
+          id: string
+          needed_on: string
+          notes: string | null
+          project_id: string
+          proposal_id: string
+          revision_no: number
+          submitted_at: string
+          submitted_by: string
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          delivery_address: string
+          id?: string
+          needed_on: string
+          notes?: string | null
+          project_id: string
+          proposal_id: string
+          revision_no: number
+          submitted_at?: string
+          submitted_by: string
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          delivery_address?: string
+          id?: string
+          needed_on?: string
+          notes?: string | null
+          project_id?: string
+          proposal_id?: string
+          revision_no?: number
+          submitted_at?: string
+          submitted_by?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_proposal_revisions_proposal_id_tenant_id_company__fkey"
+            columns: ["proposal_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "material_proposals"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      material_proposals: {
+        Row: {
+          approved_revision_id: string | null
+          company_id: string
+          created_at: string
+          created_by: string
+          current_revision_id: string | null
+          delivery_address: string
+          id: string
+          needed_on: string
+          notes: string | null
+          project_id: string
+          review_state: string
+          tenant_id: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          approved_revision_id?: string | null
+          company_id: string
+          created_at?: string
+          created_by: string
+          current_revision_id?: string | null
+          delivery_address: string
+          id?: string
+          needed_on: string
+          notes?: string | null
+          project_id: string
+          review_state?: string
+          tenant_id: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          approved_revision_id?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          current_revision_id?: string | null
+          delivery_address?: string
+          id?: string
+          needed_on?: string
+          notes?: string | null
+          project_id?: string
+          review_state?: string
+          tenant_id?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_proposals_approved_revision_fk"
+            columns: [
+              "approved_revision_id",
+              "id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "material_proposal_revisions"
+            referencedColumns: [
+              "id",
+              "proposal_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+          },
+          {
+            foreignKeyName: "material_proposals_current_revision_fk"
+            columns: [
+              "current_revision_id",
+              "id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "material_proposal_revisions"
+            referencedColumns: [
+              "id",
+              "proposal_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+          },
+          {
+            foreignKeyName: "material_proposals_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      material_supplier_names: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string
+          document_kind: string
+          id: string
+          material_id: string
+          name: string
+          supplier_id: string
+          tenant_id: string
+          version: number
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by: string
+          document_kind: string
+          id?: string
+          material_id: string
+          name: string
+          supplier_id: string
+          tenant_id: string
+          version?: number
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          document_kind?: string
+          id?: string
+          material_id?: string
+          name?: string
+          supplier_id?: string
+          tenant_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_supplier_names_material_id_tenant_id_company_id_fkey"
+            columns: ["material_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "material_items"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+          {
+            foreignKeyName: "material_supplier_names_supplier_id_tenant_id_company_id_fkey"
+            columns: ["supplier_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "business_parties"
             referencedColumns: ["id", "tenant_id", "company_id"]
           },
         ]
@@ -4384,6 +6568,14 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_cost_ocr_azure_f0_job: {
+        Args: { p_binding: Json; p_command: string; p_payload: Json }
+        Returns: Json
+      }
+      c1_cost_ocr_azure_f0_read_result: {
+        Args: { p_binding: Json; p_payload: Json }
+        Returns: Json
+      }
       c1_create_and_publish_project_cost_detail: {
         Args: {
           target_company_id: string
@@ -4446,6 +6638,24 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_create_project_cost_draft: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_create_project_cost_item: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_finalize_cost_evidence: {
         Args: {
           target_company_id: string
@@ -4463,6 +6673,18 @@ export type Database = {
           target_id: string
           target_idempotency_key: string
           target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_finalize_material_evidence_server: {
+        Args: {
+          target_actor_id: string
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
           target_request_id: string
         }
         Returns: Json
@@ -4503,6 +6725,171 @@ export type Database = {
         Args: { target_company_id: string; target_project_id: string }
         Returns: Json
       }
+      c1_material_cancel_order: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_create_evidence_intent: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_create_item: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_create_order: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_create_proposal: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_decide_proposal: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_evidence_finalization_target: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_project_id: string
+        }
+        Returns: Json
+      }
+      c1_material_evidence_read_target: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_project_id: string
+        }
+        Returns: Json
+      }
+      c1_material_list_items: {
+        Args: { target_company_id: string }
+        Returns: Json
+      }
+      c1_material_list_orders: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
+      c1_material_list_projects: {
+        Args: { target_company_id: string }
+        Returns: Json
+      }
+      c1_material_list_proposals: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
+      c1_material_list_supplier_names: {
+        Args: { target_company_id: string; target_id: string }
+        Returns: Json
+      }
+      c1_material_read_order: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_project_id: string
+        }
+        Returns: Json
+      }
+      c1_material_read_proposal: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_project_id: string
+        }
+        Returns: Json
+      }
+      c1_material_record_supplier_name: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_resolve_supplier: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_submit_proposal: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_update_item: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_update_proposal: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_persist_controlled_import: {
         Args: {
           target_company_id: string
@@ -4521,8 +6908,27 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_prepare_project_cost_financials: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_probe_cost_source_read: {
         Args: { target_company_id: string }
+        Returns: Json
+      }
+      c1_publish_project_cost: {
+        Args: {
+          target_company_id: string
+          target_expected_version: number
+          target_id: string
+          target_idempotency_key: string
+          target_request_id: string
+        }
         Returns: Json
       }
       c1_publish_project_cost_detail: {
@@ -4562,6 +6968,10 @@ export type Database = {
         Args: { target_company_id: string }
         Returns: Json
       }
+      c1_read_project_cost_draft_management_metadata_v2: {
+        Args: { target_company_id: string }
+        Returns: Json
+      }
       c1_read_project_cost_project_metadata: {
         Args: { target_company_id: string; target_project_ids: string[] }
         Returns: Json
@@ -4571,6 +6981,14 @@ export type Database = {
         Returns: Json
       }
       c1_read_project_finance_directory: {
+        Args: {
+          target_after_id: string
+          target_company_id: string
+          target_limit: number
+        }
+        Returns: Json
+      }
+      c1_read_project_finance_directory_v2: {
         Args: {
           target_after_id: string
           target_company_id: string
@@ -4646,6 +7064,24 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_update_project_cost_draft: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_update_project_cost_item: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_void_subcontract_payment: {
         Args: {
           target_company_id: string
@@ -4656,6 +7092,332 @@ export type Database = {
           target_reason: string
           target_request_id: string
           target_subcontract_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_activate_company: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_append_party_classification: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_party_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_apply_cash_correction: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_assign_manager: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_cash_snapshot: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
+      c1_workflow_configure_company: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_confirm_payment: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_confirm_refund: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_create_cash_adjustment: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_create_contract_basis: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_create_evidence_intent: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_create_request: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_cutover_snapshot: {
+        Args: { target_company_id: string }
+        Returns: Json
+      }
+      c1_workflow_decide_cash_adjustment: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_decide_contract_adjustment: {
+        Args: {
+          target_company_id: string
+          target_contract_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_decide_request: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_directory: {
+        Args: {
+          target_after_id?: string
+          target_company_id: string
+          target_page_size?: number
+        }
+        Returns: Json
+      }
+      c1_workflow_evidence_finalization_target: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_project_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_evidence_read_target: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_project_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_extraction_target: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_inventory: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
+      c1_workflow_link_request_evidence: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_list_adjustments: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
+      c1_workflow_list_contracts: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
+      c1_workflow_list_notifications: {
+        Args: { target_company_id: string }
+        Returns: Json
+      }
+      c1_workflow_list_parties: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
+      c1_workflow_list_requests: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
+      c1_workflow_list_source_subcontracts: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
+      c1_workflow_project_context: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
+      c1_workflow_read_adjustment: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_project_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_read_contract: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_project_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_read_notification: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_read_request: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_project_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_reconcile_legacy_cash: {
+        Args: {
+          target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_record_extraction: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_request_history: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_project_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_submit_contract_adjustment: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_submit_request: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_workflow_update_request: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
         }
         Returns: Json
       }
