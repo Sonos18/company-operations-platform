@@ -171,6 +171,8 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
             error: {
               code: 'INTERNAL_ERROR',
               message: 'Lỗi mạng tạm thời khi tạo vật tư.',
+              requestId: 'mock-req-500',
+              details: {},
             },
           },
         })
@@ -434,6 +436,8 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
           error: {
             code: 'PERMISSION_DENIED',
             message: 'Bạn không có quyền gửi phiếu yêu cầu mua hàng.',
+            requestId: 'mock-req-403',
+            details: {},
           },
         },
       })
@@ -842,7 +846,7 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     await page.getByRole('button', { name: 'Gửi mua hàng' }).click()
 
     // 403 error message is displayed
-    await expect(page.getByText('Bạn không có quyền gửi phiếu yêu cầu mua hàng.')).toBeVisible()
+    await expect(page.getByText('Bạn không có quyền thực hiện thao tác này.')).toBeVisible()
   })
 
   test('9. Accessibility: Material select và quantity có aria-label theo dòng; lỗi validation gắn aria-describedby', async ({ page }) => {
@@ -890,7 +894,7 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
 
     // First submit fails due to network loss/server error (500)
     await page.getByRole('button', { name: 'Lưu vật tư' }).click()
-    await expect(page.getByText('Lỗi mạng tạm thời khi tạo vật tư.')).toBeVisible()
+    await expect(page.getByText('Hệ thống không thể xử lý yêu cầu. Vui lòng thử lại sau.')).toBeVisible()
 
     // Retry with exact same form data
     await page.getByRole('button', { name: 'Lưu vật tư' }).click()
