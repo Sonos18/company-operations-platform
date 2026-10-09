@@ -46,10 +46,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import type { MaterialProjectOption, MaterialCommandResult } from '../../../../../shared/schemas/costs/material-procurement'
 import { workflowUuidSchema } from '../../../../../shared/schemas/costs/cost-workflow'
+import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
 import MaterialProposalForm from '../../../../components/materials/MaterialProposalForm.vue'
 
 definePageMeta({ requiredPermission: 'material.read' })
@@ -58,6 +59,8 @@ const route = useRoute()
 const repositories = useRepositories()
 const repo = repositories.materialProcurement
 const companyAccess = useNuxtApp().$companyAccessStore
+
+const tracker = createAsyncRequestTracker<{ companyId: string; projectId: string }>()
 
 const pId = computed(() => {
   const p = route.params.projectId
@@ -74,32 +77,55 @@ const isFormDirty = ref(false)
 const isSubmittedOrSaved = ref(false)
 
 async function loadProject() {
+  const activeCompanyId = companyAccess?.activeCompanyId
+  if (!activeCompanyId || !pId.value) {
+    currentProject.value = null
+    isLoading.value = false
+    return
+  }
+
+  const token = tracker.start({ companyId: activeCompanyId, projectId: pId.value })
   isLoading.value = true
   errorMessage.value = ''
 
   try {
     const list = await repo.listProjects()
+    if (!token.isCurrent()) return
     currentProject.value = list.find(p => p.projectId === pId.value) || null
     if (!currentProject.value) {
       errorMessage.value = 'Không tìm thấy thông tin công trình được chỉ định.'
     }
   } catch (err: unknown) {
+    if (!token.isCurrent()) return
     errorMessage.value = err instanceof Error ? err.message : 'Không thể tải thông tin công trình.'
   } finally {
-    isLoading.value = false
+    if (token.isCurrent()) {
+      isLoading.value = false
+    }
   }
 }
 
-function onSaved(_result: MaterialCommandResult, proposalId: string) {
+watch(() => companyAccess?.activeCompanyId, (newCId, oldCId) => {
+  if (newCId !== oldCId) {
+    tracker.invalidate()
+    currentProject.value = null
+    isFormDirty.value = false
+    navigateTo('/materials')
+  }
+})
+
+function onSaved(_result: MaterialCommandResult, proposalId: string, actualProjectId?: string) {
   isFormDirty.value = false
   isSubmittedOrSaved.value = true
-  navigateTo(`/materials/${pId.value}/proposals/${proposalId}`)
+  const targetProjectId = actualProjectId || pId.value
+  navigateTo(`/materials/${targetProjectId}/proposals/${proposalId}`)
 }
 
-function onSubmitted(_result: MaterialCommandResult, proposalId: string) {
+function onSubmitted(_result: MaterialCommandResult, proposalId: string, actualProjectId?: string) {
   isFormDirty.value = false
   isSubmittedOrSaved.value = true
-  navigateTo(`/materials/${pId.value}/proposals/${proposalId}`)
+  const targetProjectId = actualProjectId || pId.value
+  navigateTo(`/materials/${targetProjectId}/proposals/${proposalId}`)
 }
 
 function onCancel() {
@@ -134,6 +160,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  tracker.invalidate()
   if (typeof window !== 'undefined') {
     window.removeEventListener('beforeunload', handleBeforeUnload)
   }

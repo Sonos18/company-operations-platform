@@ -38,6 +38,7 @@
               type="text"
               class="cockpit-input"
               placeholder="VD: VT-THEP-01"
+              :disabled="isSubmitting"
               required
               maxlength="200"
             >
@@ -50,6 +51,7 @@
               type="text"
               class="cockpit-input"
               placeholder="VD: Thép cuộn phi 8"
+              :disabled="isSubmitting"
               required
               maxlength="200"
             >
@@ -62,6 +64,7 @@
               type="text"
               class="cockpit-input"
               placeholder="VD: kg, tấn, bao, m3"
+              :disabled="isSubmitting"
               required
               maxlength="200"
             >
@@ -72,6 +75,7 @@
                 v-model="formData.isActive"
                 type="checkbox"
                 class="cockpit-checkbox"
+                :disabled="isSubmitting"
               >
               Đang sử dụng (Khả dụng trên phiếu yêu cầu)
             </label>
@@ -86,6 +90,7 @@
             class="cockpit-textarea"
             rows="2"
             placeholder="VD: Mác thép CB240-T, TCVN 1651-1:2018"
+            :disabled="isSubmitting"
             required
             maxlength="2000"
           />
@@ -492,12 +497,33 @@ async function loadMaterials() {
   }
 }
 
+const masterIdempotencyKey = ref<string>(crypto.randomUUID())
+const lastMasterCommandSignature = ref<string>('')
+
+function getMasterCommandSignature() {
+  return JSON.stringify({
+    companyId: companyAccess?.activeCompanyId ?? '',
+    editingId: editingId.value,
+    expectedVersion: editingId.value ? editingVersion.value : null,
+    code: formData.value.code.trim(),
+    name: formData.value.name.trim(),
+    specification: formData.value.specification.trim(),
+    unit: formData.value.unit.trim(),
+    isActive: editingId.value ? formData.value.isActive : true,
+  })
+}
+
 async function submitForm() {
   errorMessage.value = ''
   actionSuccessMessage.value = ''
   isSubmitting.value = true
 
-  const idempotencyKey = crypto.randomUUID()
+  const currentSignature = getMasterCommandSignature()
+  if (currentSignature !== lastMasterCommandSignature.value) {
+    masterIdempotencyKey.value = crypto.randomUUID()
+    lastMasterCommandSignature.value = currentSignature
+  }
+  const idempotencyKey = masterIdempotencyKey.value
 
   try {
     if (editingId.value) {
@@ -526,6 +552,7 @@ async function submitForm() {
       )
       actionSuccessMessage.value = 'Thêm vật tư chuẩn mới thành công.'
     }
+    lastMasterCommandSignature.value = ''
     showForm.value = false
     editingId.value = null
     await loadMaterials()
@@ -541,6 +568,8 @@ watch(() => companyAccess?.activeCompanyId, () => {
   materials.value = []
   showForm.value = false
   editingId.value = null
+  lastMasterCommandSignature.value = ''
+  masterIdempotencyKey.value = crypto.randomUUID()
   void loadMaterials()
 })
 

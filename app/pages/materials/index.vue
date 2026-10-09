@@ -154,6 +154,8 @@ async function loadProjects() {
 watch(() => companyAccess?.activeCompanyId, () => {
   tracker.invalidate()
   projects.value = []
+  errorMessage.value = ''
+  showMasterPanel.value = false
   void loadProjects()
 })
 

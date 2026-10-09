@@ -304,7 +304,7 @@ async function loadProposal(silent = false) {
 }
 
 async function onSaved(_result: MaterialCommandResult, _savedId: string) {
-  await loadProposal()
+  await loadProposal(true)
 }
 
 async function onSubmitted(_result: MaterialCommandResult, _savedId: string) {
@@ -318,6 +318,8 @@ function onCancel() {
 watch([() => companyAccess?.activeCompanyId, pId, propId], () => {
   tracker.invalidate()
   proposal.value = null
+  errorMessage.value = ''
+  shapeErrorMessage.value = ''
   void loadProposal()
 })
 

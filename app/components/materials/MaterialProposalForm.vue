@@ -58,7 +58,9 @@
               id="proposal-project"
               v-model="formProjectId"
               class="cockpit-select"
-              :disabled="readOnly || Boolean(existingProposalId)"
+              :disabled="readOnly || Boolean(existingProposalId) || isSaving || isSubmitting"
+              :aria-invalid="Boolean(validationErrors.projectId)"
+              :aria-describedby="validationErrors.projectId ? 'proposal-project-error' : undefined"
               required
               @change="onProjectChange"
             >
@@ -74,7 +76,7 @@
             <small v-if="selectedProject?.locationText" class="field-hint">
               Địa chỉ dự án: {{ selectedProject.locationText }}
             </small>
-            <span v-if="validationErrors.projectId" class="field-error">{{ validationErrors.projectId }}</span>
+            <span v-if="validationErrors.projectId" id="proposal-project-error" class="field-error">{{ validationErrors.projectId }}</span>
           </div>
 
           <!-- Needed On Date -->
@@ -85,10 +87,12 @@
               v-model="formNeededOn"
               type="date"
               class="cockpit-input"
-              :disabled="readOnly"
+              :disabled="readOnly || isSaving || isSubmitting"
+              :aria-invalid="Boolean(validationErrors.neededOn)"
+              :aria-describedby="validationErrors.neededOn ? 'proposal-needed-on-error' : undefined"
               required
             >
-            <span v-if="validationErrors.neededOn" class="field-error">{{ validationErrors.neededOn }}</span>
+            <span v-if="validationErrors.neededOn" id="proposal-needed-on-error" class="field-error">{{ validationErrors.neededOn }}</span>
           </div>
         </div>
 
@@ -100,7 +104,9 @@
             v-model="formDeliveryAddress"
             type="text"
             class="cockpit-input"
-            :disabled="readOnly"
+            :disabled="readOnly || isSaving || isSubmitting"
+            :aria-invalid="Boolean(validationErrors.deliveryAddress)"
+            :aria-describedby="validationErrors.deliveryAddress ? 'proposal-delivery-address-error' : undefined"
             placeholder="Nhập địa chỉ giao hàng tại công trường..."
             required
             maxlength="2000"
@@ -108,7 +114,7 @@
           <small class="field-hint">
             Địa chỉ này chỉ áp dụng riêng cho phiếu yêu cầu hiện tại, không thay đổi địa chỉ mặc định của dự án.
           </small>
-          <span v-if="validationErrors.deliveryAddress" class="field-error">{{ validationErrors.deliveryAddress }}</span>
+          <span v-if="validationErrors.deliveryAddress" id="proposal-delivery-address-error" class="field-error">{{ validationErrors.deliveryAddress }}</span>
         </div>
 
         <!-- Notes -->
@@ -118,7 +124,7 @@
             id="proposal-notes"
             v-model="formNotes"
             class="cockpit-textarea"
-            :disabled="readOnly"
+            :disabled="readOnly || isSaving || isSubmitting"
             rows="2"
             placeholder="Ghi chú thêm về yêu cầu vận chuyển, thời gian hạ hàng (nếu có)..."
             maxlength="2000"
@@ -137,6 +143,7 @@
             v-if="!readOnly"
             type="button"
             class="cockpit-btn cockpit-btn--secondary"
+            :disabled="isSaving || isSubmitting"
             @click="addLine"
           >
             <UIcon name="i-lucide-plus" aria-hidden="true" />
@@ -169,14 +176,22 @@
               <tr v-for="(line, index) in lines" :key="line.lineId" :class="{ 'row-signed': isLineSigned(line) }">
                 <td class="text-center font-mono">{{ index + 1 }}</td>
                 <td>
-                  <div v-if="readOnly || isLineSigned(line)">
+                  <div v-if="readOnly || isLineSigned(line) || isPersistedLine(line)">
                     <span class="font-medium">{{ getMaterialName(line.materialId) }}</span>
                     <span v-if="isLineSigned(line)" class="signed-badge">Đã ký HĐ</span>
+                    <small v-else-if="isPersistedLine(line) && !readOnly" class="field-hint block text-xs text-muted">
+                      (Dòng đã lưu: không đổi vật tư; xóa và thêm dòng mới nếu cần thay thế)
+                    </small>
                   </div>
                   <div v-else class="material-select-cell">
                     <select
+                      :id="'line-material-' + line.lineId"
                       v-model="line.materialId"
                       class="cockpit-select line-select"
+                      :disabled="readOnly || isSaving || isSubmitting"
+                      :aria-label="'Vật tư dòng ' + (index + 1)"
+                      :aria-invalid="Boolean(getLineError(line.lineId, 'materialId'))"
+                      :aria-describedby="getLineError(line.lineId, 'materialId') ? 'line-material-error-' + line.lineId : undefined"
                       required
                       @change="onMaterialChange(line)"
                     >
@@ -190,7 +205,11 @@
                       </option>
                     </select>
                   </div>
-                  <span v-if="getLineError(line.lineId, 'materialId')" class="field-error">
+                  <span
+                    v-if="getLineError(line.lineId, 'materialId')"
+                    :id="'line-material-error-' + line.lineId"
+                    class="field-error"
+                  >
                     {{ getLineError(line.lineId, 'materialId') }}
                   </span>
                 </td>
@@ -208,11 +227,16 @@
                   </div>
                   <div v-else>
                     <input
+                      :id="'line-quantity-' + line.lineId"
                       v-model="line.quantity"
                       type="text"
                       inputmode="decimal"
                       class="cockpit-input quantity-input font-mono"
                       placeholder="VD: 20 hoặc 15.5"
+                      :disabled="readOnly || isSaving || isSubmitting"
+                      :aria-label="'Số lượng dòng ' + (index + 1)"
+                      :aria-invalid="Boolean(getLineError(line.lineId, 'quantity'))"
+                      :aria-describedby="getLineError(line.lineId, 'quantity') ? 'line-quantity-error-' + line.lineId : undefined"
                       required
                       @input="markDirty"
                     >
@@ -220,7 +244,11 @@
                       Tối thiểu: {{ line.signedQuantity }}
                     </small>
                   </div>
-                  <span v-if="getLineError(line.lineId, 'quantity')" class="field-error">
+                  <span
+                    v-if="getLineError(line.lineId, 'quantity')"
+                    :id="'line-quantity-error-' + line.lineId"
+                    class="field-error"
+                  >
                     {{ getLineError(line.lineId, 'quantity') }}
                   </span>
                 </td>
@@ -241,7 +269,8 @@
                     type="button"
                     class="btn-icon-danger"
                     title="Xóa dòng này"
-                    aria-label="Xóa dòng vật tư"
+                    :aria-label="'Xóa dòng ' + (index + 1)"
+                    :disabled="isSaving || isSubmitting"
                     @click="removeLine(index)"
                   >
                     <UIcon name="i-lucide-trash-2" aria-hidden="true" />
@@ -303,7 +332,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import Decimal from 'decimal.js'
 import type {
   MaterialProjectOption,
@@ -313,6 +342,7 @@ import type {
 } from '../../../shared/schemas/costs/material-procurement'
 import { workflowMoneySchema } from '../../../shared/schemas/costs/cost-workflow'
 import { ClientError } from '../../errors/client-error'
+import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 
 interface FormLine {
   lineId: string
@@ -336,18 +366,22 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-  'saved': [result: MaterialCommandResult, proposalId: string]
-  'submitted': [result: MaterialCommandResult, proposalId: string]
+  'saved': [result: MaterialCommandResult, proposalId: string, projectId: string]
+  'submitted': [result: MaterialCommandResult, proposalId: string, projectId: string]
   'cancel': []
   'dirty': [isDirty: boolean]
 }>()
 
 const repositories = useRepositories()
 const repo = repositories.materialProcurement
+const companyAccess = useNuxtApp().$companyAccessStore
+
+const masterDataTracker = createAsyncRequestTracker<{ companyId: string }>()
 
 // Master Data
 const projectOptions = ref<MaterialProjectOption[]>([])
 const materialsList = ref<MaterialView[]>([])
+const lastAutoFilledAddress = ref<string>('')
 
 // Form State
 const existingProposalId = ref<string>(props.proposal?.id || '')
@@ -370,9 +404,9 @@ const isDirty = ref(false)
 
 // Idempotency tracking
 const saveIdempotencyKey = ref<string>(crypto.randomUUID())
-const lastSavePayload = ref<string>('')
+const lastSaveSignature = ref<string>('')
 const submitIdempotencyKey = ref<string>(crypto.randomUUID())
-const lastSubmitVersion = ref<number>(-1)
+const lastSubmitSignature = ref<string>('')
 
 const isReturnedState = computed(() => props.proposal?.reviewState === 'returned')
 
@@ -422,6 +456,11 @@ function getMaterialUnit(materialId: string): string {
   return getMaterial(materialId)?.unit || ''
 }
 
+function isPersistedLine(line: FormLine): boolean {
+  if (!props.proposal) return false
+  return props.proposal.lines.some(l => l.lineId === line.lineId)
+}
+
 function isLineSigned(line: FormLine): boolean {
   if (!line.signedQuantity) return false
   try {
@@ -469,14 +508,15 @@ function onMaterialChange(_line: FormLine) {
 function onProjectChange() {
   markDirty()
   const p = selectedProject.value
-  // Requirement 2:
-  // "Phiếu mới nạp locationText vào “Nơi giao”, cho sửa trên phiếu; không cập nhật địa chỉ project.
-  // Nếu project không có địa chỉ, yêu cầu nhập. Khi đang sửa phiếu, giữ địa chỉ đã lưu;
-  // đổi project không được âm thầm xóa địa chỉ người dùng đã nhập."
   if (!existingProposalId.value) {
-    // If user hasn't typed an address yet, fill default from project
-    if (!formDeliveryAddress.value.trim() && p?.locationText) {
-      formDeliveryAddress.value = p.locationText
+    if (!formDeliveryAddress.value.trim() || formDeliveryAddress.value === lastAutoFilledAddress.value) {
+      if (p?.locationText) {
+        formDeliveryAddress.value = p.locationText
+        lastAutoFilledAddress.value = p.locationText
+      } else {
+        formDeliveryAddress.value = ''
+        lastAutoFilledAddress.value = ''
+      }
     }
   }
 }
@@ -557,6 +597,27 @@ function buildProposalPayload() {
   }
 }
 
+function getSaveCommandSignature(payload: ReturnType<typeof buildProposalPayload>) {
+  return JSON.stringify({
+    companyId: companyAccess?.activeCompanyId ?? '',
+    projectId: formProjectId.value,
+    target: existingProposalId.value || null,
+    operation: existingProposalId.value ? 'update' : 'create',
+    expectedVersion: existingProposalId.value ? currentVersion.value : null,
+    payload,
+  })
+}
+
+function getSubmitCommandSignature() {
+  return JSON.stringify({
+    companyId: companyAccess?.activeCompanyId ?? '',
+    projectId: formProjectId.value,
+    target: existingProposalId.value,
+    operation: 'submit',
+    expectedVersion: currentVersion.value,
+  })
+}
+
 async function saveProposalDraft(options: { silent?: boolean } = {}): Promise<MaterialCommandResult | null> {
   errorMessage.value = ''
   successMessage.value = ''
@@ -569,13 +630,14 @@ async function saveProposalDraft(options: { silent?: boolean } = {}): Promise<Ma
 
   isSaving.value = true
   const payload = buildProposalPayload()
-  const payloadString = JSON.stringify({ projectId: formProjectId.value, ...payload })
+  const currentSig = getSaveCommandSignature(payload)
 
-  // Idempotency rule: retry same payload keeps key; new payload generates new key
-  if (payloadString !== lastSavePayload.value) {
+  // Idempotency rule: exact command retry keeps key; altered command generates new key
+  if (currentSig !== lastSaveSignature.value) {
     saveIdempotencyKey.value = crypto.randomUUID()
-    lastSavePayload.value = payloadString
+    lastSaveSignature.value = currentSig
   }
+  const idempotencyKey = saveIdempotencyKey.value
 
   try {
     let result: MaterialCommandResult
@@ -587,20 +649,20 @@ async function saveProposalDraft(options: { silent?: boolean } = {}): Promise<Ma
           ...payload,
           expectedVersion: currentVersion.value,
         },
-        { idempotencyKey: saveIdempotencyKey.value },
+        { idempotencyKey },
       )
       currentVersion.value = result.version
       isDirty.value = false
       emit('dirty', false)
       if (!options.silent) {
         successMessage.value = 'Đã lưu nháp phiếu yêu cầu thành công.'
-        emit('saved', result, existingProposalId.value)
+        emit('saved', result, existingProposalId.value, formProjectId.value)
       }
     } else {
       result = await repo.createProposal(
         formProjectId.value,
         payload,
-        { idempotencyKey: saveIdempotencyKey.value },
+        { idempotencyKey },
       )
       existingProposalId.value = result.resourceId
       currentVersion.value = result.version
@@ -608,7 +670,7 @@ async function saveProposalDraft(options: { silent?: boolean } = {}): Promise<Ma
       emit('dirty', false)
       if (!options.silent) {
         successMessage.value = 'Đã tạo phiếu yêu cầu mới thành công.'
-        emit('saved', result, result.resourceId)
+        emit('saved', result, result.resourceId, formProjectId.value)
       }
     }
     return result
@@ -653,8 +715,9 @@ async function handleSubmit() {
   isSubmitting.value = true
 
   try {
-    // Step 1: If brand new, dirty, returned, or has unsaved edits, save draft first to obtain canonical version
-    const needsSave = !existingProposalId.value || isDirty.value || isReturnedState.value || hasFormModifications()
+    // Step 1: If brand new, dirty, or has unsaved edits, save draft first to obtain canonical version
+    // If returned proposal was already saved cleanly, avoid redundant PATCH
+    const needsSave = !existingProposalId.value || isDirty.value || hasFormModifications()
     if (needsSave) {
       const saveResult = await saveProposalDraft({ silent: true })
       if (!saveResult) {
@@ -664,9 +727,10 @@ async function handleSubmit() {
     }
 
     // Step 2: Submit command
-    if (currentVersion.value !== lastSubmitVersion.value) {
+    const currentSubmitSig = getSubmitCommandSignature()
+    if (currentSubmitSig !== lastSubmitSignature.value) {
       submitIdempotencyKey.value = crypto.randomUUID()
-      lastSubmitVersion.value = currentVersion.value
+      lastSubmitSignature.value = currentSubmitSig
     }
 
     const result = await repo.submitProposal(
@@ -680,7 +744,7 @@ async function handleSubmit() {
     successMessage.value = 'Đã gửi phiếu yêu cầu mua hàng thành công.'
     isDirty.value = false
     emit('dirty', false)
-    emit('submitted', result, existingProposalId.value)
+    emit('submitted', result, existingProposalId.value, formProjectId.value)
   } catch (err: unknown) {
     await handleMutationError(err)
   } finally {
@@ -726,11 +790,20 @@ function handleCancel() {
 }
 
 async function loadMasterData() {
+  const activeCompanyId = companyAccess?.activeCompanyId
+  if (!activeCompanyId) {
+    projectOptions.value = []
+    materialsList.value = []
+    return
+  }
+
+  const token = masterDataTracker.start({ companyId: activeCompanyId })
   try {
     const [projects, mats] = await Promise.all([
       repo.listProjects(),
       repo.listMaterials(),
     ])
+    if (!token.isCurrent()) return
     projectOptions.value = projects
     materialsList.value = mats
 
@@ -739,9 +812,11 @@ async function loadMasterData() {
       const p = projects.find(proj => proj.projectId === formProjectId.value)
       if (p?.locationText) {
         formDeliveryAddress.value = p.locationText
+        lastAutoFilledAddress.value = p.locationText
       }
     }
   } catch {
+    if (!token.isCurrent()) return
     errorMessage.value = 'Không thể nạp dữ liệu danh mục dự án hoặc vật tư.'
   }
 }
@@ -766,19 +841,37 @@ function initFromProposal(p: MaterialProposalView) {
 }
 
 watch(() => props.proposal, (newProposal) => {
-  if (newProposal) {
-    initFromProposal(newProposal)
+  if (!newProposal) return
+  // Protect user's in-progress or dirty edits from being overwritten by canonical GET
+  if (isDirty.value || isSaving.value || isSubmitting.value) {
+    if (newProposal.version > currentVersion.value) {
+      currentVersion.value = newProposal.version
+    }
+    return
   }
+  initFromProposal(newProposal)
 }, { immediate: true })
 
 watch(() => props.projectId, (newPId) => {
   if (newPId && !existingProposalId.value) {
     formProjectId.value = newPId
     const p = projectOptions.value.find(proj => proj.projectId === newPId)
-    if (p?.locationText && !formDeliveryAddress.value.trim()) {
+    if (p?.locationText && (!formDeliveryAddress.value.trim() || formDeliveryAddress.value === lastAutoFilledAddress.value)) {
       formDeliveryAddress.value = p.locationText
+      lastAutoFilledAddress.value = p.locationText
     }
   }
+})
+
+watch(() => companyAccess?.activeCompanyId, () => {
+  masterDataTracker.invalidate()
+  projectOptions.value = []
+  materialsList.value = []
+  lastSaveSignature.value = ''
+  lastSubmitSignature.value = ''
+  saveIdempotencyKey.value = crypto.randomUUID()
+  submitIdempotencyKey.value = crypto.randomUUID()
+  void loadMasterData()
 })
 
 onMounted(() => {
@@ -786,6 +879,10 @@ onMounted(() => {
   if (!props.proposal && lines.value.length === 0) {
     addLine()
   }
+})
+
+onUnmounted(() => {
+  masterDataTracker.invalidate()
 })
 </script>
 

@@ -281,6 +281,7 @@ watch([() => companyAccess?.activeCompanyId, pId], () => {
   tracker.invalidate()
   proposals.value = []
   currentProject.value = null
+  errorMessage.value = ''
   void loadData()
 })
 
