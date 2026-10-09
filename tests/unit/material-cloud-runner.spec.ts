@@ -49,7 +49,7 @@ it('uses only the dedicated DEV CLI environment and fails without its token', as
   const runner = await import('../../scripts/run-c1-cloud-dev-tests.mjs')
   const files: Array<{ path: string, sql: string }> = []
   runner.runMaterialCloudDevTests({ cwd, run: ({ files: selected }: { files: typeof files }) => files.push(...selected) })
-  const spawn = vi.fn(() => ({ status: 0, stdout: '{"rows":[{"result":"A1_MATERIAL_PGTAP_COMPLETE","finish_count":0}]}', stderr: '' }))
+  const spawn = vi.fn(() => ({ status: 0, stdout: '[{"result":"A1_MATERIAL_PGTAP_COMPLETE","finish_count":0}]', stderr: '' }))
   const dedicated = { A1_DEDICATED: 'yes' }
   runner.runC1CloudDevTests({ cwd, files, assertTarget: vi.fn(), spawn, createCliEnvironment: () => dedicated })
   expect(spawn).toHaveBeenCalledTimes(1)

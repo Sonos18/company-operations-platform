@@ -86,8 +86,8 @@ export function validateC1CloudDevSql(path, sql) {
 }
 
 function assertC1CloudDevPgTapResult(path, stdout) {
-  const payloadStart = stdout.indexOf('{')
-  if (payloadStart < 0) throw new Error(`C1 Cloud DEV SQL verification failed for ${path}: Supabase CLI returned no JSON result`)
+  const payloadStart = [stdout.indexOf('{'), stdout.indexOf('[')].filter(index => index >= 0).sort((a, b) => a - b)[0]
+  if (payloadStart === undefined) throw new Error(`C1 Cloud DEV SQL verification failed for ${path}: Supabase CLI returned no JSON result`)
 
   let response
   try {
@@ -95,13 +95,14 @@ function assertC1CloudDevPgTapResult(path, stdout) {
   } catch {
     throw new Error(`C1 Cloud DEV SQL verification failed for ${path}: Supabase CLI returned invalid JSON`)
   }
-  if (!response || typeof response !== 'object' || Array.isArray(response) || !Array.isArray(response.rows)) {
+  const rows = Array.isArray(response) ? response : response?.rows
+  if (!Array.isArray(rows)) {
     throw new Error(`C1 Cloud DEV SQL verification failed for ${path}: Supabase CLI returned an invalid query result`)
   }
 
-  const finish = response.rows.find(row => row && typeof row === 'object' && !Array.isArray(row) && typeof row.finish === 'string')?.finish
+  const finish = rows.find(row => row && typeof row === 'object' && !Array.isArray(row) && typeof row.finish === 'string')?.finish
   if (finish) throw new Error(`C1 Cloud DEV SQL verification failed for ${path}: pgTAP finish reported a diagnostic`)
-  if (path === 'c1_material_procurement_a1.test.sql' && !response.rows.some(row => row?.result === 'A1_MATERIAL_PGTAP_COMPLETE' && (row.finish_count === 0 || row.finish_count === '0'))) {
+  if (path === 'c1_material_procurement_a1.test.sql' && !rows.some(row => row?.result === 'A1_MATERIAL_PGTAP_COMPLETE' && (row.finish_count === 0 || row.finish_count === '0'))) {
     throw new Error('A1 Cloud DEV SQL verification returned no pgTAP completion evidence')
   }
 }
