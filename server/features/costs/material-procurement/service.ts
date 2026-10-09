@@ -18,6 +18,7 @@ import {
   materialProposalDecisionInputSchema,
   materialProposalInputSchema,
   recordMaterialSupplierNameInputSchema,
+  setBuyerInvoiceNameInputSchema,
   updateMaterialInputSchema,
   updateMaterialProposalInputSchema,
   type CancelMaterialOrderInput,
@@ -35,6 +36,7 @@ import {
   type MaterialView,
   type ProposalDecisionInput,
   type RecordMaterialSupplierNameInput,
+  type SetBuyerInvoiceNameInput,
   type UpdateMaterialInput,
   type UpdateMaterialProposalInput,
 } from '../../../../shared/schemas/costs/material-procurement'
@@ -63,6 +65,7 @@ export interface MaterialProcurementDataRepository {
   updateProposal(context: MaterialProcurementContext, projectId: string, proposalId: string, input: UpdateMaterialProposalInput, key: string): Promise<MaterialCommandResult>
   submitProposal(context: MaterialProcurementContext, projectId: string, proposalId: string, input: MaterialProposalCommandVersion, key: string): Promise<MaterialCommandResult>
   decideProposal(context: MaterialProcurementContext, projectId: string, proposalId: string, input: ProposalDecisionInput, key: string): Promise<MaterialCommandResult>
+  setBuyerInvoiceName(context: MaterialProcurementContext, projectId: string, proposalId: string, lineId: string, input: SetBuyerInvoiceNameInput, key: string): Promise<MaterialCommandResult>
   createOrder(context: MaterialProcurementContext, projectId: string, proposalId: string, input: CreateMaterialOrderInput, key: string): Promise<MaterialCommandResult>
   listOrders(context: MaterialProcurementContext, projectId: string): Promise<MaterialOrderView[]>
   readOrder(context: MaterialProcurementContext, projectId: string, orderId: string): Promise<MaterialOrderView>
@@ -175,6 +178,18 @@ export class MaterialProcurementService {
   async decideProposal(context: MaterialProcurementContext, projectId: string, proposalId: string, value: unknown, key: string) {
     requirePermission(context, 'material.proposal.decide')
     return this.repository.decideProposal(context, id(projectId), id(proposalId), parse(materialProposalDecisionInputSchema, value), id(key))
+  }
+
+  async setBuyerInvoiceName(context: MaterialProcurementContext, projectId: string, proposalId: string, lineId: string, value: unknown, key: string) {
+    requirePermission(context, 'material.order.manage')
+    return this.repository.setBuyerInvoiceName(
+      context,
+      id(projectId),
+      id(proposalId),
+      id(lineId),
+      parse(setBuyerInvoiceNameInputSchema, value),
+      id(key),
+    )
   }
 
   async createOrder(context: MaterialProcurementContext, projectId: string, proposalId: string, value: unknown, key: string) {

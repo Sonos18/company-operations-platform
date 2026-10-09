@@ -12,6 +12,7 @@ import {
   materialProposalDecisionInputSchema,
   materialProposalInputSchema,
   recordMaterialSupplierNameInputSchema,
+  setBuyerInvoiceNameInputSchema,
   updateMaterialInputSchema,
   updateMaterialProposalInputSchema,
 } from '../../../../shared/schemas/costs/material-procurement'
@@ -76,6 +77,7 @@ export function createMaterialProcurementRoutes(dependencies: MaterialProcuremen
     async updateProposal(event: H3Event) { const value = await resolved(event); return value.service.updateProposal(value.context, param(event, 'projectId'), param(event, 'proposalId'), await body(event, updateMaterialProposalInputSchema), key(event)) },
     async submitProposal(event: H3Event) { const value = await resolved(event); return value.service.submitProposal(value.context, param(event, 'projectId'), param(event, 'proposalId'), await body(event, materialProposalCommandVersionSchema), key(event)) },
     async decideProposal(event: H3Event) { const value = await resolved(event); return value.service.decideProposal(value.context, param(event, 'projectId'), param(event, 'proposalId'), await body(event, materialProposalDecisionInputSchema), key(event)) },
+    async setBuyerInvoiceName(event: H3Event) { const value = await resolved(event); return value.service.setBuyerInvoiceName(value.context, param(event, 'projectId'), param(event, 'proposalId'), param(event, 'lineId'), await body(event, setBuyerInvoiceNameInputSchema), key(event)) },
     async createOrder(event: H3Event) { const value = await resolved(event); return value.service.createOrder(value.context, param(event, 'projectId'), param(event, 'proposalId'), await body(event, createMaterialOrderInputSchema), key(event)) },
     async listOrders(event: H3Event) { const value = await resolved(event); return value.service.listOrders(value.context, param(event, 'projectId')) },
     async readOrder(event: H3Event) { const value = await resolved(event); return value.service.readOrder(value.context, param(event, 'projectId'), param(event, 'orderId')) },

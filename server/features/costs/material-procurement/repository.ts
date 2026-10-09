@@ -36,6 +36,7 @@ type RpcName =
   | 'c1_material_update_proposal'
   | 'c1_material_submit_proposal'
   | 'c1_material_decide_proposal'
+  | 'c1_material_set_proposal_invoice_name'
   | 'c1_material_create_order'
   | 'c1_material_list_orders'
   | 'c1_material_read_order'
@@ -150,6 +151,13 @@ export class SupabaseMaterialProcurementRepository implements MaterialProcuremen
 
   decideProposal: MaterialProcurementDataRepository['decideProposal'] = (context, projectId, id, input, key) =>
     this.command(context, 'c1_material_decide_proposal', input, key, { target_project_id: projectId, target_id: id })
+
+  setBuyerInvoiceName: MaterialProcurementDataRepository['setBuyerInvoiceName'] = (context, projectId, proposalId, lineId, input, key) =>
+    this.command(context, 'c1_material_set_proposal_invoice_name', input, key, {
+      target_project_id: projectId,
+      target_id: proposalId,
+      target_line_id: lineId,
+    })
 
   createOrder: MaterialProcurementDataRepository['createOrder'] = (context, projectId, proposalId, input, key) =>
     this.command(context, 'c1_material_create_order', input, key, { target_project_id: projectId, target_id: proposalId })
