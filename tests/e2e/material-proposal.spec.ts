@@ -800,7 +800,10 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     await addressInput.fill('Địa chỉ mới cần cập nhật 409')
 
     // Click "Lưu nháp"
+    const firstPatch = page.waitForResponse(r =>
+      r.request().method() === 'PATCH' && r.url().endsWith(`/proposals/${proposalId}`))
     await page.getByRole('button', { name: 'Lưu nháp' }).click()
+    await firstPatch
 
     // 409 conflict banner appears
     await expect(page.getByText('Xung đột phiên bản (409)')).toBeVisible()
@@ -809,7 +812,10 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     await expect(addressInput).toHaveValue('Địa chỉ mới cần cập nhật 409')
 
     // Click "Lưu nháp" again without changing input -> exact same command
+    const secondPatch = page.waitForResponse(r =>
+      r.request().method() === 'PATCH' && r.url().endsWith(`/proposals/${proposalId}`))
     await page.getByRole('button', { name: 'Lưu nháp' }).click()
+    await secondPatch
 
     // Both requests sent same idempotency key because command signature didn't change!
     const patchCalls = capturedRequests.filter(r => r.method === 'PATCH')
@@ -817,12 +823,15 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     expect(patchCalls[0].headers['idempotency-key']).toBe(patchCalls[1].headers['idempotency-key'])
 
     // Now change input
+    const thirdPatch = page.waitForResponse(r =>
+      r.request().method() === 'PATCH' && r.url().endsWith(`/proposals/${proposalId}`))
     await addressInput.fill('Địa chỉ thay đổi lần thứ 2')
     await page.getByRole('button', { name: 'Lưu nháp' }).click()
+    await thirdPatch
 
     // 3rd call has modified body -> MUST generate a new idempotency key!
-    const thirdPatch = capturedRequests.filter(r => r.method === 'PATCH')[2]
-    expect(thirdPatch.headers['idempotency-key']).not.toBe(patchCalls[0].headers['idempotency-key'])
+    const thirdPatchCall = capturedRequests.filter(r => r.method === 'PATCH')[2]
+    expect(thirdPatchCall.headers['idempotency-key']).not.toBe(patchCalls[0].headers['idempotency-key'])
   })
 
   test('5b. PATCH retry replays its committed receipt before comparing the stale expectedVersion', async ({ page }) => {
