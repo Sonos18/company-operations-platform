@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(37);
+select plan(40);
 
 -- Rollback-only canonical fixture. The accountant has cash and contract rights,
 -- but no request.submit or manager assignment when direct authority is recorded.
@@ -255,6 +255,55 @@ select throws_ok($$
   'c1260000-0000-4000-8000-000000000919','c1260000-0000-4000-8000-000000000999')
 $$,'P0001','MATERIAL_CONTRACT_SOURCE_CONFLICT','unclassified exact source requires explicit legacy review');
 
+-- The old workflow's generic contract kind is a canonical source fact, not an
+-- attestation that the document is signed. The human selects its exact identity.
+set local role none;
+insert into public.cost_evidence_files(id,tenant_id,company_id,project_id,object_path,original_filename,
+ declared_mime_type,declared_size_bytes,declared_sha256,verified_mime_type,verified_size_bytes,
+ verified_sha256,status,intent_expires_at,created_by,finalized_by,finalized_at,version,
+ workflow_origin,workflow_target_kind,workflow_evidence_kind)
+values('c1260000-0000-4000-8000-000000000791','c1260000-0000-4000-8000-000000000010','c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101',
+ 'c1260000-0000-4000-8000-000000000010/c1260000-0000-4000-8000-000000000020/c1260000-0000-4000-8000-000000000101/c1260000-0000-4000-8000-000000000791',
+ 'legacy-contract-kind.pdf','application/pdf',8,repeat('8',64),'application/pdf',8,repeat('8',64),'finalized',now()+interval '15 minutes','c1260000-0000-4000-8000-000000000903','c1260000-0000-4000-8000-000000000903',now(),1,true,'request','contract');
+insert into public.cost_evidence_files(id,tenant_id,company_id,project_id,object_path,original_filename,
+ declared_mime_type,declared_size_bytes,declared_sha256,verified_mime_type,verified_size_bytes,
+ verified_sha256,status,intent_expires_at,created_by,finalized_by,finalized_at,version)
+values('c1260000-0000-4000-8000-000000000714','c1260000-0000-4000-8000-000000000010','c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101',
+ 'c1260000-0000-4000-8000-000000000010/c1260000-0000-4000-8000-000000000020/c1260000-0000-4000-8000-000000000101/c1260000-0000-4000-8000-000000000714',
+ 'reviewed-signed-contract.pdf','application/pdf',8,repeat('8',64),'application/pdf',8,repeat('8',64),'finalized',now()+interval '15 minutes','c1260000-0000-4000-8000-000000000903','c1260000-0000-4000-8000-000000000903',now(),1);
+insert into public.material_evidence_scopes(evidence_file_id,tenant_id,company_id,project_id,target_kind,order_id,evidence_role,created_by)
+values('c1260000-0000-4000-8000-000000000714','c1260000-0000-4000-8000-000000000010','c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101','material_order','c1260000-0000-4000-8000-000000000602','signed_contract','c1260000-0000-4000-8000-000000000903');
+insert into public.cost_workflow_contracts(id,tenant_id,company_id,project_id,party_id,reference,currency_code,created_by)
+values('c1260000-0000-4000-8000-000000000805','c1260000-0000-4000-8000-000000000010','c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101','c1260000-0000-4000-8000-000000000201','T6-GENERIC','VND','c1260000-0000-4000-8000-000000000903');
+insert into public.cost_workflow_contract_versions(id,tenant_id,company_id,project_id,contract_id,version,cap,evidence_file_ids,basis_state,reviewed_by)
+values('c1260000-0000-4000-8000-000000000815','c1260000-0000-4000-8000-000000000010','c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101','c1260000-0000-4000-8000-000000000805',1,100,array['c1260000-0000-4000-8000-000000000791'::uuid],'reviewed_reference','c1260000-0000-4000-8000-000000000903');
+select ok(not private.c1_material_explicit_signed_source('c1260000-0000-4000-8000-000000000791')
+ and private.c1_material_legacy_contract_source_fact('c1260000-0000-4000-8000-000000000791'),
+ 'legacy contract-kind association is not signed attestation');
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1260000-0000-4000-8000-000000000903","role":"authenticated"}',true);
+select throws_ok($$
+ select public.c1_material_record_contract(
+  'c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101',
+  'c1260000-0000-4000-8000-000000000602',
+  jsonb_build_object('expectedOrderVersion',1,'contractReference','T6-GENERIC','signedValue','100.0000',
+   'currencyCode','VND','signedContractEvidenceFileId','c1260000-0000-4000-8000-000000000714',
+   'signedQuotationEvidenceFileId','c1260000-0000-4000-8000-000000000722','documentsReviewed',true),
+  'c1260000-0000-4000-8000-000000000920','c1260000-0000-4000-8000-0000000009a0')
+$$,'P0001','MATERIAL_CONTRACT_SOURCE_CONFLICT','generic old contract source cannot auto-associate by hash');
+insert into t6_results(name,body)
+select 'generic-link',public.c1_material_record_contract(
+ 'c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101',
+ 'c1260000-0000-4000-8000-000000000602',
+ jsonb_build_object('expectedOrderVersion',1,'contractReference','T6-GENERIC','signedValue','100.0000',
+  'currencyCode','VND','signedContractEvidenceFileId','c1260000-0000-4000-8000-000000000714',
+  'signedQuotationEvidenceFileId','c1260000-0000-4000-8000-000000000722','documentsReviewed',true,
+  'existingContractId','c1260000-0000-4000-8000-000000000805'),
+ 'c1260000-0000-4000-8000-000000000921','c1260000-0000-4000-8000-0000000009a1');
+select is((select body->>'contractId' from t6_results where name='generic-link'),
+ 'c1260000-0000-4000-8000-000000000805',
+ 'explicit exact canonical contract identity resolves generic source without guessing signature');
+
 set local role none;
 insert into public.cost_evidence_files(id,tenant_id,company_id,project_id,object_path,original_filename,
  declared_mime_type,declared_size_bytes,declared_sha256,verified_mime_type,verified_size_bytes,
@@ -386,8 +435,8 @@ select is(public.c1_material_read_order(
  '0.0000','direct order reports no remaining authority');
 
 set local role none;
-select ok(not private.c1_material_typed_signed_source('c1260000-0000-4000-8000-000000000721')
- and private.c1_material_typed_signed_source('c1260000-0000-4000-8000-000000000711'),
+select ok(not private.c1_material_explicit_signed_source('c1260000-0000-4000-8000-000000000721')
+ and private.c1_material_explicit_signed_source('c1260000-0000-4000-8000-000000000711'),
  'typed quotation remains reusable while signed-contract bytes are claimed');
 insert into public.cost_workflow_contracts(id,tenant_id,company_id,project_id,party_id,reference,currency_code,created_by)
 values('c1260000-0000-4000-8000-000000000802','c1260000-0000-4000-8000-000000000010','c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101','c1260000-0000-4000-8000-000000000201','T6-QUOTE-REUSE','VND','c1260000-0000-4000-8000-000000000903');

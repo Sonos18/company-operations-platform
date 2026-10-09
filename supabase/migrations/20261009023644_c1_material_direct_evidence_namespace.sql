@@ -71,9 +71,17 @@ revoke all on function private.c1_material_require_direct_payment_proofs(uuid,uu
 from public,anon,authenticated,service_role;
 notify pgrst,'reload schema';
 
--- Only evidence positively identified as a signed contract may reserve that
--- physical source for a different canonical contract. A quotation can recur.
-create function private.c1_material_typed_signed_source(file_id uuid)
+-- Only an explicit material signed_contract scope or durable direct claim
+-- attests the signed source. A legacy generic contract label is a source fact,
+-- not proof that the document was signed. Quotation-only files may recur.
+create function private.c1_material_explicit_signed_source(file_id uuid)
+returns boolean language sql stable security definer set search_path='' as $$
+ select exists(select 1 from public.material_evidence_scopes scope
+  where scope.evidence_file_id=file_id and scope.evidence_role='signed_contract')
+  or exists(select 1 from public.material_direct_authorizations authority
+   where authority.signed_contract_evidence_file_id=file_id);
+$$;
+create function private.c1_material_legacy_contract_source_fact(file_id uuid)
 returns boolean language sql stable security definer set search_path='' as $$
  select exists(select 1 from public.cost_evidence_files evidence
   where evidence.id=file_id and (
@@ -81,11 +89,7 @@ returns boolean language sql stable security definer set search_path='' as $$
    or exists(select 1 from public.cost_evidence_links link
     where link.evidence_file_id=evidence.id and link.tenant_id=evidence.tenant_id
      and link.company_id=evidence.company_id and link.project_id=evidence.project_id
-     and link.evidence_kind='contract')
-   or exists(select 1 from public.material_evidence_scopes scope
-    where scope.evidence_file_id=evidence.id and scope.tenant_id=evidence.tenant_id
-     and scope.company_id=evidence.company_id and scope.project_id=evidence.project_id
-     and scope.evidence_role='signed_contract')));
+     and link.evidence_kind='contract')));
 $$;
 create function private.c1_material_ambiguous_legacy_source(file_id uuid)
 returns boolean language sql stable security definer set search_path='' as $$
@@ -107,7 +111,9 @@ begin
   where evidence.id=any(new.evidence_file_ids)
    and evidence.tenant_id=new.tenant_id and evidence.company_id=new.company_id
    and evidence.project_id=new.project_id and evidence.status='finalized'
-   and private.c1_material_typed_signed_source(evidence.id)
+   and (private.c1_material_explicit_signed_source(evidence.id)
+    or private.c1_material_legacy_contract_source_fact(evidence.id)
+    or (new.basis_state='reviewed_reference' and private.c1_material_ambiguous_legacy_source(evidence.id)))
   order by evidence.verified_sha256
  loop
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
@@ -169,10 +175,11 @@ begin
  into v_definition;
  v_old:='and evidence.verified_sha256=v_signed_hash and (v_existing is null or version.contract_id<>v_existing)';
  v_new:='and evidence.verified_sha256=v_signed_hash'
-  ||chr(10)||'   and (private.c1_material_typed_signed_source(evidence.id)'
+  ||chr(10)||'   and (private.c1_material_explicit_signed_source(evidence.id)'
+  ||chr(10)||'    or private.c1_material_legacy_contract_source_fact(evidence.id)'
   ||chr(10)||'    or (version.basis_state=''reviewed_reference'' and private.c1_material_ambiguous_legacy_source(evidence.id)))'
   ||chr(10)||'   and (v_existing is null or version.contract_id<>v_existing)';
- if position(v_old in v_definition)=0 or position('private.c1_material_typed_signed_source(evidence.id)' in v_definition)>0
+ if position(v_old in v_definition)=0 or position('private.c1_material_explicit_signed_source(evidence.id)' in v_definition)>0
  then raise exception using errcode='P0001',message='MATERIAL_CONTRACT_SOURCE_SCAN_DRIFT';end if;
  execute replace(v_definition,v_old,v_new);
 end $$;
@@ -239,7 +246,8 @@ begin
  if cap is null or authorized+proposed>cap then raise exception using errcode='P0001',message='CONTRACT_CAP_EXCEEDED';end if;
 end;$$;
 
-revoke all on function private.c1_material_typed_signed_source(uuid),
+revoke all on function private.c1_material_explicit_signed_source(uuid),
+ private.c1_material_legacy_contract_source_fact(uuid),
  private.c1_material_ambiguous_legacy_source(uuid)
 from public,anon,authenticated,service_role;
 notify pgrst,'reload schema';
