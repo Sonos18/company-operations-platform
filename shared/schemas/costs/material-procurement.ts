@@ -74,6 +74,10 @@ export const materialSupplierNameViewSchema = z.object({
   version,
 }).strict()
 
+export const materialOrderCurrencySchema = z.object({
+  currencyCode: workflowCurrencySchema,
+}).strict()
+
 export const materialProjectOptionSchema = z.object({
   projectId: workflowUuidSchema,
   code: shortText,
@@ -280,6 +284,7 @@ export const materialEvidenceIntentInputSchema = costEvidenceCreateIntentInputSc
 })
 
 export const materialProcurementEndpointManifest = {
+  orderCurrency: { method: 'GET', path: '/api/companies/:companyId/material-procurement/currency' },
   projects: { method: 'GET', path: '/api/companies/:companyId/material-procurement/projects' },
   resolveSupplier: { method: 'POST', path: '/api/companies/:companyId/material-procurement/suppliers/resolve' },
   listMaterials: { method: 'GET', path: '/api/companies/:companyId/material-procurement/materials' },
@@ -311,6 +316,7 @@ export type UpdateMaterialInput = z.infer<typeof updateMaterialInputSchema>
 export type MaterialView = z.infer<typeof materialViewSchema>
 export type RecordMaterialSupplierNameInput = z.infer<typeof recordMaterialSupplierNameInputSchema>
 export type MaterialSupplierNameView = z.infer<typeof materialSupplierNameViewSchema>
+export type MaterialOrderCurrency = z.infer<typeof materialOrderCurrencySchema>
 export type MaterialProjectOption = z.infer<typeof materialProjectOptionSchema>
 export type MaterialProposalLineInput = z.infer<typeof materialProposalLineInputSchema>
 export type MaterialProposalInput = z.infer<typeof materialProposalInputSchema>
@@ -333,6 +339,7 @@ export type MaterialEvidenceRole = z.infer<typeof materialEvidenceRoleSchema>
 export type MaterialEvidenceIntentInput = z.infer<typeof materialEvidenceIntentInputSchema>
 
 export interface MaterialProcurementRepository {
+  readOrderCurrency(): Promise<MaterialOrderCurrency>
   listProjects(): Promise<MaterialProjectOption[]>
   listMaterials(): Promise<MaterialView[]>
   createMaterial(input: CreateMaterialInput, command: MaterialCommand): Promise<MaterialCommandResult>

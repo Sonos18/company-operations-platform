@@ -291,6 +291,14 @@ describe('material procurement HTTP repository', () => {
   })
 
   it('uses exact scoped order and cancellation routes', async () => {
+    const currency = response({ currencyCode: 'VND' })
+    await expect(createHttpMaterialProcurementRepository({ companyId, client: currency as never })
+      .readOrderCurrency()).resolves.toEqual({ currencyCode: 'VND' })
+    expect(currency.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'GET',
+      url: '/api/companies/' + companyId + '/material-procurement/currency',
+    }))
+
     const commandClient = response({ ...result, resourceId: ids.order })
     const repository = createHttpMaterialProcurementRepository({
       companyId,

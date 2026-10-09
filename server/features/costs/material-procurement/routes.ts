@@ -64,6 +64,7 @@ export function createMaterialProcurementRoutes(dependencies: MaterialProcuremen
   }
 
   return {
+    async readOrderCurrency(event: H3Event) { const value = await resolved(event); return value.service.readOrderCurrency(value.context) },
     async listProjects(event: H3Event) { const value = await resolved(event); return value.service.listProjects(value.context) },
     async listMaterials(event: H3Event) { const value = await resolved(event); return value.service.listMaterials(value.context) },
     async createMaterial(event: H3Event) { const value = await resolved(event); return value.service.createMaterial(value.context, await body(event, createMaterialInputSchema), key(event)) },

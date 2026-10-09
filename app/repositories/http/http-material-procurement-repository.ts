@@ -15,6 +15,7 @@ import {
   materialCommandResultSchema,
   materialEvidenceIntentInputSchema,
   materialOrderViewSchema,
+  materialOrderCurrencySchema,
   materialProjectOptionSchema,
   materialProposalCommandVersionSchema,
   materialProposalDecisionInputSchema,
@@ -74,6 +75,7 @@ export function createHttpMaterialProcurementRepository(options: {
   }
 
   return {
+    readOrderCurrency: async () => read(master('/currency'), materialOrderCurrencySchema),
     listProjects: async () => read(master('/projects'), z.array(materialProjectOptionSchema)),
     listMaterials: async () => read(master('/materials'), z.array(materialViewSchema)),
     createMaterial: async (input, cmd) => command(master('/materials'), input, createMaterialInputSchema, materialCommandResultSchema, cmd),

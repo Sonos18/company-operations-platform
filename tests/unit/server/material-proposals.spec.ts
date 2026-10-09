@@ -80,6 +80,7 @@ const returnedProposal = {
 
 function repository(overrides: Partial<MaterialProcurementDataRepository> = {}): MaterialProcurementDataRepository {
   return {
+    readOrderCurrency: vi.fn(async () => ({ currencyCode: 'VND' as const })),
     listProjects: vi.fn(async () => []),
     listMaterials: vi.fn(async () => []),
     createMaterial: vi.fn(async () => submitted),

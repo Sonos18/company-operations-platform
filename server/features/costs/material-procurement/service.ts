@@ -24,6 +24,7 @@ import {
   type CancelMaterialOrderInput,
   type CreateMaterialOrderInput,
   type MaterialOrderView,
+  type MaterialOrderCurrency,
   type ChosenSupplierInput,
   type CreateMaterialInput,
   type MaterialEvidenceIntentInput,
@@ -52,6 +53,7 @@ export interface MaterialProcurementContext {
 }
 
 export interface MaterialProcurementDataRepository {
+  readOrderCurrency(context: MaterialProcurementContext): Promise<MaterialOrderCurrency>
   listProjects(context: MaterialProcurementContext): Promise<MaterialProjectOption[]>
   listMaterials(context: MaterialProcurementContext): Promise<MaterialView[]>
   createMaterial(context: MaterialProcurementContext, input: CreateMaterialInput, key: string): Promise<MaterialCommandResult>
@@ -114,6 +116,12 @@ const id = (value: string) => parse(workflowUuidSchema, value)
 
 export class MaterialProcurementService {
   constructor(private readonly repository: MaterialProcurementDataRepository) {}
+
+  async readOrderCurrency(context: MaterialProcurementContext) {
+    requirePermission(context, 'material.read')
+    requirePermission(context, 'material.order.manage')
+    return this.repository.readOrderCurrency(context)
+  }
 
   async listProjects(context: MaterialProcurementContext) {
     requirePermission(context, 'material.read')

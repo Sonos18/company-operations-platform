@@ -8,6 +8,7 @@ import {
 import {
   materialCommandResultSchema,
   materialOrderViewSchema,
+  materialOrderCurrencySchema,
   materialProjectOptionSchema,
   materialProposalViewSchema,
   materialSupplierNameViewSchema,
@@ -23,6 +24,7 @@ import type {
 } from './service'
 
 type RpcName =
+  | 'c1_material_read_order_currency'
   | 'c1_material_list_projects'
   | 'c1_material_list_items'
   | 'c1_material_create_item'
@@ -106,6 +108,10 @@ export class SupabaseMaterialProcurementRepository implements MaterialProcuremen
       target_company_id: context.companyId,
       ...targets,
     }), schema)
+  }
+
+  readOrderCurrency(context: MaterialProcurementContext) {
+    return this.read(context, 'c1_material_read_order_currency', materialOrderCurrencySchema)
   }
 
   listProjects(context: MaterialProcurementContext) {

@@ -51,6 +51,7 @@ function context(permissions: readonly PermissionCode[]): MaterialProcurementCon
 function serviceRepository(): MaterialProcurementDataRepository {
   const command = { resourceId: ids.order, version: 1, replayed: false }
   return {
+    readOrderCurrency: vi.fn(async () => ({ currencyCode: 'VND' as const })),
     listProjects: vi.fn(async () => []), listMaterials: vi.fn(async () => []),
     createMaterial: vi.fn(async () => command), updateMaterial: vi.fn(async () => command),
     listSupplierNames: vi.fn(async () => []), recordSupplierName: vi.fn(async () => command),

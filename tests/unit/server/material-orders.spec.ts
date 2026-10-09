@@ -51,6 +51,7 @@ function context(permissions: readonly PermissionCode[]): MaterialProcurementCon
 
 function repository(overrides: Partial<MaterialProcurementDataRepository> = {}): MaterialProcurementDataRepository {
   return {
+    readOrderCurrency: vi.fn(async () => ({ currencyCode: 'VND' as const })),
     listProjects: vi.fn(async () => []),
     listMaterials: vi.fn(async () => []),
     createMaterial: vi.fn(async () => commandResult),
@@ -79,6 +80,14 @@ describe('material order service', () => {
   it('denies engineer financial reads before the RPC and allows scoped financial roles', async () => {
     const data = repository()
     const service = new MaterialProcurementService(data)
+
+    await expect(service.readOrderCurrency(context(engineerRoleScope)))
+      .rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    await expect(service.readOrderCurrency(context(['material.order.manage'])))
+      .rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    expect(data.readOrderCurrency).not.toHaveBeenCalled()
+    await expect(service.readOrderCurrency(context(purchasingRoleScope)))
+      .resolves.toEqual({ currencyCode: 'VND' })
 
     await expect(service.listOrders(context(engineerRoleScope), ids.project))
       .rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
@@ -135,7 +144,8 @@ describe('material order service', () => {
 describe('material order RPC boundary', () => {
   it('uses the frozen order RPC names and exact trusted arguments', async () => {
     const rpc = vi.fn(async (name: string) => ({
-      data: name === 'c1_material_list_orders' ? [orderView]
+      data: name === 'c1_material_read_order_currency' ? { currencyCode: 'VND' }
+        : name === 'c1_material_list_orders' ? [orderView]
         : name === 'c1_material_read_order' ? orderView
           : commandResult,
       error: null,
@@ -143,6 +153,7 @@ describe('material order RPC boundary', () => {
     const data = new SupabaseMaterialProcurementRepository({ rpc } as never)
     const ctx = context(purchasingRoleScope)
 
+    await data.readOrderCurrency(ctx)
     await data.createOrder(ctx, ids.project, ids.proposal, orderInput, key)
     await data.listOrders(ctx, ids.project)
     await data.readOrder(ctx, ids.project, ids.order)
@@ -152,6 +163,7 @@ describe('material order RPC boundary', () => {
     }, key)
 
     expect(rpc.mock.calls).toEqual([
+      ['c1_material_read_order_currency', { target_company_id: companyId }],
       ['c1_material_create_order', {
         target_company_id: companyId,
         target_project_id: ids.project,
