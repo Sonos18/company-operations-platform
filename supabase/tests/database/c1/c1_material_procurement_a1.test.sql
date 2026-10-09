@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(24);
+select plan(29);
 
 -- A1-only rollback fixture; c122 IDs do not overlap the broader material suites.
 insert into auth.users(id,email) values
@@ -137,6 +137,13 @@ select is(
   (select id from a1_ids where name='proposal'),
   'exact create replay returns same proposal'
 );
+select is((public.c1_material_create_proposal(
+  'c1220000-0000-4000-8000-000000000020',
+  'c1220000-0000-4000-8000-000000000101',
+  (select body from a1_inputs where name='proposal'),
+  'c1220000-0000-4000-8000-000000000603',
+  'c1220000-0000-4000-8000-000000000703'
+)->>'replayed'),'true','exact create replay is marked replayed');
 select throws_ok($$
   select public.c1_material_create_proposal(
     'c1220000-0000-4000-8000-000000000020',
@@ -178,6 +185,17 @@ select throws_ok($$
     'c1220000-0000-4000-8000-000000000705'
   )
 $$,'P0001','PERMISSION_DENIED','peer engineer cannot edit another author proposal');
+select is(public.c1_material_list_proposals(
+  'c1220000-0000-4000-8000-000000000020',
+  'c1220000-0000-4000-8000-000000000101'
+),'[]'::jsonb,'peer engineer cannot list another author proposal');
+select throws_ok($$
+  select public.c1_material_read_proposal(
+    'c1220000-0000-4000-8000-000000000020',
+    'c1220000-0000-4000-8000-000000000101',
+    (select id from a1_ids where name='proposal')
+  )
+$$,'P0001','PERMISSION_DENIED','peer engineer cannot read another author proposal');
 select set_config('request.jwt.claims','{"sub":"c1220000-0000-4000-8000-000000000901","role":"authenticated"}',true);
 select lives_ok($$
   select public.c1_material_update_proposal(
@@ -213,6 +231,14 @@ select is((
     'c1220000-0000-4000-8000-000000000706'
   )->>'version'
 ),'1','exact update replay retains version');
+select is((public.c1_material_update_proposal(
+  'c1220000-0000-4000-8000-000000000020',
+  'c1220000-0000-4000-8000-000000000101',
+  (select id from a1_ids where name='proposal'),
+  (select body from a1_inputs where name='update'),
+  'c1220000-0000-4000-8000-000000000606',
+  'c1220000-0000-4000-8000-000000000706'
+)->>'replayed'),'true','exact update replay is marked replayed');
 select throws_ok($$
   select public.c1_material_update_proposal(
     'c1220000-0000-4000-8000-000000000020',
@@ -272,6 +298,14 @@ select is((
     'c1220000-0000-4000-8000-000000000707'
   )->>'version'
 ),'2','exact submit replay retains version');
+select is((public.c1_material_submit_proposal(
+  'c1220000-0000-4000-8000-000000000020',
+  'c1220000-0000-4000-8000-000000000101',
+  (select id from a1_ids where name='proposal'),
+  '{"expectedVersion":1}',
+  'c1220000-0000-4000-8000-000000000607',
+  'c1220000-0000-4000-8000-000000000707'
+)->>'replayed'),'true','exact submit replay is marked replayed');
 select throws_ok($$
   select public.c1_material_submit_proposal(
     'c1220000-0000-4000-8000-000000000020',
