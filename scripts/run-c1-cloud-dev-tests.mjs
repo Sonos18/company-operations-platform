@@ -24,6 +24,11 @@ const allowlist = [
   'c1_ordinary_cost_detail_provenance_evidence_reads.test.sql',
 ]
 
+const materialAllowlist = [
+  'c1_material_procurement.test.sql',
+  'c1_material_procurement_security.test.sql',
+]
+
 const accountingWriteSyntheticPrefixes = {
   'c1_accounting_write_lifecycle.test.sql': 'c106',
   'c1_accounting_write_evidence.test.sql': 'c107',
@@ -39,7 +44,7 @@ const ordinaryCostDetailSyntheticPrefixes = {
 
 export function validateC1CloudDevSql(path, sql) {
   const normalized = sql.replace(/\r\n?/g, '\n').trim()
-  if (!allowlist.includes(path)) throw new Error('Unknown C1 SQL verification file')
+  if (![...allowlist, ...materialAllowlist].includes(path)) throw new Error('Unknown C1 SQL verification file')
   if (!/^begin\s*;/iu.test(normalized) || !/rollback\s*;$/iu.test(normalized)) throw new Error('C1 SQL verification must start with begin and end with rollback')
   if (/\bcommit\s*;/iu.test(normalized)) throw new Error('C1 SQL verification cannot commit')
   if (/\b(db\s+reset|migration\s+repair|supabase_migrations|seed|include-seed)\b/iu.test(normalized)) throw new Error('C1 SQL contains a forbidden Cloud DEV operation')
@@ -143,14 +148,20 @@ export function runCompletedProjectsRehearsal({ cwd = process.cwd(), env = proce
   }
 }
 
+export function runMaterialCloudDevTests({ cwd = process.cwd(), run = runC1CloudDevTests } = {}) {
+  const files = materialAllowlist.map(path => ({ path, sql: readFileSync(resolve(cwd, 'supabase/tests/database/c1', path), 'utf8') }))
+  return run({ cwd, files })
+}
+
 export function isC1CloudDevCliInvocation({ argv = process.argv, moduleUrl = import.meta.url } = {}) {
   return typeof argv[1] === 'string' && resolve(argv[1]) === fileURLToPath(moduleUrl)
 }
 
-export function runC1CloudDevCli({ argv = process.argv, moduleUrl = import.meta.url, run = runC1CloudDevTests, rehearse = runCompletedProjectsRehearsal } = {}) {
+export function runC1CloudDevCli({ argv = process.argv, moduleUrl = import.meta.url, run = runC1CloudDevTests, rehearse = runCompletedProjectsRehearsal, materials = runMaterialCloudDevTests } = {}) {
   if (!isC1CloudDevCliInvocation({ argv, moduleUrl })) return false
   const args = argv.slice(2)
   if (args.length === 1 && args[0] === '--completed-projects-rehearsal') rehearse()
+  else if (args.length === 1 && args[0] === '--materials') materials()
   else if (args.length === 0) run()
   else throw new Error('Unknown C1 Cloud DEV verification arguments')
   return true
