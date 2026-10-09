@@ -118,10 +118,13 @@ select is((
     (select id from a1_ids where name='proposal')
   )->>'deliveryAddress'
 ),'Site override','draft read returns edited delivery address');
+-- Verify the stored project value as fixture owner; engineer reads projects through the scoped RPC.
+set local role none;
 select is(
   (select location_text from public.projects where id='c1220000-0000-4000-8000-000000000101'),
   'Depot A','proposal address does not change project location'
 );
+set local role authenticated;
 select is((
   public.c1_material_read_proposal(
     'c1220000-0000-4000-8000-000000000020',
