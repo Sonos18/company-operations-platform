@@ -774,7 +774,7 @@ async function handleMutationError(err: unknown) {
 
   if (err instanceof ClientError) {
     if (err.code === 'PERMISSION_DENIED') {
-      errorMessage.value = 'Bạn không có quyền thực hiện thao tác này.'
+      errorMessage.value = err.message || 'Bạn không có quyền thực hiện thao tác này.'
     } else {
       errorMessage.value = err.message || 'Lỗi xử lý yêu cầu.'
     }

@@ -118,6 +118,7 @@ interface MockRouteOptions {
   currentProposal?: MaterialProposalView
   failWith409OnUpdate?: boolean
   failWith403OnSubmit?: boolean
+  failFirstMasterPost?: boolean
   capturedRequests?: CapturedRequest[]
   projectsDelayMs?: number
 }
@@ -161,6 +162,20 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
         body: parsedBody,
         headers: req.headers(),
       })
+
+      if (options.failFirstMasterPost && !receipts.has('master_failed_once')) {
+        receipts.set('master_failed_once', { bodyString: '', response: null })
+        await route.fulfill({
+          status: 500,
+          json: {
+            error: {
+              code: 'INTERNAL_ERROR',
+              message: 'Lỗi mạng tạm thời khi tạo vật tư.',
+            },
+          },
+        })
+        return
+      }
 
       const receiptKey = idempotencyKey
       const bodyStr = JSON.stringify(parsedBody)
@@ -735,7 +750,7 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     // Company 1 project is visible
     await expect(page.getByText('Công trình Tòa nhà VQH')).toBeVisible()
 
-    // Switch to Company 2 via company access store
+    // 1. Switch to Company 2 while loading (delayed response tracker cancellation)
     await page.evaluate((targetCId) => {
       const root = document.querySelector('#__nuxt') as HTMLElement & {
         __vue_app__?: {
@@ -754,10 +769,35 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     // Old company project is cleared immediately, and new company project loads
     await expect(page.getByText('Công trình Biệt thự Khang Điền')).toBeVisible()
     await expect(page.getByText('Công trình Tòa nhà VQH')).toHaveCount(0)
+
+    // 2. Switch company after form is rendered on /proposals/new (Finding 1)
+    await page.goto(`/materials/${company2ProjectId}/proposals/new`)
+    await expect(page.getByRole('heading', { name: /Lập phiếu yêu cầu vật tư/i })).toBeVisible()
+
+    // Switch back to Company 1
+    await page.evaluate((targetCId) => {
+      const root = document.querySelector('#__nuxt') as HTMLElement & {
+        __vue_app__?: {
+          config: {
+            globalProperties: {
+              $nuxt?: {
+                $companyAccessStore?: { selectCompany(companyId: string): boolean }
+              }
+            }
+          }
+        }
+      }
+      root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore?.selectCompany(targetCId)
+    }, company1Id)
+
+    // Form is immediately cleared and user is navigated to /materials of new company
+    await expect(page).toHaveURL('/materials')
+    await expect(page.getByText('Công trình Tòa nhà VQH')).toBeVisible()
+    await expect(page.getByText('Công trình Biệt thự Khang Điền')).toHaveCount(0)
   })
 
   test('8. Non-author có submit permission và Buyer thấy chế độ chỉ đọc; 403 Forbidden hiển thị thông báo lỗi', async ({ page }) => {
-    // Authenticate as other engineer who has submit permission but is NOT author
+    // 1. Non-author engineer has submit permission but is not author
     const otherEngineerState = createAuthTestState({
       user: { id: otherEngineerId, email: 'other-engineer@taskovia.test' },
       sessionCompanies: [
@@ -781,6 +821,28 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     await expect(page.getByText('Chế độ chỉ đọc: Chỉ người lập phiếu mới có quyền chỉnh sửa phiếu ở trạng thái này.')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Lưu nháp' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Gửi mua hàng' })).toHaveCount(0)
+
+    // 2. Author encounters 403 Forbidden on submit
+    const authorState = createAuthTestState({
+      user: { id: engineerId, email: 'author@taskovia.test' },
+      sessionCompanies: [
+        createCompany({
+          roles: ['site_engineer'],
+          permissions: ['material.read', 'material.proposal.submit'],
+        }),
+      ],
+    })
+    await installAuthRoutes(page, authorState)
+    await setupMaterialMocks(page, {
+      currentProposal: authorProposal,
+      failWith403OnSubmit: true,
+    })
+
+    await page.goto(`/materials/${projectId}/proposals/${proposalId}`)
+    await page.getByRole('button', { name: 'Gửi mua hàng' }).click()
+
+    // 403 error message is displayed
+    await expect(page.getByText('Bạn không có quyền gửi phiếu yêu cầu mua hàng.')).toBeVisible()
   })
 
   test('9. Accessibility: Material select và quantity có aria-label theo dòng; lỗi validation gắn aria-describedby', async ({ page }) => {
@@ -812,7 +874,7 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
 
   test('10. Master material tạo mới giữ idempotency-key sau lỗi mạng và replay trả cùng version', async ({ page }) => {
     const capturedRequests: CapturedRequest[] = []
-    await setupMaterialMocks(page, { capturedRequests })
+    await setupMaterialMocks(page, { capturedRequests, failFirstMasterPost: true })
 
     await page.goto('/materials')
 
@@ -826,14 +888,19 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     await page.getByLabel('Đơn vị tính chuẩn').fill('m3')
     await page.getByLabel('Quy cách kỹ thuật chuẩn').fill('Cát vàng hạt trung đạt TCVN')
 
-    // Submit
+    // First submit fails due to network loss/server error (500)
+    await page.getByRole('button', { name: 'Lưu vật tư' }).click()
+    await expect(page.getByText('Lỗi mạng tạm thời khi tạo vật tư.')).toBeVisible()
+
+    // Retry with exact same form data
     await page.getByRole('button', { name: 'Lưu vật tư' }).click()
     await expect(page.getByText('Thêm vật tư chuẩn mới thành công.')).toBeVisible()
 
-    // Verify captured POST request had idempotency key
+    // Finding 5: Both requests MUST share the exact same idempotency-key!
     const postCalls = capturedRequests.filter(r => r.method === 'POST' && r.url.endsWith('/materials'))
-    expect(postCalls.length).toBe(1)
+    expect(postCalls.length).toBe(2)
     expect(postCalls[0].headers['idempotency-key']).toBeTruthy()
+    expect(postCalls[0].headers['idempotency-key']).toBe(postCalls[1].headers['idempotency-key'])
   })
 
   test('11. Giao diện T5 tuyệt đối không có input chọn nhà cung cấp, giá mua hay hóa đơn', async ({ page }) => {
