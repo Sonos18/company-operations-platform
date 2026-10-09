@@ -25,11 +25,31 @@
     <!-- Error Alert -->
     <div v-if="errorMessage" class="cockpit-alert cockpit-alert--danger" role="alert">
       {{ errorMessage }}
+      <button
+        v-if="decisionRefreshRejected"
+        type="button"
+        :disabled="isLoading || isBuyerBusy"
+        @click="loadProposal(true)"
+      >
+        Tải lại phiếu
+      </button>
     </div>
 
     <!-- Shape Error Alert for Returned state -->
     <div v-if="shapeErrorMessage" class="cockpit-alert cockpit-alert--danger" role="alert">
       {{ shapeErrorMessage }}
+    </div>
+
+    <div v-if="unresolvedBuyer" class="cockpit-alert cockpit-alert--danger" role="alert">
+      <p>{{ lineActionErrors[unresolvedBuyer.lineId] || 'Chưa xác định được dữ liệu tên trên HĐ mới nhất.' }}</p>
+      <button
+        type="button"
+        :disabled="isBuyerBusy || isDecisionBusy || isLoading ||
+          !isCurrentParentScope(unresolvedBuyer) || !canManageOrders"
+        @click="recoverBuyerOverride"
+      >
+        {{ unresolvedBuyer.phase === 'unknown' ? 'Thử lại lệnh vừa gửi' : 'Tải lại phiếu' }}
+      </button>
     </div>
 
     <!-- Loading State -->
@@ -62,6 +82,18 @@
       <div v-if="proposal.reviewState === 'returned' && proposal.returnReason" class="cockpit-alert cockpit-alert--danger" role="alert">
         <strong>Lý do trả phiếu từ bộ phận mua hàng:</strong> {{ proposal.returnReason }}
       </div>
+
+      <MaterialProposalDecisionPanel
+        v-if="canDecidePermission && !decisionRefreshRejected &&
+          authStore?.lifecycle === 'authenticated' &&
+          proposal.id === propId && proposal.projectId === pId"
+        :key="decisionInstanceKey"
+        :company-id="companyAccess?.activeCompanyId || ''"
+        :project-id="pId"
+        :proposal="proposal"
+        :disabled="isLoading || isBuyerBusy || Boolean(unresolvedBuyer)"
+        v-on="decisionListeners"
+      />
 
       <!-- General Info Card -->
       <div class="cockpit-card info-card">
@@ -137,7 +169,7 @@
                       class="cockpit-input text-xs flex-1 py-1 px-2"
                       placeholder="Nhập tên mới hoặc để trống để xóa..."
                       maxlength="200"
-                      :disabled="isBuyerBusy"
+                      :disabled="buyerControlsDisabled"
                       :aria-label="'Tên dự kiến trên HĐ dòng ' + (index + 1)"
                       @keydown.enter.prevent="saveBuyerOverride(line)"
                       @keydown.esc.prevent="cancelBuyerEdit"
@@ -145,7 +177,7 @@
                     <button
                       type="button"
                       class="inline-flex items-center justify-center w-7 h-7 rounded bg-sky-600 hover:bg-sky-700 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50 transition-colors shrink-0"
-                      :disabled="isBuyerBusy"
+                      :disabled="buyerControlsDisabled"
                       title="Lưu"
                       :aria-label="'Lưu tên dự kiến dòng ' + (index + 1)"
                       @click="saveBuyerOverride(line)"
@@ -156,7 +188,7 @@
                     <button
                       type="button"
                       class="inline-flex items-center justify-center w-7 h-7 rounded border border-slate-300 hover:bg-slate-100 text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:opacity-50 transition-colors shrink-0"
-                      :disabled="isBuyerBusy"
+                      :disabled="buyerControlsDisabled"
                       title="Hủy"
                       :aria-label="'Hủy chỉnh sửa dòng ' + (index + 1)"
                       @click="cancelBuyerEdit"
@@ -180,7 +212,7 @@
                       v-if="isBuyerInvoiceNameEditable(line)"
                       type="button"
                       class="inline-flex items-center justify-center w-7 h-7 -my-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-colors shrink-0"
-                      :disabled="isBuyerBusy"
+                      :disabled="buyerControlsDisabled"
                       title="Sửa tên dự kiến trên HĐ"
                       :aria-label="'Sửa tên dự kiến trên HĐ dòng ' + (index + 1)"
                       @click="startBuyerEdit(line)"
@@ -246,6 +278,7 @@ import { createAsyncRequestTracker } from '../../../../utils/costs/async-request
 import { formatMaterialQuantity } from '../../../../utils/materials/quantity-display'
 import { ClientError } from '../../../../errors/client-error'
 import MaterialProposalForm from '../../../../components/materials/MaterialProposalForm.vue'
+import MaterialProposalDecisionPanel from '../../../../components/materials/MaterialProposalDecisionPanel.vue'
 
 type MaterialProposalLineView = MaterialProposalView['lines'][number]
 type MaterialReviewState = MaterialProposalView['reviewState']
@@ -275,7 +308,14 @@ const isLoading = ref(true)
 const errorMessage = ref('')
 const shapeErrorMessage = ref('')
 
-const tracker = createAsyncRequestTracker<{ companyId: string; projectId: string; proposalId: string }>()
+type ParentScope = {
+  companyId: string
+  projectId: string
+  proposalId: string
+  actorId: string
+  epoch: number
+}
+const tracker = createAsyncRequestTracker<ParentScope>()
 
 const canSubmitPermission = computed(() => {
   return Boolean(companyAccess?.hasPermission('material.proposal.submit'))
@@ -317,13 +357,13 @@ function isBuyerInvoiceNameEditable(line: MaterialProposalLineView): boolean {
   )
 }
 
-type BuyerMutationScope = {
-  companyId: string
-  projectId: string
-  proposalId: string
-  revisionId: string
-  lineId: string
-}
+type BuyerMutationScope = ParentScope & { revisionId: string; lineId: string }
+type BuyerCommand = Readonly<BuyerMutationScope & {
+  proposedInvoiceName: string | null
+  expectedOverrideVersion: number
+  idempotencyKey: string
+  phase: 'unknown' | 'acknowledged' | 'rejected'
+}>
 
 const buyerMutationTracker = createAsyncRequestTracker<BuyerMutationScope>()
 let isDisposed = false
@@ -339,6 +379,95 @@ interface BuyerCommandTracker {
   lastSignature: string
 }
 const buyerTrackers = ref<Record<string, BuyerCommandTracker>>({})
+const unresolvedBuyer = ref<BuyerCommand | null>(null)
+const contextEpoch = ref(0)
+const isDecisionBusy = ref(false)
+const decisionRefreshRejected = ref(false)
+const canReadPermission = computed(() => Boolean(companyAccess?.hasPermission('material.read')))
+const canDecidePermission = computed(() => Boolean(companyAccess?.hasPermission('material.proposal.decide')))
+const buyerControlsDisabled = computed(() =>
+  isBuyerBusy.value || isDecisionBusy.value || isLoading.value || Boolean(unresolvedBuyer.value),
+)
+
+function captureParentScope(): ParentScope {
+  return {
+    companyId: companyAccess?.activeCompanyId || '',
+    projectId: pId.value,
+    proposalId: propId.value,
+    actorId: authStore?.user?.id || '',
+    epoch: contextEpoch.value,
+  }
+}
+
+function isCurrentParentScope(scope: ParentScope): boolean {
+  return !isDisposed && authStore?.lifecycle === 'authenticated' &&
+    canReadPermission.value &&
+    workflowUuidSchema.safeParse(scope.companyId).success &&
+    workflowUuidSchema.safeParse(scope.actorId).success &&
+    Boolean(scope.projectId && scope.proposalId) &&
+    scope.companyId === companyAccess?.activeCompanyId &&
+    scope.actorId === authStore?.user?.id &&
+    scope.projectId === pId.value && scope.proposalId === propId.value &&
+    scope.epoch === contextEpoch.value
+}
+
+function assertCanonicalProposal(data: MaterialProposalView, scope: ParentScope) {
+  if (data.id !== scope.proposalId || data.projectId !== scope.projectId ||
+      (proposal.value && data.version < proposal.value.version)) {
+    throw new Error('Dữ liệu phiếu không khớp hoặc cũ hơn bản đang hiển thị. Vui lòng tải lại.')
+  }
+  if (data.reviewState === 'returned' && !data.returnReason?.trim()) {
+    throw new Error('Phản hồi từ máy chủ sai cấu trúc: Phiếu bị trả về bắt buộc phải có lý do trả phiếu.')
+  }
+  if (data.reviewState !== 'returned' && data.returnReason !== null) {
+    throw new Error('Phản hồi từ máy chủ sai cấu trúc: Phiếu không ở trạng thái bị trả về không được có lý do trả phiếu.')
+  }
+}
+
+type DecisionEventScope = { companyId: string; projectId: string; proposalId: string }
+const decisionInstanceKey = computed(() => {
+  const s = captureParentScope()
+  return [s.actorId, s.companyId, s.projectId, s.proposalId, s.epoch].join(':')
+})
+const decisionListeners = computed(() => {
+  const scope = captureParentScope()
+  const accepts = (event: DecisionEventScope) =>
+    isCurrentParentScope(scope) && canDecidePermission.value &&
+    event.companyId === scope.companyId &&
+    event.projectId === scope.projectId && event.proposalId === scope.proposalId
+  return {
+    busy(event: DecisionEventScope & { value: boolean }) {
+      if (!accepts(event) || unresolvedBuyer.value || isBuyerBusy.value) return
+      if (event.value) {
+        tracker.invalidate()
+        buyerMutationTracker.invalidate()
+        isLoading.value = false
+        isDecisionBusy.value = true
+      } else if (!decisionRefreshRejected.value) {
+        isDecisionBusy.value = false
+      }
+    },
+    refreshed(event: DecisionEventScope & { proposal: MaterialProposalView }) {
+      if (!accepts(event) || !isDecisionBusy.value || unresolvedBuyer.value) return
+      try {
+        assertCanonicalProposal(event.proposal, scope)
+      } catch (err) {
+        decisionRefreshRejected.value = true
+        errorMessage.value = err instanceof Error ? err.message : 'Không thể làm mới phiếu.'
+        return
+      }
+      tracker.invalidate()
+      buyerMutationTracker.invalidate()
+      proposal.value = event.proposal
+      resetBuyerState()
+      decisionRefreshRejected.value = false
+      errorMessage.value = ''
+      shapeErrorMessage.value = ''
+      isLoading.value = false
+      // Keep the decision lock until the same child emits its canonical completion.
+    },
+  }
+})
 
 function getBuyerCommandSignature(
   companyId: string,
@@ -380,15 +509,19 @@ function resetBuyerState() {
   buyerInputMap.value = {}
   lineActionErrors.value = {}
   buyerTrackers.value = {}
+  unresolvedBuyer.value = null
 }
 
 function startBuyerEdit(line: MaterialProposalLineView) {
-  if (isBuyerBusy.value) return
+  const scope = captureParentScope()
+  if (buyerControlsDisabled.value || !isCurrentParentScope(scope) || !canManageOrders.value) return
   if (!isBuyerInvoiceNameEditable(line)) return
   activeEditLineId.value = line.lineId
   buyerInputMap.value[line.lineId] = line.effectiveInvoiceDisplayName || line.materialName || ''
   delete lineActionErrors.value[line.lineId]
   nextTick(() => {
+    if (!isCurrentParentScope(scope) || !canManageOrders.value ||
+        buyerControlsDisabled.value || activeEditLineId.value !== line.lineId) return
     const el = document.getElementById(`buyer-cell-input-${line.lineId}`)
     if (el) {
       ;(el as HTMLInputElement).focus()
@@ -398,7 +531,7 @@ function startBuyerEdit(line: MaterialProposalLineView) {
 }
 
 function cancelBuyerEdit() {
-  if (isBuyerBusy.value) return
+  if (buyerControlsDisabled.value || !isCurrentParentScope(captureParentScope()) || !canManageOrders.value) return
   activeEditLineId.value = null
 }
 
@@ -412,15 +545,11 @@ function sourceBadgeLabel(source?: string | null): string {
 }
 
 async function executeBuyerOverride(line: MaterialProposalLineView, rawInput: string | null) {
-  if (isBuyerBusy.value) return
-
-  const companyId = companyAccess?.activeCompanyId
-  const projectId = pId.value
-  const proposalId = propId.value
+  const scope = captureParentScope()
+  if (buyerControlsDisabled.value || !isCurrentParentScope(scope) || !canManageOrders.value) return
   const revisionId = proposal.value?.currentRevisionId
   const lineId = line.lineId
-
-  if (!companyId || !projectId || !proposalId || !revisionId) return
+  if (!revisionId) return
 
   if (!isBuyerInvoiceNameEditable(line)) {
     lineActionErrors.value[lineId] = 'Dòng vật tư đã vào đơn mua hàng hoặc không thể chỉnh sửa.'
@@ -429,7 +558,6 @@ async function executeBuyerOverride(line: MaterialProposalLineView, rawInput: st
 
   const normalizedName = rawInput ? rawInput.trim() : null
   const payloadName = (normalizedName && normalizedName.length > 0) ? normalizedName : null
-
   if (payloadName && payloadName.length > 200) {
     lineActionErrors.value[lineId] = 'Tên dự kiến trên hóa đơn không được vượt quá 200 ký tự.'
     return
@@ -437,86 +565,118 @@ async function executeBuyerOverride(line: MaterialProposalLineView, rawInput: st
 
   const expectedVersion = line.buyerOverrideVersion
   const signature = getBuyerCommandSignature(
-    companyId,
-    projectId,
-    proposalId,
-    lineId,
-    revisionId,
-    payloadName,
-    expectedVersion,
+    scope.companyId, scope.projectId, scope.proposalId, lineId,
+    revisionId, payloadName, expectedVersion,
   )
   const idempotencyKey = getBuyerIdempotencyKey(lineId, signature)
-
-  isBuyerBusy.value = true
-  updatingLineId.value = lineId
-  delete lineActionErrors.value[lineId]
-
-  const token = buyerMutationTracker.start({
-    companyId,
-    projectId,
-    proposalId,
-    revisionId,
-    lineId,
+  const command: BuyerCommand = Object.freeze({
+    ...scope, revisionId, lineId,
+    proposedInvoiceName: payloadName,
+    expectedOverrideVersion: expectedVersion,
+    idempotencyKey,
+    phase: 'unknown',
   })
+  await dispatchBuyerOverride(command)
+}
+
+async function dispatchBuyerOverride(command: BuyerCommand) {
+  if (command.phase !== 'unknown' || isBuyerBusy.value || isDecisionBusy.value || isLoading.value ||
+      !isCurrentParentScope(command) || !canManageOrders.value ||
+      (unresolvedBuyer.value && unresolvedBuyer.value !== command)) return
+
+  tracker.invalidate()
+  const token = buyerMutationTracker.start(command)
+  const isCurrent = () => token.isCurrent() && isCurrentParentScope(command) && canManageOrders.value
+  unresolvedBuyer.value = command
+  isBuyerBusy.value = true
+  updatingLineId.value = command.lineId
+  delete lineActionErrors.value[command.lineId]
 
   try {
-    await repo.setBuyerInvoiceName(
-      projectId,
-      proposalId,
-      lineId,
-      {
-        revisionId,
-        proposedInvoiceName: payloadName,
-        expectedOverrideVersion: expectedVersion,
-      },
-      { idempotencyKey },
-    )
-
-    // Follow acknowledgement with canonical reload
-    if (!token.isCurrent() || isDisposed) return
-    const reloadOk = await loadProposal(true)
-
-    if (!token.isCurrent() || isDisposed) return
-
-    if (reloadOk) {
-      delete buyerTrackers.value[lineId]
-      if (activeEditLineId.value === lineId) {
-        activeEditLineId.value = null
-      }
-    } else {
-      lineActionErrors.value[lineId] = 'Đã lưu ghi đè nhưng chưa thể làm mới dữ liệu từ máy chủ. Vui lòng thử lại.'
-    }
-  } catch (err: unknown) {
-    if (!token.isCurrent() || isDisposed) return
-
-    const isConflict =
-      (err instanceof ClientError && (err.code === 'VERSION_CONFLICT' || err.code === 'IDEMPOTENCY_CONFLICT' || err.code === 'HISTORY_IMMUTABLE')) ||
-      (typeof err === 'object' && err !== null && (
-        ('statusCode' in err && (err as { statusCode?: number }).statusCode === 409) ||
-        ('status' in err && (err as { status?: number }).status === 409)
-      ))
-
-    if (isConflict) {
-      if (err instanceof ClientError && err.code === 'HISTORY_IMMUTABLE') {
-        lineActionErrors.value[lineId] = 'Không thể chỉnh sửa: Dòng vật tư đã vào đơn mua hàng hoặc lịch sử đã đóng.'
-      } else if (err instanceof ClientError && err.code === 'IDEMPOTENCY_CONFLICT') {
-        lineActionErrors.value[lineId] = 'Xung đột yêu cầu trùng lặp với nội dung khác nhau. Vui lòng thử lại.'
+    try {
+      await repo.setBuyerInvoiceName(
+        command.projectId, command.proposalId, command.lineId,
+        {
+          revisionId: command.revisionId,
+          proposedInvoiceName: command.proposedInvoiceName,
+          expectedOverrideVersion: command.expectedOverrideVersion,
+        },
+        { idempotencyKey: command.idempotencyKey },
+      )
+      if (!isCurrent()) return
+      unresolvedBuyer.value = Object.freeze({ ...command, phase: 'acknowledged' })
+    } catch (err: unknown) {
+      if (!isCurrent()) return
+      const isConflict = err instanceof ClientError &&
+        (err.code === 'VERSION_CONFLICT' || err.code === 'IDEMPOTENCY_CONFLICT' || err.code === 'HISTORY_IMMUTABLE')
+      lineActionErrors.value[command.lineId] = err instanceof Error
+        ? err.message : 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.'
+      if (isConflict) {
+        if (err.code === 'HISTORY_IMMUTABLE') {
+          lineActionErrors.value[command.lineId] = 'Không thể chỉnh sửa: Dòng vật tư đã vào đơn mua hàng hoặc lịch sử đã đóng.'
+        } else if (err.code === 'IDEMPOTENCY_CONFLICT') {
+          lineActionErrors.value[command.lineId] = 'Xung đột yêu cầu trùng lặp với nội dung khác nhau. Vui lòng thử lại.'
+        } else {
+          lineActionErrors.value[command.lineId] = 'Xung đột dữ liệu: Tên dự kiến hoặc đơn hàng đã thay đổi trên hệ thống.'
+        }
+        unresolvedBuyer.value = Object.freeze({ ...command, phase: 'rejected' })
       } else {
-        lineActionErrors.value[lineId] = 'Xung đột dữ liệu: Tên dự kiến hoặc đơn hàng đã thay đổi trên hệ thống.'
+        const isPreCommitRejection = err instanceof ClientError &&
+          (err.kind === 'authentication' || err.kind === 'authorization' || err.kind === 'validation' ||
+            err.code === 'AUTH_INVALID' || err.code === 'AUTH_REQUIRED' ||
+            err.code === 'INPUT_INVALID' || err.code === 'RESOURCE_NOT_FOUND' ||
+            err.code === 'COMPANY_CONTEXT_REQUIRED')
+        if (isPreCommitRejection) {
+          unresolvedBuyer.value = null
+          delete buyerTrackers.value[command.lineId]
+        }
+        return
       }
-      await loadProposal(true)
-      return
     }
 
-    if (err instanceof ClientError) {
-      lineActionErrors.value[lineId] = err.message || 'Lỗi khi cập nhật tên dự kiến trên hóa đơn.'
-    } else if (err instanceof Error) {
-      lineActionErrors.value[lineId] = err.message
+    if (!isCurrent()) return
+    const reloadOk = await loadProposal(true, command)
+    if (!isCurrent()) return
+    if (reloadOk) {
+      delete buyerTrackers.value[command.lineId]
+      unresolvedBuyer.value = null
+      if (activeEditLineId.value === command.lineId) activeEditLineId.value = null
     } else {
-      lineActionErrors.value[lineId] = 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.'
+      lineActionErrors.value[command.lineId] = 'Chưa tải lại được phiếu từ máy chủ. Vui lòng thử lại.'
     }
   } finally {
-    if (token.isCurrent() && !isDisposed) {
+    if (isCurrent()) {
+      isBuyerBusy.value = false
+      updatingLineId.value = null
+    }
+  }
+}
+
+async function recoverBuyerOverride() {
+  const command = unresolvedBuyer.value
+  if (!command || isBuyerBusy.value || isDecisionBusy.value || isLoading.value ||
+      !isCurrentParentScope(command) || !canManageOrders.value) return
+  if (command.phase === 'unknown') {
+    await dispatchBuyerOverride(command)
+    return
+  }
+
+  const token = buyerMutationTracker.start(command)
+  const isCurrent = () => token.isCurrent() && isCurrentParentScope(command) && canManageOrders.value
+  isBuyerBusy.value = true
+  updatingLineId.value = command.lineId
+  try {
+    const ok = await loadProposal(true, command)
+    if (!isCurrent()) return
+    if (ok) {
+      delete buyerTrackers.value[command.lineId]
+      unresolvedBuyer.value = null
+      activeEditLineId.value = null
+    } else {
+      lineActionErrors.value[command.lineId] = 'Chưa tải lại được phiếu. Vui lòng thử lại.'
+    }
+  } finally {
+    if (isCurrent()) {
       isBuyerBusy.value = false
       updatingLineId.value = null
     }
@@ -524,7 +684,7 @@ async function executeBuyerOverride(line: MaterialProposalLineView, rawInput: st
 }
 
 async function saveBuyerOverride(line: MaterialProposalLineView) {
-  if (isBuyerBusy.value) return
+  if (buyerControlsDisabled.value || !isCurrentParentScope(captureParentScope()) || !canManageOrders.value) return
   if (!isBuyerInvoiceNameEditable(line)) return
 
   const lineId = line.lineId
@@ -603,53 +763,40 @@ function statusBadgeClass(state: MaterialReviewState): string {
   }
 }
 
-async function loadProposal(silent = false): Promise<boolean> {
-  const activeCompanyId = companyAccess?.activeCompanyId
-  if (!activeCompanyId || !pId.value || !propId.value) {
-    proposal.value = null
-    isLoading.value = false
-    return false
-  }
-
-  const projectId = pId.value
-  const proposalId = propId.value
-  const token = tracker.start({ companyId: activeCompanyId, projectId, proposalId })
-  if (!silent && !proposal.value) {
-    isLoading.value = true
-  }
+async function loadProposal(silent = false, buyerCommand?: BuyerCommand): Promise<boolean> {
+  const scope = captureParentScope()
+  const recoveringDecision = decisionRefreshRejected.value
+  if (!isCurrentParentScope(scope)) return false
+  if (isDecisionBusy.value && !recoveringDecision) return false
+  if (unresolvedBuyer.value &&
+      (unresolvedBuyer.value.phase === 'unknown' ||
+        buyerCommand?.idempotencyKey !== unresolvedBuyer.value.idempotencyKey)) return false
+  const token = tracker.start(scope)
+  if ((!silent && !proposal.value) || recoveringDecision) isLoading.value = true
   errorMessage.value = ''
   shapeErrorMessage.value = ''
 
   try {
-    const data = await repo.readProposal(projectId, proposalId)
-    if (!token.isCurrent() || isDisposed || activeCompanyId !== companyAccess?.activeCompanyId || projectId !== pId.value || proposalId !== propId.value) return false
-
-    // Requirement 7:
-    // "Returned: hiển thị returnReason từ API; kỹ sư sửa rồi gửi lại.
-    // Contract bắt buộc lý do không rỗng khi returned, và null ở các trạng thái khác.
-    // Response sai shape phải hiện lỗi, không tự bịa lý do."
-    if (data.reviewState === 'returned' && (!data.returnReason || !data.returnReason.trim())) {
-      shapeErrorMessage.value = 'Phản hồi từ máy chủ sai cấu trúc: Phiếu bị trả về bắt buộc phải có lý do trả phiếu.'
-    } else if (data.reviewState !== 'returned' && data.returnReason !== null) {
-      shapeErrorMessage.value = 'Phản hồi từ máy chủ sai cấu trúc: Phiếu không ở trạng thái bị trả về không được có lý do trả phiếu.'
-    }
-
+    const data = await repo.readProposal(scope.projectId, scope.proposalId)
+    if (!token.isCurrent() || !isCurrentParentScope(scope)) return false
+    assertCanonicalProposal(data, scope)
     proposal.value = data
-    if (activeEditLineId.value) {
-      const activeLine = data.lines.find(l => l.lineId === activeEditLineId.value)
-      if (!activeLine || !isBuyerInvoiceNameEditable(activeLine)) {
-        activeEditLineId.value = null
-      }
+    if (recoveringDecision) {
+      buyerMutationTracker.invalidate()
+      resetBuyerState()
+      decisionRefreshRejected.value = false
+      isDecisionBusy.value = false
+    } else if (activeEditLineId.value) {
+      const line = data.lines.find(l => l.lineId === activeEditLineId.value)
+      if (!line || !isBuyerInvoiceNameEditable(line)) activeEditLineId.value = null
     }
     return true
   } catch (err: unknown) {
-    if (!token.isCurrent() || isDisposed) return false
+    if (!token.isCurrent() || !isCurrentParentScope(scope)) return false
     errorMessage.value = err instanceof Error ? err.message : 'Không thể tải thông tin phiếu yêu cầu.'
     return false
   } finally {
-    if (token.isCurrent() && !isDisposed) {
-      isLoading.value = false
-    }
+    if (token.isCurrent() && isCurrentParentScope(scope)) isLoading.value = false
   }
 }
 
@@ -665,14 +812,24 @@ function onCancel() {
   navigateTo(`/materials/${pId.value}/proposals`)
 }
 
-watch([() => companyAccess?.activeCompanyId, pId, propId], () => {
+watch([
+  () => companyAccess?.activeCompanyId,
+  () => authStore?.user?.id,
+  () => authStore?.lifecycle,
+  pId, propId,
+  canReadPermission, canDecidePermission, canManageOrders, canSubmitPermission,
+], () => {
+  contextEpoch.value++
   tracker.invalidate()
   buyerMutationTracker.invalidate()
+  isDecisionBusy.value = false
+  decisionRefreshRejected.value = false
   resetBuyerState()
   proposal.value = null
   errorMessage.value = ''
   shapeErrorMessage.value = ''
-  void loadProposal()
+  isLoading.value = false
+  if (isCurrentParentScope(captureParentScope())) void loadProposal()
 }, { flush: 'sync' })
 
 onMounted(() => {
@@ -684,6 +841,8 @@ onUnmounted(() => {
   tracker.invalidate()
   buyerMutationTracker.invalidate()
   resetBuyerState()
+  isDecisionBusy.value = false
+  decisionRefreshRejected.value = false
 })
 </script>
 
