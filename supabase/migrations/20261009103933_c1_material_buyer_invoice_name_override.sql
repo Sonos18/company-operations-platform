@@ -226,7 +226,7 @@ begin
 
   perform private.c1_workflow_record_command(
     v_tenant_id, target_company_id, 'material.set_proposal_invoice_name',
-    target_idempotency_key, v_hash, v_proposal.id, v_proposal.version, target_request_id,
+    target_idempotency_key, v_hash, v_proposal.id, v_override.version, target_request_id,
     jsonb_build_object(
       'projectId', target_project_id,
       'revisionId', v_revision_id,
@@ -255,7 +255,7 @@ begin
     )
   );
   return private.c1_material_ack(
-    v_proposal.id, v_proposal.version, false, v_proposal.review_state
+    v_proposal.id, v_override.version, false, v_proposal.review_state
   );
 end;
 $$;
@@ -304,7 +304,8 @@ declare
    and snapshot.company_id = line.company_id
    and snapshot.project_id = line.project_id
   left join public.material_proposal_invoice_name_overrides as override
-    on override.revision_id = snapshot.revision_id
+    on v_proposal.review_state in ('submitted','approved')
+   and override.revision_id = snapshot.revision_id
    and override.proposal_line_id = line.id
    and override.tenant_id = line.tenant_id
    and override.company_id = line.company_id
