@@ -37,6 +37,7 @@ export function resolvePreferredRoute(permissions: readonly PermissionCode[] = [
   if (permissions.includes('cost.read')) return '/costs'
   if (permissions.includes('cost.manage') || permissions.includes('cost.prepare')) return '/cost-drafts'
   if (permissions.includes('cost.source.read')) return '/costs/sources'
+  if (permissions.includes('material.read')) return '/materials'
   return '/forbidden'
 }
 

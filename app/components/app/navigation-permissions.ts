@@ -15,6 +15,7 @@ export interface NavigationPermissionAccess {
 
 export const canonicalNavigationLinks: readonly NavigationLink[] = [
   { to: '/projects', label: 'Dự án', icon: 'i-lucide-panels-top-left', requiredPermission: 'project.read' },
+  { to: '/materials', label: 'Vật tư', icon: 'i-lucide-package', requiredPermission: 'material.read' },
   { to: '/my-work', label: 'Công việc của tôi', icon: 'i-lucide-circle-check-big', requiredPermission: 'task.read_assigned' },
   {
     to: '/employees',

@@ -21,6 +21,11 @@ function accessFor(permissions: readonly PermissionCode[]) {
 }
 
 describe('navigation permissions', () => {
+  it('shows the Materials link to a material-only user', () => {
+    expect(filterNavigationLinks(canonicalNavigationLinks, accessFor(['material.read'])).map(link => link.to))
+      .toEqual(['/materials'])
+  })
+
   it('shows only the business links granted by canonical permissions', () => {
     expect(filterNavigationLinks(canonicalNavigationLinks, accessFor(['project.read', 'employee.read_all'])).map(link => link.to))
       .toEqual(['/projects', '/employees'])

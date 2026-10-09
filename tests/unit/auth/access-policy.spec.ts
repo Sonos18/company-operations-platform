@@ -2,6 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { resolveAccessNavigation } from '../../../app/services/auth/access-policy'
 
 describe('access navigation policy', () => {
+  it('routes a material-only user to the Materials landing page', () => {
+    expect(resolveAccessNavigation({
+      path: '/login', authMode: 'guest', requiresCompany: false, lifecycle: 'authenticated',
+      companyIds: ['company-a'], activeCompanyId: 'company-a', permissions: ['material.read'],
+    })).toEqual({ type: 'redirect', to: '/materials' })
+    expect(resolveAccessNavigation({
+      path: '/login', authMode: 'guest', requiresCompany: false, lifecycle: 'authenticated',
+      companyIds: ['company-a'], activeCompanyId: 'company-a', permissions: ['cost.read', 'material.read'],
+    })).toEqual({ type: 'redirect', to: '/costs' })
+  })
+
   it('redirects anonymous visitors to login with only a safe internal return path', () => {
     expect(resolveAccessNavigation({
       path: '/projects',
