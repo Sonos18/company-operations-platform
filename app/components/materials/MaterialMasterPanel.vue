@@ -423,6 +423,7 @@ const formData = ref<{
 })
 
 const tracker = createAsyncRequestTracker<{ companyId: string }>()
+let commandGeneration = 0
 
 const filteredMaterials = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
@@ -519,6 +520,8 @@ async function submitForm() {
   isSubmitting.value = true
 
   const commandCompanyId = companyAccess?.activeCompanyId ?? ''
+  const generation = commandGeneration
+  const isCurrentCommand = () => commandGeneration === generation && companyAccess?.activeCompanyId === commandCompanyId
   const currentSignature = getMasterCommandSignature()
   if (currentSignature !== lastMasterCommandSignature.value) {
     masterIdempotencyKey.value = crypto.randomUUID()
@@ -540,7 +543,7 @@ async function submitForm() {
         },
         { idempotencyKey },
       )
-      if (companyAccess?.activeCompanyId !== commandCompanyId) {
+      if (!isCurrentCommand()) {
         return
       }
       actionSuccessMessage.value = 'Cập nhật vật tư chuẩn thành công.'
@@ -554,7 +557,7 @@ async function submitForm() {
         },
         { idempotencyKey },
       )
-      if (companyAccess?.activeCompanyId !== commandCompanyId) {
+      if (!isCurrentCommand()) {
         return
       }
       actionSuccessMessage.value = 'Thêm vật tư chuẩn mới thành công.'
@@ -564,16 +567,20 @@ async function submitForm() {
     editingId.value = null
     await loadMaterials()
   } catch (err: unknown) {
-    if (companyAccess?.activeCompanyId !== commandCompanyId) {
+    if (!isCurrentCommand()) {
       return
     }
     errorMessage.value = err instanceof Error ? err.message : 'Không thể lưu vật tư.'
   } finally {
-    isSubmitting.value = false
+    if (isCurrentCommand()) isSubmitting.value = false
   }
 }
 
 watch(() => companyAccess?.activeCompanyId, () => {
+  commandGeneration++
+  isSubmitting.value = false
+  errorMessage.value = ''
+  actionSuccessMessage.value = ''
   tracker.invalidate()
   materials.value = []
   showForm.value = false
@@ -581,13 +588,14 @@ watch(() => companyAccess?.activeCompanyId, () => {
   lastMasterCommandSignature.value = ''
   masterIdempotencyKey.value = crypto.randomUUID()
   void loadMaterials()
-})
+}, { flush: 'sync' })
 
 onMounted(() => {
   void loadMaterials()
 })
 
 onUnmounted(() => {
+  commandGeneration++
   tracker.invalidate()
 })
 </script>

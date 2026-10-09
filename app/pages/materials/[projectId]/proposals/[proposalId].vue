@@ -189,7 +189,7 @@ const isLoading = ref(true)
 const errorMessage = ref('')
 const shapeErrorMessage = ref('')
 
-const tracker = createAsyncRequestTracker<{ companyId: string; proposalId: string }>()
+const tracker = createAsyncRequestTracker<{ companyId: string; projectId: string; proposalId: string }>()
 
 const canSubmitPermission = computed(() => {
   return Boolean(companyAccess?.hasPermission('material.proposal.submit'))
@@ -271,7 +271,9 @@ async function loadProposal(silent = false) {
     return
   }
 
-  const token = tracker.start({ companyId: activeCompanyId, proposalId: propId.value })
+  const projectId = pId.value
+  const proposalId = propId.value
+  const token = tracker.start({ companyId: activeCompanyId, projectId, proposalId })
   if (!silent && !proposal.value) {
     isLoading.value = true
   }
@@ -279,8 +281,8 @@ async function loadProposal(silent = false) {
   shapeErrorMessage.value = ''
 
   try {
-    const data = await repo.readProposal(pId.value, propId.value)
-    if (!token.isCurrent()) return
+    const data = await repo.readProposal(projectId, proposalId)
+    if (!token.isCurrent() || activeCompanyId !== companyAccess?.activeCompanyId || projectId !== pId.value || proposalId !== propId.value) return
 
     // Requirement 7:
     // "Returned: hiển thị returnReason từ API; kỹ sư sửa rồi gửi lại.
@@ -303,12 +305,12 @@ async function loadProposal(silent = false) {
   }
 }
 
-async function onSaved(_result: MaterialCommandResult, _savedId: string) {
-  await loadProposal(true)
+async function onSaved(_result: MaterialCommandResult, savedId: string, projectId: string) {
+  if (savedId === propId.value && projectId === pId.value) await loadProposal(true)
 }
 
-async function onSubmitted(_result: MaterialCommandResult, _savedId: string) {
-  await loadProposal()
+async function onSubmitted(_result: MaterialCommandResult, savedId: string, projectId: string) {
+  if (savedId === propId.value && projectId === pId.value) await loadProposal()
 }
 
 function onCancel() {
@@ -321,7 +323,7 @@ watch([() => companyAccess?.activeCompanyId, pId, propId], () => {
   errorMessage.value = ''
   shapeErrorMessage.value = ''
   void loadProposal()
-})
+}, { flush: 'sync' })
 
 onMounted(() => {
   void loadProposal()

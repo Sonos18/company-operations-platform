@@ -58,7 +58,7 @@
               id="proposal-project"
               v-model="formProjectId"
               class="cockpit-select"
-              :disabled="readOnly || Boolean(existingProposalId) || isSaving || isSubmitting || isReconciling"
+              :disabled="readOnly || Boolean(existingProposalId) || isSaving || isSubmitting"
               :aria-invalid="Boolean(validationErrors.projectId)"
               :aria-describedby="validationErrors.projectId ? 'proposal-project-error' : undefined"
               required
@@ -87,7 +87,7 @@
               v-model="formNeededOn"
               type="date"
               class="cockpit-input"
-              :disabled="readOnly || isSaving || isSubmitting || isReconciling"
+              :disabled="readOnly || isSaving || isSubmitting"
               :aria-invalid="Boolean(validationErrors.neededOn)"
               :aria-describedby="validationErrors.neededOn ? 'proposal-needed-on-error' : undefined"
               required
@@ -105,7 +105,7 @@
             v-model="formDeliveryAddress"
             type="text"
             class="cockpit-input"
-            :disabled="readOnly || isSaving || isSubmitting || isReconciling"
+            :disabled="readOnly || isSaving || isSubmitting"
             :aria-invalid="Boolean(validationErrors.deliveryAddress)"
             :aria-describedby="validationErrors.deliveryAddress ? 'proposal-delivery-address-error' : undefined"
             placeholder="Nhập địa chỉ giao hàng tại công trường..."
@@ -126,7 +126,7 @@
             id="proposal-notes"
             v-model="formNotes"
             class="cockpit-textarea"
-            :disabled="readOnly || isSaving || isSubmitting || isReconciling"
+            :disabled="readOnly || isSaving || isSubmitting"
             rows="2"
             placeholder="Ghi chú thêm về yêu cầu vận chuyển, thời gian hạ hàng (nếu có)..."
             maxlength="2000"
@@ -380,6 +380,8 @@ const repo = repositories.materialProcurement
 const companyAccess = useNuxtApp().$companyAccessStore
 
 const masterDataTracker = createAsyncRequestTracker<{ companyId: string }>()
+let commandGeneration = 0
+let disposed = false
 
 // Master Data
 const projectOptions = ref<MaterialProjectOption[]>([])
@@ -404,6 +406,7 @@ const conflictNotice = ref(false)
 const canonicalProposal = ref<MaterialProposalView | null>(null)
 const validationErrors = ref<Record<string, string>>({})
 const isDirty = ref(false)
+const acknowledgedPayload = ref<string | null>(props.proposal ? proposalPayloadSignature(props.proposal) : null)
 
 // Idempotency tracking
 const saveIdempotencyKey = ref<string>(crypto.randomUUID())
@@ -600,6 +603,36 @@ function buildProposalPayload() {
   }
 }
 
+function proposalPayloadSignature(proposal: MaterialProposalView): string {
+  return JSON.stringify({
+    neededOn: proposal.neededOn,
+    deliveryAddress: proposal.deliveryAddress.trim(),
+    notes: proposal.notes?.trim() || undefined,
+    lines: proposal.lines.map(line => ({
+      lineId: line.lineId,
+      materialId: line.materialId,
+      quantity: line.quantity.trim(),
+    })),
+  })
+}
+
+function commandScope() {
+  return {
+    generation: commandGeneration,
+    companyId: companyAccess?.activeCompanyId,
+    pageProjectId: props.projectId,
+    formProjectId: formProjectId.value,
+  }
+}
+
+function isCurrentCommand(scope: ReturnType<typeof commandScope>): boolean {
+  return !disposed &&
+    scope.generation === commandGeneration &&
+    scope.companyId === companyAccess?.activeCompanyId &&
+    scope.pageProjectId === props.projectId &&
+    scope.formProjectId === formProjectId.value
+}
+
 function getSaveCommandSignature(payload: ReturnType<typeof buildProposalPayload>) {
   return JSON.stringify({
     companyId: companyAccess?.activeCompanyId ?? '',
@@ -631,7 +664,15 @@ async function saveProposalDraft(options: { silent?: boolean } = {}): Promise<Ma
     return null
   }
 
+  if (existingProposalId.value && !hasFormModifications()) {
+    isDirty.value = false
+    emit('dirty', false)
+    if (!options.silent) successMessage.value = 'Không có thay đổi cần lưu.'
+    return null
+  }
+
   isSaving.value = true
+  const scope = commandScope()
   const payload = buildProposalPayload()
   const currentSig = getSaveCommandSignature(payload)
 
@@ -654,7 +695,9 @@ async function saveProposalDraft(options: { silent?: boolean } = {}): Promise<Ma
         },
         { idempotencyKey },
       )
+      if (!isCurrentCommand(scope)) return null
       currentVersion.value = result.version
+      acknowledgedPayload.value = JSON.stringify(payload)
       isDirty.value = false
       emit('dirty', false)
       if (!options.silent) {
@@ -667,8 +710,10 @@ async function saveProposalDraft(options: { silent?: boolean } = {}): Promise<Ma
         payload,
         { idempotencyKey },
       )
+      if (!isCurrentCommand(scope)) return null
       existingProposalId.value = result.resourceId
       currentVersion.value = result.version
+      acknowledgedPayload.value = JSON.stringify(payload)
       isDirty.value = false
       emit('dirty', false)
       if (!options.silent) {
@@ -678,10 +723,10 @@ async function saveProposalDraft(options: { silent?: boolean } = {}): Promise<Ma
     }
     return result
   } catch (err: unknown) {
-    await handleMutationError(err)
+    if (isCurrentCommand(scope)) await handleMutationError(err, scope)
     return null
   } finally {
-    isSaving.value = false
+    if (isCurrentCommand(scope)) isSaving.value = false
   }
 }
 
@@ -690,19 +735,7 @@ async function handleSaveDraft(): Promise<void> {
 }
 
 function hasFormModifications(): boolean {
-  if (!props.proposal) return true
-  if (formNeededOn.value !== props.proposal.neededOn) return true
-  if (formDeliveryAddress.value.trim() !== props.proposal.deliveryAddress) return true
-  if ((formNotes.value.trim() || undefined) !== (props.proposal.notes || undefined)) return true
-  if (lines.value.length !== props.proposal.lines.length) return true
-  for (let i = 0; i < lines.value.length; i++) {
-    const fl = lines.value[i]
-    const pl = props.proposal.lines[i]
-    if (!fl || !pl || fl.lineId !== pl.lineId || fl.materialId !== pl.materialId || fl.quantity.trim() !== pl.quantity) {
-      return true
-    }
-  }
-  return false
+  return acknowledgedPayload.value !== JSON.stringify(buildProposalPayload())
 }
 
 async function handleSubmit() {
@@ -716,17 +749,14 @@ async function handleSubmit() {
   }
 
   isSubmitting.value = true
+  const scope = commandScope()
 
   try {
-    // Step 1: If brand new, dirty, or has unsaved edits, save draft first to obtain canonical version
-    // If returned proposal was already saved cleanly, avoid redundant PATCH
-    const needsSave = !existingProposalId.value || isDirty.value || hasFormModifications()
+    // Save only content that differs from the last acknowledged draft.
+    const needsSave = !existingProposalId.value || hasFormModifications()
     if (needsSave) {
       const saveResult = await saveProposalDraft({ silent: true })
-      if (!saveResult) {
-        isSubmitting.value = false
-        return
-      }
+      if (!saveResult || !isCurrentCommand(scope)) return
     }
 
     // Step 2: Submit command
@@ -743,19 +773,20 @@ async function handleSubmit() {
       { idempotencyKey: submitIdempotencyKey.value },
     )
 
+    if (!isCurrentCommand(scope)) return
     currentVersion.value = result.version
     successMessage.value = 'Đã gửi phiếu yêu cầu mua hàng thành công.'
     isDirty.value = false
     emit('dirty', false)
     emit('submitted', result, existingProposalId.value, formProjectId.value)
   } catch (err: unknown) {
-    await handleMutationError(err)
+    if (isCurrentCommand(scope)) await handleMutationError(err, scope)
   } finally {
-    isSubmitting.value = false
+    if (isCurrentCommand(scope)) isSubmitting.value = false
   }
 }
 
-async function handleMutationError(err: unknown) {
+async function handleMutationError(err: unknown, scope: ReturnType<typeof commandScope>) {
   // Check for 409 / Conflict
   const isConflict =
     (err instanceof ClientError && (err.code === 'VERSION_CONFLICT' || err.code === 'IDEMPOTENCY_CONFLICT')) ||
@@ -768,7 +799,8 @@ async function handleMutationError(err: unknown) {
     conflictNotice.value = true
     errorMessage.value = 'Xung đột phiên bản: Dữ liệu trên hệ thống đã thay đổi. Dữ liệu bạn vừa nhập đã được giữ nguyên để đối chiếu.'
     try {
-      canonicalProposal.value = await repo.readProposal(formProjectId.value, existingProposalId.value)
+      const canonical = await repo.readProposal(scope.formProjectId, existingProposalId.value)
+      if (isCurrentCommand(scope)) canonicalProposal.value = canonical
     } catch {
       // ignore secondary fetch error
     }
@@ -839,23 +871,19 @@ function initFromProposal(p: MaterialProposalView) {
     signedQuantity: l.signedQuantity,
     remainingQuantity: l.remainingQuantity,
   }))
+  acknowledgedPayload.value = proposalPayloadSignature(p)
   isDirty.value = false
   emit('dirty', false)
 }
 
-watch(() => props.proposal, (newProposal) => {
-  if (!newProposal) return
-  // Protect user's in-progress or dirty edits from being overwritten by canonical GET
-  if (isDirty.value || isSaving.value || isSubmitting.value) {
-    if (newProposal.version > currentVersion.value) {
-      currentVersion.value = newProposal.version
-    }
-    return
-  }
+watch([() => props.proposal, isSaving, isSubmitting], ([newProposal]) => {
+  if (!newProposal || isDirty.value || isSaving.value || isSubmitting.value) return
+  if (newProposal.version < currentVersion.value) return
   initFromProposal(newProposal)
 }, { immediate: true })
 
 watch(() => props.projectId, (newPId) => {
+  commandGeneration++
   if (newPId && !existingProposalId.value) {
     formProjectId.value = newPId
     const p = projectOptions.value.find(proj => proj.projectId === newPId)
@@ -864,9 +892,14 @@ watch(() => props.projectId, (newPId) => {
       lastAutoFilledAddress.value = p.locationText
     }
   }
-})
+}, { flush: 'sync' })
 
 watch(() => companyAccess?.activeCompanyId, () => {
+  commandGeneration++
+  errorMessage.value = ''
+  successMessage.value = ''
+  conflictNotice.value = false
+  canonicalProposal.value = null
   masterDataTracker.invalidate()
   projectOptions.value = []
   materialsList.value = []
@@ -875,7 +908,7 @@ watch(() => companyAccess?.activeCompanyId, () => {
   saveIdempotencyKey.value = crypto.randomUUID()
   submitIdempotencyKey.value = crypto.randomUUID()
   void loadMasterData()
-})
+}, { flush: 'sync' })
 
 onMounted(() => {
   void loadMasterData()
@@ -885,6 +918,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  disposed = true
+  commandGeneration++
   masterDataTracker.invalidate()
 })
 </script>

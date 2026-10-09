@@ -76,11 +76,13 @@ const isLoading = ref(true)
 const errorMessage = ref('')
 const isFormDirty = ref(false)
 const isSubmittedOrSaved = ref(false)
+const loadedScope = ref<{ companyId: string; pageProjectId: string } | null>(null)
 
 async function loadProject() {
   const activeCompanyId = companyAccess?.activeCompanyId
   if (!activeCompanyId || !pId.value) {
     currentProject.value = null
+    loadedScope.value = null
     isLoading.value = false
     return
   }
@@ -92,7 +94,8 @@ async function loadProject() {
   try {
     const list = await repo.listProjects()
     if (!token.isCurrent()) return
-    currentProject.value = list.find(p => p.projectId === pId.value) || null
+    currentProject.value = list.find(p => p.projectId === token.identity.projectId) || null
+    loadedScope.value = currentProject.value ? { companyId: activeCompanyId, pageProjectId: token.identity.projectId } : null
     if (!currentProject.value) {
       errorMessage.value = 'Không tìm thấy thông tin công trình được chỉ định.'
     }
@@ -110,16 +113,18 @@ watch(() => companyAccess?.activeCompanyId, (newCId, oldCId) => {
   if (newCId !== oldCId) {
     tracker.invalidate()
     currentProject.value = null
+    loadedScope.value = null
     isFormDirty.value = false
     errorMessage.value = ''
-    navigateTo('/materials')
+    void navigateTo('/materials')
   }
-})
+}, { flush: 'sync' })
 
 watch(() => pId.value, (newPId, oldPId) => {
   if (newPId !== oldPId) {
     tracker.invalidate()
     currentProject.value = null
+    loadedScope.value = null
     isFormDirty.value = false
     errorMessage.value = ''
     if (newPId) {
@@ -128,10 +133,19 @@ watch(() => pId.value, (newPId, oldPId) => {
       isLoading.value = false
     }
   }
-})
+}, { flush: 'sync' })
+
+function canUseSavedRoute(): boolean {
+  return Boolean(
+    loadedScope.value &&
+    loadedScope.value.companyId === companyAccess?.activeCompanyId &&
+    loadedScope.value.pageProjectId === pId.value &&
+    currentProject.value?.projectId === pId.value,
+  )
+}
 
 function onSaved(_result: MaterialCommandResult, proposalId: string, actualProjectId?: string) {
-  if (!companyAccess?.activeCompanyId) return
+  if (!canUseSavedRoute()) return
   isFormDirty.value = false
   isSubmittedOrSaved.value = true
   const targetProjectId = actualProjectId || pId.value
@@ -139,7 +153,7 @@ function onSaved(_result: MaterialCommandResult, proposalId: string, actualProje
 }
 
 function onSubmitted(_result: MaterialCommandResult, proposalId: string, actualProjectId?: string) {
-  if (!companyAccess?.activeCompanyId) return
+  if (!canUseSavedRoute()) return
   isFormDirty.value = false
   isSubmittedOrSaved.value = true
   const targetProjectId = actualProjectId || pId.value
