@@ -14,7 +14,10 @@ git diff --quiet 0118d57224b9a9f37b8f0a983a37db430768df88 HEAD -- package.json p
 }
 context=$(mktemp -d /tmp/taskovia-runtime-context.XXXXXX)
 mkdir -p "$context/profiles/materials" "$context/profiles/legacy"
-cp "$here/Dockerfile" "$here/start-worker.sh" "$here/attach-runtime.sh" "$here/.dockerignore" "$context/"
+runtime_ref=$(git rev-parse HEAD)
+for file in Dockerfile start-worker.sh attach-runtime.sh .dockerignore; do
+  git show "$runtime_ref:infra/instacloud/material-worker/$file" > "$context/$file"
+done
 git show 0118d57224b9a9f37b8f0a983a37db430768df88:package.json > "$context/profiles/materials/package.json"
 git show 0118d57224b9a9f37b8f0a983a37db430768df88:pnpm-lock.yaml > "$context/profiles/materials/pnpm-lock.yaml"
 git show ab2dcbd0abf5311b12f95d36b3120fd8aa097707:package.json > "$context/profiles/legacy/package.json"
