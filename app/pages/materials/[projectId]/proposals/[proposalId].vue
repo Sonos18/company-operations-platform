@@ -130,10 +130,10 @@
                 <td>
                   <span class="cockpit-badge cockpit-badge--neutral font-mono">{{ line.unit }}</span>
                 </td>
-                <td class="font-mono font-medium">{{ line.quantity }}</td>
-                <td class="font-mono text-sm">{{ line.allocatedQuantity || '0.0000' }}</td>
-                <td class="font-mono text-sm font-medium">{{ line.signedQuantity || '0.0000' }}</td>
-                <td class="font-mono text-sm text-forest">{{ line.remainingQuantity || line.quantity }}</td>
+                <td class="font-mono font-medium">{{ formatMaterialQuantity(line.quantity) }}</td>
+                <td class="font-mono text-sm">{{ formatMaterialQuantity(line.allocatedQuantity || '0') }}</td>
+                <td class="font-mono text-sm font-medium">{{ formatMaterialQuantity(line.signedQuantity || '0') }}</td>
+                <td class="font-mono text-sm text-forest">{{ formatMaterialQuantity(line.remainingQuantity || line.quantity) }}</td>
               </tr>
             </tbody>
           </table>
@@ -159,6 +159,7 @@ import type {
 } from '../../../../../shared/schemas/costs/material-procurement'
 import { workflowUuidSchema } from '../../../../../shared/schemas/costs/cost-workflow'
 import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
+import { formatMaterialQuantity } from '../../../../utils/materials/quantity-display'
 import MaterialProposalForm from '../../../../components/materials/MaterialProposalForm.vue'
 
 type MaterialProposalLineView = MaterialProposalView['lines'][number]

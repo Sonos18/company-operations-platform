@@ -28,6 +28,7 @@ const material2Id = '40000000-0000-4000-8000-000000000002'
 
 const proposalId = '50000000-0000-4000-8000-000000000001'
 const line1Id = '60000000-0000-4000-8000-000000000001'
+const line2Id = '60000000-0000-4000-8000-000000000002'
 
 interface CapturedRequest {
   method: string
@@ -698,9 +699,13 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     await page.goto(`/materials/${projectId}/proposals/${proposalId}`)
     await expect(page.getByLabel('Nơi giao hàng')).toHaveValue('123 Đường Nguyễn Huệ, Quận 1, TP.HCM')
 
+    // Canonical 20.0000 hydrates into editable input as 20 without trailing zeros
+    await expect(page.locator('input.quantity-input').first()).toHaveValue('20')
+
     const save = page.getByRole('button', { name: 'Lưu nháp' })
     await save.click()
     await expect(save).toBeEnabled()
+    await expect(page.getByText('Không có thay đổi cần lưu.')).toBeVisible()
     expect(capturedRequests.filter(r => r.method === 'PATCH')).toHaveLength(0)
   })
 
@@ -770,6 +775,9 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     // Finding 4: Signed line has locked delete action (lock icon instead of delete button)
     await expect(page.locator('button.btn-icon-danger')).toHaveCount(0)
 
+    // Verify minimum hint displays canonical 10.0000 without trailing zeros
+    await expect(page.getByText('Tối thiểu: 10')).toBeVisible()
+
     // Quantity minimum constraint: enter 5.0000 (< signed 10.0000)
     const qtyInput = page.locator('input.quantity-input').first()
     await qtyInput.fill('5.0000')
@@ -777,8 +785,8 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     // Click "Lưu nháp"
     await page.getByRole('button', { name: 'Lưu nháp' }).click()
 
-    // Validation error triggers and blocks save
-    await expect(page.getByText('Số lượng không được nhỏ hơn số lượng đã ký (10.0000).')).toBeVisible()
+    // Validation error triggers and blocks save (formatted without trailing zeros)
+    await expect(page.getByText('Số lượng không được nhỏ hơn số lượng đã ký (10).')).toBeVisible()
 
     // Enter valid quantity >= 10
     await qtyInput.fill('15.0000')
@@ -1207,5 +1215,115 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     await expect(page.locator('text=/hóa đơn/i')).toHaveCount(0)
     await expect(page.locator('input[name*="supplier"]')).toHaveCount(0)
     await expect(page.locator('input[name*="price"]')).toHaveCount(0)
+  })
+
+  test('12. Hiển thị số lượng canonical 20.0000 thành 20, 25.5000 thành 25.5, tiến độ 0.0000 thành 0; hydration không có số 0 thừa; không sửa text khi gõ', async ({ page }) => {
+    const multiLineProposal = createMockProposal({
+      reviewState: 'submitted',
+      lines: [
+        {
+          lineId: line1Id,
+          materialId: material1Id,
+          materialName: 'Thép cuộn phi 8',
+          specification: 'Mác thép CB240-T, TCVN 1651-1:2018',
+          unit: 'kg',
+          quantity: '20.0000',
+          allocatedQuantity: '0.0000',
+          signedQuantity: '0.0000',
+          remainingQuantity: '20.0000',
+        },
+        {
+          lineId: line2Id,
+          materialId: material2Id,
+          materialName: 'Xi măng PCB40',
+          specification: 'Bao 50kg, đạt chuẩn Vicem Hà Tiên',
+          unit: 'bao',
+          quantity: '25.5000',
+          allocatedQuantity: '5.0000',
+          signedQuantity: '0.0000',
+          remainingQuantity: '20.5000',
+        },
+      ],
+    })
+
+    await setupMaterialMocks(page, { currentProposal: multiLineProposal })
+
+    // 1. Read-only mode presentation
+    await page.goto(`/materials/${projectId}/proposals/${proposalId}`)
+    const roRows = page.locator('.cockpit-table tbody tr')
+    await expect(roRows).toHaveCount(2)
+    // Row 1: canonical 20.0000 displays as 20; 0.0000 progress displays as 0
+    await expect(roRows.nth(0).locator('td').nth(4)).toHaveText('20')
+    await expect(roRows.nth(0).locator('td').nth(5)).toHaveText('0')
+    await expect(roRows.nth(0).locator('td').nth(6)).toHaveText('0')
+    await expect(roRows.nth(0).locator('td').nth(7)).toHaveText('20')
+    // Row 2: canonical 25.5000 displays as 25.5; 5.0000 displays as 5; remaining 20.5000 displays as 20.5
+    await expect(roRows.nth(1).locator('td').nth(4)).toHaveText('25.5')
+    await expect(roRows.nth(1).locator('td').nth(5)).toHaveText('5')
+    await expect(roRows.nth(1).locator('td').nth(6)).toHaveText('0')
+    await expect(roRows.nth(1).locator('td').nth(7)).toHaveText('20.5')
+
+    // 2. Editable draft mode hydration and non-disruptive typing
+    const editableDraftProposal = createMockProposal({
+      reviewState: 'draft',
+      createdBy: engineerId,
+      lines: multiLineProposal.lines,
+    })
+    await setupMaterialMocks(page, { currentProposal: editableDraftProposal })
+    await page.goto(`/materials/${projectId}/proposals/${proposalId}`)
+
+    const qtyInputs = page.locator('input.quantity-input')
+    await expect(qtyInputs).toHaveCount(2)
+    // Hydrated values strip trailing zeros
+    await expect(qtyInputs.nth(0)).toHaveValue('20')
+    await expect(qtyInputs.nth(1)).toHaveValue('25.5')
+
+    // Progress columns in form table
+    const formRows = page.locator('.lines-table tbody tr')
+    await expect(formRows.nth(0).locator('td').nth(5)).toHaveText('0')
+    await expect(formRows.nth(0).locator('td').nth(6)).toHaveText('0')
+    await expect(formRows.nth(0).locator('td').nth(7)).toHaveText('20')
+    await expect(formRows.nth(1).locator('td').nth(5)).toHaveText('5')
+    await expect(formRows.nth(1).locator('td').nth(6)).toHaveText('0')
+    await expect(formRows.nth(1).locator('td').nth(7)).toHaveText('20.5')
+
+    // User types in input: raw text is never rewritten or cleared while typing
+    await qtyInputs.nth(0).fill('18.500')
+    await expect(qtyInputs.nth(0)).toHaveValue('18.500')
+  })
+
+  test('13. Chặn lưu số lượng để trống, bằng 0, hoặc âm; hiển thị thông báo lỗi tương ứng', async ({ page }) => {
+    const capturedRequests: CapturedRequest[] = []
+    await setupMaterialMocks(page, { capturedRequests })
+
+    await page.goto(`/materials/${projectId}/proposals/new`)
+    await page.getByLabel('Ngày cần vật tư').fill('2026-10-30')
+    await page.locator('select.line-select').first().selectOption(material1Id)
+
+    const qtyInput = page.locator('input.quantity-input').first()
+
+    // 1. Blank quantity
+    await qtyInput.fill('')
+    await page.getByRole('button', { name: 'Lưu nháp' }).click()
+    await expect(page.getByText('Số lượng phải là số thập phân hợp lệ.')).toBeVisible()
+    expect(capturedRequests.filter(r => r.method === 'POST' && r.url.endsWith('/proposals'))).toHaveLength(0)
+
+    // 2. Zero quantity
+    await qtyInput.fill('0')
+    await page.getByRole('button', { name: 'Lưu nháp' }).click()
+    await expect(page.getByText('Số lượng phải lớn hơn 0.')).toBeVisible()
+    expect(capturedRequests.filter(r => r.method === 'POST' && r.url.endsWith('/proposals'))).toHaveLength(0)
+
+    // 3. Zero with decimals
+    await qtyInput.fill('0.0000')
+    await page.getByRole('button', { name: 'Lưu nháp' }).click()
+    await expect(page.getByText('Số lượng phải lớn hơn 0.')).toBeVisible()
+    expect(capturedRequests.filter(r => r.method === 'POST' && r.url.endsWith('/proposals'))).toHaveLength(0)
+
+    // 4. Negative quantity
+    await qtyInput.fill('-10')
+    await page.getByRole('button', { name: 'Lưu nháp' }).click()
+    await expect(page.getByText('Số lượng phải lớn hơn 0.')).toBeVisible()
+    expect(capturedRequests.filter(r => r.method === 'POST' && r.url.endsWith('/proposals'))).toHaveLength(0)
   })
 })

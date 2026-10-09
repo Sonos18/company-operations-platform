@@ -226,7 +226,7 @@
                 </td>
                 <td>
                   <div v-if="readOnly">
-                    <span class="font-mono font-medium">{{ line.quantity }}</span>
+                    <span class="font-mono font-medium">{{ formatMaterialQuantity(line.quantity) }}</span>
                   </div>
                   <div v-else>
                     <input
@@ -244,7 +244,7 @@
                       @input="markDirty"
                     >
                     <small v-if="isLineSigned(line)" class="signed-limit-text">
-                      Tối thiểu: {{ line.signedQuantity }}
+                      Tối thiểu: {{ formatMaterialQuantity(line.signedQuantity || '') }}
                     </small>
                   </div>
                   <span
@@ -257,13 +257,13 @@
                 </td>
                 <!-- Historical progress quantities -->
                 <td v-if="hasAllocationHistory" class="font-mono text-sm">
-                  {{ line.allocatedQuantity || '0.0000' }}
+                  {{ formatMaterialQuantity(line.allocatedQuantity || '0') }}
                 </td>
                 <td v-if="hasAllocationHistory" class="font-mono text-sm font-medium">
-                  {{ line.signedQuantity || '0.0000' }}
+                  {{ formatMaterialQuantity(line.signedQuantity || '0') }}
                 </td>
                 <td v-if="hasAllocationHistory" class="font-mono text-sm text-forest">
-                  {{ line.remainingQuantity || line.quantity }}
+                  {{ formatMaterialQuantity(line.remainingQuantity || line.quantity) }}
                 </td>
                 <!-- Delete Action -->
                 <td v-if="!readOnly" class="text-center">
@@ -346,6 +346,7 @@ import type {
 import { workflowMoneySchema } from '../../../shared/schemas/costs/cost-workflow'
 import { ClientError } from '../../errors/client-error'
 import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
+import { formatMaterialQuantity } from '../../utils/materials/quantity-display'
 
 interface FormLine {
   lineId: string
@@ -425,10 +426,15 @@ const activeMaterials = computed(() => {
 })
 
 const hasAllocationHistory = computed(() => {
-  return Boolean(props.proposal?.lines?.some(l =>
-    (l.allocatedQuantity && l.allocatedQuantity !== '0.0000') ||
-    (l.signedQuantity && l.signedQuantity !== '0.0000')
-  ))
+  return Boolean(props.proposal?.lines?.some(l => {
+    try {
+      const alloc = l.allocatedQuantity ? new Decimal(l.allocatedQuantity).greaterThan(0) : false
+      const signed = l.signedQuantity ? new Decimal(l.signedQuantity).greaterThan(0) : false
+      return alloc || signed
+    } catch {
+      return false
+    }
+  }))
 })
 
 const hasSignedLines = computed(() => {
@@ -570,7 +576,7 @@ function validateForm(): boolean {
         } else if (isLineSigned(line)) {
           const signedDecimal = new Decimal(line.signedQuantity!)
           if (qtyDecimal.lessThan(signedDecimal)) {
-            validationErrors.value[`line_${line.lineId}_quantity`] = `Số lượng không được nhỏ hơn số lượng đã ký (${line.signedQuantity}).`
+            validationErrors.value[`line_${line.lineId}_quantity`] = `Số lượng không được nhỏ hơn số lượng đã ký (${formatMaterialQuantity(line.signedQuantity!)}).`
             valid = false
           }
         }
@@ -611,7 +617,20 @@ function proposalPayloadSignature(proposal: MaterialProposalView): string {
     lines: proposal.lines.map(line => ({
       lineId: line.lineId,
       materialId: line.materialId,
-      quantity: line.quantity.trim(),
+      quantity: formatMaterialQuantity(line.quantity.trim()),
+    })),
+  })
+}
+
+function formPayloadSignature(): string {
+  return JSON.stringify({
+    neededOn: formNeededOn.value,
+    deliveryAddress: formDeliveryAddress.value.trim(),
+    notes: formNotes.value.trim() ? formNotes.value.trim() : undefined,
+    lines: lines.value.map(l => ({
+      lineId: l.lineId,
+      materialId: l.materialId,
+      quantity: formatMaterialQuantity(l.quantity.trim()),
     })),
   })
 }
@@ -697,7 +716,7 @@ async function saveProposalDraft(options: { silent?: boolean } = {}): Promise<Ma
       )
       if (!isCurrentCommand(scope)) return null
       currentVersion.value = result.version
-      acknowledgedPayload.value = JSON.stringify(payload)
+      acknowledgedPayload.value = formPayloadSignature()
       isDirty.value = false
       emit('dirty', false)
       if (!options.silent) {
@@ -713,7 +732,7 @@ async function saveProposalDraft(options: { silent?: boolean } = {}): Promise<Ma
       if (!isCurrentCommand(scope)) return null
       existingProposalId.value = result.resourceId
       currentVersion.value = result.version
-      acknowledgedPayload.value = JSON.stringify(payload)
+      acknowledgedPayload.value = formPayloadSignature()
       isDirty.value = false
       emit('dirty', false)
       if (!options.silent) {
@@ -735,7 +754,7 @@ async function handleSaveDraft(): Promise<void> {
 }
 
 function hasFormModifications(): boolean {
-  return acknowledgedPayload.value !== JSON.stringify(buildProposalPayload())
+  return acknowledgedPayload.value !== formPayloadSignature()
 }
 
 async function handleSubmit() {
@@ -866,7 +885,7 @@ function initFromProposal(p: MaterialProposalView) {
   lines.value = p.lines.map(l => ({
     lineId: l.lineId,
     materialId: l.materialId,
-    quantity: l.quantity,
+    quantity: formatMaterialQuantity(l.quantity),
     allocatedQuantity: l.allocatedQuantity,
     signedQuantity: l.signedQuantity,
     remainingQuantity: l.remainingQuantity,
