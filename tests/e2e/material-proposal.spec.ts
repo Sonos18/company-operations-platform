@@ -15,7 +15,6 @@ import {
 
 const engineerId = '11111111-1111-4111-8111-111111111111'
 const otherEngineerId = '33333333-3333-4333-8333-333333333333'
-const buyerId = '22222222-2222-4222-8222-222222222222'
 
 const company1Id = '10000000-0000-4000-8000-000000000002'
 const company2Id = '10000000-0000-4000-8000-000000000099'
@@ -127,7 +126,7 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
   const captured = options.capturedRequests || []
   let activeProposal: MaterialProposalView = options.currentProposal || createMockProposal()
   const receipts = new Map<string, { bodyString: string, response: unknown }>()
-  let materialsState = [...mockMaterials]
+  const materialsState = [...mockMaterials]
 
   // Master: Projects
   await page.route(/\/api\/companies\/([^/]+)\/material-procurement\/projects$/, async (route: Route) => {
