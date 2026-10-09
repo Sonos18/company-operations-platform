@@ -766,7 +766,10 @@ function statusBadgeClass(state: MaterialReviewState): string {
 async function loadProposal(silent = false, buyerCommand?: BuyerCommand): Promise<boolean> {
   const scope = captureParentScope()
   const recoveringDecision = decisionRefreshRejected.value
-  if (!isCurrentParentScope(scope)) return false
+  if (!isCurrentParentScope(scope)) {
+    isLoading.value = false
+    return false
+  }
   if (isDecisionBusy.value && !recoveringDecision) return false
   if (unresolvedBuyer.value &&
       (unresolvedBuyer.value.phase === 'unknown' ||
