@@ -201,9 +201,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import Decimal from 'decimal.js'
-import type { MaterialProposalLineView } from '../../../shared/schemas/costs/material-procurement'
+import type { MaterialProposalView } from '../../../shared/schemas/costs/material-procurement'
 import { compareMaterialQuotation } from '../../../shared/utils/material-quotation-comparison'
 import { formatMaterialQuantity } from '../../utils/materials/quantity-display'
+
+type MaterialProposalLineView = MaterialProposalView['lines'][number]
 
 interface Props {
   line: MaterialProposalLineView

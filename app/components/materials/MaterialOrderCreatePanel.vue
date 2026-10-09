@@ -105,23 +105,23 @@
       </div>
     </div>
 
-    <!-- Alert 3: Create POST was rejected with Conflict (409) -->
+    <!-- Alert 3: Create POST was rejected with API Denial / Conflict (409) -->
     <div v-else-if="isCreatePostRejected" class="cockpit-alert cockpit-alert--danger mt-4" role="alert">
       <div class="flex items-start gap-2">
         <UIcon name="i-lucide-alert-circle" class="text-rose-600 text-base shrink-0 mt-0.5" aria-hidden="true" />
         <div class="flex-1">
           <p class="font-semibold text-rose-900">{{ createActionError }}</p>
           <p class="text-sm text-rose-800 mt-0.5">
-            Dữ liệu phiếu hoặc số lượng còn lại đã thay đổi. Vui lòng tải lại dữ liệu mới nhất để đối chiếu lại.
+            Máy chủ đã từ chối lệnh tạo đơn. Bấm "Tải lại dữ liệu" để đồng bộ số lượng còn lại mới nhất từ hệ thống trước khi lập đơn mới.
           </p>
           <div class="mt-2.5">
             <button
               type="button"
               class="cockpit-btn cockpit-btn--secondary btn-sm"
               :disabled="isRecoveryControlDisabled"
-              @click="retryCanonicalRefresh"
+              @click="retryCanonicalRejectionRefresh"
             >
-              <UIcon v-if="isTransportBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
+              <UIcon v-if="isRejectionRefreshBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
               <UIcon v-else name="i-lucide-refresh-cw" class="text-sm" aria-hidden="true" />
               Tải lại dữ liệu
             </button>
@@ -130,20 +130,23 @@
       </div>
     </div>
 
-    <!-- Alert 4: Cancel POST was rejected with Conflict (409) -->
+    <!-- Alert 4: Cancel POST was rejected with API Denial / Conflict (409) -->
     <div v-else-if="isCancelPostRejected" class="cockpit-alert cockpit-alert--danger mt-4" role="alert">
       <div class="flex items-start gap-2">
         <UIcon name="i-lucide-alert-circle" class="text-rose-600 text-base shrink-0 mt-0.5" aria-hidden="true" />
         <div class="flex-1">
           <p class="font-semibold text-rose-900">{{ cancelActionError }}</p>
+          <p class="text-sm text-rose-800 mt-0.5">
+            Máy chủ từ chối hủy đơn. Bấm "Tải lại dữ liệu" để đồng bộ trạng thái mới nhất từ máy chủ.
+          </p>
           <div class="mt-2.5">
             <button
               type="button"
               class="cockpit-btn cockpit-btn--secondary btn-sm"
               :disabled="isRecoveryControlDisabled"
-              @click="retryCanonicalRefresh"
+              @click="retryCanonicalRejectionRefresh"
             >
-              <UIcon v-if="isTransportBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
+              <UIcon v-if="isRejectionRefreshBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
               <UIcon v-else name="i-lucide-refresh-cw" class="text-sm" aria-hidden="true" />
               Tải lại dữ liệu
             </button>
@@ -410,7 +413,8 @@
             :disabled="isRecoveryControlDisabled"
             @click="openEvidencePdf(finalizedEvidenceFileId)"
           >
-            <UIcon name="i-lucide-external-link" class="text-sm" aria-hidden="true" />
+            <UIcon v-if="isPdfReading" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
+            <UIcon v-else name="i-lucide-external-link" class="text-sm" aria-hidden="true" />
             Xem PDF báo giá
           </button>
         </div>
@@ -543,6 +547,9 @@
               <td class="p-2.5 font-mono text-slate-600 align-top">
                 <span :title="order.id">{{ order.id.slice(0, 8) }}...</span>
                 <div class="text-[10px] text-slate-400">v{{ order.version }}</div>
+                <div v-if="order.approvedRevisionId" class="text-[10px] text-slate-400 font-mono">
+                  Đợt: {{ order.approvedRevisionId.slice(0, 8) }}...
+                </div>
               </td>
 
               <td class="p-2.5 font-medium text-slate-800 align-top">
@@ -568,16 +575,26 @@
               </td>
 
               <td class="p-2.5 align-top">
-                <div class="space-y-1">
+                <div class="space-y-1.5">
                   <div
                     v-for="alloc in order.allocations"
                     :key="alloc.orderLineId"
-                    class="allocation-line text-[11px] text-slate-700"
+                    class="allocation-line text-[11px] text-slate-700 bg-slate-50 p-1.5 rounded border border-slate-100"
                   >
-                    <span class="font-medium">{{ alloc.materialName }}</span>
-                    <span class="text-slate-400"> ({{ alloc.quotationMaterialName }}): </span>
-                    <span class="font-mono font-semibold">{{ formatMaterialQuantity(alloc.quantity) }} {{ alloc.unit }}</span>
-                    <span class="text-slate-400"> &times; {{ alloc.unitPrice }}</span>
+                    <div class="font-medium text-slate-800">
+                      {{ alloc.materialName }}
+                      <span v-if="alloc.specification" class="text-slate-500 font-mono text-[10px]">
+                        ({{ alloc.specification }})
+                      </span>
+                    </div>
+                    <div class="text-slate-500 text-[10px]">
+                      Báo giá: <span class="font-medium text-slate-700">{{ alloc.quotationMaterialName }}</span>
+                    </div>
+                    <div class="font-mono text-slate-800 mt-0.5">
+                      <span class="font-bold text-sky-800">{{ formatMaterialQuantity(alloc.quantity) }} {{ alloc.unit }}</span>
+                      <span class="text-slate-400"> &times; </span>
+                      <span>{{ alloc.unitPrice }}</span>
+                    </div>
                   </div>
                 </div>
               </td>
@@ -602,8 +619,8 @@
                 <span v-if="order.contract !== null" class="cockpit-badge bg-sky-100 text-sky-800 text-[11px] font-medium">
                   Đã ký HĐ
                 </span>
-                <span v-else class="text-slate-400 text-[11px]">
-                  Chưa ký HĐ
+                <span v-else class="text-slate-500 text-[11px] italic">
+                  Chưa có dữ liệu hợp đồng
                 </span>
               </td>
 
@@ -692,6 +709,7 @@ import {
   createMaterialOrderInputSchema,
 } from '../../../shared/schemas/costs/material-procurement'
 import { workflowUuidSchema } from '../../../shared/schemas/costs/cost-workflow'
+import { ClientError } from '../../errors/client-error'
 import { formatMaterialQuantity } from '../../utils/materials/quantity-display'
 import {
   uploadMaterialEvidence,
@@ -730,10 +748,19 @@ type TrackerScope = {
   projectId: string
   proposalId: string
   approvedRevisionId?: string | null
-  op: string
+  actorId?: string
+  op?: string
+  tokenKey?: string
 }
 
-const tracker = createAsyncRequestTracker<TrackerScope>()
+// F1: Independent AsyncRequestTrackers per stream
+const currencyTracker = createAsyncRequestTracker<TrackerScope>()
+const ordersTracker = createAsyncRequestTracker<TrackerScope>()
+const supplierTracker = createAsyncRequestTracker<TrackerScope>()
+const uploadTracker = createAsyncRequestTracker<TrackerScope>()
+const mutationTracker = createAsyncRequestTracker<TrackerScope>()
+const pdfReadTracker = createAsyncRequestTracker<TrackerScope>()
+
 let isDisposed = false
 let lastEmittedBusy = false
 
@@ -744,12 +771,22 @@ function emitBusy(val: boolean) {
   }
 }
 
+function invalidateAllTrackers() {
+  currencyTracker.invalidate()
+  ordersTracker.invalidate()
+  supplierTracker.invalidate()
+  uploadTracker.invalidate()
+  mutationTracker.invalidate()
+  pdfReadTracker.invalidate()
+}
+
 // Scope & Permission validation
 function isLiveScopeValid(cmd?: {
   companyId: string
   projectId: string
   proposalId: string
   approvedRevisionId?: string | null
+  actorId?: string
 }): boolean {
   if (isDisposed) return false
   const activeCompanyId = companyAccess?.activeCompanyId
@@ -770,6 +807,7 @@ function isLiveScopeValid(cmd?: {
     if (cmd.projectId !== props.projectId) return false
     if (cmd.proposalId !== props.proposal.id) return false
     if (cmd.approvedRevisionId !== undefined && cmd.approvedRevisionId !== props.proposal.approvedRevisionId) return false
+    if (cmd.actorId && cmd.actorId !== currentUserId) return false
   }
   return true
 }
@@ -797,6 +835,39 @@ const reviewStateLabel = computed(() => {
   }
 })
 
+// F2: ClientError parser
+function parseApiError(err: unknown): { code?: string; status?: number; kind?: string; message: string } {
+  if (err instanceof ClientError) {
+    return {
+      code: err.code,
+      kind: err.kind,
+      message: err.message,
+    }
+  }
+  const anyErr = err as { code?: string; statusCode?: number; status?: number; kind?: string; message?: string }
+  return {
+    code: anyErr?.code,
+    status: anyErr?.statusCode ?? anyErr?.status,
+    kind: anyErr?.kind,
+    message: (err instanceof Error) ? err.message : String(err ?? 'Lỗi không xác định'),
+  }
+}
+
+function isApiDenialOrConflict(errInfo: { code?: string; status?: number; kind?: string }): boolean {
+  return (
+    errInfo.status === 409 ||
+    errInfo.code === 'VERSION_CONFLICT' ||
+    errInfo.code === 'IDEMPOTENCY_CONFLICT' ||
+    errInfo.code === 'MATERIAL_ALLOCATION_EXCEEDED' ||
+    errInfo.code === 'INPUT_INVALID' ||
+    errInfo.code === 'RESOURCE_NOT_FOUND' ||
+    errInfo.code === 'PERMISSION_DENIED' ||
+    errInfo.code === 'COMPANY_FORBIDDEN' ||
+    errInfo.kind === 'authorization' ||
+    errInfo.kind === 'validation'
+  )
+}
+
 // Currency
 const canonicalCurrency = ref<string | null>(null)
 const isCurrencyLoading = ref(false)
@@ -804,7 +875,7 @@ const currencyError = ref('')
 
 async function loadCurrency() {
   if (!isLiveScopeValid()) return
-  const token = tracker.start({
+  const token = currencyTracker.start({
     companyId: props.companyId,
     projectId: props.projectId,
     proposalId: props.proposal.id,
@@ -835,7 +906,7 @@ const ordersError = ref('')
 
 async function loadOrders() {
   if (!isLiveScopeValid()) return
-  const token = tracker.start({
+  const token = ordersTracker.start({
     companyId: props.companyId,
     projectId: props.projectId,
     proposalId: props.proposal.id,
@@ -872,10 +943,16 @@ const supplierResolutionKey = ref<string>(crypto.randomUUID())
 const isResolvingSupplier = ref(false)
 const supplierResolveError = ref('')
 
+// F6: Editing supplier input invalidates resolution, evidence and line confirmations
 function onSupplierInputChanged() {
   if (resolvedSupplierId.value !== null) {
     resolvedSupplierId.value = null
     supplierResolutionKey.value = crypto.randomUUID()
+    selectedFile.value = null
+    finalizedEvidenceFileId.value = null
+    uploadSession.value = null
+    uploadError.value = ''
+    resetLineConfirmations()
   }
   supplierResolveError.value = ''
 }
@@ -915,12 +992,19 @@ async function handleResolveSupplier() {
   if (currentJson !== lastResolvedInputJson.value) {
     supplierResolutionKey.value = crypto.randomUUID()
     lastResolvedInputJson.value = currentJson
+    // F6: New vendor means quote must be chosen and finalized for this vendor
+    selectedFile.value = null
+    finalizedEvidenceFileId.value = null
+    uploadSession.value = null
+    uploadError.value = ''
+    resetLineConfirmations()
   }
 
-  const token = tracker.start({
+  const token = supplierTracker.start({
     companyId: props.companyId,
     projectId: props.projectId,
     proposalId: props.proposal.id,
+    actorId: authStore?.user?.id ?? '',
     op: 'resolve-supplier',
   })
 
@@ -930,11 +1014,13 @@ async function handleResolveSupplier() {
 
   try {
     const res = await repo.resolveSupplier(parsed.data, { idempotencyKey: supplierResolutionKey.value })
-    if (!token.isCurrent() || isDisposed || !isLiveScopeValid()) return
+    // F5: Guard token, disposed, scope and material.supplier.record permission
+    if (!token.isCurrent() || isDisposed || !isLiveScopeValid() || !canRecordSupplier.value) return
     resolvedSupplierId.value = res.resourceId
   } catch (err: unknown) {
     if (!token.isCurrent() || isDisposed || !isLiveScopeValid()) return
-    supplierResolveError.value = (err as Error)?.message || 'Lỗi khi ghi nhận nhà cung cấp.'
+    const errInfo = parseApiError(err)
+    supplierResolveError.value = errInfo.message || 'Lỗi khi ghi nhận nhà cung cấp.'
   } finally {
     if (token.isCurrent() && !isDisposed) {
       isResolvingSupplier.value = false
@@ -981,11 +1067,12 @@ async function handleUploadPdf() {
     return
   }
 
-  const token = tracker.start({
+  const token = uploadTracker.start({
     companyId: props.companyId,
     projectId: props.projectId,
     proposalId: props.proposal.id,
     approvedRevisionId: props.proposal.approvedRevisionId,
+    actorId: authStore?.user?.id ?? '',
     op: 'upload-evidence',
   })
 
@@ -1019,7 +1106,8 @@ async function handleUploadPdf() {
     finalizedEvidenceFileId.value = result.evidenceFileId
   } catch (err: unknown) {
     if (!token.isCurrent() || isDisposed || !isLiveScopeValid()) return
-    uploadError.value = (err as Error)?.message || 'Lỗi tải lên và hoàn tất báo giá PDF.'
+    const errInfo = parseApiError(err)
+    uploadError.value = errInfo.message || 'Lỗi tải lên và hoàn tất báo giá PDF.'
   } finally {
     if (token.isCurrent() && !isDisposed) {
       isUploading.value = false
@@ -1028,16 +1116,33 @@ async function handleUploadPdf() {
   }
 }
 
+// F5: Scoped PDF reading with pdfReadTracker
+const isPdfReading = ref(false)
+
 async function openEvidencePdf(fileId: string) {
-  if (!isLiveScopeValid() || !fileId) return
+  if (!isLiveScopeValid() || !fileId || isPdfReading.value) return
+  const token = pdfReadTracker.start({
+    companyId: props.companyId,
+    projectId: props.projectId,
+    proposalId: props.proposal.id,
+    actorId: authStore?.user?.id ?? '',
+    op: 'open-pdf',
+  })
+  isPdfReading.value = true
+  generalError.value = ''
   try {
     const res = await repo.readEvidenceUrl(props.projectId, fileId, { disposition: 'inline' })
-    if (!isLiveScopeValid()) return
+    if (!token.isCurrent() || isDisposed || !isLiveScopeValid()) return
     if (res?.url) {
       window.open(res.url, '_blank', 'noopener,noreferrer')
     }
   } catch (err: unknown) {
+    if (!token.isCurrent() || isDisposed || !isLiveScopeValid()) return
     generalError.value = 'Không thể mở tệp PDF báo giá. Vui lòng thử lại.'
+  } finally {
+    if (token.isCurrent() && !isDisposed) {
+      isPdfReading.value = false
+    }
   }
 }
 
@@ -1091,7 +1196,7 @@ function handleReturnRequested() {
   emit('returnRequested')
 }
 
-function isValidPositive(val: string): boolean {
+function isValidPositiveDecimalString(val: string): boolean {
   const trimmed = (val ?? '').trim()
   if (!trimmed || !/^\d+(\.\d{1,4})?$/.test(trimmed)) return false
   try {
@@ -1101,13 +1206,119 @@ function isValidPositive(val: string): boolean {
   }
 }
 
+// F7: Strict line validation - only completely blank allocation is considered unselected.
+// Any non-blank row with invalid quantity/price/quotationName/mapping must error on that specific line.
+interface LineValidationError {
+  lineId: string
+  materialName: string
+  message: string
+}
+
+const lineValidationErrors = computed<LineValidationError[]>(() => {
+  const errors: LineValidationError[] = []
+  if (!props.proposal?.lines) return errors
+
+  for (const line of props.proposal.lines) {
+    const form = lineFormMap.value[line.lineId]
+    if (!form) continue
+    const allocRaw = (form.allocationQuantity ?? '').trim()
+    if (allocRaw === '') continue // Unselected
+
+    if (!/^\d+(\.\d{1,4})?$/.test(allocRaw)) {
+      errors.push({
+        lineId: line.lineId,
+        materialName: line.materialName,
+        message: `Dòng "${line.materialName}": Số lượng phân bổ "${allocRaw}" không hợp lệ (cần là số thập phân dương, tối đa 4 chữ số thập phân).`,
+      })
+      continue
+    }
+
+    let allocDec: Decimal
+    try {
+      allocDec = new Decimal(allocRaw)
+    } catch {
+      errors.push({
+        lineId: line.lineId,
+        materialName: line.materialName,
+        message: `Dòng "${line.materialName}": Không thể phân tích số lượng phân bổ.`,
+      })
+      continue
+    }
+
+    if (!allocDec.gt(0)) {
+      errors.push({
+        lineId: line.lineId,
+        materialName: line.materialName,
+        message: `Dòng "${line.materialName}": Số lượng phân bổ phải lớn hơn 0.`,
+      })
+      continue
+    }
+
+    if (allocDec.gt(line.remainingQuantity)) {
+      errors.push({
+        lineId: line.lineId,
+        materialName: line.materialName,
+        message: `Dòng "${line.materialName}": Số lượng phân bổ (${allocRaw}) vượt quá số lượng còn lại (${formatMaterialQuantity(line.remainingQuantity)}).`,
+      })
+      continue
+    }
+
+    const quoteName = (form.quotationMaterialName ?? '').trim()
+    if (!quoteName) {
+      errors.push({
+        lineId: line.lineId,
+        materialName: line.materialName,
+        message: `Dòng "${line.materialName}": Chưa nhập tên trên báo giá PDF.`,
+      })
+      continue
+    }
+
+    const priceRaw = (form.unitPrice ?? '').trim()
+    if (!priceRaw || !/^\d+(\.\d{1,4})?$/.test(priceRaw)) {
+      errors.push({
+        lineId: line.lineId,
+        materialName: line.materialName,
+        message: `Dòng "${line.materialName}": Đơn giá "${priceRaw}" không hợp lệ (cần là số thập phân dương, tối đa 4 chữ số thập phân).`,
+      })
+      continue
+    }
+
+    try {
+      if (!new Decimal(priceRaw).gt(0)) {
+        errors.push({
+          lineId: line.lineId,
+          materialName: line.materialName,
+          message: `Dòng "${line.materialName}": Đơn giá phải lớn hơn 0.`,
+        })
+        continue
+      }
+    } catch {
+      errors.push({
+        lineId: line.lineId,
+        materialName: line.materialName,
+        message: `Dòng "${line.materialName}": Đơn giá không hợp lệ.`,
+      })
+      continue
+    }
+
+    if (!form.mappingConfirmed) {
+      errors.push({
+        lineId: line.lineId,
+        materialName: line.materialName,
+        message: `Dòng "${line.materialName}": Chưa xác nhận đối chiếu với báo giá PDF.`,
+      })
+    }
+  }
+  return errors
+})
+
 const selectedAllocations = computed(() => {
   const list: Array<{
     proposalLineId: string
     quantity: string
     unitPrice: string
     quotationMaterialName: string
-    mappingConfirmed: boolean
+    mappingConfirmed: true
   }> = []
 
   if (!props.proposal?.lines) return list
@@ -1115,16 +1326,16 @@ const selectedAllocations = computed(() => {
   for (const line of props.proposal.lines) {
     const form = lineFormMap.value[line.lineId]
     if (!form) continue
-    const allocQty = form.allocationQuantity.trim()
-    if (allocQty && isValidPositive(allocQty)) {
-      list.push({
-        proposalLineId: line.lineId,
-        quantity: allocQty,
-        unitPrice: form.unitPrice.trim(),
-        quotationMaterialName: form.quotationMaterialName.trim(),
-        mappingConfirmed: form.mappingConfirmed,
-      })
-    }
+    const allocRaw = (form.allocationQuantity ?? '').trim()
+    if (allocRaw === '') continue
+
+    list.push({
+      proposalLineId: line.lineId,
+      quantity: allocRaw,
+      unitPrice: form.unitPrice.trim(),
+      quotationMaterialName: form.quotationMaterialName.trim(),
+      mappingConfirmed: true,
+    })
   }
   return list
 })
@@ -1132,7 +1343,7 @@ const selectedAllocations = computed(() => {
 const formattedTotalOrderValue = computed(() => {
   let sum = new Decimal(0)
   for (const item of selectedAllocations.value) {
-    if (isValidPositive(item.quantity) && isValidPositive(item.unitPrice)) {
+    if (isValidPositiveDecimalString(item.quantity) && isValidPositiveDecimalString(item.unitPrice)) {
       sum = sum.plus(new Decimal(item.quantity).times(item.unitPrice))
     }
   }
@@ -1144,19 +1355,10 @@ const createValidationReason = computed(() => {
   if (!canonicalCurrency.value) return 'Chưa có đơn vị tiền tệ công ty.'
   if (!resolvedSupplierId.value) return 'Cần ghi nhận nhà cung cấp.'
   if (!finalizedEvidenceFileId.value) return 'Cần hoàn tất tệp báo giá PDF.'
-  if (selectedAllocations.value.length === 0) return 'Chọn ít nhất 1 dòng vật tư để phân bổ đơn hàng.'
-
-  for (const item of selectedAllocations.value) {
-    const line = props.proposal.lines.find(l => l.lineId === item.proposalLineId)
-    if (!line) return 'Dòng vật tư không tồn tại trên phiếu.'
-    if (!item.quotationMaterialName) return `Dòng "${line.materialName}" chưa có tên trên báo giá.`
-    if (!isValidPositive(item.quantity)) return `Dòng "${line.materialName}" số lượng phân bổ chưa hợp lệ.`
-    if (!isValidPositive(item.unitPrice)) return `Dòng "${line.materialName}" đơn giá chưa hợp lệ.`
-    if (new Decimal(item.quantity).gt(line.remainingQuantity)) {
-      return `Dòng "${line.materialName}" số lượng phân bổ vượt quá số lượng còn lại.`
-    }
-    if (!item.mappingConfirmed) return `Dòng "${line.materialName}" chưa được xác nhận đối chiếu.`
+  if (lineValidationErrors.value.length > 0) {
+    return lineValidationErrors.value[0]?.message ?? 'Có dòng vật tư chưa hợp lệ.'
   }
+  if (selectedAllocations.value.length === 0) return 'Chọn ít nhất 1 dòng vật tư để phân bổ đơn hàng.'
   return ''
 })
 
@@ -1171,6 +1373,7 @@ interface CreateOrderCommand {
   readonly projectId: string
   readonly proposalId: string
   readonly approvedRevisionId: string
+  readonly actorId: string
   readonly input: CreateMaterialOrderInput
   readonly idempotencyKey: string
 }
@@ -1181,6 +1384,7 @@ const isCreatePostRejected = ref(false)
 const createdOrderId = ref<string | null>(null)
 const createActionError = ref('')
 const isCreateBusy = ref(false)
+const isRejectionRefreshBusy = ref(false)
 
 function startCreateOrder() {
   if (!canCreateOrder.value || pendingCreateOrderCommand.value) return
@@ -1211,6 +1415,7 @@ function startCreateOrder() {
     projectId: props.projectId,
     proposalId: props.proposal.id,
     approvedRevisionId: props.proposal.approvedRevisionId,
+    actorId: authStore?.user?.id ?? '',
     input: parsed.data,
     idempotencyKey: crypto.randomUUID(),
   })
@@ -1223,19 +1428,21 @@ function startCreateOrder() {
 }
 
 async function executeCreateOrder(cmd: CreateOrderCommand) {
-  const token = tracker.start({
+  const token = mutationTracker.start({
     companyId: cmd.companyId,
     projectId: cmd.projectId,
     proposalId: cmd.proposalId,
     approvedRevisionId: cmd.approvedRevisionId,
-    op: 'execute-create-order',
+    actorId: cmd.actorId,
+    tokenKey: cmd.idempotencyKey,
   })
 
   isCreateBusy.value = true
   createActionError.value = ''
   emitBusy(true)
 
-  if (!createPostAcknowledged.value) {
+  // Step 1: POST createOrder if not already acknowledged and not already rejected
+  if (!createPostAcknowledged.value && !isCreatePostRejected.value) {
     try {
       const res = await repo.createOrder(cmd.projectId, cmd.proposalId, cmd.input, { idempotencyKey: cmd.idempotencyKey })
       if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
@@ -1243,21 +1450,34 @@ async function executeCreateOrder(cmd: CreateOrderCommand) {
       createdOrderId.value = res.resourceId
     } catch (err: unknown) {
       if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
-      isCreateBusy.value = false
-      emitBusy(false)
 
-      const errMsg = (err as Error)?.message || ''
-      if (errMsg.includes('409') || errMsg.includes('CONFLICT') || errMsg.includes('VERSION_CONFLICT')) {
+      const errInfo = parseApiError(err)
+      if (isApiDenialOrConflict(errInfo)) {
         isCreatePostRejected.value = true
-        createActionError.value = 'Xung đột khi tạo đơn mua hàng (409). Máy chủ từ chối do dữ liệu đã thay đổi.'
-        void refreshCanonicalOnly(cmd)
-      } else {
-        createActionError.value = 'Lỗi kết nối máy chủ. Lệnh tạo đơn chưa xác định được kết quả commit. Vui lòng bấm thử lại để tiếp tục với đúng lệnh này.'
+        if (errInfo.code === 'VERSION_CONFLICT' || errInfo.status === 409) {
+          createActionError.value = 'Xung đột phiên bản (409): Dữ liệu phiếu đã thay đổi hoặc số lượng còn lại không đủ.'
+        } else if (errInfo.code === 'MATERIAL_ALLOCATION_EXCEEDED') {
+          createActionError.value = 'Số lượng đặt mua vượt quá hạn mức còn lại được duyệt (MATERIAL_ALLOCATION_EXCEEDED).'
+        } else if (errInfo.code === 'IDEMPOTENCY_CONFLICT') {
+          createActionError.value = 'Xung đột thao tác (IDEMPOTENCY_CONFLICT): Yêu cầu trùng lặp với nội dung khác.'
+        } else {
+          createActionError.value = errInfo.message || 'Yêu cầu tạo đơn bị máy chủ từ chối.'
+        }
+
+        // F2-F4: Denial routes to canonical reload
+        await runRejectionCanonicalRefresh(cmd)
+        return
       }
+
+      // F2-F4: Network error / 5xx where outcome is not determined before ACK.
+      // Sibling lock remains true! Do not emit busy=false!
+      createActionError.value = errInfo.message || 'Lỗi kết nối máy chủ. Lệnh tạo đơn chưa xác định được kết quả commit. Vui lòng bấm thử lại để tiếp tục với đúng lệnh này.'
+      isCreateBusy.value = false
       return
     }
   }
 
+  // Step 2: Canonical reload after ACK
   if (createPostAcknowledged.value && createdOrderId.value) {
     try {
       const [readOrd, canonicalProp, freshOrders] = await Promise.all([
@@ -1269,6 +1489,9 @@ async function executeCreateOrder(cmd: CreateOrderCommand) {
 
       if (canonicalProp.id !== cmd.proposalId || readOrd.id !== createdOrderId.value) {
         throw new Error('CANONICAL_IDENTITY_MISMATCH')
+      }
+      if (canonicalProp.approvedRevisionId !== cmd.approvedRevisionId) {
+        throw new Error('REVISION_MISMATCH')
       }
 
       orders.value = freshOrders.filter(o => o.proposalId === cmd.proposalId)
@@ -1290,6 +1513,7 @@ async function executeCreateOrder(cmd: CreateOrderCommand) {
     } catch (err: unknown) {
       if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
       isCreateBusy.value = false
+      // F2-F4: Sibling lock stays held! Do not emit busy(false)
       createActionError.value = 'Đã gửi lệnh; chưa xác nhận dữ liệu mới. Vui lòng bấm thử lại để tải lại dữ liệu.'
     }
   }
@@ -1313,6 +1537,7 @@ interface CancelOrderCommand {
   readonly orderId: string
   readonly orderVersion: number
   readonly reason: string
+  readonly actorId: string
   readonly idempotencyKey: string
 }
 
@@ -1368,6 +1593,7 @@ function confirmCancelOrder() {
     orderId: order.id,
     orderVersion: order.version,
     reason: trimmed,
+    actorId: authStore?.user?.id ?? '',
     idempotencyKey: crypto.randomUUID(),
   })
 
@@ -1378,18 +1604,19 @@ function confirmCancelOrder() {
 }
 
 async function executeCancelOrder(cmd: CancelOrderCommand) {
-  const token = tracker.start({
+  const token = mutationTracker.start({
     companyId: cmd.companyId,
     projectId: cmd.projectId,
     proposalId: cmd.proposalId,
-    op: 'execute-cancel-order',
+    actorId: cmd.actorId,
+    tokenKey: cmd.idempotencyKey,
   })
 
   isCancelBusy.value = true
   cancelActionError.value = ''
   emitBusy(true)
 
-  if (!cancelPostAcknowledged.value) {
+  if (!cancelPostAcknowledged.value && !isCancelPostRejected.value) {
     try {
       await repo.cancelOrder(cmd.projectId, cmd.orderId, {
         expectedOrderVersion: cmd.orderVersion,
@@ -1400,17 +1627,22 @@ async function executeCancelOrder(cmd: CancelOrderCommand) {
       cancelPostAcknowledged.value = true
     } catch (err: unknown) {
       if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
-      isCancelBusy.value = false
-      emitBusy(false)
 
-      const errMsg = (err as Error)?.message || ''
-      if (errMsg.includes('409') || errMsg.includes('CONFLICT') || errMsg.includes('VERSION_CONFLICT')) {
+      const errInfo = parseApiError(err)
+      if (isApiDenialOrConflict(errInfo)) {
         isCancelPostRejected.value = true
-        cancelActionError.value = 'Xung đột khi hủy đơn (409). Trạng thái đơn mua đã bị thay đổi hoặc đã ký hợp đồng.'
-        void refreshCanonicalOnly(cmd)
-      } else {
-        cancelActionError.value = 'Lỗi kết nối máy chủ khi hủy đơn. Vui lòng bấm thử lại để tiếp tục với đúng lệnh này.'
+        if (errInfo.code === 'VERSION_CONFLICT' || errInfo.status === 409) {
+          cancelActionError.value = 'Xung đột khi hủy đơn (409): Trạng thái đơn mua đã bị thay đổi hoặc đã ký hợp đồng.'
+        } else {
+          cancelActionError.value = errInfo.message || 'Yêu cầu hủy đơn bị từ chối.'
+        }
+        await runRejectionCanonicalRefresh(cmd)
+        return
       }
+
+      // F2-F4: Network error / 5xx where outcome is not determined before ACK.
+      cancelActionError.value = errInfo.message || 'Lỗi kết nối máy chủ khi hủy đơn. Vui lòng bấm thử lại để tiếp tục với đúng lệnh này.'
+      isCancelBusy.value = false
       return
     }
   }
@@ -1423,6 +1655,11 @@ async function executeCancelOrder(cmd: CancelOrderCommand) {
         repo.listOrders(cmd.projectId),
       ])
       if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
+
+      // F2-F4: Verify readOrd confirms cancellation
+      if (readOrd.id !== cmd.orderId || readOrd.orderState !== 'cancelled') {
+        throw new Error('CANCEL_CONFIRMATION_FAILED')
+      }
 
       orders.value = freshOrders.filter(o => o.proposalId === cmd.proposalId)
       pendingCancelCommand.value = null
@@ -1453,37 +1690,83 @@ function retryCanonicalAfterCancel() {
   void executeCancelOrder(pendingCancelCommand.value)
 }
 
-async function refreshCanonicalOnly(cmd: { companyId: string; projectId: string; proposalId: string }) {
+// F2-F4: Safe canonical rejection refresh
+async function runRejectionCanonicalRefresh(cmd: {
+  companyId: string
+  projectId: string
+  proposalId: string
+  actorId?: string
+  approvedRevisionId?: string | null
+}) {
+  const token = mutationTracker.start({
+    companyId: cmd.companyId,
+    projectId: cmd.projectId,
+    proposalId: cmd.proposalId,
+    approvedRevisionId: cmd.approvedRevisionId,
+    actorId: cmd.actorId,
+    op: 'rejection-canonical-refresh',
+  })
+
+  isRejectionRefreshBusy.value = true
+  emitBusy(true)
+
   try {
     const [canonicalProp, freshOrders] = await Promise.all([
       repo.readProposal(cmd.projectId, cmd.proposalId),
       repo.listOrders(cmd.projectId),
     ])
-    if (isDisposed || !isLiveScopeValid(cmd)) return
+    if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
+
+    if (canonicalProp.id !== cmd.proposalId) {
+      throw new Error('CANONICAL_IDENTITY_MISMATCH')
+    }
+
     orders.value = freshOrders.filter(o => o.proposalId === cmd.proposalId)
+
+    // F2: Rejection confirmed and fresh state loaded: retire command & rejection state
+    pendingCreateOrderCommand.value = null
+    createPostAcknowledged.value = false
+    isCreatePostRejected.value = false
+    createdOrderId.value = null
+
+    pendingCancelCommand.value = null
+    cancelPostAcknowledged.value = false
+    isCancelPostRejected.value = false
+    cancellingOrderId.value = null
+
+    resetLineConfirmations()
+
     emit('canonical', canonicalProp)
-  } catch {
-    // Ignore secondary refresh failure
+    emitBusy(false)
+  } catch (err: unknown) {
+    if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
+    // Keep error banner and keep pending command
+    if (isCreatePostRejected.value) {
+      createActionError.value += ' Đồng thời chưa thể tải lại dữ liệu mới nhất từ máy chủ.'
+    }
+    if (isCancelPostRejected.value) {
+      cancelActionError.value += ' Đồng thời chưa thể tải lại dữ liệu mới nhất từ máy chủ.'
+    }
+  } finally {
+    if (token.isCurrent() && !isDisposed) {
+      isRejectionRefreshBusy.value = false
+      isCreateBusy.value = false
+      isCancelBusy.value = false
+    }
   }
 }
 
-async function retryCanonicalRefresh() {
+function retryCanonicalRejectionRefresh() {
   if (isRecoveryControlDisabled.value) return
-  isCreatePostRejected.value = false
-  isCancelPostRejected.value = false
-  createActionError.value = ''
-  cancelActionError.value = ''
-  await refreshCanonicalOnly({
-    companyId: props.companyId,
-    projectId: props.projectId,
-    proposalId: props.proposal.id,
-  })
+  const cmd = pendingCreateOrderCommand.value || pendingCancelCommand.value
+  if (!cmd) return
+  void runRejectionCanonicalRefresh(cmd)
 }
 
 function computeOrderTotal(order: MaterialOrderView): string {
   let sum = new Decimal(0)
   for (const alloc of order.allocations) {
-    if (isValidPositive(alloc.quantity) && isValidPositive(alloc.unitPrice)) {
+    if (isValidPositiveDecimalString(alloc.quantity) && isValidPositiveDecimalString(alloc.unitPrice)) {
       sum = sum.plus(new Decimal(alloc.quantity).times(alloc.unitPrice))
     }
   }
@@ -1499,7 +1782,9 @@ const isTransportBusy = computed(() => {
     isResolvingSupplier.value ||
     isUploading.value ||
     isCreateBusy.value ||
-    isCancelBusy.value
+    isCancelBusy.value ||
+    isPdfReading.value ||
+    isRejectionRefreshBusy.value
   )
 })
 
@@ -1508,6 +1793,8 @@ const busyStatusMessage = computed(() => {
   if (isResolvingSupplier.value) return 'Đang ghi nhận nhà cung cấp...'
   if (isCreateBusy.value) return 'Đang xử lý tạo đơn mua hàng...'
   if (isCancelBusy.value) return 'Đang xử lý hủy đơn mua hàng...'
+  if (isPdfReading.value) return 'Đang mở tệp báo giá...'
+  if (isRejectionRefreshBusy.value) return 'Đang đồng bộ dữ liệu mới nhất...'
   if (isCurrencyLoading.value) return 'Đang tải tiền tệ...'
   if (isOrdersLoading.value) return 'Đang tải danh sách đơn...'
   return 'Đang xử lý...'
@@ -1520,54 +1807,80 @@ const isRegularControlDisabled = computed(() => {
     pendingCreateOrderCommand.value ||
     pendingCancelCommand.value ||
     createPostAcknowledged.value ||
-    cancelPostAcknowledged.value
+    cancelPostAcknowledged.value ||
+    isCreatePostRejected.value ||
+    isCancelPostRejected.value
   )
 })
 
+// F4: Honors props.disabled from sibling
 const isRecoveryControlDisabled = computed(() => {
-  return Boolean(!isLiveScopeValid() || isTransportBusy.value)
+  return Boolean(props.disabled || !isLiveScopeValid() || isTransportBusy.value)
 })
 
-// Watchers
+// F5: Comprehensive scope teardown watcher
 watch(
   [
     () => companyAccess?.activeCompanyId,
     () => authStore?.user?.id,
     () => companyAccess?.hasPermission('material.read'),
     () => companyAccess?.hasPermission('material.order.manage'),
+    () => companyAccess?.hasPermission('material.supplier.record'),
     () => props.companyId,
     () => props.projectId,
     () => props.proposal?.id,
     () => props.proposal?.approvedRevisionId,
   ],
-  ([newCo, newActor, newRead, newManage, newPropCo, newPropProj, newPropProposal, newPropRev],
-   [oldCo, oldActor, oldRead, oldManage, oldPropCo, oldPropProj, oldPropProposal, oldPropRev]) => {
+  ([newCo, newActor, newRead, newManage, newRecord, newPropCo, newPropProj, newPropProposal, newPropRev],
+   [oldCo, oldActor, oldRead, oldManage, oldRecord, oldPropCo, oldPropProj, oldPropProposal, oldPropRev]) => {
     const changed =
       newCo !== oldCo ||
       newActor !== oldActor ||
       newRead !== oldRead ||
       newManage !== oldManage ||
+      newRecord !== oldRecord ||
       newPropCo !== oldPropCo ||
       newPropProj !== oldPropProj ||
       newPropProposal !== oldPropProposal ||
       newPropRev !== oldPropRev
 
     if (changed) {
-      tracker.invalidate()
+      // Invalidate all streams
+      invalidateAllTrackers()
+
+      // Reset all loading flags
+      isCurrencyLoading.value = false
+      isOrdersLoading.value = false
+      isResolvingSupplier.value = false
+      isUploading.value = false
       isCreateBusy.value = false
       isCancelBusy.value = false
+      isPdfReading.value = false
+      isRejectionRefreshBusy.value = false
+
+      // Clear pending commands
       pendingCreateOrderCommand.value = null
       createPostAcknowledged.value = false
       isCreatePostRejected.value = false
       createdOrderId.value = null
+
       pendingCancelCommand.value = null
       cancelPostAcknowledged.value = false
       isCancelPostRejected.value = false
       cancellingOrderId.value = null
+
+      // Clear errors
       createActionError.value = ''
       cancelActionError.value = ''
       generalError.value = ''
+      supplierResolveError.value = ''
+      uploadError.value = ''
+      ordersError.value = ''
+      currencyError.value = ''
 
+      // Clear data & forms
+      orders.value = []
+      canonicalCurrency.value = null
       supplierCode.value = ''
       supplierDisplayName.value = ''
       supplierTaxIdentifier.value = ''
@@ -1581,12 +1894,13 @@ watch(
       uploadSession.value = null
       initLineFormMap()
 
+      // Emit busy false on teardown
+      emitBusy(false)
+
+      // Start fresh loads if new scope is valid
       if (isLiveScopeValid()) {
         void loadCurrency()
         void loadOrders()
-      } else {
-        canonicalCurrency.value = null
-        orders.value = []
       }
     }
   },
@@ -1603,7 +1917,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   isDisposed = true
-  tracker.invalidate()
+  invalidateAllTrackers()
+  emitBusy(false)
 })
 </script>
 
