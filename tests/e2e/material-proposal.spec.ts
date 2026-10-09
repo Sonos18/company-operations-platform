@@ -1323,7 +1323,7 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     // 4. Negative quantity
     await qtyInput.fill('-10')
     await page.getByRole('button', { name: 'Lưu nháp' }).click()
-    await expect(page.getByText('Số lượng phải lớn hơn 0.')).toBeVisible()
+    await expect(page.getByText('Số lượng phải là số thập phân hợp lệ.')).toBeVisible()
     expect(capturedRequests.filter(r => r.method === 'POST' && r.url.endsWith('/proposals'))).toHaveLength(0)
   })
 })
