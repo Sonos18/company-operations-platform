@@ -52,6 +52,7 @@ values('c1220000-0000-4000-8000-000000000101','c1220000-0000-4000-8000-000000000
 create temporary table a1_ids(name text primary key, id uuid not null);
 create temporary table a1_inputs(name text primary key, body jsonb not null);
 grant select,insert on a1_ids,a1_inputs to authenticated;
+grant select on a1_ids to service_role;
 
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"c1220000-0000-4000-8000-000000000902","role":"authenticated"}',true);
