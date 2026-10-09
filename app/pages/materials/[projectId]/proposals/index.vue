@@ -37,118 +37,151 @@
       <div class="section-filter-bar">
         <div class="filter-tabs" role="tablist" aria-label="Lọc trạng thái phiếu yêu cầu">
           <button
+            id="tab-all"
+            role="tab"
             type="button"
             class="filter-tab"
             :class="{ active: selectedTab === 'all' }"
-            @click="selectedTab = 'all'"
+            :aria-selected="selectedTab === 'all'"
+            :aria-controls="'proposals-tabpanel'"
+            :tabindex="selectedTab === 'all' ? 0 : -1"
+            @click="onSelectTab('all')"
+            @keydown="onTabKeydown($event, 'all')"
           >
             Tất cả <span class="tab-count">({{ statusCounts.all }})</span>
           </button>
           <button
+            id="tab-draft"
+            role="tab"
             type="button"
             class="filter-tab"
             :class="{ active: selectedTab === 'draft' }"
-            @click="selectedTab = 'draft'"
+            :aria-selected="selectedTab === 'draft'"
+            :aria-controls="'proposals-tabpanel'"
+            :tabindex="selectedTab === 'draft' ? 0 : -1"
+            @click="onSelectTab('draft')"
+            @keydown="onTabKeydown($event, 'draft')"
           >
             Bản nháp <span class="tab-count">({{ statusCounts.draft }})</span>
           </button>
           <button
+            id="tab-submitted"
+            role="tab"
             type="button"
             class="filter-tab"
             :class="{ active: selectedTab === 'submitted' }"
-            @click="selectedTab = 'submitted'"
+            :aria-selected="selectedTab === 'submitted'"
+            :aria-controls="'proposals-tabpanel'"
+            :tabindex="selectedTab === 'submitted' ? 0 : -1"
+            @click="onSelectTab('submitted')"
+            @keydown="onTabKeydown($event, 'submitted')"
           >
-            Đã gửi <span class="tab-count">({{ statusCounts.submitted }})</span>
+            {{ submittedTabLabel }} <span class="tab-count">({{ statusCounts.submitted }})</span>
           </button>
           <button
+            id="tab-approved"
+            role="tab"
             type="button"
             class="filter-tab"
             :class="{ active: selectedTab === 'approved' }"
-            @click="selectedTab = 'approved'"
+            :aria-selected="selectedTab === 'approved'"
+            :aria-controls="'proposals-tabpanel'"
+            :tabindex="selectedTab === 'approved' ? 0 : -1"
+            @click="onSelectTab('approved')"
+            @keydown="onTabKeydown($event, 'approved')"
           >
             Đã duyệt <span class="tab-count">({{ statusCounts.approved }})</span>
           </button>
           <button
+            id="tab-returned"
+            role="tab"
             type="button"
             class="filter-tab"
             :class="{ active: selectedTab === 'returned' }"
-            @click="selectedTab = 'returned'"
+            :aria-selected="selectedTab === 'returned'"
+            :aria-controls="'proposals-tabpanel'"
+            :tabindex="selectedTab === 'returned' ? 0 : -1"
+            @click="onSelectTab('returned')"
+            @keydown="onTabKeydown($event, 'returned')"
           >
             Cần sửa <span class="tab-count">({{ statusCounts.returned }})</span>
           </button>
         </div>
       </div>
 
-      <!-- Loading State -->
-      <div v-if="isLoading" class="loading-state">
-        <p>Đang tải danh sách phiếu yêu cầu...</p>
-      </div>
+      <!-- Tabpanel Container -->
+      <div id="proposals-tabpanel" role="tabpanel" :aria-labelledby="'tab-' + selectedTab">
+        <!-- Loading State -->
+        <div v-if="isLoading" class="loading-state">
+          <p>Đang tải danh sách phiếu yêu cầu...</p>
+        </div>
 
-      <!-- Empty State -->
-      <div v-else-if="filteredProposals.length === 0" class="empty-state">
-        <p v-if="selectedTab === 'all'">Chưa có phiếu yêu cầu vật tư nào cho công trình này.</p>
-        <p v-else>Không có phiếu nào ở trạng thái "{{ tabLabel(selectedTab) }}".</p>
-        <NuxtLink
-          v-if="canSubmit && selectedTab === 'all'"
-          :to="`/materials/${pId}/proposals/new`"
-          class="cockpit-btn cockpit-btn--primary inline-mt"
-        >
-          Tạo phiếu đầu tiên
-        </NuxtLink>
-      </div>
+        <!-- Empty State -->
+        <div v-else-if="filteredProposals.length === 0" class="empty-state">
+          <p v-if="selectedTab === 'all'">Chưa có phiếu yêu cầu vật tư nào cho công trình này.</p>
+          <p v-else>Không có phiếu nào ở trạng thái "{{ tabLabel(selectedTab) }}".</p>
+          <NuxtLink
+            v-if="canSubmit && selectedTab === 'all'"
+            :to="`/materials/${pId}/proposals/new`"
+            class="cockpit-btn cockpit-btn--primary inline-mt"
+          >
+            Tạo phiếu đầu tiên
+          </NuxtLink>
+        </div>
 
-      <!-- Proposals Table -->
-      <div v-else class="table-wrap">
-        <table class="cockpit-table">
-          <thead>
-            <tr>
-              <th scope="col">Ngày cần</th>
-              <th scope="col">Nơi giao hàng</th>
-              <th scope="col">Số loại vật tư</th>
-              <th scope="col">Tiến độ đơn mua</th>
-              <th scope="col">Trạng thái</th>
-              <th scope="col" style="text-align: right;">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="prop in filteredProposals" :key="prop.id">
-              <td class="font-medium whitespace-nowrap">
-                <NuxtLink :to="`/materials/${pId}/proposals/${prop.id}`" class="table-link">
-                  {{ prop.neededOn }}
-                </NuxtLink>
-              </td>
-              <td>
-                <span class="delivery-address text-sm">{{ prop.deliveryAddress }}</span>
-              </td>
-              <td>
-                <span class="cockpit-badge cockpit-badge--neutral">
-                  {{ prop.lines.length }} dòng vật tư
-                </span>
-              </td>
-              <td>
-                <div class="progress-info text-sm">
-                  <span>{{ prop.orderProgress.orderCount }} đơn mua</span>
-                  <span v-if="prop.orderProgress.signedOrderCount > 0" class="signed-order-text">
-                    ({{ prop.orderProgress.signedOrderCount }} đã ký HĐ)
+        <!-- Proposals Table -->
+        <div v-else class="table-wrap">
+          <table class="cockpit-table">
+            <thead>
+              <tr>
+                <th scope="col">Ngày cần</th>
+                <th scope="col">Nơi giao hàng</th>
+                <th scope="col">Số loại vật tư</th>
+                <th scope="col">Tiến độ đơn mua</th>
+                <th scope="col">Trạng thái</th>
+                <th scope="col" style="text-align: right;">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="prop in filteredProposals" :key="prop.id">
+                <td class="font-medium whitespace-nowrap">
+                  <NuxtLink :to="`/materials/${pId}/proposals/${prop.id}`" class="table-link">
+                    {{ prop.neededOn }}
+                  </NuxtLink>
+                </td>
+                <td>
+                  <span class="delivery-address text-sm">{{ prop.deliveryAddress }}</span>
+                </td>
+                <td>
+                  <span class="cockpit-badge cockpit-badge--neutral">
+                    {{ prop.lines.length }} dòng vật tư
                   </span>
-                </div>
-              </td>
-              <td>
-                <span class="cockpit-badge" :class="statusBadgeClass(prop.reviewState)">
-                  {{ statusText(prop.reviewState) }}
-                </span>
-              </td>
-              <td style="text-align: right;">
-                <NuxtLink
-                  :to="`/materials/${pId}/proposals/${prop.id}`"
-                  class="cockpit-btn cockpit-btn--secondary btn-sm"
-                >
-                  {{ isAuthorAndEditable(prop) ? 'Chỉnh sửa' : 'Chi tiết' }}
-                </NuxtLink>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                </td>
+                <td>
+                  <div class="progress-info text-sm">
+                    <span>{{ prop.orderProgress.orderCount }} đơn mua</span>
+                    <span v-if="prop.orderProgress.signedOrderCount > 0" class="signed-order-text">
+                      ({{ prop.orderProgress.signedOrderCount }} đã ký HĐ)
+                    </span>
+                  </div>
+                </td>
+                <td>
+                  <span class="cockpit-badge" :class="statusBadgeClass(prop.reviewState)">
+                    {{ statusText(prop.reviewState) }}
+                  </span>
+                </td>
+                <td style="text-align: right;">
+                  <NuxtLink
+                    :to="`/materials/${pId}/proposals/${prop.id}`"
+                    class="cockpit-btn cockpit-btn--secondary btn-sm"
+                  >
+                    {{ isAuthorAndEditable(prop) ? 'Chỉnh sửa' : 'Chi tiết' }}
+                  </NuxtLink>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   </div>
@@ -180,14 +213,62 @@ const pId = computed(() => {
 })
 
 const canSubmit = computed(() => Boolean(companyAccess?.hasPermission('material.proposal.submit')))
+const canDecide = computed(() => Boolean(companyAccess?.hasPermission('material.proposal.decide')))
+
+const submittedTabLabel = computed(() => {
+  return canDecide.value ? 'Chờ duyệt' : 'Đã gửi'
+})
+
+function getDefaultTab(): 'all' | MaterialReviewState {
+  return canDecide.value ? 'submitted' : 'all'
+}
 
 const currentProject = ref<MaterialProjectOption | null>(null)
 const proposals = ref<MaterialProposalView[]>([])
-const selectedTab = ref<'all' | MaterialReviewState>('all')
+const hasUserSelectedTab = ref(false)
+const selectedTab = ref<'all' | MaterialReviewState>(getDefaultTab())
 const isLoading = ref(false)
 const errorMessage = ref('')
 
 const tracker = createAsyncRequestTracker<{ companyId: string; projectId: string }>()
+
+const tabOrder: Array<'all' | MaterialReviewState> = ['all', 'draft', 'submitted', 'approved', 'returned']
+
+function onSelectTab(tab: 'all' | MaterialReviewState) {
+  hasUserSelectedTab.value = true
+  selectedTab.value = tab
+}
+
+function onTabKeydown(e: KeyboardEvent, current: 'all' | MaterialReviewState) {
+  const currentIndex = tabOrder.indexOf(current)
+  let nextIndex = currentIndex
+
+  if (e.key === 'ArrowRight') {
+    nextIndex = (currentIndex + 1) % tabOrder.length
+  } else if (e.key === 'ArrowLeft') {
+    nextIndex = (currentIndex - 1 + tabOrder.length) % tabOrder.length
+  } else if (e.key === 'Home') {
+    nextIndex = 0
+  } else if (e.key === 'End') {
+    nextIndex = tabOrder.length - 1
+  } else {
+    return
+  }
+
+  e.preventDefault()
+  const nextTab = tabOrder[nextIndex]
+  if (nextTab) {
+    onSelectTab(nextTab)
+    const el = document.getElementById(`tab-${nextTab}`)
+    el?.focus()
+  }
+}
+
+watch(canDecide, (can) => {
+  if (!hasUserSelectedTab.value) {
+    selectedTab.value = can ? 'submitted' : 'all'
+  }
+})
 
 const statusCounts = computed(() => {
   const counts: Record<'all' | MaterialReviewState, number> = {
@@ -219,7 +300,7 @@ function isAuthorAndEditable(prop: MaterialProposalView): boolean {
 function statusText(state: MaterialReviewState): string {
   switch (state) {
     case 'draft': return 'Bản nháp'
-    case 'submitted': return 'Đã gửi'
+    case 'submitted': return submittedTabLabel.value
     case 'approved': return 'Đã duyệt'
     case 'returned': return 'Cần sửa'
     default: return state
@@ -239,7 +320,7 @@ function statusBadgeClass(state: MaterialReviewState): string {
 function tabLabel(tab: string): string {
   switch (tab) {
     case 'draft': return 'Bản nháp'
-    case 'submitted': return 'Đã gửi'
+    case 'submitted': return submittedTabLabel.value
     case 'approved': return 'Đã duyệt'
     case 'returned': return 'Cần sửa'
     default: return tab
@@ -282,8 +363,10 @@ watch([() => companyAccess?.activeCompanyId, pId], () => {
   proposals.value = []
   currentProject.value = null
   errorMessage.value = ''
+  hasUserSelectedTab.value = false
+  selectedTab.value = getDefaultTab()
   void loadData()
-})
+}, { flush: 'sync' })
 
 onMounted(() => {
   void loadData()
