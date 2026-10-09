@@ -111,7 +111,7 @@ export function runC1CloudDevTests({ cwd = process.cwd(), files, env = process.e
   if (!files && selected.length !== allowlist.length) throw new Error('Missing C1 SQL verification file')
   for (const file of selected) validateC1CloudDevSql(file.path, file.sql)
   assertTarget({ cwd, env })
-  const cliEnvironment = createCliEnvironment(cwd, env, platform)
+  const cliEnvironment = selected.some(file => materialAllowlist.includes(file.path)) ? createCliEnvironment(cwd, env, platform) : env
   const cli = resolve(cwd, 'node_modules/supabase/dist/supabase.js')
   for (const file of selected) {
     const result = spawn(process.execPath, [cli, 'db', 'query', '--linked', '--output-format', 'json', '--file', resolve(cwd, 'supabase/tests/database/c1', file.path)], { cwd, encoding: 'utf8', env: cliEnvironment })
