@@ -916,9 +916,14 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
 
     const submitResponse = page.waitForResponse(r =>
       r.request().method() === 'POST' && r.url().endsWith('/submit'))
+    const canonicalDetail = page.waitForResponse(r =>
+      r.request().method() === 'GET' &&
+      new URL(r.url()).pathname === `/api/companies/${company1Id}/projects/${project2Id}/material-procurement/proposals/${proposalId}`)
     await page.getByRole('button', { name: 'Gửi mua hàng' }).click()
     await submitResponse
+    await canonicalDetail
     await expect(page).toHaveURL(new RegExp(`/materials/${project2Id}/proposals/${proposalId}`))
+    await expect(page.locator('.cockpit-badge', { hasText: 'Đã gửi' }).first()).toBeVisible()
     expect(capturedRequests.some(r => r.method === 'POST' && r.url.includes(`/projects/${project2Id}/`) && r.url.endsWith('/proposals'))).toBe(true)
     expect(capturedRequests.some(r => r.method === 'POST' && r.url.includes(`/projects/${project2Id}/`) && r.url.endsWith('/submit'))).toBe(true)
   })
@@ -990,7 +995,11 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     await held.entered
     await selectCompany(page, company2Id)
     await expect(page).toHaveURL('/materials')
+    const oldResponse = page.waitForResponse(r =>
+      r.request().method() === 'POST' &&
+      new URL(r.url()).pathname === `/api/companies/${company1Id}/projects/${projectId}/material-procurement/proposals`)
     held.release()
+    await oldResponse
     await click
     await expect(page.getByText('Công trình Biệt thự Khang Điền')).toBeVisible()
     await expect(page).toHaveURL('/materials')
@@ -1042,7 +1051,11 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     const click = page.getByRole('button', { name: 'Lưu vật tư' }).click()
     await held.entered
     await selectCompany(page, company2Id)
+    const oldResponse = page.waitForResponse(r =>
+      r.request().method() === 'POST' &&
+      new URL(r.url()).pathname === `/api/companies/${company1Id}/material-procurement/materials`)
     held.release()
+    await oldResponse
     await click
     await expect(page.getByText('Công trình Biệt thự Khang Điền')).toBeVisible()
     await expect(page.getByText('Thêm vật tư chuẩn mới thành công.')).toHaveCount(0)
