@@ -48,8 +48,11 @@ export function runMaterialA1Diagnostic({
     if (result.error) throw result.error
     if (result.status !== 0) throw new Error('A1 rollback diagnostic query failed')
     const stdout = String(result.stdout ?? '')
-    const response = JSON.parse(stdout.slice(stdout.indexOf('{')))
-    const row = response?.rows?.find(value => value?.result === 'A1_MATERIAL_PGTAP_DIAGNOSTIC_COMPLETE')
+    const starts = [stdout.indexOf('{'), stdout.indexOf('[')].filter(index => index >= 0)
+    if (starts.length === 0) throw new Error('A1 rollback diagnostic returned no JSON')
+    const response = JSON.parse(stdout.slice(Math.min(...starts)))
+    const rows = Array.isArray(response) ? response.flatMap(value => Array.isArray(value?.rows) ? value.rows : [value]) : response?.rows
+    const row = rows?.find(value => value?.result === 'A1_MATERIAL_PGTAP_DIAGNOSTIC_COMPLETE')
     const lines = typeof row?.tap_lines === 'string' ? JSON.parse(row.tap_lines) : row?.tap_lines
     const summary = typeof row?.finish_lines === 'string' ? JSON.parse(row.finish_lines) : row?.finish_lines
     if (!Array.isArray(lines) || lines.length !== 33) {

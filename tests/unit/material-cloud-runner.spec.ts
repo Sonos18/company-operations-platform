@@ -92,7 +92,7 @@ it('reports only failed TAP lines from a guarded diagnostic response', async () 
   const { runMaterialA1Diagnostic } = await import('../../scripts/material-a1-pgtap-diagnostic.mjs')
   const failed = 'not ok 12 - buyer cannot edit engineer proposal'
   const tap = Array.from({ length: 33 }, (_, index) => index === 11 ? failed : `ok ${index + 1}`)
-  const spawn = vi.fn(() => ({ status: 0, stdout: JSON.stringify({ rows: [{ result: 'A1_MATERIAL_PGTAP_DIAGNOSTIC_COMPLETE', tap_lines: tap, finish_lines: ['# 1 failed'] }] }) }))
+  const spawn = vi.fn(() => ({ status: 0, stdout: JSON.stringify([{ result: 'A1_MATERIAL_PGTAP_DIAGNOSTIC_COMPLETE', tap_lines: tap, finish_lines: ['# 1 failed'] }]) }))
   const assertTarget = vi.fn()
   const log = vi.spyOn(console, 'log').mockImplementation(() => {})
   try {
