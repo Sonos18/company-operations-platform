@@ -111,6 +111,7 @@
               <tr>
                 <th scope="col" style="width: 40px;">STT</th>
                 <th scope="col">Tên vật tư chuẩn</th>
+                <th scope="col" style="min-width: 180px;">Tên dự kiến trên HĐ</th>
                 <th scope="col">Quy cách chuẩn</th>
                 <th scope="col" style="width: 100px;">Đơn vị</th>
                 <th scope="col" style="min-width: 120px;">Số lượng yêu cầu</th>
@@ -125,119 +126,88 @@
                 <td>
                   <span class="font-medium text-slate-900 block">{{ line.materialName }}</span>
                   <span v-if="isLineSigned(line)" class="signed-badge">Đã ký HĐ</span>
-
-                  <!-- Effective invoice display name & source badge -->
-                  <div class="effective-invoice-name mt-1 flex items-center gap-1.5 flex-wrap">
-                    <span class="text-xs text-muted">Tên dự kiến trên HĐ:</span>
-                    <span class="text-xs font-semibold text-slate-800">{{ line.effectiveInvoiceDisplayName || line.materialName }}</span>
+                </td>
+                <td>
+                  <!-- Display mode: when not editing this line -->
+                  <div v-if="activeEditLineId !== line.lineId" class="flex items-center gap-1.5">
                     <span
-                      class="cockpit-badge text-xs"
-                      :class="sourceBadgeClass(line.invoiceDisplayNameSource)"
+                      class="text-slate-800 break-words flex-1"
+                      :title="'Tên dự kiến trên HĐ (' + sourceBadgeLabel(line.invoiceDisplayNameSource) + ')'"
+                      :aria-label="'Tên dự kiến trên HĐ: ' + (line.effectiveInvoiceDisplayName || line.materialName) + ' (' + sourceBadgeLabel(line.invoiceDisplayNameSource) + ')'"
                     >
-                      {{ sourceBadgeLabel(line.invoiceDisplayNameSource) }}
+                      {{ line.effectiveInvoiceDisplayName || line.materialName }}
+                    </span>
+
+                    <!-- Buyer edit trigger when editable -->
+                    <button
+                      v-if="canManageOrders && isSubmittedOrApproved && proposal.currentRevisionId && line.buyerInvoiceNameEditable"
+                      type="button"
+                      class="inline-flex items-center justify-center w-7 h-7 -my-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-colors shrink-0"
+                      :disabled="isBuyerBusy"
+                      title="Sửa tên dự kiến trên HĐ"
+                      :aria-label="'Sửa tên dự kiến trên HĐ dòng ' + (index + 1)"
+                      @click="startBuyerEdit(line)"
+                    >
+                      <UIcon name="i-lucide-pencil" class="text-xs" aria-hidden="true" />
+                    </button>
+
+                    <!-- Locked indicator when line enters order -->
+                    <span
+                      v-else-if="canManageOrders && isSubmittedOrApproved && proposal.currentRevisionId && !line.buyerInvoiceNameEditable"
+                      class="inline-flex items-center justify-center w-7 h-7 -my-1 text-slate-400 shrink-0"
+                      title="Đã vào đơn mua hàng: không thể chỉnh sửa"
+                      :aria-label="'Đã vào đơn mua hàng: không thể chỉnh sửa dòng ' + (index + 1)"
+                    >
+                      <UIcon name="i-lucide-lock" class="text-xs" aria-hidden="true" />
                     </span>
                   </div>
 
-                  <!-- Buyer per-line override control -->
-                  <div
-                    v-if="canManageOrders && isSubmittedOrApproved && proposal.currentRevisionId"
-                    class="buyer-override-action mt-2 pt-2 border-t border-slate-100"
-                  >
-                    <!-- Eligible to edit -->
-                    <div v-if="line.buyerInvoiceNameEditable">
-                      <!-- Collapsed button state -->
-                      <div v-if="activeEditLineId !== line.lineId" class="flex items-center gap-2 flex-wrap">
-                        <button
-                          type="button"
-                          class="cockpit-btn cockpit-btn--secondary btn-xs text-xs py-0.5 px-2"
-                          :disabled="isBuyerBusy"
-                          :aria-label="'Ghi đè tên hóa đơn dòng ' + (index + 1)"
-                          @click="startBuyerEdit(line)"
-                        >
-                          <UIcon name="i-lucide-pencil" class="text-xs mr-1" aria-hidden="true" />
-                          {{ line.buyerProposedInvoiceName ? 'Đổi tên ghi đè' : 'Ghi đè tên HĐ' }}
-                        </button>
-                        <button
-                          v-if="line.buyerProposedInvoiceName !== null"
-                          type="button"
-                          class="cockpit-btn cockpit-btn--ghost btn-xs text-xs text-rose-600 py-0.5 px-2 hover:bg-rose-50"
-                          :disabled="isBuyerBusy"
-                          :aria-label="'Xóa ghi đè tên hóa đơn dòng ' + (index + 1)"
-                          @click="clearBuyerOverride(line)"
-                        >
-                          <UIcon v-if="updatingLineId === line.lineId && isBuyerBusy" name="i-lucide-loader-2" class="animate-spin text-xs mr-1" aria-hidden="true" />
-                          <UIcon v-else name="i-lucide-x" class="text-xs mr-1" aria-hidden="true" />
-                          Xóa ghi đè
-                        </button>
-                      </div>
-
-                      <!-- Inline edit input box -->
-                      <div v-else class="buyer-edit-panel p-2 bg-slate-50 border border-slate-200 rounded text-xs mt-1">
-                        <label :for="'buyer-input-' + line.lineId" class="font-medium text-slate-700 block mb-1">
-                          Tên dự kiến trên HĐ (Buyer ghi đè):
-                        </label>
-                        <div class="flex items-center gap-2 mb-1">
-                          <input
-                            :id="'buyer-input-' + line.lineId"
-                            v-model="buyerInputMap[line.lineId]"
-                            type="text"
-                            class="cockpit-input text-xs flex-1"
-                            placeholder="Nhập tên mới hoặc để trống để xóa ghi đè..."
-                            maxlength="200"
-                            :disabled="isBuyerBusy"
-                            :aria-label="'Tên dự kiến ghi đè dòng ' + (index + 1)"
-                            @keydown.enter.prevent="saveBuyerOverride(line)"
-                            @keydown.esc="cancelBuyerEdit"
-                          >
-                          <button
-                            type="button"
-                            class="cockpit-btn cockpit-btn--primary btn-xs text-xs py-1 px-2.5"
-                            :disabled="isBuyerBusy"
-                            @click="saveBuyerOverride(line)"
-                          >
-                            <UIcon v-if="updatingLineId === line.lineId && isBuyerBusy" name="i-lucide-loader-2" class="animate-spin text-xs mr-1" aria-hidden="true" />
-                            {{ updatingLineId === line.lineId && isBuyerBusy ? 'Đang lưu...' : 'Lưu' }}
-                          </button>
-                          <button
-                            type="button"
-                            class="cockpit-btn cockpit-btn--secondary btn-xs text-xs py-1 px-2"
-                            :disabled="isBuyerBusy"
-                            @click="cancelBuyerEdit"
-                          >
-                            Hủy
-                          </button>
-                        </div>
-                        <div class="flex items-center justify-between text-muted text-xs">
-                          <span>Để trống sẽ dùng gợi ý của kỹ sư hoặc tên chuẩn.</span>
-                          <button
-                            v-if="line.buyerProposedInvoiceName !== null"
-                            type="button"
-                            class="text-rose-600 hover:underline"
-                            :disabled="isBuyerBusy"
-                            @click="clearBuyerOverride(line)"
-                          >
-                            Xóa ghi đè ngay
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- Locked state when line enters order -->
-                    <div v-else class="text-xs text-slate-500 flex items-center gap-1">
-                      <UIcon name="i-lucide-lock" class="text-slate-400 text-xs" aria-hidden="true" />
-                      <span>Đã vào đơn mua hàng: không thể chỉnh sửa tên dự kiến.</span>
-                    </div>
-
-                    <!-- Per-line action error rendered outside collapsed/editor/locked alternatives -->
-                    <div
-                      v-if="lineActionErrors[line.lineId]"
-                      :id="'line-action-error-' + line.lineId"
-                      class="field-error block mt-1 text-xs"
-                      role="alert"
-                      aria-live="polite"
+                  <!-- Inline edit mode in place -->
+                  <div v-else class="flex items-center gap-1">
+                    <input
+                      :id="'buyer-cell-input-' + line.lineId"
+                      v-model="buyerInputMap[line.lineId]"
+                      type="text"
+                      class="cockpit-input text-xs flex-1 py-1 px-2"
+                      placeholder="Nhập tên mới hoặc để trống để xóa..."
+                      maxlength="200"
+                      :disabled="isBuyerBusy"
+                      :aria-label="'Tên dự kiến trên HĐ dòng ' + (index + 1)"
+                      @keydown.enter.prevent="saveBuyerOverride(line)"
+                      @keydown.esc.prevent="cancelBuyerEdit"
                     >
-                      {{ lineActionErrors[line.lineId] }}
-                    </div>
+                    <button
+                      type="button"
+                      class="inline-flex items-center justify-center w-7 h-7 rounded bg-sky-600 hover:bg-sky-700 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50 transition-colors shrink-0"
+                      :disabled="isBuyerBusy"
+                      title="Lưu"
+                      :aria-label="'Lưu tên dự kiến dòng ' + (index + 1)"
+                      @click="saveBuyerOverride(line)"
+                    >
+                      <UIcon v-if="updatingLineId === line.lineId && isBuyerBusy" name="i-lucide-loader-2" class="animate-spin text-xs" aria-hidden="true" />
+                      <UIcon v-else name="i-lucide-check" class="text-xs" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      class="inline-flex items-center justify-center w-7 h-7 rounded border border-slate-300 hover:bg-slate-100 text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:opacity-50 transition-colors shrink-0"
+                      :disabled="isBuyerBusy"
+                      title="Hủy"
+                      :aria-label="'Hủy chỉnh sửa dòng ' + (index + 1)"
+                      @click="cancelBuyerEdit"
+                    >
+                      <UIcon name="i-lucide-x" class="text-xs" aria-hidden="true" />
+                    </button>
+                  </div>
+
+                  <!-- Per-line action error rendered beneath cell content -->
+                  <div
+                    v-if="lineActionErrors[line.lineId]"
+                    :id="'line-action-error-' + line.lineId"
+                    class="field-error block mt-1 text-xs text-rose-600 font-normal"
+                    role="alert"
+                    aria-live="polite"
+                  >
+                    {{ lineActionErrors[line.lineId] }}
                   </div>
                 </td>
                 <td class="text-muted text-sm">{{ line.specification }}</td>
@@ -265,7 +235,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import Decimal from 'decimal.js'
 import type {
   MaterialProposalView,
@@ -406,8 +376,15 @@ function resetBuyerState() {
 function startBuyerEdit(line: MaterialProposalLineView) {
   if (isBuyerBusy.value) return
   activeEditLineId.value = line.lineId
-  buyerInputMap.value[line.lineId] = line.buyerProposedInvoiceName || ''
+  buyerInputMap.value[line.lineId] = line.effectiveInvoiceDisplayName || line.materialName || ''
   delete lineActionErrors.value[line.lineId]
+  nextTick(() => {
+    const el = document.getElementById(`buyer-cell-input-${line.lineId}`)
+    if (el) {
+      ;(el as HTMLInputElement).focus()
+      ;(el as HTMLInputElement).select()
+    }
+  })
 }
 
 function cancelBuyerEdit() {
@@ -421,15 +398,6 @@ function sourceBadgeLabel(source?: string | null): string {
     case 'engineer': return 'Kỹ sư đề xuất'
     case 'canonical': return 'Tên chuẩn'
     default: return 'Tên chuẩn'
-  }
-}
-
-function sourceBadgeClass(source?: string | null): string {
-  switch (source) {
-    case 'buyer': return 'cockpit-badge--info'
-    case 'engineer': return 'cockpit-badge--neutral'
-    case 'canonical': return 'cockpit-badge--neutral'
-    default: return 'cockpit-badge--neutral'
   }
 }
 
@@ -545,10 +513,33 @@ async function executeBuyerOverride(line: MaterialProposalLineView, rawInput: st
   }
 }
 
-function saveBuyerOverride(line: MaterialProposalLineView) {
+async function saveBuyerOverride(line: MaterialProposalLineView) {
   if (isBuyerBusy.value) return
-  const text = buyerInputMap.value[line.lineId] || ''
-  void executeBuyerOverride(line, text)
+
+  const lineId = line.lineId
+  const rawInput = buyerInputMap.value[lineId] ?? ''
+  const trimmedInput = rawInput.trim()
+  const currentDisplayed = (line.effectiveInvoiceDisplayName || line.materialName || '').trim()
+  const hasPendingRetry = Boolean(buyerTrackers.value[lineId]) || Boolean(lineActionErrors.value[lineId])
+
+  // Empty input: clear override if one existed or retry needed, otherwise no-op close
+  if (trimmedInput === '') {
+    if (line.buyerProposedInvoiceName === null && !hasPendingRetry) {
+      activeEditLineId.value = null
+      return
+    }
+    await executeBuyerOverride(line, null)
+    return
+  }
+
+  // Unchanged non-empty input without retry: no-op close
+  if (trimmedInput === currentDisplayed && !hasPendingRetry) {
+    activeEditLineId.value = null
+    return
+  }
+
+  // Changed content or retry: execute override
+  await executeBuyerOverride(line, trimmedInput)
 }
 
 function clearBuyerOverride(line: MaterialProposalLineView) {
