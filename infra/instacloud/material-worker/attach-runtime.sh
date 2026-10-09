@@ -55,7 +55,7 @@ for name in node_modules .nuxt .output; do
     die "$path already exists; inspect and migrate it explicitly"
   fi
 done
-for dir in /tmp/taskovia-runtime "$cache" "$cache/node_modules" "$cache/node_modules/.cache" "$cache/node_modules/.vite" "$cache/.nuxt" "$cache/.output"; do
+for dir in /tmp/taskovia-runtime "$cache" "$cache/node_modules" "$cache/node_modules/.cache" "$cache/node_modules/.vite" "$cache/.nuxt" "$cache/.output" "$cache/nuxt-layer"; do
   test ! -L "$dir" || die "$dir is a symlink"
   if test -e "$dir"; then
     test -d "$dir" || die "$dir is not a directory"
@@ -76,7 +76,30 @@ for entry in "$profile"/node_modules/* "$profile"/node_modules/.[!.]* "$profile"
     ln -s "$entry" "$target"
   fi
 done
+layer="$cache/nuxt-layer"
+config="$layer/nuxt.config.mjs"
+config_body=$(cat <<CONFIG
+export default {
+  buildDir: '$cache/.nuxt',
+  nitro: {
+    output: {
+      dir: '$cache/.output',
+      serverDir: '$cache/.output/server',
+      publicDir: '$cache/.output/public'
+    }
+  }
+}
+CONFIG
+)
+test ! -L "$config" || die "$config is a symlink"
+if test -e "$config"; then
+  test -f "$config" || die "$config is not a file"
+  printf '%s\n' "$config_body" | cmp -s - "$config" || die "$config differs from this worktree's cache config"
+else
+  printf '%s\n' "$config_body" > "$config"
+fi
 for name in node_modules .nuxt .output; do
   test -L "$repo/$name" || ln -s "$cache/$name" "$repo/$name"
 done
 printf 'attached %s to profile %s\n' "$repo" "$lock"
+printf 'build from that worktree: pnpm build --extends %s\n' "$layer"
