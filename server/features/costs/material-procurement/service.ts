@@ -216,6 +216,7 @@ export class MaterialProcurementService {
   }
 
   async recordContract(context: MaterialProcurementContext, projectId: string, orderId: string, value: unknown, key: string) {
+    requirePermission(context, 'material.read')
     requirePermission(context, 'material.contract.record')
     return this.repository.recordContract(context, id(projectId), id(orderId), parse(commitMaterialContractInputSchema, value), id(key))
   }

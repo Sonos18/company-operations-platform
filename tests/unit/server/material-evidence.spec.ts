@@ -59,6 +59,8 @@ function serviceRepository(): MaterialProcurementDataRepository {
     submitProposal: vi.fn(async () => command), decideProposal: vi.fn(async () => command),
     createOrder: vi.fn(async () => command), listOrders: vi.fn(async () => []), readOrder: vi.fn(),
     cancelOrder: vi.fn(async () => command),
+    listEligibleContracts: vi.fn(async () => []),
+    recordContract: vi.fn(async () => ({ ...command, contractId: ids.contract, authorizationId: ids.authority, installmentId: ids.installment, notificationId: ids.user })),
     createEvidenceIntent: vi.fn(async () => uploadIntent),
     finalizeEvidence: vi.fn(async () => finalized),
     readEvidenceUrl: vi.fn(async () => ({ url: 'https://example.invalid/file', expiresAt: '2026-10-08T08:01:00.000Z' })),

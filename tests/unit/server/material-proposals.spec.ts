@@ -97,6 +97,8 @@ function repository(overrides: Partial<MaterialProcurementDataRepository> = {}):
     listOrders: vi.fn(async () => []),
     readOrder: vi.fn(),
     cancelOrder: vi.fn(async () => submitted),
+    listEligibleContracts: vi.fn(async () => []),
+    recordContract: vi.fn(async () => ({ ...submitted, contractId: ids.contract, authorizationId: ids.authority, installmentId: ids.installment, notificationId: ids.user })),
     createEvidenceIntent: vi.fn(),
     finalizeEvidence: vi.fn(),
     readEvidenceUrl: vi.fn(),

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ClientError } from '../../../app/errors/client-error'
 import { createAuthenticatedHttpClient } from '../../../app/repositories/http/authenticated-http-client'
 import { createHttpMaterialProcurementRepository } from '../../../app/repositories/http/http-material-procurement-repository'
-import { ids, validProposal } from '../material-procurement/fixtures'
+import { ids, signedContractInput, validProposal } from '../material-procurement/fixtures'
 
 const companyId = '20000000-0000-4000-8000-000000000001'
 const otherCompanyId = '20000000-0000-4000-8000-000000000002'
@@ -78,7 +78,7 @@ const orderView = {
   }],
   unsignedQuotationEvidenceFileId: ids.unsignedQuotation,
   contract: null,
-  cash: { grossPaid: '0.0000', availableToPay: '0.0000' },
+  cash: { grossPaid: '0.0000', availableToPay: '0.0000', installmentVersion: null },
 }
 const materialEvidence = {
   originalFilename: 'quotation.pdf',
@@ -344,11 +344,31 @@ describe('material procurement HTTP repository', () => {
       body: { disposition: 'attachment' },
     }))
 
-    const client = response(result)
+    const contractAck = {
+      resourceId: ids.order, version: 2, replayed: false, contractId: ids.contract,
+      authorizationId: ids.authority, installmentId: ids.installment, notificationId: ids.user,
+    }
+    const client = response(contractAck)
     const repository = createHttpMaterialProcurementRepository({ companyId, client: client as never })
-    await expect(repository.recordContract(ids.project, ids.order, {} as never, command))
-      .rejects.toThrow('MATERIAL_PROCUREMENT_NOT_IMPLEMENTED: recordContract')
-    expect(client.request).not.toHaveBeenCalled()
+    await expect(repository.recordContract(ids.project, ids.order, signedContractInput, command)).resolves.toEqual(contractAck)
+    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'POST',
+      url: '/api/companies/' + companyId + '/projects/' + ids.project + '/material-procurement/orders/' + ids.order + '/contract',
+      body: signedContractInput,
+      idempotencyKey: key,
+    }))
+    const selector = response([{ id: ids.contract, reference: 'T6-CONTRACT', cap: '100.0000', currencyCode: 'VND' }])
+    await createHttpMaterialProcurementRepository({ companyId, client: selector as never })
+      .listEligibleContracts(ids.project, ids.order)
+    expect(selector.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'GET',
+      url: '/api/companies/' + companyId + '/projects/' + ids.project + '/material-procurement/orders/' + ids.order + '/eligible-contracts',
+    }))
+    const invalid = response({ ...contractAck, notificationId: undefined })
+    await expect(createHttpMaterialProcurementRepository({ companyId, client: invalid as never })
+      .recordContract(ids.project, ids.order, signedContractInput, command)).rejects.toThrow()
+    await expect(repository.recordContract(ids.project, ids.order, {} as never, command)).rejects.toThrow()
+    expect(client.request).toHaveBeenCalledTimes(1)
   })
 
   it('preserves stale-version conflicts from the authenticated HTTP boundary', async () => {
