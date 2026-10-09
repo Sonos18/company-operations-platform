@@ -877,7 +877,7 @@ function initFromProposal(p: MaterialProposalView) {
 }
 
 watch([() => props.proposal, isSaving, isSubmitting], ([newProposal]) => {
-  if (!newProposal || isDirty.value || isSaving.value || isSubmitting.value) return
+  if (!newProposal || conflictNotice.value || isDirty.value || isSaving.value || isSubmitting.value) return
   if (newProposal.version < currentVersion.value) return
   initFromProposal(newProposal)
 }, { immediate: true })
