@@ -95,4 +95,22 @@ describe('C1 material procurement T4 forward-only guards', () => {
     expect(behavior).toContain('signed order cancellation is denied')
     expect(behavior).toContain('old order keeps approved material name after resubmission and master rename')
   })
+  it('opens the legacy file gate only for material evidence intent and finalization', () => {
+    const sql = migration('c1_material_evidence_legacy_gate')
+
+    expect(sql).toContain('pg_get_functiondef')
+    expect(sql).toContain("set_config(''taskovia.c1_material_evidence.intent'', v_file_id::text, true)")
+    expect(sql).toContain("set_config(''taskovia.c1_material_evidence.intent'', '''', true)")
+    expect(sql).toContain("coalesce(current_setting('taskovia.c1_material_evidence.intent',true),'')=new.id::text")
+    expect(sql).toContain("coalesce(current_setting('taskovia.c1_evidence.finalize',true),'')='1'")
+    expect(sql).toContain('private.c1_material_evidence_file(new.id)')
+    expect(sql).toContain('legacy_workflow_write_disabled')
+    expect(sql).not.toContain('workflow_origin=true')
+
+    const behavior = compact(readFileSync(resolve(root, 'supabase/tests/database/c1/c1_material_procurement_a1.test.sql'), 'utf8'))
+    expect(behavior).toContain('document-backed material intent creates a pending evidence file')
+    expect(behavior).toContain('document-backed material evidence finalizes through guarded transition')
+    expect(behavior).toContain('generic legacy file insert remains denied in document-backed mode')
+  })
+
 })

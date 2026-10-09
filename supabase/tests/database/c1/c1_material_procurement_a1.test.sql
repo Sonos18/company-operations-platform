@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(29);
+select plan(33);
 
 -- A1-only rollback fixture; c122 IDs do not overlap the broader material suites.
 insert into auth.users(id,email) values
@@ -33,7 +33,9 @@ insert into public.role_permissions(role_id,permission_code) values
 ('c1220000-0000-4000-8000-000000000911','material.read'),
 ('c1220000-0000-4000-8000-000000000911','material.proposal.submit'),
 ('c1220000-0000-4000-8000-000000000912','material.read'),
-('c1220000-0000-4000-8000-000000000912','material.manage');
+('c1220000-0000-4000-8000-000000000912','material.manage'),
+('c1220000-0000-4000-8000-000000000912','material.proposal.decide'),
+('c1220000-0000-4000-8000-000000000912','material.order.manage');
 insert into public.company_role_assignments(
   tenant_id,company_id,user_id,role_id,granted_by,grant_reason
 ) values
@@ -316,6 +318,73 @@ select throws_ok($$
     'c1220000-0000-4000-8000-000000000707'
   )
 $$,'P0001','IDEMPOTENCY_CONFLICT','changed submit payload conflicts on reused key');
+
+select set_config('request.jwt.claims','{"sub":"c1220000-0000-4000-8000-000000000902","role":"authenticated"}',true);
+select lives_ok($$
+  select public.c1_material_decide_proposal(
+    'c1220000-0000-4000-8000-000000000020',
+    'c1220000-0000-4000-8000-000000000101',
+    (select id from a1_ids where name='proposal'),
+    '{"expectedVersion":2,"decision":"approve"}',
+    'c1220000-0000-4000-8000-000000000608',
+    'c1220000-0000-4000-8000-000000000708'
+  )
+$$,'buyer approves submitted proposal for material evidence');
+insert into a1_ids
+select 'evidence',(public.c1_material_create_evidence_intent(
+  'c1220000-0000-4000-8000-000000000020',
+  'c1220000-0000-4000-8000-000000000101',
+  jsonb_build_object(
+    'originalFilename','quotation.pdf','mimeType','application/pdf',
+    'sizeBytes',8,'sha256',repeat('c',64),'evidenceRole','unsigned_quotation',
+    'target',jsonb_build_object(
+      'kind','material_proposal',
+      'proposalId',(select id from a1_ids where name='proposal'),
+      'revisionId',(public.c1_material_read_proposal(
+        'c1220000-0000-4000-8000-000000000020',
+        'c1220000-0000-4000-8000-000000000101',
+        (select id from a1_ids where name='proposal')
+      )->>'approvedRevisionId')::uuid
+    )
+  ),
+  'c1220000-0000-4000-8000-000000000609',
+  'c1220000-0000-4000-8000-000000000709'
+)->>'evidenceFileId')::uuid;
+set local role none;
+select is(
+  (select status::text from public.cost_evidence_files where id=(select id from a1_ids where name='evidence')),
+  'pending_upload','document-backed material intent creates a pending evidence file'
+);
+set local role service_role;
+select set_config('request.jwt.claims','{"sub":"c1220000-0000-4000-8000-000000000902","role":"service_role"}',true);
+select is(
+  (public.c1_finalize_material_evidence_server(
+    'c1220000-0000-4000-8000-000000000902',
+    'c1220000-0000-4000-8000-000000000020',
+    'c1220000-0000-4000-8000-000000000101',
+    (select id from a1_ids where name='evidence'),
+    jsonb_build_object('expectedVersion',0,'mimeType','application/pdf','sizeBytes',8,'sha256',repeat('c',64)),
+    'c1220000-0000-4000-8000-000000000610',
+    'c1220000-0000-4000-8000-000000000710'
+  )->>'status'),
+  'finalized','document-backed material evidence finalizes through guarded transition'
+);
+set local role none;
+select throws_ok($$
+  insert into public.cost_evidence_files(
+    id,tenant_id,company_id,project_id,object_path,original_filename,
+    declared_mime_type,declared_size_bytes,declared_sha256,intent_expires_at,
+    created_by,workflow_origin
+  ) values (
+    'c1220000-0000-4000-8000-000000000599',
+    'c1220000-0000-4000-8000-000000000010',
+    'c1220000-0000-4000-8000-000000000020',
+    'c1220000-0000-4000-8000-000000000101',
+    'c1220000-0000-4000-8000-000000000010/c1220000-0000-4000-8000-000000000020/c1220000-0000-4000-8000-000000000101/c1220000-0000-4000-8000-000000000599',
+    'legacy.pdf','application/pdf',8,repeat('9',64),now()+interval '15 minutes',
+    'c1220000-0000-4000-8000-000000000902',false
+  )
+$$,'P0001','LEGACY_WORKFLOW_WRITE_DISABLED','generic legacy file insert remains denied in document-backed mode');
 
 select 'A1_MATERIAL_PGTAP_COMPLETE' as result, (select count(*) from finish(true)) as finish_count;
 rollback;
