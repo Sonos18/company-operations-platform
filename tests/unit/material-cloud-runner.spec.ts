@@ -72,3 +72,35 @@ it('requires the A1 completion sentinel before treating pgTAP as passed', async 
     spawn: () => ({ status: 0, stdout: '{"rows":[]}', stderr: '' }),
   })).toThrow(/completion/i)
 })
+
+it('renders rollback-only TAP diagnostics from the exact A1 test', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { materialA1DiagnosticSql } = await import('../../scripts/material-a1-pgtap-diagnostic.mjs')
+  const source = readFileSync(resolve('supabase/tests/database/c1/c1_material_procurement_a1.test.sql'), 'utf8')
+  const sql = materialA1DiagnosticSql(source)
+
+  expect(sql.match(/insert into a1_tap_lines\(line\) select (?:is|throws_ok|lives_ok)\(/g) ?? []).toHaveLength(33)
+  expect(sql).toContain('grant insert on a1_tap_lines to authenticated, service_role')
+  expect(sql).toContain('from finish() as f(line)')
+  expect(sql).not.toContain('finish(true)')
+  expect(sql.trim()).toMatch(/^begin\s*;/i)
+  expect(sql.trim()).toMatch(/rollback\s*;$/i)
+  expect(() => materialA1DiagnosticSql(source.replace('select plan(33);', 'select plan(32);'))).toThrow(/drift/)
+})
+
+it('reports only failed TAP lines from a guarded diagnostic response', async () => {
+  const { runMaterialA1Diagnostic } = await import('../../scripts/material-a1-pgtap-diagnostic.mjs')
+  const failed = 'not ok 12 - buyer cannot edit engineer proposal'
+  const tap = Array.from({ length: 33 }, (_, index) => index === 11 ? failed : `ok ${index + 1}`)
+  const spawn = vi.fn(() => ({ status: 0, stdout: JSON.stringify({ rows: [{ result: 'A1_MATERIAL_PGTAP_DIAGNOSTIC_COMPLETE', tap_lines: tap, finish_lines: ['# 1 failed'] }] }) }))
+  const assertTarget = vi.fn()
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+  try {
+    expect(runMaterialA1Diagnostic({ cwd, spawn, assertTarget, createCliEnvironment: () => ({}) })).toEqual([failed])
+    expect(assertTarget).toHaveBeenCalledOnce()
+    expect(spawn).toHaveBeenCalledOnce()
+    expect(JSON.parse(log.mock.calls[0]![0])).toEqual({ failed: [failed], summary: ['# 1 failed'] })
+  } finally {
+    log.mockRestore()
+  }
+})
