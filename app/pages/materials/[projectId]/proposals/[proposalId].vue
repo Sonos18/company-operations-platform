@@ -128,42 +128,8 @@
                   <span v-if="isLineSigned(line)" class="signed-badge">Đã ký HĐ</span>
                 </td>
                 <td>
-                  <!-- Display mode: when not editing this line -->
-                  <div v-if="activeEditLineId !== line.lineId" class="flex items-center gap-1.5">
-                    <span
-                      class="text-slate-800 break-words flex-1"
-                      :title="'Tên dự kiến trên HĐ (' + sourceBadgeLabel(line.invoiceDisplayNameSource) + ')'"
-                      :aria-label="'Tên dự kiến trên HĐ: ' + (line.effectiveInvoiceDisplayName || line.materialName) + ' (' + sourceBadgeLabel(line.invoiceDisplayNameSource) + ')'"
-                    >
-                      {{ line.effectiveInvoiceDisplayName || line.materialName }}
-                    </span>
-
-                    <!-- Buyer edit trigger when editable -->
-                    <button
-                      v-if="canManageOrders && isSubmittedOrApproved && proposal.currentRevisionId && line.buyerInvoiceNameEditable"
-                      type="button"
-                      class="inline-flex items-center justify-center w-7 h-7 -my-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-colors shrink-0"
-                      :disabled="isBuyerBusy"
-                      title="Sửa tên dự kiến trên HĐ"
-                      :aria-label="'Sửa tên dự kiến trên HĐ dòng ' + (index + 1)"
-                      @click="startBuyerEdit(line)"
-                    >
-                      <UIcon name="i-lucide-pencil" class="text-xs" aria-hidden="true" />
-                    </button>
-
-                    <!-- Locked indicator when line enters order -->
-                    <span
-                      v-else-if="canManageOrders && isSubmittedOrApproved && proposal.currentRevisionId && !line.buyerInvoiceNameEditable"
-                      class="inline-flex items-center justify-center w-7 h-7 -my-1 text-slate-400 shrink-0"
-                      title="Đã vào đơn mua hàng: không thể chỉnh sửa"
-                      :aria-label="'Đã vào đơn mua hàng: không thể chỉnh sửa dòng ' + (index + 1)"
-                    >
-                      <UIcon name="i-lucide-lock" class="text-xs" aria-hidden="true" />
-                    </span>
-                  </div>
-
-                  <!-- Inline edit mode in place -->
-                  <div v-else class="flex items-center gap-1">
+                  <!-- Inline edit mode in place: ONLY when line is eligible AND activeEditLineId matches -->
+                  <div v-if="isBuyerInvoiceNameEditable(line) && activeEditLineId === line.lineId" class="flex items-center gap-1">
                     <input
                       :id="'buyer-cell-input-' + line.lineId"
                       v-model="buyerInputMap[line.lineId]"
@@ -197,6 +163,40 @@
                     >
                       <UIcon name="i-lucide-x" class="text-xs" aria-hidden="true" />
                     </button>
+                  </div>
+
+                  <!-- Display mode: in all other cases -->
+                  <div v-else class="flex items-center gap-1.5">
+                    <span
+                      class="text-slate-800 break-words flex-1"
+                      :title="'Tên dự kiến trên HĐ (' + sourceBadgeLabel(line.invoiceDisplayNameSource) + ')'"
+                      :aria-label="'Tên dự kiến trên HĐ: ' + (line.effectiveInvoiceDisplayName || line.materialName) + ' (' + sourceBadgeLabel(line.invoiceDisplayNameSource) + ')'"
+                    >
+                      {{ line.effectiveInvoiceDisplayName || line.materialName }}
+                    </span>
+
+                    <!-- Buyer edit trigger when editable -->
+                    <button
+                      v-if="isBuyerInvoiceNameEditable(line)"
+                      type="button"
+                      class="inline-flex items-center justify-center w-7 h-7 -my-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-colors shrink-0"
+                      :disabled="isBuyerBusy"
+                      title="Sửa tên dự kiến trên HĐ"
+                      :aria-label="'Sửa tên dự kiến trên HĐ dòng ' + (index + 1)"
+                      @click="startBuyerEdit(line)"
+                    >
+                      <UIcon name="i-lucide-pencil" class="text-xs" aria-hidden="true" />
+                    </button>
+
+                    <!-- Locked indicator when line enters order -->
+                    <span
+                      v-else-if="canManageOrders && isSubmittedOrApproved && proposal?.currentRevisionId && !line.buyerInvoiceNameEditable"
+                      class="inline-flex items-center justify-center w-7 h-7 -my-1 text-slate-400 shrink-0"
+                      title="Đã vào đơn mua hàng: không thể chỉnh sửa"
+                      :aria-label="'Đã vào đơn mua hàng: không thể chỉnh sửa dòng ' + (index + 1)"
+                    >
+                      <UIcon name="i-lucide-lock" class="text-xs" aria-hidden="true" />
+                    </span>
                   </div>
 
                   <!-- Per-line action error rendered beneath cell content -->
@@ -308,6 +308,15 @@ const isSubmittedOrApproved = computed(() => {
   return proposal.value.reviewState === 'submitted' || proposal.value.reviewState === 'approved'
 })
 
+function isBuyerInvoiceNameEditable(line: MaterialProposalLineView): boolean {
+  return Boolean(
+    canManageOrders.value &&
+    isSubmittedOrApproved.value &&
+    proposal.value?.currentRevisionId &&
+    line.buyerInvoiceNameEditable,
+  )
+}
+
 type BuyerMutationScope = {
   companyId: string
   projectId: string
@@ -375,6 +384,7 @@ function resetBuyerState() {
 
 function startBuyerEdit(line: MaterialProposalLineView) {
   if (isBuyerBusy.value) return
+  if (!isBuyerInvoiceNameEditable(line)) return
   activeEditLineId.value = line.lineId
   buyerInputMap.value[line.lineId] = line.effectiveInvoiceDisplayName || line.materialName || ''
   delete lineActionErrors.value[line.lineId]
@@ -412,8 +422,8 @@ async function executeBuyerOverride(line: MaterialProposalLineView, rawInput: st
 
   if (!companyId || !projectId || !proposalId || !revisionId) return
 
-  if (!line.buyerInvoiceNameEditable) {
-    lineActionErrors.value[lineId] = 'Dòng vật tư đã vào đơn mua hàng: không thể chỉnh sửa.'
+  if (!isBuyerInvoiceNameEditable(line)) {
+    lineActionErrors.value[lineId] = 'Dòng vật tư đã vào đơn mua hàng hoặc không thể chỉnh sửa.'
     return
   }
 
@@ -515,6 +525,7 @@ async function executeBuyerOverride(line: MaterialProposalLineView, rawInput: st
 
 async function saveBuyerOverride(line: MaterialProposalLineView) {
   if (isBuyerBusy.value) return
+  if (!isBuyerInvoiceNameEditable(line)) return
 
   const lineId = line.lineId
   const rawInput = buyerInputMap.value[lineId] ?? ''
@@ -540,11 +551,6 @@ async function saveBuyerOverride(line: MaterialProposalLineView) {
 
   // Changed content or retry: execute override
   await executeBuyerOverride(line, trimmedInput)
-}
-
-function clearBuyerOverride(line: MaterialProposalLineView) {
-  if (isBuyerBusy.value) return
-  void executeBuyerOverride(line, null)
 }
 
 const readOnlyNoticeMessage = computed(() => {
@@ -629,6 +635,12 @@ async function loadProposal(silent = false): Promise<boolean> {
     }
 
     proposal.value = data
+    if (activeEditLineId.value) {
+      const activeLine = data.lines.find(l => l.lineId === activeEditLineId.value)
+      if (!activeLine || !isBuyerInvoiceNameEditable(activeLine)) {
+        activeEditLineId.value = null
+      }
+    }
     return true
   } catch (err: unknown) {
     if (!token.isCurrent() || isDisposed) return false
