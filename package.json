@@ -30,7 +30,6 @@
     "db:dev:stage01:test": "node scripts/run-supabase-dev.mjs stage01-test",
     "db:dev:c1:test": "node scripts/run-c1-cloud-dev-tests.mjs",
     "db:dev:a1:test": "node scripts/run-c1-cloud-dev-tests.mjs --materials",
-    "db:dev:a1:diagnose": "node scripts/material-a1-pgtap-diagnostic.mjs --execute",
     "db:dev:a1:fixture": "node scripts/material-a1-fixture.mjs --execute",
     "db:dev:c1:ordinary-detail-concurrency": "node scripts/run-c1-ordinary-detail-concurrency.mjs",
     "db:dev:c1:rehearse": "node scripts/run-c1-cloud-dev-migration-rehearsal.mjs",
