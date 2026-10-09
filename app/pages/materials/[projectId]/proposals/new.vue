@@ -35,6 +35,7 @@
     <!-- Proposal Form -->
     <MaterialProposalForm
       v-else-if="canSubmit && currentProject"
+      :key="`${companyAccess?.activeCompanyId || ''}_${pId}`"
       :project-id="pId"
       :initial-project="currentProject"
       @saved="onSaved"
@@ -110,11 +111,27 @@ watch(() => companyAccess?.activeCompanyId, (newCId, oldCId) => {
     tracker.invalidate()
     currentProject.value = null
     isFormDirty.value = false
+    errorMessage.value = ''
     navigateTo('/materials')
   }
 })
 
+watch(() => pId.value, (newPId, oldPId) => {
+  if (newPId !== oldPId) {
+    tracker.invalidate()
+    currentProject.value = null
+    isFormDirty.value = false
+    errorMessage.value = ''
+    if (newPId) {
+      void loadProject()
+    } else {
+      isLoading.value = false
+    }
+  }
+})
+
 function onSaved(_result: MaterialCommandResult, proposalId: string, actualProjectId?: string) {
+  if (!companyAccess?.activeCompanyId) return
   isFormDirty.value = false
   isSubmittedOrSaved.value = true
   const targetProjectId = actualProjectId || pId.value
@@ -122,6 +139,7 @@ function onSaved(_result: MaterialCommandResult, proposalId: string, actualProje
 }
 
 function onSubmitted(_result: MaterialCommandResult, proposalId: string, actualProjectId?: string) {
+  if (!companyAccess?.activeCompanyId) return
   isFormDirty.value = false
   isSubmittedOrSaved.value = true
   const targetProjectId = actualProjectId || pId.value

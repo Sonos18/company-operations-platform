@@ -518,6 +518,7 @@ async function submitForm() {
   actionSuccessMessage.value = ''
   isSubmitting.value = true
 
+  const commandCompanyId = companyAccess?.activeCompanyId ?? ''
   const currentSignature = getMasterCommandSignature()
   if (currentSignature !== lastMasterCommandSignature.value) {
     masterIdempotencyKey.value = crypto.randomUUID()
@@ -539,6 +540,9 @@ async function submitForm() {
         },
         { idempotencyKey },
       )
+      if (companyAccess?.activeCompanyId !== commandCompanyId) {
+        return
+      }
       actionSuccessMessage.value = 'Cập nhật vật tư chuẩn thành công.'
     } else {
       await repo.createMaterial(
@@ -550,6 +554,9 @@ async function submitForm() {
         },
         { idempotencyKey },
       )
+      if (companyAccess?.activeCompanyId !== commandCompanyId) {
+        return
+      }
       actionSuccessMessage.value = 'Thêm vật tư chuẩn mới thành công.'
     }
     lastMasterCommandSignature.value = ''
@@ -557,6 +564,9 @@ async function submitForm() {
     editingId.value = null
     await loadMaterials()
   } catch (err: unknown) {
+    if (companyAccess?.activeCompanyId !== commandCompanyId) {
+      return
+    }
     errorMessage.value = err instanceof Error ? err.message : 'Không thể lưu vật tư.'
   } finally {
     isSubmitting.value = false

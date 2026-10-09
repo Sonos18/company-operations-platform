@@ -58,7 +58,7 @@
               id="proposal-project"
               v-model="formProjectId"
               class="cockpit-select"
-              :disabled="readOnly || Boolean(existingProposalId) || isSaving || isSubmitting"
+              :disabled="readOnly || Boolean(existingProposalId) || isSaving || isSubmitting || isReconciling"
               :aria-invalid="Boolean(validationErrors.projectId)"
               :aria-describedby="validationErrors.projectId ? 'proposal-project-error' : undefined"
               required
@@ -87,10 +87,11 @@
               v-model="formNeededOn"
               type="date"
               class="cockpit-input"
-              :disabled="readOnly || isSaving || isSubmitting"
+              :disabled="readOnly || isSaving || isSubmitting || isReconciling"
               :aria-invalid="Boolean(validationErrors.neededOn)"
               :aria-describedby="validationErrors.neededOn ? 'proposal-needed-on-error' : undefined"
               required
+              @input="markDirty"
             >
             <span v-if="validationErrors.neededOn" id="proposal-needed-on-error" class="field-error">{{ validationErrors.neededOn }}</span>
           </div>
@@ -104,12 +105,13 @@
             v-model="formDeliveryAddress"
             type="text"
             class="cockpit-input"
-            :disabled="readOnly || isSaving || isSubmitting"
+            :disabled="readOnly || isSaving || isSubmitting || isReconciling"
             :aria-invalid="Boolean(validationErrors.deliveryAddress)"
             :aria-describedby="validationErrors.deliveryAddress ? 'proposal-delivery-address-error' : undefined"
             placeholder="Nhập địa chỉ giao hàng tại công trường..."
             required
             maxlength="2000"
+            @input="markDirty"
           >
           <small class="field-hint">
             Địa chỉ này chỉ áp dụng riêng cho phiếu yêu cầu hiện tại, không thay đổi địa chỉ mặc định của dự án.
@@ -124,10 +126,11 @@
             id="proposal-notes"
             v-model="formNotes"
             class="cockpit-textarea"
-            :disabled="readOnly || isSaving || isSubmitting"
+            :disabled="readOnly || isSaving || isSubmitting || isReconciling"
             rows="2"
             placeholder="Ghi chú thêm về yêu cầu vận chuyển, thời gian hạ hàng (nếu có)..."
             maxlength="2000"
+            @input="markDirty"
           />
         </div>
       </div>
