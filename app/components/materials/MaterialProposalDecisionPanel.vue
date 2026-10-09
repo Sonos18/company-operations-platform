@@ -18,7 +18,7 @@
     </div>
 
     <!-- 1. Warning Alert when POST succeeded with ACK but canonical GET failed (postAcknowledged) -->
-    <div v-if="postAcknowledged" class="cockpit-alert cockpit-alert--warning mt-3" role="alert">
+    <div v-if="postAcknowledged && !isTransportBusy && actionError" class="cockpit-alert cockpit-alert--warning mt-3" role="alert">
       <div class="flex items-start gap-2">
         <UIcon name="i-lucide-alert-triangle" class="text-amber-600 text-base shrink-0 mt-0.5" aria-hidden="true" />
         <div class="flex-1">
@@ -43,7 +43,7 @@
     </div>
 
     <!-- 2. Danger Alert when POST was rejected but canonical GET refresh failed (isPostRejected) -->
-    <div v-else-if="isPostRejected" class="cockpit-alert cockpit-alert--danger mt-3" role="alert">
+    <div v-else-if="isPostRejected && !isTransportBusy && actionError" class="cockpit-alert cockpit-alert--danger mt-3" role="alert">
       <div class="flex items-start gap-2">
         <UIcon name="i-lucide-alert-circle" class="text-rose-600 text-base shrink-0 mt-0.5" aria-hidden="true" />
         <div class="flex-1">
@@ -65,13 +65,13 @@
     </div>
 
     <!-- 3. Danger Alert for unknown POST error (e.g. network/timeout before ACK) -->
-    <div v-else-if="pendingCommand" class="cockpit-alert cockpit-alert--danger mt-3" role="alert">
+    <div v-else-if="pendingCommand && !isTransportBusy && actionError" class="cockpit-alert cockpit-alert--danger mt-3" role="alert">
       <div class="flex items-start gap-2">
         <UIcon name="i-lucide-alert-circle" class="text-rose-600 text-base shrink-0 mt-0.5" aria-hidden="true" />
         <div class="flex-1">
           <p class="font-semibold text-rose-900">{{ actionError }}</p>
           <p class="text-sm text-rose-800 mt-0.5">
-            Lỗi kết nối máy chủ. Lệnh chưa xác định được kết quả commit. Vui lòng bấm thử lại để tiếp tục với đúng lệnh này.
+            Chưa xác nhận được kết quả thao tác. Bấm Thử lại để tiếp tục đúng yêu cầu vừa gửi.
           </p>
           <div class="mt-2.5">
             <button
