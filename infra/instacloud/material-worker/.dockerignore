@@ -1,0 +1,11 @@
+**
+!Dockerfile
+!start-worker.sh
+!attach-runtime.sh
+!profiles/
+!profiles/materials/
+!profiles/materials/package.json
+!profiles/materials/pnpm-lock.yaml
+!profiles/legacy/
+!profiles/legacy/package.json
+!profiles/legacy/pnpm-lock.yaml
