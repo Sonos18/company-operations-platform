@@ -118,9 +118,10 @@ interface MockRouteOptions {
   currentProposal?: MaterialProposalView
   failWith409OnUpdate?: boolean
   failWith403OnSubmit?: boolean
-  failFirstMasterPost?: boolean
+  loseFirstMasterPostResponse?: boolean
+  loseFirstProposalPatchResponse?: boolean
+  loseFirstProposalSubmitResponse?: boolean
   capturedRequests?: CapturedRequest[]
-  projectsDelayMs?: number
 }
 
 async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
@@ -128,14 +129,14 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
   let activeProposal: MaterialProposalView = options.currentProposal || createMockProposal()
   const receipts = new Map<string, { bodyString: string, response: unknown }>()
   const materialsState = [...mockMaterials]
+  let loseFirstMasterPostResponse = options.loseFirstMasterPostResponse ?? false
+  let loseFirstProposalPatchResponse = options.loseFirstProposalPatchResponse ?? false
+  let loseFirstProposalSubmitResponse = options.loseFirstProposalSubmitResponse ?? false
 
   // Master: Projects
   await page.route(/\/api\/companies\/([^/]+)\/material-procurement\/projects$/, async (route: Route) => {
     const match = route.request().url().match(/\/api\/companies\/([^/]+)\/material-procurement\/projects$/)
     const companyId = match ? match[1] : ''
-    if (options.projectsDelayMs) {
-      await new Promise(resolve => setTimeout(resolve, options.projectsDelayMs))
-    }
     if (companyId === company2Id) {
       await route.fulfill({ json: mockProjectsCompany2 })
     } else {
@@ -162,22 +163,6 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
         body: parsedBody,
         headers: req.headers(),
       })
-
-      if (options.failFirstMasterPost && !receipts.has('master_failed_once')) {
-        receipts.set('master_failed_once', { bodyString: '', response: null })
-        await route.fulfill({
-          status: 500,
-          json: {
-            error: {
-              code: 'INTERNAL_ERROR',
-              message: 'Lỗi mạng tạm thời khi tạo vật tư.',
-              requestId: 'mock-req-500',
-              details: {},
-            },
-          },
-        })
-        return
-      }
 
       const receiptKey = idempotencyKey
       const bodyStr = JSON.stringify(parsedBody)
@@ -209,6 +194,11 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
 
       const responsePayload = { resourceId: newId, version: 1, replayed: false }
       receipts.set(receiptKey, { bodyString: bodyStr, response: responsePayload })
+      if (loseFirstMasterPostResponse) {
+        loseFirstMasterPostResponse = false
+        await route.abort('failed')
+        return
+      }
       await route.fulfill({ json: responsePayload })
       return
     }
@@ -352,21 +342,6 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
         headers: req.headers(),
       })
 
-      if (options.failWith409OnUpdate || parsedBody.expectedVersion !== activeProposal.version) {
-        await route.fulfill({
-          status: 409,
-          json: {
-            error: {
-              code: 'VERSION_CONFLICT',
-              message: 'Phiên bản không khớp (xung đột dữ liệu).',
-              requestId: 'mock-req-409',
-              details: {},
-            },
-          },
-        })
-        return
-      }
-
       const receiptKey = idempotencyKey
       const bodyStr = JSON.stringify(parsedBody)
       const cached = receipts.get(receiptKey)
@@ -379,6 +354,21 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
         await route.fulfill({
           status: 409,
           json: { error: { code: 'IDEMPOTENCY_CONFLICT', message: 'Trùng idempotency key với payload khác' } },
+        })
+        return
+      }
+
+      if (options.failWith409OnUpdate || parsedBody.expectedVersion !== activeProposal.version) {
+        await route.fulfill({
+          status: 409,
+          json: {
+            error: {
+              code: 'VERSION_CONFLICT',
+              message: 'Phiên bản không khớp (xung đột dữ liệu).',
+              requestId: 'mock-req-409',
+              details: {},
+            },
+          },
         })
         return
       }
@@ -408,6 +398,11 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
         replayed: false,
       }
       receipts.set(receiptKey, { bodyString: bodyStr, response: responsePayload })
+      if (loseFirstProposalPatchResponse) {
+        loseFirstProposalPatchResponse = false
+        await route.abort('failed')
+        return
+      }
       await route.fulfill({ json: responsePayload })
       return
     }
@@ -444,19 +439,6 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
       return
     }
 
-    if (parsedBody.expectedVersion !== activeProposal.version) {
-      await route.fulfill({
-        status: 409,
-        json: {
-          error: {
-            code: 'VERSION_CONFLICT',
-            message: 'Phiên bản không khớp khi gửi duyệt.',
-          },
-        },
-      })
-      return
-    }
-
     const receiptKey = idempotencyKey
     const bodyStr = JSON.stringify(parsedBody)
     const cached = receipts.get(receiptKey)
@@ -469,6 +451,19 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
       await route.fulfill({
         status: 409,
         json: { error: { code: 'IDEMPOTENCY_CONFLICT', message: 'Trùng idempotency key khi submit' } },
+      })
+      return
+    }
+
+    if (parsedBody.expectedVersion !== activeProposal.version) {
+      await route.fulfill({
+        status: 409,
+        json: {
+          error: {
+            code: 'VERSION_CONFLICT',
+            message: 'Phiên bản không khớp khi gửi duyệt.',
+          },
+        },
       })
       return
     }
@@ -487,13 +482,70 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
       reviewState: 'submitted',
     }
     receipts.set(receiptKey, { bodyString: bodyStr, response: responsePayload })
+    if (loseFirstProposalSubmitResponse) {
+      loseFirstProposalSubmitResponse = false
+      await route.abort('failed')
+      return
+    }
     await route.fulfill({ json: responsePayload })
   })
 
   return {
     getCaptured: () => captured,
     getActiveProposal: () => activeProposal,
+    getMaterials: () => materialsState,
   }
+}
+
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>(r => { resolve = r })
+  return { promise, resolve }
+}
+
+async function selectCompany(page: Page, companyId: string) {
+  await page.evaluate((target) => {
+    const root = document.querySelector('#__nuxt') as HTMLElement & {
+      __vue_app__?: { config: { globalProperties: {
+        $nuxt?: { $companyAccessStore?: { selectCompany(id: string): boolean } }
+      } } }
+    }
+    if (!root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore?.selectCompany(target)) {
+      throw new Error('Unable to switch company')
+    }
+  }, companyId)
+}
+
+async function setupTwoCompanies(page: Page, options: MockRouteOptions = {}) {
+  await installAuthRoutes(page, createAuthTestState({
+    sessionCompanies: [
+      createCompany({ companyId: company1Id, companyName: 'Công ty VQH' }),
+      createCompany({ companyId: company2Id, companyName: 'Công ty Khang Điền' }),
+    ],
+  }))
+  return setupMaterialMocks(page, options)
+}
+
+async function holdJsonResponse(page: Page, pattern: RegExp, body: unknown) {
+  const entered = deferred()
+  const released = deferred()
+  await page.route(pattern, async route => {
+    entered.resolve()
+    await released.promise
+    await route.fulfill({ json: body })
+  })
+  return { entered: entered.promise, release: released.resolve }
+}
+
+async function navigateWithinApp(page: Page, path: string) {
+  await page.evaluate(async target => {
+    const root = document.querySelector('#__nuxt') as HTMLElement & {
+      __vue_app__?: { config: { globalProperties: { $router?: { push(path: string): Promise<unknown> } } } }
+    }
+    const router = root.__vue_app__?.config.globalProperties.$router
+    if (!router) throw new Error('Unable to resolve router')
+    await router.push(target)
+  }, path)
 }
 
 test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding review)', () => {
@@ -581,12 +633,29 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     })
 
     const capturedRequests: CapturedRequest[] = []
-    await setupMaterialMocks(page, {
+    const mock = await setupMaterialMocks(page, {
       currentProposal: returnedProposal,
       capturedRequests,
     })
 
     await page.goto(`/materials/${projectId}/proposals/${proposalId}`)
+    await expect(page.getByLabel('Nơi giao hàng')).toBeVisible()
+    const canonicalGetEntered = deferred()
+    const releaseCanonicalGet = deferred()
+    let detailReads = 0
+    await page.route(new RegExp(`/api/companies/[^/]+/projects/${projectId}/material-procurement/proposals/${proposalId}$`), async route => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback()
+        return
+      }
+      detailReads++
+      const snapshot = mock.getActiveProposal()
+      if (detailReads === 1) {
+        canonicalGetEntered.resolve()
+        await releaseCanonicalGet.promise
+      }
+      await route.fulfill({ json: snapshot })
+    })
 
     // Verify returnReason banner is displayed prominently
     await expect(page.getByText('Vui lòng tăng khối lượng thép cuộn lên 40kg theo tiến độ đổ sàn.')).toBeVisible()
@@ -597,6 +666,7 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
 
     // Engineer clicks "Lưu nháp"
     await page.getByRole('button', { name: 'Lưu nháp' }).click()
+    await canonicalGetEntered.promise
     await expect(page.getByText('Đã lưu nháp phiếu yêu cầu thành công.')).toBeVisible()
 
     const patchCountAfterSave = capturedRequests.filter(r => r.method === 'PATCH').length
@@ -604,7 +674,11 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
 
     // Now engineer clicks "Gửi mua hàng" when form is CLEAN (not dirty)
     // Finding 3: Must NOT trigger redundant PATCH!
+    const submitResponse = page.waitForResponse(r =>
+      r.request().method() === 'POST' && r.url().endsWith('/submit'))
     await page.getByRole('button', { name: 'Gửi mua hàng' }).click()
+    await submitResponse
+    releaseCanonicalGet.resolve()
 
     // Verify no redundant PATCH was executed
     const patchCountAfterSubmit = capturedRequests.filter(r => r.method === 'PATCH').length
@@ -616,6 +690,55 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
 
     // DOM reflects fresh submitted state
     await expect(page.locator('.cockpit-badge', { hasText: 'Đã gửi' }).first()).toBeVisible()
+  })
+
+  test('3b. Unchanged manual Save does not send PATCH', async ({ page }) => {
+    const capturedRequests: CapturedRequest[] = []
+    await setupMaterialMocks(page, { capturedRequests })
+    await page.goto(`/materials/${projectId}/proposals/${proposalId}`)
+    await expect(page.getByLabel('Nơi giao hàng')).toHaveValue('123 Đường Nguyễn Huệ, Quận 1, TP.HCM')
+
+    const save = page.getByRole('button', { name: 'Lưu nháp' })
+    await save.click()
+    await expect(save).toBeEnabled()
+    expect(capturedRequests.filter(r => r.method === 'PATCH')).toHaveLength(0)
+  })
+
+  test('3c. A header edit after PATCH cannot be replaced by a delayed canonical GET', async ({ page }) => {
+    const mock = await setupMaterialMocks(page)
+    await page.goto(`/materials/${projectId}/proposals/${proposalId}`)
+    const address = page.getByLabel('Nơi giao hàng')
+    await expect(address).toHaveValue('123 Đường Nguyễn Huệ, Quận 1, TP.HCM')
+
+    const canonicalGetEntered = deferred()
+    const releaseCanonicalGet = deferred()
+    await page.route(new RegExp(`/api/companies/[^/]+/projects/${projectId}/material-procurement/proposals/${proposalId}$`), async route => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback()
+        return
+      }
+      const snapshot = mock.getActiveProposal()
+      canonicalGetEntered.resolve()
+      await releaseCanonicalGet.promise
+      await route.fulfill({ json: snapshot })
+    })
+
+    await address.fill('Địa chỉ đã lưu')
+    const patchResponse = page.waitForResponse(r =>
+      r.request().method() === 'PATCH' && r.url().endsWith(`/proposals/${proposalId}`))
+    await page.getByRole('button', { name: 'Lưu nháp' }).click()
+    await patchResponse
+    await canonicalGetEntered.promise
+    expect(mock.getActiveProposal().deliveryAddress).toBe('Địa chỉ đã lưu')
+
+    await expect(address).toBeEnabled()
+    await address.fill('Địa chỉ sửa sau PATCH')
+
+    const canonicalResponse = page.waitForResponse(r =>
+      r.request().method() === 'GET' && r.url().endsWith(`/proposals/${proposalId}`))
+    releaseCanonicalGet.resolve()
+    await canonicalResponse
+    await expect(address).toHaveValue('Địa chỉ sửa sau PATCH')
   })
 
   test('4. Không đổi materialId trên lineId đã persist; signed line giữ identity, không thể xóa và số lượng không dưới phần đã ký', async ({ page }) => {
@@ -702,6 +825,54 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     expect(thirdPatch.headers['idempotency-key']).not.toBe(patchCalls[0].headers['idempotency-key'])
   })
 
+  test('5b. PATCH retry replays its committed receipt before comparing the stale expectedVersion', async ({ page }) => {
+    const capturedRequests: CapturedRequest[] = []
+    const mock = await setupMaterialMocks(page, { capturedRequests, loseFirstProposalPatchResponse: true })
+    await page.goto(`/materials/${projectId}/proposals/${proposalId}`)
+    await page.getByLabel('Nơi giao hàng').fill('Địa chỉ đã commit')
+    const save = page.getByRole('button', { name: 'Lưu nháp' })
+
+    await save.click()
+    await expect.poll(() => mock.getActiveProposal().version).toBe(2)
+    await expect(save).toBeEnabled()
+
+    const replayResponse = page.waitForResponse(r =>
+      r.request().method() === 'PATCH' && r.url().endsWith(`/proposals/${proposalId}`))
+    await save.click()
+    const replay = await (await replayResponse).json() as { resourceId: string; version: number; replayed: boolean }
+    await expect(page.getByText('Đã lưu nháp phiếu yêu cầu thành công.')).toBeVisible()
+
+    const calls = capturedRequests.filter(r => r.method === 'PATCH')
+    expect(calls).toHaveLength(2)
+    expect(calls[0]!.headers['idempotency-key']).toBe(calls[1]!.headers['idempotency-key'])
+    expect(mock.getActiveProposal().version).toBe(2)
+    expect(replay).toEqual({ resourceId: proposalId, version: 2, replayed: true })
+  })
+
+  test('5c. Submit retry replays its committed receipt before comparing the stale expectedVersion', async ({ page }) => {
+    const capturedRequests: CapturedRequest[] = []
+    const mock = await setupMaterialMocks(page, { capturedRequests, loseFirstProposalSubmitResponse: true })
+    await page.goto(`/materials/${projectId}/proposals/${proposalId}`)
+    const submit = page.getByRole('button', { name: 'Gửi mua hàng' })
+    await expect(submit).toBeVisible()
+
+    await submit.click()
+    await expect.poll(() => mock.getActiveProposal().version).toBe(2)
+    await expect(submit).toBeEnabled()
+
+    const replayResponse = page.waitForResponse(r =>
+      r.request().method() === 'POST' && r.url().endsWith('/submit'))
+    await submit.click()
+    const replay = await (await replayResponse).json() as { resourceId: string; version: number; replayed: boolean; reviewState: string }
+    await expect(page.locator('.cockpit-badge', { hasText: 'Đã gửi' }).first()).toBeVisible()
+
+    const calls = capturedRequests.filter(r => r.url.endsWith('/submit'))
+    expect(calls).toHaveLength(2)
+    expect(calls[0]!.headers['idempotency-key']).toBe(calls[1]!.headers['idempotency-key'])
+    expect(mock.getActiveProposal().version).toBe(2)
+    expect(replay).toEqual({ resourceId: proposalId, version: 2, replayed: true, reviewState: 'submitted' })
+  })
+
   test('6. FIX BỔ SUNG: mở trang tạo của A, chọn công trình B, Save/Submit điều hướng đến đúng B; cập nhật địa chỉ mặc định', async ({ page }) => {
     const capturedRequests: CapturedRequest[] = []
     await setupMaterialMocks(page, { capturedRequests })
@@ -733,74 +904,152 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     await expect(page).toHaveURL(new RegExp(`/materials/${project2Id}/proposals/${proposalId}`))
   })
 
-  test('7. Đổi công ty xóa sạch dữ liệu ngay; bỏ phản hồi cũ theo scope bằng request tracker khi đang tải và sau khi tải', async ({ page }) => {
-    const multiCompanyState = createAuthTestState({
-      sessionCompanies: [
-        createCompany({
-          companyId: company1Id,
-          companyName: 'Công ty VQH',
-        }),
-        createCompany({
-          companyId: company2Id,
-          companyName: 'Công ty Khang Điền',
-        }),
-      ],
-    })
-    await installAuthRoutes(page, multiCompanyState)
-    await setupMaterialMocks(page, { projectsDelayMs: 200 })
+  test('6b. Selecting Project B then Submit navigates to Project B detail', async ({ page }) => {
+    const capturedRequests: CapturedRequest[] = []
+    await setupMaterialMocks(page, { capturedRequests })
+    await page.goto(`/materials/${projectId}/proposals/new`)
+    await page.getByLabel('Công trình / Dự án').selectOption(project2Id)
+    await expect(page.getByLabel('Nơi giao hàng')).toHaveValue(mockProjectsCompany1[1]!.locationText)
+    await page.getByLabel('Ngày cần vật tư').fill('2026-10-30')
+    await page.locator('select.line-select').first().selectOption(material1Id)
+    await page.locator('input.quantity-input').first().fill('30.0000')
 
-    await page.goto('/materials')
-
-    // Company 1 project is visible
-    await expect(page.getByText('Công trình Tòa nhà VQH')).toBeVisible()
-
-    // 1. Switch to Company 2 while loading (delayed response tracker cancellation)
-    await page.evaluate((targetCId) => {
-      const root = document.querySelector('#__nuxt') as HTMLElement & {
-        __vue_app__?: {
-          config: {
-            globalProperties: {
-              $nuxt?: {
-                $companyAccessStore?: { selectCompany(companyId: string): boolean }
-              }
-            }
-          }
-        }
-      }
-      root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore?.selectCompany(targetCId)
-    }, company2Id)
-
-    // Old company project is cleared immediately, and new company project loads
-    await expect(page.getByText('Công trình Biệt thự Khang Điền')).toBeVisible()
-    await expect(page.getByText('Công trình Tòa nhà VQH')).toHaveCount(0)
-
-    // 2. Switch company after form is rendered on /proposals/new (Finding 1)
-    await page.goto(`/materials/${company2ProjectId}/proposals/new`)
-    await expect(page.getByRole('heading', { name: /Lập phiếu yêu cầu vật tư/i })).toBeVisible()
-
-    // Switch back to Company 1
-    await page.evaluate((targetCId) => {
-      const root = document.querySelector('#__nuxt') as HTMLElement & {
-        __vue_app__?: {
-          config: {
-            globalProperties: {
-              $nuxt?: {
-                $companyAccessStore?: { selectCompany(companyId: string): boolean }
-              }
-            }
-          }
-        }
-      }
-      root.__vue_app__?.config.globalProperties.$nuxt?.$companyAccessStore?.selectCompany(targetCId)
-    }, company1Id)
-
-    // Form is immediately cleared and user is navigated to /materials of new company
-    await expect(page).toHaveURL('/materials')
-    await expect(page.getByText('Công trình Tòa nhà VQH')).toBeVisible()
-    await expect(page.getByText('Công trình Biệt thự Khang Điền')).toHaveCount(0)
+    const submitResponse = page.waitForResponse(r =>
+      r.request().method() === 'POST' && r.url().endsWith('/submit'))
+    await page.getByRole('button', { name: 'Gửi mua hàng' }).click()
+    await submitResponse
+    await expect(page).toHaveURL(new RegExp(`/materials/${project2Id}/proposals/${proposalId}`))
+    expect(capturedRequests.some(r => r.method === 'POST' && r.url.includes(`/projects/${project2Id}/`) && r.url.endsWith('/proposals'))).toBe(true)
+    expect(capturedRequests.some(r => r.method === 'POST' && r.url.includes(`/projects/${project2Id}/`) && r.url.endsWith('/submit'))).toBe(true)
   })
 
-  test('8. Non-author có submit permission và Buyer thấy chế độ chỉ đọc; 403 Forbidden hiển thị thông báo lỗi', async ({ page }) => {
+  test('7. Company A project response arriving after a real switch cannot replace Company B', async ({ page }) => {
+    const state = createAuthTestState({
+      sessionCompanies: [
+        createCompany({ companyId: company1Id, companyName: 'Công ty VQH' }),
+        createCompany({ companyId: company2Id, companyName: 'Công ty Khang Điền' }),
+      ],
+    })
+    await installAuthRoutes(page, state)
+    await setupMaterialMocks(page)
+
+    const aRequested = deferred()
+    const releaseA = deferred()
+    await page.route(new RegExp(`/api/companies/${company1Id}/material-procurement/projects$`), async route => {
+      aRequested.resolve()
+      await releaseA.promise
+      await route.fulfill({ json: mockProjectsCompany1 })
+    })
+
+    await page.goto('/materials')
+    await aRequested.promise
+    await selectCompany(page, company2Id)
+    await expect(page.getByText('Công trình Biệt thự Khang Điền')).toBeVisible()
+
+    const oldResponse = page.waitForResponse(r => r.url().endsWith(`/api/companies/${company1Id}/material-procurement/projects`))
+    releaseA.resolve()
+    await oldResponse
+    await expect(page.getByText('Công trình Tòa nhà VQH')).toHaveCount(0)
+    await expect(page.getByText('Công trình Biệt thự Khang Điền')).toBeVisible()
+  })
+
+  test('7b. A/new to B/new reuses the page and clears the old project form', async ({ page }) => {
+    await setupMaterialMocks(page)
+    await page.goto(`/materials/${projectId}/proposals/new`)
+    await expect(page.getByLabel('Nơi giao hàng')).toHaveValue(mockProjectsCompany1[0]!.locationText)
+
+    const held = await holdJsonResponse(
+      page,
+      new RegExp(`/api/companies/${company1Id}/material-procurement/projects$`),
+      mockProjectsCompany1,
+    )
+    const navigation = navigateWithinApp(page, `/materials/${project2Id}/proposals/new`)
+    await held.entered
+    await expect(page).toHaveURL(new RegExp(`/materials/${project2Id}/proposals/new`))
+    await expect(page.getByLabel('Nơi giao hàng')).toHaveCount(0)
+    held.release()
+    await navigation
+    await expect(page.getByLabel('Công trình / Dự án')).toHaveValue(project2Id)
+    await expect(page.getByLabel('Nơi giao hàng')).toHaveValue(mockProjectsCompany1[1]!.locationText)
+  })
+
+  test('7c. Pending new Save cannot navigate or show Company A success after switching to B', async ({ page }) => {
+    await setupTwoCompanies(page)
+    await page.goto(`/materials/${projectId}/proposals/new`)
+    await expect(page.getByLabel('Nơi giao hàng')).toBeVisible()
+    await page.getByLabel('Ngày cần vật tư').fill('2026-10-30')
+    await page.locator('select.line-select').first().selectOption(material1Id)
+    await page.locator('input.quantity-input').first().fill('25.0000')
+
+    const held = await holdJsonResponse(
+      page,
+      new RegExp(`/api/companies/${company1Id}/projects/${projectId}/material-procurement/proposals$`),
+      { resourceId: proposalId, version: 1, replayed: false },
+    )
+    const click = page.getByRole('button', { name: 'Lưu nháp' }).click()
+    await held.entered
+    await selectCompany(page, company2Id)
+    await expect(page).toHaveURL('/materials')
+    held.release()
+    await click
+    await expect(page.getByText('Công trình Biệt thự Khang Điền')).toBeVisible()
+    await expect(page).toHaveURL('/materials')
+    await expect(page.getByText('Đã tạo phiếu yêu cầu mới thành công.')).toHaveCount(0)
+  })
+
+  test('7d. Pending Submit from the new form cannot navigate to Company A after switching to B', async ({ page }) => {
+    await setupTwoCompanies(page)
+    await page.goto(`/materials/${projectId}/proposals/new`)
+    await expect(page.getByLabel('Nơi giao hàng')).toBeVisible()
+    await page.getByLabel('Ngày cần vật tư').fill('2026-10-30')
+    await page.locator('select.line-select').first().selectOption(material1Id)
+    await page.locator('input.quantity-input').first().fill('25.0000')
+
+    const held = await holdJsonResponse(
+      page,
+      new RegExp(`/api/companies/${company1Id}/projects/${projectId}/material-procurement/proposals/${proposalId}/submit$`),
+      { resourceId: proposalId, version: 2, replayed: false, reviewState: 'submitted' },
+    )
+    const click = page.getByRole('button', { name: 'Gửi mua hàng' }).click()
+    await held.entered
+    await selectCompany(page, company2Id)
+    await expect(page).toHaveURL('/materials')
+    const oldResponse = page.waitForResponse(r =>
+      r.request().method() === 'POST' && r.url().endsWith(`/proposals/${proposalId}/submit`))
+    held.release()
+    await oldResponse
+    await click
+    await expect(page.getByText('Công trình Biệt thự Khang Điền')).toBeVisible()
+    await expect(page).toHaveURL('/materials')
+    await expect(page.getByText('Đã gửi phiếu yêu cầu mua hàng thành công.')).toHaveCount(0)
+  })
+
+  test('7e. Pending master create cannot show Company A success after switching to B', async ({ page }) => {
+    await setupTwoCompanies(page)
+    await page.goto('/materials')
+    await page.getByRole('button', { name: 'Danh mục vật tư chuẩn' }).click()
+    await page.getByRole('button', { name: 'Thêm vật tư chuẩn' }).click()
+    await page.getByLabel('Mã vật tư').fill('VT-OLD-A')
+    await page.getByLabel('Tên vật tư chuẩn').fill('Vật tư công ty A')
+    await page.getByLabel('Đơn vị tính chuẩn').fill('kg')
+    await page.getByLabel('Quy cách kỹ thuật chuẩn').fill('Quy cách công ty A')
+
+    const held = await holdJsonResponse(
+      page,
+      new RegExp(`/api/companies/${company1Id}/material-procurement/materials$`),
+      { resourceId: material1Id, version: 1, replayed: false },
+    )
+    const click = page.getByRole('button', { name: 'Lưu vật tư' }).click()
+    await held.entered
+    await selectCompany(page, company2Id)
+    held.release()
+    await click
+    await expect(page.getByText('Công trình Biệt thự Khang Điền')).toBeVisible()
+    await expect(page.getByText('Thêm vật tư chuẩn mới thành công.')).toHaveCount(0)
+    await expect(page.getByText('Vật tư công ty A')).toHaveCount(0)
+  })
+
+  test('8. Non-author is read-only and author sees a 403 submit error', async ({ page }) => {
     // 1. Non-author engineer has submit permission but is not author
     const otherEngineerState = createAuthTestState({
       user: { id: otherEngineerId, email: 'other-engineer@taskovia.test' },
@@ -849,6 +1098,23 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     await expect(page.getByText('Bạn không có quyền thực hiện thao tác này.')).toBeVisible()
   })
 
+  test('8b. Buyer can read a draft but has no edit or submit control even when the author', async ({ page }) => {
+    await installAuthRoutes(page, createAuthTestState({
+      user: { id: engineerId, email: 'buyer@taskovia.test' },
+      sessionCompanies: [
+        createCompany({
+          roles: ['buyer'],
+          permissions: ['material.read', 'material.proposal.decide'],
+        }),
+      ],
+    }))
+    await setupMaterialMocks(page)
+    await page.goto(`/materials/${projectId}/proposals/${proposalId}`)
+    await expect(page.getByText('Chế độ chỉ đọc: Bạn không có quyền chỉnh sửa phiếu yêu cầu vật tư.')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Lưu nháp' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Gửi mua hàng' })).toHaveCount(0)
+  })
+
   test('9. Accessibility: Material select và quantity có aria-label theo dòng; lỗi validation gắn aria-describedby', async ({ page }) => {
     await setupMaterialMocks(page)
 
@@ -876,35 +1142,35 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     await expect(page.locator(`#${describedBy}`)).toHaveText('Số lượng phải là số thập phân hợp lệ.')
   })
 
-  test('10. Master material tạo mới giữ idempotency-key sau lỗi mạng và replay trả cùng version', async ({ page }) => {
+  test('10. Master create commits once and replays the same receipt after the first response is lost', async ({ page }) => {
     const capturedRequests: CapturedRequest[] = []
-    await setupMaterialMocks(page, { capturedRequests, failFirstMasterPost: true })
-
+    const mock = await setupMaterialMocks(page, { capturedRequests, loseFirstMasterPostResponse: true })
     await page.goto('/materials')
-
-    // Open master material dialog
     await page.getByRole('button', { name: 'Danh mục vật tư chuẩn' }).click()
     await page.getByRole('button', { name: 'Thêm vật tư chuẩn' }).click()
-
-    // Fill material details
     await page.getByLabel('Mã vật tư').fill('VT-CAT-01')
     await page.getByLabel('Tên vật tư chuẩn').fill('Cát xây tô')
     await page.getByLabel('Đơn vị tính chuẩn').fill('m3')
     await page.getByLabel('Quy cách kỹ thuật chuẩn').fill('Cát vàng hạt trung đạt TCVN')
 
-    // First submit fails due to network loss/server error (500)
     await page.getByRole('button', { name: 'Lưu vật tư' }).click()
-    await expect(page.getByText('Hệ thống không thể xử lý yêu cầu. Vui lòng thử lại sau.')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Lưu vật tư' })).toBeEnabled()
+    await expect(page.getByText('Thêm vật tư chuẩn mới thành công.')).toHaveCount(0)
+    const committed = mock.getMaterials().filter(m => m.code === 'VT-CAT-01')
+    expect(committed).toHaveLength(1)
 
-    // Retry with exact same form data
+    const replayResponse = page.waitForResponse(r =>
+      r.request().method() === 'POST' && r.url().endsWith('/material-procurement/materials'))
     await page.getByRole('button', { name: 'Lưu vật tư' }).click()
+    const replay = await (await replayResponse).json() as { resourceId: string; version: number; replayed: boolean }
     await expect(page.getByText('Thêm vật tư chuẩn mới thành công.')).toBeVisible()
 
-    // Finding 5: Both requests MUST share the exact same idempotency-key!
     const postCalls = capturedRequests.filter(r => r.method === 'POST' && r.url.endsWith('/materials'))
-    expect(postCalls.length).toBe(2)
-    expect(postCalls[0].headers['idempotency-key']).toBeTruthy()
-    expect(postCalls[0].headers['idempotency-key']).toBe(postCalls[1].headers['idempotency-key'])
+    expect(postCalls).toHaveLength(2)
+    expect(postCalls[0]!.headers['idempotency-key']).toBeTruthy()
+    expect(postCalls[0]!.headers['idempotency-key']).toBe(postCalls[1]!.headers['idempotency-key'])
+    expect(mock.getMaterials().filter(m => m.code === 'VT-CAT-01')).toHaveLength(1)
+    expect(replay).toEqual({ resourceId: committed[0]!.id, version: committed[0]!.version, replayed: true })
   })
 
   test('11. Giao diện T5 tuyệt đối không có input chọn nhà cung cấp, giá mua hay hóa đơn', async ({ page }) => {
