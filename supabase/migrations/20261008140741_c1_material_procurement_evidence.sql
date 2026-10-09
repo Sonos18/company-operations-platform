@@ -317,9 +317,10 @@ declare
   v_tenant_id uuid;
   v_file public.cost_evidence_files%rowtype;
   v_scope public.material_evidence_scopes%rowtype;
+  v_evidence_scope record;
   v_permission text;
 begin
-  select evidence, scope into v_file, v_scope
+  select evidence as evidence_file, scope as evidence_scope into v_evidence_scope
   from public.cost_evidence_files as evidence
   join public.material_evidence_scopes as scope
     on scope.evidence_file_id = evidence.id
@@ -332,6 +333,8 @@ begin
     and evidence.created_by = auth.uid()
     and scope.created_by = auth.uid();
   if not found then raise exception using errcode = 'P0001', message = 'RESOURCE_NOT_FOUND'; end if;
+  v_file := v_evidence_scope.evidence_file;
+  v_scope := v_evidence_scope.evidence_scope;
   v_permission := case when v_scope.evidence_role = 'unsigned_quotation'
     then 'material.order.manage' else 'material.contract.record' end;
   v_context := private.c1_material_context(target_company_id, v_permission);
@@ -371,6 +374,7 @@ declare
   v_actor_id uuid := auth.uid();
   v_file public.cost_evidence_files%rowtype;
   v_scope public.material_evidence_scopes%rowtype;
+  v_evidence_scope record;
   v_permission text;
   v_expected_version bigint;
   v_hash text;
@@ -436,7 +440,7 @@ begin
   if v_verified_field_count <> 3 then
     raise exception using errcode = 'P0001', message = 'INPUT_INVALID'; end if;
 
-  select evidence, scope into v_file, v_scope
+  select evidence as evidence_file, scope as evidence_scope into v_evidence_scope
   from public.cost_evidence_files as evidence
   join public.material_evidence_scopes as scope
     on scope.evidence_file_id = evidence.id
@@ -448,6 +452,8 @@ begin
     and evidence.project_id = target_project_id
   for update of evidence;
   if not found then raise exception using errcode = 'P0001', message = 'RESOURCE_NOT_FOUND'; end if;
+  v_file := v_evidence_scope.evidence_file;
+  v_scope := v_evidence_scope.evidence_scope;
   v_permission := case when v_scope.evidence_role = 'unsigned_quotation'
     then 'material.order.manage' else 'material.contract.record' end;
   v_context := private.c1_material_context(target_company_id, v_permission);

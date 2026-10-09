@@ -113,4 +113,14 @@ describe('C1 material procurement T4 forward-only guards', () => {
     expect(behavior).toContain('generic legacy file insert remains denied in document-backed mode')
   })
 
+  it('loads each evidence scope through a typed record projection', () => {
+    const sql = migration('c1_material_procurement_evidence')
+
+    expect(sql).not.toContain('select evidence, scope into v_file, v_scope')
+    expect(sql.match(/select evidence as evidence_file, scope as evidence_scope into v_evidence_scope/gu) ?? []).toHaveLength(2)
+    expect(sql.match(/v_file := v_evidence_scope\.evidence_file;/gu) ?? []).toHaveLength(2)
+    expect(sql.match(/v_scope := v_evidence_scope\.evidence_scope;/gu) ?? []).toHaveLength(2)
+    expect(sql).toContain('for update of evidence;')
+  })
+
 })
