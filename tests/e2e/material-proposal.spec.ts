@@ -6,6 +6,7 @@ import {
   materialProposalInputSchema,
   updateMaterialProposalInputSchema,
   materialProposalCommandVersionSchema,
+  setBuyerInvoiceNameInputSchema,
   createMaterialInputSchema,
   updateMaterialInputSchema,
   type MaterialProjectOption,
@@ -89,6 +90,7 @@ function createMockProposal(overrides: Partial<MaterialProposalView> = {}): Mate
     reviewState: 'draft' as const,
     returnReason: null,
     approvedRevisionId: null,
+    currentRevisionId: '70000000-0000-4000-8000-000000000001',
     projectId,
     createdBy: engineerId,
     neededOn: '2026-10-30',
@@ -99,6 +101,12 @@ function createMockProposal(overrides: Partial<MaterialProposalView> = {}): Mate
         lineId: line1Id,
         materialId: material1Id,
         materialName: 'Thép cuộn phi 8',
+        engineerProposedInvoiceName: null,
+        buyerProposedInvoiceName: null,
+        effectiveInvoiceDisplayName: 'Thép cuộn phi 8',
+        invoiceDisplayNameSource: 'canonical' as const,
+        buyerOverrideVersion: 0,
+        buyerInvoiceNameEditable: true,
         specification: 'Mác thép CB240-T, TCVN 1651-1:2018',
         unit: 'kg',
         quantity: '20.0000',
@@ -112,7 +120,19 @@ function createMockProposal(overrides: Partial<MaterialProposalView> = {}): Mate
       signedOrderCount: 0,
     },
   }
-  return materialProposalViewSchema.parse({ ...base, ...overrides })
+  const merged = { ...base, ...overrides }
+  if (overrides.lines) {
+    merged.lines = overrides.lines.map((l: any) => ({
+      engineerProposedInvoiceName: null,
+      buyerProposedInvoiceName: null,
+      effectiveInvoiceDisplayName: l.materialName || 'Vật tư',
+      invoiceDisplayNameSource: 'canonical' as const,
+      buyerOverrideVersion: 0,
+      buyerInvoiceNameEditable: true,
+      ...l,
+    }))
+  }
+  return materialProposalViewSchema.parse(merged)
 }
 
 interface MockRouteOptions {
@@ -297,17 +317,28 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
         neededOn: parsedBody.neededOn,
         deliveryAddress: parsedBody.deliveryAddress,
         notes: parsedBody.notes || null,
-        lines: parsedBody.lines.map((l) => ({
-          lineId: l.lineId,
-          materialId: l.materialId,
-          materialName: mockMaterials.find(m => m.id === l.materialId)?.name || 'Vật tư',
-          specification: mockMaterials.find(m => m.id === l.materialId)?.specification || 'Quy cách',
-          unit: mockMaterials.find(m => m.id === l.materialId)?.unit || 'đơn vị',
-          quantity: l.quantity,
-          allocatedQuantity: '0.0000',
-          signedQuantity: '0.0000',
-          remainingQuantity: l.quantity,
-        })),
+        lines: parsedBody.lines.map((l) => {
+          const mat = mockMaterials.find(m => m.id === l.materialId)
+          const matName = mat?.name || 'Vật tư'
+          const engName = l.proposedInvoiceName ? (l.proposedInvoiceName.trim() || null) : null
+          return {
+            lineId: l.lineId,
+            materialId: l.materialId,
+            materialName: matName,
+            engineerProposedInvoiceName: engName,
+            buyerProposedInvoiceName: null,
+            effectiveInvoiceDisplayName: engName || matName,
+            invoiceDisplayNameSource: engName ? ('engineer' as const) : ('canonical' as const),
+            buyerOverrideVersion: 0,
+            buyerInvoiceNameEditable: true,
+            specification: mat?.specification || 'Quy cách',
+            unit: mat?.unit || 'đơn vị',
+            quantity: l.quantity,
+            allocatedQuantity: '0.0000',
+            signedQuantity: '0.0000',
+            remainingQuantity: l.quantity,
+          }
+        }),
       })
 
       const responsePayload = {
@@ -380,17 +411,33 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
         neededOn: parsedBody.neededOn,
         deliveryAddress: parsedBody.deliveryAddress,
         notes: parsedBody.notes || null,
-        lines: parsedBody.lines.map((l) => ({
-          lineId: l.lineId,
-          materialId: l.materialId,
-          materialName: mockMaterials.find(m => m.id === l.materialId)?.name || 'Vật tư',
-          specification: mockMaterials.find(m => m.id === l.materialId)?.specification || 'Quy cách',
-          unit: mockMaterials.find(m => m.id === l.materialId)?.unit || 'đơn vị',
-          quantity: l.quantity,
-          allocatedQuantity: '0.0000',
-          signedQuantity: '0.0000',
-          remainingQuantity: l.quantity,
-        })),
+        lines: parsedBody.lines.map((l) => {
+          const existingLine = activeProposal.lines.find(oldLine => oldLine.lineId === l.lineId)
+          const mat = mockMaterials.find(m => m.id === l.materialId)
+          const matName = mat?.name || existingLine?.materialName || 'Vật tư'
+          const engName = l.proposedInvoiceName ? (l.proposedInvoiceName.trim() || null) : null
+          return {
+            lineId: l.lineId,
+            materialId: l.materialId,
+            materialName: matName,
+            engineerProposedInvoiceName: engName,
+            buyerProposedInvoiceName: existingLine?.buyerProposedInvoiceName || null,
+            effectiveInvoiceDisplayName: existingLine?.buyerProposedInvoiceName || engName || matName,
+            invoiceDisplayNameSource: existingLine?.buyerProposedInvoiceName
+              ? ('buyer' as const)
+              : engName
+                ? ('engineer' as const)
+                : ('canonical' as const),
+            buyerOverrideVersion: existingLine?.buyerOverrideVersion || 0,
+            buyerInvoiceNameEditable: existingLine?.buyerInvoiceNameEditable ?? true,
+            specification: mat?.specification || existingLine?.specification || 'Quy cách',
+            unit: mat?.unit || existingLine?.unit || 'đơn vị',
+            quantity: l.quantity,
+            allocatedQuantity: existingLine?.allocatedQuantity || '0.0000',
+            signedQuantity: existingLine?.signedQuantity || '0.0000',
+            remainingQuantity: l.quantity,
+          }
+        }),
       })
 
       const responsePayload = {
@@ -404,6 +451,85 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
         await route.abort('failed')
         return
       }
+      await route.fulfill({ json: responsePayload })
+      return
+    }
+
+    await route.abort()
+  })
+
+  // Buyer: Invoice Name Override
+  await page.route(/\/api\/companies\/[^/]+\/projects\/[^/]+\/material-procurement\/proposals\/[^/]+\/lines\/[^/]+\/invoice-name$/, async (route: Route) => {
+    const req = route.request()
+    if (req.method() === 'PATCH') {
+      const rawBody = req.postDataJSON()
+      const parsedBody = setBuyerInvoiceNameInputSchema.parse(rawBody)
+      const idempotencyKey = req.headers()['idempotency-key'] || ''
+
+      captured.push({
+        method: req.method(),
+        url: req.url(),
+        body: parsedBody,
+        headers: req.headers(),
+      })
+
+      const receiptKey = idempotencyKey
+      const bodyStr = JSON.stringify(parsedBody)
+      const cached = receipts.get(receiptKey)
+
+      if (cached) {
+        if (cached.bodyString === bodyStr) {
+          await route.fulfill({ json: { ...(cached.response as object), replayed: true } })
+          return
+        }
+        await route.fulfill({
+          status: 409,
+          json: { error: { code: 'IDEMPOTENCY_CONFLICT', message: 'Trùng idempotency key với payload khác' } },
+        })
+        return
+      }
+
+      const match = req.url().match(/\/proposals\/([^/]+)\/lines\/([^/]+)\/invoice-name$/)
+      const targetProposalId = match ? match[1] : proposalId
+      const targetLineId = match ? match[2] : ''
+
+      const targetLine = activeProposal.lines.find(l => l.lineId === targetLineId)
+      if (targetLine && parsedBody.expectedOverrideVersion !== targetLine.buyerOverrideVersion) {
+        await route.fulfill({
+          status: 409,
+          json: {
+            error: {
+              code: 'VERSION_CONFLICT',
+              message: 'Phiên bản không khớp (xung đột dữ liệu).',
+              requestId: 'mock-req-409',
+            },
+          },
+        })
+        return
+      }
+
+      const nextVersion = targetLine ? targetLine.buyerOverrideVersion + 1 : 1
+      if (targetLine) {
+        targetLine.buyerProposedInvoiceName = parsedBody.proposedInvoiceName
+        targetLine.buyerOverrideVersion = nextVersion
+        if (parsedBody.proposedInvoiceName) {
+          targetLine.effectiveInvoiceDisplayName = parsedBody.proposedInvoiceName
+          targetLine.invoiceDisplayNameSource = 'buyer'
+        } else if (targetLine.engineerProposedInvoiceName) {
+          targetLine.effectiveInvoiceDisplayName = targetLine.engineerProposedInvoiceName
+          targetLine.invoiceDisplayNameSource = 'engineer'
+        } else {
+          targetLine.effectiveInvoiceDisplayName = targetLine.materialName
+          targetLine.invoiceDisplayNameSource = 'canonical'
+        }
+      }
+
+      const responsePayload = {
+        resourceId: targetProposalId,
+        version: nextVersion,
+        replayed: false,
+      }
+      receipts.set(receiptKey, { bodyString: bodyStr, response: responsePayload })
       await route.fulfill({ json: responsePayload })
       return
     }
@@ -1203,16 +1329,17 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
     expect(replay).toEqual({ resourceId: committed[0]!.id, version: committed[0]!.version, replayed: true })
   })
 
-  test('11. Giao diện T5 tuyệt đối không có input chọn nhà cung cấp, giá mua hay hóa đơn', async ({ page }) => {
+  test('11. Giao diện T5 tuyệt đối không có input chọn nhà cung cấp, giá mua hay hóa đơn thực tế', async ({ page }) => {
     await setupMaterialMocks(page)
 
     await page.goto(`/materials/${projectId}/proposals/new`)
 
-    // Verify absence of supplier and pricing inputs in engineer request UI
+    // Verify absence of supplier, pricing, and accounting invoice evidence inputs in engineer request UI
     await expect(page.locator('text=/nhà cung cấp/i')).toHaveCount(0)
     await expect(page.locator('text=/đơn giá/i')).toHaveCount(0)
     await expect(page.locator('text=/giá mua/i')).toHaveCount(0)
-    await expect(page.locator('text=/hóa đơn/i')).toHaveCount(0)
+    await expect(page.locator('text=/số hóa đơn/i')).toHaveCount(0)
+    await expect(page.locator('text=/tải lên hóa đơn/i')).toHaveCount(0)
     await expect(page.locator('input[name*="supplier"]')).toHaveCount(0)
     await expect(page.locator('input[name*="price"]')).toHaveCount(0)
   })

@@ -215,6 +215,44 @@
                   >
                     {{ getLineError(line.lineId, 'materialId') }}
                   </span>
+
+                  <!-- Optional engineer anticipated invoice name -->
+                  <div class="line-invoice-name-group mt-2">
+                    <label
+                      :for="'line-invoice-name-' + line.lineId"
+                      class="text-xs font-medium text-slate-700 block mb-0.5"
+                    >
+                      Tên dự kiến trên hóa đơn <span class="text-xs text-muted font-normal">(tùy chọn)</span>
+                    </label>
+                    <div v-if="readOnly">
+                      <span class="text-xs font-medium text-slate-800">{{ line.proposedInvoiceName || '—' }}</span>
+                    </div>
+                    <div v-else>
+                      <input
+                        :id="'line-invoice-name-' + line.lineId"
+                        v-model="line.proposedInvoiceName"
+                        type="text"
+                        class="cockpit-input invoice-name-input text-xs"
+                        placeholder="Để trống sẽ dùng tên vật tư chuẩn"
+                        :disabled="readOnly || isSaving || isSubmitting"
+                        :aria-label="'Tên dự kiến trên hóa đơn dòng ' + (index + 1)"
+                        :aria-invalid="Boolean(getLineError(line.lineId, 'proposedInvoiceName'))"
+                        :aria-describedby="getLineError(line.lineId, 'proposedInvoiceName') ? 'line-invoice-name-error-' + line.lineId : undefined"
+                        maxlength="200"
+                        @input="markDirty"
+                      >
+                      <small class="field-hint block text-xs text-muted mt-0.5">
+                        Để trống sẽ dùng tên vật tư chuẩn
+                      </small>
+                      <span
+                        v-if="getLineError(line.lineId, 'proposedInvoiceName')"
+                        :id="'line-invoice-name-error-' + line.lineId"
+                        class="field-error text-xs"
+                      >
+                        {{ getLineError(line.lineId, 'proposedInvoiceName') }}
+                      </span>
+                    </div>
+                  </div>
                 </td>
                 <td>
                   <span class="text-muted text-sm">{{ getMaterialSpec(line.materialId) }}</span>
@@ -352,6 +390,7 @@ interface FormLine {
   lineId: string
   materialId: string
   quantity: string
+  proposedInvoiceName?: string | null
   allocatedQuantity?: string
   signedQuantity?: string
   remainingQuantity?: string
@@ -499,6 +538,7 @@ function addLine() {
     lineId: newLineId,
     materialId: '',
     quantity: '',
+    proposedInvoiceName: '',
   })
   markDirty()
 }
@@ -586,6 +626,11 @@ function validateForm(): boolean {
       }
     }
 
+    if (line.proposedInvoiceName && line.proposedInvoiceName.trim().length > 200) {
+      validationErrors.value[`line_${line.lineId}_proposedInvoiceName`] = 'Tên dự kiến trên hóa đơn không được vượt quá 200 ký tự.'
+      valid = false
+    }
+
     if (seenLineIds.has(line.lineId)) {
       validationErrors.value.lines = 'Phát hiện mã định danh dòng bị trùng lặp.'
       valid = false
@@ -594,6 +639,12 @@ function validateForm(): boolean {
   }
 
   return valid
+}
+
+function normalizeInvoiceName(name?: string | null): string | null {
+  if (!name) return null
+  const trimmed = name.trim()
+  return trimmed.length > 0 ? trimmed : null
 }
 
 function buildProposalPayload() {
@@ -605,6 +656,7 @@ function buildProposalPayload() {
       lineId: l.lineId,
       materialId: l.materialId,
       quantity: l.quantity.trim(),
+      proposedInvoiceName: normalizeInvoiceName(l.proposedInvoiceName),
     })),
   }
 }
@@ -618,6 +670,7 @@ function proposalPayloadSignature(proposal: MaterialProposalView): string {
       lineId: line.lineId,
       materialId: line.materialId,
       quantity: formatMaterialQuantity(line.quantity.trim()),
+      proposedInvoiceName: normalizeInvoiceName(line.engineerProposedInvoiceName),
     })),
   })
 }
@@ -631,6 +684,7 @@ function formPayloadSignature(): string {
       lineId: l.lineId,
       materialId: l.materialId,
       quantity: formatMaterialQuantity(l.quantity.trim()),
+      proposedInvoiceName: normalizeInvoiceName(l.proposedInvoiceName),
     })),
   })
 }
@@ -886,6 +940,7 @@ function initFromProposal(p: MaterialProposalView) {
     lineId: l.lineId,
     materialId: l.materialId,
     quantity: formatMaterialQuantity(l.quantity),
+    proposedInvoiceName: l.engineerProposedInvoiceName || '',
     allocatedQuantity: l.allocatedQuantity,
     signedQuantity: l.signedQuantity,
     remainingQuantity: l.remainingQuantity,
