@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { costEvidenceFinalizeInputSchema, costEvidenceReadUrlInputSchema } from '../../../../shared/schemas/costs/cost-evidence'
 import {
   cancelMaterialOrderInputSchema,
+  commitMaterialContractInputSchema,
   createMaterialOrderInputSchema,
   materialEvidenceIntentInputSchema,
   chosenSupplierInputSchema,
@@ -80,6 +81,8 @@ export function createMaterialProcurementRoutes(dependencies: MaterialProcuremen
     async listOrders(event: H3Event) { const value = await resolved(event); return value.service.listOrders(value.context, param(event, 'projectId')) },
     async readOrder(event: H3Event) { const value = await resolved(event); return value.service.readOrder(value.context, param(event, 'projectId'), param(event, 'orderId')) },
     async cancelOrder(event: H3Event) { const value = await resolved(event); return value.service.cancelOrder(value.context, param(event, 'projectId'), param(event, 'orderId'), await body(event, cancelMaterialOrderInputSchema), key(event)) },
+    async listEligibleContracts(event: H3Event) { const value = await resolved(event); return value.service.listEligibleContracts(value.context, param(event, 'projectId'), param(event, 'orderId')) },
+    async recordContract(event: H3Event) { const value = await resolved(event); return value.service.recordContract(value.context, param(event, 'projectId'), param(event, 'orderId'), await body(event, commitMaterialContractInputSchema), key(event)) },
     async createEvidenceIntent(event: H3Event) { const value = await resolved(event); return value.service.createEvidenceIntent(value.context, param(event, 'projectId'), await body(event, materialEvidenceIntentInputSchema), key(event)) },
     async finalizeEvidence(event: H3Event) { const value = await resolved(event); return value.service.finalizeEvidence(value.context, param(event, 'projectId'), param(event, 'fileId'), await body(event, costEvidenceFinalizeInputSchema), key(event)) },
     async readEvidenceUrl(event: H3Event) { const value = await resolved(event); return value.service.readEvidenceUrl(value.context, param(event, 'projectId'), param(event, 'fileId'), await body(event, costEvidenceReadUrlInputSchema)) },

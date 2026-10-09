@@ -188,7 +188,9 @@ export const commitMaterialContractInputSchema = z.object({
   signedContractEvidenceFileId: workflowUuidSchema,
   signedQuotationEvidenceFileId: workflowUuidSchema,
   documentsReviewed: z.literal(true),
-}).strict()
+  existingContractId: workflowUuidSchema.optional(),
+}).strict().refine(value => value.signedContractEvidenceFileId !== value.signedQuotationEvidenceFileId,
+  { path: ['signedQuotationEvidenceFileId'], message: 'Signed documents must be distinct' })
 
 export const materialOrderViewSchema = z.object({
   id: workflowUuidSchema,
@@ -211,6 +213,7 @@ export const materialOrderViewSchema = z.object({
   cash: z.object({
     grossPaid: workflowMoneySchema,
     availableToPay: workflowMoneySchema,
+    installmentVersion: version.nullable(),
   }).strict(),
 }).strict()
 
@@ -237,6 +240,20 @@ export const materialCommandResultSchema = z.object({
   contractId: workflowUuidSchema.optional(),
   authorizationId: workflowUuidSchema.optional(),
   installmentId: workflowUuidSchema.optional(),
+}).strict()
+
+export const materialEligibleContractSchema = z.object({
+  id: workflowUuidSchema,
+  reference: shortText,
+  cap: positiveDecimal,
+  currencyCode: workflowCurrencySchema,
+}).strict()
+
+export const materialContractCommandResultSchema = materialCommandResultSchema.extend({
+  contractId: workflowUuidSchema,
+  authorizationId: workflowUuidSchema,
+  installmentId: workflowUuidSchema,
+  notificationId: workflowUuidSchema,
 }).strict()
 
 export const materialEvidenceTargetSchema = z.discriminatedUnion('kind', [
@@ -282,6 +299,7 @@ export const materialProcurementEndpointManifest = {
   listOrders: { method: 'GET', path: '/api/companies/:companyId/projects/:projectId/material-procurement/orders' },
   readOrder: { method: 'GET', path: '/api/companies/:companyId/projects/:projectId/material-procurement/orders/:orderId' },
   cancelOrder: { method: 'POST', path: '/api/companies/:companyId/projects/:projectId/material-procurement/orders/:orderId/cancellations' },
+  listEligibleContracts: { method: 'GET', path: '/api/companies/:companyId/projects/:projectId/material-procurement/orders/:orderId/eligible-contracts' },
   recordContract: { method: 'POST', path: '/api/companies/:companyId/projects/:projectId/material-procurement/orders/:orderId/contract' },
   createEvidenceIntent: { method: 'POST', path: '/api/companies/:companyId/projects/:projectId/material-procurement/evidence/upload-intents' },
   finalizeEvidence: { method: 'POST', path: '/api/companies/:companyId/projects/:projectId/material-procurement/evidence/:fileId/finalize' },
@@ -312,6 +330,8 @@ export type MaterialQuotationComparisonInput = z.infer<typeof materialQuotationC
 export type MaterialQuotationComparisonView = z.infer<typeof materialQuotationComparisonViewSchema>
 export type MaterialCommand = z.infer<typeof materialCommandSchema>
 export type MaterialCommandResult = z.infer<typeof materialCommandResultSchema>
+export type MaterialContractCommandResult = z.infer<typeof materialContractCommandResultSchema>
+export type MaterialEligibleContract = z.infer<typeof materialEligibleContractSchema>
 export type MaterialEvidenceRole = z.infer<typeof materialEvidenceRoleSchema>
 export type MaterialEvidenceIntentInput = z.infer<typeof materialEvidenceIntentInputSchema>
 
@@ -333,7 +353,8 @@ export interface MaterialProcurementRepository {
   listOrders(projectId: string): Promise<MaterialOrderView[]>
   readOrder(projectId: string, orderId: string): Promise<MaterialOrderView>
   cancelOrder(projectId: string, orderId: string, input: CancelMaterialOrderInput, command: MaterialCommand): Promise<MaterialCommandResult>
-  recordContract(projectId: string, orderId: string, input: CommitMaterialContractInput, command: MaterialCommand): Promise<MaterialCommandResult>
+  listEligibleContracts(projectId: string, orderId: string): Promise<MaterialEligibleContract[]>
+  recordContract(projectId: string, orderId: string, input: CommitMaterialContractInput, command: MaterialCommand): Promise<MaterialContractCommandResult>
   createEvidenceIntent(projectId: string, input: MaterialEvidenceIntentInput, command: MaterialCommand): Promise<CostEvidenceUploadIntent>
   finalizeEvidence(projectId: string, fileId: string, input: CostEvidenceFinalizeInput, command: MaterialCommand): Promise<CostEvidenceFinalized>
   readEvidenceUrl(projectId: string, fileId: string, input?: CostEvidenceReadUrlInput): Promise<CostEvidenceReadUrl>

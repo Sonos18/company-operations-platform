@@ -98,6 +98,11 @@ export function createSupabaseEvidenceFinalizer(config: SupabaseAdminConfig): Su
   }
 }
 
+export function createSupabaseDirectPaymentEvidenceFinalizer(config: SupabaseAdminConfig): SupabaseEvidenceFinalizer {
+  const client = createClient(config.url, config.serviceRoleKey, { auth })
+  return { finalize: async args => await client.rpc('c1_finalize_material_payment_evidence_server', args) }
+}
+
 export function createSupabaseMaterialEvidenceFinalizer(config: SupabaseAdminConfig): SupabaseMaterialEvidenceFinalizer {
   const client = createClient(config.url, config.serviceRoleKey, { auth })
   return {

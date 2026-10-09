@@ -7,6 +7,8 @@ import {
 } from '../../../../shared/schemas/costs/cost-evidence'
 import {
   materialCommandResultSchema,
+  materialContractCommandResultSchema,
+  materialEligibleContractSchema,
   materialOrderViewSchema,
   materialProjectOptionSchema,
   materialProposalViewSchema,
@@ -40,6 +42,8 @@ type RpcName =
   | 'c1_material_list_orders'
   | 'c1_material_read_order'
   | 'c1_material_cancel_order'
+  | 'c1_material_record_contract'
+  | 'c1_material_list_eligible_contracts'
   | 'c1_material_create_evidence_intent'
   | 'c1_material_evidence_finalization_target'
   | 'c1_material_evidence_read_target'
@@ -162,6 +166,15 @@ export class SupabaseMaterialProcurementRepository implements MaterialProcuremen
 
   cancelOrder: MaterialProcurementDataRepository['cancelOrder'] = (context, projectId, orderId, input, key) =>
     this.command(context, 'c1_material_cancel_order', input, key, { target_project_id: projectId, target_id: orderId })
+
+  listEligibleContracts: MaterialProcurementDataRepository['listEligibleContracts'] = (context, projectId, orderId) =>
+    this.read(context, 'c1_material_list_eligible_contracts', z.array(materialEligibleContractSchema), { target_project_id: projectId, target_id: orderId })
+
+  recordContract: MaterialProcurementDataRepository['recordContract'] = async (context, projectId, orderId, input, key) =>
+    workflowResponse(await this.client.rpc('c1_material_record_contract', {
+      target_company_id: context.companyId, target_project_id: projectId, target_id: orderId,
+      target_input: input, target_idempotency_key: key, target_request_id: context.requestId,
+    }), materialContractCommandResultSchema)
 
   async createEvidenceIntent(
     context: MaterialProcurementContext,

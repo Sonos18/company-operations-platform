@@ -13,6 +13,9 @@ import {
   createMaterialInputSchema,
   materialCommandSchema,
   materialCommandResultSchema,
+  materialContractCommandResultSchema,
+  materialEligibleContractSchema,
+  commitMaterialContractInputSchema,
   materialEvidenceIntentInputSchema,
   materialOrderViewSchema,
   materialProjectOptionSchema,
@@ -68,10 +71,6 @@ export function createHttpMaterialProcurementRepository(options: {
     })
   }
 
-  async function unsupported(operation: string): Promise<never> {
-    throw new Error('MATERIAL_PROCUREMENT_NOT_IMPLEMENTED: ' + operation)
-  }
-
   return {
     listProjects: async () => read(master('/projects'), z.array(materialProjectOptionSchema)),
     listMaterials: async () => read(master('/materials'), z.array(materialViewSchema)),
@@ -90,7 +89,8 @@ export function createHttpMaterialProcurementRepository(options: {
     listOrders: async projectId => read(project(projectId, '/orders'), z.array(materialOrderViewSchema)),
     readOrder: async (projectId, orderId) => read(project(projectId, '/orders/' + targetId(orderId)), materialOrderViewSchema),
     cancelOrder: async (projectId, orderId, input, cmd) => command(project(projectId, '/orders/' + targetId(orderId) + '/cancellations'), input, cancelMaterialOrderInputSchema, materialCommandResultSchema, cmd),
-    recordContract: () => unsupported('recordContract'),
+    listEligibleContracts: async (projectId, orderId) => read(project(projectId, '/orders/' + targetId(orderId) + '/eligible-contracts'), z.array(materialEligibleContractSchema)),
+    recordContract: async (projectId, orderId, input, cmd) => command(project(projectId, '/orders/' + targetId(orderId) + '/contract'), input, commitMaterialContractInputSchema, materialContractCommandResultSchema, cmd),
     createEvidenceIntent: async (projectId, input, cmd) => command(project(projectId, '/evidence/upload-intents'), input, materialEvidenceIntentInputSchema, costEvidenceUploadIntentSchema, cmd),
     finalizeEvidence: async (projectId, fileId, input, cmd) => command(project(projectId, '/evidence/' + targetId(fileId) + '/finalize'), input, costEvidenceFinalizeInputSchema, costEvidenceFinalizedSchema, cmd),
     readEvidenceUrl: async (projectId, fileId, input = { disposition: 'inline' }) => options.client.request({

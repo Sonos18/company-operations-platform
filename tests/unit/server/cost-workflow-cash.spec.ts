@@ -3,7 +3,7 @@ import {CostWorkflowCashService} from '../../../server/features/costs/workflow/c
 const id='c1f50000-0000-4000-8000-000000000001'
 const context={actorId:id,tenantId:id,companyId:id,requestId:id,permissions:['cost.record_cash','cost.correct','cost.request.submit'] as const}
 const payment={amount:'10',currencyCode:'VND',paymentDate:'2026-10-04',reference:'synthetic transfer',evidenceFileIds:[id],expectedVersion:0}
-function repository(){return {confirmPayment:vi.fn(),createCashAdjustment:vi.fn(),decideCashAdjustment:vi.fn(),confirmRefund:vi.fn(),applyCashCorrection:vi.fn()}}
+function repository(){return {authoritySource:vi.fn(async()=> 'manager_decision' as const),confirmPayment:vi.fn(),createCashAdjustment:vi.fn(),decideCashAdjustment:vi.fn(),confirmRefund:vi.fn(),applyCashCorrection:vi.fn()}}
 describe('proof-backed cash command boundary',()=>{
  it('requires payment proof and never accepts browser consumption or actor fields',async()=>{const r=repository(),s=new CostWorkflowCashService(r);await expect(s.confirmPayment(context,id,id,{...payment,evidenceFileIds:[]},id)).rejects.toMatchObject({statusCode:400});await expect(s.confirmPayment(context,id,id,{...payment,remaining:'90'},id)).rejects.toMatchObject({statusCode:400});expect(r.confirmPayment).not.toHaveBeenCalled()})
  it('approval authority cannot replace accountant actual-payment authority',async()=>{const r=repository();await expect(new CostWorkflowCashService(r).confirmPayment({...context,permissions:['cost.request.decide']},id,id,payment,id)).rejects.toMatchObject({statusCode:403});expect(r.confirmPayment).not.toHaveBeenCalled()})

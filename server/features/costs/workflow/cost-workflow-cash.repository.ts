@@ -1,3 +1,4 @@
+import {z} from 'zod'
 import type {UserSupabaseClient} from '../../../utils/supabase-client'
 import {workflowCommandResultSchema} from '../../../../shared/schemas/costs/cost-workflow'
 import type {WorkflowContext} from './cost-workflow.service'
@@ -8,6 +9,7 @@ export class SupabaseWorkflowCashRepository implements WorkflowCashRepository {
  private readonly client:Client
  constructor(client:UserSupabaseClient){this.client=client as unknown as Client}
  private async command(c:WorkflowContext,p:string,id:string,name:string,input:unknown,key:string){return workflowResponse(await this.client.rpc(name,{target_company_id:c.companyId,target_project_id:p,target_id:id,target_input:input,target_idempotency_key:key,target_request_id:c.requestId}),workflowCommandResultSchema)}
+ authoritySource:WorkflowCashRepository['authoritySource']=async(c,p,id)=>workflowResponse(await this.client.rpc('c1_workflow_installment_authority_source',{target_company_id:c.companyId,target_project_id:p,target_id:id}),z.enum(['manager_decision','direct_authorization']))
  confirmPayment:WorkflowCashRepository['confirmPayment']=(c,p,id,input,key)=>this.command(c,p,id,'c1_workflow_confirm_payment',input,key)
  createCashAdjustment:WorkflowCashRepository['createCashAdjustment']=(c,p,id,input,key)=>this.command(c,p,id,'c1_workflow_create_cash_adjustment',input,key)
  decideCashAdjustment:WorkflowCashRepository['decideCashAdjustment']=(c,p,id,input,key)=>this.command(c,p,id,'c1_workflow_decide_cash_adjustment',input,key)

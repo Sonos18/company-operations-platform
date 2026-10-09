@@ -1,3 +1,4 @@
+import type {CanonicalMaterialPaymentInput} from '../../shared/schemas/costs/direct-contract-authority'
 import type {CostRequestInput,WorkflowUpdateRequestInput,WorkflowCommandVersion,WorkflowDecisionInput,WorkflowManagerAssignmentInput,ContractBasisInput,ContractAdjustmentInput,CashAdjustmentInput,WorkflowPaymentInput,WorkflowRefundConfirmation,WorkflowCommandResult,CostRequestView,WorkflowContractView,WorkflowAdjustmentView,WorkflowProjectContext,WorkflowNotificationView,WorkflowPartyOption,WorkflowDirectoryQuery,WorkflowDirectory,WorkflowRequestHistory,WorkflowSourceSubcontractOption} from '../../shared/schemas/costs/cost-workflow'
 import type {WorkflowEvidenceIntent,WorkflowEvidenceLink,WorkflowQuotationRecoveryInput,WorkflowRecoverableQuotation} from '../../shared/schemas/costs/cost-workflow-evidence'
 import type {CostEvidenceUploadIntent,CostEvidenceFinalized,CostEvidenceFinalizeInput,CostEvidenceReadUrl,CostEvidenceReadUrlInput} from '../../shared/schemas/costs/cost-evidence'
@@ -32,7 +33,7 @@ export interface CostWorkflowRepository{
  linkEvidence(projectId:string,id:string,input:WorkflowEvidenceLink,command:WorkflowCommand):Promise<WorkflowCommandResult>
  readEvidenceUrl(projectId:string,id:string,input?:CostEvidenceReadUrlInput):Promise<CostEvidenceReadUrl>
  extractEvidence(projectId:string,id:string,input:{requestId:string|null;pdfPageScope?:'1'|'1-2';pdfDeclaredPageCount?:number},command:WorkflowCommand):Promise<CostExtractionView>
- confirmPayment(projectId:string,id:string,input:WorkflowPaymentInput,command:WorkflowCommand):Promise<WorkflowCommandResult>
+ confirmPayment(projectId:string,id:string,input:WorkflowPaymentInput|CanonicalMaterialPaymentInput,command:WorkflowCommand):Promise<WorkflowCommandResult>
  createCashAdjustment(projectId:string,id:string,input:CashAdjustmentInput,command:WorkflowCommand):Promise<WorkflowCommandResult>
  decideCashAdjustment(projectId:string,id:string,input:WorkflowDecisionInput,command:WorkflowCommand):Promise<WorkflowCommandResult>
  confirmRefund(projectId:string,id:string,input:WorkflowRefundConfirmation,command:WorkflowCommand):Promise<WorkflowCommandResult>

@@ -41,7 +41,7 @@ const orderView = {
   }],
   unsignedQuotationEvidenceFileId: ids.unsignedQuotation,
   contract: null,
-  cash: { grossPaid: '0.0000', availableToPay: '0.0000' },
+  cash: { grossPaid: '0.0000', availableToPay: '0.0000', installmentVersion: null },
 }
 const commandResult = { resourceId: ids.order, version: 1, replayed: false }
 
@@ -68,6 +68,8 @@ function repository(overrides: Partial<MaterialProcurementDataRepository> = {}):
     listOrders: vi.fn(async () => [orderView]),
     readOrder: vi.fn(async () => orderView),
     cancelOrder: vi.fn(async () => ({ ...commandResult, version: 2 })),
+    listEligibleContracts: vi.fn(async () => []),
+    recordContract: vi.fn(),
     createEvidenceIntent: vi.fn(),
     finalizeEvidence: vi.fn(),
     readEvidenceUrl: vi.fn(),

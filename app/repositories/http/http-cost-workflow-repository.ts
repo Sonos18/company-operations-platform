@@ -1,4 +1,5 @@
 import {z} from 'zod'
+import {canonicalMaterialPaymentInputSchema} from '../../../shared/schemas/costs/direct-contract-authority'
 import {costRequestInputSchema,workflowUpdateRequestInputSchema,workflowCommandVersionSchema,workflowDecisionInputSchema,workflowManagerAssignmentSchema,contractBasisInputSchema,contractAdjustmentInputSchema,cashAdjustmentInputSchema,workflowPaymentInputSchema,workflowRefundConfirmationSchema,workflowCommandResultSchema,costRequestViewSchema,workflowContractViewSchema,workflowAdjustmentViewSchema,workflowProjectContextSchema,workflowNotificationViewSchema,workflowUuidSchema,workflowDirectoryQuerySchema,workflowDirectorySchema,workflowRequestHistorySchema,workflowSourceSubcontractOptionSchema} from '../../../shared/schemas/costs/cost-workflow'
 import {workflowEvidenceIntentSchema,workflowEvidenceLinkSchema,workflowQuotationRecoveryInputSchema,workflowRecoverableQuotationsSchema} from '../../../shared/schemas/costs/cost-workflow-evidence'
 import {costEvidenceUploadIntentSchema,costEvidenceFinalizeInputSchema,costEvidenceFinalizedSchema,costEvidenceReadUrlInputSchema,costEvidenceReadUrlSchema} from '../../../shared/schemas/costs/cost-evidence'
@@ -49,7 +50,7 @@ export function createHttpCostWorkflowRepository(options:{companyId:string|(()=>
   linkEvidence:(p,target,input,key)=>command(p,'/requests/'+id(target)+'/evidence',input,workflowEvidenceLinkSchema,workflowCommandResultSchema,key),
   async readEvidenceUrl(p,target,input={disposition:'inline'}){const url=scoped(p)+'/evidence/'+id(target)+'/read-url';return options.client.request({url,method:'POST',body:costEvidenceReadUrlInputSchema.parse(input),schema:costEvidenceReadUrlSchema})},
   extractEvidence:(p,target,input,key)=>command(p,'/evidence/'+id(target)+'/extract',input,costExtractionCommandSchema,costExtractionViewSchema,key),
-  confirmPayment:(p,target,input,key)=>command(p,'/installments/'+id(target)+'/payments',input,workflowPaymentInputSchema,workflowCommandResultSchema,key),
+  confirmPayment:(p,target,input,key)=>command(p,'/installments/'+id(target)+'/payments',input,z.union([canonicalMaterialPaymentInputSchema,workflowPaymentInputSchema]),workflowCommandResultSchema,key),
   createCashAdjustment:(p,target,input,key)=>command(p,'/payments/'+id(target)+'/adjustments',input,cashAdjustmentInputSchema,workflowCommandResultSchema,key),
   decideCashAdjustment:(p,target,input,key)=>command(p,'/adjustments/'+id(target)+'/decisions',input,workflowDecisionInputSchema,workflowCommandResultSchema,key),
   confirmRefund:(p,target,input,key)=>command(p,'/adjustments/'+id(target)+'/confirm-refund',input,workflowRefundConfirmationSchema,workflowCommandResultSchema,key),

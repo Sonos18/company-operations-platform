@@ -41,9 +41,10 @@ function response<T>(result:Result,schema:z.ZodType<T>):T{
 export class SupabaseWorkflowEvidenceRepository implements WorkflowEvidenceRepository {
  private readonly client:Client
  private readonly original:CostEvidenceRepository
+ private readonly direct:CostEvidenceRepository
  private readonly workflow:SupabaseWorkflowRepository
  private readonly extraction:SupabaseCostExtractionRepository
- constructor(client:UserSupabaseClient,finalizer?:SupabaseEvidenceFinalizer){this.client=client as unknown as Client;this.original=new CostEvidenceRepository(client,finalizer);this.workflow=new SupabaseWorkflowRepository(client);this.extraction=new SupabaseCostExtractionRepository(client)}
+ constructor(client:UserSupabaseClient,finalizer?:SupabaseEvidenceFinalizer,directFinalizer?:SupabaseEvidenceFinalizer){this.client=client as unknown as Client;this.original=new CostEvidenceRepository(client,finalizer);this.direct=new CostEvidenceRepository(client,directFinalizer);this.workflow=new SupabaseWorkflowRepository(client);this.extraction=new SupabaseCostExtractionRepository(client)}
  async listRecoverableQuotations(context:WorkflowEvidenceContext,projectId:string,input:WorkflowQuotationRecoveryInput){
   const parsed=workflowQuotationRecoveryInputSchema.safeParse(input)
   if(!parsed.success)throw new AppApiError(400,'INPUT_INVALID','Dữ liệu báo giá không hợp lệ.')
@@ -73,6 +74,11 @@ export class SupabaseWorkflowEvidenceRepository implements WorkflowEvidenceRepos
   }
   return workflowRecoverableQuotationsSchema.parse(rows.map(row=>({id:row.id,version:row.version,originalFilename:row.original_filename,mimeType:row.verified_mime_type,sizeBytes:row.verified_size_bytes,sha256:row.verified_sha256,finalizedAt:row.finalized_at,kind:'quotation'})))
  }
+ async paymentAuthoritySource(context:WorkflowEvidenceContext,projectId:string,installmentId:string){return response(await this.client.rpc('c1_workflow_installment_authority_source',{target_company_id:context.companyId,target_project_id:projectId,target_id:installmentId}),z.enum(['manager_decision','direct_authorization']))}
+ async directEvidenceSource(context:WorkflowEvidenceContext,projectId:string,fileId:string){return response(await this.client.rpc('c1_material_payment_evidence_source',{target_company_id:context.companyId,target_project_id:projectId,target_id:fileId}),z.boolean())}
+ async createDirectIntent(context:WorkflowEvidenceContext,projectId:string,input:WorkflowEvidenceIntent,key:string){return response(await this.client.rpc('c1_material_payment_evidence_intent',{target_company_id:context.companyId,target_project_id:projectId,target_input:input,target_idempotency_key:key,target_request_id:context.requestId}),costEvidenceUploadIntentSchema)}
+ async finalizeDirect(context:WorkflowEvidenceContext,projectId:string,fileId:string,input:CostEvidenceFinalizeInput,key:string){return this.direct.finalize(context,fileId,input,key)}
+ async createDirectReadUrl(context:WorkflowEvidenceContext,projectId:string,fileId:string,input:CostEvidenceReadUrlInput){const target=response(await this.client.rpc('c1_material_payment_evidence_read_target',{target_company_id:context.companyId,target_project_id:projectId,target_id:fileId}),z.object({bucketId:z.literal('c1-accounting-evidence'),objectPath:z.string().min(1)}).strict());const signed=response(await this.client.storage.from(target.bucketId).createSignedUrl(target.objectPath,60,{download:input.disposition==='attachment'}),z.object({signedUrl:z.string().url()}).passthrough());return costEvidenceReadUrlSchema.parse({url:signed.signedUrl,expiresAt:new Date(Date.now()+60000).toISOString()})}
  async createIntent(context:WorkflowEvidenceContext,projectId:string,input:WorkflowEvidenceIntent,key:string){return response(await this.client.rpc('c1_workflow_create_evidence_intent',{target_company_id:context.companyId,target_project_id:projectId,target_input:input,target_idempotency_key:key,target_request_id:context.requestId}),costEvidenceUploadIntentSchema)}
  async finalize(context:WorkflowEvidenceContext,projectId:string,fileId:string,input:CostEvidenceFinalizeInput,key:string){
   response(await this.client.rpc('c1_workflow_evidence_finalization_target',{target_company_id:context.companyId,target_project_id:projectId,target_id:fileId}),z.object({id:workflowUuidSchema}).strict())

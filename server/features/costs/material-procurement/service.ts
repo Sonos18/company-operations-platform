@@ -10,6 +10,7 @@ import {
 } from '../../../../shared/schemas/costs/cost-evidence'
 import {
   cancelMaterialOrderInputSchema,
+  commitMaterialContractInputSchema,
   createMaterialOrderInputSchema,
   chosenSupplierInputSchema,
   createMaterialInputSchema,
@@ -23,6 +24,9 @@ import {
   type CancelMaterialOrderInput,
   type CreateMaterialOrderInput,
   type MaterialOrderView,
+  type CommitMaterialContractInput,
+  type MaterialContractCommandResult,
+  type MaterialEligibleContract,
   type ChosenSupplierInput,
   type CreateMaterialInput,
   type MaterialEvidenceIntentInput,
@@ -67,6 +71,8 @@ export interface MaterialProcurementDataRepository {
   listOrders(context: MaterialProcurementContext, projectId: string): Promise<MaterialOrderView[]>
   readOrder(context: MaterialProcurementContext, projectId: string, orderId: string): Promise<MaterialOrderView>
   cancelOrder(context: MaterialProcurementContext, projectId: string, orderId: string, input: CancelMaterialOrderInput, key: string): Promise<MaterialCommandResult>
+  listEligibleContracts(context: MaterialProcurementContext, projectId: string, orderId: string): Promise<MaterialEligibleContract[]>
+  recordContract(context: MaterialProcurementContext, projectId: string, orderId: string, input: CommitMaterialContractInput, key: string): Promise<MaterialContractCommandResult>
   createEvidenceIntent(context: MaterialProcurementContext, projectId: string, input: MaterialEvidenceIntentInput, key: string): Promise<CostEvidenceUploadIntent>
   finalizeEvidence(context: MaterialProcurementContext, projectId: string, fileId: string, input: CostEvidenceFinalizeInput, key: string): Promise<CostEvidenceFinalized>
   readEvidenceUrl(context: MaterialProcurementContext, projectId: string, fileId: string, input: CostEvidenceReadUrlInput): Promise<CostEvidenceReadUrl>
@@ -201,6 +207,17 @@ export class MaterialProcurementService {
       parse(cancelMaterialOrderInputSchema, value),
       id(key),
     )
+  }
+
+  async listEligibleContracts(context: MaterialProcurementContext, projectId: string, orderId: string) {
+    requirePermission(context, 'material.read')
+    requirePermission(context, 'material.contract.record')
+    return this.repository.listEligibleContracts(context, id(projectId), id(orderId))
+  }
+
+  async recordContract(context: MaterialProcurementContext, projectId: string, orderId: string, value: unknown, key: string) {
+    requirePermission(context, 'material.contract.record')
+    return this.repository.recordContract(context, id(projectId), id(orderId), parse(commitMaterialContractInputSchema, value), id(key))
   }
 
   async createEvidenceIntent(context: MaterialProcurementContext, projectId: string, value: unknown, key: string) {

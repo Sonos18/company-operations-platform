@@ -5,6 +5,11 @@ import type { WorkflowPartyOption } from '../../../../shared/schemas/costs/cost-
 import { AppApiError } from '../../../utils/api-error'
 export interface WorkflowEvidenceContext {actorId:string;tenantId:string;companyId:string;requestId:string;permissions:readonly PermissionCode[]}
 export interface WorkflowEvidenceRepository {
+ paymentAuthoritySource(context:WorkflowEvidenceContext,projectId:string,installmentId:string):Promise<'manager_decision'|'direct_authorization'>
+ directEvidenceSource(context:WorkflowEvidenceContext,projectId:string,fileId:string):Promise<boolean>
+ createDirectIntent(context:WorkflowEvidenceContext,projectId:string,input:WorkflowEvidenceIntent,key:string):Promise<unknown>
+ finalizeDirect(context:WorkflowEvidenceContext,projectId:string,fileId:string,input:CostEvidenceFinalizeInput,key:string):Promise<unknown>
+ createDirectReadUrl(context:WorkflowEvidenceContext,projectId:string,fileId:string,input:CostEvidenceReadUrlInput):Promise<unknown>
  listRecoverableQuotations(context:WorkflowEvidenceContext,projectId:string,input:WorkflowQuotationRecoveryInput):Promise<WorkflowRecoverableQuotation[]>
  createIntent(context:WorkflowEvidenceContext,projectId:string,input:WorkflowEvidenceIntent,key:string):Promise<unknown>
  finalize(context:WorkflowEvidenceContext,projectId:string,fileId:string,input:CostEvidenceFinalizeInput,key:string):Promise<unknown>
@@ -23,9 +28,9 @@ export class CostWorkflowEvidenceService {
   if(!parsed.success)throw new AppApiError(500,'INTERNAL_ERROR','Phản hồi báo giá không hợp lệ.')
   return parsed.data
  }
- async createIntent(context:WorkflowEvidenceContext,projectId:string,value:unknown,key:string){requirePermission(context,'cost.request.submit');requirePermission(context,'cost.prepare');return this.repository.createIntent(context,projectId,parse(workflowEvidenceIntentSchema,value),key)}
- async finalize(context:WorkflowEvidenceContext,projectId:string,fileId:string,value:unknown,key:string){requirePermission(context,'cost.request.submit');requirePermission(context,'cost.prepare');return this.repository.finalize(context,projectId,fileId,parse(costEvidenceFinalizeInputSchema,value),key)}
+ async createIntent(context:WorkflowEvidenceContext,projectId:string,value:unknown,key:string){const input=parse(workflowEvidenceIntentSchema,value);if(input.target.kind==='payment'&&context.permissions.includes('cost.record_cash')&&(await this.repository.paymentAuthoritySource(context,projectId,input.target.id))==='direct_authorization')return this.repository.createDirectIntent(context,projectId,input,key);requirePermission(context,'cost.request.submit');requirePermission(context,'cost.prepare');return this.repository.createIntent(context,projectId,input,key)}
+ async finalize(context:WorkflowEvidenceContext,projectId:string,fileId:string,value:unknown,key:string){const input=parse(costEvidenceFinalizeInputSchema,value);if(context.permissions.includes('cost.record_cash')&&await this.repository.directEvidenceSource(context,projectId,fileId))return this.repository.finalizeDirect(context,projectId,fileId,input,key);requirePermission(context,'cost.request.submit');requirePermission(context,'cost.prepare');return this.repository.finalize(context,projectId,fileId,input,key)}
  async linkRequestEvidence(context:WorkflowEvidenceContext,projectId:string,requestId:string,value:unknown,key:string){requirePermission(context,'cost.request.submit');return this.repository.linkRequestEvidence(context,projectId,requestId,parse(workflowEvidenceLinkSchema,value),key)}
- async createReadUrl(context:WorkflowEvidenceContext,projectId:string,fileId:string,value:unknown){requirePermission(context,'cost.request.read');requirePermission(context,'cost.request.file.read');return this.repository.createReadUrl(context,projectId,fileId,parse(costEvidenceReadUrlInputSchema,value))}
+ async createReadUrl(context:WorkflowEvidenceContext,projectId:string,fileId:string,value:unknown){const input=parse(costEvidenceReadUrlInputSchema,value);if(context.permissions.includes('cost.record_cash')&&await this.repository.directEvidenceSource(context,projectId,fileId))return this.repository.createDirectReadUrl(context,projectId,fileId,input);requirePermission(context,'cost.request.read');requirePermission(context,'cost.request.file.read');return this.repository.createReadUrl(context,projectId,fileId,input)}
  async listWorkflowParties(context:WorkflowEvidenceContext,projectId:string){requirePermission(context,'cost.party.read');return this.repository.listWorkflowParties(context,projectId)}
 }
