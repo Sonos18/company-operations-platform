@@ -43,6 +43,7 @@
             class="filter-tab"
             :class="{ active: selectedTab === 'all' }"
             :aria-selected="selectedTab === 'all'"
+            :aria-controls="'proposals-tabpanel'"
             :tabindex="selectedTab === 'all' ? 0 : -1"
             @click="onSelectTab('all')"
             @keydown="onTabKeydown($event, 'all')"
@@ -56,6 +57,7 @@
             class="filter-tab"
             :class="{ active: selectedTab === 'draft' }"
             :aria-selected="selectedTab === 'draft'"
+            :aria-controls="'proposals-tabpanel'"
             :tabindex="selectedTab === 'draft' ? 0 : -1"
             @click="onSelectTab('draft')"
             @keydown="onTabKeydown($event, 'draft')"
@@ -69,6 +71,7 @@
             class="filter-tab"
             :class="{ active: selectedTab === 'submitted' }"
             :aria-selected="selectedTab === 'submitted'"
+            :aria-controls="'proposals-tabpanel'"
             :tabindex="selectedTab === 'submitted' ? 0 : -1"
             @click="onSelectTab('submitted')"
             @keydown="onTabKeydown($event, 'submitted')"
@@ -82,6 +85,7 @@
             class="filter-tab"
             :class="{ active: selectedTab === 'approved' }"
             :aria-selected="selectedTab === 'approved'"
+            :aria-controls="'proposals-tabpanel'"
             :tabindex="selectedTab === 'approved' ? 0 : -1"
             @click="onSelectTab('approved')"
             @keydown="onTabKeydown($event, 'approved')"
@@ -95,6 +99,7 @@
             class="filter-tab"
             :class="{ active: selectedTab === 'returned' }"
             :aria-selected="selectedTab === 'returned'"
+            :aria-controls="'proposals-tabpanel'"
             :tabindex="selectedTab === 'returned' ? 0 : -1"
             @click="onSelectTab('returned')"
             @keydown="onTabKeydown($event, 'returned')"
@@ -104,76 +109,79 @@
         </div>
       </div>
 
-      <!-- Loading State -->
-      <div v-if="isLoading" class="loading-state">
-        <p>Đang tải danh sách phiếu yêu cầu...</p>
-      </div>
+      <!-- Tabpanel Container -->
+      <div id="proposals-tabpanel" role="tabpanel" :aria-labelledby="'tab-' + selectedTab">
+        <!-- Loading State -->
+        <div v-if="isLoading" class="loading-state">
+          <p>Đang tải danh sách phiếu yêu cầu...</p>
+        </div>
 
-      <!-- Empty State -->
-      <div v-else-if="filteredProposals.length === 0" class="empty-state">
-        <p v-if="selectedTab === 'all'">Chưa có phiếu yêu cầu vật tư nào cho công trình này.</p>
-        <p v-else>Không có phiếu nào ở trạng thái "{{ tabLabel(selectedTab) }}".</p>
-        <NuxtLink
-          v-if="canSubmit && selectedTab === 'all'"
-          :to="`/materials/${pId}/proposals/new`"
-          class="cockpit-btn cockpit-btn--primary inline-mt"
-        >
-          Tạo phiếu đầu tiên
-        </NuxtLink>
-      </div>
+        <!-- Empty State -->
+        <div v-else-if="filteredProposals.length === 0" class="empty-state">
+          <p v-if="selectedTab === 'all'">Chưa có phiếu yêu cầu vật tư nào cho công trình này.</p>
+          <p v-else>Không có phiếu nào ở trạng thái "{{ tabLabel(selectedTab) }}".</p>
+          <NuxtLink
+            v-if="canSubmit && selectedTab === 'all'"
+            :to="`/materials/${pId}/proposals/new`"
+            class="cockpit-btn cockpit-btn--primary inline-mt"
+          >
+            Tạo phiếu đầu tiên
+          </NuxtLink>
+        </div>
 
-      <!-- Proposals Table -->
-      <div v-else class="table-wrap">
-        <table class="cockpit-table">
-          <thead>
-            <tr>
-              <th scope="col">Ngày cần</th>
-              <th scope="col">Nơi giao hàng</th>
-              <th scope="col">Số loại vật tư</th>
-              <th scope="col">Tiến độ đơn mua</th>
-              <th scope="col">Trạng thái</th>
-              <th scope="col" style="text-align: right;">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="prop in filteredProposals" :key="prop.id">
-              <td class="font-medium whitespace-nowrap">
-                <NuxtLink :to="`/materials/${pId}/proposals/${prop.id}`" class="table-link">
-                  {{ prop.neededOn }}
-                </NuxtLink>
-              </td>
-              <td>
-                <span class="delivery-address text-sm">{{ prop.deliveryAddress }}</span>
-              </td>
-              <td>
-                <span class="cockpit-badge cockpit-badge--neutral">
-                  {{ prop.lines.length }} dòng vật tư
-                </span>
-              </td>
-              <td>
-                <div class="progress-info text-sm">
-                  <span>{{ prop.orderProgress.orderCount }} đơn mua</span>
-                  <span v-if="prop.orderProgress.signedOrderCount > 0" class="signed-order-text">
-                    ({{ prop.orderProgress.signedOrderCount }} đã ký HĐ)
+        <!-- Proposals Table -->
+        <div v-else class="table-wrap">
+          <table class="cockpit-table">
+            <thead>
+              <tr>
+                <th scope="col">Ngày cần</th>
+                <th scope="col">Nơi giao hàng</th>
+                <th scope="col">Số loại vật tư</th>
+                <th scope="col">Tiến độ đơn mua</th>
+                <th scope="col">Trạng thái</th>
+                <th scope="col" style="text-align: right;">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="prop in filteredProposals" :key="prop.id">
+                <td class="font-medium whitespace-nowrap">
+                  <NuxtLink :to="`/materials/${pId}/proposals/${prop.id}`" class="table-link">
+                    {{ prop.neededOn }}
+                  </NuxtLink>
+                </td>
+                <td>
+                  <span class="delivery-address text-sm">{{ prop.deliveryAddress }}</span>
+                </td>
+                <td>
+                  <span class="cockpit-badge cockpit-badge--neutral">
+                    {{ prop.lines.length }} dòng vật tư
                   </span>
-                </div>
-              </td>
-              <td>
-                <span class="cockpit-badge" :class="statusBadgeClass(prop.reviewState)">
-                  {{ statusText(prop.reviewState) }}
-                </span>
-              </td>
-              <td style="text-align: right;">
-                <NuxtLink
-                  :to="`/materials/${pId}/proposals/${prop.id}`"
-                  class="cockpit-btn cockpit-btn--secondary btn-sm"
-                >
-                  {{ isAuthorAndEditable(prop) ? 'Chỉnh sửa' : 'Chi tiết' }}
-                </NuxtLink>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                </td>
+                <td>
+                  <div class="progress-info text-sm">
+                    <span>{{ prop.orderProgress.orderCount }} đơn mua</span>
+                    <span v-if="prop.orderProgress.signedOrderCount > 0" class="signed-order-text">
+                      ({{ prop.orderProgress.signedOrderCount }} đã ký HĐ)
+                    </span>
+                  </div>
+                </td>
+                <td>
+                  <span class="cockpit-badge" :class="statusBadgeClass(prop.reviewState)">
+                    {{ statusText(prop.reviewState) }}
+                  </span>
+                </td>
+                <td style="text-align: right;">
+                  <NuxtLink
+                    :to="`/materials/${pId}/proposals/${prop.id}`"
+                    class="cockpit-btn cockpit-btn--secondary btn-sm"
+                  >
+                    {{ isAuthorAndEditable(prop) ? 'Chỉnh sửa' : 'Chi tiết' }}
+                  </NuxtLink>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   </div>

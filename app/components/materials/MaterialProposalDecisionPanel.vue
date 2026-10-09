@@ -17,7 +17,7 @@
       </div>
     </div>
 
-    <!-- Warning Alert when POST succeeded but canonical GET failed (postAcknowledged) -->
+    <!-- 1. Warning Alert when POST succeeded with ACK but canonical GET failed (postAcknowledged) -->
     <div v-if="postAcknowledged" class="cockpit-alert cockpit-alert--warning mt-3" role="alert">
       <div class="flex items-start gap-2">
         <UIcon name="i-lucide-alert-triangle" class="text-amber-600 text-base shrink-0 mt-0.5" aria-hidden="true" />
@@ -30,10 +30,10 @@
             <button
               type="button"
               class="cockpit-btn cockpit-btn--primary btn-sm"
-              :disabled="isControlDisabled"
+              :disabled="isRecoveryControlDisabled"
               @click="retryCanonicalGet"
             >
-              <UIcon v-if="isLocalBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
+              <UIcon v-if="isTransportBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
               <UIcon v-else name="i-lucide-refresh-cw" class="text-sm" aria-hidden="true" />
               Tải lại phiếu
             </button>
@@ -42,21 +42,45 @@
       </div>
     </div>
 
-    <!-- Error Alert for other failures (network, conflict, permission) -->
-    <div v-else-if="actionError" class="cockpit-alert cockpit-alert--danger mt-3" role="alert">
+    <!-- 2. Danger Alert when POST was rejected but canonical GET refresh failed (isPostRejected) -->
+    <div v-else-if="isPostRejected" class="cockpit-alert cockpit-alert--danger mt-3" role="alert">
       <div class="flex items-start gap-2">
         <UIcon name="i-lucide-alert-circle" class="text-rose-600 text-base shrink-0 mt-0.5" aria-hidden="true" />
         <div class="flex-1">
           <p class="font-semibold text-rose-900">{{ actionError }}</p>
-          <!-- Retry button for uncommitted command after network error -->
-          <div v-if="pendingCommand" class="mt-2 flex items-center gap-2">
+          <div class="mt-2.5">
             <button
               type="button"
               class="cockpit-btn cockpit-btn--secondary btn-sm"
-              :disabled="isControlDisabled"
+              :disabled="isRecoveryControlDisabled"
+              @click="retryCanonicalGet"
+            >
+              <UIcon v-if="isTransportBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
+              <UIcon v-else name="i-lucide-refresh-cw" class="text-sm" aria-hidden="true" />
+              Tải lại phiếu
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Danger Alert for unknown POST error (e.g. network/timeout before ACK) -->
+    <div v-else-if="pendingCommand" class="cockpit-alert cockpit-alert--danger mt-3" role="alert">
+      <div class="flex items-start gap-2">
+        <UIcon name="i-lucide-alert-circle" class="text-rose-600 text-base shrink-0 mt-0.5" aria-hidden="true" />
+        <div class="flex-1">
+          <p class="font-semibold text-rose-900">{{ actionError }}</p>
+          <p class="text-sm text-rose-800 mt-0.5">
+            Lỗi kết nối máy chủ. Lệnh chưa xác định được kết quả commit. Vui lòng bấm thử lại để tiếp tục với đúng lệnh này.
+          </p>
+          <div class="mt-2.5">
+            <button
+              type="button"
+              class="cockpit-btn cockpit-btn--secondary btn-sm"
+              :disabled="isRecoveryControlDisabled"
               @click="retryPendingCommand"
             >
-              <UIcon v-if="isLocalBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
+              <UIcon v-if="isTransportBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
               <UIcon v-else name="i-lucide-rotate-cw" class="text-sm" aria-hidden="true" />
               Thử lại lệnh vừa gửi
             </button>
@@ -65,21 +89,29 @@
       </div>
     </div>
 
-    <!-- Busy progress banner -->
-    <div v-if="isLocalBusy" class="busy-banner mt-3" role="status" aria-live="polite">
+    <!-- 4. Regular Error Alert when no command is pending -->
+    <div v-else-if="actionError" class="cockpit-alert cockpit-alert--danger mt-3" role="alert">
+      <div class="flex items-start gap-2">
+        <UIcon name="i-lucide-alert-circle" class="text-rose-600 text-base shrink-0 mt-0.5" aria-hidden="true" />
+        <p class="font-semibold text-rose-900 flex-1">{{ actionError }}</p>
+      </div>
+    </div>
+
+    <!-- Busy progress banner (for active transport) -->
+    <div v-if="isTransportBusy" class="busy-banner mt-3" role="status" aria-live="polite">
       <UIcon name="i-lucide-loader-2" class="animate-spin text-sky-600 shrink-0" aria-hidden="true" />
       <span class="text-sm font-medium text-slate-700">{{ actionStatusMessage || 'Đang xử lý quyết định...' }}</span>
     </div>
 
-    <!-- Interactive Decision Controls: locked when postAcknowledged (only reload allowed) -->
-    <div v-if="!postAcknowledged && isEligible" class="decision-content mt-3">
+    <!-- Interactive Decision Controls: locked whenever pendingCommand exists -->
+    <div v-if="!pendingCommand && isEligible" class="decision-content mt-3">
       <!-- Mode: Idle (buttons to choose action) -->
       <div v-if="activeMode === 'idle'" class="flex items-center gap-3 flex-wrap">
         <button
           v-if="canApprove"
           type="button"
           class="cockpit-btn cockpit-btn--primary"
-          :disabled="isControlDisabled"
+          :disabled="isRegularControlDisabled"
           @click="startApprove"
         >
           <UIcon name="i-lucide-check-circle" aria-hidden="true" />
@@ -90,7 +122,7 @@
           v-if="canReturn"
           type="button"
           class="cockpit-btn cockpit-btn--danger"
-          :disabled="isControlDisabled"
+          :disabled="isRegularControlDisabled"
           @click="startReturn"
         >
           <UIcon name="i-lucide-corner-up-left" aria-hidden="true" />
@@ -117,17 +149,17 @@
           <button
             type="button"
             class="cockpit-btn cockpit-btn--primary btn-sm"
-            :disabled="isControlDisabled"
+            :disabled="isRegularControlDisabled"
             @click="confirmApprove"
           >
-            <UIcon v-if="isLocalBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
+            <UIcon v-if="isTransportBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
             <UIcon v-else name="i-lucide-check" class="text-sm" aria-hidden="true" />
             Xác nhận duyệt
           </button>
           <button
             type="button"
             class="cockpit-btn cockpit-btn--secondary btn-sm"
-            :disabled="isControlDisabled"
+            :disabled="isRegularControlDisabled"
             @click="cancelAction"
           >
             Hủy
@@ -152,7 +184,7 @@
           rows="3"
           class="return-textarea"
           placeholder="Nhập lý do trả phiếu..."
-          :disabled="isControlDisabled"
+          :disabled="isRegularControlDisabled"
           maxlength="2000"
         />
 
@@ -168,17 +200,17 @@
           <button
             type="button"
             class="cockpit-btn cockpit-btn--danger btn-sm"
-            :disabled="isControlDisabled"
+            :disabled="isRegularControlDisabled"
             @click="confirmReturn"
           >
-            <UIcon v-if="isLocalBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
+            <UIcon v-if="isTransportBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
             <UIcon v-else name="i-lucide-corner-up-left" class="text-sm" aria-hidden="true" />
             Xác nhận trả phiếu
           </button>
           <button
             type="button"
             class="cockpit-btn cockpit-btn--secondary btn-sm"
-            :disabled="isControlDisabled"
+            :disabled="isRegularControlDisabled"
             @click="cancelAction"
           >
             Hủy
@@ -191,10 +223,10 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from 'vue'
-import type { MaterialProposalView } from '../../../../shared/schemas/costs/material-procurement'
-import { workflowUuidSchema } from '../../../../shared/schemas/costs/cost-workflow'
-import { ClientError } from '../../../errors/client-error'
-import { createAsyncRequestTracker } from '../../../utils/costs/async-request-tracker'
+import type { MaterialProposalView } from '../../../shared/schemas/costs/material-procurement'
+import { workflowUuidSchema } from '../../../shared/schemas/costs/cost-workflow'
+import { ClientError } from '../../errors/client-error'
+import { createAsyncRequestTracker, type RequestToken } from '../../utils/costs/async-request-tracker'
 
 interface Props {
   companyId: string
@@ -213,6 +245,7 @@ const emit = defineEmits<{
 }>()
 
 const companyAccess = useNuxtApp().$companyAccessStore
+const authStore = useNuxtApp().$authStore
 const repositories = useRepositories()
 const repo = repositories.materialProcurement
 
@@ -220,6 +253,7 @@ interface DecisionCommand {
   readonly companyId: string
   readonly projectId: string
   readonly proposalId: string
+  readonly actorId: string
   readonly expectedVersion: number
   readonly decision: 'approve' | 'return'
   readonly reason?: string
@@ -230,15 +264,17 @@ type TrackerScope = {
   companyId: string
   projectId: string
   proposalId: string
+  actorId: string
   tokenKey: string
 }
 
 const tracker = createAsyncRequestTracker<TrackerScope>()
 let isDisposed = false
 
-const isLocalBusy = ref(false)
-const postAcknowledged = ref(false)
+const isTransportBusy = ref(false)
 const pendingCommand = ref<DecisionCommand | null>(null)
+const postAcknowledged = ref(false)
+const isPostRejected = ref(false)
 const actionError = ref('')
 const actionStatusMessage = ref('')
 
@@ -246,24 +282,39 @@ const activeMode = ref<'idle' | 'confirm_approve' | 'input_return'>('idle')
 const returnReason = ref('')
 const validationError = ref('')
 
-const isScopeValid = computed(() => {
+function isLiveScopeValid(cmd?: DecisionCommand): boolean {
+  if (isDisposed) return false
   const activeCompanyId = companyAccess?.activeCompanyId
-  if (!activeCompanyId || activeCompanyId !== props.companyId) return false
+  const currentUserId = authStore?.user?.id
+  if (!activeCompanyId || !currentUserId) return false
+  if (activeCompanyId !== props.companyId) return false
   if (!workflowUuidSchema.safeParse(props.companyId).success) return false
   if (!props.projectId || props.projectId !== props.proposal?.projectId) return false
   if (!workflowUuidSchema.safeParse(props.projectId).success) return false
   if (!props.proposal?.id || !workflowUuidSchema.safeParse(props.proposal.id).success) return false
+  if (cmd) {
+    if (cmd.companyId !== activeCompanyId) return false
+    if (cmd.projectId !== props.projectId) return false
+    if (cmd.proposalId !== props.proposal.id) return false
+    if (cmd.actorId !== currentUserId) return false
+  }
   return true
-})
+}
 
 const hasDecidePermission = computed(() => {
-  if (!isScopeValid.value) return false
+  if (!isLiveScopeValid()) return false
   return Boolean(companyAccess?.hasPermission('material.proposal.decide'))
+})
+
+const hasReadPermission = computed(() => {
+  if (!isLiveScopeValid()) return false
+  return Boolean(companyAccess?.hasPermission('material.read'))
 })
 
 const canApprove = computed(() => {
   return (
     hasDecidePermission.value &&
+    !pendingCommand.value &&
     props.proposal?.reviewState === 'submitted' &&
     Boolean(props.proposal?.currentRevisionId)
   )
@@ -272,6 +323,7 @@ const canApprove = computed(() => {
 const canReturn = computed(() => {
   return (
     hasDecidePermission.value &&
+    !pendingCommand.value &&
     (props.proposal?.reviewState === 'submitted' || props.proposal?.reviewState === 'approved') &&
     Boolean(props.proposal?.currentRevisionId)
   )
@@ -282,23 +334,53 @@ const isEligible = computed(() => {
 })
 
 const shouldRender = computed(() => {
-  if (!isScopeValid.value || !hasDecidePermission.value) return false
-  return isEligible.value || Boolean(pendingCommand.value) || postAcknowledged.value
+  if (!isLiveScopeValid() || !hasDecidePermission.value) return false
+  return isEligible.value || Boolean(pendingCommand.value)
 })
 
-const isControlDisabled = computed(() => {
-  return Boolean(props.disabled || isLocalBusy.value)
+const isRegularControlDisabled = computed(() => {
+  return Boolean(props.disabled || isTransportBusy.value || pendingCommand.value)
 })
+
+const isRecoveryControlDisabled = computed(() => {
+  return Boolean(isTransportBusy.value || !isLiveScopeValid())
+})
+
+function assertCanonicalIdentity(canonical: MaterialProposalView, expectedProjectId: string, expectedProposalId: string): void {
+  if (canonical.id !== expectedProposalId || canonical.projectId !== expectedProjectId) {
+    throw new Error('Dữ liệu phiếu tải về không khớp định danh hiện tại.')
+  }
+}
+
+function safeEmitBusy(cmd: DecisionCommand, token: RequestToken<TrackerScope>, value: boolean) {
+  if (isDisposed || !token.isCurrent() || !isLiveScopeValid(cmd)) return
+  emit('busy', {
+    companyId: cmd.companyId,
+    projectId: cmd.projectId,
+    proposalId: cmd.proposalId,
+    value,
+  })
+}
+
+function safeEmitRefreshed(cmd: DecisionCommand, token: RequestToken<TrackerScope>, proposal: MaterialProposalView) {
+  if (isDisposed || !token.isCurrent() || !isLiveScopeValid(cmd)) return
+  emit('refreshed', {
+    companyId: cmd.companyId,
+    projectId: cmd.projectId,
+    proposalId: cmd.proposalId,
+    proposal,
+  })
+}
 
 function startApprove() {
-  if (isControlDisabled.value || !canApprove.value) return
+  if (isRegularControlDisabled.value || !canApprove.value) return
   actionError.value = ''
   validationError.value = ''
   activeMode.value = 'confirm_approve'
 }
 
 function startReturn() {
-  if (isControlDisabled.value || !canReturn.value) return
+  if (isRegularControlDisabled.value || !canReturn.value) return
   actionError.value = ''
   validationError.value = ''
   returnReason.value = ''
@@ -306,35 +388,32 @@ function startReturn() {
 }
 
 function cancelAction() {
-  if (isLocalBusy.value) return
+  if (isTransportBusy.value || pendingCommand.value) return
   activeMode.value = 'idle'
   returnReason.value = ''
   validationError.value = ''
 }
 
 async function executeCommand(cmd: DecisionCommand) {
-  if (isLocalBusy.value || props.disabled || !isScopeValid.value) return
+  if (isTransportBusy.value || !isLiveScopeValid(cmd) || !hasDecidePermission.value) return
 
   const token = tracker.start({
     companyId: cmd.companyId,
     projectId: cmd.projectId,
     proposalId: cmd.proposalId,
+    actorId: cmd.actorId,
     tokenKey: cmd.idempotencyKey,
   })
 
-  isLocalBusy.value = true
+  isTransportBusy.value = true
   actionError.value = ''
   validationError.value = ''
 
-  emit('busy', {
-    companyId: cmd.companyId,
-    projectId: cmd.projectId,
-    proposalId: cmd.proposalId,
-    value: true,
-  })
+  // Lock parent
+  safeEmitBusy(cmd, token, true)
 
-  // Phase 1: POST decision command if not yet acknowledged
-  if (!postAcknowledged.value) {
+  // Phase 1: POST decision command if not yet acknowledged and not already rejected
+  if (!postAcknowledged.value && !isPostRejected.value) {
     try {
       actionStatusMessage.value = cmd.decision === 'approve'
         ? 'Đang gửi quyết định duyệt phiếu...'
@@ -344,6 +423,8 @@ async function executeCommand(cmd: DecisionCommand) {
         ? { expectedVersion: cmd.expectedVersion, decision: 'approve' as const }
         : { expectedVersion: cmd.expectedVersion, decision: 'return' as const, reason: cmd.reason! }
 
+      if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd) || !hasDecidePermission.value) return
+
       await repo.decideProposal(
         cmd.projectId,
         cmd.proposalId,
@@ -351,10 +432,10 @@ async function executeCommand(cmd: DecisionCommand) {
         { idempotencyKey: cmd.idempotencyKey },
       )
 
-      if (!token.isCurrent() || isDisposed) return
+      if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
       postAcknowledged.value = true
     } catch (err: unknown) {
-      if (!token.isCurrent() || isDisposed) return
+      if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
 
       const errCode = (err as { code?: string })?.code
       const errStatus = (err as { statusCode?: number; status?: number })?.statusCode
@@ -370,6 +451,7 @@ async function executeCommand(cmd: DecisionCommand) {
         errStatus === 409
 
       if (isConflictOrStateError) {
+        isPostRejected.value = true
         if (errCode === 'VERSION_CONFLICT' || errStatus === 409) {
           actionError.value = 'Xung đột phiên bản: Phiếu yêu cầu đã bị thay đổi bởi người khác. Vui lòng tải lại dữ liệu mới nhất.'
         } else if (errCode === 'IDEMPOTENCY_CONFLICT') {
@@ -386,28 +468,30 @@ async function executeCommand(cmd: DecisionCommand) {
 
         try {
           actionStatusMessage.value = 'Đang tải lại dữ liệu phiếu mới nhất...'
+          if (!hasReadPermission.value) throw new Error('PERMISSION_DENIED')
+
           const canonical = await repo.readProposal(cmd.projectId, cmd.proposalId)
-          if (!token.isCurrent() || isDisposed) return
+          if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
+
+          assertCanonicalIdentity(canonical, cmd.projectId, cmd.proposalId)
 
           pendingCommand.value = null
           postAcknowledged.value = false
+          isPostRejected.value = false
           activeMode.value = 'idle'
           returnReason.value = ''
+          actionStatusMessage.value = ''
 
-          emit('refreshed', {
-            companyId: cmd.companyId,
-            projectId: cmd.projectId,
-            proposalId: cmd.proposalId,
-            proposal: canonical,
-          })
+          safeEmitRefreshed(cmd, token, canonical)
+          safeEmitBusy(cmd, token, false)
         } catch {
-          if (!token.isCurrent() || isDisposed) return
-          actionError.value += ' Đồng thời không thể tải lại phiếu mới nhất từ máy chủ.'
+          if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
+          actionError.value += ' Đồng thời chưa thể tải lại dữ liệu mới nhất từ máy chủ.'
         }
         return
       }
 
-      // Authorization / authentication errors: command rejected, safe to clear pendingCommand
+      // Authorization / authentication errors: command rejected before commit
       if (
         errStatus === 401 ||
         errStatus === 403 ||
@@ -417,6 +501,10 @@ async function executeCommand(cmd: DecisionCommand) {
       ) {
         actionError.value = err instanceof Error ? err.message : 'Bạn không có quyền thực hiện thao tác này.'
         pendingCommand.value = null
+        isPostRejected.value = false
+        activeMode.value = 'idle'
+        actionStatusMessage.value = ''
+        safeEmitBusy(cmd, token, false)
         return
       }
 
@@ -424,15 +512,9 @@ async function executeCommand(cmd: DecisionCommand) {
       actionError.value = err instanceof Error ? err.message : 'Lỗi kết nối máy chủ khi gửi quyết định.'
       return
     } finally {
-      if ((!postAcknowledged.value || !token.isCurrent() || isDisposed) && token.isCurrent() && !isDisposed) {
-        isLocalBusy.value = false
+      if (token.isCurrent() && !isDisposed && isLiveScopeValid(cmd)) {
+        isTransportBusy.value = false
         actionStatusMessage.value = ''
-        emit('busy', {
-          companyId: cmd.companyId,
-          projectId: cmd.projectId,
-          proposalId: cmd.proposalId,
-          value: false,
-        })
       }
     }
   }
@@ -441,52 +523,47 @@ async function executeCommand(cmd: DecisionCommand) {
   if (postAcknowledged.value) {
     try {
       actionStatusMessage.value = 'Đang tải lại dữ liệu phiếu đã cập nhật...'
-      const canonical = await repo.readProposal(cmd.projectId, cmd.proposalId)
-      if (!token.isCurrent() || isDisposed) return
+      if (!hasReadPermission.value) throw new Error('PERMISSION_DENIED')
 
-      if (canonical.id !== cmd.proposalId || canonical.projectId !== cmd.projectId) {
-        throw new Error('Dữ liệu phiếu tải về không khớp định danh hiện tại.')
-      }
+      const canonical = await repo.readProposal(cmd.projectId, cmd.proposalId)
+      if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
+
+      assertCanonicalIdentity(canonical, cmd.projectId, cmd.proposalId)
 
       // Completed successfully
       pendingCommand.value = null
       postAcknowledged.value = false
+      isPostRejected.value = false
       activeMode.value = 'idle'
       returnReason.value = ''
       actionError.value = ''
       actionStatusMessage.value = ''
 
-      emit('refreshed', {
-        companyId: cmd.companyId,
-        projectId: cmd.projectId,
-        proposalId: cmd.proposalId,
-        proposal: canonical,
-      })
+      safeEmitRefreshed(cmd, token, canonical)
+      safeEmitBusy(cmd, token, false)
     } catch (err: unknown) {
-      if (!token.isCurrent() || isDisposed) return
+      if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
       actionError.value = 'Đã ghi nhận, chưa tải lại được phiếu.'
     } finally {
-      if (token.isCurrent() && !isDisposed) {
-        isLocalBusy.value = false
+      if (token.isCurrent() && !isDisposed && isLiveScopeValid(cmd)) {
+        isTransportBusy.value = false
         actionStatusMessage.value = ''
-        emit('busy', {
-          companyId: cmd.companyId,
-          projectId: cmd.projectId,
-          proposalId: cmd.proposalId,
-          value: false,
-        })
       }
     }
   }
 }
 
 function confirmApprove() {
-  if (isControlDisabled.value || !canApprove.value) return
+  if (isRegularControlDisabled.value || !canApprove.value || pendingCommand.value) return
+
+  const liveActorId = authStore?.user?.id
+  if (!liveActorId || !isLiveScopeValid()) return
 
   const cmd: DecisionCommand = Object.freeze({
     companyId: props.companyId,
     projectId: props.projectId,
     proposalId: props.proposal.id,
+    actorId: liveActorId,
     expectedVersion: props.proposal.version,
     decision: 'approve' as const,
     idempotencyKey: crypto.randomUUID(),
@@ -494,11 +571,12 @@ function confirmApprove() {
 
   pendingCommand.value = cmd
   postAcknowledged.value = false
+  isPostRejected.value = false
   void executeCommand(cmd)
 }
 
 function confirmReturn() {
-  if (isControlDisabled.value || !canReturn.value) return
+  if (isRegularControlDisabled.value || !canReturn.value || pendingCommand.value) return
 
   const trimmed = returnReason.value.trim()
   if (!trimmed) {
@@ -511,10 +589,14 @@ function confirmReturn() {
   }
   validationError.value = ''
 
+  const liveActorId = authStore?.user?.id
+  if (!liveActorId || !isLiveScopeValid()) return
+
   const cmd: DecisionCommand = Object.freeze({
     companyId: props.companyId,
     projectId: props.projectId,
     proposalId: props.proposal.id,
+    actorId: liveActorId,
     expectedVersion: props.proposal.version,
     decision: 'return' as const,
     reason: trimmed,
@@ -523,88 +605,97 @@ function confirmReturn() {
 
   pendingCommand.value = cmd
   postAcknowledged.value = false
+  isPostRejected.value = false
   void executeCommand(cmd)
 }
 
 function retryPendingCommand() {
-  if (isControlDisabled.value || !pendingCommand.value || postAcknowledged.value) return
+  if (isRecoveryControlDisabled.value || !pendingCommand.value || postAcknowledged.value || isPostRejected.value) return
   void executeCommand(pendingCommand.value)
 }
 
 async function retryCanonicalGet() {
-  if (isControlDisabled.value || !pendingCommand.value || !postAcknowledged.value) return
+  if (isRecoveryControlDisabled.value || !pendingCommand.value || (!postAcknowledged.value && !isPostRejected.value)) return
   const cmd = pendingCommand.value
 
   const token = tracker.start({
     companyId: cmd.companyId,
     projectId: cmd.projectId,
     proposalId: cmd.proposalId,
+    actorId: cmd.actorId,
     tokenKey: 'retry-canonical-get',
   })
 
-  isLocalBusy.value = true
+  isTransportBusy.value = true
   actionError.value = ''
   actionStatusMessage.value = 'Đang tải lại dữ liệu phiếu...'
 
-  emit('busy', {
-    companyId: cmd.companyId,
-    projectId: cmd.projectId,
-    proposalId: cmd.proposalId,
-    value: true,
-  })
+  safeEmitBusy(cmd, token, true)
 
   try {
-    const canonical = await repo.readProposal(cmd.projectId, cmd.proposalId)
-    if (!token.isCurrent() || isDisposed) return
+    if (!hasReadPermission.value) throw new Error('PERMISSION_DENIED')
 
-    if (canonical.id !== cmd.proposalId || canonical.projectId !== cmd.projectId) {
-      throw new Error('Dữ liệu phiếu tải về không khớp định danh hiện tại.')
-    }
+    const canonical = await repo.readProposal(cmd.projectId, cmd.proposalId)
+    if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
+
+    assertCanonicalIdentity(canonical, cmd.projectId, cmd.proposalId)
 
     pendingCommand.value = null
     postAcknowledged.value = false
+    isPostRejected.value = false
     activeMode.value = 'idle'
     returnReason.value = ''
     actionError.value = ''
     actionStatusMessage.value = ''
 
-    emit('refreshed', {
-      companyId: cmd.companyId,
-      projectId: cmd.projectId,
-      proposalId: cmd.proposalId,
-      proposal: canonical,
-    })
+    safeEmitRefreshed(cmd, token, canonical)
+    safeEmitBusy(cmd, token, false)
   } catch (err: unknown) {
-    if (!token.isCurrent() || isDisposed) return
-    actionError.value = 'Đã ghi nhận, chưa tải lại được phiếu. Vui lòng thử lại.'
+    if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
+    if (postAcknowledged.value) {
+      actionError.value = 'Đã ghi nhận, chưa tải lại được phiếu. Vui lòng thử lại.'
+    } else {
+      actionError.value = 'Chưa tải lại được dữ liệu mới nhất từ máy chủ. Vui lòng thử lại.'
+    }
   } finally {
-    if (token.isCurrent() && !isDisposed) {
-      isLocalBusy.value = false
+    if (token.isCurrent() && !isDisposed && isLiveScopeValid(cmd)) {
+      isTransportBusy.value = false
       actionStatusMessage.value = ''
-      emit('busy', {
-        companyId: cmd.companyId,
-        projectId: cmd.projectId,
-        proposalId: cmd.proposalId,
-        value: false,
-      })
     }
   }
 }
 
 watch(
-  [() => props.companyId, () => props.projectId, () => props.proposal?.id],
-  ([newCompany, newProj, newProp], [oldCompany, oldProj, oldProp]) => {
-    if (newCompany !== oldCompany || newProj !== oldProj || newProp !== oldProp) {
+  [
+    () => companyAccess?.activeCompanyId,
+    () => authStore?.user?.id,
+    () => companyAccess?.hasPermission('material.proposal.decide'),
+    () => props.companyId,
+    () => props.projectId,
+    () => props.proposal?.id,
+  ],
+  ([newCompany, newActor, newDecide, newPropCompany, newPropProject, newPropProposal],
+   [oldCompany, oldActor, oldDecide, oldPropCompany, oldPropProject, oldPropProposal]) => {
+    const changed =
+      newCompany !== oldCompany ||
+      newActor !== oldActor ||
+      newDecide !== oldDecide ||
+      newPropCompany !== oldPropCompany ||
+      newPropProject !== oldPropProject ||
+      newPropProposal !== oldPropProposal
+
+    if (changed) {
       tracker.invalidate()
-      isLocalBusy.value = false
+      isTransportBusy.value = false
       pendingCommand.value = null
       postAcknowledged.value = false
+      isPostRejected.value = false
       activeMode.value = 'idle'
       returnReason.value = ''
       validationError.value = ''
       actionError.value = ''
       actionStatusMessage.value = ''
-      // Never emit busy=false into new/different scope
+      // Never emit busy=false into another context
     }
   },
   { flush: 'sync' },
@@ -613,7 +704,7 @@ watch(
 onUnmounted(() => {
   isDisposed = true
   tracker.invalidate()
-  // Never emit busy=false in unmount
+  // Never emit busy=false on unmount
 })
 </script>
 
