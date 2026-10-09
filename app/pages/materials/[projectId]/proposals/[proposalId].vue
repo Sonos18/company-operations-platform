@@ -338,7 +338,7 @@ const isSubmittedOrApproved = computed(() => {
   return proposal.value.reviewState === 'submitted' || proposal.value.reviewState === 'approved'
 })
 
-interface BuyerMutationScope {
+type BuyerMutationScope = {
   companyId: string
   projectId: string
   proposalId: string
@@ -495,6 +495,7 @@ async function executeBuyerOverride(line: MaterialProposalLineView, rawInput: st
     )
 
     // Follow acknowledgement with canonical reload
+    if (!token.isCurrent() || isDisposed) return
     const reloadOk = await loadProposal(true)
 
     if (!token.isCurrent() || isDisposed) return
