@@ -314,6 +314,7 @@ const hasReadPermission = computed(() => {
 const canApprove = computed(() => {
   return (
     hasDecidePermission.value &&
+    hasReadPermission.value &&
     !pendingCommand.value &&
     props.proposal?.reviewState === 'submitted' &&
     Boolean(props.proposal?.currentRevisionId)
@@ -323,6 +324,7 @@ const canApprove = computed(() => {
 const canReturn = computed(() => {
   return (
     hasDecidePermission.value &&
+    hasReadPermission.value &&
     !pendingCommand.value &&
     (props.proposal?.reviewState === 'submitted' || props.proposal?.reviewState === 'approved') &&
     Boolean(props.proposal?.currentRevisionId)
@@ -334,7 +336,7 @@ const isEligible = computed(() => {
 })
 
 const shouldRender = computed(() => {
-  if (!isLiveScopeValid() || !hasDecidePermission.value) return false
+  if (!isLiveScopeValid() || !hasDecidePermission.value || !hasReadPermission.value) return false
   return isEligible.value || Boolean(pendingCommand.value)
 })
 
@@ -343,7 +345,7 @@ const isRegularControlDisabled = computed(() => {
 })
 
 const isRecoveryControlDisabled = computed(() => {
-  return Boolean(isTransportBusy.value || !isLiveScopeValid())
+  return Boolean(isTransportBusy.value || !isLiveScopeValid() || !hasReadPermission.value)
 })
 
 function assertCanonicalIdentity(canonical: MaterialProposalView, expectedProjectId: string, expectedProposalId: string): void {
@@ -363,7 +365,7 @@ function safeEmitBusy(cmd: DecisionCommand, token: RequestToken<TrackerScope>, v
 }
 
 function safeEmitRefreshed(cmd: DecisionCommand, token: RequestToken<TrackerScope>, proposal: MaterialProposalView) {
-  if (isDisposed || !token.isCurrent() || !isLiveScopeValid(cmd)) return
+  if (isDisposed || !token.isCurrent() || !isLiveScopeValid(cmd) || !hasReadPermission.value) return
   emit('refreshed', {
     companyId: cmd.companyId,
     projectId: cmd.projectId,
@@ -395,7 +397,7 @@ function cancelAction() {
 }
 
 async function executeCommand(cmd: DecisionCommand) {
-  if (isTransportBusy.value || !isLiveScopeValid(cmd) || !hasDecidePermission.value) return
+  if (isTransportBusy.value || !isLiveScopeValid(cmd) || !hasDecidePermission.value || !hasReadPermission.value) return
 
   const token = tracker.start({
     companyId: cmd.companyId,
@@ -412,9 +414,9 @@ async function executeCommand(cmd: DecisionCommand) {
   // Lock parent
   safeEmitBusy(cmd, token, true)
 
-  // Phase 1: POST decision command if not yet acknowledged and not already rejected
-  if (!postAcknowledged.value && !isPostRejected.value) {
-    try {
+  try {
+    // Phase 1: POST decision command if not yet acknowledged and not already rejected
+    if (!postAcknowledged.value && !isPostRejected.value) {
       actionStatusMessage.value = cmd.decision === 'approve'
         ? 'Đang gửi quyết định duyệt phiếu...'
         : 'Đang gửi quyết định trả phiếu...'
@@ -425,130 +427,134 @@ async function executeCommand(cmd: DecisionCommand) {
 
       if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd) || !hasDecidePermission.value) return
 
-      await repo.decideProposal(
-        cmd.projectId,
-        cmd.proposalId,
-        input,
-        { idempotencyKey: cmd.idempotencyKey },
-      )
+      try {
+        await repo.decideProposal(
+          cmd.projectId,
+          cmd.proposalId,
+          input,
+          { idempotencyKey: cmd.idempotencyKey },
+        )
 
-      if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
-      postAcknowledged.value = true
-    } catch (err: unknown) {
-      if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
+        if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
+        postAcknowledged.value = true
+      } catch (err: unknown) {
+        if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
 
-      const errCode = (err as { code?: string })?.code
-      const errStatus = (err as { statusCode?: number; status?: number })?.statusCode
-        ?? (err as { status?: number })?.status
+        const errCode = (err as { code?: string })?.code
+        const errStatus = (err as { statusCode?: number; status?: number })?.statusCode
+          ?? (err as { status?: number })?.status
 
-      const isConflictOrStateError =
-        errCode === 'VERSION_CONFLICT' ||
-        errCode === 'IDEMPOTENCY_CONFLICT' ||
-        errCode === 'PROPOSAL_NOT_DECIDABLE' ||
-        errCode === 'PROPOSAL_NOT_EDITABLE' ||
-        errCode === 'HISTORY_IMMUTABLE' ||
-        errCode === 'STAGE01_HISTORY_IMMUTABLE' ||
-        errStatus === 409
+        const isConflictOrStateError =
+          errCode === 'VERSION_CONFLICT' ||
+          errCode === 'IDEMPOTENCY_CONFLICT' ||
+          errCode === 'PROPOSAL_NOT_DECIDABLE' ||
+          errCode === 'PROPOSAL_NOT_EDITABLE' ||
+          errCode === 'HISTORY_IMMUTABLE' ||
+          errCode === 'STAGE01_HISTORY_IMMUTABLE' ||
+          errStatus === 409
 
-      if (isConflictOrStateError) {
-        isPostRejected.value = true
-        if (errCode === 'VERSION_CONFLICT' || errStatus === 409) {
-          actionError.value = 'Xung đột phiên bản: Phiếu yêu cầu đã bị thay đổi bởi người khác. Vui lòng tải lại dữ liệu mới nhất.'
-        } else if (errCode === 'IDEMPOTENCY_CONFLICT') {
-          actionError.value = 'Xung đột yêu cầu trùng lặp với nội dung khác nhau. Vui lòng làm mới dữ liệu và thử lại.'
-        } else if (errCode === 'PROPOSAL_NOT_DECIDABLE') {
-          actionError.value = 'Phiếu không ở trạng thái hợp lệ để duyệt hoặc trả.'
-        } else if (errCode === 'PROPOSAL_NOT_EDITABLE') {
-          actionError.value = 'Phiếu không thể chỉnh sửa hoặc quyết định ở trạng thái hiện tại.'
-        } else if (errCode === 'HISTORY_IMMUTABLE' || errCode === 'STAGE01_HISTORY_IMMUTABLE') {
-          actionError.value = 'Lịch sử phiếu đã đóng, không thể thay đổi quyết định.'
-        } else {
-          actionError.value = err instanceof Error ? err.message : 'Xung đột dữ liệu hoặc trạng thái phiếu.'
+        if (isConflictOrStateError) {
+          isPostRejected.value = true
+          if (errCode === 'VERSION_CONFLICT' || errStatus === 409) {
+            actionError.value = 'Xung đột phiên bản: Phiếu yêu cầu đã bị thay đổi bởi người khác. Vui lòng tải lại dữ liệu mới nhất.'
+          } else if (errCode === 'IDEMPOTENCY_CONFLICT') {
+            actionError.value = 'Xung đột yêu cầu trùng lặp với nội dung khác nhau. Vui lòng làm mới dữ liệu và thử lại.'
+          } else if (errCode === 'PROPOSAL_NOT_DECIDABLE') {
+            actionError.value = 'Phiếu không ở trạng thái hợp lệ để duyệt hoặc trả.'
+          } else if (errCode === 'PROPOSAL_NOT_EDITABLE') {
+            actionError.value = 'Phiếu không thể chỉnh sửa hoặc quyết định ở trạng thái hiện tại.'
+          } else if (errCode === 'HISTORY_IMMUTABLE' || errCode === 'STAGE01_HISTORY_IMMUTABLE') {
+            actionError.value = 'Lịch sử phiếu đã đóng, không thể thay đổi quyết định.'
+          } else {
+            actionError.value = err instanceof Error ? err.message : 'Xung đột dữ liệu hoặc trạng thái phiếu.'
+          }
+
+          // Safe rejection: try canonical GET to refresh state
+          try {
+            actionStatusMessage.value = 'Đang tải lại dữ liệu phiếu mới nhất...'
+            if (!hasReadPermission.value) throw new Error('PERMISSION_DENIED')
+
+            const canonical = await repo.readProposal(cmd.projectId, cmd.proposalId)
+            if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd) || !hasReadPermission.value) return
+
+            assertCanonicalIdentity(canonical, cmd.projectId, cmd.proposalId)
+
+            pendingCommand.value = null
+            postAcknowledged.value = false
+            isPostRejected.value = false
+            activeMode.value = 'idle'
+            returnReason.value = ''
+            actionStatusMessage.value = ''
+
+            safeEmitRefreshed(cmd, token, canonical)
+            safeEmitBusy(cmd, token, false)
+          } catch {
+            if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
+            actionError.value += ' Đồng thời chưa thể tải lại dữ liệu mới nhất từ máy chủ.'
+          }
+          return
         }
 
-        try {
-          actionStatusMessage.value = 'Đang tải lại dữ liệu phiếu mới nhất...'
-          if (!hasReadPermission.value) throw new Error('PERMISSION_DENIED')
+        // R4: Include AUTH_INVALID in safe pre-commit rejection
+        const isAuthOrForbidden =
+          errStatus === 401 ||
+          errStatus === 403 ||
+          errCode === 'AUTH_INVALID' ||
+          errCode === 'AUTH_REQUIRED' ||
+          errCode === 'PERMISSION_DENIED' ||
+          errCode === 'COMPANY_FORBIDDEN'
 
-          const canonical = await repo.readProposal(cmd.projectId, cmd.proposalId)
-          if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
-
-          assertCanonicalIdentity(canonical, cmd.projectId, cmd.proposalId)
-
+        if (isAuthOrForbidden) {
+          actionError.value = (errCode === 'AUTH_INVALID' || errCode === 'AUTH_REQUIRED')
+            ? 'Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.'
+            : (err instanceof Error ? err.message : 'Bạn không có quyền thực hiện thao tác này.')
           pendingCommand.value = null
-          postAcknowledged.value = false
           isPostRejected.value = false
           activeMode.value = 'idle'
-          returnReason.value = ''
           actionStatusMessage.value = ''
-
-          safeEmitRefreshed(cmd, token, canonical)
           safeEmitBusy(cmd, token, false)
-        } catch {
-          if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
-          actionError.value += ' Đồng thời chưa thể tải lại dữ liệu mới nhất từ máy chủ.'
+          return
         }
-        return
-      }
 
-      // Authorization / authentication errors: command rejected before commit
-      if (
-        errStatus === 401 ||
-        errStatus === 403 ||
-        errCode === 'PERMISSION_DENIED' ||
-        errCode === 'AUTH_REQUIRED' ||
-        errCode === 'COMPANY_FORBIDDEN'
-      ) {
-        actionError.value = err instanceof Error ? err.message : 'Bạn không có quyền thực hiện thao tác này.'
-        pendingCommand.value = null
-        isPostRejected.value = false
-        activeMode.value = 'idle'
-        actionStatusMessage.value = ''
-        safeEmitBusy(cmd, token, false)
+        // Network or unknown errors: retain pendingCommand for exact retry
+        actionError.value = err instanceof Error ? err.message : 'Lỗi kết nối máy chủ khi gửi quyết định.'
         return
-      }
-
-      // Network or unknown errors: retain pendingCommand for exact retry
-      actionError.value = err instanceof Error ? err.message : 'Lỗi kết nối máy chủ khi gửi quyết định.'
-      return
-    } finally {
-      if (token.isCurrent() && !isDisposed && isLiveScopeValid(cmd)) {
-        isTransportBusy.value = false
-        actionStatusMessage.value = ''
       }
     }
-  }
 
-  // Phase 2: Canonical GET after command ACK
-  if (postAcknowledged.value) {
-    try {
+    // Phase 2: Canonical GET after command ACK
+    // R1: isTransportBusy remains TRUE continuously from Phase 1 through Phase 2!
+    if (postAcknowledged.value) {
       actionStatusMessage.value = 'Đang tải lại dữ liệu phiếu đã cập nhật...'
       if (!hasReadPermission.value) throw new Error('PERMISSION_DENIED')
 
-      const canonical = await repo.readProposal(cmd.projectId, cmd.proposalId)
-      if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
+      try {
+        const canonical = await repo.readProposal(cmd.projectId, cmd.proposalId)
+        if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd) || !hasReadPermission.value) return
 
-      assertCanonicalIdentity(canonical, cmd.projectId, cmd.proposalId)
+        assertCanonicalIdentity(canonical, cmd.projectId, cmd.proposalId)
 
-      // Completed successfully
-      pendingCommand.value = null
-      postAcknowledged.value = false
-      isPostRejected.value = false
-      activeMode.value = 'idle'
-      returnReason.value = ''
-      actionError.value = ''
-      actionStatusMessage.value = ''
-
-      safeEmitRefreshed(cmd, token, canonical)
-      safeEmitBusy(cmd, token, false)
-    } catch (err: unknown) {
-      if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
-      actionError.value = 'Đã ghi nhận, chưa tải lại được phiếu.'
-    } finally {
-      if (token.isCurrent() && !isDisposed && isLiveScopeValid(cmd)) {
-        isTransportBusy.value = false
+        // Terminal success
+        pendingCommand.value = null
+        postAcknowledged.value = false
+        isPostRejected.value = false
+        activeMode.value = 'idle'
+        returnReason.value = ''
+        actionError.value = ''
         actionStatusMessage.value = ''
+
+        safeEmitRefreshed(cmd, token, canonical)
+        safeEmitBusy(cmd, token, false)
+      } catch (err: unknown) {
+        if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
+        actionError.value = 'Đã ghi nhận, chưa tải lại được phiếu.'
       }
+    }
+  } finally {
+    // R1: Cleared at actual terminal point: whether POST failed or GET succeeded/failed
+    if (token.isCurrent() && !isDisposed && isLiveScopeValid(cmd)) {
+      isTransportBusy.value = false
+      actionStatusMessage.value = ''
     }
   }
 }
@@ -636,7 +642,7 @@ async function retryCanonicalGet() {
     if (!hasReadPermission.value) throw new Error('PERMISSION_DENIED')
 
     const canonical = await repo.readProposal(cmd.projectId, cmd.proposalId)
-    if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
+    if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd) || !hasReadPermission.value) return
 
     assertCanonicalIdentity(canonical, cmd.projectId, cmd.proposalId)
 
@@ -670,16 +676,18 @@ watch(
     () => companyAccess?.activeCompanyId,
     () => authStore?.user?.id,
     () => companyAccess?.hasPermission('material.proposal.decide'),
+    () => companyAccess?.hasPermission('material.read'),
     () => props.companyId,
     () => props.projectId,
     () => props.proposal?.id,
   ],
-  ([newCompany, newActor, newDecide, newPropCompany, newPropProject, newPropProposal],
-   [oldCompany, oldActor, oldDecide, oldPropCompany, oldPropProject, oldPropProposal]) => {
+  ([newCompany, newActor, newDecide, newRead, newPropCompany, newPropProject, newPropProposal],
+   [oldCompany, oldActor, oldDecide, oldRead, oldPropCompany, oldPropProject, oldPropProposal]) => {
     const changed =
       newCompany !== oldCompany ||
       newActor !== oldActor ||
       newDecide !== oldDecide ||
+      newRead !== oldRead ||
       newPropCompany !== oldPropCompany ||
       newPropProject !== oldPropProject ||
       newPropProposal !== oldPropProposal
