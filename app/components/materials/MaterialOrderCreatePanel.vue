@@ -293,7 +293,7 @@
               placeholder="VD: Công ty TNHH Thép Hòa Phát"
               :disabled="isRegularControlDisabled || !canRecordSupplier"
               maxlength="200"
-              @input="onSupplierInputChanged"
+              @input="onSupplierDisplayNameInput"
             >
           </div>
 
@@ -307,7 +307,7 @@
               placeholder="VD: 0102030405"
               :disabled="isRegularControlDisabled || !canRecordSupplier"
               maxlength="100"
-              @input="onSupplierInputChanged"
+              @input="onSupplierTaxInput"
             >
           </div>
 
@@ -321,7 +321,7 @@
               placeholder="VD: Nguyễn Văn A"
               :disabled="isRegularControlDisabled || !canRecordSupplier"
               maxlength="200"
-              @input="onSupplierInputChanged"
+              @input="onSupplierContactNameInput"
             >
           </div>
 
@@ -335,7 +335,7 @@
               placeholder="VD: 0912345678"
               :disabled="isRegularControlDisabled || !canRecordSupplier"
               maxlength="100"
-              @input="onSupplierInputChanged"
+              @input="onSupplierContactPhoneInput"
             >
           </div>
 
@@ -384,14 +384,24 @@
             <UIcon name="i-lucide-file-text" class="text-sky-600 text-base" aria-hidden="true" />
             <h4 id="evidence-section-title" class="font-bold text-slate-900 text-sm m-0">2. Tệp báo giá đính kèm (PDF)</h4>
           </div>
-          <span v-if="finalizedEvidenceFileId" class="cockpit-badge bg-emerald-100 text-emerald-800 text-xs flex items-center gap-1 font-semibold">
-            <UIcon name="i-lucide-check" class="text-xs" aria-hidden="true" />
-            Báo giá đã hoàn tất
-          </span>
+          <div class="flex items-center gap-2">
+            <span v-if="finalizedEvidenceFileId" class="cockpit-badge bg-emerald-100 text-emerald-800 text-xs flex items-center gap-1 font-semibold">
+              <UIcon name="i-lucide-check" class="text-xs" aria-hidden="true" />
+              Báo giá đã hoàn tất
+            </span>
+            <span
+              v-if="analysisResult"
+              class="cockpit-badge text-xs flex items-center gap-1 font-semibold"
+              :class="analysisResult.matched ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
+            >
+              <UIcon :name="analysisResult.matched ? 'i-lucide-sparkles' : 'i-lucide-alert-circle'" class="text-xs" aria-hidden="true" />
+              AI: {{ analysisResult.matched ? 'Khớp toàn bộ' : 'Cần kiểm tra' }}
+            </span>
+          </div>
         </div>
 
         <p class="text-xs text-slate-600 mb-3">
-          Tải lên báo giá dạng PDF (&le; 25 MiB). Tệp được lưu trữ làm bằng chứng báo giá chưa ký (unsigned quotation).
+          Tải lên báo giá dạng PDF (&le; 25 MiB). Hệ thống tự động phân tích báo giá bằng AI và điền bản nháp để đối chiếu.
         </p>
 
         <div class="flex items-center gap-3 flex-wrap">
@@ -427,6 +437,19 @@
             <UIcon v-else name="i-lucide-external-link" class="text-sm" aria-hidden="true" />
             Xem PDF báo giá
           </button>
+
+          <!-- Nút phân tích lại chủ động -->
+          <button
+            v-if="finalizedEvidenceFileId"
+            type="button"
+            class="cockpit-btn cockpit-btn--secondary btn-sm"
+            :disabled="isRegularControlDisabled || isRecoveryControlDisabled || isAnalyzing"
+            @click="runQuotationAnalysis(finalizedEvidenceFileId)"
+          >
+            <UIcon v-if="isAnalyzing" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
+            <UIcon v-else name="i-lucide-sparkles" class="text-sm text-sky-600" aria-hidden="true" />
+            Phân tích lại (AI)
+          </button>
         </div>
 
         <div v-if="selectedFile" class="text-xs text-slate-500 mt-2 flex items-center gap-2">
@@ -436,6 +459,46 @@
 
         <div v-if="uploadError" class="text-xs text-rose-600 mt-2 font-medium" role="alert">
           {{ uploadError }}
+        </div>
+
+        <!-- AI Analysis Loading State -->
+        <div v-if="isAnalyzing" class="mt-3 p-3 bg-sky-50 border border-sky-200 rounded-lg flex items-center gap-2.5 text-xs text-sky-800" role="status">
+          <UIcon name="i-lucide-loader-2" class="animate-spin text-sky-600 text-sm shrink-0" aria-hidden="true" />
+          <span>Đang dùng AI (gpt-5.4-mini) đọc và phân tích dữ liệu báo giá PDF...</span>
+        </div>
+
+        <!-- AI Analysis Error Alert (Non-blocking: PDF preserved, manual entry allowed) -->
+        <div v-else-if="analysisError" class="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800" role="alert">
+          <div class="flex items-start gap-2">
+            <UIcon name="i-lucide-alert-triangle" class="text-amber-600 text-sm shrink-0 mt-0.5" aria-hidden="true" />
+            <div class="flex-1">
+              <p class="font-semibold text-amber-900 m-0">{{ analysisError }}</p>
+              <p class="text-amber-700 mt-0.5 m-0">Tệp PDF vẫn được lưu trữ làm bằng chứng. Bạn có thể tự nhập thông tin thủ công bên dưới hoặc bấm "Phân tích lại (AI)".</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Analysis Succeeded Review Summary -->
+        <div v-else-if="analysisResult" class="mt-3 p-3 bg-white border border-slate-200 rounded-lg text-xs space-y-2">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div class="flex items-center gap-2 font-semibold text-slate-800">
+              <UIcon name="i-lucide-bot" class="text-sky-600 text-sm" aria-hidden="true" />
+              <span>Kết quả phân tích báo giá (AI gpt-5.4-mini)</span>
+            </div>
+            <span class="font-medium" :class="analysisResult.matched ? 'text-emerald-700' : 'text-amber-700'">
+              {{ analysisResult.matched ? 'Tất cả các dòng khớp đề xuất' : 'Một số dòng cần kiểm tra lại' }}
+            </span>
+          </div>
+
+          <div v-if="analysisResult.warnings.length > 0" class="p-2 bg-amber-50 border border-amber-100 rounded text-amber-800 space-y-1">
+            <div class="font-semibold text-amber-900 flex items-center gap-1">
+              <UIcon name="i-lucide-info" class="text-xs" aria-hidden="true" />
+              Lưu ý đối chiếu:
+            </div>
+            <ul class="list-disc list-inside space-y-0.5 pl-1 text-slate-700">
+              <li v-for="(w, idx) in analysisResult.warnings" :key="idx">{{ w }}</li>
+            </ul>
+          </div>
         </div>
       </section>
 
@@ -457,23 +520,74 @@
 
         <!-- Lines list of MaterialQuotationComparisonPanel -->
         <div class="space-y-3">
-          <MaterialQuotationComparisonPanel
+          <div
             v-for="line in proposal.lines"
             :key="line.lineId"
-            :line="line"
-            :allocation-quantity="lineFormMap[line.lineId]?.allocationQuantity ?? ''"
-            :unit-price="lineFormMap[line.lineId]?.unitPrice ?? ''"
-            :quoted-quantity="lineFormMap[line.lineId]?.quotedQuantity ?? ''"
-            :quotation-material-name="lineFormMap[line.lineId]?.quotationMaterialName ?? ''"
-            :mapping-confirmed="lineFormMap[line.lineId]?.mappingConfirmed ?? false"
-            :disabled="isRegularControlDisabled"
-            @update:allocation-quantity="val => updateLineField(line.lineId, 'allocationQuantity', val)"
-            @update:unit-price="val => updateLineField(line.lineId, 'unitPrice', val)"
-            @update:quoted-quantity="val => updateLineField(line.lineId, 'quotedQuantity', val)"
-            @update:quotation-material-name="val => updateLineField(line.lineId, 'quotationMaterialName', val)"
-            @update:mapping-confirmed="val => updateLineField(line.lineId, 'mappingConfirmed', val)"
-            @return-requested="handleReturnRequested"
-          />
+            class="line-allocation-block space-y-1"
+          >
+            <!-- Per-line AI Comparison Summary (if analysisResult exists) -->
+            <div
+              v-if="analysisLineMap[line.lineId]"
+              class="ai-line-status-bar px-3 py-1.5 rounded-t border border-b-0 text-xs flex items-center justify-between gap-2 flex-wrap"
+              :class="analysisLineMap[line.lineId]?.matched ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-amber-50 border-amber-200 text-amber-900'"
+            >
+              <div class="flex items-center gap-2">
+                <UIcon
+                  :name="analysisLineMap[line.lineId]?.matched ? 'i-lucide-check-circle-2' : 'i-lucide-alert-circle'"
+                  class="text-sm shrink-0"
+                  :class="analysisLineMap[line.lineId]?.matched ? 'text-emerald-600' : 'text-amber-600'"
+                  aria-hidden="true"
+                />
+                <span class="font-semibold">
+                  AI đối chiếu: {{ analysisLineMap[line.lineId]?.matched ? 'Khớp' : 'Cần kiểm tra' }}
+                </span>
+                <span v-if="analysisLineMap[line.lineId]?.sourcePage" class="text-slate-500 font-normal">
+                  (Trang {{ analysisLineMap[line.lineId]?.sourcePage }})
+                </span>
+              </div>
+
+              <div class="flex items-center gap-2 flex-wrap text-xs">
+                <span
+                  class="cockpit-badge"
+                  :class="analysisLineMap[line.lineId]?.quantityMatchesProposal ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800 font-semibold'"
+                >
+                  {{ analysisLineMap[line.lineId]?.quantityMatchesProposal ? 'Khớp số lượng' : 'Số lượng khác đề xuất' }}
+                </span>
+                <span
+                  v-if="analysisLineMap[line.lineId]?.suggestedAllocationQuantity"
+                  class="cockpit-badge bg-sky-100 text-sky-800"
+                >
+                  Gợi ý phân bổ: {{ analysisLineMap[line.lineId]?.suggestedAllocationQuantity }}
+                </span>
+              </div>
+
+              <!-- Per-line warnings if any -->
+              <div
+                v-if="analysisLineMap[line.lineId]?.warnings && analysisLineMap[line.lineId]!.warnings.length > 0"
+                class="w-full text-xs text-amber-800 mt-1 pl-5"
+              >
+                <span v-for="(w, wIdx) in analysisLineMap[line.lineId]?.warnings" :key="wIdx" class="mr-2 inline-block">
+                  &bull; {{ w }}
+                </span>
+              </div>
+            </div>
+
+            <MaterialQuotationComparisonPanel
+              :line="line"
+              :allocation-quantity="lineFormMap[line.lineId]?.allocationQuantity ?? ''"
+              :unit-price="lineFormMap[line.lineId]?.unitPrice ?? ''"
+              :quoted-quantity="lineFormMap[line.lineId]?.quotedQuantity ?? ''"
+              :quotation-material-name="lineFormMap[line.lineId]?.quotationMaterialName ?? ''"
+              :mapping-confirmed="lineFormMap[line.lineId]?.mappingConfirmed ?? false"
+              :disabled="isRegularControlDisabled"
+              @update:allocation-quantity="val => updateLineField(line.lineId, 'allocationQuantity', val)"
+              @update:unit-price="val => updateLineField(line.lineId, 'unitPrice', val)"
+              @update:quoted-quantity="val => updateLineField(line.lineId, 'quotedQuantity', val)"
+              @update:quotation-material-name="val => updateLineField(line.lineId, 'quotationMaterialName', val)"
+              @update:mapping-confirmed="val => updateLineField(line.lineId, 'mappingConfirmed', val)"
+              @return-requested="handleReturnRequested"
+            />
+          </div>
         </div>
 
         <!-- Line Validation Errors Alert -->
@@ -731,6 +845,10 @@ import {
   chosenSupplierInputSchema,
   createMaterialOrderInputSchema,
 } from '../../../shared/schemas/costs/material-procurement'
+import type {
+  MaterialQuotationAnalysisInput,
+  MaterialQuotationAnalysisResult,
+} from '../../../shared/schemas/costs/material-quotation-analysis'
 import { workflowUuidSchema, workflowMoneySchema } from '../../../shared/schemas/costs/cost-workflow'
 import { ClientError } from '../../errors/client-error'
 import { formatMaterialQuantity } from '../../utils/materials/quantity-display'
@@ -781,6 +899,7 @@ const currencyTracker = createAsyncRequestTracker<TrackerScope>()
 const ordersTracker = createAsyncRequestTracker<TrackerScope>()
 const supplierTracker = createAsyncRequestTracker<TrackerScope>()
 const uploadTracker = createAsyncRequestTracker<TrackerScope>()
+const analysisTracker = createAsyncRequestTracker<TrackerScope>()
 const mutationTracker = createAsyncRequestTracker<TrackerScope>()
 const pdfReadTracker = createAsyncRequestTracker<TrackerScope>()
 
@@ -799,6 +918,7 @@ function invalidateAllTrackers() {
   ordersTracker.invalidate()
   supplierTracker.invalidate()
   uploadTracker.invalidate()
+  analysisTracker.invalidate()
   mutationTracker.invalidate()
   pdfReadTracker.invalidate()
 }
@@ -961,21 +1081,51 @@ const supplierContactDisplayName = ref('')
 const supplierContactPhone = ref('')
 const supplierAlreadyChosenAcknowledged = ref(false)
 
+const userEditedSupplierFields = ref({
+  displayName: false,
+  taxIdentifier: false,
+  contactDisplayName: false,
+  contactPhone: false,
+})
+
+function onSupplierDisplayNameInput() {
+  userEditedSupplierFields.value.displayName = true
+  onSupplierInputChanged()
+}
+
+function onSupplierTaxInput() {
+  userEditedSupplierFields.value.taxIdentifier = true
+  onSupplierInputChanged()
+}
+
+function onSupplierContactNameInput() {
+  userEditedSupplierFields.value.contactDisplayName = true
+  onSupplierInputChanged()
+}
+
+function onSupplierContactPhoneInput() {
+  userEditedSupplierFields.value.contactPhone = true
+  onSupplierInputChanged()
+}
+
 const resolvedSupplierId = ref<string | null>(null)
 const lastResolvedInputJson = ref<string | null>(null)
 const supplierResolutionKey = ref<string>(crypto.randomUUID())
 const isResolvingSupplier = ref(false)
 const supplierResolveError = ref('')
 
-// F6: Editing supplier input invalidates resolution, evidence and line confirmations
+// F6: Editing supplier input invalidates resolution, evidence, AI analysis and line confirmations
 function onSupplierInputChanged() {
   if (resolvedSupplierId.value !== null) {
     resolvedSupplierId.value = null
     supplierResolutionKey.value = crypto.randomUUID()
-    selectedFile.value = null
+    // Retain selectedFile bytes for fresh finalization, but invalidate proof & session
     finalizedEvidenceFileId.value = null
     uploadSession.value = null
     uploadError.value = ''
+    analysisResult.value = null
+    analysisError.value = ''
+    analysisTracker.invalidate()
     resetLineConfirmations()
   }
   supplierResolveError.value = ''
@@ -1016,11 +1166,13 @@ async function handleResolveSupplier() {
   if (currentJson !== lastResolvedInputJson.value) {
     supplierResolutionKey.value = crypto.randomUUID()
     lastResolvedInputJson.value = currentJson
-    // F6: New vendor means quote must be chosen and finalized for this vendor
-    selectedFile.value = null
+    // Retain selectedFile bytes for fresh finalization, but invalidate proof & session
     finalizedEvidenceFileId.value = null
     uploadSession.value = null
     uploadError.value = ''
+    analysisResult.value = null
+    analysisError.value = ''
+    analysisTracker.invalidate()
     resetLineConfirmations()
   }
 
@@ -1081,6 +1233,9 @@ function onFileSelected(event: Event) {
   uploadError.value = ''
   finalizedEvidenceFileId.value = null
   uploadSession.value = null
+  analysisResult.value = null
+  analysisError.value = ''
+  analysisTracker.invalidate()
   resetLineConfirmations()
 }
 
@@ -1103,6 +1258,8 @@ async function handleUploadPdf() {
   isUploading.value = true
   uploadError.value = ''
   emitBusy(true)
+
+  let newlyFinalizedFileId: string | null = null
 
   try {
     const result = await uploadMaterialEvidence({
@@ -1128,6 +1285,7 @@ async function handleUploadPdf() {
 
     if (!token.isCurrent() || isDisposed || !isLiveScopeValid()) return
     finalizedEvidenceFileId.value = result.evidenceFileId
+    newlyFinalizedFileId = result.evidenceFileId
   } catch (err: unknown) {
     if (!token.isCurrent() || isDisposed || !isLiveScopeValid()) return
     const errInfo = parseApiError(err)
@@ -1137,6 +1295,11 @@ async function handleUploadPdf() {
       isUploading.value = false
       emitBusy(false)
     }
+  }
+
+  // Trigger analysis once for this newly finalized file after upload busy has ended
+  if (newlyFinalizedFileId && token.isCurrent() && !isDisposed && isLiveScopeValid()) {
+    void runQuotationAnalysis(newlyFinalizedFileId)
   }
 }
 
@@ -1170,6 +1333,202 @@ async function openEvidencePdf(fileId: string) {
   }
 }
 
+// AI Quotation Analysis State
+const isAnalyzing = ref(false)
+const analysisError = ref('')
+const analysisResult = ref<MaterialQuotationAnalysisResult | null>(null)
+
+interface LineEditTrack {
+  allocationQuantity: boolean
+  unitPrice: boolean
+  quotedQuantity: boolean
+  quotationMaterialName: boolean
+}
+const userEditedLineFields = ref<Record<string, LineEditTrack>>({})
+
+const analysisLineMap = computed(() => {
+  const map: Record<string, MaterialQuotationAnalysisResult['lines'][number]> = {}
+  if (!analysisResult.value?.lines) return map
+  for (const l of analysisResult.value.lines) {
+    map[l.proposalLineId] = l
+  }
+  return map
+})
+
+function getCanonicalLineProjection(): string {
+  if (!props.proposal?.lines) return '[]'
+  return JSON.stringify(
+    props.proposal.lines.map(l => ({
+      lineId: l.lineId,
+      materialId: l.materialId,
+      materialName: l.materialName,
+      specification: l.specification,
+      unit: l.unit,
+      quantity: l.quantity,
+      remainingQuantity: l.remainingQuantity,
+      allocatedQuantity: l.allocatedQuantity,
+      engineerProposedInvoiceName: l.engineerProposedInvoiceName,
+      buyerProposedInvoiceName: l.buyerProposedInvoiceName,
+      effectiveInvoiceDisplayName: l.effectiveInvoiceDisplayName,
+      buyerOverrideVersion: l.buyerOverrideVersion,
+    })),
+  )
+}
+
+async function runQuotationAnalysis(targetFileId?: string | null) {
+  const fileId = targetFileId || finalizedEvidenceFileId.value
+  if (!fileId || !isLiveScopeValid() || isAnalyzing.value) return
+  if (isRegularControlDisabled.value) return
+  if (!props.proposal.approvedRevisionId) return
+
+  // Verify hash from finalized upload session
+  const expectedSha256 = uploadSession.value?.session?.finalized?.sha256
+  if (!expectedSha256) {
+    analysisError.value = 'Chưa xác định được mã băm SHA-256 của tệp báo giá đã tải lên. Vui lòng tải lại tệp.'
+    return
+  }
+
+  const currentRevisionId = props.proposal.approvedRevisionId
+  const currentVersion = props.proposal.version
+  const currentCurrency = canonicalCurrency.value
+  const capturedLineProjectionJson = getCanonicalLineProjection()
+
+  const scope: TrackerScope = {
+    companyId: props.companyId,
+    projectId: props.projectId,
+    proposalId: props.proposal.id,
+    approvedRevisionId: currentRevisionId,
+    actorId: authStore?.user?.id ?? '',
+    op: 'analyze-quotation',
+    tokenKey: fileId,
+  }
+
+  const token = analysisTracker.start(scope)
+  isAnalyzing.value = true
+  analysisError.value = ''
+  emitBusy(true)
+
+  try {
+    const result = await repo.analyzeQuotation(props.projectId, props.proposal.id, {
+      evidenceFileId: fileId,
+      approvedRevisionId: currentRevisionId,
+      expectedProposalVersion: currentVersion,
+    })
+
+    if (!token.isCurrent() || isDisposed || !isLiveScopeValid()) return
+
+    // 1. Verify source identity against current context
+    if (
+      result.source.companyId !== props.companyId ||
+      result.source.projectId !== props.projectId ||
+      result.source.proposalId !== props.proposal.id ||
+      result.source.approvedRevisionId !== props.proposal.approvedRevisionId ||
+      result.source.proposalVersion !== props.proposal.version ||
+      result.source.evidenceFileId !== finalizedEvidenceFileId.value ||
+      result.source.actorId !== authStore?.user?.id
+    ) {
+      analysisError.value = 'Thông tin nguồn phân tích không khớp với ngữ cảnh hiện tại.'
+      return
+    }
+
+    // 2. Verify SHA-256 match
+    if (result.source.sha256 !== expectedSha256) {
+      analysisError.value = 'Mã băm SHA-256 của tệp báo giá không khớp với kết quả phân tích.'
+      return
+    }
+
+    // 3. Verify canonical line projection and currency haven't changed
+    if (
+      getCanonicalLineProjection() !== capturedLineProjectionJson ||
+      canonicalCurrency.value !== currentCurrency
+    ) {
+      analysisError.value = 'Dữ liệu vật tư hoặc tiền tệ đã thay đổi trong lúc phân tích. Vui lòng phân tích lại.'
+      return
+    }
+
+    analysisResult.value = result
+    applyQuotationAnalysisDraft(result)
+  } catch (err: unknown) {
+    if (!token.isCurrent() || isDisposed || !isLiveScopeValid()) return
+    const errInfo = parseApiError(err)
+    analysisError.value = errInfo.message || 'Không thể phân tích báo giá. Bạn có thể nhập tay.'
+  } finally {
+    if (token.isCurrent() && !isDisposed) {
+      isAnalyzing.value = false
+      emitBusy(false)
+    }
+  }
+}
+
+function applyQuotationAnalysisDraft(result: MaterialQuotationAnalysisResult) {
+  // 1. Supplier autofill: only if not already resolved and buyer hasn't edited
+  if (!resolvedSupplierId.value) {
+    if (result.supplier.name && !userEditedSupplierFields.value.displayName && !supplierDisplayName.value.trim()) {
+      supplierDisplayName.value = result.supplier.name.trim()
+    }
+    if (result.supplier.taxCode && !userEditedSupplierFields.value.taxIdentifier && !supplierTaxIdentifier.value.trim()) {
+      supplierTaxIdentifier.value = result.supplier.taxCode.trim()
+    }
+    if (result.supplier.contactName && !userEditedSupplierFields.value.contactDisplayName && !supplierContactDisplayName.value.trim()) {
+      supplierContactDisplayName.value = result.supplier.contactName.trim()
+    }
+    if (result.supplier.phone && !userEditedSupplierFields.value.contactPhone && !supplierContactPhone.value.trim()) {
+      supplierContactPhone.value = result.supplier.phone.trim()
+    }
+  }
+
+  // 2. Lines autofill
+  const resultLinesMap = new Map<string, MaterialQuotationAnalysisResult['lines'][number]>()
+  for (const rl of result.lines) {
+    resultLinesMap.set(rl.proposalLineId, rl)
+  }
+
+  for (const line of props.proposal.lines) {
+    const resLine = resultLinesMap.get(line.lineId)
+    if (!resLine) continue
+
+    const editedState = userEditedLineFields.value[line.lineId]
+    const form = lineFormMap.value[line.lineId]
+    if (!form) continue
+
+    // quotationMaterialName
+    if (!editedState?.quotationMaterialName && !form.quotationMaterialName.trim() && resLine.quotationMaterialName) {
+      updateLineFieldInternal(line.lineId, 'quotationMaterialName', resLine.quotationMaterialName.trim())
+    }
+
+    // quotedQuantity
+    if (!editedState?.quotedQuantity && !form.quotedQuantity.trim() && resLine.quotationQuantity) {
+      updateLineFieldInternal(line.lineId, 'quotedQuantity', resLine.quotationQuantity)
+    }
+
+    // unitPrice: only if taxBasis === 'exclusive' and result currency === canonicalCurrency
+    const isTaxExclusive = resLine.taxBasis === 'exclusive'
+    const isCurrencyMatch = result.currencyCode !== null && result.currencyCode === canonicalCurrency.value
+    if (isTaxExclusive && isCurrencyMatch && resLine.unitPrice) {
+      if (!editedState?.unitPrice && !form.unitPrice.trim()) {
+        updateLineFieldInternal(line.lineId, 'unitPrice', resLine.unitPrice)
+      }
+    }
+
+    // allocationQuantity: suggestedAllocationQuantity if <= remainingQuantity
+    if (resLine.suggestedAllocationQuantity) {
+      try {
+        const suggestedDec = new Decimal(resLine.suggestedAllocationQuantity)
+        const remainingDec = new Decimal(line.remainingQuantity)
+        if (suggestedDec.gt(0) && suggestedDec.lte(remainingDec)) {
+          if (!editedState?.allocationQuantity && !form.allocationQuantity.trim()) {
+            updateLineFieldInternal(line.lineId, 'allocationQuantity', resLine.suggestedAllocationQuantity)
+          }
+        }
+      } catch {
+        // Skip invalid decimal
+      }
+    }
+
+    // AI never ticks mappingConfirmed
+  }
+}
+
 // Line comparison and allocation state
 interface LineAllocationState {
   allocationQuantity: string
@@ -1183,6 +1542,7 @@ const lineFormMap = ref<Record<string, LineAllocationState>>({})
 
 function initLineFormMap() {
   const map: Record<string, LineAllocationState> = {}
+  const editMap: Record<string, LineEditTrack> = {}
   if (props.proposal?.lines) {
     for (const line of props.proposal.lines) {
       map[line.lineId] = {
@@ -1192,9 +1552,16 @@ function initLineFormMap() {
         quotationMaterialName: '',
         mappingConfirmed: false,
       }
+      editMap[line.lineId] = {
+        allocationQuantity: false,
+        unitPrice: false,
+        quotedQuantity: false,
+        quotationMaterialName: false,
+      }
     }
   }
   lineFormMap.value = map
+  userEditedLineFields.value = editMap
 }
 
 function resetLineConfirmations() {
@@ -1205,7 +1572,7 @@ function resetLineConfirmations() {
   }
 }
 
-function updateLineField(lineId: string, field: keyof LineAllocationState, value: any) {
+function updateLineFieldInternal(lineId: string, field: keyof LineAllocationState, value: string | boolean) {
   if (!lineFormMap.value[lineId]) {
     lineFormMap.value[lineId] = {
       allocationQuantity: '',
@@ -1215,7 +1582,30 @@ function updateLineField(lineId: string, field: keyof LineAllocationState, value
       mappingConfirmed: false,
     }
   }
-  (lineFormMap.value[lineId] as any)[field] = value
+  const form = lineFormMap.value[lineId]
+  if (form) {
+    if (field === 'mappingConfirmed') {
+      form.mappingConfirmed = Boolean(value)
+    } else {
+      form[field] = String(value ?? '')
+    }
+  }
+}
+
+function updateLineField(lineId: string, field: keyof LineAllocationState, value: any) {
+  if (!userEditedLineFields.value[lineId]) {
+    userEditedLineFields.value[lineId] = {
+      allocationQuantity: false,
+      unitPrice: false,
+      quotedQuantity: false,
+      quotationMaterialName: false,
+    }
+  }
+  const track = userEditedLineFields.value[lineId]
+  if (track && field in track) {
+    track[field as keyof LineEditTrack] = true
+  }
+  updateLineFieldInternal(lineId, field, value)
 }
 
 function handleReturnRequested() {
@@ -1800,6 +2190,9 @@ async function runRejectionCanonicalRefresh(cmd: {
     cancelPostAcknowledged.value = false
     isCancelPostRejected.value = false
     cancellingOrderId.value = null
+    analysisResult.value = null
+    analysisError.value = ''
+    analysisTracker.invalidate()
 
     resetLineConfirmations()
 
@@ -1848,6 +2241,7 @@ const isTransportBusy = computed(() => {
     isOrdersLoading.value ||
     isResolvingSupplier.value ||
     isUploading.value ||
+    isAnalyzing.value ||
     isCreateBusy.value ||
     isCancelBusy.value ||
     isPdfReading.value ||
@@ -1857,6 +2251,7 @@ const isTransportBusy = computed(() => {
 
 const busyStatusMessage = computed(() => {
   if (isUploading.value) return 'Đang tải lên tệp báo giá PDF...'
+  if (isAnalyzing.value) return 'Đang phân tích báo giá bằng AI...'
   if (isResolvingSupplier.value) return 'Đang ghi nhận nhà cung cấp...'
   if (isCreateBusy.value) return 'Đang xử lý tạo đơn mua hàng...'
   if (isCancelBusy.value) return 'Đang xử lý hủy đơn mua hàng...'
@@ -1920,6 +2315,7 @@ watch(
       isOrdersLoading.value = false
       isResolvingSupplier.value = false
       isUploading.value = false
+      isAnalyzing.value = false
       isCreateBusy.value = false
       isCancelBusy.value = false
       isPdfReading.value = false
@@ -1942,6 +2338,8 @@ watch(
       generalError.value = ''
       supplierResolveError.value = ''
       uploadError.value = ''
+      analysisError.value = ''
+      analysisResult.value = null
       ordersError.value = ''
       currencyError.value = ''
 
@@ -1954,6 +2352,12 @@ watch(
       supplierContactDisplayName.value = ''
       supplierContactPhone.value = ''
       supplierAlreadyChosenAcknowledged.value = false
+      userEditedSupplierFields.value = {
+        displayName: false,
+        taxIdentifier: false,
+        contactDisplayName: false,
+        contactPhone: false,
+      }
       resolvedSupplierId.value = null
       lastResolvedInputJson.value = null
       selectedFile.value = null
