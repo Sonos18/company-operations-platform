@@ -28,8 +28,16 @@
       <button
         v-if="decisionRefreshRejected"
         type="button"
-        :disabled="isLoading || isBuyerBusy"
+        :disabled="isLoading || isBuyerBusy || isOrderBusy"
         @click="loadProposal(true)"
+      >
+        Tải lại phiếu
+      </button>
+      <button
+        v-else-if="orderRefreshRejected"
+        type="button"
+        :disabled="isLoading || isBuyerBusy || isDecisionBusy"
+        @click="loadProposal(true, undefined, true)"
       >
         Tải lại phiếu
       </button>
@@ -44,7 +52,7 @@
       <p>{{ lineActionErrors[unresolvedBuyer.lineId] || 'Chưa xác định được dữ liệu tên trên HĐ mới nhất.' }}</p>
       <button
         type="button"
-        :disabled="isBuyerBusy || isDecisionBusy || isLoading ||
+        :disabled="isBuyerBusy || isDecisionBusy || isOrderBusy || orderRefreshRejected || isLoading ||
           !isCurrentParentScope(unresolvedBuyer) || !canManageOrders"
         @click="recoverBuyerOverride"
       >
@@ -83,17 +91,19 @@
         <strong>Lý do trả phiếu từ bộ phận mua hàng:</strong> {{ proposal.returnReason }}
       </div>
 
-      <MaterialProposalDecisionPanel
-        v-if="canDecidePermission && !decisionRefreshRejected &&
-          authStore?.lifecycle === 'authenticated' &&
-          proposal.id === propId && proposal.projectId === pId"
-        :key="decisionInstanceKey"
-        :company-id="companyAccess?.activeCompanyId || ''"
-        :project-id="pId"
-        :proposal="proposal"
-        :disabled="isLoading || isBuyerBusy || Boolean(unresolvedBuyer)"
-        v-on="decisionListeners"
-      />
+      <div ref="decisionPanelWrapperRef">
+        <MaterialProposalDecisionPanel
+          v-if="canDecidePermission && !decisionRefreshRejected &&
+            authStore?.lifecycle === 'authenticated' &&
+            proposal.id === propId && proposal.projectId === pId"
+          :key="decisionInstanceKey"
+          :company-id="companyAccess?.activeCompanyId || ''"
+          :project-id="pId"
+          :proposal="proposal"
+          :disabled="isDecisionDisabled"
+          v-on="decisionListeners"
+        />
+      </div>
 
       <!-- General Info Card -->
       <div class="cockpit-card info-card">
@@ -262,6 +272,19 @@
           </span>
         </div>
       </div>
+
+      <!-- Material Order Create Panel (Buyer Procurement Panel) -->
+      <MaterialOrderCreatePanel
+        v-if="canManageOrders && canReadPermission && !orderRefreshRejected &&
+          authStore?.lifecycle === 'authenticated' &&
+          proposal.id === propId && proposal.projectId === pId"
+        :key="orderInstanceKey"
+        :company-id="companyAccess?.activeCompanyId || ''"
+        :project-id="pId"
+        :proposal="proposal"
+        :disabled="orderControlsDisabled"
+        v-on="orderListeners"
+      />
     </template>
   </div>
 </template>
@@ -279,6 +302,7 @@ import { formatMaterialQuantity } from '../../../../utils/materials/quantity-dis
 import { ClientError } from '../../../../errors/client-error'
 import MaterialProposalForm from '../../../../components/materials/MaterialProposalForm.vue'
 import MaterialProposalDecisionPanel from '../../../../components/materials/MaterialProposalDecisionPanel.vue'
+import MaterialOrderCreatePanel from '../../../../components/materials/MaterialOrderCreatePanel.vue'
 
 type MaterialProposalLineView = MaterialProposalView['lines'][number]
 type MaterialReviewState = MaterialProposalView['reviewState']
@@ -383,10 +407,24 @@ const unresolvedBuyer = ref<BuyerCommand | null>(null)
 const contextEpoch = ref(0)
 const isDecisionBusy = ref(false)
 const decisionRefreshRejected = ref(false)
+const isOrderBusy = ref(false)
+const orderRefreshRejected = ref(false)
+const decisionPanelWrapperRef = ref<HTMLElement | null>(null)
 const canReadPermission = computed(() => Boolean(companyAccess?.hasPermission('material.read')))
 const canDecidePermission = computed(() => Boolean(companyAccess?.hasPermission('material.proposal.decide')))
+const canSupplierRecordPermission = computed(() => Boolean(companyAccess?.hasPermission('material.supplier.record')))
 const buyerControlsDisabled = computed(() =>
-  isBuyerBusy.value || isDecisionBusy.value || isLoading.value || Boolean(unresolvedBuyer.value),
+  isBuyerBusy.value || isDecisionBusy.value || isOrderBusy.value || orderRefreshRejected.value ||
+  isLoading.value || Boolean(unresolvedBuyer.value),
+)
+const isDecisionDisabled = computed(() =>
+  isLoading.value || isBuyerBusy.value || Boolean(unresolvedBuyer.value) ||
+  isOrderBusy.value || orderRefreshRejected.value,
+)
+const orderControlsDisabled = computed(() =>
+  isLoading.value || isBuyerBusy.value || Boolean(unresolvedBuyer.value) ||
+  isDecisionBusy.value || decisionRefreshRejected.value ||
+  orderRefreshRejected.value,
 )
 
 function captureParentScope(): ParentScope {
@@ -437,7 +475,7 @@ const decisionListeners = computed(() => {
     event.projectId === scope.projectId && event.proposalId === scope.proposalId
   return {
     busy(event: DecisionEventScope & { value: boolean }) {
-      if (!accepts(event) || unresolvedBuyer.value || isBuyerBusy.value) return
+      if (!accepts(event) || unresolvedBuyer.value || isBuyerBusy.value || isOrderBusy.value || orderRefreshRejected.value) return
       if (event.value) {
         tracker.invalidate()
         buyerMutationTracker.invalidate()
@@ -448,7 +486,7 @@ const decisionListeners = computed(() => {
       }
     },
     refreshed(event: DecisionEventScope & { proposal: MaterialProposalView }) {
-      if (!accepts(event) || !isDecisionBusy.value || unresolvedBuyer.value) return
+      if (!accepts(event) || !isDecisionBusy.value || unresolvedBuyer.value || isOrderBusy.value || orderRefreshRejected.value) return
       try {
         assertCanonicalProposal(event.proposal, scope)
       } catch (err) {
@@ -465,6 +503,131 @@ const decisionListeners = computed(() => {
       shapeErrorMessage.value = ''
       isLoading.value = false
       // Keep the decision lock until the same child emits its canonical completion.
+    },
+  }
+})
+
+const orderInstanceKey = computed(() => {
+  const s = captureParentScope()
+  return [s.actorId, s.companyId, s.projectId, s.proposalId, s.epoch].join(':')
+})
+
+const orderListeners = computed(() => {
+  const scope = captureParentScope()
+  const accepts = () =>
+    isCurrentParentScope(scope) &&
+    canManageOrders.value &&
+    canReadPermission.value
+
+  return {
+    busy(val: boolean) {
+      if (!accepts()) return
+      if (val) {
+        if (
+          isBuyerBusy.value ||
+          Boolean(unresolvedBuyer.value) ||
+          isDecisionBusy.value ||
+          decisionRefreshRejected.value
+        ) {
+          return
+        }
+        tracker.invalidate()
+        buyerMutationTracker.invalidate()
+        isLoading.value = false
+        isOrderBusy.value = true
+      } else {
+        if (!orderRefreshRejected.value) {
+          isOrderBusy.value = false
+        }
+      }
+    },
+    canonical(newProposal: MaterialProposalView) {
+      if (!accepts() || !isOrderBusy.value) return
+      if (
+        isBuyerBusy.value ||
+        Boolean(unresolvedBuyer.value) ||
+        isDecisionBusy.value ||
+        decisionRefreshRejected.value
+      ) {
+        return
+      }
+
+      try {
+        assertCanonicalProposal(newProposal, scope)
+      } catch (err) {
+        orderRefreshRejected.value = true
+        errorMessage.value = err instanceof Error ? err.message : 'Không thể làm mới phiếu từ đơn mua hàng.'
+        return
+      }
+
+      tracker.invalidate()
+      buyerMutationTracker.invalidate()
+      proposal.value = newProposal
+      resetBuyerState()
+      orderRefreshRejected.value = false
+      errorMessage.value = ''
+      shapeErrorMessage.value = ''
+      isLoading.value = false
+      // Keep Order lock (isOrderBusy) until the same current child emits busy(false)
+    },
+    async returnRequested() {
+      if (!accepts()) return
+      if (!canDecidePermission.value) return
+      if (
+        !proposal.value ||
+        proposal.value.id !== scope.proposalId ||
+        proposal.value.projectId !== scope.projectId
+      ) {
+        return
+      }
+      if (
+        proposal.value.reviewState !== 'submitted' &&
+        proposal.value.reviewState !== 'approved'
+      ) {
+        return
+      }
+      if (
+        isBuyerBusy.value ||
+        Boolean(unresolvedBuyer.value) ||
+        isDecisionBusy.value ||
+        decisionRefreshRejected.value ||
+        isOrderBusy.value ||
+        orderRefreshRejected.value
+      ) {
+        return
+      }
+
+      await nextTick()
+
+      if (
+        !isCurrentParentScope(scope) ||
+        !canDecidePermission.value ||
+        isBuyerBusy.value ||
+        Boolean(unresolvedBuyer.value) ||
+        isDecisionBusy.value ||
+        decisionRefreshRejected.value ||
+        isOrderBusy.value ||
+        orderRefreshRejected.value
+      ) {
+        return
+      }
+
+      const container = decisionPanelWrapperRef.value
+      if (!container) return
+
+      const reasonInput = container.querySelector<HTMLTextAreaElement | HTMLInputElement>('#decision-return-reason-input')
+      if (reasonInput) {
+        reasonInput.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        reasonInput.focus()
+        return
+      }
+
+      const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      const returnBtn = buttons.find(btn => !btn.disabled && btn.textContent?.trim() === 'Trả phiếu')
+      if (returnBtn) {
+        returnBtn.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        returnBtn.focus()
+      }
     },
   }
 })
@@ -580,7 +743,7 @@ async function executeBuyerOverride(line: MaterialProposalLineView, rawInput: st
 }
 
 async function dispatchBuyerOverride(command: BuyerCommand) {
-  if (command.phase !== 'unknown' || isBuyerBusy.value || isDecisionBusy.value || isLoading.value ||
+  if (command.phase !== 'unknown' || isBuyerBusy.value || isDecisionBusy.value || isOrderBusy.value || orderRefreshRejected.value || isLoading.value ||
       !isCurrentParentScope(command) || !canManageOrders.value ||
       (unresolvedBuyer.value && unresolvedBuyer.value !== command)) return
 
@@ -654,7 +817,7 @@ async function dispatchBuyerOverride(command: BuyerCommand) {
 
 async function recoverBuyerOverride() {
   const command = unresolvedBuyer.value
-  if (!command || isBuyerBusy.value || isDecisionBusy.value || isLoading.value ||
+  if (!command || isBuyerBusy.value || isDecisionBusy.value || isOrderBusy.value || orderRefreshRejected.value || isLoading.value ||
       !isCurrentParentScope(command) || !canManageOrders.value) return
   if (command.phase === 'unknown') {
     await dispatchBuyerOverride(command)
@@ -763,19 +926,21 @@ function statusBadgeClass(state: MaterialReviewState): string {
   }
 }
 
-async function loadProposal(silent = false, buyerCommand?: BuyerCommand): Promise<boolean> {
+async function loadProposal(silent = false, buyerCommand?: BuyerCommand, allowOrderRecovery = false): Promise<boolean> {
   const scope = captureParentScope()
   const recoveringDecision = decisionRefreshRejected.value
+  const recoveringOrder = orderRefreshRejected.value && allowOrderRecovery
   if (!isCurrentParentScope(scope)) {
     isLoading.value = false
     return false
   }
   if (isDecisionBusy.value && !recoveringDecision) return false
+  if ((isOrderBusy.value || orderRefreshRejected.value) && !recoveringOrder) return false
   if (unresolvedBuyer.value &&
       (unresolvedBuyer.value.phase === 'unknown' ||
         buyerCommand?.idempotencyKey !== unresolvedBuyer.value.idempotencyKey)) return false
   const token = tracker.start(scope)
-  if ((!silent && !proposal.value) || recoveringDecision) isLoading.value = true
+  if ((!silent && !proposal.value) || recoveringDecision || recoveringOrder) isLoading.value = true
   errorMessage.value = ''
   shapeErrorMessage.value = ''
 
@@ -789,6 +954,11 @@ async function loadProposal(silent = false, buyerCommand?: BuyerCommand): Promis
       resetBuyerState()
       decisionRefreshRejected.value = false
       isDecisionBusy.value = false
+    } else if (recoveringOrder) {
+      buyerMutationTracker.invalidate()
+      resetBuyerState()
+      orderRefreshRejected.value = false
+      isOrderBusy.value = false
     } else if (activeEditLineId.value) {
       const line = data.lines.find(l => l.lineId === activeEditLineId.value)
       if (!line || !isBuyerInvoiceNameEditable(line)) activeEditLineId.value = null
@@ -821,12 +991,15 @@ watch([
   () => authStore?.lifecycle,
   pId, propId,
   canReadPermission, canDecidePermission, canManageOrders, canSubmitPermission,
+  canSupplierRecordPermission,
 ], () => {
   contextEpoch.value++
   tracker.invalidate()
   buyerMutationTracker.invalidate()
   isDecisionBusy.value = false
   decisionRefreshRejected.value = false
+  isOrderBusy.value = false
+  orderRefreshRejected.value = false
   resetBuyerState()
   proposal.value = null
   errorMessage.value = ''
@@ -846,6 +1019,8 @@ onUnmounted(() => {
   resetBuyerState()
   isDecisionBusy.value = false
   decisionRefreshRejected.value = false
+  isOrderBusy.value = false
+  orderRefreshRejected.value = false
 })
 </script>
 
