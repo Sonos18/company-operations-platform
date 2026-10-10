@@ -1198,8 +1198,10 @@ function initLineFormMap() {
 }
 
 function resetLineConfirmations() {
-  for (const lineId in lineFormMap.value) {
-    lineFormMap.value[lineId].mappingConfirmed = false
+  for (const state of Object.values(lineFormMap.value)) {
+    if (state) {
+      state.mappingConfirmed = false
+    }
   }
 }
 
