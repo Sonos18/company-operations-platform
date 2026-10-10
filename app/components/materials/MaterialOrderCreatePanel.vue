@@ -279,7 +279,7 @@
               placeholder="VD: NCC-HOAPHAT"
               :disabled="isRegularControlDisabled || !canRecordSupplier"
               maxlength="200"
-              @input="onSupplierInputChanged"
+              @input="onSupplierCodeInput"
             >
           </div>
 
@@ -347,7 +347,7 @@
                 type="checkbox"
                 class="cockpit-checkbox h-4 w-4 text-sky-600 rounded border-slate-300 focus:ring-sky-500 cursor-pointer disabled:cursor-not-allowed"
                 :disabled="isRegularControlDisabled || !canRecordSupplier"
-                @change="onSupplierInputChanged"
+                @change="onSupplierAckChange"
               >
               <label for="supplier-ack-checkbox" class="text-xs font-medium text-slate-700 cursor-pointer select-none">
                 Xác nhận NCC chọn bên ngoài <span class="text-rose-500">*</span>
@@ -908,14 +908,11 @@ let lastEmittedBusy = false
 
 function isPanelBusy(): boolean {
   return Boolean(
-    isCurrencyLoading.value ||
-    isOrdersLoading.value ||
     isResolvingSupplier.value ||
     isUploading.value ||
     isAnalyzing.value ||
     isCreateBusy.value ||
     isCancelBusy.value ||
-    isPdfReading.value ||
     isRejectionRefreshBusy.value ||
     pendingCreateOrderCommand.value ||
     pendingCancelCommand.value ||
@@ -929,6 +926,13 @@ function syncParentBusy() {
 }
 
 function emitBusy(val: boolean) {
+  if (isDisposed) {
+    if (!val && lastEmittedBusy) {
+      lastEmittedBusy = false
+      emit('busy', false)
+    }
+    return
+  }
   const effectiveVal = val ? true : isPanelBusy()
   if (lastEmittedBusy !== effectiveVal) {
     lastEmittedBusy = effectiveVal
@@ -1118,38 +1122,13 @@ const aiOwnedSupplierFields = ref({
   contactPhone: false,
 })
 
-function onSupplierDisplayNameInput() {
-  userEditedSupplierFields.value.displayName = true
-  aiOwnedSupplierFields.value.displayName = false
-  onSupplierInputChanged()
-}
-
-function onSupplierTaxInput() {
-  userEditedSupplierFields.value.taxIdentifier = true
-  aiOwnedSupplierFields.value.taxIdentifier = false
-  onSupplierInputChanged()
-}
-
-function onSupplierContactNameInput() {
-  userEditedSupplierFields.value.contactDisplayName = true
-  aiOwnedSupplierFields.value.contactDisplayName = false
-  onSupplierInputChanged()
-}
-
-function onSupplierContactPhoneInput() {
-  userEditedSupplierFields.value.contactPhone = true
-  aiOwnedSupplierFields.value.contactPhone = false
-  onSupplierInputChanged()
-}
-
 const resolvedSupplierId = ref<string | null>(null)
 const lastResolvedInputJson = ref<string | null>(null)
 const supplierResolutionKey = ref<string>(crypto.randomUUID())
 const isResolvingSupplier = ref(false)
 const supplierResolveError = ref('')
 
-// F6 & F2: Editing supplier input invalidates resolution, evidence, AI analysis and line confirmations
-function onSupplierInputChanged() {
+function onResolvedSupplierInvalidated() {
   if (resolvedSupplierId.value !== null) {
     resolvedSupplierId.value = null
     supplierResolutionKey.value = crypto.randomUUID()
@@ -1159,18 +1138,80 @@ function onSupplierInputChanged() {
     uploadError.value = ''
     resetLineConfirmations()
   }
-  // Even when resolvedSupplierId is null: manual edits to supplier identity invalidate cached AI result/badges & stale AI suggestions
-  if (analysisResult.value !== null || analysisError.value !== '' || isAnalyzing.value) {
-    analysisTracker.invalidate()
-    if (isAnalyzing.value) {
-      isAnalyzing.value = false
-      syncParentBusy()
-    }
-    analysisResult.value = null
-    analysisError.value = ''
-    retractAiOwnedDrafts()
-  }
+}
+
+// G3: Completing mandatory code or ACK for same PDF-derived supplier does NOT wipe descriptor or retract drafts
+function onSupplierCodeInput() {
+  onResolvedSupplierInvalidated()
   supplierResolveError.value = ''
+}
+
+function onSupplierAckChange() {
+  onResolvedSupplierInvalidated()
+  supplierResolveError.value = ''
+}
+
+function handleSupplierDescriptorChanged(field: 'displayName' | 'taxIdentifier' | 'contactDisplayName' | 'contactPhone') {
+  supplierResolveError.value = ''
+
+  if (resolvedSupplierId.value !== null) {
+    onResolvedSupplierInvalidated()
+    if (analysisResult.value !== null || analysisError.value !== '' || isAnalyzing.value) {
+      analysisTracker.invalidate()
+      if (isAnalyzing.value) {
+        isAnalyzing.value = false
+        syncParentBusy()
+      }
+      analysisResult.value = null
+      analysisError.value = ''
+      retractAiOwnedDrafts()
+    }
+    return
+  }
+
+  // Before resolution: only a genuine vendor name change away from analyzed supplier retires conflicting proof and mismatched draft
+  if (field === 'displayName' && analysisResult.value?.supplier?.name) {
+    const aiName = analysisResult.value.supplier.name.trim()
+    const currentName = supplierDisplayName.value.trim()
+    if (currentName !== '' && currentName !== aiName) {
+      finalizedEvidenceFileId.value = null
+      uploadSession.value = null
+      uploadError.value = ''
+      analysisTracker.invalidate()
+      if (isAnalyzing.value) {
+        isAnalyzing.value = false
+        syncParentBusy()
+      }
+      analysisResult.value = null
+      analysisError.value = ''
+      retractAiOwnedDrafts()
+      resetLineConfirmations()
+    }
+  }
+}
+
+function onSupplierDisplayNameInput() {
+  userEditedSupplierFields.value.displayName = true
+  aiOwnedSupplierFields.value.displayName = false
+  handleSupplierDescriptorChanged('displayName')
+}
+
+function onSupplierTaxInput() {
+  userEditedSupplierFields.value.taxIdentifier = true
+  aiOwnedSupplierFields.value.taxIdentifier = false
+  handleSupplierDescriptorChanged('taxIdentifier')
+}
+
+function onSupplierContactNameInput() {
+  userEditedSupplierFields.value.contactDisplayName = true
+  aiOwnedSupplierFields.value.contactDisplayName = false
+  handleSupplierDescriptorChanged('contactDisplayName')
+}
+
+function onSupplierContactPhoneInput() {
+  userEditedSupplierFields.value.contactPhone = true
+  aiOwnedSupplierFields.value.contactPhone = false
+  handleSupplierDescriptorChanged('contactPhone')
 }
 
 const canTriggerSupplierResolve = computed(() => {
@@ -1205,17 +1246,13 @@ async function handleResolveSupplier() {
   }
 
   const currentJson = JSON.stringify(parsed.data)
-  if (currentJson !== lastResolvedInputJson.value) {
+  if (lastResolvedInputJson.value !== null && currentJson !== lastResolvedInputJson.value) {
     supplierResolutionKey.value = crypto.randomUUID()
     lastResolvedInputJson.value = currentJson
     // Retain selectedFile bytes for fresh finalization, but invalidate proof & session
     finalizedEvidenceFileId.value = null
     uploadSession.value = null
     uploadError.value = ''
-    analysisResult.value = null
-    analysisError.value = ''
-    analysisTracker.invalidate()
-    retractAiOwnedDrafts()
     resetLineConfirmations()
   }
 
@@ -1236,6 +1273,7 @@ async function handleResolveSupplier() {
     // F5: Guard token, disposed, scope and material.supplier.record permission
     if (!token.isCurrent() || isDisposed || !isLiveScopeValid() || !canRecordSupplier.value) return
     resolvedSupplierId.value = res.resourceId
+    lastResolvedInputJson.value = currentJson
   } catch (err: unknown) {
     if (!token.isCurrent() || isDisposed || !isLiveScopeValid()) return
     const errInfo = parseApiError(err)
@@ -1243,7 +1281,7 @@ async function handleResolveSupplier() {
   } finally {
     if (token.isCurrent() && !isDisposed) {
       isResolvingSupplier.value = false
-      emitBusy(false)
+      syncParentBusy()
     }
   }
 }
@@ -1337,7 +1375,7 @@ async function handleUploadPdf() {
   } finally {
     if (token.isCurrent() && !isDisposed) {
       isUploading.value = false
-      emitBusy(false)
+      syncParentBusy()
     }
   }
 
@@ -1435,21 +1473,46 @@ const analysisInputKey = computed(() => {
   ].join('|')
 })
 
-// F2: Watcher invalidates cached result, in-flight requests, and retracts stale suggestions without side effects
-watch(analysisInputKey, (newKey, oldKey) => {
-  if (newKey !== oldKey) {
-    if (isAnalyzing.value || analysisResult.value !== null || analysisError.value !== '') {
-      analysisTracker.invalidate()
-      if (isAnalyzing.value) {
-        isAnalyzing.value = false
-        syncParentBusy()
-      }
-      analysisResult.value = null
-      analysisError.value = ''
-      retractAiOwnedDrafts()
+const activeAnalysisInputKey = ref<string | null>(null)
+
+function hasAiOwnedDrafts(): boolean {
+  if (
+    aiOwnedSupplierFields.value.displayName ||
+    aiOwnedSupplierFields.value.taxIdentifier ||
+    aiOwnedSupplierFields.value.contactDisplayName ||
+    aiOwnedSupplierFields.value.contactPhone
+  ) {
+    return true
+  }
+  for (const track of Object.values(aiOwnedLineFields.value)) {
+    if (track && (track.quotationMaterialName || track.quotedQuantity || track.unitPrice || track.allocationQuantity)) {
+      return true
     }
   }
-})
+  return false
+}
+
+// G1: Synchronous watcher invalidates stale identity, cancels truly old running requests, and retracts old drafts
+watch(
+  analysisInputKey,
+  (newKey, oldKey) => {
+    if (newKey !== oldKey) {
+      if (isAnalyzing.value && activeAnalysisInputKey.value && activeAnalysisInputKey.value !== newKey) {
+        analysisTracker.invalidate()
+        isAnalyzing.value = false
+        activeAnalysisInputKey.value = null
+        syncParentBusy()
+      }
+      if (analysisResult.value !== null || analysisError.value !== '' || hasAiOwnedDrafts()) {
+        analysisResult.value = null
+        analysisError.value = ''
+        retractAiOwnedDrafts()
+        resetLineConfirmations()
+      }
+    }
+  },
+  { flush: 'sync' },
+)
 
 // F1: Retract only AI-owned fields when source changes, keeping buyer edits intact
 function retractAiOwnedDrafts() {
@@ -1496,6 +1559,7 @@ function retractAiOwnedDrafts() {
         form.allocationQuantity = ''
         aiOwned.allocationQuantity = false
       }
+      form.mappingConfirmed = false
     }
   }
 }
@@ -1527,9 +1591,10 @@ async function runQuotationAnalysis(targetFileId?: string | null) {
   if (isRegularControlDisabled.value) return
   if (!props.proposal.approvedRevisionId) return
 
-  // F2: Clear prior result immediately so failed/stale attempt never leaves old green badges
+  // F2 & G5: Clear prior result and line confirmations immediately
   analysisResult.value = null
   analysisError.value = ''
+  resetLineConfirmations()
 
   // Verify hash from finalized upload session
   const expectedSha256 = uploadSession.value?.session?.finalized?.sha256
@@ -1538,8 +1603,9 @@ async function runQuotationAnalysis(targetFileId?: string | null) {
     return
   }
 
-  // F2: Capture cache/source identity before request
+  // F2 & G1: Capture cache/source identity before request
   const capturedInputKey = analysisInputKey.value
+  activeAnalysisInputKey.value = capturedInputKey
   const currentRevisionId = props.proposal.approvedRevisionId
   const currentVersion = props.proposal.version
 
@@ -1601,6 +1667,7 @@ async function runQuotationAnalysis(targetFileId?: string | null) {
   } finally {
     if (token.isCurrent() && !isDisposed) {
       isAnalyzing.value = false
+      activeAnalysisInputKey.value = null
       syncParentBusy()
     }
   }
@@ -1666,6 +1733,9 @@ function applyQuotationAnalysisDraft(result: MaterialQuotationAnalysisResult) {
     ensureLineTrackers(lineId)
     const userEdited = userEditedLineFields.value[lineId]
     const aiOwned = aiOwnedLineFields.value[lineId]
+
+    // G5: Fresh AI draft refresh clears mapping confirmation; AI never sets mappingConfirmed
+    form.mappingConfirmed = false
 
     // A. quotationMaterialName
     if (!userEdited?.quotationMaterialName) {
@@ -2167,7 +2237,23 @@ async function executeCreateOrder(cmd: CreateOrderCommand) {
       isCreateBusy.value = false
 
       initLineFormMap()
+      // G4: Retract AI drafts and clear supplier fields so no residual data survives
+      retractAiOwnedDrafts()
+      resetAiOwnedState()
+      supplierCode.value = ''
+      supplierDisplayName.value = ''
+      supplierTaxIdentifier.value = ''
+      supplierContactDisplayName.value = ''
+      supplierContactPhone.value = ''
+      supplierAlreadyChosenAcknowledged.value = false
+      userEditedSupplierFields.value = {
+        displayName: false,
+        taxIdentifier: false,
+        contactDisplayName: false,
+        contactPhone: false,
+      }
       resolvedSupplierId.value = null
+      lastResolvedInputJson.value = null
       selectedFile.value = null
       finalizedEvidenceFileId.value = null
       uploadSession.value = null
@@ -2175,10 +2261,9 @@ async function executeCreateOrder(cmd: CreateOrderCommand) {
       analysisResult.value = null
       analysisError.value = ''
       analysisTracker.invalidate()
-      resetAiOwnedState()
 
       emit('canonical', canonicalProp)
-      emitBusy(false)
+      syncParentBusy()
     } catch (err: unknown) {
       if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
       isCreateBusy.value = false
@@ -2354,7 +2439,7 @@ async function executeCancelOrder(cmd: CancelOrderCommand) {
       isCancelBusy.value = false
 
       emit('canonical', canonicalProp)
-      emitBusy(false)
+      syncParentBusy()
     } catch (err: unknown) {
       if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
       isCancelBusy.value = false
@@ -2422,12 +2507,19 @@ async function runRejectionCanonicalRefresh(cmd: {
     analysisResult.value = null
     analysisError.value = ''
     analysisTracker.invalidate()
-    resetAiOwnedState()
 
+    // G4: Retract applicable old AI-owned values before resetting provenance
+    retractAiOwnedDrafts()
+    resetAiOwnedState()
     resetLineConfirmations()
 
+    // G2: End refresh loader & create/cancel busy BEFORE publishing final busy=false
+    isRejectionRefreshBusy.value = false
+    isCreateBusy.value = false
+    isCancelBusy.value = false
+
     emit('canonical', canonicalProp)
-    emitBusy(false)
+    syncParentBusy()
   } catch (err: unknown) {
     if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
     // Keep error banner and keep pending command
@@ -2442,6 +2534,7 @@ async function runRejectionCanonicalRefresh(cmd: {
       isRejectionRefreshBusy.value = false
       isCreateBusy.value = false
       isCancelBusy.value = false
+      syncParentBusy()
     }
   }
 }
@@ -2620,7 +2713,10 @@ onMounted(() => {
 onUnmounted(() => {
   isDisposed = true
   invalidateAllTrackers()
-  emitBusy(false)
+  if (lastEmittedBusy) {
+    lastEmittedBusy = false
+    emit('busy', false)
+  }
 })
 </script>
 
