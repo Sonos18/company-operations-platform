@@ -101,6 +101,7 @@ function createMockProposal(overrides: Partial<MaterialProposalView> = {}): Mate
         lineId: line1Id,
         materialId: material1Id,
         materialName: 'Thép cuộn phi 8',
+        notes: null,
         engineerProposedInvoiceName: null,
         buyerProposedInvoiceName: null,
         effectiveInvoiceDisplayName: 'Thép cuộn phi 8',
@@ -123,6 +124,7 @@ function createMockProposal(overrides: Partial<MaterialProposalView> = {}): Mate
   const merged = { ...base, ...overrides }
   if (overrides.lines) {
     merged.lines = overrides.lines.map((l: any) => ({
+      notes: null,
       engineerProposedInvoiceName: null,
       buyerProposedInvoiceName: null,
       effectiveInvoiceDisplayName: l.materialName || 'Vật tư',
@@ -321,10 +323,12 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
           const mat = mockMaterials.find(m => m.id === l.materialId)
           const matName = mat?.name || 'Vật tư'
           const engName = l.proposedInvoiceName ? (l.proposedInvoiceName.trim() || null) : null
+          const lineNotes = (typeof l.notes === 'string' && l.notes.trim().length > 0) ? l.notes.trim() : null
           return {
             lineId: l.lineId,
             materialId: l.materialId,
             materialName: matName,
+            notes: lineNotes,
             engineerProposedInvoiceName: engName,
             buyerProposedInvoiceName: null,
             effectiveInvoiceDisplayName: engName || matName,
@@ -416,10 +420,15 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
           const mat = mockMaterials.find(m => m.id === l.materialId)
           const matName = mat?.name || existingLine?.materialName || 'Vật tư'
           const engName = l.proposedInvoiceName ? (l.proposedInvoiceName.trim() || null) : null
+          let lineNotes = existingLine?.notes ?? null
+          if ('notes' in l) {
+            lineNotes = (typeof l.notes === 'string' && l.notes.trim().length > 0) ? l.notes.trim() : null
+          }
           return {
             lineId: l.lineId,
             materialId: l.materialId,
             materialName: matName,
+            notes: lineNotes,
             engineerProposedInvoiceName: engName,
             buyerProposedInvoiceName: existingLine?.buyerProposedInvoiceName || null,
             effectiveInvoiceDisplayName: existingLine?.buyerProposedInvoiceName || engName || matName,
