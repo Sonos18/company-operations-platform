@@ -33,6 +33,7 @@ const source = {
 const row = {
   proposalLineId: ids.proposalLine, sourceRowKey: '1:1', sourcePage: 1, quotationMaterialName: 'Steel D10',
   quotationUnit: 'kg', rawQuantity: '20', quotationQuantity: '20', rawUnitPrice: '12.5', unitPrice: '12.5',
+  rawLineTotal: null, lineTotal: null, lineTotalBasis: 'unknown' as const,
   taxBasis: 'exclusive' as const, nameMatches: true, specificationMatches: true, unitMatches: true, warnings: [],
 }
 const extraction = { supplier: { name: 'Supplier A', taxCode: null, contactName: null, phone: null }, currencyCode: 'VND', warnings: [], lines: [row] }
@@ -75,6 +76,57 @@ describe('quotation analysis guarded suggestions (source only; not run during al
     expect(foreign.lines[0]?.unitPrice).toBeNull()
   })
 
+  it('confirms grouped or decimal quantities only from the same-row arithmetic and strips private proof fields', () => {
+    const proof = { ...row, rawQuantity: '1,000', quotationQuantity: null, rawUnitPrice: '500', unitPrice: '500',
+      rawLineTotal: '500000', lineTotal: '500000', lineTotalBasis: 'same_as_unit_price' as const }
+    const thousand = { ...proposal, lines: [{ ...proposal.lines[0]!, quantity: '1000', remainingQuantity: '1000' }] }
+    for (const rawQuantity of ['1,000', '1.000']) {
+      const result = buildMaterialQuotationResult({ ...extraction, lines: [{ ...proof, rawQuantity }] }, thousand, 'VND', source)
+      expect(result.lines[0]).toMatchObject({ quotationQuantity: '1000', matched: true, suggestedAllocationQuantity: '1000' })
+      expect(result.lines[0]?.warnings.join(' ')).toContain('Số lượng được xác nhận')
+      for (const privateField of ['rawLineTotal', 'lineTotal', 'lineTotalBasis']) expect(result.lines[0]).not.toHaveProperty(privateField)
+    }
+    const decimal = buildMaterialQuotationResult({ ...extraction, lines: [{ ...proof, quotationQuantity: '1000', rawLineTotal: '500', lineTotal: '500' }] }, thousand, 'VND', source)
+    expect(decimal.lines[0]).toMatchObject({ quotationQuantity: '1', quantityMatchesProposal: false, matched: false })
+    const twelve = { ...proposal, lines: [{ ...proposal.lines[0]!, quantity: '12', remainingQuantity: '12' }] }
+    expect(buildMaterialQuotationResult({ ...extraction, lines: [proof] }, twelve, 'VND', source).lines[0])
+      .toMatchObject({ quotationQuantity: '1000', matched: false, suggestedAllocationQuantity: '12' })
+    expect(buildMaterialQuotationResult({ ...extraction, lines: [{ ...proof, taxBasis: 'inclusive' }] }, thousand, 'VND', source).lines[0])
+      .toMatchObject({ quotationQuantity: '1000', unitPrice: null })
+    const repeated = { ...proof, rawQuantity: '1,000,000', rawUnitPrice: '1', unitPrice: '1', rawLineTotal: '1,000,000', lineTotal: '1000000' }
+    expect(buildMaterialQuotationResult({ ...extraction, lines: [repeated] }, thousand, 'VND', source).lines[0]?.quotationQuantity).toBe('1000000')
+  })
+
+  it('refuses missing, malformed, adjusted, conflicting or semantically unbound arithmetic evidence', () => {
+    const proof = { ...row, rawQuantity: '1,000', quotationQuantity: null, rawUnitPrice: '500', unitPrice: '500',
+      rawLineTotal: '500000', lineTotal: '500000', lineTotalBasis: 'same_as_unit_price' as const }
+    for (const change of [
+      { rawQuantity: null }, { rawQuantity: '1,00' }, { rawQuantity: '1,000.000' },
+      { rawLineTotal: null }, { lineTotal: null }, { rawLineTotal: '0', lineTotal: null },
+      { rawLineTotal: '500,00' }, { rawLineTotal: '500001', lineTotal: '500001' },
+      { rawUnitPrice: null }, { unitPrice: null }, { rawUnitPrice: '0', unitPrice: null }, { rawUnitPrice: '5O0' },
+      { lineTotalBasis: 'adjusted' }, { lineTotalBasis: 'unknown' },
+      { sourceRowKey: null }, { sourcePage: 2 }, { quotationMaterialName: null },
+      { nameMatches: false }, { specificationMatches: false }, { unitMatches: false },
+    ]) {
+      expect(buildMaterialQuotationResult({ ...extraction, lines: [{ ...proof, ...change }] }, proposal, 'VND', source).lines[0])
+        .toMatchObject({ quotationQuantity: null, suggestedAllocationQuantity: null, matched: false })
+    }
+    for (const change of [{ unitPrice: '0' }, { lineTotal: '0' }, { lineTotal: 'invalid' }]) {
+      expect(() => buildMaterialQuotationResult({ ...extraction, lines: [{ ...proof, ...change }] }, proposal, 'VND', source)).toThrow()
+    }
+  })
+
+  it('compares large operands exactly instead of accepting a product rounded to 20 significant digits', () => {
+    const price = '9999999999999999.9999'
+    const proof = { ...row, rawQuantity: '1,000', quotationQuantity: null, rawUnitPrice: price, unitPrice: price,
+      rawLineTotal: price, lineTotal: price, lineTotalBasis: 'same_as_unit_price' as const }
+    expect(buildMaterialQuotationResult({ ...extraction, lines: [proof] }, proposal, 'VND', source).lines[0]?.quotationQuantity).toBe('1')
+    const roundedTotal = '9989999999999999.9999'
+    expect(buildMaterialQuotationResult({ ...extraction, lines: [{ ...proof, rawQuantity: '0.999',
+      rawLineTotal: roundedTotal, lineTotal: roundedTotal }] }, proposal, 'VND', source).lines[0]?.quotationQuantity).toBeNull()
+  })
+
   it('denies unapproved/version/revision/project and role scopes', () => {
     requireQuotationScope(context, ids.project, ids.proposal, input, proposal)
     for (const changed of [{ ...proposal, version: 2 }, { ...proposal, currentRevisionId: ids.material }, { ...proposal, reviewState: 'submitted' as const }, { ...proposal, projectId: ids.material }]) {
@@ -95,6 +147,15 @@ describe('quotation analysis guarded suggestions (source only; not run during al
     const payload = JSON.parse(String(request.body))
     expect(payload).toMatchObject({ model: 'gpt-5.4-mini', store: false, max_output_tokens: 12000, text: { format: { strict: true } } })
     expect(payload.input[0].content[0].file_data).toContain('data:application/pdf;base64,')
+    const lineSchema = payload.text.format.schema.properties.lines.items
+    expect(lineSchema.additionalProperties).toBe(false)
+    expect(lineSchema.required).toEqual(expect.arrayContaining(['rawLineTotal', 'lineTotal', 'lineTotalBasis']))
+    expect(lineSchema.properties.rawLineTotal.anyOf).toEqual(expect.arrayContaining([{ type: 'null' }]))
+    expect(lineSchema.properties.lineTotal.anyOf).toEqual(expect.arrayContaining([{ type: 'null' }]))
+    expect(lineSchema.properties.lineTotalBasis.enum).toEqual(['same_as_unit_price', 'adjusted', 'unknown'])
+    expect(payload.instructions).toContain('SAME physical row')
+    expect(payload.instructions).toContain('Never calculate or derive a missing quantity or amount')
+
     for (const envelope of [
       { status: 'incomplete', output: [] },
       { status: 'completed', output: [{ type: 'message', content: [{ type: 'refusal', refusal: 'no' }] }] },

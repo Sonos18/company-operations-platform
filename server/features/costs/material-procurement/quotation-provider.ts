@@ -19,9 +19,11 @@ export async function extractMaterialQuotation(apiKey: string, pdf: Buffer, prop
     'Return exactly one result per proposalLineId, including unmatched lines with null data and false matching flags.',
     'Use sourceRowKey in page:row format (physical row position, not proposal identity); repeated occurrences of one row use the same key.',
     'nameMatches/specificationMatches/unitMatches mean semantic equivalence with canonical proposal fields or its invoice display names.',
-    'Return rawQuantity/rawUnitPrice verbatim. Normalize only unambiguous positive decimal values (no separators, up to 4 decimal places).',
-    'With explicit VND currency, repeated dot or comma groups of exactly three digits in integer prices are thousands grouping; preserve raw text and normalize the integer price.',
+    'Return rawQuantity/rawUnitPrice/rawLineTotal verbatim. Normalized numbers contain no grouping separators and have at most 4 decimal places; ambiguous quantity normalization stays null.',
+    'With explicit VND currency, repeated dot or comma groups of exactly three digits in integer prices and printed line amounts are thousands grouping; preserve raw text and normalize the integer amount.',
     'If separators, units, or prices are ambiguous, normalized values must be null. Never infer missing quantities, currency, tax basis or supplier identity.',
+    'rawLineTotal and lineTotal refer only to the printed amount on the SAME physical row as rawQuantity and rawUnitPrice, never a subtotal or grand total across rows. Never calculate or derive a missing quantity or amount.',
+    'lineTotalBasis is same_as_unit_price only with evidence that printed amount and unit price use the same VAT basis and include no added VAT, discount, surcharge or rounding. Otherwise use adjusted or unknown. Missing printed amounts are null with unknown basis.',
     'taxBasis is exclusive only with clear evidence of price before VAT; otherwise inclusive or unknown.',
     'Do not create suppliers, purchase orders, confirmations or approval decisions. Missing information is null.',
   ].join(' ')

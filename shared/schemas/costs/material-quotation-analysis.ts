@@ -22,6 +22,9 @@ export const materialQuotationExtractionLineSchema = z.object({
   quotationQuantity: positiveDecimal.nullable(),
   rawUnitPrice: shortText.nullable(),
   unitPrice: positiveDecimal.nullable(),
+  rawLineTotal: shortText.nullable(),
+  lineTotal: positiveDecimal.nullable(),
+  lineTotalBasis: z.enum(['same_as_unit_price', 'adjusted', 'unknown']),
   taxBasis: z.enum(['exclusive', 'inclusive', 'unknown']),
   nameMatches: z.boolean(),
   specificationMatches: z.boolean(),
@@ -58,7 +61,7 @@ export const materialQuotationAnalysisResultSchema = z.object({
   supplier: materialQuotationExtractionSchema.shape.supplier,
   currencyCode: workflowCurrencySchema.nullable(),
   warnings,
-  lines: z.array(materialQuotationExtractionLineSchema.extend({
+  lines: z.array(materialQuotationExtractionLineSchema.omit({ rawLineTotal: true, lineTotal: true, lineTotalBasis: true }).extend({
     extractedUnitPrice: positiveDecimal.nullable(),
     quantityMatchesProposal: z.boolean(),
     matched: z.boolean(),

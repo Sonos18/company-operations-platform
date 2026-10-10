@@ -10,7 +10,7 @@ import {
 } from '../../../../shared/schemas/costs/material-quotation-analysis'
 import { COST_EVIDENCE_MAX_BYTES } from '../../../../shared/schemas/costs/cost-evidence'
 import type { MaterialProposalView } from '../../../../shared/schemas/costs/material-procurement'
-import { workflowUuidSchema } from '../../../../shared/schemas/costs/cost-workflow'
+import { workflowMoneySchema, workflowUuidSchema } from '../../../../shared/schemas/costs/cost-workflow'
 import { AppApiError } from '../../../utils/api-error'
 import { c1RequestContext } from '../../c1-master-data/context'
 import { verifyEvidenceBlob } from '../evidence/evidence-file-integrity'
@@ -41,6 +41,21 @@ function quotationPrice(raw: string | null, normalized: string | null, currencyC
   return unambiguousDecimal(raw, normalized)
 }
 
+// At most 20 significant digits per operand; 60 keeps the quantity-price product exact.
+const QuantityDecimal = Decimal.clone({ precision: 60 })
+
+function confirmedAmbiguousQuantity(raw: string | null, price: string | null, printedTotal: string | null) {
+  if (!raw || !price || !printedTotal
+    || !/^(?:0|[1-9]\d{0,2})([.,])\d{3}(?:\1\d{3})*$/u.test(raw.trim())) return null
+  const parts = raw.trim().split(/[.,]/u)
+  const candidates = [parts.join(''), ...(parts.length === 2 ? [parts.join('.')] : [])]
+    .map(value => new QuantityDecimal(value).toFixed())
+    .filter(value => workflowMoneySchema.safeParse(value).success && new QuantityDecimal(value).greaterThan(0))
+  const matches = [...new Set(candidates)].filter(value =>
+    new QuantityDecimal(value).times(price).equals(printedTotal))
+  return matches.length === 1 ? matches[0]! : null
+}
+
 export function buildMaterialQuotationResult(
   value: unknown,
   proposal: MaterialProposalView,
@@ -58,11 +73,17 @@ export function buildMaterialQuotationResult(
   const lines = proposal.lines.map(item => {
     const row = byLine.get(item.lineId)
     if (!row) invalidOutput()
-    const quotationQuantity = unambiguousDecimal(row.rawQuantity, row.quotationQuantity)
+    const { rawLineTotal, lineTotal, lineTotalBasis, ...publicRow } = row
     const extractedUnitPrice = quotationPrice(row.rawUnitPrice, row.unitPrice, extraction.currencyCode)
     const warnings = row.warnings.slice(0, 94)
     const semanticMatch = !!row.sourceRowKey && row.sourceRowKey.split(':')[0] === String(row.sourcePage) && !!row.quotationMaterialName
       && !!row.quotationUnit && row.nameMatches && row.specificationMatches && row.unitMatches
+    const directQuantity = unambiguousDecimal(row.rawQuantity, row.quotationQuantity)
+    const arithmeticQuantity = directQuantity === null && semanticMatch && lineTotalBasis === 'same_as_unit_price'
+      ? confirmedAmbiguousQuantity(row.rawQuantity, extractedUnitPrice, quotationPrice(rawLineTotal, lineTotal, extraction.currencyCode))
+      : null
+    const quotationQuantity = directQuantity ?? arithmeticQuantity
+    if (arithmeticQuantity !== null) warnings.push('Số lượng được xác nhận bằng đơn giá × số lượng = thành tiền in trên cùng dòng; mua hàng vẫn cần kiểm tra.')
     const quantityMatchesProposal = quotationQuantity !== null && new Decimal(quotationQuantity).equals(item.quantity)
     if (quotationQuantity === null) warnings.push('Số lượng báo giá thiếu hoặc chưa rõ.')
     else if (!quantityMatchesProposal) warnings.push('Số lượng báo giá khác số lượng đề xuất; cần kiểm tra đơn từng phần.')
@@ -74,7 +95,7 @@ export function buildMaterialQuotationResult(
     const suggestedAllocationQuantity = semanticMatch && quotationQuantity && remaining.greaterThan(0)
       ? Decimal.min(quotationQuantity, remaining).toFixed() : null
     return {
-      ...row, quotationQuantity, extractedUnitPrice,
+      ...publicRow, quotationQuantity, extractedUnitPrice,
       unitPrice: priceUsable ? extractedUnitPrice : null,
       quantityMatchesProposal,
       matched: semanticMatch && quantityMatchesProposal,
