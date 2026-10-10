@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(116);
+select plan(118);
 
 select ok(
   coalesce((select relation.relrowsecurity and relation.relforcerowsecurity from pg_class as relation where relation.oid=to_regclass(table_name)),false),
@@ -97,6 +97,7 @@ select ok(
   signature||' is executable by authenticated'
 )
 from unnest(array[
+  'private.c1_material_evidence_file(uuid)',
   'public.c1_material_list_projects(uuid)',
   'public.c1_material_list_items(uuid)',
   'public.c1_material_create_item(uuid,jsonb,uuid,uuid)',
@@ -124,6 +125,7 @@ select ok(
   signature||' denies anonymous execution'
 )
 from unnest(array[
+  'private.c1_material_evidence_file(uuid)',
   'public.c1_material_list_projects(uuid)',
   'public.c1_material_list_items(uuid)',
   'public.c1_material_create_item(uuid,jsonb,uuid,uuid)',
