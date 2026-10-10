@@ -1245,15 +1245,18 @@ async function handleResolveSupplier() {
     return
   }
 
+  const previousLastJson = lastResolvedInputJson.value
   const currentJson = JSON.stringify(parsed.data)
-  if (lastResolvedInputJson.value !== null && currentJson !== lastResolvedInputJson.value) {
+  if (currentJson !== previousLastJson) {
     supplierResolutionKey.value = crypto.randomUUID()
     lastResolvedInputJson.value = currentJson
-    // Retain selectedFile bytes for fresh finalization, but invalidate proof & session
-    finalizedEvidenceFileId.value = null
-    uploadSession.value = null
-    uploadError.value = ''
-    resetLineConfirmations()
+    if (previousLastJson !== null) {
+      // Retain selectedFile bytes for fresh finalization, but invalidate proof & session on genuine supplier change
+      finalizedEvidenceFileId.value = null
+      uploadSession.value = null
+      uploadError.value = ''
+      resetLineConfirmations()
+    }
   }
 
   const token = supplierTracker.start({
