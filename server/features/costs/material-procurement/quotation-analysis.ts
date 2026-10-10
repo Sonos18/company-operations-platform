@@ -109,8 +109,10 @@ const fileSchema = z.object({
   verified_sha256: z.string().regex(/^[a-f0-9]{64}$/u), version: z.number().int().nonnegative(),
 }).strict()
 
-function sourceDenied(): never {
-  throw new AppApiError(409, 'SOURCE_SELECTION_SCOPE_MISMATCH', 'PDF chưa hoàn tất hoặc không thuộc đề xuất và phiên bản duyệt hiện tại.')
+function sourceDenied(stage: 'scope_metadata' | 'file_metadata' | 'file_validation' | 'object_path' | 'storage_download' | 'blob_size_or_mime' | 'blob_integrity', backendCode?: string): never {
+  const details: Record<string, unknown> = { stage }
+  if (backendCode && /^[A-Z0-9_]{1,32}$/u.test(backendCode)) details.backendCode = backendCode
+  throw new AppApiError(409, 'SOURCE_SELECTION_SCOPE_MISMATCH', 'PDF chưa hoàn tất hoặc không thuộc đề xuất và phiên bản duyệt hiện tại.', details)
 }
 
 type Context = Awaited<ReturnType<typeof c1RequestContext>>
@@ -128,15 +130,16 @@ async function quotationSnapshot(context: Context, projectId: string, proposalId
     .eq('company_id', context.companyId).eq('project_id', projectId)
     .eq('target_kind', 'material_proposal').eq('proposal_id', proposalId)
     .eq('revision_id', input.approvedRevisionId).eq('evidence_role', 'unsigned_quotation').maybeSingle()
-  if (scope.error || !scope.data) sourceDenied()
+  if (scope.error || !scope.data) sourceDenied('scope_metadata', scope.error?.code)
   const result = await context.db.from('cost_evidence_files')
     .select('id,tenant_id,company_id,project_id,status,bucket_id,object_path,verified_mime_type,verified_size_bytes,verified_sha256,version')
     .eq('id', input.evidenceFileId).eq('tenant_id', context.tenantId).eq('company_id', context.companyId)
     .eq('project_id', projectId).maybeSingle()
   const parsed = fileSchema.safeParse(result.data)
-  if (result.error || !parsed.success) sourceDenied()
+  if (result.error) sourceDenied('file_metadata', result.error.code)
+  if (!parsed.success) sourceDenied('file_validation')
   const file = parsed.data
-  if (file.object_path !== [context.tenantId, context.companyId, projectId, input.evidenceFileId].join('/')) sourceDenied()
+  if (file.object_path !== [context.tenantId, context.companyId, projectId, input.evidenceFileId].join('/')) sourceDenied('object_path')
   return { proposal, currency, file }
 }
 
@@ -161,10 +164,10 @@ export function createMaterialQuotationAnalysisRoute(dependencies: QuotationAnal
     const apiKey = dependencies.apiKey(event)
     if (!apiKey.trim()) throw new AppApiError(503, 'QUOTATION_ANALYSIS_NOT_CONFIGURED', 'Dịch vụ phân tích báo giá chưa được cấu hình.')
     const downloaded = await context.db.storage.from(before.file.bucket_id).download(before.file.object_path)
-    if (downloaded.error || !(downloaded.data instanceof Blob)) sourceDenied()
-    if (downloaded.data.size !== before.file.verified_size_bytes || downloaded.data.type !== 'application/pdf') sourceDenied()
+    if (downloaded.error || !(downloaded.data instanceof Blob)) sourceDenied('storage_download')
+    if (downloaded.data.size !== before.file.verified_size_bytes || downloaded.data.type !== 'application/pdf') sourceDenied('blob_size_or_mime')
     const identity = await verifyEvidenceBlob(downloaded.data, COST_EVIDENCE_MAX_BYTES, 'application/pdf')
-    if (identity.sha256 !== before.file.verified_sha256 || identity.sizeBytes !== before.file.verified_size_bytes) sourceDenied()
+    if (identity.sha256 !== before.file.verified_sha256 || identity.sizeBytes !== before.file.verified_size_bytes) sourceDenied('blob_integrity')
     const extraction = await (dependencies.extract ?? extractMaterialQuotation)(
       apiKey, Buffer.from(await downloaded.data.arrayBuffer()), before.proposal,
     )
