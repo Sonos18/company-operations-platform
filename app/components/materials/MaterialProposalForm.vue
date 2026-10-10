@@ -289,7 +289,7 @@
                 </td>
                 <td>
                   <div v-if="readOnly">
-                    <span class="text-xs text-slate-800 whitespace-pre-wrap break-words">{{ line.notes || '—' }}</span>
+                    <span class="line-note-display text-xs text-slate-800">{{ line.notes || '—' }}</span>
                   </div>
                   <div v-else>
                     <textarea
@@ -1253,6 +1253,12 @@ onUnmounted(() => {
   min-height: 48px;
   resize: vertical;
   line-height: 1.4;
+}
+.line-note-display {
+  display: block;
+  max-width: 20rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .invoice-name-input {
   min-width: 160px;

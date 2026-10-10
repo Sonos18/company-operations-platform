@@ -262,7 +262,7 @@
                 <td class="font-mono text-sm font-medium">{{ formatMaterialQuantity(line.signedQuantity || '0') }}</td>
                 <td class="font-mono text-sm text-forest">{{ formatMaterialQuantity(line.remainingQuantity || line.quantity) }}</td>
                 <td class="text-sm">
-                  <span class="text-slate-700 whitespace-pre-wrap break-words">{{ line.notes ?? '—' }}</span>
+                  <span class="line-note-display text-slate-700">{{ line.notes ?? '—' }}</span>
                 </td>
               </tr>
             </tbody>
@@ -1208,5 +1208,11 @@ onUnmounted(() => {
 }
 .text-center {
   text-align: center;
+}
+.line-note-display {
+  display: block;
+  max-width: 20rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 </style>
