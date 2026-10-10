@@ -21,7 +21,7 @@ const proposal = materialProposalViewSchema.parse({
   reviewState: 'approved', returnReason: null, approvedRevisionId: ids.proposalRevision,
   currentRevisionId: ids.proposalRevision, neededOn: '2026-10-30', deliveryAddress: 'Site', notes: null,
   lines: [{ lineId: ids.proposalLine, materialId: ids.material, materialName: 'Steel', specification: 'D10',
-    unit: 'kg', quantity: '20.0000', engineerProposedInvoiceName: null, buyerProposedInvoiceName: null,
+    unit: 'kg', quantity: '20.0000', notes: null, engineerProposedInvoiceName: null, buyerProposedInvoiceName: null,
     effectiveInvoiceDisplayName: 'Steel', invoiceDisplayNameSource: 'canonical', buyerOverrideVersion: 0,
     buyerInvoiceNameEditable: true, allocatedQuantity: '8', signedQuantity: '0', remainingQuantity: '12' }],
   orderProgress: { orderCount: 1, signedOrderCount: 0 },
