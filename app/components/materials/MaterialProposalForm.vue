@@ -236,9 +236,6 @@
                       maxlength="200"
                       @input="markDirty"
                     >
-                    <small class="field-hint block text-xs text-muted mt-0.5">
-                      Để trống sẽ dùng tên chuẩn
-                    </small>
                     <span
                       v-if="getLineError(line.lineId, 'proposedInvoiceName')"
                       :id="'line-invoice-name-error-' + line.lineId"
