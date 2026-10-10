@@ -33,6 +33,7 @@ export async function extractMaterialQuotation(apiKey: string, pdf: Buffer, prop
     'Use whole-document tax summaries and footnotes: separately added VAT and a subtotal reconciling the pre-tax row amounts, with printed adjustments accounted for, are clear evidence of exclusive unit prices even without a literal before-VAT phrase.',
     'Use inclusive only when evidence shows VAT is already included in the unit price; use unknown when evidence is missing or conflicting. Do not assume a VAT rate or judge its legal applicability.',
     'Return currencyCode only with explicit currency evidence in the PDF. Never substitute canonical company or proposal currency; missing or ambiguous PDF currency is null.',
+    'Any application currency default is applied after extraction; report only actual PDF currency evidence, never an application default.',
     'Do not create suppliers, purchase orders, confirmations or approval decisions. Missing information is null.',
   ].join(' ')
   try {

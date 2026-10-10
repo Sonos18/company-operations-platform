@@ -82,6 +82,7 @@ export function buildMaterialQuotationResult(
   const parsed = materialQuotationExtractionSchema.safeParse(value)
   if (!parsed.success) invalidOutput()
   const extraction = parsed.data
+  const effectiveQuotationCurrency = extraction.currencyCode ?? 'VND'
   const byLine = new Map(extraction.lines.map(line => [line.proposalLineId, line]))
   const rowKeys = extraction.lines.flatMap(line => line.sourceRowKey ? [line.sourceRowKey] : [])
   if (byLine.size !== extraction.lines.length || byLine.size !== proposal.lines.length
@@ -91,13 +92,13 @@ export function buildMaterialQuotationResult(
     const row = byLine.get(item.lineId)
     if (!row) invalidOutput()
     const { rawLineTotal, lineTotal, lineTotalBasis, ...publicRow } = row
-    const extractedUnitPrice = quotationPrice(row.rawUnitPrice, row.unitPrice, extraction.currencyCode)
+    const extractedUnitPrice = quotationPrice(row.rawUnitPrice, row.unitPrice, effectiveQuotationCurrency)
     const warnings = row.warnings.slice(0, 94)
     const semanticMatch = !!row.sourceRowKey && row.sourceRowKey.split(':')[0] === String(row.sourcePage) && !!row.quotationMaterialName
       && !!row.quotationUnit && row.nameMatches && row.specificationMatches && row.unitMatches
     const directQuantity = unambiguousDecimal(row.rawQuantity, row.quotationQuantity)
     const arithmeticQuantity = directQuantity === null && semanticMatch && lineTotalBasis === 'same_as_unit_price'
-      ? confirmedAmbiguousQuantity(row.rawQuantity, proofNumber(row.rawUnitPrice, row.unitPrice, extraction.currencyCode), proofNumber(rawLineTotal, lineTotal, extraction.currencyCode))
+      ? confirmedAmbiguousQuantity(row.rawQuantity, proofNumber(row.rawUnitPrice, row.unitPrice, effectiveQuotationCurrency), proofNumber(rawLineTotal, lineTotal, effectiveQuotationCurrency))
       : null
     const quotationQuantity = directQuantity ?? arithmeticQuantity
     if (arithmeticQuantity !== null) warnings.push('Số lượng được xác nhận bằng đơn giá × số lượng = thành tiền in trên cùng dòng; mua hàng vẫn cần kiểm tra.')
@@ -105,11 +106,10 @@ export function buildMaterialQuotationResult(
     if (quotationQuantity === null) warnings.push('Số lượng báo giá thiếu hoặc chưa rõ.')
     else if (!quantityMatchesProposal) warnings.push('Số lượng báo giá khác số lượng đề xuất; cần kiểm tra đơn từng phần.')
     if (!semanticMatch) warnings.push('Tên, quy cách hoặc đơn vị chưa được đối chiếu đầy đủ.')
-    const priceUsable = semanticMatch && row.taxBasis === 'exclusive' && extraction.currencyCode === currencyCode
+    const priceUsable = semanticMatch && row.taxBasis === 'exclusive' && effectiveQuotationCurrency === currencyCode
     if (row.taxBasis === 'unknown') warnings.push('Chưa xác định đơn giá đã gồm VAT hay chưa; vui lòng kiểm tra và nhập đơn giá chưa VAT.')
     else if (row.taxBasis === 'inclusive') warnings.push('AI nhận diện đơn giá đã gồm VAT; vui lòng đối chiếu PDF và nhập đơn giá chưa VAT.')
-    if (extraction.currencyCode === null) warnings.push('Chưa xác định được đồng tiền trên PDF; không tự điền đơn giá.')
-    else if (extraction.currencyCode !== currencyCode) warnings.push('Đồng tiền báo giá ' + extraction.currencyCode + ' khác đồng tiền hệ thống ' + currencyCode + '; không tự điền đơn giá.')
+    if (effectiveQuotationCurrency !== currencyCode) warnings.push('Đồng tiền báo giá ' + effectiveQuotationCurrency + ' khác đồng tiền hệ thống ' + currencyCode + '; không tự điền đơn giá.')
     if (extractedUnitPrice === null) warnings.push('Đơn giá thiếu hoặc chưa rõ.')
     const remaining = new Decimal(item.remainingQuantity)
     const suggestedAllocationQuantity = semanticMatch && quotationQuantity && remaining.greaterThan(0)
@@ -123,10 +123,15 @@ export function buildMaterialQuotationResult(
       warnings,
     }
   })
+  const currencyDefaultWarning = 'Chưa xác định được đồng tiền trên PDF; đang dùng mặc định VND. Mua hàng cần kiểm tra lại.'
+  const warnings = extraction.warnings.filter(warning => warning !== currencyDefaultWarning)
+    .slice(0, extraction.currencyCode === null ? 98 : 99)
+  if (extraction.currencyCode === null) warnings.push(currencyDefaultWarning)
+  warnings.push('AI chỉ hỗ trợ đối chiếu; mua hàng phải kiểm tra và xác nhận mapping trước khi tạo đơn.')
   return materialQuotationAnalysisResultSchema.parse({
     model: 'gpt-5.4-mini', source, matched: lines.every(line => line.matched),
-    supplier: extraction.supplier, currencyCode: extraction.currencyCode,
-    warnings: [...extraction.warnings.slice(0, 99), 'AI chỉ hỗ trợ đối chiếu; mua hàng phải kiểm tra và xác nhận mapping trước khi tạo đơn.'],
+    supplier: extraction.supplier, currencyCode: effectiveQuotationCurrency,
+    warnings,
     lines,
   })
 }
