@@ -76,6 +76,37 @@ describe('quotation analysis guarded suggestions (source only; not run during al
     expect(foreign.lines[0]?.unitPrice).toBeNull()
   })
 
+  it('autofills a small exclusive per-unit price and explains the precise tax or currency gate', () => {
+    const pricedRow = { ...row, rawQuantity: '1,000', quotationQuantity: null, rawUnitPrice: '430', unitPrice: '430',
+      rawLineTotal: '430,000', lineTotal: '430000', lineTotalBasis: 'same_as_unit_price' as const }
+    const thousand = { ...proposal, lines: [{ ...proposal.lines[0]!, quantity: '1000', allocatedQuantity: '0', remainingQuantity: '1000' }] }
+    const result = buildMaterialQuotationResult({ ...extraction, lines: [pricedRow] }, thousand, 'VND', source)
+    expect(result.lines[0]).toMatchObject({ quotationQuantity: '1000', extractedUnitPrice: '430', unitPrice: '430', matched: true })
+    for (const [taxBasis, message] of [
+      ['unknown', 'Chưa xác định đơn giá đã gồm VAT hay chưa; vui lòng kiểm tra và nhập đơn giá chưa VAT.'],
+      ['inclusive', 'Đơn giá báo giá đã gồm VAT; vui lòng nhập đơn giá chưa VAT.'],
+    ] as const) {
+      const denied = buildMaterialQuotationResult({ ...extraction, lines: [{ ...pricedRow, taxBasis }] }, thousand, 'VND', source)
+      expect(denied.lines[0]).toMatchObject({ extractedUnitPrice: '430', unitPrice: null })
+      expect(denied.lines[0]?.warnings).toContain(message)
+      expect(denied.lines[0]?.warnings.join(' ')).not.toContain('đồng tiền')
+    }
+    for (const [currencyCode, message] of [
+      [null, 'PDF chưa thể hiện rõ đồng tiền báo giá; không tự điền đơn giá.'],
+      ['USD', 'Đồng tiền báo giá USD khác đồng tiền hệ thống VND; không tự điền đơn giá.'],
+    ] as const) {
+      const denied = buildMaterialQuotationResult({ ...extraction, currencyCode, lines: [pricedRow] }, thousand, 'VND', source)
+      expect(denied.lines[0]).toMatchObject({ extractedUnitPrice: '430', unitPrice: null })
+      expect(denied.lines[0]?.warnings).toContain(message)
+      expect(denied.lines[0]?.warnings.join(' ')).not.toContain('VAT')
+    }
+    const allWarnings = buildMaterialQuotationResult({ ...extraction, currencyCode: null, lines: [{
+      ...row, rawQuantity: null, quotationQuantity: null, rawUnitPrice: null, unitPrice: null,
+      nameMatches: false, taxBasis: 'unknown', warnings: Array.from({ length: 100 }, () => 'Cần kiểm tra.'),
+    }] }, proposal, 'VND', source)
+    expect(allWarnings.lines[0]?.warnings.length).toBeLessThanOrEqual(100)
+  })
+
   it('confirms grouped or decimal quantities only from the same-row arithmetic and strips private proof fields', () => {
     const proof = { ...row, rawQuantity: '1,000', quotationQuantity: null, rawUnitPrice: '500', unitPrice: '500',
       rawLineTotal: '500000', lineTotal: '500000', lineTotalBasis: 'same_as_unit_price' as const }
@@ -155,6 +186,14 @@ describe('quotation analysis guarded suggestions (source only; not run during al
     expect(lineSchema.properties.lineTotalBasis.enum).toEqual(['same_as_unit_price', 'adjusted', 'unknown'])
     expect(payload.instructions).toContain('SAME physical row')
     expect(payload.instructions).toContain('Never calculate or derive a missing quantity or amount')
+    expect(payload.instructions).toContain('unitPrice is the printed price per quotation unit')
+    expect(payload.instructions).toContain('Do not require an exact heading, column position or fixed layout')
+    expect(payload.instructions).toContain('non-exhaustive examples, not a required vocabulary')
+    expect(payload.instructions).toContain('taxBasis describes the unitPrice on each line')
+    expect(payload.instructions).toContain('A grand total after VAT does NOT make the per-unit price inclusive')
+    expect(payload.instructions).toContain('separately added VAT and a subtotal reconciling the pre-tax row amounts')
+    expect(payload.instructions).toContain('Never derive a missing unit price from totals or proposal data')
+    expect(payload.instructions).toContain('Never substitute canonical company or proposal currency')
 
     for (const envelope of [
       { status: 'incomplete', output: [] },

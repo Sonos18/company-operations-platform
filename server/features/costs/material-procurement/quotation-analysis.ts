@@ -89,7 +89,10 @@ export function buildMaterialQuotationResult(
     else if (!quantityMatchesProposal) warnings.push('Số lượng báo giá khác số lượng đề xuất; cần kiểm tra đơn từng phần.')
     if (!semanticMatch) warnings.push('Tên, quy cách hoặc đơn vị chưa được đối chiếu đầy đủ.')
     const priceUsable = semanticMatch && row.taxBasis === 'exclusive' && extraction.currencyCode === currencyCode
-    if (!priceUsable) warnings.push('Chỉ tự điền đơn giá chưa VAT cùng đồng tiền hệ thống; vui lòng nhập giá hợp lệ.')
+    if (row.taxBasis === 'unknown') warnings.push('Chưa xác định đơn giá đã gồm VAT hay chưa; vui lòng kiểm tra và nhập đơn giá chưa VAT.')
+    else if (row.taxBasis === 'inclusive') warnings.push('Đơn giá báo giá đã gồm VAT; vui lòng nhập đơn giá chưa VAT.')
+    if (extraction.currencyCode === null) warnings.push('PDF chưa thể hiện rõ đồng tiền báo giá; không tự điền đơn giá.')
+    else if (extraction.currencyCode !== currencyCode) warnings.push('Đồng tiền báo giá ' + extraction.currencyCode + ' khác đồng tiền hệ thống ' + currencyCode + '; không tự điền đơn giá.')
     if (extractedUnitPrice === null) warnings.push('Đơn giá thiếu hoặc chưa rõ.')
     const remaining = new Decimal(item.remainingQuantity)
     const suggestedAllocationQuantity = semanticMatch && quotationQuantity && remaining.greaterThan(0)
