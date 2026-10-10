@@ -79,7 +79,7 @@ describe('quotation analysis guarded suggestions (source only; not run during al
   it('confirms grouped or decimal quantities only from the same-row arithmetic and strips private proof fields', () => {
     const proof = { ...row, rawQuantity: '1,000', quotationQuantity: null, rawUnitPrice: '500', unitPrice: '500',
       rawLineTotal: '500000', lineTotal: '500000', lineTotalBasis: 'same_as_unit_price' as const }
-    const thousand = { ...proposal, lines: [{ ...proposal.lines[0]!, quantity: '1000', remainingQuantity: '1000' }] }
+    const thousand = { ...proposal, lines: [{ ...proposal.lines[0]!, quantity: '1000', allocatedQuantity: '0', remainingQuantity: '1000' }] }
     for (const rawQuantity of ['1,000', '1.000']) {
       const result = buildMaterialQuotationResult({ ...extraction, lines: [{ ...proof, rawQuantity }] }, thousand, 'VND', source)
       expect(result.lines[0]).toMatchObject({ quotationQuantity: '1000', matched: true, suggestedAllocationQuantity: '1000' })
@@ -88,7 +88,7 @@ describe('quotation analysis guarded suggestions (source only; not run during al
     }
     const decimal = buildMaterialQuotationResult({ ...extraction, lines: [{ ...proof, quotationQuantity: '1000', rawLineTotal: '500', lineTotal: '500' }] }, thousand, 'VND', source)
     expect(decimal.lines[0]).toMatchObject({ quotationQuantity: '1', quantityMatchesProposal: false, matched: false })
-    const twelve = { ...proposal, lines: [{ ...proposal.lines[0]!, quantity: '12', remainingQuantity: '12' }] }
+    const twelve = { ...proposal, lines: [{ ...proposal.lines[0]!, quantity: '12', allocatedQuantity: '0', remainingQuantity: '12' }] }
     expect(buildMaterialQuotationResult({ ...extraction, lines: [proof] }, twelve, 'VND', source).lines[0])
       .toMatchObject({ quotationQuantity: '1000', matched: false, suggestedAllocationQuantity: '12' })
     expect(buildMaterialQuotationResult({ ...extraction, lines: [{ ...proof, taxBasis: 'inclusive' }] }, thousand, 'VND', source).lines[0])

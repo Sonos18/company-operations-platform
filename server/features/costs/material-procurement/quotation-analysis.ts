@@ -53,7 +53,7 @@ function confirmedAmbiguousQuantity(raw: string | null, price: string | null, pr
     .filter(value => workflowMoneySchema.safeParse(value).success && new QuantityDecimal(value).greaterThan(0))
   const matches = [...new Set(candidates)].filter(value =>
     new QuantityDecimal(value).times(price).equals(printedTotal))
-  return matches.length === 1 ? matches[0]! : null
+  return matches.length === 1 ? (matches[0] ?? null) : null
 }
 
 export function buildMaterialQuotationResult(
