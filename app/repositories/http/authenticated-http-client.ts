@@ -144,7 +144,7 @@ function extractSafeDetails(code: ApiErrorCode, details?: Record<string, unknown
   return undefined
 }
 
-function apiFailure(status: number, code: ApiErrorCode, requestId: string, reason?: ClientErrorReason, details?: Record<string, unknown>): ClientError {
+function apiFailure(status: number, code: ApiErrorCode, requestId: string, message: string, reason?: ClientErrorReason, details?: Record<string, unknown>): ClientError {
   if (status === 429) {
     return clientError(
       'rate_limit',
@@ -153,6 +153,11 @@ function apiFailure(status: number, code: ApiErrorCode, requestId: string, reaso
       true,
       requestId,
     )
+  }
+
+  if (status >= 500 && (code === 'QUOTATION_ANALYSIS_NOT_CONFIGURED'
+    || code === 'QUOTATION_ANALYSIS_FAILED' || code === 'QUOTATION_ANALYSIS_INVALID')) {
+    return clientError('api', code, message, false, requestId)
   }
 
   if (status >= 500) {
@@ -240,7 +245,7 @@ export function createAuthenticatedHttpClient(options: AuthenticatedHttpClientOp
         const parsedError = strictApiErrorBodySchema.safeParse(responseBody.value)
         if (!parsedError.success) throw malformedResponse()
         const reason = parsedError.data.error.details.reason === 'MODULE_DISABLED' ? 'MODULE_DISABLED' : undefined
-        const failure = apiFailure(response.status, parsedError.data.error.code, parsedError.data.error.requestId, reason, parsedError.data.error.details)
+        const failure = apiFailure(response.status, parsedError.data.error.code, parsedError.data.error.requestId, parsedError.data.error.message, reason, parsedError.data.error.details)
         const shouldRevalidate = input.url.split(/[?#]/u, 1)[0] !== '/api/auth/session'
           && (failure.code === 'COMPANY_FORBIDDEN' || failure.code === 'PERMISSION_DENIED')
 
