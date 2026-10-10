@@ -107,6 +107,38 @@ describe('quotation analysis guarded suggestions (source only; not run during al
     expect(allWarnings.lines[0]?.warnings.length).toBeLessThanOrEqual(100)
   })
 
+  it('keeps quantity proof independent of currency while retaining the existing price autofill gate', () => {
+    const proof = { ...row, rawQuantity: '1,000', quotationQuantity: null, rawUnitPrice: '430', unitPrice: '430',
+      rawLineTotal: '430,000', lineTotal: '430000', lineTotalBasis: 'same_as_unit_price' as const }
+    const thousand = { ...proposal, lines: [{ ...proposal.lines[0]!, quantity: '1000', allocatedQuantity: '0', remainingQuantity: '1000' }] }
+    for (const currencyCode of ['VND', null, 'USD'] as const) {
+      const result = buildMaterialQuotationResult({ ...extraction, currencyCode, lines: [proof] }, thousand, 'VND', source)
+      expect(result.lines[0]).toMatchObject({ quotationQuantity: '1000', suggestedAllocationQuantity: '1000', matched: true,
+        extractedUnitPrice: '430', unitPrice: currencyCode === 'VND' ? '430' : null })
+      if (currencyCode === null) expect(result.lines[0]?.warnings).toContain('Chưa xác định được đồng tiền trên PDF; không tự điền đơn giá.')
+    }
+    const decimal = buildMaterialQuotationResult({ ...extraction, currencyCode: null, lines: [{ ...proof, lineTotal: '430' }] }, thousand, 'VND', source)
+    expect(decimal.lines[0]).toMatchObject({ quotationQuantity: '1', matched: false, suggestedAllocationQuantity: '1', unitPrice: null })
+    const groupedPrice = { ...proof, rawUnitPrice: '1,000', unitPrice: '1000', rawLineTotal: '1,000,000', lineTotal: '1000000' }
+    expect(buildMaterialQuotationResult({ ...extraction, currencyCode: 'USD', lines: [groupedPrice] }, thousand, 'VND', source).lines[0])
+      .toMatchObject({ quotationQuantity: '1000', matched: true, extractedUnitPrice: null, unitPrice: null })
+    const previousVnd = { ...proof, rawUnitPrice: ' 18.500 đ ', unitPrice: '18500',
+      rawLineTotal: ' 18.500.000 VND ', lineTotal: '18500000' }
+    expect(buildMaterialQuotationResult({ ...extraction, lines: [previousVnd] }, thousand, 'VND', source).lines[0])
+      .toMatchObject({ quotationQuantity: '1000', extractedUnitPrice: '18500', unitPrice: '18500', matched: true })
+    for (const change of [
+      { lineTotal: null }, { rawLineTotal: null }, { lineTotal: '430001' },
+      { rawLineTotal: '430,00' }, { rawLineTotal: '430,000.000' }, { rawLineTotal: '430,000 USD / VND' },
+      { unitPrice: null }, { rawUnitPrice: null }, { unitPrice: '431' },
+      { rawUnitPrice: '430USD/500VND' }, { rawQuantity: null }, { rawQuantity: '1,00' },
+      { lineTotalBasis: 'adjusted' }, { lineTotalBasis: 'unknown' }, { unitMatches: false },
+    ]) {
+      expect(buildMaterialQuotationResult({ ...extraction, currencyCode: null, lines: [{ ...proof, ...change }] }, thousand, 'VND', source).lines[0])
+        .toMatchObject({ quotationQuantity: null, suggestedAllocationQuantity: null, matched: false, unitPrice: null })
+    }
+    expect(() => buildMaterialQuotationResult({ ...extraction, currencyCode: 'VND/USD', lines: [proof] }, thousand, 'VND', source)).toThrow()
+  })
+
   it('confirms grouped or decimal quantities only from the same-row arithmetic and strips private proof fields', () => {
     const proof = { ...row, rawQuantity: '1,000', quotationQuantity: null, rawUnitPrice: '500', unitPrice: '500',
       rawLineTotal: '500000', lineTotal: '500000', lineTotalBasis: 'same_as_unit_price' as const }
@@ -194,6 +226,9 @@ describe('quotation analysis guarded suggestions (source only; not run during al
     expect(payload.instructions).toContain('separately added VAT and a subtotal reconciling the pre-tax row amounts')
     expect(payload.instructions).toContain('Never derive a missing unit price from totals or proposal data')
     expect(payload.instructions).toContain('Never substitute canonical company or proposal currency')
+    expect(payload.instructions).toContain('number format from consistent printed formatting, layout and numeric evidence independently of currencyCode')
+    expect(payload.instructions).toContain('Missing currency alone must NOT force normalized unitPrice or lineTotal to null')
+    expect(payload.instructions).toContain('Do not use proposal quantity to choose number format')
 
     for (const envelope of [
       { status: 'incomplete', output: [] },

@@ -44,14 +44,31 @@ function quotationPrice(raw: string | null, normalized: string | null, currencyC
 // At most 20 significant digits per operand; 60 keeps the quantity-price product exact.
 const QuantityDecimal = Decimal.clone({ precision: 60 })
 
+const groupedNumber = /^(?:0|[1-9]\d{0,2})([.,])\d{3}(?:\1\d{3})*$/u
+
+function numberCandidates(raw: string | null) {
+  const text = raw?.trim()
+  if (!text) return []
+  let values: string[]
+  if (groupedNumber.test(text)) {
+    const parts = text.split(/[.,]/u)
+    values = [parts.join(''), ...(parts.length === 2 ? [parts.join('.')] : [])]
+  } else if (workflowMoneySchema.safeParse(text).success) values = [text]
+  else return []
+  return [...new Set(values.map(value => new QuantityDecimal(value).toFixed())
+    .filter(value => workflowMoneySchema.safeParse(value).success && new QuantityDecimal(value).greaterThan(0)))]
+}
+
+function proofNumber(raw: string | null, normalized: string | null, currencyCode: string | null) {
+  const existing = quotationPrice(raw, normalized, currencyCode)
+  if (existing !== null) return existing
+  return normalized !== null && numberCandidates(raw).some(value => new QuantityDecimal(value).equals(normalized))
+    ? normalized : null
+}
+
 function confirmedAmbiguousQuantity(raw: string | null, price: string | null, printedTotal: string | null) {
-  if (!raw || !price || !printedTotal
-    || !/^(?:0|[1-9]\d{0,2})([.,])\d{3}(?:\1\d{3})*$/u.test(raw.trim())) return null
-  const parts = raw.trim().split(/[.,]/u)
-  const candidates = [parts.join(''), ...(parts.length === 2 ? [parts.join('.')] : [])]
-    .map(value => new QuantityDecimal(value).toFixed())
-    .filter(value => workflowMoneySchema.safeParse(value).success && new QuantityDecimal(value).greaterThan(0))
-  const matches = [...new Set(candidates)].filter(value =>
+  if (!raw || !price || !printedTotal || !groupedNumber.test(raw.trim())) return null
+  const matches = numberCandidates(raw).filter(value =>
     new QuantityDecimal(value).times(price).equals(printedTotal))
   return matches.length === 1 ? (matches[0] ?? null) : null
 }
@@ -80,7 +97,7 @@ export function buildMaterialQuotationResult(
       && !!row.quotationUnit && row.nameMatches && row.specificationMatches && row.unitMatches
     const directQuantity = unambiguousDecimal(row.rawQuantity, row.quotationQuantity)
     const arithmeticQuantity = directQuantity === null && semanticMatch && lineTotalBasis === 'same_as_unit_price'
-      ? confirmedAmbiguousQuantity(row.rawQuantity, extractedUnitPrice, quotationPrice(rawLineTotal, lineTotal, extraction.currencyCode))
+      ? confirmedAmbiguousQuantity(row.rawQuantity, proofNumber(row.rawUnitPrice, row.unitPrice, extraction.currencyCode), proofNumber(rawLineTotal, lineTotal, extraction.currencyCode))
       : null
     const quotationQuantity = directQuantity ?? arithmeticQuantity
     if (arithmeticQuantity !== null) warnings.push('Số lượng được xác nhận bằng đơn giá × số lượng = thành tiền in trên cùng dòng; mua hàng vẫn cần kiểm tra.')
