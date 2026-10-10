@@ -3269,6 +3269,7 @@ export type Database = {
           id: string
           is_active: boolean
           material_id: string
+          notes: string | null
           project_id: string
           proposal_id: string
           quantity: number
@@ -3283,6 +3284,7 @@ export type Database = {
           id: string
           is_active?: boolean
           material_id: string
+          notes?: string | null
           project_id: string
           proposal_id: string
           quantity: number
@@ -3297,6 +3299,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           material_id?: string
+          notes?: string | null
           project_id?: string
           proposal_id?: string
           quantity?: number
@@ -3326,6 +3329,7 @@ export type Database = {
           engineer_proposed_invoice_name: string | null
           material_id: string
           material_name: string
+          notes: string | null
           project_id: string
           proposal_id: string
           proposal_line_id: string
@@ -3340,6 +3344,7 @@ export type Database = {
           engineer_proposed_invoice_name?: string | null
           material_id: string
           material_name: string
+          notes?: string | null
           project_id: string
           proposal_id: string
           proposal_line_id: string
@@ -3354,6 +3359,7 @@ export type Database = {
           engineer_proposed_invoice_name?: string | null
           material_id?: string
           material_name?: string
+          notes?: string | null
           project_id?: string
           proposal_id?: string
           proposal_line_id?: string
@@ -6938,6 +6944,10 @@ export type Database = {
           target_id: string
           target_project_id: string
         }
+        Returns: Json
+      }
+      c1_material_read_order_currency: {
+        Args: { target_company_id: string }
         Returns: Json
       }
       c1_material_read_proposal: {
