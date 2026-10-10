@@ -109,14 +109,14 @@ const fileSchema = z.object({
   verified_sha256: z.string().regex(/^[a-f0-9]{64}$/u), version: z.number().int().nonnegative(),
 }).strict()
 
-function sourceDenied(stage: 'scope_metadata' | 'file_metadata' | 'file_validation' | 'object_path' | 'storage_download' | 'blob_size_or_mime' | 'blob_integrity', backendCode?: string): never {
-  const details: Record<string, unknown> = { stage }
+function sourceDenied(stage: 'scope_metadata' | 'file_metadata' | 'file_validation' | 'object_path' | 'storage_download' | 'blob_size_or_mime' | 'blob_integrity', backendCode?: string, phase: 'before_provider' | 'after_provider' = 'before_provider'): never {
+  const details: Record<string, unknown> = { phase, stage }
   if (backendCode && /^[A-Z0-9_]{1,32}$/u.test(backendCode)) details.backendCode = backendCode
   throw new AppApiError(409, 'SOURCE_SELECTION_SCOPE_MISMATCH', 'PDF chưa hoàn tất hoặc không thuộc đề xuất và phiên bản duyệt hiện tại.', details)
 }
 
 type Context = Awaited<ReturnType<typeof c1RequestContext>>
-async function quotationSnapshot(context: Context, projectId: string, proposalId: string, input: MaterialQuotationAnalysisInput) {
+async function quotationSnapshot(context: Context, projectId: string, proposalId: string, input: MaterialQuotationAnalysisInput, phase: 'before_provider' | 'after_provider') {
   // Check permission before even reading metadata or storage.
   if (!context.permissions.includes('material.read') || !context.permissions.includes('material.order.manage')) {
     throw new AppApiError(403, 'PERMISSION_DENIED', 'Bạn không có quyền phân tích báo giá.')
@@ -130,16 +130,16 @@ async function quotationSnapshot(context: Context, projectId: string, proposalId
     .eq('company_id', context.companyId).eq('project_id', projectId)
     .eq('target_kind', 'material_proposal').eq('proposal_id', proposalId)
     .eq('revision_id', input.approvedRevisionId).eq('evidence_role', 'unsigned_quotation').maybeSingle()
-  if (scope.error || !scope.data) sourceDenied('scope_metadata', scope.error?.code)
+  if (scope.error || !scope.data) sourceDenied('scope_metadata', scope.error?.code, phase)
   const result = await context.db.from('cost_evidence_files')
     .select('id,tenant_id,company_id,project_id,status,bucket_id,object_path,verified_mime_type,verified_size_bytes,verified_sha256,version')
     .eq('id', input.evidenceFileId).eq('tenant_id', context.tenantId).eq('company_id', context.companyId)
     .eq('project_id', projectId).maybeSingle()
   const parsed = fileSchema.safeParse(result.data)
-  if (result.error) sourceDenied('file_metadata', result.error.code)
-  if (!parsed.success) sourceDenied('file_validation')
+  if (result.error) sourceDenied('file_metadata', result.error.code, phase)
+  if (!parsed.success) sourceDenied('file_validation', undefined, phase)
   const file = parsed.data
-  if (file.object_path !== [context.tenantId, context.companyId, projectId, input.evidenceFileId].join('/')) sourceDenied('object_path')
+  if (file.object_path !== [context.tenantId, context.companyId, projectId, input.evidenceFileId].join('/')) sourceDenied('object_path', undefined, phase)
   return { proposal, currency, file }
 }
 
@@ -160,7 +160,7 @@ export function createMaterialQuotationAnalysisRoute(dependencies: QuotationAnal
     }
     const input = body.data
     const context = await dependencies.resolveContext(event, companyId.data)
-    const before = await quotationSnapshot(context, projectId.data, proposalId.data, input)
+    const before = await quotationSnapshot(context, projectId.data, proposalId.data, input, 'before_provider')
     const apiKey = dependencies.apiKey(event)
     if (!apiKey.trim()) throw new AppApiError(503, 'QUOTATION_ANALYSIS_NOT_CONFIGURED', 'Dịch vụ phân tích báo giá chưa được cấu hình.')
     const downloaded = await context.db.storage.from(before.file.bucket_id).download(before.file.object_path)
@@ -172,7 +172,7 @@ export function createMaterialQuotationAnalysisRoute(dependencies: QuotationAnal
       apiKey, Buffer.from(await downloaded.data.arrayBuffer()), before.proposal,
     )
     const currentContext = await dependencies.resolveContext(event, companyId.data)
-    const after = await quotationSnapshot(currentContext, projectId.data, proposalId.data, input)
+    const after = await quotationSnapshot(currentContext, projectId.data, proposalId.data, input, 'after_provider')
     if (currentContext.actorId !== context.actorId || currentContext.tenantId !== context.tenantId
       || currentContext.companyId !== context.companyId || JSON.stringify(after) !== JSON.stringify(before)) {
       throw new AppApiError(409, 'VERSION_CONFLICT', 'Ngữ cảnh, đề xuất hoặc PDF đã thay đổi trong lúc phân tích. Vui lòng tải lại.')

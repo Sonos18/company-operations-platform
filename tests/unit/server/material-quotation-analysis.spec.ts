@@ -157,7 +157,7 @@ describe('quotation route scope and in-flight canonical changes', () => {
   it('denies invisible or wrong proposal evidence scope before provider access', async () => {
     const denied = harness()
     denied.hideSource()
-    await expect(denied.route(denied.event)).rejects.toMatchObject({ code: 'SOURCE_SELECTION_SCOPE_MISMATCH', details: { stage: 'scope_metadata' } })
+    await expect(denied.route(denied.event)).rejects.toMatchObject({ code: 'SOURCE_SELECTION_SCOPE_MISMATCH', details: { phase: 'before_provider', stage: 'scope_metadata' } })
     expect(denied.extract).not.toHaveBeenCalled()
   })
 })
