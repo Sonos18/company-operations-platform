@@ -117,8 +117,12 @@ describe('quotation analysis guarded suggestions (source only; not run during al
         extractedUnitPrice: '430', unitPrice: currencyCode === 'VND' ? '430' : null })
       if (currencyCode === null) expect(result.lines[0]?.warnings).toContain('Chưa xác định được đồng tiền trên PDF; không tự điền đơn giá.')
     }
-    const decimal = buildMaterialQuotationResult({ ...extraction, currencyCode: null, lines: [{ ...proof, lineTotal: '430' }] }, thousand, 'VND', source)
-    expect(decimal.lines[0]).toMatchObject({ quotationQuantity: '1', matched: false, suggestedAllocationQuantity: '1', unitPrice: null })
+    // This pins a raw-attested model interpretation, not perfect locale proof or a proposal-forced quantity.
+    for (const currencyCode of ['VND', null, 'USD'] as const) {
+      const decimal = buildMaterialQuotationResult({ ...extraction, currencyCode, lines: [{ ...proof, lineTotal: '430' }] }, thousand, 'VND', source)
+      expect(decimal.lines[0]).toMatchObject({ quotationQuantity: '1', matched: false, suggestedAllocationQuantity: '1',
+        unitPrice: currencyCode === 'VND' ? '430' : null })
+    }
     const groupedPrice = { ...proof, rawUnitPrice: '1,000', unitPrice: '1000', rawLineTotal: '1,000,000', lineTotal: '1000000' }
     expect(buildMaterialQuotationResult({ ...extraction, currencyCode: 'USD', lines: [groupedPrice] }, thousand, 'VND', source).lines[0])
       .toMatchObject({ quotationQuantity: '1000', matched: true, extractedUnitPrice: null, unitPrice: null })
