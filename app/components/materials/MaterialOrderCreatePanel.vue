@@ -563,7 +563,7 @@
 
               <!-- Per-line warnings if any -->
               <div
-                v-if="analysisLineMap[line.lineId]?.warnings && analysisLineMap[line.lineId]!.warnings.length > 0"
+                v-if="(analysisLineMap[line.lineId]?.warnings?.length || 0) > 0"
                 class="w-full text-xs text-amber-800 mt-1 pl-5"
               >
                 <span v-for="(w, wIdx) in analysisLineMap[line.lineId]?.warnings" :key="wIdx" class="mr-2 inline-block">
@@ -906,10 +906,33 @@ const pdfReadTracker = createAsyncRequestTracker<TrackerScope>()
 let isDisposed = false
 let lastEmittedBusy = false
 
+function isPanelBusy(): boolean {
+  return Boolean(
+    isCurrencyLoading.value ||
+    isOrdersLoading.value ||
+    isResolvingSupplier.value ||
+    isUploading.value ||
+    isAnalyzing.value ||
+    isCreateBusy.value ||
+    isCancelBusy.value ||
+    isPdfReading.value ||
+    isRejectionRefreshBusy.value ||
+    pendingCreateOrderCommand.value ||
+    pendingCancelCommand.value ||
+    createPostAcknowledged.value ||
+    cancelPostAcknowledged.value
+  )
+}
+
+function syncParentBusy() {
+  emitBusy(isPanelBusy())
+}
+
 function emitBusy(val: boolean) {
-  if (lastEmittedBusy !== val) {
-    lastEmittedBusy = val
-    emit('busy', val)
+  const effectiveVal = val ? true : isPanelBusy()
+  if (lastEmittedBusy !== effectiveVal) {
+    lastEmittedBusy = effectiveVal
+    emit('busy', effectiveVal)
   }
 }
 
@@ -1088,23 +1111,34 @@ const userEditedSupplierFields = ref({
   contactPhone: false,
 })
 
+const aiOwnedSupplierFields = ref({
+  displayName: false,
+  taxIdentifier: false,
+  contactDisplayName: false,
+  contactPhone: false,
+})
+
 function onSupplierDisplayNameInput() {
   userEditedSupplierFields.value.displayName = true
+  aiOwnedSupplierFields.value.displayName = false
   onSupplierInputChanged()
 }
 
 function onSupplierTaxInput() {
   userEditedSupplierFields.value.taxIdentifier = true
+  aiOwnedSupplierFields.value.taxIdentifier = false
   onSupplierInputChanged()
 }
 
 function onSupplierContactNameInput() {
   userEditedSupplierFields.value.contactDisplayName = true
+  aiOwnedSupplierFields.value.contactDisplayName = false
   onSupplierInputChanged()
 }
 
 function onSupplierContactPhoneInput() {
   userEditedSupplierFields.value.contactPhone = true
+  aiOwnedSupplierFields.value.contactPhone = false
   onSupplierInputChanged()
 }
 
@@ -1114,7 +1148,7 @@ const supplierResolutionKey = ref<string>(crypto.randomUUID())
 const isResolvingSupplier = ref(false)
 const supplierResolveError = ref('')
 
-// F6: Editing supplier input invalidates resolution, evidence, AI analysis and line confirmations
+// F6 & F2: Editing supplier input invalidates resolution, evidence, AI analysis and line confirmations
 function onSupplierInputChanged() {
   if (resolvedSupplierId.value !== null) {
     resolvedSupplierId.value = null
@@ -1123,10 +1157,18 @@ function onSupplierInputChanged() {
     finalizedEvidenceFileId.value = null
     uploadSession.value = null
     uploadError.value = ''
+    resetLineConfirmations()
+  }
+  // Even when resolvedSupplierId is null: manual edits to supplier identity invalidate cached AI result/badges & stale AI suggestions
+  if (analysisResult.value !== null || analysisError.value !== '' || isAnalyzing.value) {
+    analysisTracker.invalidate()
+    if (isAnalyzing.value) {
+      isAnalyzing.value = false
+      syncParentBusy()
+    }
     analysisResult.value = null
     analysisError.value = ''
-    analysisTracker.invalidate()
-    resetLineConfirmations()
+    retractAiOwnedDrafts()
   }
   supplierResolveError.value = ''
 }
@@ -1173,6 +1215,7 @@ async function handleResolveSupplier() {
     analysisResult.value = null
     analysisError.value = ''
     analysisTracker.invalidate()
+    retractAiOwnedDrafts()
     resetLineConfirmations()
   }
 
@@ -1236,6 +1279,7 @@ function onFileSelected(event: Event) {
   analysisResult.value = null
   analysisError.value = ''
   analysisTracker.invalidate()
+  retractAiOwnedDrafts()
   resetLineConfirmations()
 }
 
@@ -1338,13 +1382,14 @@ const isAnalyzing = ref(false)
 const analysisError = ref('')
 const analysisResult = ref<MaterialQuotationAnalysisResult | null>(null)
 
-interface LineEditTrack {
+interface LineFieldTrack {
   allocationQuantity: boolean
   unitPrice: boolean
   quotedQuantity: boolean
   quotationMaterialName: boolean
 }
-const userEditedLineFields = ref<Record<string, LineEditTrack>>({})
+const userEditedLineFields = ref<Record<string, LineFieldTrack>>({})
+const aiOwnedLineFields = ref<Record<string, LineFieldTrack>>({})
 
 const analysisLineMap = computed(() => {
   const map: Record<string, MaterialQuotationAnalysisResult['lines'][number]> = {}
@@ -1375,11 +1420,116 @@ function getCanonicalLineProjection(): string {
   )
 }
 
+// F2: Minimal analysis-input identity covering all actual inputs
+const analysisInputKey = computed(() => {
+  return [
+    props.companyId,
+    props.projectId,
+    props.proposal?.id ?? '',
+    props.proposal?.approvedRevisionId ?? '',
+    String(props.proposal?.version ?? ''),
+    canonicalCurrency.value ?? '',
+    finalizedEvidenceFileId.value ?? '',
+    uploadSession.value?.session?.finalized?.sha256 ?? '',
+    getCanonicalLineProjection(),
+  ].join('|')
+})
+
+// F2: Watcher invalidates cached result, in-flight requests, and retracts stale suggestions without side effects
+watch(analysisInputKey, (newKey, oldKey) => {
+  if (newKey !== oldKey) {
+    if (isAnalyzing.value || analysisResult.value !== null || analysisError.value !== '') {
+      analysisTracker.invalidate()
+      if (isAnalyzing.value) {
+        isAnalyzing.value = false
+        syncParentBusy()
+      }
+      analysisResult.value = null
+      analysisError.value = ''
+      retractAiOwnedDrafts()
+    }
+  }
+})
+
+// F1: Retract only AI-owned fields when source changes, keeping buyer edits intact
+function retractAiOwnedDrafts() {
+  if (!resolvedSupplierId.value) {
+    if (aiOwnedSupplierFields.value.displayName && !userEditedSupplierFields.value.displayName) {
+      supplierDisplayName.value = ''
+      aiOwnedSupplierFields.value.displayName = false
+    }
+    if (aiOwnedSupplierFields.value.taxIdentifier && !userEditedSupplierFields.value.taxIdentifier) {
+      supplierTaxIdentifier.value = ''
+      aiOwnedSupplierFields.value.taxIdentifier = false
+    }
+    if (aiOwnedSupplierFields.value.contactDisplayName && !userEditedSupplierFields.value.contactDisplayName) {
+      supplierContactDisplayName.value = ''
+      aiOwnedSupplierFields.value.contactDisplayName = false
+    }
+    if (aiOwnedSupplierFields.value.contactPhone && !userEditedSupplierFields.value.contactPhone) {
+      supplierContactPhone.value = ''
+      aiOwnedSupplierFields.value.contactPhone = false
+    }
+  }
+
+  if (props.proposal?.lines) {
+    for (const line of props.proposal.lines) {
+      const lineId = line.lineId
+      const form = lineFormMap.value[lineId]
+      const aiOwned = aiOwnedLineFields.value[lineId]
+      const userEdited = userEditedLineFields.value[lineId]
+      if (!form || !aiOwned) continue
+
+      if (aiOwned.quotationMaterialName && !userEdited?.quotationMaterialName) {
+        form.quotationMaterialName = ''
+        aiOwned.quotationMaterialName = false
+      }
+      if (aiOwned.quotedQuantity && !userEdited?.quotedQuantity) {
+        form.quotedQuantity = ''
+        aiOwned.quotedQuantity = false
+      }
+      if (aiOwned.unitPrice && !userEdited?.unitPrice) {
+        form.unitPrice = ''
+        aiOwned.unitPrice = false
+      }
+      if (aiOwned.allocationQuantity && !userEdited?.allocationQuantity) {
+        form.allocationQuantity = ''
+        aiOwned.allocationQuantity = false
+      }
+    }
+  }
+}
+
+function resetAiOwnedState() {
+  aiOwnedSupplierFields.value = {
+    displayName: false,
+    taxIdentifier: false,
+    contactDisplayName: false,
+    contactPhone: false,
+  }
+  const aiMap: Record<string, LineFieldTrack> = {}
+  if (props.proposal?.lines) {
+    for (const line of props.proposal.lines) {
+      aiMap[line.lineId] = {
+        quotationMaterialName: false,
+        quotedQuantity: false,
+        unitPrice: false,
+        allocationQuantity: false,
+      }
+    }
+  }
+  aiOwnedLineFields.value = aiMap
+}
+
 async function runQuotationAnalysis(targetFileId?: string | null) {
   const fileId = targetFileId || finalizedEvidenceFileId.value
   if (!fileId || !isLiveScopeValid() || isAnalyzing.value) return
   if (isRegularControlDisabled.value) return
   if (!props.proposal.approvedRevisionId) return
+
+  // F2: Clear prior result immediately so failed/stale attempt never leaves old green badges
+  analysisResult.value = null
+  analysisError.value = ''
 
   // Verify hash from finalized upload session
   const expectedSha256 = uploadSession.value?.session?.finalized?.sha256
@@ -1388,10 +1538,10 @@ async function runQuotationAnalysis(targetFileId?: string | null) {
     return
   }
 
+  // F2: Capture cache/source identity before request
+  const capturedInputKey = analysisInputKey.value
   const currentRevisionId = props.proposal.approvedRevisionId
   const currentVersion = props.proposal.version
-  const currentCurrency = canonicalCurrency.value
-  const capturedLineProjectionJson = getCanonicalLineProjection()
 
   const scope: TrackerScope = {
     companyId: props.companyId,
@@ -1405,8 +1555,7 @@ async function runQuotationAnalysis(targetFileId?: string | null) {
 
   const token = analysisTracker.start(scope)
   isAnalyzing.value = true
-  analysisError.value = ''
-  emitBusy(true)
+  syncParentBusy()
 
   try {
     const result = await repo.analyzeQuotation(props.projectId, props.proposal.id, {
@@ -1437,11 +1586,8 @@ async function runQuotationAnalysis(targetFileId?: string | null) {
       return
     }
 
-    // 3. Verify canonical line projection and currency haven't changed
-    if (
-      getCanonicalLineProjection() !== capturedLineProjectionJson ||
-      canonicalCurrency.value !== currentCurrency
-    ) {
+    // 3. Verify captured input key matches current input key
+    if (analysisInputKey.value !== capturedInputKey) {
       analysisError.value = 'Dữ liệu vật tư hoặc tiền tệ đã thay đổi trong lúc phân tích. Vui lòng phân tích lại.'
       return
     }
@@ -1455,73 +1601,128 @@ async function runQuotationAnalysis(targetFileId?: string | null) {
   } finally {
     if (token.isCurrent() && !isDisposed) {
       isAnalyzing.value = false
-      emitBusy(false)
+      syncParentBusy()
     }
   }
 }
 
+// F1: Apply new analysis draft, replacing old AI-owned values while preserving buyer edits
 function applyQuotationAnalysisDraft(result: MaterialQuotationAnalysisResult) {
-  // 1. Supplier autofill: only if not already resolved and buyer hasn't edited
+  // 1. Supplier autofill: only if not already resolved
   if (!resolvedSupplierId.value) {
-    if (result.supplier.name && !userEditedSupplierFields.value.displayName && !supplierDisplayName.value.trim()) {
-      supplierDisplayName.value = result.supplier.name.trim()
+    if (!userEditedSupplierFields.value.displayName) {
+      if (result.supplier.name) {
+        supplierDisplayName.value = result.supplier.name.trim()
+        aiOwnedSupplierFields.value.displayName = true
+      } else if (aiOwnedSupplierFields.value.displayName) {
+        supplierDisplayName.value = ''
+        aiOwnedSupplierFields.value.displayName = false
+      }
     }
-    if (result.supplier.taxCode && !userEditedSupplierFields.value.taxIdentifier && !supplierTaxIdentifier.value.trim()) {
-      supplierTaxIdentifier.value = result.supplier.taxCode.trim()
+
+    if (!userEditedSupplierFields.value.taxIdentifier) {
+      if (result.supplier.taxCode) {
+        supplierTaxIdentifier.value = result.supplier.taxCode.trim()
+        aiOwnedSupplierFields.value.taxIdentifier = true
+      } else if (aiOwnedSupplierFields.value.taxIdentifier) {
+        supplierTaxIdentifier.value = ''
+        aiOwnedSupplierFields.value.taxIdentifier = false
+      }
     }
-    if (result.supplier.contactName && !userEditedSupplierFields.value.contactDisplayName && !supplierContactDisplayName.value.trim()) {
-      supplierContactDisplayName.value = result.supplier.contactName.trim()
+
+    if (!userEditedSupplierFields.value.contactDisplayName) {
+      if (result.supplier.contactName) {
+        supplierContactDisplayName.value = result.supplier.contactName.trim()
+        aiOwnedSupplierFields.value.contactDisplayName = true
+      } else if (aiOwnedSupplierFields.value.contactDisplayName) {
+        supplierContactDisplayName.value = ''
+        aiOwnedSupplierFields.value.contactDisplayName = false
+      }
     }
-    if (result.supplier.phone && !userEditedSupplierFields.value.contactPhone && !supplierContactPhone.value.trim()) {
-      supplierContactPhone.value = result.supplier.phone.trim()
+
+    if (!userEditedSupplierFields.value.contactPhone) {
+      if (result.supplier.phone) {
+        supplierContactPhone.value = result.supplier.phone.trim()
+        aiOwnedSupplierFields.value.contactPhone = true
+      } else if (aiOwnedSupplierFields.value.contactPhone) {
+        supplierContactPhone.value = ''
+        aiOwnedSupplierFields.value.contactPhone = false
+      }
     }
   }
 
-  // 2. Lines autofill
+  // 2. Lines autofill & refresh
   const resultLinesMap = new Map<string, MaterialQuotationAnalysisResult['lines'][number]>()
   for (const rl of result.lines) {
     resultLinesMap.set(rl.proposalLineId, rl)
   }
 
   for (const line of props.proposal.lines) {
-    const resLine = resultLinesMap.get(line.lineId)
-    if (!resLine) continue
-
-    const editedState = userEditedLineFields.value[line.lineId]
-    const form = lineFormMap.value[line.lineId]
+    const lineId = line.lineId
+    const resLine = resultLinesMap.get(lineId)
+    const form = lineFormMap.value[lineId]
     if (!form) continue
 
-    // quotationMaterialName
-    if (!editedState?.quotationMaterialName && !form.quotationMaterialName.trim() && resLine.quotationMaterialName) {
-      updateLineFieldInternal(line.lineId, 'quotationMaterialName', resLine.quotationMaterialName.trim())
-    }
+    ensureLineTrackers(lineId)
+    const userEdited = userEditedLineFields.value[lineId]
+    const aiOwned = aiOwnedLineFields.value[lineId]
 
-    // quotedQuantity
-    if (!editedState?.quotedQuantity && !form.quotedQuantity.trim() && resLine.quotationQuantity) {
-      updateLineFieldInternal(line.lineId, 'quotedQuantity', resLine.quotationQuantity)
-    }
-
-    // unitPrice: only if taxBasis === 'exclusive' and result currency === canonicalCurrency
-    const isTaxExclusive = resLine.taxBasis === 'exclusive'
-    const isCurrencyMatch = result.currencyCode !== null && result.currencyCode === canonicalCurrency.value
-    if (isTaxExclusive && isCurrencyMatch && resLine.unitPrice) {
-      if (!editedState?.unitPrice && !form.unitPrice.trim()) {
-        updateLineFieldInternal(line.lineId, 'unitPrice', resLine.unitPrice)
+    // A. quotationMaterialName
+    if (!userEdited?.quotationMaterialName) {
+      if (resLine?.quotationMaterialName) {
+        updateLineFieldInternal(lineId, 'quotationMaterialName', resLine.quotationMaterialName.trim())
+        if (aiOwned) aiOwned.quotationMaterialName = true
+      } else if (aiOwned?.quotationMaterialName) {
+        updateLineFieldInternal(lineId, 'quotationMaterialName', '')
+        if (aiOwned) aiOwned.quotationMaterialName = false
       }
     }
 
-    // allocationQuantity: suggestedAllocationQuantity if <= remainingQuantity
-    if (resLine.suggestedAllocationQuantity) {
-      try {
-        const suggestedDec = new Decimal(resLine.suggestedAllocationQuantity)
-        const remainingDec = new Decimal(line.remainingQuantity)
-        if (suggestedDec.gt(0) && suggestedDec.lte(remainingDec)) {
-          if (!editedState?.allocationQuantity && !form.allocationQuantity.trim()) {
-            updateLineFieldInternal(line.lineId, 'allocationQuantity', resLine.suggestedAllocationQuantity)
+    // B. quotedQuantity
+    if (!userEdited?.quotedQuantity) {
+      if (resLine?.quotationQuantity) {
+        updateLineFieldInternal(lineId, 'quotedQuantity', resLine.quotationQuantity)
+        if (aiOwned) aiOwned.quotedQuantity = true
+      } else if (aiOwned?.quotedQuantity) {
+        updateLineFieldInternal(lineId, 'quotedQuantity', '')
+        if (aiOwned) aiOwned.quotedQuantity = false
+      }
+    }
+
+    // C. unitPrice: only if taxBasis === 'exclusive' and result currency === canonicalCurrency
+    if (!userEdited?.unitPrice) {
+      const isTaxExclusive = resLine?.taxBasis === 'exclusive'
+      const isCurrencyMatch = result.currencyCode !== null && result.currencyCode === canonicalCurrency.value
+      if (resLine && isTaxExclusive && isCurrencyMatch && resLine.unitPrice) {
+        updateLineFieldInternal(lineId, 'unitPrice', resLine.unitPrice)
+        if (aiOwned) aiOwned.unitPrice = true
+      } else if (aiOwned?.unitPrice) {
+        updateLineFieldInternal(lineId, 'unitPrice', '')
+        if (aiOwned) aiOwned.unitPrice = false
+      }
+    }
+
+    // D. allocationQuantity: suggestedAllocationQuantity if <= remainingQuantity
+    if (!userEdited?.allocationQuantity) {
+      let usableAlloc: string | null = null
+      if (resLine?.suggestedAllocationQuantity) {
+        try {
+          const suggestedDec = new Decimal(resLine.suggestedAllocationQuantity)
+          const remainingDec = new Decimal(line.remainingQuantity)
+          if (suggestedDec.gt(0) && suggestedDec.lte(remainingDec)) {
+            usableAlloc = resLine.suggestedAllocationQuantity
           }
+        } catch {
+          // Invalid decimal
         }
-      } catch {
-        // Skip invalid decimal
+      }
+
+      if (usableAlloc !== null) {
+        updateLineFieldInternal(lineId, 'allocationQuantity', usableAlloc)
+        if (aiOwned) aiOwned.allocationQuantity = true
+      } else if (aiOwned?.allocationQuantity) {
+        updateLineFieldInternal(lineId, 'allocationQuantity', '')
+        if (aiOwned) aiOwned.allocationQuantity = false
       }
     }
 
@@ -1540,9 +1741,29 @@ interface LineAllocationState {
 
 const lineFormMap = ref<Record<string, LineAllocationState>>({})
 
+function ensureLineTrackers(lineId: string) {
+  if (!userEditedLineFields.value[lineId]) {
+    userEditedLineFields.value[lineId] = {
+      allocationQuantity: false,
+      unitPrice: false,
+      quotedQuantity: false,
+      quotationMaterialName: false,
+    }
+  }
+  if (!aiOwnedLineFields.value[lineId]) {
+    aiOwnedLineFields.value[lineId] = {
+      allocationQuantity: false,
+      unitPrice: false,
+      quotedQuantity: false,
+      quotationMaterialName: false,
+    }
+  }
+}
+
 function initLineFormMap() {
   const map: Record<string, LineAllocationState> = {}
-  const editMap: Record<string, LineEditTrack> = {}
+  const editMap: Record<string, LineFieldTrack> = {}
+  const aiMap: Record<string, LineFieldTrack> = {}
   if (props.proposal?.lines) {
     for (const line of props.proposal.lines) {
       map[line.lineId] = {
@@ -1558,10 +1779,17 @@ function initLineFormMap() {
         quotedQuantity: false,
         quotationMaterialName: false,
       }
+      aiMap[line.lineId] = {
+        quotationMaterialName: false,
+        quotedQuantity: false,
+        unitPrice: false,
+        allocationQuantity: false,
+      }
     }
   }
   lineFormMap.value = map
   userEditedLineFields.value = editMap
+  aiOwnedLineFields.value = aiMap
 }
 
 function resetLineConfirmations() {
@@ -1593,17 +1821,14 @@ function updateLineFieldInternal(lineId: string, field: keyof LineAllocationStat
 }
 
 function updateLineField(lineId: string, field: keyof LineAllocationState, value: any) {
-  if (!userEditedLineFields.value[lineId]) {
-    userEditedLineFields.value[lineId] = {
-      allocationQuantity: false,
-      unitPrice: false,
-      quotedQuantity: false,
-      quotationMaterialName: false,
-    }
-  }
+  ensureLineTrackers(lineId)
   const track = userEditedLineFields.value[lineId]
+  const aiTrack = aiOwnedLineFields.value[lineId]
   if (track && field in track) {
-    track[field as keyof LineEditTrack] = true
+    track[field as keyof LineFieldTrack] = true
+  }
+  if (aiTrack && field in aiTrack) {
+    aiTrack[field as keyof LineFieldTrack] = false
   }
   updateLineFieldInternal(lineId, field, value)
 }
@@ -1947,6 +2172,10 @@ async function executeCreateOrder(cmd: CreateOrderCommand) {
       finalizedEvidenceFileId.value = null
       uploadSession.value = null
       supplierResolutionKey.value = crypto.randomUUID()
+      analysisResult.value = null
+      analysisError.value = ''
+      analysisTracker.invalidate()
+      resetAiOwnedState()
 
       emit('canonical', canonicalProp)
       emitBusy(false)
@@ -2193,6 +2422,7 @@ async function runRejectionCanonicalRefresh(cmd: {
     analysisResult.value = null
     analysisError.value = ''
     analysisTracker.invalidate()
+    resetAiOwnedState()
 
     resetLineConfirmations()
 
@@ -2358,6 +2588,7 @@ watch(
         contactDisplayName: false,
         contactPhone: false,
       }
+      resetAiOwnedState()
       resolvedSupplierId.value = null
       lastResolvedInputJson.value = null
       selectedFile.value = null
