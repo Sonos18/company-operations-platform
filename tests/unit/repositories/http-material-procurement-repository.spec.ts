@@ -34,6 +34,7 @@ const returnedProposal = {
   lines: [{
     ...proposalInput.lines[0]!,
     materialName: 'Cement',
+    notes: null,
     engineerProposedInvoiceName: null,
     buyerProposedInvoiceName: null,
     effectiveInvoiceDisplayName: 'Cement',
