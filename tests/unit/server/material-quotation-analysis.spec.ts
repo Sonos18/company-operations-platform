@@ -84,7 +84,7 @@ describe('quotation analysis guarded suggestions (source only; not run during al
     expect(result.lines[0]).toMatchObject({ quotationQuantity: '1000', extractedUnitPrice: '430', unitPrice: '430', matched: true })
     for (const [taxBasis, message] of [
       ['unknown', 'Chưa xác định đơn giá đã gồm VAT hay chưa; vui lòng kiểm tra và nhập đơn giá chưa VAT.'],
-      ['inclusive', 'Đơn giá báo giá đã gồm VAT; vui lòng nhập đơn giá chưa VAT.'],
+      ['inclusive', 'AI nhận diện đơn giá đã gồm VAT; vui lòng đối chiếu PDF và nhập đơn giá chưa VAT.'],
     ] as const) {
       const denied = buildMaterialQuotationResult({ ...extraction, lines: [{ ...pricedRow, taxBasis }] }, thousand, 'VND', source)
       expect(denied.lines[0]).toMatchObject({ extractedUnitPrice: '430', unitPrice: null })
@@ -92,7 +92,7 @@ describe('quotation analysis guarded suggestions (source only; not run during al
       expect(denied.lines[0]?.warnings.join(' ')).not.toContain('đồng tiền')
     }
     for (const [currencyCode, message] of [
-      [null, 'PDF chưa thể hiện rõ đồng tiền báo giá; không tự điền đơn giá.'],
+      [null, 'Chưa xác định được đồng tiền trên PDF; không tự điền đơn giá.'],
       ['USD', 'Đồng tiền báo giá USD khác đồng tiền hệ thống VND; không tự điền đơn giá.'],
     ] as const) {
       const denied = buildMaterialQuotationResult({ ...extraction, currencyCode, lines: [pricedRow] }, thousand, 'VND', source)
