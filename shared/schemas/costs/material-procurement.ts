@@ -23,6 +23,7 @@ const shortText = z.string().trim().min(1).max(200)
 const version = z.number().int().nonnegative()
 const positiveDecimal = workflowMoneySchema.refine(value => new Decimal(value).greaterThan(0), 'Must be positive')
 const optionalEngineerInvoiceName = z.string().trim().max(200).transform(value => value || null).nullable().optional()
+const optionalLineNotes = z.string().trim().max(2000).transform(value => value || null).nullable().optional()
 const uniqueBy = <T>(values: T[], identity: (value: T) => string) =>
   new Set(values.map(identity)).size === values.length
 
@@ -91,6 +92,7 @@ export const materialProposalLineInputSchema = z.object({
   materialId: workflowUuidSchema,
   quantity: positiveDecimal,
   proposedInvoiceName: optionalEngineerInvoiceName,
+  notes: optionalLineNotes,
 }).strict()
 
 export const materialProposalInputSchema = z.object({
@@ -131,7 +133,8 @@ export const materialProposalDecisionInputSchema = z.object({
   }
 })
 
-export const materialProposalLineViewSchema = materialProposalLineInputSchema.omit({ proposedInvoiceName: true }).extend({
+export const materialProposalLineViewSchema = materialProposalLineInputSchema.omit({ proposedInvoiceName: true, notes: true }).extend({
+  notes: z.string().max(2000).nullable(),
   materialName: shortText,
   engineerProposedInvoiceName: shortText.nullable(),
   buyerProposedInvoiceName: shortText.nullable(),

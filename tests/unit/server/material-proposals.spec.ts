@@ -68,6 +68,7 @@ const returnedProposal = {
     materialName: 'Cement',
     specification: 'PCB40',
     unit: 'bag',
+    notes: null,
     allocatedQuantity: '0.0000',
     signedQuantity: '0.0000',
     remainingQuantity: '20.0000',

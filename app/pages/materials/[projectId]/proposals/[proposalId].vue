@@ -160,6 +160,7 @@
                 <th scope="col" style="min-width: 120px;">Đã phân bổ</th>
                 <th scope="col" style="min-width: 120px;">Đã ký HĐ</th>
                 <th scope="col" style="min-width: 120px;">Còn lại</th>
+                <th scope="col" style="min-width: 180px;">Ghi chú</th>
               </tr>
             </thead>
             <tbody>
@@ -260,6 +261,9 @@
                 <td class="font-mono text-sm">{{ formatMaterialQuantity(line.allocatedQuantity || '0') }}</td>
                 <td class="font-mono text-sm font-medium">{{ formatMaterialQuantity(line.signedQuantity || '0') }}</td>
                 <td class="font-mono text-sm text-forest">{{ formatMaterialQuantity(line.remainingQuantity || line.quantity) }}</td>
+                <td class="text-sm">
+                  <span class="line-note-display text-slate-700">{{ line.notes ?? '—' }}</span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -1204,5 +1208,11 @@ onUnmounted(() => {
 }
 .text-center {
   text-align: center;
+}
+.line-note-display {
+  display: block;
+  max-width: 20rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 </style>

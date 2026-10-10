@@ -41,6 +41,11 @@ import {
 describe('material procurement contracts', () => {
   it('normalizes optional engineer invoice names and validates Buyer override input', () => {
     expect(materialProposalLineInputSchema.parse(validLine)).not.toHaveProperty('proposedInvoiceName')
+    expect(materialProposalLineInputSchema.parse(validLine)).not.toHaveProperty('notes')
+    expect(materialProposalLineInputSchema.parse({ ...validLine, notes: null }).notes).toBeNull()
+    expect(materialProposalLineInputSchema.parse({ ...validLine, notes: '   ' }).notes).toBeNull()
+    expect(materialProposalLineInputSchema.parse({ ...validLine, notes: '  Keep dry  ' }).notes).toBe('Keep dry')
+    expect(materialProposalLineInputSchema.safeParse({ ...validLine, notes: 'x'.repeat(2001) }).success).toBe(false)
     expect(materialProposalLineInputSchema.parse({ ...validLine, proposedInvoiceName: null }).proposedInvoiceName).toBeNull()
     expect(materialProposalLineInputSchema.parse({ ...validLine, proposedInvoiceName: '   ' }).proposedInvoiceName).toBeNull()
     expect(materialProposalLineInputSchema.parse({ ...validLine, proposedInvoiceName: '  Steel invoice  ' }).proposedInvoiceName).toBe('Steel invoice')
@@ -88,7 +93,7 @@ describe('material procurement contracts', () => {
       id: ids.proposal, version: 3, reviewState: 'returned', returnReason: 'Kiem tra lai quy cach xi mang',
       approvedRevisionId: null, projectId: ids.project, createdBy: ids.user,
       neededOn: validProposal.neededOn, deliveryAddress: validProposal.deliveryAddress, notes: null,
-      lines: [{ ...validLine, materialName: 'Xi mang', specification: 'PCB40', unit: 'bao',
+      lines: [{ ...validLine, materialName: 'Xi mang', specification: 'PCB40', unit: 'bao', notes: null,
         engineerProposedInvoiceName: null, buyerProposedInvoiceName: null, effectiveInvoiceDisplayName: 'Xi mang', invoiceDisplayNameSource: 'canonical', buyerOverrideVersion: 0,
         allocatedQuantity: '0.0000', signedQuantity: '0.0000', remainingQuantity: '20.0000' }],
       orderProgress: { orderCount: 0, signedOrderCount: 0 },
@@ -148,6 +153,7 @@ describe('material procurement contracts', () => {
       lines: [{
         ...validLine,
         materialName: 'Thep hop',
+        notes: null,
         engineerProposedInvoiceName: null,
         buyerProposedInvoiceName: 'Thep tren hoa don',
         effectiveInvoiceDisplayName: 'Thep tren hoa don',
