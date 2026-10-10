@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { materialQuotationAnalysisInputSchema, materialQuotationAnalysisResultSchema } from '../../../shared/schemas/costs/material-quotation-analysis'
 import {
   costEvidenceFinalizeInputSchema,
   costEvidenceFinalizedSchema,
@@ -84,6 +85,12 @@ export function createHttpMaterialProcurementRepository(options: {
     recordSupplierName: async (id, input, cmd) => command(master('/materials/' + targetId(id) + '/supplier-names'), input, recordMaterialSupplierNameInputSchema, materialCommandResultSchema, cmd),
     resolveSupplier: async (input, cmd) => command(master('/suppliers/resolve'), input, chosenSupplierInputSchema, materialCommandResultSchema, cmd),
     listProposals: async projectId => read(project(projectId, '/proposals'), z.array(materialProposalViewSchema)),
+    analyzeQuotation: async (projectId, proposalId, input) => options.client.request({
+      url: project(projectId, '/proposals/' + targetId(proposalId) + '/quotation-analysis'),
+      method: 'POST',
+      body: materialQuotationAnalysisInputSchema.parse(input),
+      schema: materialQuotationAnalysisResultSchema,
+    }),
     readProposal: async (projectId, id) => read(project(projectId, '/proposals/' + targetId(id)), materialProposalViewSchema),
     createProposal: async (projectId, input, cmd) => command(project(projectId, '/proposals'), input, materialProposalInputSchema, materialCommandResultSchema, cmd),
     updateProposal: async (projectId, id, input, cmd) => command(project(projectId, '/proposals/' + targetId(id)), input, updateMaterialProposalInputSchema, materialCommandResultSchema, cmd, 'PATCH'),

@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js'
 import { z } from 'zod'
+import type { MaterialQuotationAnalysisInput, MaterialQuotationAnalysisResult } from './material-quotation-analysis'
 import {
   costEvidenceCreateIntentInputSchema,
 } from './cost-evidence'
@@ -294,6 +295,7 @@ export const materialProcurementEndpointManifest = {
   recordSupplierName: { method: 'POST', path: '/api/companies/:companyId/material-procurement/materials/:materialId/supplier-names' },
   listProposals: { method: 'GET', path: '/api/companies/:companyId/projects/:projectId/material-procurement/proposals' },
   createProposal: { method: 'POST', path: '/api/companies/:companyId/projects/:projectId/material-procurement/proposals' },
+  analyzeQuotation: { method: 'POST', path: '/api/companies/:companyId/projects/:projectId/material-procurement/proposals/:proposalId/quotation-analysis' },
   readProposal: { method: 'GET', path: '/api/companies/:companyId/projects/:projectId/material-procurement/proposals/:proposalId' },
   updateProposal: { method: 'PATCH', path: '/api/companies/:companyId/projects/:projectId/material-procurement/proposals/:proposalId' },
   submitProposal: { method: 'POST', path: '/api/companies/:companyId/projects/:projectId/material-procurement/proposals/:proposalId/submit' },
@@ -348,6 +350,7 @@ export interface MaterialProcurementRepository {
   recordSupplierName(materialId: string, input: RecordMaterialSupplierNameInput, command: MaterialCommand): Promise<MaterialCommandResult>
   resolveSupplier(input: ChosenSupplierInput, command: MaterialCommand): Promise<MaterialCommandResult>
   listProposals(projectId: string): Promise<MaterialProposalView[]>
+  analyzeQuotation(projectId: string, proposalId: string, input: MaterialQuotationAnalysisInput): Promise<MaterialQuotationAnalysisResult>
   readProposal(projectId: string, proposalId: string): Promise<MaterialProposalView>
   createProposal(projectId: string, input: MaterialProposalInput, command: MaterialCommand): Promise<MaterialCommandResult>
   updateProposal(projectId: string, proposalId: string, input: UpdateMaterialProposalInput, command: MaterialCommand): Promise<MaterialCommandResult>
