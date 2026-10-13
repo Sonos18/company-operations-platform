@@ -20,6 +20,7 @@ import {
   materialQuotationComparisonViewSchema,
 } from '../../../shared/schemas/costs/material-procurement'
 import { costEvidenceCreateIntentInputSchema } from '../../../shared/schemas/costs/cost-evidence'
+import { apiErrorCodeSchema } from '../../../shared/schemas/api-error'
 import {
   canonicalMaterialPaymentInputSchema,
   directContractAuthorityViewSchema,
@@ -116,13 +117,24 @@ describe('material procurement contracts', () => {
   it('freezes split-order allocation and signed-contract inputs', () => {
     const order = {
       approvedRevisionId: ids.proposalRevision,
-      supplierId: ids.supplier,
+      supplier: { code: 'NCC-0102030405', displayName: 'Cong ty A' },
       currencyCode: 'VND',
       unsignedQuotationEvidenceFileId: ids.unsignedQuotation,
       allocations: [split10Of20.allocations[0]],
     }
 
     expect(createMaterialOrderInputSchema.safeParse(order).success).toBe(true)
+    expect(createMaterialOrderInputSchema.safeParse({
+      ...order,
+      supplier: { ...order.supplier, taxIdentifier: '0102030405', contactDisplayName: 'Mr. Phu', contactPhone: '0907333850' },
+    }).success).toBe(true)
+    expect(createMaterialOrderInputSchema.safeParse({ ...order, supplierId: ids.supplier }).success).toBe(false)
+    expect(createMaterialOrderInputSchema.safeParse({ ...order, supplier: { displayName: 'Cong ty A' } }).success).toBe(false)
+    expect(createMaterialOrderInputSchema.safeParse({ ...order, supplier: { code: 'NCC-1', displayName: '  ' } }).success).toBe(false)
+    expect(createMaterialOrderInputSchema.safeParse({ ...order, supplier: { ...order.supplier, partyKind: 'organization' } }).success).toBe(false)
+    const withoutSupplier = { ...order } as Record<string, unknown>
+    delete withoutSupplier.supplier
+    expect(createMaterialOrderInputSchema.safeParse(withoutSupplier).success).toBe(false)
     expect(createMaterialOrderInputSchema.safeParse({
       ...order,
       allocations: [split10Of20.allocations[1]],
@@ -136,6 +148,11 @@ describe('material procurement contracts', () => {
       ...signedContractInput,
       documentsReviewed: false,
     }).success).toBe(false)
+  })
+
+  it('exposes supplier resolution conflicts as API error codes', () => {
+    expect(apiErrorCodeSchema.safeParse('SUPPLIER_AMBIGUOUS').success).toBe(true)
+    expect(apiErrorCodeSchema.safeParse('SUPPLIER_UNAVAILABLE').success).toBe(true)
   })
 
   it('exposes proposal and order progress without turning a signed contract into cash', () => {
