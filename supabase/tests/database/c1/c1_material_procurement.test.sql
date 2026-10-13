@@ -219,7 +219,7 @@ select throws_ok($$
     (select value from material_test_ids where name='proposal1'),
     jsonb_build_object(
       'approvedRevisionId',(select approved_revision_id from public.material_proposals where id=(select value from material_test_ids where name='proposal1')),
-      'supplierId','c1200000-0000-4000-8000-000000000201',
+      'supplier',jsonb_build_object('code','SUP-A','displayName','Supplier A'),
       'currencyCode','VND',
       'unsignedQuotationEvidenceFileId',(select value from material_test_ids where name='pendingEvidence'),
       'allocations',jsonb_build_array(jsonb_build_object(
@@ -288,7 +288,7 @@ from (select public.c1_material_create_order(
   (select value from material_test_ids where name='proposal1'),
   jsonb_build_object(
     'approvedRevisionId',(select current_revision_id from public.material_proposals where id=(select value from material_test_ids where name='proposal1')),
-    'supplierId','c1200000-0000-4000-8000-000000000201',
+    'supplier',jsonb_build_object('code','SUP-A','displayName','Supplier A'),
     'currencyCode','VND',
     'unsignedQuotationEvidenceFileId','c1200000-0000-4000-8000-000000000501',
     'allocations',jsonb_build_array(jsonb_build_object(
@@ -309,7 +309,7 @@ select is((
     (select value from material_test_ids where name='proposal1'),
     jsonb_build_object(
       'approvedRevisionId',(select current_revision_id from public.material_proposals where id=(select value from material_test_ids where name='proposal1')),
-      'supplierId','c1200000-0000-4000-8000-000000000201',
+      'supplier',jsonb_build_object('code','SUP-A','displayName','Supplier A'),
       'currencyCode','VND',
       'unsignedQuotationEvidenceFileId','c1200000-0000-4000-8000-000000000501',
       'allocations',jsonb_build_array(jsonb_build_object(
@@ -330,7 +330,7 @@ select throws_ok($$
     (select value from material_test_ids where name='proposal1'),
     jsonb_build_object(
       'approvedRevisionId',(select current_revision_id from public.material_proposals where id=(select value from material_test_ids where name='proposal1')),
-      'supplierId','c1200000-0000-4000-8000-000000000201',
+      'supplier',jsonb_build_object('code','SUP-A','displayName','Supplier A'),
       'currencyCode','VND',
       'unsignedQuotationEvidenceFileId','c1200000-0000-4000-8000-000000000501',
       'allocations',jsonb_build_array(jsonb_build_object(
@@ -352,7 +352,7 @@ from (select public.c1_material_create_order(
   (select value from material_test_ids where name='proposal1'),
   jsonb_build_object(
     'approvedRevisionId',(select current_revision_id from public.material_proposals where id=(select value from material_test_ids where name='proposal1')),
-    'supplierId','c1200000-0000-4000-8000-000000000201',
+    'supplier',jsonb_build_object('code','SUP-A','displayName','Supplier A'),
     'currencyCode','VND',
     'unsignedQuotationEvidenceFileId','c1200000-0000-4000-8000-000000000502',
     'allocations',jsonb_build_array(jsonb_build_object(
@@ -407,14 +407,14 @@ select set_config('request.jwt.claims','{"sub":"c1200000-0000-4000-8000-00000000
 select lives_ok($$
   select public.c1_material_create_order(
     'c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101','c1200000-0000-4000-8000-000000000402',
-    '{"approvedRevisionId":"c1200000-0000-4000-8000-000000000412","supplierId":"c1200000-0000-4000-8000-000000000201","currencyCode":"VND","unsignedQuotationEvidenceFileId":"c1200000-0000-4000-8000-000000000503","allocations":[{"proposalLineId":"c1200000-0000-4000-8000-000000000302","quantity":"11.0000","unitPrice":"1.0000","quotationMaterialName":"Steel","mappingConfirmed":true}]}',
+    '{"approvedRevisionId":"c1200000-0000-4000-8000-000000000412","supplier":{"code":"SUP-A","displayName":"Supplier A"},"currencyCode":"VND","unsignedQuotationEvidenceFileId":"c1200000-0000-4000-8000-000000000503","allocations":[{"proposalLineId":"c1200000-0000-4000-8000-000000000302","quantity":"11.0000","unitPrice":"1.0000","quotationMaterialName":"Steel","mappingConfirmed":true}]}',
     'c1200000-0000-4000-8000-000000000608','c1200000-0000-4000-8000-000000000709'
   )
 $$,'first 11 allocation succeeds');
 select throws_ok($$
   select public.c1_material_create_order(
     'c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101','c1200000-0000-4000-8000-000000000402',
-    '{"approvedRevisionId":"c1200000-0000-4000-8000-000000000412","supplierId":"c1200000-0000-4000-8000-000000000201","currencyCode":"VND","unsignedQuotationEvidenceFileId":"c1200000-0000-4000-8000-000000000504","allocations":[{"proposalLineId":"c1200000-0000-4000-8000-000000000302","quantity":"10.0000","unitPrice":"1.0000","quotationMaterialName":"Steel","mappingConfirmed":true}]}',
+    '{"approvedRevisionId":"c1200000-0000-4000-8000-000000000412","supplier":{"code":"SUP-A","displayName":"Supplier A"},"currencyCode":"VND","unsignedQuotationEvidenceFileId":"c1200000-0000-4000-8000-000000000504","allocations":[{"proposalLineId":"c1200000-0000-4000-8000-000000000302","quantity":"10.0000","unitPrice":"1.0000","quotationMaterialName":"Steel","mappingConfirmed":true}]}',
     'c1200000-0000-4000-8000-000000000609','c1200000-0000-4000-8000-000000000710'
   )
 $$,'P0001','MATERIAL_ALLOCATION_EXCEEDED','20 -> 11 + 10');
@@ -422,14 +422,14 @@ $$,'P0001','MATERIAL_ALLOCATION_EXCEEDED','20 -> 11 + 10');
 select lives_ok($$
   select public.c1_material_create_order(
     'c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101','c1200000-0000-4000-8000-000000000403',
-    '{"approvedRevisionId":"c1200000-0000-4000-8000-000000000413","supplierId":"c1200000-0000-4000-8000-000000000201","currencyCode":"VND","unsignedQuotationEvidenceFileId":"c1200000-0000-4000-8000-000000000505","allocations":[{"proposalLineId":"c1200000-0000-4000-8000-000000000303","quantity":"11.0000","unitPrice":"1.0000","quotationMaterialName":"Steel","mappingConfirmed":true}]}',
+    '{"approvedRevisionId":"c1200000-0000-4000-8000-000000000413","supplier":{"code":"SUP-A","displayName":"Supplier A"},"currencyCode":"VND","unsignedQuotationEvidenceFileId":"c1200000-0000-4000-8000-000000000505","allocations":[{"proposalLineId":"c1200000-0000-4000-8000-000000000303","quantity":"11.0000","unitPrice":"1.0000","quotationMaterialName":"Steel","mappingConfirmed":true}]}',
     'c1200000-0000-4000-8000-000000000610','c1200000-0000-4000-8000-000000000711'
   )
 $$,'first concurrent candidate 11 succeeds');
 select throws_ok($$
   select public.c1_material_create_order(
     'c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101','c1200000-0000-4000-8000-000000000403',
-    '{"approvedRevisionId":"c1200000-0000-4000-8000-000000000413","supplierId":"c1200000-0000-4000-8000-000000000201","currencyCode":"VND","unsignedQuotationEvidenceFileId":"c1200000-0000-4000-8000-000000000506","allocations":[{"proposalLineId":"c1200000-0000-4000-8000-000000000303","quantity":"11.0000","unitPrice":"1.0000","quotationMaterialName":"Steel","mappingConfirmed":true}]}',
+    '{"approvedRevisionId":"c1200000-0000-4000-8000-000000000413","supplier":{"code":"SUP-A","displayName":"Supplier A"},"currencyCode":"VND","unsignedQuotationEvidenceFileId":"c1200000-0000-4000-8000-000000000506","allocations":[{"proposalLineId":"c1200000-0000-4000-8000-000000000303","quantity":"11.0000","unitPrice":"1.0000","quotationMaterialName":"Steel","mappingConfirmed":true}]}',
     'c1200000-0000-4000-8000-000000000611','c1200000-0000-4000-8000-000000000712'
   )
 $$,'P0001','MATERIAL_ALLOCATION_EXCEEDED','concurrent 11 + 11 second writer fails after stable lock');
