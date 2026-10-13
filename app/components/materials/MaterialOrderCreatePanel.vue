@@ -336,6 +336,10 @@
             >
           </div>
         </div>
+
+        <div v-if="supplierRejectionError" class="text-xs text-rose-600 mt-2 font-medium" role="alert">
+          {{ supplierRejectionError }}
+        </div>
       </section>
 
       <!-- 2. PDF Quotation Evidence Section -->
@@ -814,6 +818,7 @@ import { workflowUuidSchema, workflowMoneySchema } from '../../../shared/schemas
 import { ClientError } from '../../errors/client-error'
 import { formatGroupedDecimal } from '../../utils/materials/quantity-display'
 import { deriveSupplierCode } from '../../utils/materials/supplier-code'
+import { supplierInputRejectionMessage } from '../../utils/materials/order-create-rejection'
 import {
   uploadMaterialEvidence,
   type MaterialEvidenceUploadSession,
@@ -1066,6 +1071,14 @@ const supplierDisplayName = ref('')
 const supplierTaxIdentifier = ref('')
 const supplierContactDisplayName = ref('')
 const supplierContactPhone = ref('')
+// Set when the server rejects the supplier descriptor on create; cleared once the buyer edits it.
+const supplierRejectionError = ref('')
+watch(
+  [supplierCode, supplierDisplayName, supplierTaxIdentifier, supplierContactDisplayName, supplierContactPhone],
+  () => {
+    supplierRejectionError.value = ''
+  },
+)
 
 const userEditedSupplierFields = ref({
   displayName: false,
@@ -1962,6 +1975,7 @@ function startCreateOrder() {
 
   generalError.value = ''
   createActionError.value = ''
+  supplierRejectionError.value = ''
 
   const supplierInput: MaterialOrderSupplierInput = {
     code: supplierCode.value.trim(),
@@ -2035,6 +2049,15 @@ async function executeCreateOrder(cmd: CreateOrderCommand) {
       if (!token.isCurrent() || isDisposed || !isLiveScopeValid(cmd)) return
 
       const errInfo = parseApiError(err)
+      const supplierMessage = supplierInputRejectionMessage(errInfo, canRecordSupplier.value)
+      if (supplierMessage) {
+        // The order transaction rolled back as a whole: keep the form and let the buyer correct the supplier.
+        supplierRejectionError.value = supplierMessage
+        pendingCreateOrderCommand.value = null
+        isCreateBusy.value = false
+        syncParentBusy()
+        return
+      }
       if (isApiDenialOrConflict(errInfo)) {
         isCreatePostRejected.value = true
         if (errInfo.code === 'PROJECT_COMPLETED') {
@@ -2043,12 +2066,6 @@ async function executeCreateOrder(cmd: CreateOrderCommand) {
           createActionError.value = 'Xung đột phiên bản (409): Dữ liệu phiếu đã thay đổi hoặc số lượng còn lại không đủ.'
         } else if (errInfo.code === 'MATERIAL_ALLOCATION_EXCEEDED') {
           createActionError.value = 'Số lượng đặt mua vượt quá hạn mức còn lại được duyệt (MATERIAL_ALLOCATION_EXCEEDED).'
-        } else if (errInfo.code === 'SUPPLIER_AMBIGUOUS') {
-          createActionError.value = 'Có nhiều nhà cung cấp trùng tên trong hệ thống. Vui lòng nhập đúng mã nhà cung cấp.'
-        } else if (errInfo.code === 'SUPPLIER_UNAVAILABLE') {
-          createActionError.value = 'Nhà cung cấp này đã ngừng sử dụng hoặc không phải tổ chức.'
-        } else if (errInfo.code === 'PERMISSION_DENIED') {
-          createActionError.value = 'Bạn chưa có quyền tạo nhà cung cấp mới. Hãy nhập mã của nhà cung cấp đã có hoặc nhờ người có quyền.'
         } else if (errInfo.code === 'IDEMPOTENCY_CONFLICT') {
           createActionError.value = 'Xung đột thao tác (IDEMPOTENCY_CONFLICT): Yêu cầu trùng lặp với nội dung khác.'
         } else {
