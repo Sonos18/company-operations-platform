@@ -1,6 +1,6 @@
 # Tạo đơn mua vật tư kèm tìm/tạo nhà cung cấp trong một lệnh
 
-Ngày: 2026-10-13. Trạng thái: DRAFT chờ Sơn duyệt. Nhánh: `codex/materials-a3-inline-supplier` (từ `3432a76`).
+Ngày: 2026-10-13. Trạng thái: APPROVED by Sơn 2026-10-13 (rủi ro 1–2 ở mục 8 không áp dụng vì Sơn là dev duy nhất; rủi ro 3 chấp nhận với ưu tiên mã trước). Nhánh: `codex/materials-a3-inline-supplier` (từ `3432a76`).
 
 ## 1. Mục tiêu
 
