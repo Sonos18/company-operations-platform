@@ -276,11 +276,12 @@
               v-model="supplierCode"
               type="text"
               class="cockpit-input w-full text-sm font-mono"
-              placeholder="VD: NCC-HOAPHAT"
+              placeholder="Tự tạo từ MST hoặc tên NCC"
               :disabled="isRegularControlDisabled || !canRecordSupplier"
               maxlength="200"
-              @input="onSupplierCodeInput"
+              @input="handleSupplierCodeUserEdit"
             >
+            <span class="field-hint text-xs text-slate-400">Tự tạo từ MST (nếu có) hoặc tên nhà cung cấp; có thể sửa.</span>
           </div>
 
           <div>
@@ -557,7 +558,7 @@
                   v-if="analysisLineMap[line.lineId]?.suggestedAllocationQuantity"
                   class="cockpit-badge bg-sky-100 text-sky-800"
                 >
-                  Gợi ý phân bổ: {{ analysisLineMap[line.lineId]?.suggestedAllocationQuantity }}
+                  Gợi ý phân bổ: {{ formatGroupedDecimal(analysisLineMap[line.lineId]?.suggestedAllocationQuantity ?? '') }}
                 </span>
               </div>
 
@@ -728,9 +729,9 @@
                       Báo giá: <span class="font-medium text-slate-700">{{ alloc.quotationMaterialName }}</span>
                     </div>
                     <div class="font-mono text-slate-800 mt-0.5">
-                      <span class="font-bold text-sky-800">{{ formatMaterialQuantity(alloc.quantity) }} {{ alloc.unit }}</span>
+                      <span class="font-bold text-sky-800">{{ formatGroupedDecimal(alloc.quantity) }} {{ alloc.unit }}</span>
                       <span class="text-slate-400"> &times; </span>
-                      <span>{{ alloc.unitPrice }}</span>
+                      <span>{{ formatGroupedDecimal(alloc.unitPrice) }}</span>
                     </div>
                   </div>
                 </div>
@@ -851,7 +852,8 @@ import type {
 } from '../../../shared/schemas/costs/material-quotation-analysis'
 import { workflowUuidSchema, workflowMoneySchema } from '../../../shared/schemas/costs/cost-workflow'
 import { ClientError } from '../../errors/client-error'
-import { formatMaterialQuantity } from '../../utils/materials/quantity-display'
+import { formatGroupedDecimal } from '../../utils/materials/quantity-display'
+import { deriveSupplierCode } from '../../utils/materials/supplier-code'
 import {
   uploadMaterialEvidence,
   type MaterialEvidenceUploadSession,
@@ -1102,6 +1104,7 @@ async function loadOrders() {
 
 // Supplier state
 const supplierCode = ref('')
+const userEditedSupplierCode = ref(false)
 const supplierDisplayName = ref('')
 const supplierTaxIdentifier = ref('')
 const supplierContactDisplayName = ref('')
@@ -1145,6 +1148,30 @@ function onSupplierCodeInput() {
   onResolvedSupplierInvalidated()
   supplierResolveError.value = ''
 }
+
+function handleSupplierCodeUserEdit() {
+  if (supplierCode.value.trim() === '') {
+    userEditedSupplierCode.value = false
+    const derived = deriveSupplierCode(supplierTaxIdentifier.value, supplierDisplayName.value)
+    supplierCode.value = derived
+  } else {
+    userEditedSupplierCode.value = true
+  }
+  onSupplierCodeInput()
+}
+
+watch(
+  [supplierTaxIdentifier, supplierDisplayName],
+  ([tax, name]) => {
+    if (!userEditedSupplierCode.value) {
+      const derived = deriveSupplierCode(tax, name)
+      if (derived !== supplierCode.value) {
+        supplierCode.value = derived
+        onSupplierCodeInput()
+      }
+    }
+  }
+)
 
 function onSupplierAckChange() {
   onResolvedSupplierInvalidated()
@@ -1975,7 +2002,7 @@ const lineValidationErrors = computed<LineValidationError[]>(() => {
       errors.push({
         lineId: line.lineId,
         materialName: line.materialName,
-        message: `Dòng "${line.materialName}": Số lượng phân bổ (${allocRaw}) vượt quá số lượng còn lại (${formatMaterialQuantity(line.remainingQuantity)}).`,
+        message: `Dòng "${line.materialName}": Số lượng phân bổ (${allocRaw}) vượt quá số lượng còn lại (${formatGroupedDecimal(line.remainingQuantity)}).`,
       })
       continue
     }
@@ -2065,7 +2092,7 @@ const formattedTotalOrderValue = computed(() => {
       sum = sum.plus(new Decimal(item.quantity).times(item.unitPrice))
     }
   }
-  return formatMaterialQuantity(sum.toFixed(4))
+  return formatGroupedDecimal(sum.toFixed(4))
 })
 
 const createValidationReason = computed(() => {
@@ -2244,6 +2271,7 @@ async function executeCreateOrder(cmd: CreateOrderCommand) {
       retractAiOwnedDrafts()
       resetAiOwnedState()
       supplierCode.value = ''
+      userEditedSupplierCode.value = false
       supplierDisplayName.value = ''
       supplierTaxIdentifier.value = ''
       supplierContactDisplayName.value = ''
@@ -2556,7 +2584,7 @@ function computeOrderTotal(order: MaterialOrderView): string {
       sum = sum.plus(new Decimal(alloc.quantity).times(alloc.unitPrice))
     }
   }
-  return formatMaterialQuantity(sum.toFixed(4))
+  return formatGroupedDecimal(sum.toFixed(4))
 }
 
 const generalError = ref('')
@@ -2673,6 +2701,7 @@ watch(
       orders.value = []
       canonicalCurrency.value = null
       supplierCode.value = ''
+      userEditedSupplierCode.value = false
       supplierDisplayName.value = ''
       supplierTaxIdentifier.value = ''
       supplierContactDisplayName.value = ''

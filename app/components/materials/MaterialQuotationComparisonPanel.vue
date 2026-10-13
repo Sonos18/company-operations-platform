@@ -37,22 +37,22 @@
       <div class="quantity-stats">
         <div class="stat-pill" title="Tổng số lượng kỹ sư yêu cầu và đã được duyệt">
           <span class="stat-label">Duyệt:</span>
-          <span class="stat-val font-mono font-medium">{{ formatMaterialQuantity(line.quantity) }}</span>
+          <span class="stat-val font-mono font-medium">{{ formatGroupedDecimal(line.quantity) }}</span>
         </div>
         <div class="stat-pill" title="Số lượng đã phân bổ vào các đơn mua khác">
           <span class="stat-label">Đã phân bổ:</span>
-          <span class="stat-val font-mono font-medium">{{ formatMaterialQuantity(line.allocatedQuantity) }}</span>
+          <span class="stat-val font-mono font-medium">{{ formatGroupedDecimal(line.allocatedQuantity) }}</span>
         </div>
         <div class="stat-pill stat-pill--remaining" title="Số lượng còn lại có thể tạo đơn mua">
           <span class="stat-label">Còn lại:</span>
-          <span class="stat-val font-mono font-bold text-sky-700">{{ formatMaterialQuantity(line.remainingQuantity) }}</span>
+          <span class="stat-val font-mono font-bold text-sky-700">{{ formatGroupedDecimal(line.remainingQuantity) }}</span>
         </div>
       </div>
     </div>
 
     <!-- Interactive Comparison & Allocation Form Grid -->
     <div class="form-grid-wrapper mt-3">
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
         <!-- 1. Quotation Material Name from PDF -->
         <div class="form-field">
           <label :for="'quote-name-' + line.lineId" class="field-label">
@@ -79,12 +79,15 @@
           <input
             :id="'quote-qty-' + line.lineId"
             type="text"
+            inputmode="decimal"
             class="cockpit-input text-sm w-full font-mono"
             :class="{ 'border-rose-400 text-rose-700': isQuoteQtyFormatInvalid }"
             placeholder="VD: 10.0000"
-            :value="quotedQuantity"
+            :value="getDisplayValue('quotedQuantity', quotedQuantity)"
             :disabled="disabled || isLineExhausted"
-            @input="onUpdateQuotedQuantity"
+            @focus="onNumericFocus('quotedQuantity')"
+            @blur="onNumericBlur('quotedQuantity')"
+            @input="onNumericInput('quotedQuantity', $event)"
           >
           <span v-if="isQuoteQtyFormatInvalid" class="text-xs text-rose-600 font-medium" role="alert">
             Số lượng không hợp lệ (tối đa 16 số nguyên, 4 số thập phân, không số 0 ở đầu)
@@ -100,20 +103,23 @@
           <input
             :id="'alloc-qty-' + line.lineId"
             type="text"
+            inputmode="decimal"
             class="cockpit-input text-sm w-full font-mono"
             :class="{ 'border-rose-400 text-rose-700': exceedsRemaining || isAllocQtyFormatInvalid }"
             placeholder="VD: 10.0000"
-            :value="allocationQuantity"
+            :value="getDisplayValue('allocationQuantity', allocationQuantity)"
             :disabled="disabled || isLineExhausted"
-            @input="onUpdateAllocationQuantity"
+            @focus="onNumericFocus('allocationQuantity')"
+            @blur="onNumericBlur('allocationQuantity')"
+            @input="onNumericInput('allocationQuantity', $event)"
           >
           <span v-if="exceedsRemaining" class="text-xs text-rose-600 font-medium" role="alert">
-            Vượt quá còn lại ({{ formatMaterialQuantity(line.remainingQuantity) }})
+            Vượt quá còn lại ({{ formatGroupedDecimal(line.remainingQuantity) }})
           </span>
           <span v-else-if="isAllocQtyFormatInvalid" class="text-xs text-rose-600 font-medium" role="alert">
             Số lượng phân bổ không hợp lệ (tối đa 16 số nguyên, 4 số thập phân, không số 0 ở đầu)
           </span>
-          <span v-else class="field-hint text-xs text-slate-400">Tối đa: {{ formatMaterialQuantity(line.remainingQuantity) }}</span>
+          <span v-else class="field-hint text-xs text-slate-400">Tối đa: {{ formatGroupedDecimal(line.remainingQuantity) }}</span>
         </div>
 
         <!-- 4. Unit Price -->
@@ -124,20 +130,36 @@
           <input
             :id="'unit-price-' + line.lineId"
             type="text"
+            inputmode="decimal"
             class="cockpit-input text-sm w-full font-mono"
             :class="{ 'border-rose-400 text-rose-700': isUnitPriceFormatInvalid }"
             placeholder="VD: 18500"
-            :value="unitPrice"
+            :value="getDisplayValue('unitPrice', unitPrice)"
             :disabled="disabled || isLineExhausted"
-            @input="onUpdateUnitPrice"
+            @focus="onNumericFocus('unitPrice')"
+            @blur="onNumericBlur('unitPrice')"
+            @input="onNumericInput('unitPrice', $event)"
           >
           <span v-if="isUnitPriceFormatInvalid" class="text-xs text-rose-600 font-medium" role="alert">
             Đơn giá không hợp lệ (tối đa 16 số nguyên, 4 số thập phân, không số 0 ở đầu)
           </span>
-          <span v-else-if="lineTotalEstimate" class="field-hint text-xs text-slate-600 font-mono font-medium">
-            Thành tiền: {{ lineTotalEstimate }}
-          </span>
           <span v-else class="field-hint text-xs text-slate-400">Đơn giá chưa VAT / theo báo giá</span>
+        </div>
+
+        <!-- 5. Line Total (Read-only) -->
+        <div class="form-field">
+          <label :for="'line-total-' + line.lineId" class="field-label">
+            Thành tiền
+          </label>
+          <input
+            :id="'line-total-' + line.lineId"
+            type="text"
+            readonly
+            tabindex="-1"
+            class="cockpit-input text-sm w-full font-mono bg-slate-50 text-slate-700 cursor-default"
+            :value="lineTotalEstimate ? formatGroupedDecimal(lineTotalEstimate) : '—'"
+          >
+          <span class="field-hint text-xs text-slate-400">SL phân bổ &times; đơn giá</span>
         </div>
       </div>
     </div>
@@ -157,7 +179,7 @@
               aria-hidden="true"
             />
             <span v-if="comparisonResult.matchesAllocation">Khớp số lượng đặt hàng</span>
-            <span v-else>Chênh lệch: {{ comparisonResult.varianceQuantity }} {{ line.unit }}</span>
+            <span v-else>Chênh lệch: {{ formatGroupedDecimal(comparisonResult.varianceQuantity) }} {{ line.unit }}</span>
           </span>
 
           <span v-if="!comparisonResult.matchesAllocation" class="text-xs text-rose-600 font-medium">
@@ -210,12 +232,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import Decimal from 'decimal.js'
 import type { MaterialProposalView } from '../../../shared/schemas/costs/material-procurement'
 import { workflowMoneySchema } from '../../../shared/schemas/costs/cost-workflow'
 import { compareMaterialQuotation } from '../../../shared/utils/material-quotation-comparison'
-import { formatMaterialQuantity } from '../../utils/materials/quantity-display'
+import { formatGroupedDecimal, stripGroupSeparators } from '../../utils/materials/quantity-display'
 
 type MaterialProposalLineView = MaterialProposalView['lines'][number]
 
@@ -370,25 +392,44 @@ function onUpdateQuotationMaterialName(event: Event) {
   }
 }
 
-function onUpdateQuotedQuantity(event: Event) {
-  const val = (event.target as HTMLInputElement).value
-  emit('update:quotedQuantity', val)
-  if (props.mappingConfirmed) {
-    emit('update:mappingConfirmed', false)
+type NumericField = 'quotedQuantity' | 'allocationQuantity' | 'unitPrice'
+
+const focusedField = ref<NumericField | null>(null)
+
+function getDisplayValue(field: NumericField, raw: string): string {
+  if (focusedField.value === field) {
+    return raw ?? ''
+  }
+  return formatGroupedDecimal(raw ?? '')
+}
+
+function onNumericFocus(field: NumericField) {
+  focusedField.value = field
+}
+
+function onNumericBlur(field: NumericField) {
+  if (focusedField.value === field) {
+    focusedField.value = null
   }
 }
 
-function onUpdateAllocationQuantity(event: Event) {
-  const val = (event.target as HTMLInputElement).value
-  emit('update:allocationQuantity', val)
-  if (props.mappingConfirmed) {
-    emit('update:mappingConfirmed', false)
+function onNumericInput(field: NumericField, event: Event) {
+  const target = event.target as HTMLInputElement
+  const raw = stripGroupSeparators(target.value)
+  if (target.value !== raw) {
+    target.value = raw
   }
-}
-
-function onUpdateUnitPrice(event: Event) {
-  const val = (event.target as HTMLInputElement).value
-  emit('update:unitPrice', val)
+  switch (field) {
+    case 'quotedQuantity':
+      emit('update:quotedQuantity', raw)
+      break
+    case 'allocationQuantity':
+      emit('update:allocationQuantity', raw)
+      break
+    case 'unitPrice':
+      emit('update:unitPrice', raw)
+      break
+  }
   if (props.mappingConfirmed) {
     emit('update:mappingConfirmed', false)
   }
