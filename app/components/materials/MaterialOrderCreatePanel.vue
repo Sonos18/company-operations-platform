@@ -254,18 +254,14 @@
             <UIcon name="i-lucide-truck" class="text-sky-600 text-base" aria-hidden="true" />
             <h4 id="supplier-section-title" class="font-bold text-slate-900 text-sm m-0">1. Nhà cung cấp đã chọn bên ngoài</h4>
           </div>
-          <span v-if="resolvedSupplierId" class="cockpit-badge bg-emerald-100 text-emerald-800 text-xs flex items-center gap-1 font-semibold">
-            <UIcon name="i-lucide-check" class="text-xs" aria-hidden="true" />
-            Đã ghi nhận NCC
-          </span>
         </div>
 
         <p class="text-xs text-slate-600 mb-3">
-          Nhập thông tin nhà cung cấp đã được đàm phán và lựa chọn ngoài hệ thống (bắt buộc Mã NCC và Tên hiển thị).
+          Nhập thông tin nhà cung cấp đã chọn bên ngoài. Khi tạo đơn, hệ thống dùng NCC có sẵn (trùng mã hoặc tên) hoặc tự tạo mới.
         </p>
 
         <div v-if="!canRecordSupplier" class="text-xs text-amber-700 italic mb-2">
-          Tài khoản của bạn không có quyền ghi nhận nhà cung cấp (material.supplier.record).
+          Bạn chưa có quyền tạo nhà cung cấp mới; chỉ dùng được nhà cung cấp đã có (trùng mã hoặc tên).
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -277,7 +273,7 @@
               type="text"
               class="cockpit-input w-full text-sm font-mono"
               placeholder="Tự tạo từ MST hoặc tên NCC"
-              :disabled="isRegularControlDisabled || !canRecordSupplier"
+              :disabled="isRegularControlDisabled"
               maxlength="200"
               @input="handleSupplierCodeUserEdit"
             >
@@ -292,7 +288,7 @@
               type="text"
               class="cockpit-input w-full text-sm"
               placeholder="VD: Công ty TNHH Thép Hòa Phát"
-              :disabled="isRegularControlDisabled || !canRecordSupplier"
+              :disabled="isRegularControlDisabled"
               maxlength="200"
               @input="onSupplierDisplayNameInput"
             >
@@ -306,7 +302,7 @@
               type="text"
               class="cockpit-input w-full text-sm font-mono"
               placeholder="VD: 0102030405"
-              :disabled="isRegularControlDisabled || !canRecordSupplier"
+              :disabled="isRegularControlDisabled"
               maxlength="100"
               @input="onSupplierTaxInput"
             >
@@ -320,7 +316,7 @@
               type="text"
               class="cockpit-input w-full text-sm"
               placeholder="VD: Nguyễn Văn A"
-              :disabled="isRegularControlDisabled || !canRecordSupplier"
+              :disabled="isRegularControlDisabled"
               maxlength="200"
               @input="onSupplierContactNameInput"
             >
@@ -334,47 +330,11 @@
               type="text"
               class="cockpit-input w-full text-sm"
               placeholder="VD: 0912345678"
-              :disabled="isRegularControlDisabled || !canRecordSupplier"
+              :disabled="isRegularControlDisabled"
               maxlength="100"
               @input="onSupplierContactPhoneInput"
             >
           </div>
-
-          <div class="flex items-end">
-            <div class="flex items-center gap-2 mb-2">
-              <input
-                id="supplier-ack-checkbox"
-                v-model="supplierAlreadyChosenAcknowledged"
-                type="checkbox"
-                class="cockpit-checkbox h-4 w-4 text-sky-600 rounded border-slate-300 focus:ring-sky-500 cursor-pointer disabled:cursor-not-allowed"
-                :disabled="isRegularControlDisabled || !canRecordSupplier"
-                @change="onSupplierAckChange"
-              >
-              <label for="supplier-ack-checkbox" class="text-xs font-medium text-slate-700 cursor-pointer select-none">
-                Xác nhận NCC chọn bên ngoài <span class="text-rose-500">*</span>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="supplierResolveError" class="text-xs text-rose-600 mt-2 font-medium" role="alert">
-          {{ supplierResolveError }}
-        </div>
-
-        <div class="mt-3 flex items-center gap-3">
-          <button
-            type="button"
-            class="cockpit-btn cockpit-btn--primary btn-sm"
-            :disabled="isRegularControlDisabled || !canRecordSupplier || !canTriggerSupplierResolve"
-            @click="handleResolveSupplier"
-          >
-            <UIcon v-if="isResolvingSupplier" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
-            <UIcon v-else name="i-lucide-save" class="text-sm" aria-hidden="true" />
-            {{ resolvedSupplierId ? 'Ghi nhận lại nhà cung cấp' : 'Ghi nhận nhà cung cấp' }}
-          </button>
-          <span v-if="resolvedSupplierId" class="text-xs text-emerald-700 font-mono">
-            ID NCC: {{ resolvedSupplierId }}
-          </span>
         </div>
       </section>
 
@@ -841,9 +801,9 @@ import type {
   MaterialProposalView,
   MaterialOrderView,
   CreateMaterialOrderInput,
+  MaterialOrderSupplierInput,
 } from '../../../shared/schemas/costs/material-procurement'
 import {
-  chosenSupplierInputSchema,
   createMaterialOrderInputSchema,
 } from '../../../shared/schemas/costs/material-procurement'
 import type {
@@ -899,7 +859,6 @@ type TrackerScope = {
 // F1: Independent AsyncRequestTrackers per stream
 const currencyTracker = createAsyncRequestTracker<TrackerScope>()
 const ordersTracker = createAsyncRequestTracker<TrackerScope>()
-const supplierTracker = createAsyncRequestTracker<TrackerScope>()
 const uploadTracker = createAsyncRequestTracker<TrackerScope>()
 const analysisTracker = createAsyncRequestTracker<TrackerScope>()
 const mutationTracker = createAsyncRequestTracker<TrackerScope>()
@@ -910,7 +869,6 @@ let lastEmittedBusy = false
 
 function isPanelBusy(): boolean {
   return Boolean(
-    isResolvingSupplier.value ||
     isUploading.value ||
     isAnalyzing.value ||
     isCreateBusy.value ||
@@ -945,7 +903,6 @@ function emitBusy(val: boolean) {
 function invalidateAllTrackers() {
   currencyTracker.invalidate()
   ordersTracker.invalidate()
-  supplierTracker.invalidate()
   uploadTracker.invalidate()
   analysisTracker.invalidate()
   mutationTracker.invalidate()
@@ -1109,7 +1066,6 @@ const supplierDisplayName = ref('')
 const supplierTaxIdentifier = ref('')
 const supplierContactDisplayName = ref('')
 const supplierContactPhone = ref('')
-const supplierAlreadyChosenAcknowledged = ref(false)
 
 const userEditedSupplierFields = ref({
   displayName: false,
@@ -1125,30 +1081,6 @@ const aiOwnedSupplierFields = ref({
   contactPhone: false,
 })
 
-const resolvedSupplierId = ref<string | null>(null)
-const lastResolvedInputJson = ref<string | null>(null)
-const supplierResolutionKey = ref<string>(crypto.randomUUID())
-const isResolvingSupplier = ref(false)
-const supplierResolveError = ref('')
-
-function onResolvedSupplierInvalidated() {
-  if (resolvedSupplierId.value !== null) {
-    resolvedSupplierId.value = null
-    supplierResolutionKey.value = crypto.randomUUID()
-    // Retain selectedFile bytes for fresh finalization, but invalidate proof & session
-    finalizedEvidenceFileId.value = null
-    uploadSession.value = null
-    uploadError.value = ''
-    resetLineConfirmations()
-  }
-}
-
-// G3: Completing mandatory code or ACK for same PDF-derived supplier does NOT wipe descriptor or retract drafts
-function onSupplierCodeInput() {
-  onResolvedSupplierInvalidated()
-  supplierResolveError.value = ''
-}
-
 function handleSupplierCodeUserEdit() {
   if (supplierCode.value.trim() === '') {
     userEditedSupplierCode.value = false
@@ -1157,7 +1089,6 @@ function handleSupplierCodeUserEdit() {
   } else {
     userEditedSupplierCode.value = true
   }
-  onSupplierCodeInput()
 }
 
 watch(
@@ -1167,43 +1098,16 @@ watch(
       const derived = deriveSupplierCode(tax, name)
       if (derived !== supplierCode.value) {
         supplierCode.value = derived
-        onSupplierCodeInput()
       }
     }
   }
 )
 
-function onSupplierAckChange() {
-  onResolvedSupplierInvalidated()
-  supplierResolveError.value = ''
-}
-
 function handleSupplierDescriptorChanged(field: 'displayName' | 'taxIdentifier' | 'contactDisplayName' | 'contactPhone') {
-  supplierResolveError.value = ''
-
-  if (resolvedSupplierId.value !== null) {
-    onResolvedSupplierInvalidated()
-    if (analysisResult.value !== null || analysisError.value !== '' || isAnalyzing.value) {
-      analysisTracker.invalidate()
-      if (isAnalyzing.value) {
-        isAnalyzing.value = false
-        syncParentBusy()
-      }
-      analysisResult.value = null
-      analysisError.value = ''
-      retractAiOwnedDrafts()
-    }
-    return
-  }
-
-  // Before resolution: only a genuine vendor name change away from analyzed supplier retires conflicting proof and mismatched draft
   if (field === 'displayName' && analysisResult.value?.supplier?.name) {
     const aiName = analysisResult.value.supplier.name.trim()
     const currentName = supplierDisplayName.value.trim()
     if (currentName !== '' && currentName !== aiName) {
-      finalizedEvidenceFileId.value = null
-      uploadSession.value = null
-      uploadError.value = ''
       analysisTracker.invalidate()
       if (isAnalyzing.value) {
         isAnalyzing.value = false
@@ -1239,81 +1143,6 @@ function onSupplierContactPhoneInput() {
   userEditedSupplierFields.value.contactPhone = true
   aiOwnedSupplierFields.value.contactPhone = false
   handleSupplierDescriptorChanged('contactPhone')
-}
-
-const canTriggerSupplierResolve = computed(() => {
-  return (
-    supplierCode.value.trim().length > 0 &&
-    supplierDisplayName.value.trim().length > 0 &&
-    supplierAlreadyChosenAcknowledged.value
-  )
-})
-
-async function handleResolveSupplier() {
-  if (!isLiveScopeValid() || !canRecordSupplier.value || isRegularControlDisabled.value) return
-  if (!supplierAlreadyChosenAcknowledged.value) {
-    supplierResolveError.value = 'Vui lòng xác nhận nhà cung cấp được lựa chọn ngoài hệ thống.'
-    return
-  }
-
-  const rawInput = {
-    code: supplierCode.value.trim(),
-    displayName: supplierDisplayName.value.trim(),
-    partyKind: 'organization' as const,
-    supplierAlreadyChosen: true as const,
-    taxIdentifier: supplierTaxIdentifier.value.trim() || undefined,
-    contactDisplayName: supplierContactDisplayName.value.trim() || undefined,
-    contactPhone: supplierContactPhone.value.trim() || undefined,
-  }
-
-  const parsed = chosenSupplierInputSchema.safeParse(rawInput)
-  if (!parsed.success) {
-    supplierResolveError.value = parsed.error.issues[0]?.message || 'Thông tin nhà cung cấp không hợp lệ.'
-    return
-  }
-
-  const previousLastJson = lastResolvedInputJson.value
-  const currentJson = JSON.stringify(parsed.data)
-  if (currentJson !== previousLastJson) {
-    supplierResolutionKey.value = crypto.randomUUID()
-    lastResolvedInputJson.value = currentJson
-    if (previousLastJson !== null) {
-      // Retain selectedFile bytes for fresh finalization, but invalidate proof & session on genuine supplier change
-      finalizedEvidenceFileId.value = null
-      uploadSession.value = null
-      uploadError.value = ''
-      resetLineConfirmations()
-    }
-  }
-
-  const token = supplierTracker.start({
-    companyId: props.companyId,
-    projectId: props.projectId,
-    proposalId: props.proposal.id,
-    actorId: authStore?.user?.id ?? '',
-    op: 'resolve-supplier',
-  })
-
-  isResolvingSupplier.value = true
-  supplierResolveError.value = ''
-  emitBusy(true)
-
-  try {
-    const res = await repo.resolveSupplier(parsed.data, { idempotencyKey: supplierResolutionKey.value })
-    // F5: Guard token, disposed, scope and material.supplier.record permission
-    if (!token.isCurrent() || isDisposed || !isLiveScopeValid() || !canRecordSupplier.value) return
-    resolvedSupplierId.value = res.resourceId
-    lastResolvedInputJson.value = currentJson
-  } catch (err: unknown) {
-    if (!token.isCurrent() || isDisposed || !isLiveScopeValid()) return
-    const errInfo = parseApiError(err)
-    supplierResolveError.value = errInfo.message || 'Lỗi khi ghi nhận nhà cung cấp.'
-  } finally {
-    if (token.isCurrent() && !isDisposed) {
-      isResolvingSupplier.value = false
-      syncParentBusy()
-    }
-  }
 }
 
 // PDF Evidence
@@ -1546,23 +1375,21 @@ watch(
 
 // F1: Retract only AI-owned fields when source changes, keeping buyer edits intact
 function retractAiOwnedDrafts() {
-  if (!resolvedSupplierId.value) {
-    if (aiOwnedSupplierFields.value.displayName && !userEditedSupplierFields.value.displayName) {
-      supplierDisplayName.value = ''
-      aiOwnedSupplierFields.value.displayName = false
-    }
-    if (aiOwnedSupplierFields.value.taxIdentifier && !userEditedSupplierFields.value.taxIdentifier) {
-      supplierTaxIdentifier.value = ''
-      aiOwnedSupplierFields.value.taxIdentifier = false
-    }
-    if (aiOwnedSupplierFields.value.contactDisplayName && !userEditedSupplierFields.value.contactDisplayName) {
-      supplierContactDisplayName.value = ''
-      aiOwnedSupplierFields.value.contactDisplayName = false
-    }
-    if (aiOwnedSupplierFields.value.contactPhone && !userEditedSupplierFields.value.contactPhone) {
-      supplierContactPhone.value = ''
-      aiOwnedSupplierFields.value.contactPhone = false
-    }
+  if (aiOwnedSupplierFields.value.displayName && !userEditedSupplierFields.value.displayName) {
+    supplierDisplayName.value = ''
+    aiOwnedSupplierFields.value.displayName = false
+  }
+  if (aiOwnedSupplierFields.value.taxIdentifier && !userEditedSupplierFields.value.taxIdentifier) {
+    supplierTaxIdentifier.value = ''
+    aiOwnedSupplierFields.value.taxIdentifier = false
+  }
+  if (aiOwnedSupplierFields.value.contactDisplayName && !userEditedSupplierFields.value.contactDisplayName) {
+    supplierContactDisplayName.value = ''
+    aiOwnedSupplierFields.value.contactDisplayName = false
+  }
+  if (aiOwnedSupplierFields.value.contactPhone && !userEditedSupplierFields.value.contactPhone) {
+    supplierContactPhone.value = ''
+    aiOwnedSupplierFields.value.contactPhone = false
   }
 
   if (props.proposal?.lines) {
@@ -1705,46 +1532,44 @@ async function runQuotationAnalysis(targetFileId?: string | null) {
 
 // F1: Apply new analysis draft, replacing old AI-owned values while preserving buyer edits
 function applyQuotationAnalysisDraft(result: MaterialQuotationAnalysisResult) {
-  // 1. Supplier autofill: only if not already resolved
-  if (!resolvedSupplierId.value) {
-    if (!userEditedSupplierFields.value.displayName) {
-      if (result.supplier.name) {
-        supplierDisplayName.value = result.supplier.name.trim()
-        aiOwnedSupplierFields.value.displayName = true
-      } else if (aiOwnedSupplierFields.value.displayName) {
-        supplierDisplayName.value = ''
-        aiOwnedSupplierFields.value.displayName = false
-      }
+  // 1. Supplier autofill
+  if (!userEditedSupplierFields.value.displayName) {
+    if (result.supplier.name) {
+      supplierDisplayName.value = result.supplier.name.trim()
+      aiOwnedSupplierFields.value.displayName = true
+    } else if (aiOwnedSupplierFields.value.displayName) {
+      supplierDisplayName.value = ''
+      aiOwnedSupplierFields.value.displayName = false
     }
+  }
 
-    if (!userEditedSupplierFields.value.taxIdentifier) {
-      if (result.supplier.taxCode) {
-        supplierTaxIdentifier.value = result.supplier.taxCode.trim()
-        aiOwnedSupplierFields.value.taxIdentifier = true
-      } else if (aiOwnedSupplierFields.value.taxIdentifier) {
-        supplierTaxIdentifier.value = ''
-        aiOwnedSupplierFields.value.taxIdentifier = false
-      }
+  if (!userEditedSupplierFields.value.taxIdentifier) {
+    if (result.supplier.taxCode) {
+      supplierTaxIdentifier.value = result.supplier.taxCode.trim()
+      aiOwnedSupplierFields.value.taxIdentifier = true
+    } else if (aiOwnedSupplierFields.value.taxIdentifier) {
+      supplierTaxIdentifier.value = ''
+      aiOwnedSupplierFields.value.taxIdentifier = false
     }
+  }
 
-    if (!userEditedSupplierFields.value.contactDisplayName) {
-      if (result.supplier.contactName) {
-        supplierContactDisplayName.value = result.supplier.contactName.trim()
-        aiOwnedSupplierFields.value.contactDisplayName = true
-      } else if (aiOwnedSupplierFields.value.contactDisplayName) {
-        supplierContactDisplayName.value = ''
-        aiOwnedSupplierFields.value.contactDisplayName = false
-      }
+  if (!userEditedSupplierFields.value.contactDisplayName) {
+    if (result.supplier.contactName) {
+      supplierContactDisplayName.value = result.supplier.contactName.trim()
+      aiOwnedSupplierFields.value.contactDisplayName = true
+    } else if (aiOwnedSupplierFields.value.contactDisplayName) {
+      supplierContactDisplayName.value = ''
+      aiOwnedSupplierFields.value.contactDisplayName = false
     }
+  }
 
-    if (!userEditedSupplierFields.value.contactPhone) {
-      if (result.supplier.phone) {
-        supplierContactPhone.value = result.supplier.phone.trim()
-        aiOwnedSupplierFields.value.contactPhone = true
-      } else if (aiOwnedSupplierFields.value.contactPhone) {
-        supplierContactPhone.value = ''
-        aiOwnedSupplierFields.value.contactPhone = false
-      }
+  if (!userEditedSupplierFields.value.contactPhone) {
+    if (result.supplier.phone) {
+      supplierContactPhone.value = result.supplier.phone.trim()
+      aiOwnedSupplierFields.value.contactPhone = true
+    } else if (aiOwnedSupplierFields.value.contactPhone) {
+      supplierContactPhone.value = ''
+      aiOwnedSupplierFields.value.contactPhone = false
     }
   }
 
@@ -2098,7 +1923,7 @@ const formattedTotalOrderValue = computed(() => {
 const createValidationReason = computed(() => {
   if (!isProposalApproved.value) return 'Phiếu chưa được duyệt.'
   if (!canonicalCurrency.value) return 'Chưa có đơn vị tiền tệ công ty.'
-  if (!resolvedSupplierId.value) return 'Cần ghi nhận nhà cung cấp.'
+  if (!supplierCode.value.trim() || !supplierDisplayName.value.trim()) return 'Cần nhập mã và tên nhà cung cấp.'
   if (!finalizedEvidenceFileId.value) return 'Cần hoàn tất tệp báo giá PDF.'
   if (lineValidationErrors.value.length > 0) {
     return lineValidationErrors.value[0]?.message ?? 'Có dòng vật tư chưa hợp lệ.'
@@ -2133,14 +1958,22 @@ const isRejectionRefreshBusy = ref(false)
 
 function startCreateOrder() {
   if (!canCreateOrder.value || pendingCreateOrderCommand.value) return
-  if (!isLiveScopeValid() || !props.proposal.approvedRevisionId || !resolvedSupplierId.value || !canonicalCurrency.value || !finalizedEvidenceFileId.value) return
+  if (!isLiveScopeValid() || !props.proposal.approvedRevisionId || !canonicalCurrency.value || !finalizedEvidenceFileId.value) return
 
   generalError.value = ''
   createActionError.value = ''
 
+  const supplierInput: MaterialOrderSupplierInput = {
+    code: supplierCode.value.trim(),
+    displayName: supplierDisplayName.value.trim(),
+    ...(supplierTaxIdentifier.value.trim() ? { taxIdentifier: supplierTaxIdentifier.value.trim() } : {}),
+    ...(supplierContactDisplayName.value.trim() ? { contactDisplayName: supplierContactDisplayName.value.trim() } : {}),
+    ...(supplierContactPhone.value.trim() ? { contactPhone: supplierContactPhone.value.trim() } : {}),
+  }
+
   const inputPayload: CreateMaterialOrderInput = {
     approvedRevisionId: props.proposal.approvedRevisionId,
-    supplierId: resolvedSupplierId.value,
+    supplier: supplierInput,
     currencyCode: canonicalCurrency.value,
     unsignedQuotationEvidenceFileId: finalizedEvidenceFileId.value,
     allocations: selectedAllocations.value.map(a => ({
@@ -2210,6 +2043,12 @@ async function executeCreateOrder(cmd: CreateOrderCommand) {
           createActionError.value = 'Xung đột phiên bản (409): Dữ liệu phiếu đã thay đổi hoặc số lượng còn lại không đủ.'
         } else if (errInfo.code === 'MATERIAL_ALLOCATION_EXCEEDED') {
           createActionError.value = 'Số lượng đặt mua vượt quá hạn mức còn lại được duyệt (MATERIAL_ALLOCATION_EXCEEDED).'
+        } else if (errInfo.code === 'SUPPLIER_AMBIGUOUS') {
+          createActionError.value = 'Có nhiều nhà cung cấp trùng tên trong hệ thống. Vui lòng nhập đúng mã nhà cung cấp.'
+        } else if (errInfo.code === 'SUPPLIER_UNAVAILABLE') {
+          createActionError.value = 'Nhà cung cấp này đã ngừng sử dụng hoặc không phải tổ chức.'
+        } else if (errInfo.code === 'PERMISSION_DENIED') {
+          createActionError.value = 'Bạn chưa có quyền tạo nhà cung cấp mới. Hãy nhập mã của nhà cung cấp đã có hoặc nhờ người có quyền.'
         } else if (errInfo.code === 'IDEMPOTENCY_CONFLICT') {
           createActionError.value = 'Xung đột thao tác (IDEMPOTENCY_CONFLICT): Yêu cầu trùng lặp với nội dung khác.'
         } else {
@@ -2276,19 +2115,15 @@ async function executeCreateOrder(cmd: CreateOrderCommand) {
       supplierTaxIdentifier.value = ''
       supplierContactDisplayName.value = ''
       supplierContactPhone.value = ''
-      supplierAlreadyChosenAcknowledged.value = false
       userEditedSupplierFields.value = {
         displayName: false,
         taxIdentifier: false,
         contactDisplayName: false,
         contactPhone: false,
       }
-      resolvedSupplierId.value = null
-      lastResolvedInputJson.value = null
       selectedFile.value = null
       finalizedEvidenceFileId.value = null
       uploadSession.value = null
-      supplierResolutionKey.value = crypto.randomUUID()
       analysisResult.value = null
       analysisError.value = ''
       analysisTracker.invalidate()
@@ -2593,7 +2428,6 @@ const isTransportBusy = computed(() => {
   return (
     isCurrencyLoading.value ||
     isOrdersLoading.value ||
-    isResolvingSupplier.value ||
     isUploading.value ||
     isAnalyzing.value ||
     isCreateBusy.value ||
@@ -2606,7 +2440,6 @@ const isTransportBusy = computed(() => {
 const busyStatusMessage = computed(() => {
   if (isUploading.value) return 'Đang tải lên tệp báo giá PDF...'
   if (isAnalyzing.value) return 'Đang phân tích báo giá bằng AI...'
-  if (isResolvingSupplier.value) return 'Đang ghi nhận nhà cung cấp...'
   if (isCreateBusy.value) return 'Đang xử lý tạo đơn mua hàng...'
   if (isCancelBusy.value) return 'Đang xử lý hủy đơn mua hàng...'
   if (isPdfReading.value) return 'Đang mở tệp báo giá...'
@@ -2667,7 +2500,6 @@ watch(
       // Reset all loading flags
       isCurrencyLoading.value = false
       isOrdersLoading.value = false
-      isResolvingSupplier.value = false
       isUploading.value = false
       isAnalyzing.value = false
       isCreateBusy.value = false
@@ -2690,7 +2522,6 @@ watch(
       createActionError.value = ''
       cancelActionError.value = ''
       generalError.value = ''
-      supplierResolveError.value = ''
       uploadError.value = ''
       analysisError.value = ''
       analysisResult.value = null
@@ -2706,7 +2537,6 @@ watch(
       supplierTaxIdentifier.value = ''
       supplierContactDisplayName.value = ''
       supplierContactPhone.value = ''
-      supplierAlreadyChosenAcknowledged.value = false
       userEditedSupplierFields.value = {
         displayName: false,
         taxIdentifier: false,
@@ -2714,8 +2544,6 @@ watch(
         contactPhone: false,
       }
       resetAiOwnedState()
-      resolvedSupplierId.value = null
-      lastResolvedInputJson.value = null
       selectedFile.value = null
       finalizedEvidenceFileId.value = null
       uploadSession.value = null
