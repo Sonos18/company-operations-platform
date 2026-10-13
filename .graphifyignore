@@ -1,0 +1,8 @@
+# Agent tooling and working artifacts - not product code
+.claude/
+.codex/
+.agents/
+.insta/
+.superpowers/
+.task3-reference/
+.jev-router-shadow/
