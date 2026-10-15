@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
 import JSZip, { type JSZipObject } from 'jszip'
+import { isXmlEvidenceMimeType } from '../../../../shared/utils/evidence-storage-content-type'
 import { AppApiError } from '../../../utils/api-error'
 import { inspectZipCentralDirectory } from '../../../utils/zip-archive-metadata'
+import { validateXmlEvidence, XmlEvidenceRejected } from './xml-evidence-validation'
 
 const signatures: Record<string, readonly number[]> = {
   'application/pdf': [0x25, 0x50, 0x44, 0x46, 0x2d],
@@ -86,33 +88,16 @@ async function verifyXlsx(bytes: Uint8Array) {
   }
 }
 
-const xmlMimeTypes: ReadonlySet<string> = new Set(['application/xml', 'text/xml'])
-
-const xmlPrologInspectionBytes = 64 * 1024
-// "<?xml" followed by whitespace, or a root element whose name starts with a letter or "_".
-const xmlStartPattern = /^<(?:\?xml\s|[a-z_][\w.:-]*[\s/>])/iu
-// Content a browser could render or execute if the file were ever opened inline. XML invoices
-// are always served as downloads (see readEvidenceUrl); this rejects them at upload as well.
-const forbiddenXmlPatterns: readonly RegExp[] = [
-  /http:\/\/www\.w3\.org\/1999\/xhtml/iu,
-  /http:\/\/www\.w3\.org\/2000\/svg/iu,
-  /<script/iu,
-  /javascript:/iu,
-  /<!entity/iu,
-  /<!doctype[^>[]*\[/iu,
-  /<\?xml-stylesheet/iu,
-]
-
-// Structural and active-content check for XML invoices. It does not parse the document or
-// resolve entities. Only the first 64 KiB are decoded for the start check; the forbidden
-// content scan covers the whole document so it cannot be pushed past that window.
+// Allowlist check for XML invoices. Not the XSS control: XML evidence is stored as
+// application/octet-stream and always signed as a download (see xml-evidence-validation.ts).
 function verifyXml(bytes: Uint8Array) {
-  // TextDecoder drops a leading UTF-8 BOM; trimStart drops any whitespace before the first tag.
-  const decoder = new TextDecoder('utf-8')
-  const head = decoder.decode(bytes.subarray(0, xmlPrologInspectionBytes), { stream: true }).trimStart()
-  if (!xmlStartPattern.test(head)) mismatch()
-  const text = new TextDecoder('utf-8').decode(bytes)
-  if (forbiddenXmlPatterns.some(pattern => pattern.test(text))) mismatch()
+  try {
+    validateXmlEvidence(bytes)
+  }
+  catch (error) {
+    if (error instanceof XmlEvidenceRejected) mismatch()
+    throw error
+  }
 }
 
 export async function verifyEvidenceBlob(blob: Blob, maxBytes: number, mimeType: string) {
@@ -128,7 +113,7 @@ export async function verifyEvidenceBlob(blob: Blob, maxBytes: number, mimeType:
   }
   const bytes = new Uint8Array(Buffer.concat(chunks))
   if (mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') await verifyXlsx(bytes)
-  else if (xmlMimeTypes.has(mimeType)) verifyXml(bytes)
+  else if (isXmlEvidenceMimeType(mimeType)) verifyXml(bytes)
   else if (!signatures[mimeType] || !hasPrefix(bytes, signatures[mimeType])) mismatch()
   return { sizeBytes, sha256: hash.digest('hex'), mimeType }
 }

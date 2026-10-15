@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(23);
+select plan(24);
 
 -- A4/A5 T8 hardening (20261015090500). Rollback-only fixture with prefix c129.
 -- Contract C1 (601) totals 110: installment A (advance, key a0a) 33 and B (key a0b) 77.
@@ -324,6 +324,13 @@ select is((
   where target_kind='material_contract' and project_id='c1290000-0000-4000-8000-000000000101'
 ),5::bigint,'finance evidence: accountant sees all five contract-level evidence scope rows');
 set local role none;
+select ok((
+  select 'application/octet-stream' = any(allowed_mime_types)
+    and not ('application/xml' = any(allowed_mime_types))
+    and not ('text/xml' = any(allowed_mime_types))
+    and 'application/pdf' = any(allowed_mime_types)
+  from storage.buckets where id = 'c1-accounting-evidence'
+),'finance evidence: the evidence bucket stores XML only as octet-stream and keeps PDF');
 
 select * from finish();
 rollback;

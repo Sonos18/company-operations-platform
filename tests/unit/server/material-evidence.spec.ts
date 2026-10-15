@@ -274,9 +274,18 @@ describe('material evidence repository', () => {
     return { finalizer, contentSha, repository: new SupabaseMaterialProcurementRepository(client as never, () => finalizer) }
   }
 
-  it('finalizes a well-formed XML invoice, tolerating a BOM, whitespace and a charset suffix on the blob type', async () => {
+  it('rejects an XML invoice stored with an XML content type, so no stored XML object can render inline', async () => {
+    const xml = new TextEncoder().encode('<?xml version="1.0"?><HDon/>')
+    const { finalizer, repository } = pendingUpload(xml, 'application/xml', 'application/xml')
+
+    await expect(repository.finalizeEvidence(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { expectedVersion: 0 }, key))
+      .rejects.toMatchObject({ statusCode: 409, code: 'EVIDENCE_UPLOAD_MISMATCH' })
+    expect(finalizer.finalize).not.toHaveBeenCalled()
+  })
+
+  it('finalizes a well-formed XML invoice stored as octet-stream, tolerating a BOM and whitespace', async () => {
     const xml = new TextEncoder().encode('﻿  \n<?xml version="1.0"?><HDon/>')
-    const { finalizer, contentSha, repository } = pendingUpload(xml, 'application/xml; charset=utf-8', 'application/xml')
+    const { finalizer, contentSha, repository } = pendingUpload(xml, 'application/octet-stream', 'application/xml')
 
     await repository.finalizeEvidence(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { expectedVersion: 0 }, key)
     expect(finalizer.finalize).toHaveBeenCalledWith(expect.objectContaining({
@@ -285,7 +294,7 @@ describe('material evidence repository', () => {
   })
 
   it('rejects an XML invoice that does not start with a tag before calling the finalizer', async () => {
-    const { finalizer, repository } = pendingUpload(new TextEncoder().encode('%PDF-1.7 pretending to be xml'), 'application/xml', 'application/xml')
+    const { finalizer, repository } = pendingUpload(new TextEncoder().encode('%PDF-1.7 pretending to be xml'), 'application/octet-stream', 'application/xml')
 
     await expect(repository.finalizeEvidence(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { expectedVersion: 0 }, key))
       .rejects.toMatchObject({ statusCode: 409, code: 'EVIDENCE_UPLOAD_MISMATCH' })

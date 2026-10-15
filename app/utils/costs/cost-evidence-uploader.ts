@@ -11,6 +11,7 @@ import type {
   CostEvidenceUploadIntent,
 } from '../../../shared/schemas/costs/cost-evidence'
 import type { CostEvidenceRepository } from '../../repositories/contracts'
+import { evidenceStorageContentType } from '../../../shared/utils/evidence-storage-content-type'
 
 export type CostEvidenceKind = z.infer<typeof costEvidenceKindSchema>
 export type CostEvidenceMimeType = z.infer<typeof costEvidenceMimeTypeSchema>
@@ -125,8 +126,9 @@ export async function createEvidenceIntent(
 const ACTIVE_DOCUMENT_MIME_PATTERN = /html|svg/iu
 
 /**
- * Uploads the file with the MIME type declared on the intent (not the browser's file.type), so
- * the stored Content-Type always matches what the server verifies at finalize.
+ * Uploads the file with the Content-Type derived from the declared MIME type (never the browser's
+ * file.type), so it always matches what the server verifies at finalize. XML is stored as
+ * application/octet-stream (see shared/utils/evidence-storage-content-type.ts).
  */
 export async function uploadToStorageWithIntent(
   supabaseClient: SupabaseClient,
@@ -139,7 +141,7 @@ export async function uploadToStorageWithIntent(
     .from(intent.bucketId)
     .upload(intent.objectPath, file, {
       upsert: false,
-      contentType: mimeType,
+      contentType: evidenceStorageContentType(mimeType),
     })
   return { error }
 }

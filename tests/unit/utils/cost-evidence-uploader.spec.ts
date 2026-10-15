@@ -578,11 +578,18 @@ describe('Cost Evidence Uploader utility', () => {
       replayed: false,
     }
 
-    it('stores the object with the declared MIME type', async () => {
+    it('stores a PDF with its declared MIME type', async () => {
+      const upload = vi.fn().mockResolvedValue({ error: null })
+      const file = new File(['%PDF-1.7'], 'invoice.pdf', { type: 'text/html' })
+      await uploadToStorageWithIntent({ storage: { from: vi.fn(() => ({ upload })) } } as never, intent as never, file, 'application/pdf')
+      expect(upload).toHaveBeenCalledWith('c1/p1/file-1', file, { upsert: false, contentType: 'application/pdf' })
+    })
+
+    it.each(['application/xml', 'text/xml'])('stores %s evidence as application/octet-stream so it can only download', async (mimeType) => {
       const upload = vi.fn().mockResolvedValue({ error: null })
       const file = new File(['<HDon/>'], 'invoice.xml', { type: 'text/html' })
-      await uploadToStorageWithIntent({ storage: { from: vi.fn(() => ({ upload })) } } as never, intent as never, file, 'application/xml')
-      expect(upload).toHaveBeenCalledWith('c1/p1/file-1', file, { upsert: false, contentType: 'application/xml' })
+      await uploadToStorageWithIntent({ storage: { from: vi.fn(() => ({ upload })) } } as never, intent as never, file, mimeType)
+      expect(upload).toHaveBeenCalledWith('c1/p1/file-1', file, { upsert: false, contentType: 'application/octet-stream' })
     })
 
     it.each(['text/html', 'TEXT/HTML; charset=utf-8', 'application/xhtml+xml', 'image/svg+xml', ''])('never stores an object as %j', async (mimeType) => {
@@ -593,7 +600,7 @@ describe('Cost Evidence Uploader utility', () => {
       expect(upload).not.toHaveBeenCalled()
     })
 
-    it('uploads an XML invoice the browser labels text/html with the declared XML type', async () => {
+    it('declares an XML invoice the browser labels text/html as XML and stores it as octet-stream', async () => {
       const file = new File(['<?xml version="1.0"?><HDon/>'], 'hoa-don.xml', { type: 'text/html' })
       const upload = vi.fn().mockResolvedValue({ error: null })
       const createUploadIntent = vi.fn().mockResolvedValue(intent)
@@ -610,7 +617,7 @@ describe('Cost Evidence Uploader utility', () => {
         allowedMimeTypes: ['application/pdf', 'application/xml', 'text/xml'],
       })
       expect(createUploadIntent).toHaveBeenCalledWith('proj-1', expect.objectContaining({ mimeType: 'application/xml' }), expect.anything())
-      expect(upload).toHaveBeenCalledWith('c1/p1/file-1', file, { upsert: false, contentType: 'application/xml' })
+      expect(upload).toHaveBeenCalledWith('c1/p1/file-1', file, { upsert: false, contentType: 'application/octet-stream' })
     })
   })
 })

@@ -14,7 +14,9 @@ select pg_catalog.pg_advisory_xact_lock(71842, 55);
 --      record_payment, 20261015090200).
 --   D. An amend_contract replay returns the version stored in its receipt.
 --   B. public.c1_material_evidence_read_target (20261015090400) also returns
---      declaredMimeType so the server can force XML evidence to download.
+--      declaredMimeType so the server can force XML evidence to download, and the
+--      evidence bucket stops accepting XML content types: XML invoices are stored as
+--      application/octet-stream so no stored object can be rendered inline.
 -- private.c1_material_context stays module-wide and is not touched.
 
 -- A ----------------------------------------------------------------------------
@@ -548,6 +550,17 @@ begin
   );
 end;
 $$;
+
+-- XML evidence keeps application/xml or text/xml as its declared MIME type on
+-- cost_evidence_files; only the stored object type is application/octet-stream
+-- (shared/utils/evidence-storage-content-type.ts). 20261015090400 left the list non-null.
+update storage.buckets
+set allowed_mime_types = (
+  select array_agg(distinct mime order by mime)
+  from unnest(coalesce(allowed_mime_types, '{}') || array['application/octet-stream']) as mime
+  where mime not in ('application/xml', 'text/xml')
+)
+where id = 'c1-accounting-evidence';
 
 revoke all on function
   private.c1_material_finance_command_start(uuid,uuid,text,jsonb,text[],text[]),

@@ -21,49 +21,77 @@ const vietnameseInvoice = `<?xml version="1.0" encoding="UTF-8"?>
 </HDon>`
 
 const mismatch = { statusCode: 409, code: 'EVIDENCE_UPLOAD_MISMATCH' }
+const verifyBytes = (bytes: Uint8Array) =>
+  verifyEvidenceBlob(new Blob([bytes], { type: 'application/xml' }), maxBytes, 'application/xml')
 
-describe('XML evidence integrity', () => {
+describe('XML evidence integrity (allowlist)', () => {
   it('accepts a Vietnamese e-invoice for both XML MIME types', async () => {
     await expect(verify(vietnameseInvoice)).resolves.toMatchObject({ mimeType: 'application/xml' })
     await expect(verify(vietnameseInvoice, 'text/xml')).resolves.toMatchObject({ mimeType: 'text/xml' })
   })
 
-  it('accepts a document that starts directly with its root element after a BOM and whitespace', async () => {
-    await expect(verify('\uFEFF \n<HDon><SHDon>1</SHDon></HDon>')).resolves.toMatchObject({ mimeType: 'application/xml' })
-  })
-
-  it('accepts a DOCTYPE without an internal subset', async () => {
-    await expect(verify('<?xml version="1.0"?><!DOCTYPE HDon SYSTEM "hdon.dtd"><HDon/>')).resolves.toMatchObject({ mimeType: 'application/xml' })
+  it.each([
+    ['a bare HDon root after a BOM and whitespace', '\uFEFF \n<HDon><SHDon>1</SHDon></HDon>'],
+    ['a self-closing root', '<?xml version="1.0" encoding="utf-8" standalone="yes"?><HDon/>'],
+    ['a TDiep root with a comment and CDATA', '<?xml version="1.0"?>\n<TDiep><!-- gửi CQT --><DLieu><![CDATA[a < b]]></DLieu></TDiep>\n'],
+    ['a prefixed Invoice root in the GDT namespace', '<inv:Invoice xmlns:inv="http://laphoadon.gdt.gov.vn/2014/09/invoicexml/v1"><inv:No>1</inv:No></inv:Invoice>'],
+    ['escaped markup characters in text', '<HDon><Ten>Thép &lt; 10mm &amp; phụ kiện</Ten></HDon>'],
+  ])('accepts %s', async (_label, text) => {
+    await expect(verify(text)).resolves.toMatchObject({ mimeType: 'application/xml' })
   })
 
   it.each([
     ['plain text', 'Hóa đơn số 123'],
     ['a renamed PDF', '%PDF-1.7 pretending to be xml'],
-    ['a tag name that does not start with a letter', '<1HDon/>'],
-    ['a leading comment instead of the prolog or root', '<!-- comment --><HDon/>'],
+    ['an unknown root element', '<?xml version="1.0"?><html><body/></html>'],
+    ['an unknown root element that only starts like an allowed one', '<HDonX/>'],
+    ['a leading comment before the root', '<!-- comment --><HDon/>'],
     ['an empty document', '   '],
-  ])('rejects %s without a well-formed XML start', async (_label, text) => {
+    ['a second root element', '<HDon></HDon><svg></svg>'],
+    ['trailing content after the root', '<HDon/>tail'],
+    ['a root that is never closed', '<HDon><SHDon>1</SHDon>'],
+    ['a non UTF-8 encoding declaration', '<?xml version="1.0" encoding="windows-1258"?><HDon/>'],
+    ['a malformed XML declaration', '<?xml version="1.0" foo="bar"?><HDon/>'],
+  ])('rejects %s', async (_label, text) => {
     await expect(verify(text)).rejects.toMatchObject(mismatch)
   })
 
   it.each([
-    ['the XHTML namespace', '<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><body/></html>'],
-    ['the XHTML namespace in upper case', '<?xml version="1.0"?><x:html xmlns:x="HTTP://WWW.W3.ORG/1999/XHTML"/>'],
-    ['the SVG namespace', '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>'],
-    ['a script element', '<?xml version="1.0"?><HDon><script>alert(1)</script></HDon>'],
-    ['a script element in mixed case', '<?xml version="1.0"?><HDon><ScRiPt>alert(1)</ScRiPt></HDon>'],
-    ['a javascript: URL', '<?xml version="1.0"?><HDon><a href="JavaScript:alert(1)">x</a></HDon>'],
-    ['an entity declaration', '<?xml version="1.0"?><!ENTITY x "y"><HDon/>'],
-    ['a DOCTYPE with an internal subset', '<?xml version="1.0"?><!DOCTYPE HDon [<!ELEMENT HDon ANY>]><HDon/>'],
-    ['a DOCTYPE with an internal subset in lower case', '<?xml version="1.0"?><!doctype HDon\n[ <!element HDon ANY> ]><HDon/>'],
+    ['a DOCTYPE', '<?xml version="1.0"?><!DOCTYPE HDon SYSTEM "hdon.dtd"><HDon/>'],
+    ['a DOCTYPE with an internal subset', '<?xml version="1.0"?><!doctype HDon [<!ELEMENT HDon ANY>]><HDon/>'],
+    ['an entity declaration', '<?xml version="1.0"?><HDon><!ENTITY x "y"></HDon>'],
     ['an xml-stylesheet processing instruction', '<?xml version="1.0"?><?xml-stylesheet type="text/xsl" href="x.xsl"?><HDon/>'],
-    ['an xml-stylesheet processing instruction in upper case', '<?xml version="1.0"?><?XML-STYLESHEET href="x.css"?><HDon/>'],
+    ['a processing instruction inside the root', '<HDon><?php echo 1 ?></HDon>'],
+    ['the XHTML namespace', '<HDon><x:script xmlns:x="http://www.w3.org/1999/xhtml">alert(1)</x:script></HDon>'],
+    ['the XHTML namespace as the default namespace', '<HDon xmlns="http://www.w3.org/1999/xhtml"/>'],
+    ['the SVG namespace', '<HDon><svg xmlns = \'http://www.w3.org/2000/svg\' onload="alert(1)"/></HDon>'],
+    ['the MathML namespace', '<HDon><math xmlns="http://www.w3.org/1998/Math/MathML"/></HDon>'],
+    ['the XSLT namespace', '<HDon><xsl:template xmlns:xsl="http://www.w3.org/1999/XSL/Transform"/></HDon>'],
+    ['a namespace hidden behind character references', '<HDon><a xmlns="http&#x3A;//www.w3.org/1999/xhtml"/></HDon>'],
+    ['a namespace declaration without a quoted value', '<HDon><a xmlns=x/></HDon>'],
+    ['an encoded &#x3C;script', '<HDon><Ten>&#x3C;script&#x3E;alert(1)&#x3C;/script&#x3E;</Ten></HDon>'],
+    ['an encoded &#60;script', '<HDon><Ten>&#60;script>alert(1)</Ten></HDon>'],
+    ['a javascript: URL', '<HDon><a href="JavaScript:alert(1)">x</a></HDon>'],
   ])('rejects a document with %s', async (_label, text) => {
     await expect(verify(text)).rejects.toMatchObject(mismatch)
   })
 
-  it('rejects active content that appears after the first 64 KiB', async () => {
+  it('rejects UTF-16 documents, with or without a byte order mark', async () => {
+    const utf16 = (text: string, bom: boolean) => {
+      const body = Buffer.from(text, 'utf16le')
+      return new Uint8Array(bom ? Buffer.concat([Buffer.from([0xff, 0xfe]), body]) : body)
+    }
+    await expect(verifyBytes(utf16('<?xml version="1.0" encoding="UTF-16"?><HDon/>', true))).rejects.toMatchObject(mismatch)
+    await expect(verifyBytes(utf16('<HDon/>', false))).rejects.toMatchObject(mismatch)
+  })
+
+  it('rejects bytes that are not valid UTF-8', async () => {
+    await expect(verifyBytes(new Uint8Array([...new TextEncoder().encode('<HDon>'), 0xc3, 0x28, ...new TextEncoder().encode('</HDon>')])))
+      .rejects.toMatchObject(mismatch)
+  })
+
+  it('checks the whole document, not only the first 64 KiB', async () => {
     const padding = `<Ghi>${'a'.repeat(70 * 1024)}</Ghi>`
-    await expect(verify(`<?xml version="1.0"?><HDon>${padding}<script>alert(1)</script></HDon>`)).rejects.toMatchObject(mismatch)
+    await expect(verify(`<HDon>${padding}<x xmlns="http://www.w3.org/1999/xhtml"/></HDon>`)).rejects.toMatchObject(mismatch)
   })
 })

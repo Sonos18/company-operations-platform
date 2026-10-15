@@ -15,6 +15,7 @@ import {
   materialSupplierNameViewSchema,
   materialViewSchema,
 } from '../../../../shared/schemas/costs/material-procurement'
+import { evidenceStorageContentType, isXmlEvidenceMimeType } from '../../../../shared/utils/evidence-storage-content-type'
 import { AppApiError } from '../../../utils/api-error'
 import type { SupabaseMaterialEvidenceFinalizer, UserSupabaseClient } from '../../../utils/supabase-client'
 import { verifyEvidenceBlob } from '../evidence/evidence-file-integrity'
@@ -79,9 +80,15 @@ const readTargetSchema = z.object({
   objectPath: z.string().min(1),
   declaredMimeType: z.string().min(1),
 }).strict()
-// Types a browser may render inline safely. Everything else (XML invoices in particular, which a
-// browser can execute as XHTML/SVG) is always served as a download, whatever the caller asked for.
+// Types a browser may render inline safely. Everything else, XML invoices in particular (a browser
+// can execute XML as XHTML/SVG), is always signed as a download, whatever the caller asked for.
 const inlineEvidenceMimeTypes: ReadonlySet<string> = new Set(['application/pdf', 'image/png', 'image/jpeg'])
+
+function mustDownload(declaredMimeType: string, disposition: 'inline' | 'attachment' | undefined) {
+  return disposition === 'attachment'
+    || isXmlEvidenceMimeType(declaredMimeType)
+    || !inlineEvidenceMimeTypes.has(declaredMimeType)
+}
 
 export class SupabaseMaterialProcurementRepository implements MaterialProcurementDataRepository {
   private readonly client: Client
@@ -219,9 +226,10 @@ export class SupabaseMaterialProcurementRepository implements MaterialProcuremen
         throw new AppApiError(409, 'EVIDENCE_UPLOAD_MISMATCH', 'Không thể xác minh tệp tải lên.')
       }
       const identity = await verifyEvidenceBlob(downloaded.data, COST_EVIDENCE_MAX_BYTES, target.declaredMimeType)
-      // Storage may append parameters (for example a charset) to text types.
+      // Storage may append parameters (for example a charset) to text types. XML must be stored
+      // as application/octet-stream so the object can never be rendered inline.
       const storedMimeType = downloaded.data.type.split(';')[0]!.trim().toLowerCase()
-      if (storedMimeType !== target.declaredMimeType
+      if (storedMimeType !== evidenceStorageContentType(target.declaredMimeType)
         || identity.sizeBytes !== target.declaredSizeBytes
         || identity.sha256 !== target.declaredSha256) {
         throw new AppApiError(409, 'EVIDENCE_UPLOAD_MISMATCH', 'Tệp tải lên không khớp với khai báo.')
@@ -249,7 +257,7 @@ export class SupabaseMaterialProcurementRepository implements MaterialProcuremen
     }), readTargetSchema)
     const signed = workflowResponse(
       await this.client.storage.from(target.bucketId).createSignedUrl(target.objectPath, 60, {
-        download: input.disposition === 'attachment' || !inlineEvidenceMimeTypes.has(target.declaredMimeType),
+        download: mustDownload(target.declaredMimeType, input.disposition),
       }),
       z.object({ signedUrl: z.string().url() }).passthrough(),
     )

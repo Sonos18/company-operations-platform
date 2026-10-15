@@ -73,6 +73,10 @@ describe('material finance hardening migration', () => {
     expect(definitionOf('public.c1_material_evidence_read_target')).toContain("'declaredmimetype', v_file.declared_mime_type")
   })
 
+  it('B: lets the evidence bucket store octet-stream and no XML content type', () => {
+    expect(sql).toContain("update storage.buckets set allowed_mime_types = ( select array_agg(distinct mime order by mime) from unnest(coalesce(allowed_mime_types, '{}') || array['application/octet-stream']) as mime where mime not in ('application/xml', 'text/xml') ) where id = 'c1-accounting-evidence';")
+  })
+
   it('keeps the grants of the redefined functions', () => {
     expect(sql).toContain('revoke all on function public.c1_material_evidence_read_target(uuid,uuid,uuid) from public,anon,authenticated,service_role;')
     expect(sql).toContain('grant execute on function public.c1_material_evidence_read_target(uuid,uuid,uuid) to authenticated;')
