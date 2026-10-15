@@ -29,6 +29,7 @@ create table public.material_contracts (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (id, tenant_id, company_id, project_id),
+  unique (id, supplier_id),
   foreign key (order_id, tenant_id, company_id, project_id)
     references public.material_orders(id, tenant_id, company_id, project_id) on delete restrict,
   foreign key (supplier_id, tenant_id, company_id)
@@ -57,6 +58,7 @@ create table public.material_contract_versions (
   recorded_at timestamptz not null default now(),
   unique (contract_id, version_no),
   unique (id, tenant_id, company_id, project_id),
+  unique (id, contract_id),
   check ((subtotal = order_subtotal_snapshot) = (variance_reason is null)),
   check ((kind = 'original') = (signed_quotation_file_id is not null)),
   check ((kind = 'amendment') = (reason is not null)),
@@ -83,10 +85,14 @@ create table public.material_contract_installments (
   is_advance boolean not null,
   unique (contract_version_id, seq),
   unique (contract_version_id, installment_key),
+  unique (id, tenant_id, company_id, project_id),
   foreign key (contract_version_id, tenant_id, company_id, project_id)
     references public.material_contract_versions(id, tenant_id, company_id, project_id) on delete restrict,
   foreign key (contract_id, tenant_id, company_id, project_id)
-    references public.material_contracts(id, tenant_id, company_id, project_id) on delete restrict
+    references public.material_contracts(id, tenant_id, company_id, project_id) on delete restrict,
+  -- An installment must belong to a version of the same contract.
+  foreign key (contract_version_id, contract_id)
+    references public.material_contract_versions(id, contract_id) on delete restrict
 );
 create index material_contract_installments_contract_idx
 on public.material_contract_installments(contract_id, installment_key);
@@ -113,9 +119,13 @@ create table public.material_invoices (
   recorded_by uuid not null references auth.users(id) on delete restrict,
   recorded_at timestamptz not null default now(),
   unique (id, tenant_id, company_id, project_id),
+  unique (id, contract_id),
   check ((state = 'voided') = (void_reason is not null and voided_by is not null and voided_at is not null)),
   foreign key (contract_id, tenant_id, company_id, project_id)
     references public.material_contracts(id, tenant_id, company_id, project_id) on delete restrict,
+  -- The invoice supplier must be the contract supplier.
+  foreign key (contract_id, supplier_id)
+    references public.material_contracts(id, supplier_id) on delete restrict,
   foreign key (supplier_id, tenant_id, company_id)
     references public.business_parties(id, tenant_id, company_id) on delete restrict,
   foreign key (file_id, tenant_id, company_id, project_id)
@@ -156,6 +166,8 @@ create table public.material_payment_requests (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (id, tenant_id, company_id, project_id),
+  unique (id, contract_id),
+  unique (id, contract_id, installment_key),
   check ((state = 'cancelled') = (cancel_reason is not null)),
   foreign key (contract_id, tenant_id, company_id, project_id)
     references public.material_contracts(id, tenant_id, company_id, project_id) on delete restrict
@@ -177,6 +189,7 @@ create table public.material_payment_request_revisions (
   submitted_by uuid not null references auth.users(id) on delete restrict,
   submitted_at timestamptz not null default now(),
   unique (payment_request_id, revision_no),
+  unique (id, tenant_id, company_id, project_id),
   foreign key (payment_request_id, tenant_id, company_id, project_id)
     references public.material_payment_requests(id, tenant_id, company_id, project_id) on delete restrict
 );
@@ -187,11 +200,17 @@ create table public.material_payment_request_invoices (
   tenant_id uuid not null,
   company_id uuid not null,
   project_id uuid not null,
+  contract_id uuid not null,
   primary key (payment_request_id, invoice_id),
   foreign key (payment_request_id, tenant_id, company_id, project_id)
     references public.material_payment_requests(id, tenant_id, company_id, project_id) on delete cascade,
   foreign key (invoice_id, tenant_id, company_id, project_id)
-    references public.material_invoices(id, tenant_id, company_id, project_id) on delete restrict
+    references public.material_invoices(id, tenant_id, company_id, project_id) on delete restrict,
+  -- Request and invoice must belong to the same contract.
+  foreign key (payment_request_id, contract_id)
+    references public.material_payment_requests(id, contract_id) on delete cascade,
+  foreign key (invoice_id, contract_id)
+    references public.material_invoices(id, contract_id) on delete restrict
 );
 create index material_payment_request_invoices_invoice_idx
 on public.material_payment_request_invoices(invoice_id);
@@ -208,6 +227,7 @@ create table public.material_payment_decisions (
   decided_by uuid not null references auth.users(id) on delete restrict,
   decided_at timestamptz not null default now(),
   unique (payment_request_id, request_revision_no),
+  unique (id, tenant_id, company_id, project_id),
   check ((decision = 'return') = (reason is not null)),
   foreign key (payment_request_id, tenant_id, company_id, project_id)
     references public.material_payment_requests(id, tenant_id, company_id, project_id) on delete restrict
@@ -229,8 +249,12 @@ create table public.material_payments (
   paid_by uuid not null references auth.users(id) on delete restrict,
   recorded_at timestamptz not null default now(),
   unique (company_id, proof_sha256),
+  unique (id, tenant_id, company_id, project_id),
   foreign key (payment_request_id, tenant_id, company_id, project_id)
     references public.material_payment_requests(id, tenant_id, company_id, project_id) on delete restrict,
+  -- A payment snapshots the contract and installment of its own request.
+  foreign key (payment_request_id, contract_id, installment_key)
+    references public.material_payment_requests(id, contract_id, installment_key) on delete restrict,
   foreign key (contract_id, tenant_id, company_id, project_id)
     references public.material_contracts(id, tenant_id, company_id, project_id) on delete restrict,
   foreign key (proof_file_id, tenant_id, company_id, project_id)
@@ -255,7 +279,12 @@ create table public.app_notifications (
   dedupe_key text not null check (char_length(dedupe_key) <= 200),
   created_at timestamptz not null default now(),
   read_at timestamptz,
-  unique (recipient_id, dedupe_key)
+  unique (recipient_id, dedupe_key),
+  foreign key (company_id, tenant_id)
+    references public.companies(id, tenant_id) on delete restrict,
+  -- MATCH SIMPLE: company-level notifications (project_id null) skip this check.
+  foreign key (project_id, tenant_id, company_id)
+    references public.projects(id, tenant_id, company_id) on delete restrict
 );
 create index app_notifications_recipient_idx on public.app_notifications(recipient_id, company_id, created_at desc, id);
 
@@ -480,6 +509,10 @@ for each row execute function private.c1_material_retain_history();
 
 -- In-app notifications. The acting user never notifies themself; recipients
 -- must still hold material.read in the company.
+-- c1_material_notify_users selects recipients by user id only (for example buyers
+-- or engineers without finance permission), so its payload must never carry money
+-- values. Money-bearing payloads go only through c1_material_notify_permission
+-- with a finance permission.
 create function private.c1_material_notify_users(
   t uuid, c uuid, p uuid, user_ids uuid[], event_kind text, source_type text, source_id uuid,
   link_path text, payload jsonb, dedupe_key text
@@ -529,7 +562,84 @@ $$;
 create trigger material_order_created_notify after insert on public.material_orders
 for each row execute function private.c1_material_notify_order_created();
 
+-- Order reads: the legacy cost-workflow cash shape is retired. Copied from
+-- 20261008140823 (latest definition); only the contract and cash fields change.
+-- Later tasks fill these from material_contracts.
+create or replace function private.c1_material_order_json(
+  target_tenant_id uuid,
+  target_company_id uuid,
+  target_project_id uuid,
+  target_id uuid
+)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare
+  v_order public.material_orders%rowtype;
+  v_supplier_name text;
+  v_allocations jsonb;
+begin
+  select material_order.* into v_order
+  from public.material_orders as material_order
+  where material_order.id = target_id
+    and material_order.tenant_id = target_tenant_id
+    and material_order.company_id = target_company_id
+    and material_order.project_id = target_project_id;
+  if not found then
+    raise exception using errcode = 'P0001', message = 'RESOURCE_NOT_FOUND';
+  end if;
+
+  select supplier.display_name into v_supplier_name
+  from public.business_parties as supplier
+  where supplier.id = v_order.supplier_id
+    and supplier.tenant_id = v_order.tenant_id
+    and supplier.company_id = v_order.company_id;
+  if not found then
+    raise exception using errcode = 'P0001', message = 'RESOURCE_NOT_FOUND';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'orderLineId', allocation.id,
+    'proposalLineId', allocation.proposal_line_id,
+    'materialId', snapshot.material_id,
+    'materialName', snapshot.material_name,
+    'specification', snapshot.specification,
+    'unit', snapshot.unit,
+    'quantity', allocation.quantity::text,
+    'unitPrice', allocation.unit_price::text,
+    'quotationMaterialName', allocation.quotation_material_name,
+    'mappingConfirmed', allocation.mapping_confirmed
+  ) order by allocation.id), '[]'::jsonb)
+  into v_allocations
+  from public.material_order_allocations as allocation
+  join public.material_proposal_revision_lines as snapshot
+    on snapshot.revision_id = v_order.approved_revision_id
+   and snapshot.proposal_line_id = allocation.proposal_line_id
+   and snapshot.tenant_id = allocation.tenant_id
+   and snapshot.company_id = allocation.company_id
+   and snapshot.project_id = allocation.project_id
+  where allocation.order_id = v_order.id
+    and allocation.tenant_id = v_order.tenant_id
+    and allocation.company_id = v_order.company_id
+    and allocation.project_id = v_order.project_id;
+
+  return jsonb_build_object(
+    'id', v_order.id,
+    'version', v_order.version,
+    'orderState', v_order.state,
+    'proposalId', v_order.proposal_id,
+    'approvedRevisionId', v_order.approved_revision_id,
+    'supplierId', v_order.supplier_id,
+    'supplierName', v_supplier_name,
+    'currencyCode', v_order.currency_code,
+    'allocations', v_allocations,
+    'unsignedQuotationEvidenceFileId', v_order.unsigned_quotation_evidence_file_id,
+    'contract', null,
+    'cash', null
+  );
+end;
+$$;
+
 revoke all on function
+  private.c1_material_order_json(uuid,uuid,uuid,uuid),
   private.c1_material_can_read_finance(uuid,uuid),
   private.c1_material_can_see_contract_status(uuid,uuid,uuid,uuid),
   private.c1_material_installment_usage(uuid),

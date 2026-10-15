@@ -43,6 +43,33 @@ describe('material finance foundation migration', () => {
       expect(sql).toContain(`before update or delete on public.${table} for each row execute function private.c1_material_retain_history()`)
     }
   })
+  it('retires the legacy cost-workflow cash shape from order reads', () => {
+    const orderJson = sql.slice(sql.indexOf('create or replace function private.c1_material_order_json('))
+    expect(orderJson).toContain("'contract', null, 'cash', null );")
+    expect(sql).not.toContain('grosspaid')
+    expect(sql).not.toContain('availabletopay')
+    expect(sql).toContain('private.c1_material_order_json(uuid,uuid,uuid,uuid), private.c1_material_can_read_finance(uuid,uuid)')
+  })
+  it('pins cross-row integrity to the same contract, supplier and installment', () => {
+    for (const constraint of [
+      'foreign key (contract_version_id, contract_id) references public.material_contract_versions(id, contract_id)',
+      'foreign key (contract_id, supplier_id) references public.material_contracts(id, supplier_id)',
+      'foreign key (payment_request_id, contract_id, installment_key) references public.material_payment_requests(id, contract_id, installment_key)',
+      'foreign key (payment_request_id, contract_id) references public.material_payment_requests(id, contract_id)',
+      'foreign key (invoice_id, contract_id) references public.material_invoices(id, contract_id)',
+      'foreign key (company_id, tenant_id) references public.companies(id, tenant_id)',
+      'foreign key (project_id, tenant_id, company_id) references public.projects(id, tenant_id, company_id)',
+    ]) {
+      expect(sql).toContain(constraint)
+    }
+    const requestInvoices = sql.slice(sql.indexOf('create table public.material_payment_request_invoices'))
+    expect(requestInvoices.slice(0, requestInvoices.indexOf(');'))).toContain('contract_id uuid not null')
+  })
+  it('keeps money out of user-targeted notification payloads', () => {
+    const comment = sql.slice(0, sql.indexOf('create function private.c1_material_notify_users('))
+    expect(comment).toContain('payload must never carry money')
+    expect(comment).toContain('go only through c1_material_notify_permission')
+  })
   it('grants authenticated only the RLS predicate helpers', () => {
     const tail = sql.slice(sql.lastIndexOf('grant execute on function'))
     const grant = tail.slice(0, tail.indexOf(';'))

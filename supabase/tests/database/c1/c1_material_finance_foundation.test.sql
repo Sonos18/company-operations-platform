@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(61);
+select plan(69);
 
 -- Structural security: every new finance table forces RLS and denies direct writes.
 select ok(
@@ -73,7 +73,7 @@ select ok(not exists(
 
 select ok(
   coalesce((
-    select procedure.prosecdef and procedure.proconfig @> array['search_path=']
+    select procedure.prosecdef and coalesce(procedure.proconfig, '{}') @> array['search_path=""']
     from pg_proc as procedure
     where procedure.oid=to_regprocedure(signature)
   ),false),
@@ -189,7 +189,12 @@ from (values
  ('c1250000-0000-4000-8000-000000000503'::uuid,'signed-quotation.pdf','c'),
  ('c1250000-0000-4000-8000-000000000504'::uuid,'invoice.pdf','d'),
  ('c1250000-0000-4000-8000-000000000505'::uuid,'misplaced-contract.pdf','e'),
- ('c1250000-0000-4000-8000-000000000506'::uuid,'amendment.pdf','f')
+ ('c1250000-0000-4000-8000-000000000506'::uuid,'amendment.pdf','f'),
+ ('c1250000-0000-4000-8000-000000000507'::uuid,'second-contract.pdf','1'),
+ ('c1250000-0000-4000-8000-000000000508'::uuid,'second-signed-quotation.pdf','2'),
+ ('c1250000-0000-4000-8000-000000000509'::uuid,'mismatched-invoice.pdf','3'),
+ ('c1250000-0000-4000-8000-000000000510'::uuid,'payment-proof.pdf','4'),
+ ('c1250000-0000-4000-8000-000000000511'::uuid,'second-invoice.pdf','5')
 ) as file(id,name,hash_char);
 
 -- Creating an order notifies contract recorders, never the acting buyer.
@@ -299,6 +304,77 @@ select throws_ok($$
     'c1250000-0000-4000-8000-000000000903'
   )
 $$,'23514',null,'material_contract scope rejects the order-level signed_contract role');
+
+-- Order reads no longer expose the retired cost-workflow cash shape.
+select ok((
+  select order_json->'contract'='null'::jsonb and order_json->'cash'='null'::jsonb
+  from (select private.c1_material_order_json('c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','c1250000-0000-4000-8000-000000000351') as order_json) as read_order
+),'order read reports contract null and cash null');
+
+-- Cross-row integrity: children must stay on the same contract, supplier and installment.
+insert into public.business_parties(id,tenant_id,company_id,code,display_name,party_kind,created_by)
+values('c1250000-0000-4000-8000-000000000202','c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','FIN-S2','Second finance supplier','organization','c1250000-0000-4000-8000-000000000902');
+insert into public.material_orders(
+  id,tenant_id,company_id,project_id,proposal_id,approved_revision_id,
+  supplier_id,currency_code,unsigned_quotation_evidence_file_id,created_by
+) values(
+  'c1250000-0000-4000-8000-000000000352','c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','c1250000-0000-4000-8000-000000000301','c1250000-0000-4000-8000-000000000401','c1250000-0000-4000-8000-000000000202','VND','c1250000-0000-4000-8000-000000000501','c1250000-0000-4000-8000-000000000902'
+);
+insert into public.material_contracts(
+  id,tenant_id,company_id,project_id,order_id,supplier_id,currency_code,contract_no,signed_on,created_by
+) values('c1250000-0000-4000-8000-000000000602','c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','c1250000-0000-4000-8000-000000000352','c1250000-0000-4000-8000-000000000202','VND','HD-FIN-02','2026-10-11','c1250000-0000-4000-8000-000000000903');
+insert into public.material_contract_versions(
+  id,tenant_id,company_id,project_id,contract_id,version_no,kind,subtotal,vat_amount,total,
+  order_subtotal_snapshot,variance_reason,contract_file_id,signed_quotation_file_id,reason,recorded_by
+) values('c1250000-0000-4000-8000-000000000621','c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','c1250000-0000-4000-8000-000000000602',1,'original',50,5,55,50,null,'c1250000-0000-4000-8000-000000000507','c1250000-0000-4000-8000-000000000508',null,'c1250000-0000-4000-8000-000000000903');
+
+select lives_ok($$
+  insert into public.material_contract_installments(
+    tenant_id,company_id,project_id,contract_id,contract_version_id,seq,installment_key,name,amount,due_on,is_advance
+  ) values('c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','c1250000-0000-4000-8000-000000000601','c1250000-0000-4000-8000-000000000611',1,'c1250000-0000-4000-8000-000000000a01','Dot 1',110,'2026-11-10',false)
+$$,'installment on a version of its own contract is accepted');
+select throws_ok($$
+  insert into public.material_contract_installments(
+    tenant_id,company_id,project_id,contract_id,contract_version_id,seq,installment_key,name,amount,due_on,is_advance
+  ) values('c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','c1250000-0000-4000-8000-000000000601','c1250000-0000-4000-8000-000000000621',1,'c1250000-0000-4000-8000-000000000a02','Dot sai',55,'2026-11-10',false)
+$$,'23503',null,'installment cannot point at a version of another contract');
+
+select throws_ok($$
+  insert into public.material_invoices(
+    tenant_id,company_id,project_id,contract_id,supplier_id,invoice_symbol,invoice_no,issued_on,
+    subtotal,vat_amount,total,file_id,recorded_by
+  ) values('c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','c1250000-0000-4000-8000-000000000601','c1250000-0000-4000-8000-000000000202','1C26TAA','0000001','2026-10-12',10,1,11,'c1250000-0000-4000-8000-000000000509','c1250000-0000-4000-8000-000000000903')
+$$,'23503',null,'invoice supplier must be the contract supplier');
+
+insert into public.material_payment_requests(
+  id,tenant_id,company_id,project_id,contract_id,installment_key,amount,submitted_by,created_by
+) values('c1250000-0000-4000-8000-000000000701','c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','c1250000-0000-4000-8000-000000000601','c1250000-0000-4000-8000-000000000a01',10,'c1250000-0000-4000-8000-000000000903','c1250000-0000-4000-8000-000000000903');
+select throws_ok($$
+  insert into public.material_payments(
+    tenant_id,company_id,project_id,payment_request_id,contract_id,installment_key,amount,
+    paid_on,bank_reference,proof_file_id,proof_sha256,paid_by
+  ) values('c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','c1250000-0000-4000-8000-000000000701','c1250000-0000-4000-8000-000000000601','c1250000-0000-4000-8000-000000000a02',10,'2026-10-15','UNC-01','c1250000-0000-4000-8000-000000000510',repeat('4',64),'c1250000-0000-4000-8000-000000000904')
+$$,'23503',null,'payment must keep the contract and installment of its request');
+
+insert into public.material_invoices(
+  id,tenant_id,company_id,project_id,contract_id,supplier_id,invoice_symbol,invoice_no,issued_on,
+  subtotal,vat_amount,total,file_id,recorded_by
+) values('c1250000-0000-4000-8000-000000000801','c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','c1250000-0000-4000-8000-000000000602','c1250000-0000-4000-8000-000000000202','1C26TBB','0000002','2026-10-12',50,5,55,'c1250000-0000-4000-8000-000000000511','c1250000-0000-4000-8000-000000000903');
+select throws_ok($$
+  insert into public.material_payment_request_invoices(payment_request_id,invoice_id,tenant_id,company_id,project_id,contract_id)
+  values('c1250000-0000-4000-8000-000000000701','c1250000-0000-4000-8000-000000000801','c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','c1250000-0000-4000-8000-000000000601')
+$$,'23503',null,'payment request cannot link an invoice of another contract');
+select throws_ok($$
+  insert into public.material_payment_request_invoices(payment_request_id,invoice_id,tenant_id,company_id,project_id,contract_id)
+  values('c1250000-0000-4000-8000-000000000701','c1250000-0000-4000-8000-000000000801','c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','c1250000-0000-4000-8000-000000000602')
+$$,'23503',null,'payment request invoice link must carry the request contract');
+
+select throws_ok($$
+  select private.c1_material_notify_users(
+    'c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000999',array['c1250000-0000-4000-8000-000000000903'::uuid],
+    'material.order.created','material_order','c1250000-0000-4000-8000-000000000351','/materials/missing','{}'::jsonb,'missing-project'
+  )
+$$,'23503',null,'notification project must exist in the same company');
 
 -- A second notification for another recipient proves recipient-only visibility.
 select private.c1_material_notify_users(
