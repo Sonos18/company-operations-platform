@@ -90,6 +90,18 @@ describe('material payment service', () => {
     )
   })
 
+  it('lets an approver reach cancel (the RPC decides by request state) and keeps other roles out', async () => {
+    const repository = repo()
+    const service = new MaterialPaymentService(repository)
+    await expect(callWith(service, 'cancelPaymentRequest', ctx(['material.read', 'material.payment.execute'])))
+      .rejects.toMatchObject({ statusCode: 403 })
+    await expect(callWith(service, 'cancelPaymentRequest', ctx(['material.payment.approve'])))
+      .rejects.toMatchObject({ statusCode: 403 })
+    expect(repository.cancelPaymentRequest).not.toHaveBeenCalled()
+    await expect(callWith(service, 'cancelPaymentRequest', ctx(['material.read', 'material.payment.approve'])))
+      .resolves.toMatchObject({ replayed: false })
+  })
+
   it('rejects a return decision without reason as 400', async () => {
     const service = new MaterialPaymentService(repo())
     await expect(service.decidePaymentRequest(ctx(['material.read', 'material.payment.approve']), ids.project, ids.request,
