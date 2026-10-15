@@ -66,18 +66,29 @@ insert into public.material_proposal_revision_lines(revision_id,proposal_line_id
 values('c1300000-0000-4000-8000-000000000411','c1300000-0000-4000-8000-000000000301','c1300000-0000-4000-8000-000000000401','c1300000-0000-4000-8000-000000000010','c1300000-0000-4000-8000-000000000020','c1300000-0000-4000-8000-000000000101',(select value from inline_ids where name='material'),'Steel','D10','bag',100);
 update public.material_proposals set review_state='approved',current_revision_id='c1300000-0000-4000-8000-000000000411',approved_revision_id='c1300000-0000-4000-8000-000000000411',version=2
 where id='c1300000-0000-4000-8000-000000000401';
-insert into public.cost_evidence_files(
-  id,tenant_id,company_id,project_id,object_path,original_filename,
-  declared_mime_type,declared_size_bytes,declared_sha256,
-  verified_mime_type,verified_size_bytes,verified_sha256,status,intent_expires_at,
-  created_by,finalized_by,finalized_at,version
-)
-select ('c1300000-0000-4000-8000-0000000005'||lpad(n::text,2,'0'))::uuid,
-  'c1300000-0000-4000-8000-000000000010','c1300000-0000-4000-8000-000000000020','c1300000-0000-4000-8000-000000000101',
-  'c1300000-0000-4000-8000-000000000010/c1300000-0000-4000-8000-000000000020/c1300000-0000-4000-8000-000000000101/c1300000-0000-4000-8000-0000000005'||lpad(n::text,2,'0'),
-  'inline-'||n||'.pdf','application/pdf',8,repeat(to_hex(n),64)::text,'application/pdf',8,repeat(to_hex(n),64)::text,'finalized',
-  now()+interval '15 minutes','c1300000-0000-4000-8000-000000000902','c1300000-0000-4000-8000-000000000902',now(),1
-from generate_series(1,12) n;
+-- The legacy evidence gate admits a direct insert only for the file id named by the material intent setting.
+do $$
+declare v_id uuid;
+begin
+  for n in 1..12 loop
+    v_id := ('c1300000-0000-4000-8000-0000000005'||lpad(n::text,2,'0'))::uuid;
+    perform set_config('taskovia.c1_material_evidence.intent', v_id::text, true);
+    insert into public.cost_evidence_files(
+      id,tenant_id,company_id,project_id,object_path,original_filename,
+      declared_mime_type,declared_size_bytes,declared_sha256,
+      verified_mime_type,verified_size_bytes,verified_sha256,status,intent_expires_at,
+      created_by,finalized_by,finalized_at,version
+    ) values (
+      v_id,
+      'c1300000-0000-4000-8000-000000000010','c1300000-0000-4000-8000-000000000020','c1300000-0000-4000-8000-000000000101',
+      'c1300000-0000-4000-8000-000000000010/c1300000-0000-4000-8000-000000000020/c1300000-0000-4000-8000-000000000101/'||v_id::text,
+      'inline-'||n||'.pdf','application/pdf',8,repeat(to_hex(n),64),'application/pdf',8,repeat(to_hex(n),64),'finalized',
+      now()+interval '15 minutes','c1300000-0000-4000-8000-000000000902','c1300000-0000-4000-8000-000000000902',now(),1
+    );
+  end loop;
+  perform set_config('taskovia.c1_material_evidence.intent', '', true);
+end
+$$;
 insert into public.material_evidence_scopes(evidence_file_id,tenant_id,company_id,project_id,target_kind,proposal_id,revision_id,evidence_role,created_by)
 select ('c1300000-0000-4000-8000-0000000005'||lpad(n::text,2,'0'))::uuid,
   'c1300000-0000-4000-8000-000000000010','c1300000-0000-4000-8000-000000000020','c1300000-0000-4000-8000-000000000101',
