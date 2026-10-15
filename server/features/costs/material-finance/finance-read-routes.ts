@@ -11,7 +11,8 @@ export interface MaterialFinanceReadRouteDependencies {
   service?: MaterialFinanceReadService
 }
 
-const cursorSchema = z.string().datetime({ offset: true })
+// Opaque keyset cursor produced by c1_list_app_notifications; the database validates its content.
+const cursorSchema = z.string().min(1).max(200)
 const optionalUuid = z.string().uuid()
 
 function query(event: H3Event, name: string, schema: z.ZodType<string>): string | null {

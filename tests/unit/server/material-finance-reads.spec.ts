@@ -47,6 +47,15 @@ describe('material finance read service', () => {
     expect(treasurer.dueInstallments).toEqual([])
   })
 
+  it('passes the opaque notification cursor through and accepts an opaque next cursor', async () => {
+    const data = repo()
+    const cursor = 'abcdef0123'
+    vi.mocked(data.listNotifications).mockResolvedValueOnce({ items: [], nextCursor: '3230323' })
+    const page = await new MaterialFinanceReadService(data, now).listNotifications(ctx(['material.read']), cursor)
+    expect(data.listNotifications).toHaveBeenCalledWith(expect.anything(), cursor)
+    expect(page.nextCursor).toBe('3230323')
+  })
+
   it('denies summary without finance permission', async () => {
     await expect(new MaterialFinanceReadService(repo(), now).projectSummary(ctx(['material.read', 'material.order.manage']), p1))
       .rejects.toMatchObject({ statusCode: 403 })

@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(43);
+select plan(46);
 
 -- Fixture prefix c128. Company A: buyer, accountants, treasurer, requester and two
 -- notification-only members. Company B (separate tenant): one accountant with its own contract.
@@ -181,7 +181,8 @@ insert into public.app_notifications(
 ('c1280000-0000-4000-8000-000000000b11','c1280000-0000-4000-8000-000000000010','c1280000-0000-4000-8000-000000000020',null,'c1280000-0000-4000-8000-000000000908','material.order.created','material_order','c1280000-0000-4000-8000-000000000351','/x','{}','n2a','2026-10-10 10:00:00+00'),
 ('c1280000-0000-4000-8000-000000000b12','c1280000-0000-4000-8000-000000000010','c1280000-0000-4000-8000-000000000020',null,'c1280000-0000-4000-8000-000000000908','material.order.created','material_order','c1280000-0000-4000-8000-000000000351','/x','{}','n2b','2026-10-10 10:00:00+00'),
 ('c1280000-0000-4000-8000-000000000b13','c1280000-0000-4000-8000-000000000010','c1280000-0000-4000-8000-000000000020',null,'c1280000-0000-4000-8000-000000000908','material.order.created','material_order','c1280000-0000-4000-8000-000000000351','/x','{}','n2c','2026-10-10 10:00:00+00'),
-('c1280000-0000-4000-8000-000000000b14','c1280000-0000-4000-8000-000000000010','c1280000-0000-4000-8000-000000000020',null,'c1280000-0000-4000-8000-000000000908','material.order.created','material_order','c1280000-0000-4000-8000-000000000351','/x','{}','n2d','2026-10-09 10:00:00+00');
+('c1280000-0000-4000-8000-000000000b14','c1280000-0000-4000-8000-000000000010','c1280000-0000-4000-8000-000000000020',null,'c1280000-0000-4000-8000-000000000908','material.order.created','material_order','c1280000-0000-4000-8000-000000000351','/x','{}','n2d','2026-10-10 10:00:00+00'),
+('c1280000-0000-4000-8000-000000000b15','c1280000-0000-4000-8000-000000000010','c1280000-0000-4000-8000-000000000020',null,'c1280000-0000-4000-8000-000000000908','material.order.created','material_order','c1280000-0000-4000-8000-000000000351','/x','{}','n2e','2026-10-10 10:00:00+00');
 
 update public.app_notifications set read_at='2026-10-06 00:00:00+00' where id='c1280000-0000-4000-8000-000000000b03';
 
@@ -308,9 +309,9 @@ select throws_ok(
 select set_config('request.jwt.claims','{"sub":"c1280000-0000-4000-8000-000000000907","role":"authenticated"}',true);
 insert into read_results values('n1_page1',public.c1_list_app_notifications('c1280000-0000-4000-8000-000000000020',null,2));
 insert into read_results values('n1_page2',public.c1_list_app_notifications('c1280000-0000-4000-8000-000000000020',
-  ((select body->>'nextCursor' from read_results where name='n1_page1'))::timestamptz,2));
+  (select body->>'nextCursor' from read_results where name='n1_page1'),2));
 insert into read_results values('n1_page3',public.c1_list_app_notifications('c1280000-0000-4000-8000-000000000020',
-  ((select body->>'nextCursor' from read_results where name='n1_page2'))::timestamptz,2));
+  (select body->>'nextCursor' from read_results where name='n1_page2'),2));
 select is(
   (select array[body->'items'->0->>'id',body->'items'->1->>'id'] from read_results where name='n1_page1'),
   array['c1280000-0000-4000-8000-000000000b05','c1280000-0000-4000-8000-000000000b04'],'first notification page returns the newest rows'
@@ -346,20 +347,37 @@ select throws_ok(
 
 select set_config('request.jwt.claims','{"sub":"c1280000-0000-4000-8000-000000000908","role":"authenticated"}',true);
 insert into read_results values('n2_all',public.c1_list_app_notifications('c1280000-0000-4000-8000-000000000020',null,50));
-insert into read_results values('n2_tie',public.c1_list_app_notifications('c1280000-0000-4000-8000-000000000020',null,2));
-insert into read_results values('n2_tie_next',public.c1_list_app_notifications('c1280000-0000-4000-8000-000000000020',
-  ((select body->>'nextCursor' from read_results where name='n2_tie'))::timestamptz,2));
+insert into read_results values('n2_page1',public.c1_list_app_notifications('c1280000-0000-4000-8000-000000000020',null,2));
+insert into read_results values('n2_page2',public.c1_list_app_notifications('c1280000-0000-4000-8000-000000000020',
+  (select body->>'nextCursor' from read_results where name='n2_page1'),2));
+insert into read_results values('n2_page3',public.c1_list_app_notifications('c1280000-0000-4000-8000-000000000020',
+  (select body->>'nextCursor' from read_results where name='n2_page2'),2));
 select is(
   (select jsonb_array_length(body->'items') from read_results where name='n2_all'),
-  4,'user B does not see notifications of user A'
+  5,'user B does not see notifications of user A'
 );
 select is(
-  (select array[jsonb_array_length(body->'items')::text,(body->>'nextCursor' is not null)::text] from read_results where name='n2_tie'),
-  array['3','true'],'a page never splits rows that share one created_at'
+  (select array[body->'items'->0->>'id',body->'items'->1->>'id',jsonb_array_length(body->'items')::text,(body->>'nextCursor' is not null)::text]
+   from read_results where name='n2_page1'),
+  array['c1280000-0000-4000-8000-000000000b15','c1280000-0000-4000-8000-000000000b14','2','true'],'rows sharing one created_at are paged by id: first page of two'
 );
 select is(
-  (select array[jsonb_array_length(body->'items')::text,body->'items'->0->>'id'] from read_results where name='n2_tie_next'),
-  array['1','c1280000-0000-4000-8000-000000000b14'],'the page after a tied group continues with the older row'
+  (select array[body->'items'->0->>'id',body->'items'->1->>'id',jsonb_array_length(body->'items')::text,(body->>'nextCursor' is not null)::text]
+   from read_results where name='n2_page2'),
+  array['c1280000-0000-4000-8000-000000000b13','c1280000-0000-4000-8000-000000000b12','2','true'],'rows sharing one created_at are paged by id: second page of two without gaps or duplicates'
+);
+select is(
+  (select array[body->'items'->0->>'id',jsonb_array_length(body->'items')::text,(body->'nextCursor'='null'::jsonb)::text]
+   from read_results where name='n2_page3'),
+  array['c1280000-0000-4000-8000-000000000b11','1','true'],'rows sharing one created_at are paged by id: last page of one and no next cursor'
+);
+select throws_ok(
+  $$select public.c1_list_app_notifications('c1280000-0000-4000-8000-000000000020','not-a-cursor',10)$$,
+  'P0001','INPUT_INVALID','a malformed notification cursor is rejected'
+);
+select throws_ok(
+  $$select public.c1_list_app_notifications('c1280000-0000-4000-8000-000000000020',encode(convert_to('2026-13-45T99:00:00.000000Z|00000000-0000-4000-8000-000000000000','UTF8'),'hex'),10)$$,
+  'P0001','INPUT_INVALID','a well-shaped cursor with an impossible timestamp is rejected'
 );
 
 select set_config('request.jwt.claims','{"sub":"c1280000-0000-4000-8000-000000000906","role":"authenticated"}',true);

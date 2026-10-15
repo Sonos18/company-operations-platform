@@ -28,6 +28,24 @@ describe('material finance reads migration', () => {
     }
   })
 
+  it('pages notifications with an opaque keyset cursor over (created_at, id)', () => {
+    const start = sql.indexOf('create function private.c1_list_app_notifications(')
+    const body = sql.slice(start, sql.indexOf('$$;', start))
+    expect(body).toContain('target_cursor text')
+    expect(body).toContain('(notification.created_at, notification.id) < (v_cursor_at, v_cursor_id)')
+    expect(body).toContain('order by notification.created_at desc, notification.id desc')
+    expect(body).toContain('limit target_limit + 1')
+    expect(sql).toContain('public.c1_list_app_notifications(uuid,text,integer)')
+  })
+
+  it('counts only rows inserted by the reminder run and takes no runtime advisory lock', () => {
+    const start = sql.indexOf('create function private.c1_material_emit_installment_reminders(')
+    const body = sql.slice(start, sql.indexOf('$$;', start))
+    expect(body).toContain('on conflict (recipient_id, dedupe_key) do nothing returning 1')
+    expect(body).not.toContain('advisory')
+    expect(sql.match(/pg_advisory_xact_lock/gu)).toHaveLength(1)
+  })
+
   it('does not use auth.uid() in the reminder emitter', () => {
     const start = sql.indexOf('create function private.c1_material_emit_installment_reminders(')
     const body = sql.slice(start, sql.indexOf('$$;', start))
@@ -50,7 +68,8 @@ describe('material finance reads pgTAP', () => {
       'procurement inbox is denied without finance permissions',
       'treasurer inbox has no awaiting contracts',
       'user B does not see notifications of user A',
-      'a page never splits rows that share one created_at',
+      'rows sharing one created_at are paged by id: last page of one and no next cursor',
+      'a malformed notification cursor is rejected',
       'reading twice is idempotent',
       'authenticated cannot call the reminder emitter',
       'a second run on the same day creates no new reminders',
