@@ -56,6 +56,10 @@ describe('material finance input schemas', () => {
     expect(decidePaymentRequestInputSchema.safeParse({ expectedVersion: 1, decision: 'return' }).success).toBe(false)
     expect(decidePaymentRequestInputSchema.safeParse({ expectedVersion: 1, decision: 'approve' }).success).toBe(true)
   })
+  it('rejects a reason on an approval, matching the database', () => {
+    expect(decidePaymentRequestInputSchema.safeParse({ expectedVersion: 1, decision: 'approve', reason: 'Đồng ý' }).success).toBe(false)
+    expect(decidePaymentRequestInputSchema.safeParse({ expectedVersion: 1, decision: 'return', reason: 'Thiếu chứng từ' }).success).toBe(true)
+  })
   it('rejects invoice with duplicate proposal lines', () => {
     expect(recordMaterialInvoiceInputSchema.safeParse({
       invoiceSymbol: '1C26TAA', invoiceNo: '0000123', issuedOn: '2026-10-11',

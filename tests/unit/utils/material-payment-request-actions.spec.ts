@@ -18,6 +18,13 @@ describe('paymentRequestActions', () => {
     expect(paymentRequestActions(r('approved'), 'u2', ['material.payment.execute'])).toEqual(['record_payment'])
     expect(paymentRequestActions(r('approved'), 'u1', ['material.payment.execute'])).toEqual([])
   })
+  it('lets requesters cancel only submitted or returned requests, and approvers cancel approved ones', () => {
+    expect(paymentRequestActions(r('submitted'), 'u1', ['material.payment.request'])).toEqual(['cancel'])
+    expect(paymentRequestActions(r('approved'), 'u1', ['material.payment.request'])).toEqual([])
+    expect(paymentRequestActions(r('approved'), 'u1', ['material.payment.approve'])).toEqual(['cancel'])
+    expect(paymentRequestActions(r('approved'), 'u2', ['material.payment.approve', 'material.payment.execute'])).toEqual(['record_payment', 'cancel'])
+    expect(paymentRequestActions(r('submitted'), 'u2', ['material.payment.approve'])).toEqual(['approve', 'return'])
+  })
   it('offers nothing on paid or cancelled', () => {
     expect(paymentRequestActions(r('paid'), 'u2', ['material.payment.execute', 'material.payment.request'])).toEqual([])
     expect(paymentRequestActions(r('cancelled'), 'u2', ['material.payment.request'])).toEqual([])

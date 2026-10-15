@@ -1,4 +1,5 @@
-import Decimal from 'decimal.js'
+import type Decimal from 'decimal.js'
+import { MoneyDecimal } from './money-decimal'
 
 export const MATERIAL_DUE_SOON_DAYS = 3
 
@@ -41,7 +42,7 @@ function daysBetween(from: string, to: string): number {
 }
 
 export function installmentDueStatus(installment: MaterialInstallmentFacts, today: string): InstallmentDueStatus {
-  if (new Decimal(installment.paid).greaterThanOrEqualTo(installment.amount)) return 'settled'
+  if (new MoneyDecimal(installment.paid).greaterThanOrEqualTo(installment.amount)) return 'settled'
   const days = daysBetween(today, installment.dueOn)
   if (days < 0) return 'overdue'
   return days <= MATERIAL_DUE_SOON_DAYS ? 'due_soon' : 'not_due'
@@ -52,11 +53,11 @@ export function installmentDueStatus(installment: MaterialInstallmentFacts, toda
  * totals (max(0, paid - invoiced)), not per contract, per spec section 10.
  */
 export function summarizeMaterialFinance(contracts: readonly MaterialContractFacts[], today: string): MaterialFinanceTotals {
-  let committed = new Decimal(0)
-  let paid = new Decimal(0)
-  let pending = new Decimal(0)
-  let overdue = new Decimal(0)
-  let invoiced = new Decimal(0)
+  let committed = new MoneyDecimal(0)
+  let paid = new MoneyDecimal(0)
+  let pending = new MoneyDecimal(0)
+  let overdue = new MoneyDecimal(0)
+  let invoiced = new MoneyDecimal(0)
   for (const contract of contracts) {
     committed = committed.plus(contract.total)
     invoiced = invoiced.plus(contract.invoiced)
@@ -64,7 +65,7 @@ export function summarizeMaterialFinance(contracts: readonly MaterialContractFac
       paid = paid.plus(installment.paid)
       pending = pending.plus(installment.pending)
       if (installmentDueStatus(installment, today) === 'overdue') {
-        overdue = overdue.plus(Decimal.max(0, new Decimal(installment.amount).minus(installment.paid)))
+        overdue = overdue.plus(MoneyDecimal.max(0, new MoneyDecimal(installment.amount).minus(installment.paid)))
       }
     }
   }
@@ -75,6 +76,6 @@ export function summarizeMaterialFinance(contracts: readonly MaterialContractFac
     remaining: money(committed.minus(paid)),
     overdue: money(overdue),
     invoiced: money(invoiced),
-    paidWithoutInvoice: money(Decimal.max(0, paid.minus(invoiced))),
+    paidWithoutInvoice: money(MoneyDecimal.max(0, paid.minus(invoiced))),
   }
 }

@@ -10,7 +10,8 @@
             <th scope="col">Hạn</th>
             <th scope="col" class="num">Đã đề nghị</th>
             <th scope="col" class="num">Đã chi</th>
-            <th scope="col" class="num">Còn lại</th>
+            <!-- remaining = amount − paid − pending: what a new payment request may still ask for. -->
+            <th scope="col" class="num">Còn có thể đề nghị</th>
             <th scope="col">Trạng thái</th>
           </tr>
         </thead>

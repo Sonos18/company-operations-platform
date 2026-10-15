@@ -136,7 +136,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import Decimal from 'decimal.js'
+import { MoneyDecimal } from '../../../../shared/utils/money-decimal'
 import {
   amendMaterialContractInputSchema,
   type MaterialContractView,
@@ -189,13 +189,13 @@ const currentVersion = computed(() =>
   props.contract.versions.find(version => version.versionNo === props.contract.currentVersionNo)
   ?? props.contract.versions[props.contract.versions.length - 1])
 
-const orderSubtotal = computed(() => new Decimal(currentVersion.value?.orderSubtotalSnapshot ?? '0'))
+const orderSubtotal = computed(() => new MoneyDecimal(currentVersion.value?.orderSubtotalSnapshot ?? '0'))
 const orderSubtotalLabel = computed(() => `${formatVnNumber(orderSubtotal.value)} ${props.contract.currencyCode}`)
 const money = useContractMoneyFields(() => orderSubtotal.value)
 
 /** Paid plus pending per installment: the amendment may neither delete nor go below it. */
 const floors = computed<Record<string, string>>(() => Object.fromEntries(
-  props.contract.installments.map(item => [item.installmentKey, new Decimal(item.paid).plus(item.pending).toFixed(4)]),
+  props.contract.installments.map(item => [item.installmentKey, new MoneyDecimal(item.paid).plus(item.pending).toFixed(4)]),
 ))
 
 const open = ref(false)

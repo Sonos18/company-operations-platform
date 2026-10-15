@@ -9,6 +9,8 @@ export function paymentRequestActions(request: Pick<MaterialPaymentRequestView, 
   if (request.state === 'returned' && can('material.payment.request')) actions.push('resubmit')
   if (request.state === 'submitted' && can('material.payment.approve') && notSubmitter) actions.push('approve', 'return')
   if (request.state === 'approved' && can('material.payment.execute') && notSubmitter) actions.push('record_payment')
-  if (['submitted', 'returned', 'approved'].includes(request.state) && can('material.payment.request')) actions.push('cancel')
+  // Requesters cancel submitted or returned requests; an approved one only an approver may cancel.
+  if (['submitted', 'returned'].includes(request.state) && can('material.payment.request')) actions.push('cancel')
+  if (request.state === 'approved' && can('material.payment.approve')) actions.push('cancel')
   return actions
 }

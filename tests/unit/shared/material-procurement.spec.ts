@@ -108,6 +108,14 @@ describe('material procurement contracts', () => {
     expect(materialProposalViewSchema.safeParse({ ...returned, returnReason: '  ' }).success).toBe(false)
     expect(materialProposalViewSchema.safeParse({ ...returned, returnReason: null }).success).toBe(false)
     expect(materialProposalViewSchema.safeParse({ ...returned, reviewState: 'submitted' }).success).toBe(false)
+
+    // Optional, money-free contract status per order of the proposal (T8 I1).
+    const approved = { ...returned, reviewState: 'approved', returnReason: null }
+    const status = { orderId: ids.order, contractNo: 'HD-01', signedOn: '2026-10-10' }
+    expect(materialProposalViewSchema.safeParse(approved).success).toBe(true)
+    expect(materialProposalViewSchema.parse({ ...approved, contractStatus: [status] }).contractStatus).toEqual([status])
+    expect(materialProposalViewSchema.safeParse({ ...approved, contractStatus: [{ ...status, total: '110.0000' }] }).success).toBe(false)
+    expect(materialProposalViewSchema.safeParse({ ...approved, contractStatus: [{ ...status, signedOn: '10/10/2026' }] }).success).toBe(false)
   })
 
   it('freezes split-order allocation and signed-contract inputs', () => {

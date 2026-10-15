@@ -96,3 +96,13 @@ export const permissionCodes = [
 ] as const
 
 export type PermissionCode = (typeof permissionCodes)[number]
+
+/**
+ * Permissions that, together with material.read, let a user see A4/A5 contract money.
+ * Mirrors private.c1_material_can_read_finance; used by the server gates and by the UI to
+ * skip finance reads a user would only be refused.
+ */
+export const materialFinanceReadPermissions: readonly PermissionCode[] = [
+  'material.finance.read', 'material.contract.record', 'material.payment.request',
+  'material.payment.approve', 'material.payment.execute',
+]

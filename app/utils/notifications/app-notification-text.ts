@@ -1,4 +1,5 @@
 import type { AppNotificationView } from '../../../shared/schemas/costs/material-finance'
+import { formatVnNumber } from '../materials/vn-number'
 
 type NotificationPayload = AppNotificationView['payload']
 
@@ -7,7 +8,7 @@ export interface AppNotificationText {
   body: string
 }
 
-const moneyFormatter = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 4 })
+const canonicalDecimalPattern = /^-?\d+(\.\d+)?$/
 const isoDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/
 
 /** Returns the trimmed payload value as text, or null when it is missing or empty. */
@@ -19,12 +20,14 @@ function textValue(payload: NotificationPayload, key: string): string | null {
   return trimmed === '' ? null : trimmed
 }
 
-/** Display-only money formatting. Values are never recomputed here. */
+/**
+ * Display-only money formatting with the shared A4/A5 formatter ("1.100.000", "12.500,5").
+ * The decimal string is formatted as text, never converted to a JavaScript number.
+ */
 function moneyValue(payload: NotificationPayload, key: string): string | null {
   const raw = textValue(payload, key)
-  if (raw === null) return null
-  const amount = Number(raw)
-  return Number.isFinite(amount) ? moneyFormatter.format(amount) : null
+  if (raw === null || !canonicalDecimalPattern.test(raw)) return null
+  return formatVnNumber(raw)
 }
 
 /** Converts a YYYY-MM-DD payload value to dd/MM/yyyy by splitting the string, never through Date. */
@@ -38,6 +41,17 @@ function dateValue(payload: NotificationPayload, key: string): string | null {
 function contractLabel(payload: NotificationPayload): string {
   const contractNo = textValue(payload, 'contractNo')
   return contractNo ? `Hợp đồng ${contractNo}` : 'Hợp đồng'
+}
+
+/** "hợp đồng HD-01" inside a sentence, or "hợp đồng" when the number is missing. */
+function requestContractPart(payload: NotificationPayload): string {
+  const contractNo = textValue(payload, 'contractNo')
+  return contractNo ? `hợp đồng ${contractNo}` : 'hợp đồng'
+}
+
+function supplierPart(payload: NotificationPayload): string {
+  const supplierName = textValue(payload, 'supplierName')
+  return supplierName ? ` với ${supplierName}` : ''
 }
 
 function installmentLabel(payload: NotificationPayload): string {
@@ -60,13 +74,11 @@ export function appNotificationText(notification: AppNotificationView): AppNotif
       }
     }
     case 'material.contract.recorded': {
-      const supplierName = textValue(payload, 'supplierName')
       const total = moneyValue(payload, 'total')
-      const supplierPart = supplierName ? ` với ${supplierName}` : ''
       const totalPart = total ? `, tổng giá trị ${total}` : ''
       return {
         title: 'Hợp đồng vật tư đã được ghi nhận',
-        body: `${contractLabel(payload)}${supplierPart}${totalPart}.`,
+        body: `${contractLabel(payload)}${supplierPart(payload)}${totalPart}.`,
       }
     }
     case 'material.contract.amended': {
@@ -102,20 +114,19 @@ export function appNotificationText(notification: AppNotificationView): AppNotif
           : 'Có đề nghị chi đang chờ duyệt.',
       }
     }
+    // Returned and paid notifications go to the submitter by user id, so they never show money.
     case 'material.payment.returned': {
       const reason = textValue(payload, 'reason')
+      const reasonPart = reason ? ` Lý do: ${reason}.` : ''
       return {
         title: 'Đề nghị chi bị trả lại',
-        body: reason
-          ? `Đề nghị chi đã bị trả lại. Lý do: ${reason}.`
-          : 'Đề nghị chi đã bị trả lại.',
+        body: `Đề nghị chi cho ${requestContractPart(payload)}${supplierPart(payload)} đã bị trả lại.${reasonPart}`,
       }
     }
     case 'material.payment.paid': {
-      const amount = moneyValue(payload, 'amount')
       return {
         title: 'Đề nghị chi đã được chi',
-        body: amount ? `Đã chi ${amount}.` : 'Đề nghị chi đã được thanh toán.',
+        body: `Đề nghị chi cho ${requestContractPart(payload)}${supplierPart(payload)} đã được thanh toán.`,
       }
     }
     default:

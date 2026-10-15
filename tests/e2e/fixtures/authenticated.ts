@@ -27,8 +27,18 @@ function collectDiagnostics(page: Page) {
   return lines
 }
 
+/** Resolves with the fallback after `ms`; the timer is always cleared so it never keeps the worker alive. */
 async function within<T>(promise: Promise<T>, fallback: T, ms = 3000): Promise<T> {
-  return Promise.race([promise, new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms))])
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms)
+  })
+  try {
+    return await Promise.race([promise, timeout])
+  }
+  finally {
+    clearTimeout(timer)
+  }
 }
 
 export const test = base.extend<AuthenticatedFixtures>({
@@ -47,7 +57,10 @@ export const test = base.extend<AuthenticatedFixtures>({
       '--- browser events ---',
       ...diagnostics,
       '--- document ---',
-      page.isClosed() ? '(page closed)' : await within(page.content().then(html => html.slice(0, 6000)), '(page content unavailable: page not responding)'),
+      page.isClosed() ? '(page closed)' : await within(
+        page.content().then(html => html.slice(0, 6000)).catch(() => '(page content unavailable)'),
+        '(page content unavailable: page not responding)',
+      ),
     ].join('\n')
     await testInfo.attach('page-diagnostics', { body, contentType: 'text/plain' })
   },

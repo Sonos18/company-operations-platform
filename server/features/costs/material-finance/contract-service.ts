@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js'
+import { MoneyDecimal } from '../../../../shared/utils/money-decimal'
 import { z } from 'zod'
 import {
   amendMaterialContractInputSchema,
@@ -37,7 +37,7 @@ export function contractViewFromFacts(facts: MaterialContractFacts, today: strin
     ...rest,
     installments: facts.installments.map(installment => ({
       ...installment,
-      remaining: Decimal.max(0, new Decimal(installment.amount).minus(installment.paid).minus(installment.pending)).toFixed(4),
+      remaining: MoneyDecimal.max(0, new MoneyDecimal(installment.amount).minus(installment.paid).minus(installment.pending)).toFixed(4),
       dueStatus: installmentDueStatus(installment, today),
     })),
     totals: summarizeMaterialFinance([{ total: current.total, invoiced, installments: facts.installments }], today),

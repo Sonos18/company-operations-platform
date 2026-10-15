@@ -539,16 +539,48 @@ update public.material_proposal_lines
 set is_active=true
 where id='c1200000-0000-4000-8000-000000000302';
 
-insert into public.cost_workflow_contracts(
-  id,tenant_id,company_id,project_id,party_id,reference,currency_code,created_by
-) values (
-  'c1200000-0000-4000-8000-000000000801',
+-- Since 20261015090000, material_order_contracts.contract_id references
+-- material_contracts, so the signed order gets a minimal A4 contract (+ version 1).
+insert into public.cost_evidence_files(
+  id,tenant_id,company_id,project_id,object_path,original_filename,
+  declared_mime_type,declared_size_bytes,declared_sha256,
+  verified_mime_type,verified_size_bytes,verified_sha256,status,intent_expires_at,
+  created_by,finalized_by,finalized_at,version
+)
+select
+  evidence_id,
   'c1200000-0000-4000-8000-000000000010',
   'c1200000-0000-4000-8000-000000000020',
   'c1200000-0000-4000-8000-000000000101',
-  'c1200000-0000-4000-8000-000000000201',
-  'SIGNED-1','VND','c1200000-0000-4000-8000-000000000903'
-);
+  'c1200000-0000-4000-8000-000000000010/c1200000-0000-4000-8000-000000000020/c1200000-0000-4000-8000-000000000101/'||evidence_id::text,
+  filename,'application/pdf',8,hash,'application/pdf',8,hash,'finalized',
+  now()+interval '15 minutes','c1200000-0000-4000-8000-000000000903',
+  'c1200000-0000-4000-8000-000000000903',now(),1
+from (values
+  ('c1200000-0000-4000-8000-000000000811'::uuid,'hop-dong.pdf',repeat('8',63)||'1'),
+  ('c1200000-0000-4000-8000-000000000812'::uuid,'bao-gia-ky.pdf',repeat('8',63)||'2')
+) as file(evidence_id,filename,hash);
+insert into public.material_contracts(
+  id,tenant_id,company_id,project_id,order_id,supplier_id,currency_code,contract_no,signed_on,created_by
+)
+select 'c1200000-0000-4000-8000-000000000801',material_order.tenant_id,material_order.company_id,material_order.project_id,
+  material_order.id,material_order.supplier_id,material_order.currency_code,'SIGNED-1','2026-01-05',
+  'c1200000-0000-4000-8000-000000000903'
+from public.material_orders as material_order
+where material_order.id=(select value from material_test_ids where name='order1');
+insert into public.material_contract_versions(
+  tenant_id,company_id,project_id,contract_id,version_no,kind,subtotal,vat_amount,total,
+  order_subtotal_snapshot,variance_reason,contract_file_id,signed_quotation_file_id,reason,recorded_by
+)
+select 'c1200000-0000-4000-8000-000000000010','c1200000-0000-4000-8000-000000000020','c1200000-0000-4000-8000-000000000101',
+  'c1200000-0000-4000-8000-000000000801',1,'original',subtotal,0,subtotal,subtotal,null,
+  'c1200000-0000-4000-8000-000000000811','c1200000-0000-4000-8000-000000000812',null,
+  'c1200000-0000-4000-8000-000000000903'
+from (
+  select sum(allocation.quantity*allocation.unit_price)::numeric(20,4) as subtotal
+  from public.material_order_allocations as allocation
+  where allocation.order_id=(select value from material_test_ids where name='order1')
+) as order_total;
 insert into public.material_order_contracts(order_id,tenant_id,company_id,project_id,contract_id,created_by)
 values(
   (select value from material_test_ids where name='order1'),

@@ -19,7 +19,22 @@ describe('appNotificationText', () => {
   })
   it('formats money without trailing zeros and dates as dd/MM/yyyy', () => {
     expect(appNotificationText(n('material.contract.recorded', { supplierName: 'NCC A', contractNo: 'HD-01', total: '1100000.0000' })).body).toContain('1.100.000')
+    expect(appNotificationText(n('material.payment.submitted', { amount: '1234567.5000' })).body).toContain('1.234.567,5')
     expect(appNotificationText(n('material.installment.overdue', { installmentName: 'Đợt 1', dueOn: '2026-10-10' })).body).toContain('10/10/2026')
+  })
+  it('formats money exactly from the decimal string, without floating point rounding', () => {
+    expect(appNotificationText(n('material.payment.submitted', { amount: '12345678901234.1234' })).body).toContain('12.345.678.901.234,1234')
+  })
+  it('renders returned and paid notifications with supplier and contract but never an amount', () => {
+    const returned = appNotificationText(n('material.payment.returned', { supplierName: 'NCC A', contractNo: 'HD-01', reason: 'Sai số tiền', amount: '33.0000' }))
+    expect(returned.body).toContain('HD-01')
+    expect(returned.body).toContain('NCC A')
+    expect(returned.body).toContain('Sai số tiền')
+    expect(returned.body).not.toMatch(/33/)
+    const paid = appNotificationText(n('material.payment.paid', { supplierName: 'NCC A', contractNo: 'HD-01', amount: '33.0000' }))
+    expect(paid.body).toContain('HD-01')
+    expect(paid.body).toContain('NCC A')
+    expect(paid.body).not.toMatch(/33/)
   })
   it('never renders "undefined" or "null" when payload keys are missing, null or malformed', () => {
     const eventKinds = [

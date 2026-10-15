@@ -51,7 +51,7 @@ const projectSummary = projectMaterialFinanceSummarySchema.parse({
   projectId,
   currencyCode: 'VND',
   totals: totals({
-    committed: '170.0000', paid: '60.0000', pending: '20.0000', remaining: '110.0000',
+    committed: '1100170.5000', paid: '60.0000', pending: '20.0000', remaining: '1100110.5000',
     overdue: '70.0000', invoiced: '100.0000', paidWithoutInvoice: '0.0000',
   }),
   contracts: [contractRowA, contractRowB],
@@ -78,7 +78,7 @@ const materialNotificationPage = appNotificationPageSchema.parse({
       eventKind: 'material.payment.paid',
       projectId,
       linkPath: '/materials/finance/suppliers',
-      payload: { amount: '33.0000' },
+      payload: { supplierName: 'NCC Thép Hòa Phát', contractNo: 'HD-VT-01' },
       createdAt: '2026-10-10T03:00:00+00:00',
       readAt: null,
     },
@@ -156,7 +156,8 @@ test.describe('Số liệu tài chính vật tư', () => {
     await expect(page.getByRole('heading', { name: 'Vật tư', exact: true })).toBeVisible()
     const committed = page.getByTestId('material-total-committed')
     await expect(committed).toContainText('Cam kết')
-    await expect(committed.locator('.metric-amount')).toHaveText('170')
+    // One display formatter for A4/A5 money: "." groups thousands and "," marks decimals.
+    await expect(committed.locator('.metric-amount')).toHaveText('1.100.170,5')
     const overdue = page.getByTestId('material-total-overdue')
     await expect(overdue).toContainText('Quá hạn')
     await expect(overdue.locator('.metric-amount')).toHaveText('70')

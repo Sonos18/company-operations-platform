@@ -65,11 +65,11 @@
                     <span class="contract-count">({{ supplier.contracts.length }} hợp đồng)</span>
                   </button>
                 </th>
-                <td class="num">{{ money(supplier.totals.committed) }} <span class="currency">{{ supplier.currencyCode }}</span></td>
-                <td class="num">{{ money(supplier.totals.paid) }}</td>
-                <td class="num">{{ money(supplier.totals.remaining) }}</td>
+                <td class="num">{{ formatVnNumber(supplier.totals.committed) }} <span class="currency">{{ supplier.currencyCode }}</span></td>
+                <td class="num">{{ formatVnNumber(supplier.totals.paid) }}</td>
+                <td class="num">{{ formatVnNumber(supplier.totals.remaining) }}</td>
                 <td class="num" :class="{ 'is-overdue': isOverdue(supplier.totals.overdue) }">
-                  {{ money(supplier.totals.overdue) }}
+                  {{ formatVnNumber(supplier.totals.overdue) }}
                 </td>
               </tr>
               <tr v-if="isExpanded(supplier.supplierId)" class="contracts-row">
@@ -96,11 +96,11 @@
                             </NuxtLink>
                           </td>
                           <td class="font-mono">{{ contract.contractNo }}</td>
-                          <td class="num">{{ money(contract.totals.committed) }}</td>
-                          <td class="num">{{ money(contract.totals.paid) }}</td>
-                          <td class="num">{{ money(contract.totals.remaining) }}</td>
+                          <td class="num">{{ formatVnNumber(contract.totals.committed) }}</td>
+                          <td class="num">{{ formatVnNumber(contract.totals.paid) }}</td>
+                          <td class="num">{{ formatVnNumber(contract.totals.remaining) }}</td>
                           <td class="num" :class="{ 'is-overdue': isOverdue(contract.totals.overdue) }">
-                            {{ money(contract.totals.overdue) }}
+                            {{ formatVnNumber(contract.totals.overdue) }}
                           </td>
                           <td>
                             <NuxtLink :to="`/materials/${contract.projectId}/orders/${contract.orderId}`" class="table-link">
@@ -125,7 +125,8 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import type { SupplierMaterialFinance } from '../../../../shared/schemas/costs/material-finance'
 import { createAsyncRequestTracker } from '../../../utils/costs/async-request-tracker'
-import { formatFinanceMoney, isDecimalGreaterThan } from '../../../utils/costs/finance-display'
+import { isDecimalGreaterThan } from '../../../utils/costs/finance-display'
+import { formatVnNumber } from '../../../utils/materials/vn-number'
 
 definePageMeta({ requiredPermission: 'material.finance.read' })
 
@@ -140,10 +141,6 @@ const isLoading = ref(false)
 const errorMessage = ref('')
 
 const tracker = createAsyncRequestTracker<{ companyId: string }>()
-
-function money(value: string): string {
-  return formatFinanceMoney(value) ?? '0'
-}
 
 function isOverdue(value: string): boolean {
   return isDecimalGreaterThan(value, '0')

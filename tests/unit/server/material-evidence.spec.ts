@@ -213,7 +213,7 @@ describe('material evidence repository', () => {
 
   it('signs only the guarded material read target for 60 seconds', async () => {
     const signed = vi.fn(async () => ({ data: { signedUrl: 'https://example.invalid/material' }, error: null }))
-    const rpc = vi.fn(async () => ({ data: { bucketId: 'c1-accounting-evidence', objectPath: uploadIntent.objectPath }, error: null }))
+    const rpc = vi.fn(async () => ({ data: { bucketId: 'c1-accounting-evidence', objectPath: uploadIntent.objectPath, declaredMimeType: 'application/pdf' }, error: null }))
     const client = { rpc, storage: { from: vi.fn(() => ({ createSignedUrl: signed })) } }
     const repository = new SupabaseMaterialProcurementRepository(client as never)
 
@@ -224,6 +224,34 @@ describe('material evidence repository', () => {
       target_project_id: ids.project,
       target_id: ids.unsignedQuotation,
     })
+    expect(signed).toHaveBeenCalledWith(uploadIntent.objectPath, 60, { download: true })
+  })
+
+  function readTarget(declaredMimeType: string) {
+    const signed = vi.fn(async () => ({ data: { signedUrl: 'https://example.invalid/material' }, error: null }))
+    const rpc = vi.fn(async () => ({ data: { bucketId: 'c1-accounting-evidence', objectPath: uploadIntent.objectPath, declaredMimeType }, error: null }))
+    const client = { rpc, storage: { from: vi.fn(() => ({ createSignedUrl: signed })) } }
+    return { signed, repository: new SupabaseMaterialProcurementRepository(client as never) }
+  }
+
+  it.each(['application/pdf', 'image/png', 'image/jpeg'])('opens %s evidence inline when asked to', async (mimeType) => {
+    const { signed, repository } = readTarget(mimeType)
+    await repository.readEvidenceUrl(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { disposition: 'inline' })
+    expect(signed).toHaveBeenCalledWith(uploadIntent.objectPath, 60, { download: false })
+  })
+
+  it.each(['application/xml', 'text/xml'])('always downloads %s evidence, even when inline is requested', async (mimeType) => {
+    const { signed, repository } = readTarget(mimeType)
+    await repository.readEvidenceUrl(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { disposition: 'inline' })
+    expect(signed).toHaveBeenCalledWith(uploadIntent.objectPath, 60, { download: true })
+  })
+
+  it('signs a download when the read target does not report its MIME type (database without 20261015090500)', async () => {
+    const signed = vi.fn(async () => ({ data: { signedUrl: 'https://example.invalid/material' }, error: null }))
+    const rpc = vi.fn(async () => ({ data: { bucketId: 'c1-accounting-evidence', objectPath: uploadIntent.objectPath }, error: null }))
+    const client = { rpc, storage: { from: vi.fn(() => ({ createSignedUrl: signed })) } }
+    const repository = new SupabaseMaterialProcurementRepository(client as never)
+    await repository.readEvidenceUrl(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { disposition: 'inline' })
     expect(signed).toHaveBeenCalledWith(uploadIntent.objectPath, 60, { download: true })
   })
 
@@ -246,9 +274,18 @@ describe('material evidence repository', () => {
     return { finalizer, contentSha, repository: new SupabaseMaterialProcurementRepository(client as never, () => finalizer) }
   }
 
-  it('finalizes a well-formed XML invoice, tolerating a BOM, whitespace and a charset suffix on the blob type', async () => {
+  it('rejects an XML invoice stored with an XML content type, so no stored XML object can render inline', async () => {
+    const xml = new TextEncoder().encode('<?xml version="1.0"?><HDon/>')
+    const { finalizer, repository } = pendingUpload(xml, 'application/xml', 'application/xml')
+
+    await expect(repository.finalizeEvidence(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { expectedVersion: 0 }, key))
+      .rejects.toMatchObject({ statusCode: 409, code: 'EVIDENCE_UPLOAD_MISMATCH' })
+    expect(finalizer.finalize).not.toHaveBeenCalled()
+  })
+
+  it('finalizes a well-formed XML invoice stored as octet-stream, tolerating a BOM and whitespace', async () => {
     const xml = new TextEncoder().encode('﻿  \n<?xml version="1.0"?><HDon/>')
-    const { finalizer, contentSha, repository } = pendingUpload(xml, 'application/xml; charset=utf-8', 'application/xml')
+    const { finalizer, contentSha, repository } = pendingUpload(xml, 'application/octet-stream', 'application/xml')
 
     await repository.finalizeEvidence(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { expectedVersion: 0 }, key)
     expect(finalizer.finalize).toHaveBeenCalledWith(expect.objectContaining({
@@ -257,7 +294,7 @@ describe('material evidence repository', () => {
   })
 
   it('rejects an XML invoice that does not start with a tag before calling the finalizer', async () => {
-    const { finalizer, repository } = pendingUpload(new TextEncoder().encode('%PDF-1.7 pretending to be xml'), 'application/xml', 'application/xml')
+    const { finalizer, repository } = pendingUpload(new TextEncoder().encode('%PDF-1.7 pretending to be xml'), 'application/octet-stream', 'application/xml')
 
     await expect(repository.finalizeEvidence(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { expectedVersion: 0 }, key))
       .rejects.toMatchObject({ statusCode: 409, code: 'EVIDENCE_UPLOAD_MISMATCH' })

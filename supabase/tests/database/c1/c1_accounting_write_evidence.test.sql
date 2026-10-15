@@ -8,7 +8,8 @@ select has_table('public', 'cost_evidence_files', 'evidence file registry exists
 select has_table('public', 'cost_evidence_links', 'evidence link registry exists');
 select is((select public from storage.buckets where id = 'c1-accounting-evidence'), false, 'evidence bucket is private');
 select is((select file_size_limit from storage.buckets where id = 'c1-accounting-evidence'), 26214400::bigint, 'evidence bucket limit is 25 MiB');
-select is((select allowed_mime_types from storage.buckets where id = 'c1-accounting-evidence'), array['application/pdf','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','image/png','image/jpeg']::text[], 'evidence MIME allow-list is exact');
+-- 20261015090400 sorted the list and 20261015090500 stores XML invoices as octet-stream.
+select is((select allowed_mime_types from storage.buckets where id = 'c1-accounting-evidence'), array['application/octet-stream','application/pdf','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','image/jpeg','image/png']::text[], 'evidence MIME allow-list is exact');
 select is((select count(*) from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname like 'c1_accounting_evidence_%' and cmd in ('UPDATE','DELETE')), 0::bigint, 'evidence objects have no update or delete policy');
 select ok(not has_table_privilege('authenticated', 'public.cost_evidence_files', 'insert'), 'authenticated cannot insert evidence registry rows directly');
 select ok(not has_table_privilege('authenticated', 'public.cost_evidence_files', 'update'), 'authenticated cannot mutate evidence registry rows directly');

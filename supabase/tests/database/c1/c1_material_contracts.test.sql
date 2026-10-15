@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(42);
+select plan(43);
 
 -- Fixture: engineer owns the proposal, buyer creates orders, accountant records
 -- contracts, finance reader only reads, director is the legacy notification recipient.
@@ -292,6 +292,12 @@ select is((
     and notification.source_id=(select id from public.material_contracts where order_id='c1260000-0000-4000-8000-000000000351')
     and not (notification.payload ? 'total')
 ),1::bigint,'case 8: engineer gets one notification without a total');
+select is((
+  select notification.link_path from public.app_notifications as notification
+  where notification.event_kind='material.contract.recorded' and notification.recipient_id='c1260000-0000-4000-8000-000000000901'
+    and notification.source_id=(select id from public.material_contracts where order_id='c1260000-0000-4000-8000-000000000351')
+),'/materials/c1260000-0000-4000-8000-000000000101/proposals/c1260000-0000-4000-8000-000000000301',
+'case 8: the engineer (proposal creator) is linked to the proposal, not the order (20261015090600)');
 select is((
   select count(*) from public.app_notifications as notification
   where notification.event_kind='material.contract.recorded' and notification.recipient_id='c1260000-0000-4000-8000-000000000903'

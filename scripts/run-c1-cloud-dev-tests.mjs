@@ -24,9 +24,21 @@ const allowlist = [
   'c1_ordinary_cost_detail_provenance_evidence_reads.test.sql',
 ]
 
-const materialAllowlist = [
-  'c1_material_procurement_a1.test.sql',
-]
+// Each material file owns one synthetic UUID prefix; every UUID in it must use that prefix.
+export const materialSyntheticPrefixes = {
+  'c1_material_procurement.test.sql': 'c120',
+  'c1_material_procurement_security.test.sql': 'c121',
+  'c1_material_procurement_a1.test.sql': 'c122',
+  'c1_material_engineer_invoice_name.test.sql': 'c123',
+  'c1_material_finance_foundation.test.sql': 'c125',
+  'c1_material_contracts.test.sql': 'c126',
+  'c1_material_payments.test.sql': 'c127',
+  'c1_material_finance_reads.test.sql': 'c128',
+  'c1_material_finance_hardening.test.sql': 'c129',
+  'c1_material_finance_access.test.sql': 'c12a',
+}
+
+const materialAllowlist = Object.keys(materialSyntheticPrefixes)
 
 const accountingWriteSyntheticPrefixes = {
   'c1_accounting_write_lifecycle.test.sql': 'c106',
@@ -49,7 +61,7 @@ export function validateC1CloudDevSql(path, sql) {
   if (/\b(db\s+reset|migration\s+repair|supabase_migrations|seed|include-seed)\b/iu.test(normalized)) throw new Error('C1 SQL contains a forbidden Cloud DEV operation')
   if (/\b(?:select|perform|call)\s+(?:public\.(?:c1_(?:create_project_cost_draft|update_project_cost_draft|prepare_project_cost_financials|read_project_cost_draft|list_project_cost_drafts|read_project_cost_draft_operational|list_project_cost_drafts_operational|publish_project_cost|create_project_cost_item|update_project_cost_item))|private\.(?:c1_(?:create_project_cost_draft|update_project_cost_draft|prepare_project_cost_financials|read_project_cost_draft|list_project_cost_drafts|read_project_cost_draft_operational|list_project_cost_drafts_operational|publish_project_cost|project_cost_draft_json|project_cost_draft_operational_json|project_cost_publish_readiness)))\s*\(/iu.test(normalized)) throw new Error('C1 SQL calls a retired parent draft RPC')
   if (/\bVQH\b|10000000-0000-4000-8000-0000000000/iu.test(normalized)) throw new Error('C1 SQL cannot reference real VQH identifiers')
-  const materialPrefix = path === 'c1_material_procurement_a1.test.sql' ? 'c122' : undefined
+  const materialPrefix = materialSyntheticPrefixes[path]
   if (materialPrefix) {
     const ids = normalized.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu) ?? []
     if (ids.some(id => !id.toLowerCase().startsWith(materialPrefix))) throw new Error('Material SQL must use reserved synthetic UUIDs')

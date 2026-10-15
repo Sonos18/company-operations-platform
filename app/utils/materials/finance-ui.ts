@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js'
+import { MoneyDecimal } from '../../../shared/utils/money-decimal'
 import { ClientError } from '../../errors/client-error'
 import { describeContractError } from './contract-errors'
 import { createCommandKeyKeeper } from './command-key'
@@ -17,19 +17,19 @@ export function parseMoneyOrNull(raw: string): string | null {
 }
 
 export function isPositiveMoney(value: string | null): value is string {
-  return value !== null && new Decimal(value).gt(0)
+  return value !== null && new MoneyDecimal(value).gt(0)
 }
 
 export function moneyEquals(left: string, right: string): boolean {
-  return new Decimal(left).equals(new Decimal(right))
+  return new MoneyDecimal(left).equals(new MoneyDecimal(right))
 }
 
 export function moneySum(left: string, right: string): string {
-  return new Decimal(left).plus(right).toFixed()
+  return new MoneyDecimal(left).plus(right).toFixed()
 }
 
 export function moneyGreaterThan(left: string, right: string): boolean {
-  return new Decimal(left).gt(new Decimal(right))
+  return new MoneyDecimal(left).gt(new MoneyDecimal(right))
 }
 
 const financeErrorMessages: Readonly<Record<string, string>> = {

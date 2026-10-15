@@ -57,11 +57,11 @@
               <tr v-for="contract in summary.contracts" :key="contract.contractId">
                 <th scope="row" class="supplier-cell">{{ contract.supplierName }}</th>
                 <td class="font-mono">{{ contract.contractNo }}</td>
-                <td class="num">{{ money(contract.totals.committed) }}</td>
-                <td class="num">{{ money(contract.totals.paid) }}</td>
-                <td class="num">{{ money(contract.totals.remaining) }}</td>
+                <td class="num">{{ formatVnNumber(contract.totals.committed) }}</td>
+                <td class="num">{{ formatVnNumber(contract.totals.paid) }}</td>
+                <td class="num">{{ formatVnNumber(contract.totals.remaining) }}</td>
                 <td class="num" :class="{ 'is-overdue': isOverdue(contract.totals.overdue) }">
-                  {{ money(contract.totals.overdue) }}
+                  {{ formatVnNumber(contract.totals.overdue) }}
                 </td>
                 <td>
                   <NuxtLink :to="`/materials/${contract.projectId}/orders/${contract.orderId}`" class="table-link">
@@ -83,7 +83,8 @@ import type { MaterialProjectOption } from '../../../../shared/schemas/costs/mat
 import type { ProjectMaterialFinanceSummary } from '../../../../shared/schemas/costs/material-finance'
 import { workflowUuidSchema } from '../../../../shared/schemas/costs/cost-workflow'
 import { createAsyncRequestTracker } from '../../../utils/costs/async-request-tracker'
-import { formatFinanceMoney, isDecimalGreaterThan } from '../../../utils/costs/finance-display'
+import { isDecimalGreaterThan } from '../../../utils/costs/finance-display'
+import { formatVnNumber } from '../../../utils/materials/vn-number'
 import MaterialFinanceTotals from '../../../components/materials/finance/MaterialFinanceTotals.vue'
 
 definePageMeta({ requiredPermission: 'material.finance.read' })
@@ -104,10 +105,6 @@ const isLoading = ref(false)
 const errorMessage = ref('')
 
 const tracker = createAsyncRequestTracker<{ companyId: string, projectId: string }>()
-
-function money(value: string): string {
-  return formatFinanceMoney(value) ?? '0'
-}
 
 function isOverdue(value: string): boolean {
   return isDecimalGreaterThan(value, '0')

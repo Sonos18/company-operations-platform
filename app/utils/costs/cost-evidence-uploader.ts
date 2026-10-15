@@ -11,6 +11,7 @@ import type {
   CostEvidenceUploadIntent,
 } from '../../../shared/schemas/costs/cost-evidence'
 import type { CostEvidenceRepository } from '../../repositories/contracts'
+import { evidenceStorageContentType } from '../../../shared/utils/evidence-storage-content-type'
 
 export type CostEvidenceKind = z.infer<typeof costEvidenceKindSchema>
 export type CostEvidenceMimeType = z.infer<typeof costEvidenceMimeTypeSchema>
@@ -120,17 +121,27 @@ export async function createEvidenceIntent(
   }, { idempotencyKey })
 }
 
+// Content types a browser renders as an active document. Evidence is never stored with them,
+// whatever the browser reported for the picked file.
+const ACTIVE_DOCUMENT_MIME_PATTERN = /html|svg/iu
+
+/**
+ * Uploads the file with the Content-Type derived from the declared MIME type (never the browser's
+ * file.type), so it always matches what the server verifies at finalize. XML is stored as
+ * application/octet-stream (see shared/utils/evidence-storage-content-type.ts).
+ */
 export async function uploadToStorageWithIntent(
   supabaseClient: SupabaseClient,
   intent: CostEvidenceUploadIntent,
   file: File,
   mimeType: string,
 ): Promise<{ error: unknown | null }> {
+  if (!mimeType.trim() || ACTIVE_DOCUMENT_MIME_PATTERN.test(mimeType)) throw new Error('Định dạng tệp không được hỗ trợ.')
   const { error } = await supabaseClient.storage
     .from(intent.bucketId)
     .upload(intent.objectPath, file, {
       upsert: false,
-      contentType: mimeType,
+      contentType: evidenceStorageContentType(mimeType),
     })
   return { error }
 }

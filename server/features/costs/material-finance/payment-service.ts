@@ -17,7 +17,7 @@ import {
   type ResubmitPaymentRequestInput,
   type VoidMaterialInvoiceInput,
 } from '../../../../shared/schemas/costs/material-finance'
-import { id, parse, requireFinanceRead, requirePermission, type MaterialFinanceContext } from './service'
+import { id, parse, requireAnyPermission, requireFinanceRead, requirePermission, type MaterialFinanceContext } from './service'
 
 type Command<T> = (
   context: MaterialFinanceContext, projectId: string, targetId: string, input: T, key: string,
@@ -69,7 +69,8 @@ export class MaterialPaymentService {
   }
 
   async cancelPaymentRequest(context: MaterialFinanceContext, projectId: string, requestId: string, value: unknown, key: string) {
-    requirePermission(context, 'material.payment.request')
+    // Requesters cancel submitted/returned requests, approvers approved ones; the RPC decides by state.
+    requireAnyPermission(context, ['material.payment.request', 'material.payment.approve'])
     return this.repository.cancelPaymentRequest(context, id(projectId), id(requestId), parse(cancelPaymentRequestInputSchema, value), id(key))
   }
 

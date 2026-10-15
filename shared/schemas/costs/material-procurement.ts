@@ -166,6 +166,13 @@ export const materialProposalViewSchema = z.object({
     orderCount: z.number().int().nonnegative(),
     signedOrderCount: z.number().int().nonnegative(),
   }).strict(),
+  // Contract status of each order of the proposal, without money (20261015090600).
+  // Optional so a database without that migration still parses.
+  contractStatus: z.array(z.object({
+    orderId: workflowUuidSchema,
+    contractNo: z.string().min(1),
+    signedOn: z.string().date(),
+  }).strict()).max(1000).optional(),
 }).strict().refine(
   value => (value.reviewState === 'returned') === (value.returnReason !== null),
   { path: ['returnReason'], message: 'Only returned proposals require a return reason' },

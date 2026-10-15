@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(46);
+select plan(47);
 
 -- Fixture prefix c128. Company A: buyer, accountants, treasurer, requester and two
 -- notification-only members. Company B (separate tenant): one accountant with its own contract.
@@ -376,7 +376,7 @@ select throws_ok(
   'P0001','INPUT_INVALID','a malformed notification cursor is rejected'
 );
 select throws_ok(
-  $$select public.c1_list_app_notifications('c1280000-0000-4000-8000-000000000020',encode(convert_to('2026-13-45T99:00:00.000000Z|00000000-0000-4000-8000-000000000000','UTF8'),'hex'),10)$$,
+  $$select public.c1_list_app_notifications('c1280000-0000-4000-8000-000000000020',encode(convert_to('2026-13-45T99:00:00.000000Z|c1280000-0000-4000-8000-000000000fff','UTF8'),'hex'),10)$$,
   'P0001','INPUT_INVALID','a well-shaped cursor with an impossible timestamp is rejected'
 );
 
@@ -441,6 +441,14 @@ select is(
   (select array_agg(recipient_id::text order by recipient_id) from public.app_notifications
    where event_kind='material.installment.due_soon' and source_id='c1280000-0000-4000-8000-000000000a02'),
   array['c1280000-0000-4000-8000-000000000903','c1280000-0000-4000-8000-000000000909'],'due-soon reminders go to every contract recorder of the company'
+);
+select is(
+  (select array_agg(distinct dedupe_key) from public.app_notifications
+   where event_kind='material.installment.due_soon' and source_id='c1280000-0000-4000-8000-000000000a02'),
+  array['inst:c1280000-0000-4000-8000-000000000601:c1280000-0000-4000-8000-000000000a02:due_soon:'
+    ||(select due_on::text from public.material_contract_installments
+       where contract_version_id='c1280000-0000-4000-8000-000000000611' and installment_key='c1280000-0000-4000-8000-000000000a02')],
+  'reminder dedupe keys carry the contract id, the installment, the kind and the due date (20261015090600)'
 );
 select is(
   (select payload->>'remaining' from public.app_notifications
