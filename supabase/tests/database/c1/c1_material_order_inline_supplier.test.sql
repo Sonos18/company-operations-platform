@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(22);
+select plan(25);
 
 insert into auth.users(id,email) values
 ('c1300000-0000-4000-8000-000000000901','inline-engineer@test.invalid'),
@@ -38,6 +38,7 @@ values('c1300000-0000-4000-8000-000000000101','c1300000-0000-4000-8000-000000000
 insert into public.business_parties(id,tenant_id,company_id,code,display_name,party_kind,tax_identifier,contact_display_name,contact_phone,is_active,created_by) values
 ('c1300000-0000-4000-8000-000000000201','c1300000-0000-4000-8000-000000000010','c1300000-0000-4000-8000-000000000020','suppliera','Supplier A','organization','111','Old Contact','0100',true,'c1300000-0000-4000-8000-000000000902'),
 ('c1300000-0000-4000-8000-000000000202','c1300000-0000-4000-8000-000000000010','c1300000-0000-4000-8000-000000000020','donga','Đông Á','organization',null,null,null,true,'c1300000-0000-4000-8000-000000000902'),
+('c1300000-0000-4000-8000-000000000203','c1300000-0000-4000-8000-000000000010','c1300000-0000-4000-8000-000000000020','thanhcong','Thành Công','organization',null,null,null,true,'c1300000-0000-4000-8000-000000000902'),
 ('c1300000-0000-4000-8000-000000000204','c1300000-0000-4000-8000-000000000010','c1300000-0000-4000-8000-000000000020','inactiveco','Inactive Co','organization',null,null,null,false,'c1300000-0000-4000-8000-000000000902'),
 ('c1300000-0000-4000-8000-000000000205','c1300000-0000-4000-8000-000000000010','c1300000-0000-4000-8000-000000000020','crewone','Crew One','crew',null,null,null,true,'c1300000-0000-4000-8000-000000000902');
 
@@ -130,6 +131,13 @@ set local role authenticated;
 insert into inline_ids(name,value) select 'diacritics',(pg_temp.inline_create(4,'{"displayName":"Đông Á"}')->>'resourceId')::uuid;
 select is((select supplier_id from public.material_orders where id=(select value from inline_ids where name='diacritics')),'c1300000-0000-4000-8000-000000000202'::uuid,'Vietnamese name maps to its accent-free code');
 
+insert into inline_ids(name,value) select 'upperVietnamese',(pg_temp.inline_create(11,'{"displayName":"ĐÔNG Á"}')->>'resourceId')::uuid;
+select is((select supplier_id from public.material_orders where id=(select value from inline_ids where name='upperVietnamese')),'c1300000-0000-4000-8000-000000000202'::uuid,'upper-case Vietnamese name matches the same company');
+
+select throws_ok($$ select pg_temp.inline_create(12,'{"displayName":"Thạnh Công"}') $$,'P0001','SUPPLIER_CODE_CONFLICT','a name differing only by diacritics is another company with a colliding code');
+set local role none;
+select is((select display_name||'|'||version::text from public.business_parties where id='c1300000-0000-4000-8000-000000000203'),'Thành Công|0','the colliding company is not overwritten');
+set local role authenticated;
 insert into inline_ids(name,value) select 'created',(pg_temp.inline_create(5,'{"displayName":"Brand New Co","taxIdentifier":"0101"}')->>'resourceId')::uuid;
 set local role none;
 select is((select party_kind||'|'||display_name||'|'||tax_identifier||'|'||is_active::text from public.business_parties where company_id='c1300000-0000-4000-8000-000000000020' and code='brandnewco'),'organization|Brand New Co|0101|true','unknown supplier is created with the derived code');

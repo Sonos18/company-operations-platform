@@ -257,7 +257,7 @@
         </div>
 
         <p class="text-xs text-slate-600 mb-3">
-          Nhập thông tin nhà cung cấp đã chọn bên ngoài. Khi tạo đơn, hệ thống tự tìm nhà cung cấp theo tên (không phân biệt hoa thường, dấu, khoảng trắng); nếu đã có thì cập nhật thông tin khác biệt, nếu chưa có thì tạo mới.
+          Nhập thông tin nhà cung cấp đã chọn bên ngoài. Khi tạo đơn, hệ thống tự tìm nhà cung cấp theo tên công ty (không phân biệt hoa thường và khoảng trắng); nếu đã có thì cập nhật thông tin khác biệt, nếu chưa có thì tạo mới.
         </p>
 
         <div v-if="!canRecordSupplier" class="text-xs text-amber-700 italic mb-2">

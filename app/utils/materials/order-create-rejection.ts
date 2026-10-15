@@ -13,6 +13,8 @@ export function supplierInputRejectionMessage(
   switch (errInfo.code) {
     case 'SUPPLIER_UNAVAILABLE':
       return 'Nhà cung cấp này đã ngừng sử dụng hoặc không phải tổ chức.'
+    case 'SUPPLIER_CODE_CONFLICT':
+      return 'Tên nhà cung cấp gần trùng với một nhà cung cấp khác đã có (chỉ khác dấu hoặc ký tự đặc biệt). Vui lòng kiểm tra lại tên.'
     case 'PERMISSION_DENIED':
       // Without supplier.record the only permission the order path can newly need is creating or updating the supplier.
       return canRecordSupplier

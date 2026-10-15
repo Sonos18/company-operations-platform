@@ -103,3 +103,8 @@ Theo lựa chọn chi phí của Sơn: không chạy suite đầy đủ; chạy 
 - Tạo mới **hoặc ghi đè** cần `material.supplier.record`; thiếu quyền → `PERMISSION_DENIED`. Dùng lại không thay đổi gì thì không cần quyền này.
 - MST không bắt buộc, không dùng để chặn hay đối chiếu.
 - NCC cũ trên Cloud DEV có mã kiểu `NCC-...`/`SUP-A` sẽ không khớp mã mới; lần tạo đơn đầu tiên sẽ tạo bản ghi mới (chấp nhận).
+
+## Sửa đổi 2026-10-15 (2) — Sơn quyết định sau review bảo mật
+
+- Quyền: chỉ cần `material.supplier.record` để ghi đè thông tin NCC qua luồng tạo đơn (không đòi `party.manage`). Chấp nhận rằng người có quyền này sửa được tên/MST/liên hệ của tổ chức có cùng mã.
+- Tên công ty là duy nhất: khi trùng mã, tên đã chuẩn hoá (NFC, trim, gộp khoảng trắng, chữ thường; **giữ dấu và ký tự**) phải trùng. Khác → `SUPPLIER_CODE_CONFLICT` (409), không ghi đè, không tạo. Ví dụ "Thạnh Công" khi đã có "Thành Công" (cùng mã `thanhcong`).

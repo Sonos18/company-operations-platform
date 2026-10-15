@@ -139,8 +139,9 @@ begin
     raise exception using errcode='P0001', message='EVIDENCE_UPLOAD_MISMATCH';
   end if;
 
-  -- Resolve the externally chosen supplier by its name-derived code only: reuse (overwriting fields the
-  -- buyer sent that differ) or create. Changing or creating master data requires material.supplier.record.
+  -- Resolve the externally chosen supplier by its name-derived code plus the same company name: reuse
+  -- (overwriting fields the buyer sent that differ) or create. Changing or creating it requires
+  -- material.supplier.record.
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
     'material.supplier:' || v_tenant_id::text || ':' || target_company_id::text || ':' || v_supplier_code,
     0
@@ -154,6 +155,13 @@ begin
   if found then
     if v_supplier.party_kind <> 'organization' or not v_supplier.is_active then
       raise exception using errcode='P0001', message='SUPPLIER_UNAVAILABLE';
+    end if;
+    -- Company names are unique: the same code under a name that differs beyond case and spacing
+    -- (diacritics, punctuation) belongs to another company and must not be merged or overwritten.
+    if lower(regexp_replace(btrim(normalize(v_supplier.display_name, NFC)), '\s+', ' ', 'g'))
+      is distinct from lower(regexp_replace(btrim(normalize(v_supplier_name, NFC)), '\s+', ' ', 'g'))
+    then
+      raise exception using errcode='P0001', message='SUPPLIER_CODE_CONFLICT';
     end if;
     if v_supplier.display_name is distinct from v_supplier_name
       or (v_supplier_tax is not null and v_supplier.tax_identifier is distinct from v_supplier_tax)

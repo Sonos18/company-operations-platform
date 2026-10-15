@@ -153,6 +153,7 @@ describe('material procurement contracts', () => {
 
   it('exposes supplier resolution conflicts as API error codes', () => {
     expect(apiErrorCodeSchema.safeParse('SUPPLIER_UNAVAILABLE').success).toBe(true)
+    expect(apiErrorCodeSchema.safeParse('SUPPLIER_CODE_CONFLICT').success).toBe(true)
     expect(apiErrorCodeSchema.safeParse('SUPPLIER_AMBIGUOUS').success).toBe(false)
   })
 
