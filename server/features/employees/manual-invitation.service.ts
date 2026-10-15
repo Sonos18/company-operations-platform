@@ -31,6 +31,17 @@ function matchesProfile(employee: InvitationEmployeeProfile, input: EmployeeInvi
     && employee.positionId === (input.positionId ?? null) && employee.hireDate === (input.hireDate ?? null)
     && employee.employmentStatus !== 'terminated'
 }
+// HR-entered names end up in a domain-signed email: keep control characters and line breaks out of the greeting.
+const GREETING_NAME_MAX_LENGTH = 120
+function greetingName(fullName: string): string {
+  return fullName
+    // eslint-disable-next-line no-control-regex -- stripping control characters is the point
+    .replace(/[\u0000-\u001F\u007F]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, GREETING_NAME_MAX_LENGTH)
+    .trim()
+}
 const preparingEmails = new Set<string>()
 interface ManualInvitationRepository extends Pick<EmployeeRepository, 'completeEmployeeOnboarding'> {
   findInvitationEmployee(companyId: string, userId: string): Promise<InvitationEmployeeProfile | null>
@@ -86,7 +97,7 @@ export function createManualEmployeeInvitationService(
           recipient: persisted.workEmail,
           subject: 'Lời mời tham gia Taskovia',
           body: [
-            'Chào ' + persisted.fullName + ',',
+            'Chào ' + greetingName(persisted.fullName) + ',',
             '',
             'Bạn được mời tham gia Taskovia. Mở liên kết bên dưới để tự đặt mật khẩu từ 8 đến 72 ký tự:',
             link.toString(),
