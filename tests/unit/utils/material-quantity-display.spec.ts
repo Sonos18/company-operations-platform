@@ -4,7 +4,6 @@ import {
   formatMaterialQuantity,
   stripGroupSeparators,
 } from '../../../app/utils/materials/quantity-display'
-import { deriveSupplierCode } from '../../../app/utils/materials/supplier-code'
 
 describe('formatMaterialQuantity', () => {
   it('strips trailing fractional zeros and dot from canonical decimal values', () => {
@@ -56,35 +55,5 @@ describe('stripGroupSeparators', () => {
     expect(stripGroupSeparators('1,000')).toBe('1000')
     expect(stripGroupSeparators('1,234,567.5')).toBe('1234567.5')
     expect(stripGroupSeparators('430')).toBe('430')
-  })
-})
-
-describe('deriveSupplierCode', () => {
-  it('uses the tax identifier when present', () => {
-    expect(deriveSupplierCode('0102030405', 'Any name')).toBe('NCC-0102030405')
-    expect(deriveSupplierCode('0102030405-001', '')).toBe('NCC-0102030405001')
-  })
-
-  it('drops legal-form and business-type words from the display name', () => {
-    expect(deriveSupplierCode('', 'CÔNG TY TNHH SX-TM-XNK NGŨ KIM TRUNG NAM')).toBe('NCC-NGU-KIM-TRUNG-NAM')
-    expect(deriveSupplierCode('', 'Công ty Cổ phần Thép Hòa Phát')).toBe('NCC-THEP-HOA-PHAT')
-    expect(deriveSupplierCode('', 'Cty TNHH MTV Đông Á')).toBe('NCC-DONG-A')
-    expect(deriveSupplierCode('  ', 'Đông Á')).toBe('NCC-DONG-A')
-  })
-
-  it('keeps distinctive words that only resemble common words', () => {
-    expect(deriveSupplierCode('', 'Công ty TNHH Thành Công')).toBe('NCC-THANH-CONG')
-    expect(deriveSupplierCode('', 'Công ty Thương Mại')).toBe('NCC-CONG-TY-THUONG-MAI')
-  })
-
-  it('is deterministic, capped at 30 characters on word boundaries and empty without inputs', () => {
-    const longName = 'Công ty cổ phần vật liệu xây dựng và thương mại dịch vụ tổng hợp miền Nam'
-    const code = deriveSupplierCode('', longName)
-    expect(code).toBe(deriveSupplierCode('', longName))
-    expect(code).toBe('NCC-VAT-LIEU-XAY-DUNG-VA-TONG')
-    expect(code.length).toBeLessThanOrEqual(30)
-    expect(deriveSupplierCode('', 'Supercalifragilisticexpialidocious Industries')).toBe('NCC-SUPERCALIFRAGILISTICEXPIAL')
-    expect(deriveSupplierCode('', '')).toBe('')
-    expect(deriveSupplierCode('', ' - ')).toBe('')
   })
 })

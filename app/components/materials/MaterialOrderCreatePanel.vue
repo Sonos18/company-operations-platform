@@ -257,29 +257,14 @@
         </div>
 
         <p class="text-xs text-slate-600 mb-3">
-          Nhập thông tin nhà cung cấp đã chọn bên ngoài. Khi tạo đơn, hệ thống dùng NCC có sẵn (trùng mã hoặc tên) hoặc tự tạo mới.
+          Nhập thông tin nhà cung cấp đã chọn bên ngoài. Khi tạo đơn, hệ thống tự tìm nhà cung cấp theo tên (không phân biệt hoa thường, dấu, khoảng trắng); nếu đã có thì cập nhật thông tin khác biệt, nếu chưa có thì tạo mới.
         </p>
 
         <div v-if="!canRecordSupplier" class="text-xs text-amber-700 italic mb-2">
-          Bạn chưa có quyền tạo nhà cung cấp mới; chỉ dùng được nhà cung cấp đã có (trùng mã hoặc tên).
+          Bạn chưa có quyền tạo hoặc cập nhật nhà cung cấp; chỉ dùng được nhà cung cấp đã có với đúng thông tin đang lưu.
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div>
-            <label for="supplier-code-input" class="field-label">Mã nhà cung cấp <span class="text-rose-500">*</span></label>
-            <input
-              id="supplier-code-input"
-              v-model="supplierCode"
-              type="text"
-              class="cockpit-input w-full text-sm font-mono"
-              placeholder="Tự tạo từ MST hoặc tên NCC"
-              :disabled="isRegularControlDisabled"
-              maxlength="200"
-              @input="handleSupplierCodeUserEdit"
-            >
-            <span class="field-hint text-xs text-slate-400">Tự tạo từ MST (nếu có) hoặc tên nhà cung cấp; có thể sửa.</span>
-          </div>
-
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label for="supplier-name-input" class="field-label">Tên nhà cung cấp <span class="text-rose-500">*</span></label>
             <input
@@ -817,7 +802,6 @@ import type {
 import { workflowUuidSchema, workflowMoneySchema } from '../../../shared/schemas/costs/cost-workflow'
 import { ClientError } from '../../errors/client-error'
 import { formatGroupedDecimal } from '../../utils/materials/quantity-display'
-import { deriveSupplierCode } from '../../utils/materials/supplier-code'
 import { supplierInputRejectionMessage } from '../../utils/materials/order-create-rejection'
 import {
   uploadMaterialEvidence,
@@ -1065,8 +1049,6 @@ async function loadOrders() {
 }
 
 // Supplier state
-const supplierCode = ref('')
-const userEditedSupplierCode = ref(false)
 const supplierDisplayName = ref('')
 const supplierTaxIdentifier = ref('')
 const supplierContactDisplayName = ref('')
@@ -1074,7 +1056,7 @@ const supplierContactPhone = ref('')
 // Set when the server rejects the supplier descriptor on create; cleared once the buyer edits it.
 const supplierRejectionError = ref('')
 watch(
-  [supplierCode, supplierDisplayName, supplierTaxIdentifier, supplierContactDisplayName, supplierContactPhone],
+  [supplierDisplayName, supplierTaxIdentifier, supplierContactDisplayName, supplierContactPhone],
   () => {
     supplierRejectionError.value = ''
   },
@@ -1093,28 +1075,6 @@ const aiOwnedSupplierFields = ref({
   contactDisplayName: false,
   contactPhone: false,
 })
-
-function handleSupplierCodeUserEdit() {
-  if (supplierCode.value.trim() === '') {
-    userEditedSupplierCode.value = false
-    const derived = deriveSupplierCode(supplierTaxIdentifier.value, supplierDisplayName.value)
-    supplierCode.value = derived
-  } else {
-    userEditedSupplierCode.value = true
-  }
-}
-
-watch(
-  [supplierTaxIdentifier, supplierDisplayName],
-  ([tax, name]) => {
-    if (!userEditedSupplierCode.value) {
-      const derived = deriveSupplierCode(tax, name)
-      if (derived !== supplierCode.value) {
-        supplierCode.value = derived
-      }
-    }
-  }
-)
 
 function handleSupplierDescriptorChanged(field: 'displayName' | 'taxIdentifier' | 'contactDisplayName' | 'contactPhone') {
   if (field === 'displayName' && analysisResult.value?.supplier?.name) {
@@ -1936,7 +1896,7 @@ const formattedTotalOrderValue = computed(() => {
 const createValidationReason = computed(() => {
   if (!isProposalApproved.value) return 'Phiếu chưa được duyệt.'
   if (!canonicalCurrency.value) return 'Chưa có đơn vị tiền tệ công ty.'
-  if (!supplierCode.value.trim() || !supplierDisplayName.value.trim()) return 'Cần nhập mã và tên nhà cung cấp.'
+  if (!supplierDisplayName.value.trim()) return 'Cần nhập tên nhà cung cấp.'
   if (!finalizedEvidenceFileId.value) return 'Cần hoàn tất tệp báo giá PDF.'
   if (lineValidationErrors.value.length > 0) {
     return lineValidationErrors.value[0]?.message ?? 'Có dòng vật tư chưa hợp lệ.'
@@ -1978,7 +1938,6 @@ function startCreateOrder() {
   supplierRejectionError.value = ''
 
   const supplierInput: MaterialOrderSupplierInput = {
-    code: supplierCode.value.trim(),
     displayName: supplierDisplayName.value.trim(),
     ...(supplierTaxIdentifier.value.trim() ? { taxIdentifier: supplierTaxIdentifier.value.trim() } : {}),
     ...(supplierContactDisplayName.value.trim() ? { contactDisplayName: supplierContactDisplayName.value.trim() } : {}),
@@ -2126,8 +2085,6 @@ async function executeCreateOrder(cmd: CreateOrderCommand) {
       // G4: Retract AI drafts and clear supplier fields so no residual data survives
       retractAiOwnedDrafts()
       resetAiOwnedState()
-      supplierCode.value = ''
-      userEditedSupplierCode.value = false
       supplierDisplayName.value = ''
       supplierTaxIdentifier.value = ''
       supplierContactDisplayName.value = ''
@@ -2548,8 +2505,6 @@ watch(
       // Clear data & forms
       orders.value = []
       canonicalCurrency.value = null
-      supplierCode.value = ''
-      userEditedSupplierCode.value = false
       supplierDisplayName.value = ''
       supplierTaxIdentifier.value = ''
       supplierContactDisplayName.value = ''
