@@ -17,7 +17,11 @@ import {
   type MaterialInvoiceView,
   type MaterialPaymentRequestView,
 } from '../../shared/schemas/costs/material-finance'
-import type { MaterialProjectOption } from '../../shared/schemas/costs/material-procurement'
+import {
+  materialOrderViewSchema,
+  type MaterialOrderView,
+  type MaterialProjectOption,
+} from '../../shared/schemas/costs/material-procurement'
 import type { PermissionCode } from '../../shared/constants/permissions'
 
 const accountantId = '11111111-1111-4111-8111-111111111111'
@@ -33,22 +37,16 @@ const invoiceId = 'c0000000-0000-4000-8000-000000000001'
 const invoiceFileId = 'c0000000-0000-4000-8000-0000000000f1'
 const requestId = 'd0000000-0000-4000-8000-000000000001'
 const proofFileId = 'e0000000-0000-4000-8000-000000000001'
+const proposalId = '50000000-0000-4000-8000-000000000001'
+const proposalLineId = '60000000-0000-4000-8000-000000000001'
+const orderLineId = '83000000-0000-4000-8000-000000000001'
+const materialId = '40000000-0000-4000-8000-000000000001'
 const contractFileId = 'e0000000-0000-4000-8000-0000000000c1'
 const tenantId = '10000000-0000-4000-8000-000000000001'
 const companyId = '10000000-0000-4000-8000-000000000002'
 
 const orderPath = `/materials/${projectId}/orders/${orderId}`
 const proofAlreadyUsedMessage = 'Tệp ủy nhiệm chi này đã được dùng cho một lần chi khác. Hãy chọn tệp khác.'
-
-// The order detail page that hosts both panels belongs to Task 5 and is not on this branch.
-// Scenarios 1-6 drive the panels through that page, so they stay fixme until Task 8
-// integration merges it; run them then with MATERIAL_ORDER_PAGE=1.
-const orderPageAvailable = process.env.MATERIAL_ORDER_PAGE === '1'
-
-function panelScenario(title: string, body: (args: { page: Page }) => Promise<void>) {
-  if (orderPageAvailable) test(title, body)
-  else test.fixme(title, body)
-}
 
 interface Call {
   method: string
@@ -172,6 +170,45 @@ function buildContract(state: FinanceState): MaterialContractView {
   })
 }
 
+function buildOrder(contract: MaterialContractView): MaterialOrderView {
+  return materialOrderViewSchema.parse({
+    id: orderId,
+    version: 2,
+    orderState: 'active',
+    proposalId,
+    approvedRevisionId: '70000000-0000-4000-8000-000000000001',
+    supplierId,
+    supplierName: contract.supplierName,
+    currencyCode: 'VND',
+    allocations: [{
+      proposalLineId,
+      quantity: '10.0000',
+      unitPrice: '90.9091',
+      quotationMaterialName: 'Thép cuộn phi 8',
+      mappingConfirmed: true,
+      orderLineId,
+      materialId,
+      materialName: 'Thép cuộn phi 8',
+      specification: 'CB240-T',
+      unit: 'kg',
+    }],
+    unsignedQuotationEvidenceFileId: '85000000-0000-4000-8000-000000000001',
+    contract: {
+      id: contract.id,
+      contractNo: contract.contractNo,
+      signedOn: contract.signedOn,
+      currentVersionNo: contract.currentVersionNo,
+      total: contract.versions[0]?.total ?? null,
+    },
+    cash: {
+      committed: contract.totals.committed,
+      paid: contract.totals.paid,
+      pending: contract.totals.pending,
+      remaining: contract.totals.remaining,
+    },
+  })
+}
+
 function errorBody(code: string, message: string) {
   return { error: { code, message, requestId: 'mock-request', details: {} } }
 }
@@ -192,6 +229,7 @@ async function installFinanceMocks(page: Page, initial: Partial<FinanceState> = 
   }
   let nextRequestNo = 2
 
+  await page.route('https://api.iconify.design/**', route => route.fulfill({ json: { prefix: 'lucide', icons: {} } }))
   await page.route('https://auth.taskovia.test/storage/v1/**', route =>
     route.fulfill({ json: { Key: 'synthetic', Id: proofFileId }, headers: { 'Access-Control-Allow-Origin': '*' } }))
 
@@ -201,6 +239,7 @@ async function installFinanceMocks(page: Page, initial: Partial<FinanceState> = 
     const method = req.method()
 
     if (method === 'GET') {
+      if (path === `/orders/${orderId}`) return route.fulfill({ json: buildOrder(buildContract(state)) })
       if (path === `/orders/${orderId}/contract`) return route.fulfill({ json: buildContract(state) })
       if (path === `/contracts/${contractId}/invoices`) return route.fulfill({ json: state.invoices })
       if (path === `/contracts/${contractId}/payment-requests`) return route.fulfill({ json: state.requests })
@@ -323,7 +362,7 @@ const accountantPermissions: PermissionCode[] = ['material.read', 'material.fina
 const treasurerPermissions: PermissionCode[] = ['material.read', 'material.finance.read', 'material.payment.approve', 'material.payment.execute']
 
 test.describe('Material invoices, payment requests and finance inbox', () => {
-  panelScenario('1. accountant files a 33 advance request without an invoice', async ({ page }) => {
+  test('1. accountant files a 33 advance request without an invoice', async ({ page }) => {
     await signIn(page, accountant, accountantPermissions)
     const state = await installFinanceMocks(page)
 
@@ -334,6 +373,7 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
     await expect(dialog.getByRole('radio', { name: /Tạm ứng 10%/ })).toBeChecked()
     await expect(dialog.getByText('Đợt tạm ứng: không bắt buộc đính kèm hóa đơn.')).toBeVisible()
     await dialog.getByLabel(/Số tiền đề nghị chi/).fill('33')
+    await expect(dialog.getByTestId('request-amount-interpreted')).toHaveText('Hiểu là: 33')
     await dialog.getByRole('button', { name: 'Gửi đề nghị chi' }).click()
 
     await expect(dialog).toBeHidden()
@@ -349,7 +389,7 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
     await expect(page.getByRole('cell', { name: 'Chờ duyệt' })).toBeVisible()
   })
 
-  panelScenario('2. a regular installment without an invoice cannot be submitted', async ({ page }) => {
+  test('2. a regular installment without an invoice cannot be submitted', async ({ page }) => {
     await signIn(page, accountant, accountantPermissions)
     const state = await installFinanceMocks(page)
 
@@ -364,7 +404,7 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
     expect(state.calls).toHaveLength(0)
   })
 
-  panelScenario('3. treasurer must give a reason to return a request', async ({ page }) => {
+  test('3. treasurer must give a reason to return a request', async ({ page }) => {
     await signIn(page, treasurer, treasurerPermissions)
     const state = await installFinanceMocks(page, { invoices: [buildInvoice()], requests: [buildRequest()] })
 
@@ -391,7 +431,7 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
     await expect(page.getByRole('cell', { name: 'Bị trả lại' })).toBeVisible()
   })
 
-  panelScenario('4. accountant resubmits a returned request with the new version', async ({ page }) => {
+  test('4. accountant resubmits a returned request with the new version', async ({ page }) => {
     await signIn(page, accountant, accountantPermissions)
     const returned = buildRequest({
       state: 'returned',
@@ -405,7 +445,8 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
 
     const dialog = page.getByRole('dialog', { name: 'Gửi lại đề nghị thanh toán' })
     await expect(dialog.getByRole('radio', { name: /Thanh toán đợt 2/ })).toBeChecked()
-    await dialog.getByLabel(/Số tiền đề nghị chi/).fill('350')
+    await dialog.getByLabel(/Số tiền đề nghị chi/).fill('350,5')
+    await expect(dialog.getByTestId('request-amount-interpreted')).toHaveText('Hiểu là: 350,5')
     await dialog.getByRole('button', { name: 'Gửi lại đề nghị' }).click()
 
     await expect(dialog).toBeHidden()
@@ -413,14 +454,14 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
     expect(patch?.path).toBe(`/payment-requests/${requestId}`)
     expect(resubmitPaymentRequestInputSchema.parse(patch?.body)).toEqual({
       expectedVersion: 2,
-      amount: '350',
+      amount: '350.5',
       invoiceIds: [invoiceId],
       note: null,
     })
     await expect(page.getByRole('cell', { name: 'Chờ duyệt' })).toBeVisible()
   })
 
-  panelScenario('5. treasurer approves, then records the payment with a PNG proof', async ({ page }) => {
+  test('5. treasurer approves, then records the payment with a PNG proof', async ({ page }) => {
     await signIn(page, treasurer, treasurerPermissions)
     const state = await installFinanceMocks(page, { invoices: [buildInvoice()], requests: [buildRequest()] })
 
@@ -444,7 +485,7 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
     await expect(page.getByRole('cell', { name: 'Đã chi', exact: true })).toBeVisible()
   })
 
-  panelScenario('6. a proof file that was already used shows a Vietnamese message', async ({ page }) => {
+  test('6. a proof file that was already used shows a Vietnamese message', async ({ page }) => {
     await signIn(page, treasurer, treasurerPermissions)
     await installFinanceMocks(page, {
       invoices: [buildInvoice()],
@@ -509,6 +550,7 @@ test.describe('Material finance inbox', () => {
     await expect(page.getByRole('tab', { name: /Đề nghị bị trả lại/ })).toHaveCount(0)
 
     await expect(page.getByRole('cell', { name: 'Công ty Thép Hòa Phát' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Công nợ nhà cung cấp' })).toHaveAttribute('href', '/materials/finance/suppliers')
     await page.getByRole('link', { name: 'Xét duyệt' }).click()
     await expect(page).toHaveURL(new RegExp(`${orderPath}$`))
   })
@@ -534,7 +576,7 @@ test.describe('Material finance inbox', () => {
   })
 
   test('7c. an inbox load failure shows a message and reload recovers', async ({ page }) => {
-    await signIn(page, accountant, accountantPermissions)
+    await signIn(page, accountant, accountantPermissions.filter(permission => permission !== 'material.finance.read'))
     let failures = 1
     await page.route(/\/api\/companies\/[^/]+\/material-procurement\/projects$/, route => route.fulfill({ json: projects }))
     await page.route(/\/api\/companies\/[^/]+\/material-finance\/inbox(?:\?.*)?$/, (route) => {
@@ -547,6 +589,7 @@ test.describe('Material finance inbox', () => {
 
     await page.goto('/materials/finance')
     await expect(page.getByRole('alert')).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Công nợ nhà cung cấp' })).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Làm mới dữ liệu' }).click()
     await expect(page.getByRole('alert')).toHaveCount(0)

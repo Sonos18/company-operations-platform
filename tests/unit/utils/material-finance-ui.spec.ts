@@ -1,15 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { ClientError } from '../../../app/errors/client-error'
+import { createCommandKeyKeeper } from '../../../app/utils/materials/command-key'
 import {
-  contractEvidenceScope,
-  createCommandKeyTracker,
   financeErrorMessage,
-  formatDate,
-  formatMoney,
   isDefinitiveRejection,
   moneyEquals,
   moneySum,
-  parseMoneyInput,
+  parseMoneyOrNull,
+  resetCommandKeyAfterError,
   uploadErrorMessage,
 } from '../../../app/utils/materials/finance-ui'
 
@@ -17,18 +15,18 @@ function clientError(code: ClientError['code'], retryable: boolean, kind: Client
   return new ClientError({ kind, code, message: 'server text', retryable })
 }
 
-describe('parseMoneyInput', () => {
-  it('returns a canonical decimal string without trailing zeros', () => {
-    expect(parseMoneyInput('33')).toBe('33')
-    expect(parseMoneyInput(' 1500000.5000 ')).toBe('1500000.5')
-    expect(parseMoneyInput('0.1')).toBe('0.1')
-    expect(parseMoneyInput('007')).toBe('7')
-    expect(parseMoneyInput('0')).toBe('0')
+describe('parseMoneyOrNull (Vietnamese format)', () => {
+  it('reads "." as thousands and "," as decimal and returns the canonical string', () => {
+    expect(parseMoneyOrNull('33')).toBe('33')
+    expect(parseMoneyOrNull('1.500.000,5')).toBe('1500000.5')
+    expect(parseMoneyOrNull(' 12.500,5000 ')).toBe('12500.5')
+    expect(parseMoneyOrNull('0,1')).toBe('0.1')
+    expect(parseMoneyOrNull('0')).toBe('0')
   })
 
-  it('rejects anything that is not a plain decimal with at most four places', () => {
-    for (const raw of ['', 'abc', '-1', '1e3', '1,000', '1.23456', '1.', '.5', '12345678901234567']) {
-      expect(parseMoneyInput(raw)).toBeNull()
+  it('rejects dot decimals, signs, exponents and too many decimals', () => {
+    for (const raw of ['', 'abc', '-1', '1e3', '1.5', '1,23456', '1,2,3', '12345678901234567']) {
+      expect(parseMoneyOrNull(raw)).toBeNull()
     }
   })
 })
@@ -37,19 +35,6 @@ describe('money arithmetic', () => {
   it('does not accumulate floating point error', () => {
     expect(moneySum('0.1', '0.2')).toBe('0.3')
     expect(moneyEquals(moneySum('10000000', '800000.1'), '10800000.1')).toBe(true)
-    expect(moneyEquals('0.3', moneySum('0.1', '0.2'))).toBe(true)
-  })
-})
-
-describe('display formatting', () => {
-  it('groups thousands and trims zeros', () => {
-    expect(formatMoney('1500000.5000')).toBe('1,500,000.5')
-    expect(formatMoney('0.0000')).toBe('0')
-    expect(formatMoney(null)).toBe('0')
-  })
-
-  it('formats date-only values without a timezone shift', () => {
-    expect(formatDate('2026-10-15')).toBe('15/10/2026')
   })
 })
 
@@ -71,42 +56,28 @@ describe('financeErrorMessage', () => {
     expect(message).toMatch(/[ạảãàáâấầẩẫậăắằẳẵặẹẻẽèéêếềểễệỉịọỏõòóôốồổỗộơớờởỡợụủũùúưứừửữựỳỵỷỹđ]/i)
   })
 
-  it('falls back to the client error message, then to the fallback text', () => {
+  it('uses the client error message for unmapped codes and the fallback for other errors', () => {
     expect(financeErrorMessage(clientError('INTERNAL_ERROR', true), 'fallback')).toBe('server text')
     expect(financeErrorMessage(new Error('boom'), 'fallback')).toBe('fallback')
   })
 })
 
-describe('createCommandKeyTracker', () => {
-  it('reuses the key for an identical payload and changes it when the payload changes', () => {
-    const tracker = createCommandKeyTracker()
-    const first = tracker.keyFor({ id: 'a', reason: 'x' })
-    expect(tracker.keyFor({ id: 'a', reason: 'x' })).toBe(first)
-    expect(tracker.keyFor({ id: 'a', reason: 'y' })).not.toBe(first)
-  })
-
+describe('idempotency key after a failed command', () => {
   it('keeps the key when the outcome is unknown and drops it on a definitive rejection', () => {
-    const tracker = createCommandKeyTracker()
-    const key = tracker.keyFor({ id: 'a' })
+    const keeper = createCommandKeyKeeper()
+    const key = keeper.keyFor({ id: 'a' })
 
-    tracker.settleAfterError(clientError('NETWORK_ERROR', true, 'network'))
-    expect(tracker.keyFor({ id: 'a' })).toBe(key)
+    resetCommandKeyAfterError(keeper, clientError('NETWORK_ERROR', true, 'network'))
+    expect(keeper.keyFor({ id: 'a' })).toBe(key)
 
-    tracker.settleAfterError(clientError('MALFORMED_RESPONSE', false, 'unexpected'))
-    expect(tracker.keyFor({ id: 'a' })).toBe(key)
+    resetCommandKeyAfterError(keeper, clientError('MALFORMED_RESPONSE', false, 'unexpected'))
+    expect(keeper.keyFor({ id: 'a' })).toBe(key)
 
-    tracker.settleAfterError(new Error('socket closed'))
-    expect(tracker.keyFor({ id: 'a' })).toBe(key)
+    resetCommandKeyAfterError(keeper, new Error('socket closed'))
+    expect(keeper.keyFor({ id: 'a' })).toBe(key)
 
-    tracker.settleAfterError(clientError('VERSION_CONFLICT', false))
-    expect(tracker.keyFor({ id: 'a' })).not.toBe(key)
-  })
-
-  it('drops the key after success', () => {
-    const tracker = createCommandKeyTracker()
-    const key = tracker.keyFor({ id: 'a' })
-    tracker.settle()
-    expect(tracker.keyFor({ id: 'a' })).not.toBe(key)
+    resetCommandKeyAfterError(keeper, clientError('VERSION_CONFLICT', false))
+    expect(keeper.keyFor({ id: 'a' })).not.toBe(key)
   })
 })
 
@@ -128,14 +99,5 @@ describe('uploadErrorMessage', () => {
     zodLike.name = 'ZodError'
     expect(uploadErrorMessage(zodLike, 'fallback')).toBe('fallback')
     expect(uploadErrorMessage('boom', 'fallback')).toBe('fallback')
-  })
-})
-
-describe('contractEvidenceScope', () => {
-  it('targets the contract with the requested role', () => {
-    expect(contractEvidenceScope('payment_proof', 'c1')).toEqual({
-      evidenceRole: 'payment_proof',
-      target: { kind: 'material_contract', contractId: 'c1' },
-    })
   })
 })

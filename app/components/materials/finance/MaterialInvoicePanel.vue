@@ -112,15 +112,15 @@
               </td>
 
               <td class="p-2.5 font-mono text-right text-slate-700">
-                {{ formatMoney(inv.subtotal) }}
+                {{ formatVnNumber(inv.subtotal) }}
               </td>
 
               <td class="p-2.5 font-mono text-right text-slate-700">
-                {{ formatMoney(inv.vatAmount) }}
+                {{ formatVnNumber(inv.vatAmount) }}
               </td>
 
               <td class="p-2.5 font-mono font-bold text-right text-slate-900">
-                {{ formatMoney(inv.total) }} <span class="text-[10px] font-normal text-slate-500">{{ contract.currencyCode }}</span>
+                {{ formatVnNumber(inv.total) }} <span class="text-[10px] font-normal text-slate-500">{{ contract.currencyCode }}</span>
               </td>
 
               <td class="p-2.5 text-center">
@@ -166,85 +166,87 @@
     </div>
 
     <!-- Void Invoice Modal Dialog -->
-    <div
-      v-if="voidingInvoice"
-      :ref="focusDialogElement"
-      class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4"
-      tabindex="-1"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="void-invoice-dialog-title"
-      @keydown.esc="closeVoidDialog"
-    >
-      <div class="bg-white rounded-lg shadow-xl border border-slate-200 w-full max-w-md p-5 space-y-4">
-        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div class="flex items-center gap-2 text-rose-700 font-bold text-sm">
-            <UIcon name="i-lucide-alert-triangle" class="text-rose-600 text-base" aria-hidden="true" />
-            <h4 id="void-invoice-dialog-title" class="m-0">Hủy hóa đơn nhà cung cấp</h4>
+    <Teleport to="body">
+      <div
+        v-if="voidingInvoice"
+        :ref="focusDialogElement"
+        class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+        tabindex="-1"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="void-invoice-dialog-title"
+        @keydown.esc="closeVoidDialog"
+      >
+        <div class="bg-white rounded-lg shadow-xl border border-slate-200 w-full max-w-md p-5 space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div class="flex items-center gap-2 text-rose-700 font-bold text-sm">
+              <UIcon name="i-lucide-alert-triangle" class="text-rose-600 text-base" aria-hidden="true" />
+              <h4 id="void-invoice-dialog-title" class="m-0">Hủy hóa đơn nhà cung cấp</h4>
+            </div>
+            <button
+              type="button"
+              class="text-slate-400 hover:text-slate-600 p-1"
+              aria-label="Đóng"
+              :disabled="isVoidBusy"
+              @click="closeVoidDialog"
+            >
+              <UIcon name="i-lucide-x" class="text-sm" aria-hidden="true" />
+            </button>
           </div>
-          <button
-            type="button"
-            class="text-slate-400 hover:text-slate-600 p-1"
-            aria-label="Đóng"
-            :disabled="isVoidBusy"
-            @click="closeVoidDialog"
-          >
-            <UIcon name="i-lucide-x" class="text-sm" aria-hidden="true" />
-          </button>
-        </div>
 
-        <div class="text-xs text-slate-600 space-y-1 bg-slate-50 p-2.5 rounded border border-slate-100">
-          <div>Hóa đơn số: <strong class="font-mono text-slate-900">{{ voidingInvoice.invoiceNo }}</strong> (Ký hiệu: {{ voidingInvoice.invoiceSymbol }})</div>
-          <div>Tổng tiền: <strong class="font-mono text-slate-900">{{ formatMoney(voidingInvoice.total) }} {{ contract.currencyCode }}</strong></div>
-          <div class="text-rose-700 font-medium pt-1">
-            Lưu ý: Hóa đơn sau khi hủy sẽ không thể phục hồi và sẽ không được tính vào tổng giá trị đã nhận hóa đơn.
+          <div class="text-xs text-slate-600 space-y-1 bg-slate-50 p-2.5 rounded border border-slate-100">
+            <div>Hóa đơn số: <strong class="font-mono text-slate-900">{{ voidingInvoice.invoiceNo }}</strong> (Ký hiệu: {{ voidingInvoice.invoiceSymbol }})</div>
+            <div>Tổng tiền: <strong class="font-mono text-slate-900">{{ formatVnNumber(voidingInvoice.total) }} {{ contract.currencyCode }}</strong></div>
+            <div class="text-rose-700 font-medium pt-1">
+              Lưu ý: Hóa đơn sau khi hủy sẽ không thể phục hồi và sẽ không được tính vào tổng giá trị đã nhận hóa đơn.
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label for="void-reason-input" class="field-label block text-xs font-semibold text-slate-700 mb-1">
-            Lý do hủy hóa đơn <span class="text-rose-500">*</span>
-          </label>
-          <textarea
-            id="void-reason-input"
-            v-model="voidReason"
-            rows="3"
-            class="cockpit-input w-full text-xs"
-            placeholder="Nhập lý do hủy hóa đơn (bắt buộc)..."
-            :disabled="isVoidBusy"
-            maxlength="1000"
-          />
-          <div class="text-[10px] text-slate-400 text-right mt-1">
-            {{ voidReason.length }}/1000 ký tự
+          <div>
+            <label for="void-reason-input" class="field-label block text-xs font-semibold text-slate-700 mb-1">
+              Lý do hủy hóa đơn <span class="text-rose-500">*</span>
+            </label>
+            <textarea
+              id="void-reason-input"
+              v-model="voidReason"
+              rows="3"
+              class="cockpit-input w-full text-xs"
+              placeholder="Nhập lý do hủy hóa đơn (bắt buộc)..."
+              :disabled="isVoidBusy"
+              maxlength="1000"
+            />
+            <div class="text-[10px] text-slate-400 text-right mt-1">
+              {{ voidReason.length }}/1000 ký tự
+            </div>
           </div>
-        </div>
 
-        <div v-if="voidError" class="cockpit-alert cockpit-alert--danger p-2 text-xs text-rose-700" role="alert">
-          {{ voidError }}
-        </div>
+          <div v-if="voidError" class="cockpit-alert cockpit-alert--danger p-2 text-xs text-rose-700" role="alert">
+            {{ voidError }}
+          </div>
 
-        <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-          <button
-            type="button"
-            class="cockpit-btn cockpit-btn--secondary btn-sm"
-            :disabled="isVoidBusy"
-            @click="closeVoidDialog"
-          >
-            Đóng
-          </button>
-          <button
-            type="button"
-            class="cockpit-btn cockpit-btn--danger btn-sm flex items-center gap-1.5"
-            :disabled="isVoidBusy || !voidReason.trim()"
-            @click="confirmVoidInvoice"
-          >
-            <UIcon v-if="isVoidBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
-            <UIcon v-else name="i-lucide-check" class="text-sm" aria-hidden="true" />
-            <span>Xác nhận hủy</span>
-          </button>
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              class="cockpit-btn cockpit-btn--secondary btn-sm"
+              :disabled="isVoidBusy"
+              @click="closeVoidDialog"
+            >
+              Đóng
+            </button>
+            <button
+              type="button"
+              class="cockpit-btn cockpit-btn--danger btn-sm flex items-center gap-1.5"
+              :disabled="isVoidBusy || !voidReason.trim()"
+              @click="confirmVoidInvoice"
+            >
+              <UIcon v-if="isVoidBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
+              <UIcon v-else name="i-lucide-check" class="text-sm" aria-hidden="true" />
+              <span>Xác nhận hủy</span>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </Teleport>
 
     <!-- MaterialInvoiceForm Modal -->
     <MaterialInvoiceForm
@@ -265,12 +267,13 @@ import type {
   MaterialInvoiceView,
   VoidMaterialInvoiceInput,
 } from '../../../../shared/schemas/costs/material-finance'
+import { formatVnNumber } from '../../../utils/materials/vn-number'
+import { formatDate } from '../../../utils/materials/date-display'
+import { createCommandKeyKeeper } from '../../../utils/materials/command-key'
 import {
-  createCommandKeyTracker,
   financeErrorMessage,
   focusDialogElement,
-  formatDate,
-  formatMoney,
+  resetCommandKeyAfterError,
 } from '../../../utils/materials/finance-ui'
 import MaterialInvoiceForm from './MaterialInvoiceForm.vue'
 
@@ -307,7 +310,7 @@ const voidingInvoice = ref<MaterialInvoiceView | null>(null)
 const voidReason = ref('')
 const isVoidBusy = ref(false)
 const voidError = ref('')
-const voidKey = createCommandKeyTracker()
+const voidKey = createCommandKeyKeeper()
 
 async function loadInvoices() {
   if (!props.contract?.id) return
@@ -341,7 +344,7 @@ function openVoidDialog(inv: MaterialInvoiceView) {
   voidingInvoice.value = inv
   voidReason.value = ''
   voidError.value = ''
-  voidKey.settle()
+  voidKey.reset()
 }
 
 function closeVoidDialog() {
@@ -370,13 +373,13 @@ async function confirmVoidInvoice() {
   voidError.value = ''
   try {
     await financeRepo.voidInvoice(props.projectId, invoice.id, payload, { idempotencyKey })
-    voidKey.settle()
+    voidKey.reset()
     isVoidBusy.value = false
     closeVoidDialog()
     await loadInvoices()
     emit('changed')
   } catch (err: unknown) {
-    voidKey.settleAfterError(err)
+    resetCommandKeyAfterError(voidKey, err)
     voidError.value = financeErrorMessage(err, 'Lỗi khi hủy hóa đơn.')
   } finally {
     isVoidBusy.value = false

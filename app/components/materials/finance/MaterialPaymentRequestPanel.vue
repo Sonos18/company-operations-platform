@@ -113,7 +113,7 @@
 
               <!-- Amount -->
               <td class="p-2.5 font-mono font-bold text-right text-slate-900 align-top whitespace-nowrap">
-                {{ formatMoney(req.amount) }} <span class="text-[10px] font-normal text-slate-500">{{ contract.currencyCode }}</span>
+                {{ formatVnNumber(req.amount) }} <span class="text-[10px] font-normal text-slate-500">{{ contract.currencyCode }}</span>
               </td>
 
               <!-- Status -->
@@ -263,85 +263,87 @@
     </div>
 
     <!-- Cancel Payment Request Modal Dialog -->
-    <div
-      v-if="cancellingRequest"
-      :ref="focusDialogElement"
-      tabindex="-1"
-      class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cancel-dialog-title"
-      @keydown.esc="closeCancelDialog"
-    >
-      <div class="bg-white rounded-lg shadow-xl border border-slate-200 w-full max-w-md p-5 space-y-4">
-        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div class="flex items-center gap-2 text-rose-700 font-bold text-sm">
-            <UIcon name="i-lucide-alert-triangle" class="text-rose-600 text-base" aria-hidden="true" />
-            <h4 id="cancel-dialog-title" class="m-0">Xác nhận hủy đề nghị chi</h4>
+    <Teleport to="body">
+      <div
+        v-if="cancellingRequest"
+        :ref="focusDialogElement"
+        tabindex="-1"
+        class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cancel-dialog-title"
+        @keydown.esc="closeCancelDialog"
+      >
+        <div class="bg-white rounded-lg shadow-xl border border-slate-200 w-full max-w-md p-5 space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div class="flex items-center gap-2 text-rose-700 font-bold text-sm">
+              <UIcon name="i-lucide-alert-triangle" class="text-rose-600 text-base" aria-hidden="true" />
+              <h4 id="cancel-dialog-title" class="m-0">Xác nhận hủy đề nghị chi</h4>
+            </div>
+            <button
+              type="button"
+              class="text-slate-400 hover:text-slate-600 p-1"
+              aria-label="Đóng"
+              :disabled="isCancelBusy"
+              @click="closeCancelDialog"
+            >
+              <UIcon name="i-lucide-x" class="text-sm" aria-hidden="true" />
+            </button>
           </div>
-          <button
-            type="button"
-            class="text-slate-400 hover:text-slate-600 p-1"
-            aria-label="Đóng"
-            :disabled="isCancelBusy"
-            @click="closeCancelDialog"
-          >
-            <UIcon name="i-lucide-x" class="text-sm" aria-hidden="true" />
-          </button>
-        </div>
 
-        <div class="text-xs text-slate-600 space-y-1 bg-slate-50 p-2.5 rounded border border-slate-100">
-          <div>Số tiền đề nghị: <strong class="font-mono text-slate-900">{{ formatMoney(cancellingRequest.amount) }} {{ contract.currencyCode }}</strong></div>
-          <div>Đợt thanh toán: <strong class="text-slate-900">{{ getInstallmentName(cancellingRequest.installmentKey) }}</strong></div>
-          <div class="text-rose-700 font-medium pt-1">
-            Sau khi hủy, hạn mức đề nghị sẽ được hoàn trả lại cho đợt thanh toán tương ứng.
+          <div class="text-xs text-slate-600 space-y-1 bg-slate-50 p-2.5 rounded border border-slate-100">
+            <div>Số tiền đề nghị: <strong class="font-mono text-slate-900">{{ formatVnNumber(cancellingRequest.amount) }} {{ contract.currencyCode }}</strong></div>
+            <div>Đợt thanh toán: <strong class="text-slate-900">{{ getInstallmentName(cancellingRequest.installmentKey) }}</strong></div>
+            <div class="text-rose-700 font-medium pt-1">
+              Sau khi hủy, hạn mức đề nghị sẽ được hoàn trả lại cho đợt thanh toán tương ứng.
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label for="cancel-request-reason-input" class="field-label block text-xs font-semibold text-slate-700 mb-1">
-            Lý do hủy đề nghị <span class="text-rose-500">*</span>
-          </label>
-          <textarea
-            id="cancel-request-reason-input"
-            v-model="cancelReason"
-            rows="3"
-            class="cockpit-input w-full text-xs"
-            placeholder="Nhập lý do hủy đề nghị chi..."
-            :disabled="isCancelBusy"
-            maxlength="1000"
-          />
-          <div class="text-[10px] text-slate-400 text-right mt-1">
-            {{ cancelReason.length }}/1000 ký tự
+          <div>
+            <label for="cancel-request-reason-input" class="field-label block text-xs font-semibold text-slate-700 mb-1">
+              Lý do hủy đề nghị <span class="text-rose-500">*</span>
+            </label>
+            <textarea
+              id="cancel-request-reason-input"
+              v-model="cancelReason"
+              rows="3"
+              class="cockpit-input w-full text-xs"
+              placeholder="Nhập lý do hủy đề nghị chi..."
+              :disabled="isCancelBusy"
+              maxlength="1000"
+            />
+            <div class="text-[10px] text-slate-400 text-right mt-1">
+              {{ cancelReason.length }}/1000 ký tự
+            </div>
           </div>
-        </div>
 
-        <div v-if="cancelError" class="cockpit-alert cockpit-alert--danger p-2 text-xs text-rose-700" role="alert">
-          {{ cancelError }}
-        </div>
+          <div v-if="cancelError" class="cockpit-alert cockpit-alert--danger p-2 text-xs text-rose-700" role="alert">
+            {{ cancelError }}
+          </div>
 
-        <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-          <button
-            type="button"
-            class="cockpit-btn cockpit-btn--secondary btn-sm"
-            :disabled="isCancelBusy"
-            @click="closeCancelDialog"
-          >
-            Đóng
-          </button>
-          <button
-            type="button"
-            class="cockpit-btn cockpit-btn--danger btn-sm flex items-center gap-1.5"
-            :disabled="isCancelBusy || !cancelReason.trim()"
-            @click="confirmCancelRequest"
-          >
-            <UIcon v-if="isCancelBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
-            <UIcon v-else name="i-lucide-check" class="text-sm" aria-hidden="true" />
-            <span>Xác nhận hủy</span>
-          </button>
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              class="cockpit-btn cockpit-btn--secondary btn-sm"
+              :disabled="isCancelBusy"
+              @click="closeCancelDialog"
+            >
+              Đóng
+            </button>
+            <button
+              type="button"
+              class="cockpit-btn cockpit-btn--danger btn-sm flex items-center gap-1.5"
+              :disabled="isCancelBusy || !cancelReason.trim()"
+              @click="confirmCancelRequest"
+            >
+              <UIcon v-if="isCancelBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
+              <UIcon v-else name="i-lucide-check" class="text-sm" aria-hidden="true" />
+              <span>Xác nhận hủy</span>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </Teleport>
 
     <!-- Create or Resubmit Request Modal Form -->
     <MaterialPaymentRequestForm
@@ -387,14 +389,15 @@ import type {
   CancelPaymentRequestInput,
 } from '../../../../shared/schemas/costs/material-finance'
 import { paymentRequestActions } from '../../../utils/materials/payment-request-actions'
+import { formatVnNumber } from '../../../utils/materials/vn-number'
+import { formatDate } from '../../../utils/materials/date-display'
+import { createCommandKeyKeeper } from '../../../utils/materials/command-key'
 import {
-  createCommandKeyTracker,
   financeErrorMessage,
   focusDialogElement,
-  formatDate,
   formatDateTime,
-  formatMoney,
   moneyGreaterThan,
+  resetCommandKeyAfterError,
 } from '../../../utils/materials/finance-ui'
 import MaterialPaymentRequestForm from './MaterialPaymentRequestForm.vue'
 import MaterialPaymentDecisionDialog from './MaterialPaymentDecisionDialog.vue'
@@ -440,7 +443,7 @@ const cancellingRequest = ref<MaterialPaymentRequestView | null>(null)
 const cancelReason = ref('')
 const isCancelBusy = ref(false)
 const cancelError = ref('')
-const cancelKey = createCommandKeyTracker()
+const cancelKey = createCommandKeyKeeper()
 
 const actorId = computed(() => authStore?.user?.id ?? '')
 
@@ -543,7 +546,7 @@ function openCancelDialog(req: MaterialPaymentRequestView) {
   cancellingRequest.value = req
   cancelReason.value = ''
   cancelError.value = ''
-  cancelKey.settle()
+  cancelKey.reset()
 }
 
 function closeCancelDialog() {
@@ -572,14 +575,14 @@ async function confirmCancelRequest() {
   cancelError.value = ''
   try {
     await financeRepo.cancelPaymentRequest(props.projectId, request.id, payload, { idempotencyKey })
-    cancelKey.settle()
+    cancelKey.reset()
     isCancelBusy.value = false
     closeCancelDialog()
     await loadRequests()
     emit('changed')
   }
   catch (err: unknown) {
-    cancelKey.settleAfterError(err)
+    resetCommandKeyAfterError(cancelKey, err)
     cancelError.value = financeErrorMessage(err, 'Lỗi khi hủy đề nghị chi.')
   }
   finally {

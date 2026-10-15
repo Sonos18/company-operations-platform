@@ -38,6 +38,15 @@
             </select>
           </div>
 
+          <NuxtLink
+            v-if="canReadFinance"
+            to="/materials/finance/suppliers"
+            class="cockpit-btn cockpit-btn--secondary btn-sm flex items-center gap-1.5"
+          >
+            <UIcon name="i-lucide-building-2" class="text-sm" aria-hidden="true" />
+            <span>Công nợ nhà cung cấp</span>
+          </NuxtLink>
+
           <!-- Reload Button -->
           <button
             type="button"
@@ -166,7 +175,7 @@
                       {{ row.supplierName }}
                     </td>
                     <td class="p-2.5 font-mono font-bold text-right text-slate-900">
-                      {{ formatMoney(row.orderSubtotal) }}
+                      {{ formatVnNumber(row.orderSubtotal) }}
                     </td>
                     <td class="p-2.5 text-slate-600">
                       {{ formatDateTime(row.createdAt) }}
@@ -229,7 +238,7 @@
                       {{ formatDate(row.dueOn) }}
                     </td>
                     <td class="p-2.5 font-mono font-bold text-right text-slate-900">
-                      {{ formatMoney(row.remaining) }}
+                      {{ formatVnNumber(row.remaining) }}
                     </td>
                     <td class="p-2.5 text-center">
                       <span
@@ -295,7 +304,7 @@
                       {{ row.supplierName }}
                     </td>
                     <td class="p-2.5 font-mono font-bold text-right text-slate-900">
-                      {{ formatMoney(row.amount) }}
+                      {{ formatVnNumber(row.amount) }}
                     </td>
                     <td class="p-2.5 text-rose-700 italic">
                       "{{ row.reason }}"
@@ -357,7 +366,7 @@
                       {{ row.supplierName }}
                     </td>
                     <td class="p-2.5 font-mono font-bold text-right text-slate-900">
-                      {{ formatMoney(row.amount) }}
+                      {{ formatVnNumber(row.amount) }}
                     </td>
                     <td class="p-2.5 font-mono text-[11px] text-slate-600">
                       {{ row.submittedBy.slice(0, 8) }}...
@@ -421,7 +430,7 @@
                       {{ row.supplierName }}
                     </td>
                     <td class="p-2.5 font-mono font-bold text-right text-emerald-800">
-                      {{ formatMoney(row.amount) }}
+                      {{ formatVnNumber(row.amount) }}
                     </td>
                     <td class="p-2.5 text-slate-600">
                       {{ formatDateTime(row.approvedAt) }}
@@ -454,11 +463,11 @@ import type {
 import type {
   MaterialProjectOption,
 } from '../../../../shared/schemas/costs/material-procurement'
+import { formatVnNumber } from '../../../utils/materials/vn-number'
+import { formatDate } from '../../../utils/materials/date-display'
 import {
   financeErrorMessage,
-  formatDate,
   formatDateTime,
-  formatMoney,
 } from '../../../utils/materials/finance-ui'
 
 definePageMeta({
@@ -477,6 +486,10 @@ const inboxData = ref<MaterialFinanceInbox | null>(null)
 const isLoading = ref(false)
 const loadError = ref('')
 const activeTab = ref<string>('')
+
+const canReadFinance = computed(() => {
+  return Boolean(companyAccess?.hasPermission('material.finance.read'))
+})
 
 const canAccounting = computed(() => {
   return Boolean(companyAccess?.hasPermission('material.payment.request'))
