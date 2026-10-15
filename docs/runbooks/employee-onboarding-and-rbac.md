@@ -36,7 +36,7 @@ Unknown employment and private-detail values remain null. These identities estab
 
 ## Production invitation and onboarding
 
-1. Use an authenticated account with both `account.invite` and `employee.create` for `POST /api/companies/:companyId/employee-invitations`.
+1. Use an authenticated account with both `account.invite` and `employee.create` for `POST /api/companies/:companyId/employee-invitations/manual`.
 2. Supply employee code, full name, real work email, department ID, and optional position ID and hire date. The route derives actor, tenant, and company scope from the authenticated request; it accepts no caller-supplied actor or scope.
 3. The server-only Admin client sends the Supabase Auth invitation. Do not create, choose, transmit, or store a password.
 4. After Supabase Auth returns a user ID, the onboarding RPC links the tenant/company memberships, creates the employee and private-detail shell, and grants only the base `employee` role.
