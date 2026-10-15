@@ -74,7 +74,14 @@ const finalizationTargetSchema = z.discriminatedUnion('status', [
     declaredSha256: z.string().regex(/^[a-f0-9]{64}$/u),
   }).strict(),
 ])
-const readTargetSchema = z.object({ bucketId: z.literal('c1-accounting-evidence'), objectPath: z.string().min(1) }).strict()
+const readTargetSchema = z.object({
+  bucketId: z.literal('c1-accounting-evidence'),
+  objectPath: z.string().min(1),
+  declaredMimeType: z.string().min(1),
+}).strict()
+// Types a browser may render inline safely. Everything else (XML invoices in particular, which a
+// browser can execute as XHTML/SVG) is always served as a download, whatever the caller asked for.
+const inlineEvidenceMimeTypes: ReadonlySet<string> = new Set(['application/pdf', 'image/png', 'image/jpeg'])
 
 export class SupabaseMaterialProcurementRepository implements MaterialProcurementDataRepository {
   private readonly client: Client
@@ -241,7 +248,9 @@ export class SupabaseMaterialProcurementRepository implements MaterialProcuremen
       target_id: fileId,
     }), readTargetSchema)
     const signed = workflowResponse(
-      await this.client.storage.from(target.bucketId).createSignedUrl(target.objectPath, 60, { download: input.disposition === 'attachment' }),
+      await this.client.storage.from(target.bucketId).createSignedUrl(target.objectPath, 60, {
+        download: input.disposition === 'attachment' || !inlineEvidenceMimeTypes.has(target.declaredMimeType),
+      }),
       z.object({ signedUrl: z.string().url() }).passthrough(),
     )
     return costEvidenceReadUrlSchema.parse({ url: signed.signedUrl, expiresAt: new Date(Date.now() + 60_000).toISOString() })

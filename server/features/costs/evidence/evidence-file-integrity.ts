@@ -88,12 +88,31 @@ async function verifyXlsx(bytes: Uint8Array) {
 
 const xmlMimeTypes: ReadonlySet<string> = new Set(['application/xml', 'text/xml'])
 
-// Cheap structural check only: the first meaningful character of an XML document is '<'.
-// It rejects renamed binaries; it does not parse the document or resolve entities.
+const xmlPrologInspectionBytes = 64 * 1024
+// "<?xml" followed by whitespace, or a root element whose name starts with a letter or "_".
+const xmlStartPattern = /^<(?:\?xml\s|[a-z_][\w.:-]*[\s/>])/iu
+// Content a browser could render or execute if the file were ever opened inline. XML invoices
+// are always served as downloads (see readEvidenceUrl); this rejects them at upload as well.
+const forbiddenXmlPatterns: readonly RegExp[] = [
+  /http:\/\/www\.w3\.org\/1999\/xhtml/iu,
+  /http:\/\/www\.w3\.org\/2000\/svg/iu,
+  /<script/iu,
+  /javascript:/iu,
+  /<!entity/iu,
+  /<!doctype[^>[]*\[/iu,
+  /<\?xml-stylesheet/iu,
+]
+
+// Structural and active-content check for XML invoices. It does not parse the document or
+// resolve entities. Only the first 64 KiB are decoded for the start check; the forbidden
+// content scan covers the whole document so it cannot be pushed past that window.
 function verifyXml(bytes: Uint8Array) {
   // TextDecoder drops a leading UTF-8 BOM; trimStart drops any whitespace before the first tag.
-  const text = new TextDecoder('utf-8').decode(bytes).trimStart()
-  if (!text.startsWith('<')) mismatch()
+  const decoder = new TextDecoder('utf-8')
+  const head = decoder.decode(bytes.subarray(0, xmlPrologInspectionBytes), { stream: true }).trimStart()
+  if (!xmlStartPattern.test(head)) mismatch()
+  const text = new TextDecoder('utf-8').decode(bytes)
+  if (forbiddenXmlPatterns.some(pattern => pattern.test(text))) mismatch()
 }
 
 export async function verifyEvidenceBlob(blob: Blob, maxBytes: number, mimeType: string) {

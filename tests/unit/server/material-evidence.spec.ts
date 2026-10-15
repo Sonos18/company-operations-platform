@@ -213,7 +213,7 @@ describe('material evidence repository', () => {
 
   it('signs only the guarded material read target for 60 seconds', async () => {
     const signed = vi.fn(async () => ({ data: { signedUrl: 'https://example.invalid/material' }, error: null }))
-    const rpc = vi.fn(async () => ({ data: { bucketId: 'c1-accounting-evidence', objectPath: uploadIntent.objectPath }, error: null }))
+    const rpc = vi.fn(async () => ({ data: { bucketId: 'c1-accounting-evidence', objectPath: uploadIntent.objectPath, declaredMimeType: 'application/pdf' }, error: null }))
     const client = { rpc, storage: { from: vi.fn(() => ({ createSignedUrl: signed })) } }
     const repository = new SupabaseMaterialProcurementRepository(client as never)
 
@@ -225,6 +225,34 @@ describe('material evidence repository', () => {
       target_id: ids.unsignedQuotation,
     })
     expect(signed).toHaveBeenCalledWith(uploadIntent.objectPath, 60, { download: true })
+  })
+
+  function readTarget(declaredMimeType: string) {
+    const signed = vi.fn(async () => ({ data: { signedUrl: 'https://example.invalid/material' }, error: null }))
+    const rpc = vi.fn(async () => ({ data: { bucketId: 'c1-accounting-evidence', objectPath: uploadIntent.objectPath, declaredMimeType }, error: null }))
+    const client = { rpc, storage: { from: vi.fn(() => ({ createSignedUrl: signed })) } }
+    return { signed, repository: new SupabaseMaterialProcurementRepository(client as never) }
+  }
+
+  it.each(['application/pdf', 'image/png', 'image/jpeg'])('opens %s evidence inline when asked to', async (mimeType) => {
+    const { signed, repository } = readTarget(mimeType)
+    await repository.readEvidenceUrl(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { disposition: 'inline' })
+    expect(signed).toHaveBeenCalledWith(uploadIntent.objectPath, 60, { download: false })
+  })
+
+  it.each(['application/xml', 'text/xml'])('always downloads %s evidence, even when inline is requested', async (mimeType) => {
+    const { signed, repository } = readTarget(mimeType)
+    await repository.readEvidenceUrl(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { disposition: 'inline' })
+    expect(signed).toHaveBeenCalledWith(uploadIntent.objectPath, 60, { download: true })
+  })
+
+  it('refuses to sign a read target that does not report its MIME type', async () => {
+    const signed = vi.fn()
+    const rpc = vi.fn(async () => ({ data: { bucketId: 'c1-accounting-evidence', objectPath: uploadIntent.objectPath }, error: null }))
+    const client = { rpc, storage: { from: vi.fn(() => ({ createSignedUrl: signed })) } }
+    const repository = new SupabaseMaterialProcurementRepository(client as never)
+    await expect(repository.readEvidenceUrl(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { disposition: 'inline' })).rejects.toThrow()
+    expect(signed).not.toHaveBeenCalled()
   })
 
   function pendingUpload(content: Uint8Array, blobType: string, declaredMimeType: string) {

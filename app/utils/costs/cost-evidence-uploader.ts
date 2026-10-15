@@ -120,12 +120,21 @@ export async function createEvidenceIntent(
   }, { idempotencyKey })
 }
 
+// Content types a browser renders as an active document. Evidence is never stored with them,
+// whatever the browser reported for the picked file.
+const ACTIVE_DOCUMENT_MIME_PATTERN = /html|svg/iu
+
+/**
+ * Uploads the file with the MIME type declared on the intent (not the browser's file.type), so
+ * the stored Content-Type always matches what the server verifies at finalize.
+ */
 export async function uploadToStorageWithIntent(
   supabaseClient: SupabaseClient,
   intent: CostEvidenceUploadIntent,
   file: File,
   mimeType: string,
 ): Promise<{ error: unknown | null }> {
+  if (!mimeType.trim() || ACTIVE_DOCUMENT_MIME_PATTERN.test(mimeType)) throw new Error('Định dạng tệp không được hỗ trợ.')
   const { error } = await supabaseClient.storage
     .from(intent.bucketId)
     .upload(intent.objectPath, file, {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   computeFileSha256Hex,
   uploadAndFinalizeEvidence,
+  uploadToStorageWithIntent,
   validateEvidenceFile,
   type EvidenceUploadSession,
 } from '../../../app/utils/costs/cost-evidence-uploader'
@@ -564,6 +565,52 @@ describe('Cost Evidence Uploader utility', () => {
       expect(createUploadIntent).toHaveBeenCalledTimes(2)
       expect(uploadSpy).toHaveBeenCalledTimes(2)
       expect(mockEvidenceRepo.finalize).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('Storage content type (XML evidence hardening)', () => {
+    const intent = {
+      evidenceFileId: 'file-1',
+      version: 0,
+      bucketId: 'c1-accounting-evidence' as const,
+      objectPath: 'c1/p1/file-1',
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+      replayed: false,
+    }
+
+    it('stores the object with the declared MIME type', async () => {
+      const upload = vi.fn().mockResolvedValue({ error: null })
+      const file = new File(['<HDon/>'], 'invoice.xml', { type: 'text/html' })
+      await uploadToStorageWithIntent({ storage: { from: vi.fn(() => ({ upload })) } } as never, intent as never, file, 'application/xml')
+      expect(upload).toHaveBeenCalledWith('c1/p1/file-1', file, { upsert: false, contentType: 'application/xml' })
+    })
+
+    it.each(['text/html', 'TEXT/HTML; charset=utf-8', 'application/xhtml+xml', 'image/svg+xml', ''])('never stores an object as %j', async (mimeType) => {
+      const upload = vi.fn().mockResolvedValue({ error: null })
+      const file = new File(['<html/>'], 'invoice.xml')
+      await expect(uploadToStorageWithIntent({ storage: { from: vi.fn(() => ({ upload })) } } as never, intent as never, file, mimeType))
+        .rejects.toThrow('Định dạng tệp không được hỗ trợ.')
+      expect(upload).not.toHaveBeenCalled()
+    })
+
+    it('uploads an XML invoice the browser labels text/html with the declared XML type', async () => {
+      const file = new File(['<?xml version="1.0"?><HDon/>'], 'hoa-don.xml', { type: 'text/html' })
+      const upload = vi.fn().mockResolvedValue({ error: null })
+      const createUploadIntent = vi.fn().mockResolvedValue(intent)
+      await uploadAndFinalizeEvidence({
+        companyId: 'c1010000-0000-4000-8000-000000000020',
+        projectId: 'proj-1',
+        file,
+        evidenceKind: 'other',
+        evidenceRepo: {
+          createUploadIntent,
+          finalize: vi.fn().mockResolvedValue({ id: 'file-1', status: 'finalized', originalFilename: 'hoa-don.xml', mimeType: 'application/xml', sizeBytes: file.size, sha256: 'abc', version: 1, finalizedAt: '2026-10-15T00:00:00.000Z', replayed: false }),
+        } as never,
+        supabaseClient: { storage: { from: vi.fn(() => ({ upload })) } } as never,
+        allowedMimeTypes: ['application/pdf', 'application/xml', 'text/xml'],
+      })
+      expect(createUploadIntent).toHaveBeenCalledWith('proj-1', expect.objectContaining({ mimeType: 'application/xml' }), expect.anything())
+      expect(upload).toHaveBeenCalledWith('c1/p1/file-1', file, { upsert: false, contentType: 'application/xml' })
     })
   })
 })
