@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(43);
+select plan(47);
 
 -- Fixture: engineer owns the proposal, buyer creates orders, accountant records
 -- contracts, finance reader only reads, director is the legacy notification recipient.
@@ -232,6 +232,22 @@ select set_config('request.jwt.claims','{"sub":"c1260000-0000-4000-8000-00000000
 select is((
   select (public.c1_material_read_proposal('c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101','c1260000-0000-4000-8000-000000000301')->'lines'->0->>'signedQuantity')::numeric
 ),10::numeric,'case 1: proposal shows signedQuantity equal to the order quantity');
+
+-- case 1 (signed-order guards): once the order has a contract, even the table owner cannot rewrite its allocations or commercial fields
+set local role none;
+select throws_ok($$ update public.material_order_allocations set quantity = quantity + 1 where order_id = 'c1260000-0000-4000-8000-000000000351' $$,'P0001','SIGNED_ALLOCATION_IMMUTABLE','case 1: updating an allocation of a contracted order is SIGNED_ALLOCATION_IMMUTABLE');
+select throws_ok($$
+  insert into public.material_order_allocations(
+    tenant_id,company_id,project_id,order_id,proposal_id,approved_revision_id,proposal_line_id,quantity,unit_price,
+    quotation_material_name,mapping_confirmed
+  ) values (
+    'c1260000-0000-4000-8000-000000000010','c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101','c1260000-0000-4000-8000-000000000351',
+    'c1260000-0000-4000-8000-000000000301','c1260000-0000-4000-8000-000000000401','c1260000-0000-4000-8000-000000000311',1,1,'Steel Supplier A',true
+  )
+$$,'P0001','SIGNED_ALLOCATION_IMMUTABLE','case 1: adding an allocation to a contracted order is SIGNED_ALLOCATION_IMMUTABLE');
+select throws_ok($$ update public.material_orders set supplier_id = 'c1260000-0000-4000-8000-000000000202' where id = 'c1260000-0000-4000-8000-000000000351' $$,'P0001','SIGNED_ORDER_IMMUTABLE','case 1: changing the supplier of a contracted order is SIGNED_ORDER_IMMUTABLE');
+select throws_ok($$ update public.material_orders set currency_code = 'USD' where id = 'c1260000-0000-4000-8000-000000000351' $$,'P0001','SIGNED_ORDER_IMMUTABLE','case 1: changing the currency of a contracted order is SIGNED_ORDER_IMMUTABLE');
+set local role authenticated;
 
 -- case 2: replay and conflict
 select set_config('request.jwt.claims','{"sub":"c1260000-0000-4000-8000-000000000903","role":"authenticated"}',true);
