@@ -263,40 +263,18 @@
     </div>
 
     <!-- Cancel Payment Request Modal Dialog -->
-    <Teleport to="body">
-      <div
-        v-if="cancellingRequest"
-        :ref="focusDialogElement"
-        tabindex="-1"
-        class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="cancel-dialog-title"
-        @keydown.esc="closeCancelDialog"
-      >
-        <div class="bg-white rounded-lg shadow-xl border border-slate-200 w-full max-w-md p-5 space-y-4">
-          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div class="flex items-center gap-2 text-rose-700 font-bold text-sm">
-              <UIcon name="i-lucide-alert-triangle" class="text-rose-600 text-base" aria-hidden="true" />
-              <h4 id="cancel-dialog-title" class="m-0">Xác nhận hủy đề nghị chi</h4>
-            </div>
-            <button
-              type="button"
-              class="text-slate-400 hover:text-slate-600 p-1"
-              aria-label="Đóng"
-              :disabled="isCancelBusy"
-              @click="closeCancelDialog"
-            >
-              <UIcon name="i-lucide-x" class="text-sm" aria-hidden="true" />
-            </button>
-          </div>
-
-          <div class="text-xs text-slate-600 space-y-1 bg-slate-50 p-2.5 rounded border border-slate-100">
+    <UModal
+      :open="Boolean(cancellingRequest)"
+      title="Xác nhận hủy đề nghị chi"
+      description="Sau khi hủy, hạn mức đề nghị sẽ được hoàn trả lại cho đợt thanh toán tương ứng."
+      :dismissible="!isCancelBusy"
+      @update:open="onCancelOpenChange"
+    >
+      <template #body>
+        <div v-if="cancellingRequest" class="space-y-4 text-xs">
+          <div class="text-slate-600 space-y-1 bg-slate-50 p-2.5 rounded border border-slate-100">
             <div>Số tiền đề nghị: <strong class="font-mono text-slate-900">{{ formatVnNumber(cancellingRequest.amount) }} {{ contract.currencyCode }}</strong></div>
             <div>Đợt thanh toán: <strong class="text-slate-900">{{ getInstallmentName(cancellingRequest.installmentKey) }}</strong></div>
-            <div class="text-rose-700 font-medium pt-1">
-              Sau khi hủy, hạn mức đề nghị sẽ được hoàn trả lại cho đợt thanh toán tương ứng.
-            </div>
           </div>
 
           <div>
@@ -320,30 +298,20 @@
           <div v-if="cancelError" class="cockpit-alert cockpit-alert--danger p-2 text-xs text-rose-700" role="alert">
             {{ cancelError }}
           </div>
-
-          <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-            <button
-              type="button"
-              class="cockpit-btn cockpit-btn--secondary btn-sm"
-              :disabled="isCancelBusy"
-              @click="closeCancelDialog"
-            >
-              Đóng
-            </button>
-            <button
-              type="button"
-              class="cockpit-btn cockpit-btn--danger btn-sm flex items-center gap-1.5"
-              :disabled="isCancelBusy || !cancelReason.trim()"
-              @click="confirmCancelRequest"
-            >
-              <UIcon v-if="isCancelBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
-              <UIcon v-else name="i-lucide-check" class="text-sm" aria-hidden="true" />
-              <span>Xác nhận hủy</span>
-            </button>
-          </div>
         </div>
-      </div>
-    </Teleport>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full items-center justify-end gap-2">
+          <UButton color="neutral" variant="outline" :disabled="isCancelBusy" @click="closeCancelDialog">
+            Đóng
+          </UButton>
+          <UButton color="error" icon="i-lucide-check" :loading="isCancelBusy" :disabled="!cancelReason.trim()" @click="confirmCancelRequest">
+            Xác nhận hủy
+          </UButton>
+        </div>
+      </template>
+    </UModal>
 
     <!-- Create or Resubmit Request Modal Form -->
     <MaterialPaymentRequestForm
@@ -351,9 +319,11 @@
       :project-id="projectId"
       :contract="contract"
       :open="isFormOpen"
+      :command-key="commandKeys.forScope(resubmitRequestTarget ? `resubmit:${resubmitRequestTarget.id}` : `create:${contract.id}`)"
       :resubmit-request="resubmitRequestTarget"
       @update:open="val => isFormOpen = val"
       @saved="onRequestSaved"
+      @stale="onStale"
     />
 
     <!-- Decision Modal Dialog -->
@@ -363,8 +333,10 @@
       :request="decisionRequestTarget"
       :initial-decision="decisionInitialAction"
       :open="isDecisionOpen"
+      :command-key="commandKeys.forScope(`decide:${decisionRequestTarget?.id ?? ''}`)"
       @update:open="val => isDecisionOpen = val"
       @saved="onDecisionSaved"
+      @stale="onStale"
     />
 
     <!-- Record Payment Modal Dialog -->
@@ -375,8 +347,10 @@
       :request="recordPaymentRequestTarget"
       :installment-name="recordPaymentRequestTarget ? getInstallmentName(recordPaymentRequestTarget.installmentKey) : ''"
       :open="isRecordPaymentOpen"
+      :command-key="commandKeys.forScope(`pay:${recordPaymentRequestTarget?.id ?? ''}`)"
       @update:open="val => isRecordPaymentOpen = val"
       @saved="onRecordPaymentSaved"
+      @stale="onStale"
     />
   </div>
 </template>
@@ -390,12 +364,11 @@ import type {
 } from '../../../../shared/schemas/costs/material-finance'
 import { paymentRequestActions } from '../../../utils/materials/payment-request-actions'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
-import { formatDate } from '../../../utils/materials/date-display'
-import { createCommandKeyKeeper } from '../../../utils/materials/command-key'
+import { formatDate, formatDateTime } from '../../../utils/materials/date-display'
 import {
+  createScopedCommandKeys,
   financeErrorMessage,
-  focusDialogElement,
-  formatDateTime,
+  isVersionConflict,
   moneyGreaterThan,
   resetCommandKeyAfterError,
 } from '../../../utils/materials/finance-ui'
@@ -443,7 +416,7 @@ const cancellingRequest = ref<MaterialPaymentRequestView | null>(null)
 const cancelReason = ref('')
 const isCancelBusy = ref(false)
 const cancelError = ref('')
-const cancelKey = createCommandKeyKeeper()
+const commandKeys = createScopedCommandKeys()
 
 const actorId = computed(() => authStore?.user?.id ?? '')
 
@@ -546,7 +519,6 @@ function openCancelDialog(req: MaterialPaymentRequestView) {
   cancellingRequest.value = req
   cancelReason.value = ''
   cancelError.value = ''
-  cancelKey.reset()
 }
 
 function closeCancelDialog() {
@@ -569,6 +541,7 @@ async function confirmCancelRequest() {
     expectedVersion: request.version,
     reason: trimmedReason,
   }
+  const cancelKey = commandKeys.forScope(`cancel:${request.id}`)
   const idempotencyKey = cancelKey.keyFor({ requestId: request.id, ...payload })
 
   isCancelBusy.value = true
@@ -583,11 +556,32 @@ async function confirmCancelRequest() {
   }
   catch (err: unknown) {
     resetCommandKeyAfterError(cancelKey, err)
-    cancelError.value = financeErrorMessage(err, 'Lỗi khi hủy đề nghị chi.')
+    const message = financeErrorMessage(err, 'Lỗi khi hủy đề nghị chi.')
+    isCancelBusy.value = false
+    if (isVersionConflict(err)) await onStale(message)
+    else cancelError.value = message
   }
   finally {
     isCancelBusy.value = false
   }
+}
+
+function onCancelOpenChange(value: boolean) {
+  if (!value) closeCancelDialog()
+}
+
+/** The request changed since it was loaded: close the dialogs, reload, and tell the user why. */
+async function onStale(message: string) {
+  isFormOpen.value = false
+  resubmitRequestTarget.value = null
+  isDecisionOpen.value = false
+  decisionRequestTarget.value = null
+  isRecordPaymentOpen.value = false
+  recordPaymentRequestTarget.value = null
+  closeCancelDialog()
+  await loadRequests()
+  actionError.value = message
+  emit('changed')
 }
 
 function onRequestSaved() {

@@ -10,6 +10,7 @@ import {
   materialFinanceInboxSchema,
   materialInvoiceViewSchema,
   materialPaymentRequestViewSchema,
+  recordMaterialInvoiceInputSchema,
   recordMaterialPaymentInputSchema,
   resubmitPaymentRequestInputSchema,
   type MaterialContractView,
@@ -60,6 +61,9 @@ interface FinanceState {
   requests: MaterialPaymentRequestView[]
   calls: Call[]
   proofAlreadyUsed: boolean
+  loseFirstCreateResponse: boolean
+  receipts: Map<string, { resourceId: string, version: number }>
+  lastIntent: { originalFilename: string, mimeType: string, sizeBytes: number, sha256: string } | null
 }
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64')
@@ -225,6 +229,9 @@ async function installFinanceMocks(page: Page, initial: Partial<FinanceState> = 
     requests: [],
     calls: [],
     proofAlreadyUsed: false,
+    loseFirstCreateResponse: false,
+    receipts: new Map(),
+    lastIntent: null,
     ...initial,
   }
   let nextRequestNo = 2
@@ -251,6 +258,7 @@ async function installFinanceMocks(page: Page, initial: Partial<FinanceState> = 
     const ack = (resourceId: string, version: number) => route.fulfill({ json: { resourceId, version, replayed: false } })
 
     if (path === '/evidence/upload-intents') {
+      state.lastIntent = body as FinanceState['lastIntent']
       return route.fulfill({
         json: {
           evidenceFileId: proofFileId,
@@ -267,10 +275,10 @@ async function installFinanceMocks(page: Page, initial: Partial<FinanceState> = 
         json: {
           id: proofFileId,
           status: 'finalized',
-          originalFilename: 'unc.png',
-          mimeType: 'image/png',
-          sizeBytes: png.length,
-          sha256: 'a'.repeat(64),
+          originalFilename: state.lastIntent?.originalFilename ?? 'unc.png',
+          mimeType: state.lastIntent?.mimeType ?? 'image/png',
+          sizeBytes: state.lastIntent?.sizeBytes ?? png.length,
+          sha256: state.lastIntent?.sha256 ?? 'a'.repeat(64),
           version: 1,
           finalizedAt: new Date().toISOString(),
           replayed: false,
@@ -278,8 +286,24 @@ async function installFinanceMocks(page: Page, initial: Partial<FinanceState> = 
       })
     }
 
+    if (path === `/contracts/${contractId}/invoices` && method === 'POST') {
+      const input = recordMaterialInvoiceInputSchema.parse(body)
+      state.invoices.push(materialInvoiceViewSchema.parse({
+        id: invoiceId,
+        contractId,
+        ...input,
+        state: 'recorded',
+        voidReason: null,
+        version: 1,
+      }))
+      return ack(invoiceId, 1)
+    }
+
     if (path === `/contracts/${contractId}/payment-requests` && method === 'POST') {
       const input = createPaymentRequestInputSchema.parse(body)
+      const receiptKey = req.headers()['idempotency-key'] ?? ''
+      const replay = state.receipts.get(receiptKey)
+      if (replay) return route.fulfill({ json: { ...replay, replayed: true } })
       const created = buildRequest({
         id: `d0000000-0000-4000-8000-00000000000${nextRequestNo++}`,
         installmentKey: input.installmentKey,
@@ -289,6 +313,12 @@ async function installFinanceMocks(page: Page, initial: Partial<FinanceState> = 
         submittedBy: accountantId,
       })
       state.requests.push(created)
+      state.receipts.set(receiptKey, { resourceId: created.id, version: created.version })
+      if (state.loseFirstCreateResponse) {
+        // The server committed, but the response never reaches the browser.
+        state.loseFirstCreateResponse = false
+        return route.abort('failed')
+      }
       return ack(created.id, created.version)
     }
 
@@ -372,8 +402,13 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
     const dialog = page.getByRole('dialog', { name: 'Lập đề nghị thanh toán chi' })
     await expect(dialog.getByRole('radio', { name: /Tạm ứng 10%/ })).toBeChecked()
     await expect(dialog.getByText('Đợt tạm ứng: không bắt buộc đính kèm hóa đơn.')).toBeVisible()
-    await dialog.getByLabel(/Số tiền đề nghị chi/).fill('33')
+    // Real key presses: every keystroke re-renders the dialog and must not move focus away.
+    await dialog.getByLabel(/Số tiền đề nghị chi/).fill('')
+    await dialog.getByLabel(/Số tiền đề nghị chi/).pressSequentially('33')
+    await expect(dialog.getByLabel(/Số tiền đề nghị chi/)).toHaveValue('33')
     await expect(dialog.getByTestId('request-amount-interpreted')).toHaveText('Hiểu là: 33')
+    await dialog.getByLabel('Ghi chú đề nghị chi').pressSequentially('Tạm ứng đợt 1')
+    await expect(dialog.getByLabel('Ghi chú đề nghị chi')).toHaveValue('Tạm ứng đợt 1')
     await dialog.getByRole('button', { name: 'Gửi đề nghị chi' }).click()
 
     await expect(dialog).toBeHidden()
@@ -383,7 +418,7 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
       installmentKey: advanceKey,
       amount: '33',
       invoiceIds: [],
-      note: null,
+      note: 'Tạm ứng đợt 1',
     })
     expect(post?.key).toBeTruthy()
     await expect(page.getByRole('cell', { name: 'Chờ duyệt' })).toBeVisible()
@@ -418,7 +453,8 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
     await expect(dialog.getByText('Cần nhập lý do khi trả lại đề nghị')).toBeVisible()
     expect(state.calls).toHaveLength(0)
 
-    await dialog.getByLabel(/Lý do trả lại đề nghị chi/).fill('Thiếu bảng đối chiếu khối lượng')
+    await dialog.getByLabel(/Lý do trả lại đề nghị chi/).pressSequentially('Thiếu bảng đối chiếu khối lượng')
+    await expect(dialog.getByLabel(/Lý do trả lại đề nghị chi/)).toHaveValue('Thiếu bảng đối chiếu khối lượng')
     await confirm.click()
 
     await expect(dialog).toBeHidden()
@@ -445,7 +481,9 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
 
     const dialog = page.getByRole('dialog', { name: 'Gửi lại đề nghị thanh toán' })
     await expect(dialog.getByRole('radio', { name: /Thanh toán đợt 2/ })).toBeChecked()
-    await dialog.getByLabel(/Số tiền đề nghị chi/).fill('350,5')
+    await dialog.getByLabel(/Số tiền đề nghị chi/).fill('')
+    await dialog.getByLabel(/Số tiền đề nghị chi/).pressSequentially('350,5')
+    await expect(dialog.getByLabel(/Số tiền đề nghị chi/)).toHaveValue('350,5')
     await expect(dialog.getByTestId('request-amount-interpreted')).toHaveText('Hiểu là: 350,5')
     await dialog.getByRole('button', { name: 'Gửi lại đề nghị' }).click()
 
@@ -472,7 +510,8 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
 
     await page.getByRole('button', { name: 'Ghi chi', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Ghi nhận chuyển khoản thực chi' })
-    await dialog.getByLabel(/Số tham chiếu/).fill('FT26288000189')
+    await dialog.getByLabel(/Số tham chiếu/).pressSequentially('FT26288000189')
+    await expect(dialog.getByLabel(/Số tham chiếu/)).toHaveValue('FT26288000189')
     await dialog.locator('input[type=file]').setInputFiles({ name: 'unc.png', mimeType: 'image/png', buffer: png })
     await dialog.getByRole('button', { name: 'Tải lên', exact: true }).click()
     await expect(dialog.getByText('Đã tải chứng từ')).toBeVisible()
@@ -504,6 +543,98 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
 
     await expect(dialog.getByRole('alert').filter({ hasText: proofAlreadyUsedMessage })).toBeVisible()
     await expect(dialog.getByRole('button', { name: 'Xác nhận đã chi' })).toBeDisabled()
+  })
+})
+
+test.describe('Material payment dialogs: stale data, retries and typing', () => {
+  test('8. a stale request version closes the dialog, reloads and the retry uses the new version', async ({ page }) => {
+    await signIn(page, treasurer, treasurerPermissions)
+    const state = await installFinanceMocks(page, { invoices: [buildInvoice()], requests: [buildRequest()] })
+
+    await page.goto(orderPath)
+    await expect(page.getByRole('button', { name: 'Duyệt', exact: true })).toBeVisible()
+    // Someone else changes the request after the page loaded.
+    state.requests[0] = buildRequest({ version: 2 })
+
+    await page.getByRole('button', { name: 'Duyệt', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Phê duyệt đề nghị chi' })
+    await dialog.getByRole('button', { name: 'Xác nhận duyệt' }).click()
+
+    await expect(dialog).toBeHidden()
+    await expect(page.getByRole('alert').filter({ hasText: 'Dữ liệu đã thay đổi' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Duyệt', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Phê duyệt đề nghị chi' }).getByRole('button', { name: 'Xác nhận duyệt' }).click()
+    await expect(page.getByRole('cell', { name: 'Đã duyệt', exact: true })).toBeVisible()
+
+    const decisions = state.calls.filter(call => call.path === `/payment-requests/${requestId}/decisions`)
+    expect(decisions.map(call => decidePaymentRequestInputSchema.parse(call.body).expectedVersion)).toEqual([1, 2])
+    expect(decisions[0]?.key).not.toBe(decisions[1]?.key)
+  })
+
+  test('9. a lost response keeps the idempotency key when the dialog is closed and reopened', async ({ page }) => {
+    await signIn(page, accountant, accountantPermissions)
+    const state = await installFinanceMocks(page, { loseFirstCreateResponse: true })
+
+    await page.goto(orderPath)
+    await page.getByRole('button', { name: 'Lập đề nghị chi' }).click()
+    const first = page.getByRole('dialog', { name: 'Lập đề nghị thanh toán chi' })
+    await first.getByRole('button', { name: 'Gửi đề nghị chi' }).click()
+    await expect(first.getByRole('alert')).toBeVisible()
+    await first.getByRole('button', { name: 'Hủy bỏ' }).click()
+    await expect(first).toBeHidden()
+
+    await page.getByRole('button', { name: 'Lập đề nghị chi' }).click()
+    await page.getByRole('dialog', { name: 'Lập đề nghị thanh toán chi' }).getByRole('button', { name: 'Gửi đề nghị chi' }).click()
+    await expect(page.getByRole('cell', { name: 'Chờ duyệt' })).toBeVisible()
+
+    const creates = state.calls.filter(call => call.method === 'POST' && call.path === `/contracts/${contractId}/payment-requests`)
+    expect(creates).toHaveLength(2)
+    expect(creates[0]?.key).toBeTruthy()
+    expect(creates[1]?.key).toBe(creates[0]?.key)
+    expect(state.requests).toHaveLength(1)
+  })
+
+  test('10. accountant records an invoice, typing Vietnamese amounts key by key', async ({ page }) => {
+    await signIn(page, accountant, accountantPermissions)
+    const state = await installFinanceMocks(page)
+
+    await page.goto(orderPath)
+    await page.getByRole('button', { name: 'Nhập hóa đơn' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Nhập hóa đơn nhà cung cấp' })
+
+    await dialog.locator('#invoice-file-input').setInputFiles({ name: 'hoa-don.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7 invoice') })
+    await dialog.getByRole('button', { name: 'Tải lên tệp' }).click()
+    await expect(dialog.getByText('Đã tải lên tệp')).toBeVisible()
+
+    await dialog.locator('#inv-symbol-input').pressSequentially('1C26TAA')
+    await expect(dialog.locator('#inv-symbol-input')).toHaveValue('1C26TAA')
+    await dialog.locator('#inv-no-input').pressSequentially('0000123')
+    await expect(dialog.locator('#inv-no-input')).toHaveValue('0000123')
+    await dialog.locator('#inv-subtotal-input').fill('')
+    await dialog.locator('#inv-subtotal-input').pressSequentially('1.000.000')
+    await expect(dialog.locator('#inv-subtotal-input')).toHaveValue('1.000.000')
+    await dialog.locator('#inv-vat-input').fill('')
+    await dialog.locator('#inv-vat-input').pressSequentially('100.000')
+    await expect(dialog.locator('#inv-vat-input')).toHaveValue('100.000')
+    await expect(dialog.locator('#inv-total-input')).toHaveValue('1.100.000')
+
+    await dialog.getByLabel('Tên vật tư trên hóa đơn:').pressSequentially('Thép cuộn phi 8 (HĐ)')
+    await expect(dialog.getByLabel('Tên vật tư trên hóa đơn:')).toHaveValue('Thép cuộn phi 8 (HĐ)')
+    await dialog.getByRole('button', { name: 'Ghi nhận hóa đơn' }).click()
+
+    await expect(dialog).toBeHidden()
+    const post = state.calls.find(call => call.path === `/contracts/${contractId}/invoices`)
+    expect(recordMaterialInvoiceInputSchema.parse(post?.body)).toMatchObject({
+      invoiceSymbol: '1C26TAA',
+      invoiceNo: '0000123',
+      subtotal: '1000000',
+      vatAmount: '100000',
+      total: '1100000',
+      fileId: proofFileId,
+      lines: [{ proposalLineId, invoiceMaterialName: 'Thép cuộn phi 8 (HĐ)' }],
+    })
+    await expect(page.getByRole('cell', { name: '1C26TAA' })).toBeVisible()
   })
 })
 
@@ -573,6 +704,20 @@ test.describe('Material finance inbox', () => {
     await page.getByRole('tab', { name: /Đợt sắp\/quá hạn/ }).click()
     await expect(page.getByText('Không có đợt thanh toán nào sắp hoặc quá hạn.')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Làm mới dữ liệu' })).toBeEnabled()
+  })
+
+  test('7d. approve and execute permissions each open only their own tab', async ({ page }) => {
+    await signIn(page, treasurer, ['material.read', 'material.payment.approve'])
+    await installInboxMocks(page)
+
+    await page.goto('/materials/finance')
+    await expect(page.getByRole('tab')).toHaveCount(1)
+    await expect(page.getByRole('tab', { name: /Chờ duyệt/ })).toBeVisible()
+
+    await signIn(page, treasurer, ['material.read', 'material.payment.execute'])
+    await page.goto('/materials/finance')
+    await expect(page.getByRole('tab')).toHaveCount(1)
+    await expect(page.getByRole('tab', { name: /Đã duyệt – chờ chi/ })).toBeVisible()
   })
 
   test('7c. an inbox load failure shows a message and reload recovers', async ({ page }) => {

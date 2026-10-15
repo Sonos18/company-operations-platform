@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js'
 import { ClientError } from '../../errors/client-error'
 import { describeContractError } from './contract-errors'
-import type { createCommandKeyKeeper } from './command-key'
+import { createCommandKeyKeeper } from './command-key'
 import { parseVnMoney } from './vn-number'
 
 /**
@@ -30,19 +30,6 @@ export function moneySum(left: string, right: string): string {
 
 export function moneyGreaterThan(left: string, right: string): boolean {
   return new Decimal(left).gt(new Decimal(right))
-}
-
-export function formatDateTime(value: string): string {
-  if (!value) return ''
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleString('vi-VN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 const financeErrorMessages: Readonly<Record<string, string>> = {
@@ -91,11 +78,33 @@ export function isDefinitiveRejection(err: unknown): boolean {
 }
 
 /** After a failed command: forget the idempotency key unless the outcome is unknown (then a retry must replay it). */
-export function resetCommandKeyAfterError(keeper: ReturnType<typeof createCommandKeyKeeper>, err: unknown): void {
+export type CommandKeyKeeper = ReturnType<typeof createCommandKeyKeeper>
+
+export function resetCommandKeyAfterError(keeper: CommandKeyKeeper, err: unknown): void {
   if (isDefinitiveRejection(err)) keeper.reset()
 }
 
-/** Template ref callback that moves focus into a freshly opened dialog. */
-export function focusDialogElement(element: unknown): void {
-  if (element instanceof HTMLElement) element.focus()
+/**
+ * One idempotency key keeper per action and target (for example "decide:<requestId>"). The
+ * owner of the dialogs holds this, so a key survives closing and reopening a dialog: if a
+ * submit timed out after the server committed, the same submit after reopening replays the
+ * same key instead of creating a second request.
+ */
+export function createScopedCommandKeys() {
+  const keepers = new Map<string, CommandKeyKeeper>()
+  return {
+    forScope(scope: string): CommandKeyKeeper {
+      let keeper = keepers.get(scope)
+      if (!keeper) {
+        keeper = createCommandKeyKeeper()
+        keepers.set(scope, keeper)
+      }
+      return keeper
+    },
+  }
+}
+
+/** True when the server rejected the command because the record changed since it was loaded. */
+export function isVersionConflict(err: unknown): boolean {
+  return financeErrorCode(err) === 'VERSION_CONFLICT'
 }

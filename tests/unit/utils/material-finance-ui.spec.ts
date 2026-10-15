@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { ClientError } from '../../../app/errors/client-error'
 import { createCommandKeyKeeper } from '../../../app/utils/materials/command-key'
 import {
+  createScopedCommandKeys,
   financeErrorMessage,
   isDefinitiveRejection,
+  isVersionConflict,
   moneyEquals,
   moneySum,
   parseMoneyOrNull,
@@ -99,5 +101,43 @@ describe('uploadErrorMessage', () => {
     zodLike.name = 'ZodError'
     expect(uploadErrorMessage(zodLike, 'fallback')).toBe('fallback')
     expect(uploadErrorMessage('boom', 'fallback')).toBe('fallback')
+  })
+})
+
+describe('createScopedCommandKeys', () => {
+  it('returns the same keeper for the same scope and separate keepers for other scopes', () => {
+    const keys = createScopedCommandKeys()
+    expect(keys.forScope('decide:r1')).toBe(keys.forScope('decide:r1'))
+    expect(keys.forScope('decide:r1')).not.toBe(keys.forScope('decide:r2'))
+    expect(keys.forScope('decide:r1')).not.toBe(keys.forScope('pay:r1'))
+  })
+
+  it('replays the same key after a dialog is closed and reopened with the same payload', () => {
+    const keys = createScopedCommandKeys()
+    const payload = { requestId: 'r1', expectedVersion: 2, decision: 'approve' }
+
+    const first = keys.forScope('decide:r1').keyFor(payload)
+    // The submit timed out (outcome unknown), the dialog is closed and a new one asks for the keeper again.
+    resetCommandKeyAfterError(keys.forScope('decide:r1'), clientError('NETWORK_ERROR', true, 'network'))
+    expect(keys.forScope('decide:r1').keyFor(payload)).toBe(first)
+
+    // A different action on the same request never shares the key.
+    expect(keys.forScope('pay:r1').keyFor(payload)).not.toBe(first)
+  })
+
+  it('starts a new key after success or a definitive refusal', () => {
+    const keys = createScopedCommandKeys()
+    const payload = { requestId: 'r1' }
+    const first = keys.forScope('cancel:r1').keyFor(payload)
+    keys.forScope('cancel:r1').reset()
+    expect(keys.forScope('cancel:r1').keyFor(payload)).not.toBe(first)
+  })
+})
+
+describe('isVersionConflict', () => {
+  it('detects only the version conflict code', () => {
+    expect(isVersionConflict(clientError('VERSION_CONFLICT', false))).toBe(true)
+    expect(isVersionConflict(clientError('INVOICE_DUPLICATE', false))).toBe(false)
+    expect(isVersionConflict(new Error('VERSION_CONFLICT'))).toBe(false)
   })
 })

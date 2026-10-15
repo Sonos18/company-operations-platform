@@ -464,11 +464,8 @@ import type {
   MaterialProjectOption,
 } from '../../../../shared/schemas/costs/material-procurement'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
-import { formatDate } from '../../../utils/materials/date-display'
-import {
-  financeErrorMessage,
-  formatDateTime,
-} from '../../../utils/materials/finance-ui'
+import { formatDate, formatDateTime } from '../../../utils/materials/date-display'
+import { financeErrorMessage } from '../../../utils/materials/finance-ui'
 
 definePageMeta({
   requiredPermission: 'material.read',
@@ -495,12 +492,8 @@ const canAccounting = computed(() => {
   return Boolean(companyAccess?.hasPermission('material.payment.request'))
 })
 
-const canTreasurer = computed(() => {
-  return Boolean(
-    companyAccess?.hasPermission('material.payment.approve') ||
-    companyAccess?.hasPermission('material.payment.execute')
-  )
-})
+const canApprove = computed(() => Boolean(companyAccess?.hasPermission('material.payment.approve')))
+const canExecute = computed(() => Boolean(companyAccess?.hasPermission('material.payment.execute')))
 
 interface TabItem {
   key: string
@@ -529,19 +522,19 @@ const availableTabs = computed<TabItem[]>(() => {
       }
     )
   }
-  if (canTreasurer.value) {
-    tabs.push(
-      {
-        key: 'pendingApproval',
-        label: 'Chờ duyệt',
-        count: inboxData.value?.pendingApproval?.length ?? 0,
-      },
-      {
-        key: 'approvedAwaitingPayment',
-        label: 'Đã duyệt – chờ chi',
-        count: inboxData.value?.approvedAwaitingPayment?.length ?? 0,
-      }
-    )
+  if (canApprove.value) {
+    tabs.push({
+      key: 'pendingApproval',
+      label: 'Chờ duyệt',
+      count: inboxData.value?.pendingApproval?.length ?? 0,
+    })
+  }
+  if (canExecute.value) {
+    tabs.push({
+      key: 'approvedAwaitingPayment',
+      label: 'Đã duyệt – chờ chi',
+      count: inboxData.value?.approvedAwaitingPayment?.length ?? 0,
+    })
   }
   return tabs
 })

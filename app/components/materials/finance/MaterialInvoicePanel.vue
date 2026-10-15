@@ -166,40 +166,18 @@
     </div>
 
     <!-- Void Invoice Modal Dialog -->
-    <Teleport to="body">
-      <div
-        v-if="voidingInvoice"
-        :ref="focusDialogElement"
-        class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4"
-        tabindex="-1"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="void-invoice-dialog-title"
-        @keydown.esc="closeVoidDialog"
-      >
-        <div class="bg-white rounded-lg shadow-xl border border-slate-200 w-full max-w-md p-5 space-y-4">
-          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div class="flex items-center gap-2 text-rose-700 font-bold text-sm">
-              <UIcon name="i-lucide-alert-triangle" class="text-rose-600 text-base" aria-hidden="true" />
-              <h4 id="void-invoice-dialog-title" class="m-0">Hủy hóa đơn nhà cung cấp</h4>
-            </div>
-            <button
-              type="button"
-              class="text-slate-400 hover:text-slate-600 p-1"
-              aria-label="Đóng"
-              :disabled="isVoidBusy"
-              @click="closeVoidDialog"
-            >
-              <UIcon name="i-lucide-x" class="text-sm" aria-hidden="true" />
-            </button>
-          </div>
-
-          <div class="text-xs text-slate-600 space-y-1 bg-slate-50 p-2.5 rounded border border-slate-100">
+    <UModal
+      :open="Boolean(voidingInvoice)"
+      title="Hủy hóa đơn nhà cung cấp"
+      description="Hóa đơn sau khi hủy sẽ không thể phục hồi và không được tính vào tổng giá trị đã nhận hóa đơn."
+      :dismissible="!isVoidBusy"
+      @update:open="onVoidOpenChange"
+    >
+      <template #body>
+        <div v-if="voidingInvoice" class="space-y-4 text-xs">
+          <div class="text-slate-600 space-y-1 bg-slate-50 p-2.5 rounded border border-slate-100">
             <div>Hóa đơn số: <strong class="font-mono text-slate-900">{{ voidingInvoice.invoiceNo }}</strong> (Ký hiệu: {{ voidingInvoice.invoiceSymbol }})</div>
             <div>Tổng tiền: <strong class="font-mono text-slate-900">{{ formatVnNumber(voidingInvoice.total) }} {{ contract.currencyCode }}</strong></div>
-            <div class="text-rose-700 font-medium pt-1">
-              Lưu ý: Hóa đơn sau khi hủy sẽ không thể phục hồi và sẽ không được tính vào tổng giá trị đã nhận hóa đơn.
-            </div>
           </div>
 
           <div>
@@ -223,30 +201,20 @@
           <div v-if="voidError" class="cockpit-alert cockpit-alert--danger p-2 text-xs text-rose-700" role="alert">
             {{ voidError }}
           </div>
-
-          <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-            <button
-              type="button"
-              class="cockpit-btn cockpit-btn--secondary btn-sm"
-              :disabled="isVoidBusy"
-              @click="closeVoidDialog"
-            >
-              Đóng
-            </button>
-            <button
-              type="button"
-              class="cockpit-btn cockpit-btn--danger btn-sm flex items-center gap-1.5"
-              :disabled="isVoidBusy || !voidReason.trim()"
-              @click="confirmVoidInvoice"
-            >
-              <UIcon v-if="isVoidBusy" name="i-lucide-loader-2" class="animate-spin text-sm" aria-hidden="true" />
-              <UIcon v-else name="i-lucide-check" class="text-sm" aria-hidden="true" />
-              <span>Xác nhận hủy</span>
-            </button>
-          </div>
         </div>
-      </div>
-    </Teleport>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full items-center justify-end gap-2">
+          <UButton color="neutral" variant="outline" :disabled="isVoidBusy" @click="closeVoidDialog">
+            Đóng
+          </UButton>
+          <UButton color="error" icon="i-lucide-check" :loading="isVoidBusy" :disabled="!voidReason.trim()" @click="confirmVoidInvoice">
+            Xác nhận hủy
+          </UButton>
+        </div>
+      </template>
+    </UModal>
 
     <!-- MaterialInvoiceForm Modal -->
     <MaterialInvoiceForm
@@ -254,8 +222,10 @@
       :project-id="projectId"
       :contract="contract"
       :open="isFormOpen"
+      :command-key="commandKeys.forScope(`record-invoice:${contract.id}`)"
       @update:open="val => isFormOpen = val"
       @saved="onInvoiceSaved"
+      @stale="onStale"
     />
   </div>
 </template>
@@ -269,10 +239,10 @@ import type {
 } from '../../../../shared/schemas/costs/material-finance'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
 import { formatDate } from '../../../utils/materials/date-display'
-import { createCommandKeyKeeper } from '../../../utils/materials/command-key'
 import {
+  createScopedCommandKeys,
   financeErrorMessage,
-  focusDialogElement,
+  isVersionConflict,
   resetCommandKeyAfterError,
 } from '../../../utils/materials/finance-ui'
 import MaterialInvoiceForm from './MaterialInvoiceForm.vue'
@@ -310,7 +280,7 @@ const voidingInvoice = ref<MaterialInvoiceView | null>(null)
 const voidReason = ref('')
 const isVoidBusy = ref(false)
 const voidError = ref('')
-const voidKey = createCommandKeyKeeper()
+const commandKeys = createScopedCommandKeys()
 
 async function loadInvoices() {
   if (!props.contract?.id) return
@@ -344,7 +314,6 @@ function openVoidDialog(inv: MaterialInvoiceView) {
   voidingInvoice.value = inv
   voidReason.value = ''
   voidError.value = ''
-  voidKey.reset()
 }
 
 function closeVoidDialog() {
@@ -367,6 +336,7 @@ async function confirmVoidInvoice() {
     expectedVersion: invoice.version,
     reason: trimmedReason,
   }
+  const voidKey = commandKeys.forScope(`void:${invoice.id}`)
   const idempotencyKey = voidKey.keyFor({ invoiceId: invoice.id, ...payload })
 
   isVoidBusy.value = true
@@ -380,10 +350,26 @@ async function confirmVoidInvoice() {
     emit('changed')
   } catch (err: unknown) {
     resetCommandKeyAfterError(voidKey, err)
-    voidError.value = financeErrorMessage(err, 'Lỗi khi hủy hóa đơn.')
+    const message = financeErrorMessage(err, 'Lỗi khi hủy hóa đơn.')
+    isVoidBusy.value = false
+    if (isVersionConflict(err)) await onStale(message)
+    else voidError.value = message
   } finally {
     isVoidBusy.value = false
   }
+}
+
+function onVoidOpenChange(value: boolean) {
+  if (!value) closeVoidDialog()
+}
+
+/** The invoice changed since it was loaded: close the dialogs, reload, and tell the user why. */
+async function onStale(message: string) {
+  isFormOpen.value = false
+  closeVoidDialog()
+  await loadInvoices()
+  actionError.value = message
+  emit('changed')
 }
 
 function onInvoiceSaved() {
