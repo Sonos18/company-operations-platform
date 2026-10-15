@@ -26,7 +26,6 @@ const allowlist = [
 
 // Each material file owns one synthetic UUID prefix; every UUID in it must use that prefix.
 export const materialSyntheticPrefixes = {
-  'c1_material_procurement.test.sql': 'c120',
   'c1_material_procurement_security.test.sql': 'c121',
   'c1_material_procurement_a1.test.sql': 'c122',
   'c1_material_engineer_invoice_name.test.sql': 'c123',

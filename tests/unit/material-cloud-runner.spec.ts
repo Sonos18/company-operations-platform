@@ -5,7 +5,6 @@ import { expect, it, vi } from 'vitest'
 const cwd = process.cwd()
 const scriptPath = resolve('scripts/run-c1-cloud-dev-tests.mjs')
 const materialPaths = [
-  'c1_material_procurement.test.sql',
   'c1_material_procurement_security.test.sql',
   'c1_material_procurement_a1.test.sql',
   'c1_material_engineer_invoice_name.test.sql',
