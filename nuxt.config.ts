@@ -18,6 +18,13 @@ export default defineNuxtConfig({
   runtimeConfig: {
     materialQuotationOpenaiApiKey: '',
     supabaseServiceRoleKey: '',
+    smtp: {
+      host: '',
+      port: '',
+      user: '',
+      pass: '',
+      from: '',
+    },
     public: {
       appUrl: '',
       supabaseUrl: '',
