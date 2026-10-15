@@ -246,13 +246,13 @@ describe('material evidence repository', () => {
     expect(signed).toHaveBeenCalledWith(uploadIntent.objectPath, 60, { download: true })
   })
 
-  it('refuses to sign a read target that does not report its MIME type', async () => {
-    const signed = vi.fn()
+  it('signs a download when the read target does not report its MIME type (database without 20261015090500)', async () => {
+    const signed = vi.fn(async () => ({ data: { signedUrl: 'https://example.invalid/material' }, error: null }))
     const rpc = vi.fn(async () => ({ data: { bucketId: 'c1-accounting-evidence', objectPath: uploadIntent.objectPath }, error: null }))
     const client = { rpc, storage: { from: vi.fn(() => ({ createSignedUrl: signed })) } }
     const repository = new SupabaseMaterialProcurementRepository(client as never)
-    await expect(repository.readEvidenceUrl(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { disposition: 'inline' })).rejects.toThrow()
-    expect(signed).not.toHaveBeenCalled()
+    await repository.readEvidenceUrl(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { disposition: 'inline' })
+    expect(signed).toHaveBeenCalledWith(uploadIntent.objectPath, 60, { download: true })
   })
 
   function pendingUpload(content: Uint8Array, blobType: string, declaredMimeType: string) {

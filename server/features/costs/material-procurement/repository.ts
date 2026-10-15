@@ -78,14 +78,17 @@ const finalizationTargetSchema = z.discriminatedUnion('status', [
 const readTargetSchema = z.object({
   bucketId: z.literal('c1-accounting-evidence'),
   objectPath: z.string().min(1),
-  declaredMimeType: z.string().min(1),
+  // Optional so the app and the database can be deployed in either order: a target without it
+  // (database before 20261015090500) is always signed as a download.
+  declaredMimeType: z.string().min(1).optional(),
 }).strict()
 // Types a browser may render inline safely. Everything else, XML invoices in particular (a browser
 // can execute XML as XHTML/SVG), is always signed as a download, whatever the caller asked for.
 const inlineEvidenceMimeTypes: ReadonlySet<string> = new Set(['application/pdf', 'image/png', 'image/jpeg'])
 
-function mustDownload(declaredMimeType: string, disposition: 'inline' | 'attachment' | undefined) {
+function mustDownload(declaredMimeType: string | undefined, disposition: 'inline' | 'attachment' | undefined) {
   return disposition === 'attachment'
+    || declaredMimeType === undefined
     || isXmlEvidenceMimeType(declaredMimeType)
     || !inlineEvidenceMimeTypes.has(declaredMimeType)
 }
