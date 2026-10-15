@@ -3,10 +3,10 @@ import { z } from 'zod'
 import type { MaterialQuotationAnalysisInput, MaterialQuotationAnalysisResult } from './material-quotation-analysis'
 import {
   costEvidenceCreateIntentInputSchema,
+  costEvidenceFinalizedSchema,
 } from './cost-evidence'
 import type {
   CostEvidenceFinalizeInput,
-  CostEvidenceFinalized,
   CostEvidenceReadUrl,
   CostEvidenceReadUrlInput,
   CostEvidenceUploadIntent,
@@ -261,20 +261,71 @@ export const materialEvidenceTargetSchema = z.discriminatedUnion('kind', [
     kind: z.literal('material_order'),
     orderId: workflowUuidSchema,
   }).strict(),
+  z.object({
+    kind: z.literal('material_contract'),
+    contractId: workflowUuidSchema,
+  }).strict(),
 ])
 
-export const materialEvidenceRoleSchema = z.enum(['unsigned_quotation', 'signed_quotation', 'signed_contract'])
+export const materialEvidenceRoleSchema = z.enum([
+  'unsigned_quotation',
+  'signed_quotation',
+  'signed_contract',
+  'contract_amendment',
+  'invoice',
+  'payment_proof',
+])
+
+export const materialEvidenceMimeTypeSchema = z.enum([
+  'application/pdf',
+  'application/xml',
+  'text/xml',
+  'image/jpeg',
+  'image/png',
+])
+
+/** MIME types each evidence role may carry. The database enforces the same table. */
+export const materialEvidenceMimeTypes = {
+  unsigned_quotation: ['application/pdf'],
+  signed_quotation: ['application/pdf'],
+  signed_contract: ['application/pdf'],
+  contract_amendment: ['application/pdf'],
+  invoice: ['application/pdf', 'application/xml', 'text/xml'],
+  payment_proof: ['application/pdf', 'image/jpeg', 'image/png'],
+} as const satisfies Record<z.infer<typeof materialEvidenceRoleSchema>, readonly z.infer<typeof materialEvidenceMimeTypeSchema>[]>
+
+const materialEvidenceRoleTargets = {
+  unsigned_quotation: 'material_proposal',
+  signed_quotation: 'material_order',
+  signed_contract: 'material_order',
+  contract_amendment: 'material_contract',
+  invoice: 'material_contract',
+  payment_proof: 'material_contract',
+} as const satisfies Record<z.infer<typeof materialEvidenceRoleSchema>, z.infer<typeof materialEvidenceTargetSchema>['kind']>
 
 export const materialEvidenceIntentInputSchema = costEvidenceCreateIntentInputSchema.extend({
-  mimeType: z.literal('application/pdf'),
+  mimeType: materialEvidenceMimeTypeSchema,
   evidenceRole: materialEvidenceRoleSchema,
   target: materialEvidenceTargetSchema,
 }).strict().superRefine((value, context) => {
-  const valid = value.target.kind === 'material_proposal'
-    ? value.evidenceRole === 'unsigned_quotation'
-    : value.evidenceRole === 'signed_quotation' || value.evidenceRole === 'signed_contract'
-  if (!valid) context.addIssue({ code: 'custom', path: ['evidenceRole'], message: 'Evidence role does not match target' })
+  if (materialEvidenceRoleTargets[value.evidenceRole] !== value.target.kind) {
+    context.addIssue({ code: 'custom', path: ['evidenceRole'], message: 'Evidence role does not match target' })
+  }
+  if (!(materialEvidenceMimeTypes[value.evidenceRole] as readonly string[]).includes(value.mimeType)) {
+    context.addIssue({ code: 'custom', path: ['mimeType'], message: 'MIME type not allowed for evidence role' })
+  }
 })
+
+export const materialEvidenceFinalizedSchema = costEvidenceFinalizedSchema.extend({
+  mimeType: materialEvidenceMimeTypeSchema,
+})
+
+/** Upload authority per role: quotations belong to buyers, payment proofs to the treasurer, the rest to contract recorders. */
+export function materialEvidenceUploadPermission(role: z.infer<typeof materialEvidenceRoleSchema>) {
+  if (role === 'unsigned_quotation') return 'material.order.manage' as const
+  if (role === 'payment_proof') return 'material.payment.execute' as const
+  return 'material.contract.record' as const
+}
 
 export const materialProcurementEndpointManifest = {
   orderCurrency: { method: 'GET', path: '/api/companies/:companyId/material-procurement/currency' },
@@ -326,6 +377,7 @@ export type MaterialQuotationComparisonInput = z.infer<typeof materialQuotationC
 export type MaterialQuotationComparisonView = z.infer<typeof materialQuotationComparisonViewSchema>
 export type MaterialCommand = z.infer<typeof materialCommandSchema>
 export type MaterialCommandResult = z.infer<typeof materialCommandResultSchema>
+export type MaterialEvidenceFinalized = z.infer<typeof materialEvidenceFinalizedSchema>
 export type MaterialEvidenceRole = z.infer<typeof materialEvidenceRoleSchema>
 export type MaterialEvidenceIntentInput = z.infer<typeof materialEvidenceIntentInputSchema>
 
@@ -351,6 +403,6 @@ export interface MaterialProcurementRepository {
   readOrder(projectId: string, orderId: string): Promise<MaterialOrderView>
   cancelOrder(projectId: string, orderId: string, input: CancelMaterialOrderInput, command: MaterialCommand): Promise<MaterialCommandResult>
   createEvidenceIntent(projectId: string, input: MaterialEvidenceIntentInput, command: MaterialCommand): Promise<CostEvidenceUploadIntent>
-  finalizeEvidence(projectId: string, fileId: string, input: CostEvidenceFinalizeInput, command: MaterialCommand): Promise<CostEvidenceFinalized>
+  finalizeEvidence(projectId: string, fileId: string, input: CostEvidenceFinalizeInput, command: MaterialCommand): Promise<MaterialEvidenceFinalized>
   readEvidenceUrl(projectId: string, fileId: string, input?: CostEvidenceReadUrlInput): Promise<CostEvidenceReadUrl>
 }
