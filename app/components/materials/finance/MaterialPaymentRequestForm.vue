@@ -81,7 +81,7 @@
               </div>
 
               <div class="text-right shrink-0">
-                <div class="text-[10px] text-slate-400">Còn lại có thể chi:</div>
+                <div class="text-[10px] text-slate-400">Còn có thể đề nghị:</div>
                 <div class="font-mono font-bold text-sm text-sky-700">
                   {{ formatVnNumber(inst.remaining) }} <span class="text-[10px] font-normal text-slate-500">{{ contract.currencyCode }}</span>
                 </div>
@@ -95,7 +95,7 @@
           <div class="flex items-center justify-between gap-2 flex-wrap">
             <span class="block font-semibold text-slate-800 text-xs">2. Số tiền đề nghị chi ({{ contract.currencyCode }}) <span class="text-rose-500">*</span></span>
             <span class="text-[11px] text-slate-500">
-              Hạn mức tối đa còn lại: <strong class="font-mono text-slate-800">{{ formatVnNumber(selectedInstallment.remaining) }}</strong> {{ contract.currencyCode }}
+              Còn có thể đề nghị: <strong class="font-mono text-slate-800">{{ formatVnNumber(selectedInstallment.remaining) }}</strong> {{ contract.currencyCode }}
             </span>
           </div>
 

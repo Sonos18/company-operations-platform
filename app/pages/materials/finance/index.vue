@@ -215,7 +215,8 @@
                     <th scope="col" class="p-2.5">Dự án</th>
                     <th scope="col" class="p-2.5">Nhà cung cấp</th>
                     <th scope="col" class="p-2.5">Hạn thanh toán</th>
-                    <th scope="col" class="p-2.5 text-right">Số tiền còn lại</th>
+                    <!-- remaining = amount − paid (what is still owed), unlike the installment table. -->
+                    <th scope="col" class="p-2.5 text-right">Còn phải trả</th>
                     <th scope="col" class="p-2.5 text-center">Tình trạng hạn</th>
                     <th scope="col" class="p-2.5 text-center">Thao tác</th>
                   </tr>

@@ -130,6 +130,7 @@ export const materialInstallmentViewSchema = materialInstallmentInputSchema.exte
   seq: z.number().int().positive(),
   paid: workflowMoneySchema,
   pending: workflowMoneySchema,
+  // amount − paid − pending: what a new payment request may still ask for ("Còn có thể đề nghị").
   remaining: workflowMoneySchema,
   dueStatus: installmentDueStatusSchema,
 }).strict()
@@ -243,6 +244,7 @@ export const materialFinanceInboxSchema = z.object({
   awaitingContract: z.array(z.object({ ...inboxBase, orderSubtotal: workflowMoneySchema, createdAt: z.string().datetime({ offset: true }) }).strict()),
   dueInstallments: z.array(z.object({
     ...inboxBase, contractId: uuid, installmentKey: uuid, name: z.string().min(1),
+    // amount − paid: what is still owed on the installment ("Còn phải trả"), pending requests included.
     dueOn: date, remaining: workflowMoneySchema, dueStatus: z.enum(['overdue', 'due_soon']),
   }).strict()),
   returnedRequests: z.array(z.object({ ...inboxBase, contractId: uuid, requestId: uuid, amount: workflowMoneySchema, reason: z.string().min(1) }).strict()),
