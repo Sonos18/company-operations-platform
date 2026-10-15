@@ -1,9 +1,23 @@
 set local lock_timeout = '5s';
 set local statement_timeout = '30s';
 
--- Order creation resolves the externally chosen supplier inside the same transaction:
--- reuse by code, then by normalised name (organizations only), else create (requires material.supplier.record).
--- Existing suppliers are never updated. Signature is unchanged, so grants and generated types stay as they are.
+-- Order creation resolves the externally chosen supplier inside the same transaction by a code derived
+-- from its name: reuse it (overwriting differing fields the buyer sent) or create it. Changing or creating
+-- the supplier requires material.supplier.record. The create_order signature is unchanged, so its grants
+-- and the generated types stay as they are.
+
+-- Supplier identity code: the name in NFC, Vietnamese diacritics removed, only [a-z0-9] kept, lower-cased.
+-- e.g. 'CÔNG TY TNHH SX-TM-XNK NGŨ KIM TRUNG NAM' -> 'congtytnhhsxtmxnkngukimtrungnam'.
+create or replace function private.c1_material_supplier_code(target_name text)
+returns text language sql immutable set search_path='' as $$
+  select lower(regexp_replace(
+    translate(normalize(target_name, NFC), 'àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ', 'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyydAAAAAAAAAAAAAAAAAEEEEEEEEEEEIIIIIOOOOOOOOOOOOOOOOOUUUUUUUUUUUYYYYYD'),
+    '[^A-Za-z0-9]+', '', 'g'
+  ))
+$$;
+
+revoke all on function private.c1_material_supplier_code(text) from public,anon,authenticated,service_role;
+
 create or replace function private.c1_material_create_order(
   target_company_id uuid,
   target_project_id uuid,
@@ -22,8 +36,9 @@ declare
   v_supplier_input jsonb;
   v_supplier_code text;
   v_supplier_name text;
-  v_supplier_name_key text;
-  v_supplier_match_count integer;
+  v_supplier_tax text;
+  v_supplier_contact_name text;
+  v_supplier_contact_phone text;
   v_supplier public.business_parties%rowtype;
   v_evidence_id uuid;
   v_receipt public.cost_command_receipts%rowtype;
@@ -52,15 +67,17 @@ begin
   end if;
   perform private.c1_workflow_require_keys(
     v_supplier_input,
-    array['code','displayName'],
-    array['code','displayName','taxIdentifier','contactDisplayName','contactPhone']
+    array['displayName'],
+    array['displayName','taxIdentifier','contactDisplayName','contactPhone']
   );
-  v_supplier_code := private.c1_material_short_text(v_supplier_input->'code');
   v_supplier_name := private.c1_material_short_text(v_supplier_input->'displayName');
-  if v_supplier_input ? 'taxIdentifier' then perform private.c1_workflow_text(v_supplier_input->'taxIdentifier'); end if;
-  if v_supplier_input ? 'contactDisplayName' then perform private.c1_workflow_text(v_supplier_input->'contactDisplayName'); end if;
-  if v_supplier_input ? 'contactPhone' then perform private.c1_workflow_text(v_supplier_input->'contactPhone'); end if;
-  v_supplier_name_key := lower(regexp_replace(btrim(v_supplier_name), '\s+', ' ', 'g'));
+  v_supplier_tax := case when v_supplier_input ? 'taxIdentifier' then private.c1_workflow_text(v_supplier_input->'taxIdentifier') end;
+  v_supplier_contact_name := case when v_supplier_input ? 'contactDisplayName' then private.c1_workflow_text(v_supplier_input->'contactDisplayName') end;
+  v_supplier_contact_phone := case when v_supplier_input ? 'contactPhone' then private.c1_workflow_text(v_supplier_input->'contactPhone') end;
+  v_supplier_code := private.c1_material_supplier_code(v_supplier_name);
+  if v_supplier_code = '' then
+    raise exception using errcode='P0001', message='INPUT_INVALID';
+  end if;
   v_evidence_id := private.c1_material_uuid(target_input->'unsignedQuotationEvidenceFileId');
   if jsonb_typeof(target_input->'currencyCode') is distinct from 'string'
     or target_input->>'currencyCode' !~ '^[A-Z]{3}$'
@@ -122,63 +139,52 @@ begin
     raise exception using errcode='P0001', message='EVIDENCE_UPLOAD_MISMATCH';
   end if;
 
-  -- Resolve the externally chosen supplier: code first, then normalised name, else create.
+  -- Resolve the externally chosen supplier by its name-derived code only: reuse (overwriting fields the
+  -- buyer sent that differ) or create. Changing or creating master data requires material.supplier.record.
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
     'material.supplier:' || v_tenant_id::text || ':' || target_company_id::text || ':' || v_supplier_code,
-    0
-  ));
-  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
-    'material.supplier-name:' || v_tenant_id::text || ':' || target_company_id::text || ':' || v_supplier_name_key,
     0
   ));
   select supplier.* into v_supplier
   from public.business_parties as supplier
   where supplier.tenant_id = v_tenant_id
     and supplier.company_id = target_company_id
-    and supplier.code = v_supplier_code;
+    and supplier.code = v_supplier_code
+  for update;
   if found then
     if v_supplier.party_kind <> 'organization' or not v_supplier.is_active then
       raise exception using errcode='P0001', message='SUPPLIER_UNAVAILABLE';
     end if;
-  else
-    select count(*) into v_supplier_match_count
-    from public.business_parties as supplier
-    where supplier.tenant_id = v_tenant_id
-      and supplier.company_id = target_company_id
-      and supplier.party_kind = 'organization'
-      and lower(regexp_replace(btrim(supplier.display_name), '\s+', ' ', 'g')) = v_supplier_name_key;
-    if v_supplier_match_count > 1 then
-      raise exception using errcode='P0001', message='SUPPLIER_AMBIGUOUS';
-    elsif v_supplier_match_count = 1 then
-      select supplier.* into v_supplier
-      from public.business_parties as supplier
-      where supplier.tenant_id = v_tenant_id
-        and supplier.company_id = target_company_id
-        and supplier.party_kind = 'organization'
-        and lower(regexp_replace(btrim(supplier.display_name), '\s+', ' ', 'g')) = v_supplier_name_key;
-      if not v_supplier.is_active then
-        raise exception using errcode='P0001', message='SUPPLIER_UNAVAILABLE';
-      end if;
-    else
+    if v_supplier.display_name is distinct from v_supplier_name
+      or (v_supplier_tax is not null and v_supplier.tax_identifier is distinct from v_supplier_tax)
+      or (v_supplier_contact_name is not null and v_supplier.contact_display_name is distinct from v_supplier_contact_name)
+      or (v_supplier_contact_phone is not null and v_supplier.contact_phone is distinct from v_supplier_contact_phone)
+    then
       if not private.c1_material_actor_has_permission(v_tenant_id, target_company_id, 'material.supplier.record') then
         raise exception using errcode='P0001', message='PERMISSION_DENIED';
       end if;
-      insert into public.business_parties(
-        tenant_id, company_id, code, display_name, party_kind,
-        tax_identifier, contact_display_name, contact_phone, created_by
-      ) values (
-        v_tenant_id,
-        target_company_id,
-        v_supplier_code,
-        v_supplier_name,
-        'organization',
-        case when v_supplier_input ? 'taxIdentifier' then private.c1_workflow_text(v_supplier_input->'taxIdentifier') end,
-        case when v_supplier_input ? 'contactDisplayName' then private.c1_workflow_text(v_supplier_input->'contactDisplayName') end,
-        case when v_supplier_input ? 'contactPhone' then private.c1_workflow_text(v_supplier_input->'contactPhone') end,
-        auth.uid()
-      )
+      update public.business_parties
+      set display_name = v_supplier_name,
+          tax_identifier = coalesce(v_supplier_tax, tax_identifier),
+          contact_display_name = coalesce(v_supplier_contact_name, contact_display_name),
+          contact_phone = coalesce(v_supplier_contact_phone, contact_phone),
+          version = version + 1,
+          updated_at = now()
+      where id = v_supplier.id
       returning * into v_supplier;
     end if;
+  else
+    if not private.c1_material_actor_has_permission(v_tenant_id, target_company_id, 'material.supplier.record') then
+      raise exception using errcode='P0001', message='PERMISSION_DENIED';
+    end if;
+    insert into public.business_parties(
+      tenant_id, company_id, code, display_name, party_kind,
+      tax_identifier, contact_display_name, contact_phone, created_by
+    ) values (
+      v_tenant_id, target_company_id, v_supplier_code, v_supplier_name, 'organization',
+      v_supplier_tax, v_supplier_contact_name, v_supplier_contact_phone, auth.uid()
+    )
+    returning * into v_supplier;
   end if;
   v_supplier_id := v_supplier.id;
 
