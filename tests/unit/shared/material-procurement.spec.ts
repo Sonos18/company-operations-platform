@@ -262,6 +262,21 @@ describe('material procurement contracts', () => {
     })
   })
 
+  it('accepts contract-level finance evidence roles with allowed MIME types', () => {
+    const base = { originalFilename: 'hd.xml', sizeBytes: 100, sha256: 'a'.repeat(64) }
+    const target = { kind: 'material_contract' as const, contractId: '00000000-0000-4000-8000-000000000001' }
+    expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'application/xml', evidenceRole: 'invoice', target }).success).toBe(true)
+    expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'text/xml', evidenceRole: 'invoice', target }).success).toBe(true)
+    expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'image/png', evidenceRole: 'payment_proof', target }).success).toBe(true)
+    expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'application/pdf', evidenceRole: 'contract_amendment', target }).success).toBe(true)
+    expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'application/xml', evidenceRole: 'payment_proof', target }).success).toBe(false)
+    expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'image/png', evidenceRole: 'invoice', target }).success).toBe(false)
+    expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'application/xml', evidenceRole: 'contract_amendment', target }).success).toBe(false)
+    expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'application/pdf', evidenceRole: 'signed_contract', target }).success).toBe(false)
+    expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'application/pdf', evidenceRole: 'invoice', target: { kind: 'material_order', orderId: target.contractId } }).success).toBe(false)
+    expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'application/xml', evidenceRole: 'signed_quotation', target: { kind: 'material_order', orderId: target.contractId } }).success).toBe(false)
+  })
+
   it('compares a quotation against its allocation and keeps the mismatch explicit', () => {
     expect(materialQuotationComparisonInputSchema.safeParse(quote11ForAllocation10).success).toBe(true)
     expect(materialQuotationComparisonViewSchema.safeParse({

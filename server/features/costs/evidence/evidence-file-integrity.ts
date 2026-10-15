@@ -86,6 +86,16 @@ async function verifyXlsx(bytes: Uint8Array) {
   }
 }
 
+const xmlMimeTypes: ReadonlySet<string> = new Set(['application/xml', 'text/xml'])
+
+// Cheap structural check only: the first meaningful character of an XML document is '<'.
+// It rejects renamed binaries; it does not parse the document or resolve entities.
+function verifyXml(bytes: Uint8Array) {
+  // TextDecoder drops a leading UTF-8 BOM; trimStart drops any whitespace before the first tag.
+  const text = new TextDecoder('utf-8').decode(bytes).trimStart()
+  if (!text.startsWith('<')) mismatch()
+}
+
 export async function verifyEvidenceBlob(blob: Blob, maxBytes: number, mimeType: string) {
   const hash = createHash('sha256')
   let sizeBytes = 0
@@ -99,6 +109,7 @@ export async function verifyEvidenceBlob(blob: Blob, maxBytes: number, mimeType:
   }
   const bytes = new Uint8Array(Buffer.concat(chunks))
   if (mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') await verifyXlsx(bytes)
+  else if (xmlMimeTypes.has(mimeType)) verifyXml(bytes)
   else if (!signatures[mimeType] || !hasPrefix(bytes, signatures[mimeType])) mismatch()
   return { sizeBytes, sha256: hash.digest('hex'), mimeType }
 }

@@ -2,11 +2,14 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { MaterialProcurementRepository } from '../../repositories/material-procurement.contracts'
 import {
   materialEvidenceIntentInputSchema,
+  materialEvidenceMimeTypes,
   type MaterialEvidenceRole,
   type MaterialEvidenceIntentInput,
 } from '../../../shared/schemas/costs/material-procurement'
+import type { CostEvidenceFinalized } from '../../../shared/schemas/costs/cost-evidence'
 import type { CostEvidenceRepository } from '../../repositories/contracts'
 import {
+  resolveAllowedMimeType,
   uploadAndFinalizeEvidence,
   type EvidenceUploadSession,
   type UploadEvidenceResult,
@@ -29,6 +32,10 @@ export async function uploadMaterialEvidence(options: {
   onSessionChange?: (session: MaterialEvidenceUploadSession) => void
   isScopeCurrent: () => boolean
 }): Promise<UploadEvidenceResult> {
+  const allowedMimeTypes: readonly string[] = materialEvidenceMimeTypes[options.evidenceRole]
+  if (!resolveAllowedMimeType(options.file, allowedMimeTypes)) {
+    throw new Error('Định dạng tệp không được hỗ trợ cho loại chứng từ này.')
+  }
   const targetIdentity = JSON.stringify({
     companyId: options.companyId,
     projectId: options.projectId,
@@ -61,7 +68,8 @@ export async function uploadMaterialEvidence(options: {
       assertCurrent()
       const value = await options.repository.finalizeEvidence(options.projectId, fileId, input, command)
       assertCurrent()
-      return value
+      // The shared uploader only reads mimeType as text, so a material-only type (XML) is safe to pass through.
+      return value as CostEvidenceFinalized
     },
     link: blocked,
     listMetadata: blocked,
@@ -82,5 +90,6 @@ export async function uploadMaterialEvidence(options: {
       options.onSessionChange?.({ targetIdentity, session })
     },
     isCompanyContextCurrent: options.isScopeCurrent,
+    allowedMimeTypes,
   })
 }

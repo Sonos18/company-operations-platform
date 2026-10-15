@@ -2,7 +2,6 @@ import { z } from 'zod'
 import { materialQuotationAnalysisInputSchema, materialQuotationAnalysisResultSchema } from '../../../shared/schemas/costs/material-quotation-analysis'
 import {
   costEvidenceFinalizeInputSchema,
-  costEvidenceFinalizedSchema,
   costEvidenceReadUrlInputSchema,
   costEvidenceReadUrlSchema,
   costEvidenceUploadIntentSchema,
@@ -14,6 +13,7 @@ import {
   createMaterialInputSchema,
   materialCommandSchema,
   materialCommandResultSchema,
+  materialEvidenceFinalizedSchema,
   materialEvidenceIntentInputSchema,
   materialOrderViewSchema,
   materialOrderCurrencySchema,
@@ -98,7 +98,7 @@ export function createHttpMaterialProcurementRepository(options: {
     readOrder: async (projectId, orderId) => read(project(projectId, '/orders/' + targetId(orderId)), materialOrderViewSchema),
     cancelOrder: async (projectId, orderId, input, cmd) => command(project(projectId, '/orders/' + targetId(orderId) + '/cancellations'), input, cancelMaterialOrderInputSchema, materialCommandResultSchema, cmd),
     createEvidenceIntent: async (projectId, input, cmd) => command(project(projectId, '/evidence/upload-intents'), input, materialEvidenceIntentInputSchema, costEvidenceUploadIntentSchema, cmd),
-    finalizeEvidence: async (projectId, fileId, input, cmd) => command(project(projectId, '/evidence/' + targetId(fileId) + '/finalize'), input, costEvidenceFinalizeInputSchema, costEvidenceFinalizedSchema, cmd),
+    finalizeEvidence: async (projectId, fileId, input, cmd) => command(project(projectId, '/evidence/' + targetId(fileId) + '/finalize'), input, costEvidenceFinalizeInputSchema, materialEvidenceFinalizedSchema, cmd),
     readEvidenceUrl: async (projectId, fileId, input = { disposition: 'inline' }) => options.client.request({
       url: project(projectId, '/evidence/' + targetId(fileId) + '/read-url'),
       method: 'POST',

@@ -72,6 +72,27 @@ function resolveEvidenceMimeType(file: File): CostEvidenceMimeType {
   throw new Error('Định dạng tệp không được hỗ trợ.')
 }
 
+const MIME_TYPE_BY_EXTENSION: Readonly<Record<string, string>> = {
+  '.pdf': 'application/pdf',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.xml': 'application/xml',
+}
+
+/**
+ * Resolves a file's MIME type against a caller-supplied allow-list. The browser type wins when
+ * allowed; otherwise the extension is used. Returns null when the file is not an allowed type.
+ */
+export function resolveAllowedMimeType(file: File, allowed: readonly string[]): string | null {
+  if (allowed.includes(file.type)) return file.type
+  const extension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
+  const fromExtension = MIME_TYPE_BY_EXTENSION[extension]
+  return fromExtension && allowed.includes(fromExtension) ? fromExtension : null
+}
+
 export async function computeFileSha256Hex(file: File): Promise<string> {
   const buffer = await file.arrayBuffer()
   const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', buffer)
@@ -164,6 +185,8 @@ export interface UploadEvidenceOptions {
   session?: EvidenceUploadSession | null
   onSessionChange?: (session: EvidenceUploadSession) => void
   isCompanyContextCurrent?: () => boolean
+  /** Overrides the generic cost-evidence MIME allow-list (for example material XML invoices). */
+  allowedMimeTypes?: readonly string[]
 }
 
 export interface UploadEvidenceResult {
@@ -183,12 +206,20 @@ export async function uploadAndFinalizeEvidence(options: UploadEvidenceOptions):
   }
 
   assertCompanyContextCurrent()
-  const validation = validateEvidenceFile(file)
-  if (!validation.valid) {
-    throw new Error(validation.error)
+  let mimeType: string
+  if (options.allowedMimeTypes) {
+    const allowedMimeType = resolveAllowedMimeType(file, options.allowedMimeTypes)
+    if (file.size > COST_EVIDENCE_MAX_BYTES) throw new Error('Dung lượng tệp vượt quá giới hạn tối đa 25 MiB.')
+    if (!allowedMimeType) throw new Error('Định dạng tệp không được hỗ trợ.')
+    mimeType = allowedMimeType
   }
-
-  const mimeType = resolveEvidenceMimeType(file)
+  else {
+    const validation = validateEvidenceFile(file)
+    if (!validation.valid) {
+      throw new Error(validation.error)
+    }
+    mimeType = resolveEvidenceMimeType(file)
+  }
 
   assertCompanyContextCurrent()
   onProgress?.('hashing')

@@ -1,12 +1,13 @@
 import { z } from 'zod'
 import {
   COST_EVIDENCE_MAX_BYTES,
-  costEvidenceFinalizedSchema,
   costEvidenceReadUrlSchema,
   costEvidenceUploadIntentSchema,
 } from '../../../../shared/schemas/costs/cost-evidence'
 import {
   materialCommandResultSchema,
+  materialEvidenceFinalizedSchema,
+  materialEvidenceMimeTypeSchema,
   materialOrderViewSchema,
   materialOrderCurrencySchema,
   materialProjectOptionSchema,
@@ -68,7 +69,7 @@ const finalizationTargetSchema = z.discriminatedUnion('status', [
     status: z.literal('pending_upload'),
     bucketId: z.literal('c1-accounting-evidence'),
     objectPath: z.string().min(1),
-    declaredMimeType: z.literal('application/pdf'),
+    declaredMimeType: materialEvidenceMimeTypeSchema,
     declaredSizeBytes: z.number().int().positive(),
     declaredSha256: z.string().regex(/^[a-f0-9]{64}$/u),
   }).strict(),
@@ -211,7 +212,9 @@ export class SupabaseMaterialProcurementRepository implements MaterialProcuremen
         throw new AppApiError(409, 'EVIDENCE_UPLOAD_MISMATCH', 'Không thể xác minh tệp tải lên.')
       }
       const identity = await verifyEvidenceBlob(downloaded.data, COST_EVIDENCE_MAX_BYTES, target.declaredMimeType)
-      if (downloaded.data.type !== target.declaredMimeType
+      // Storage may append parameters (for example a charset) to text types.
+      const storedMimeType = downloaded.data.type.split(';')[0]!.trim().toLowerCase()
+      if (storedMimeType !== target.declaredMimeType
         || identity.sizeBytes !== target.declaredSizeBytes
         || identity.sha256 !== target.declaredSha256) {
         throw new AppApiError(409, 'EVIDENCE_UPLOAD_MISMATCH', 'Tệp tải lên không khớp với khai báo.')
@@ -228,7 +231,7 @@ export class SupabaseMaterialProcurementRepository implements MaterialProcuremen
       target_input: finalInput,
       target_idempotency_key: key,
       target_request_id: context.requestId,
-    }), costEvidenceFinalizedSchema)
+    }), materialEvidenceFinalizedSchema)
   }
 
   async readEvidenceUrl(context: MaterialProcurementContext, projectId: string, fileId: string, input: Parameters<MaterialProcurementDataRepository['readEvidenceUrl']>[3]) {
