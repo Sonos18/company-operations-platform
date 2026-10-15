@@ -184,7 +184,10 @@ Kiểm trong RPC sau khi khóa hàng theo thứ tự cố định: đơn → h�
 5. Σ `total` các hóa đơn `recorded` ≤ `total` của phiên bản hiện hành.
 6. Hủy hóa đơn bị chặn nếu hóa đơn đang liên kết với đề nghị không ở trạng thái `cancelled`.
 7. Người quyết định (`decided_by`) và người ghi chi (`paid_by`) phải khác `submitted_by` của lần gửi đang xét.
-8. Đơn có hợp đồng: không sửa dòng, không hủy, không bị đình chỉ khi phiếu bị trả. Vá các trigger `c1_material_guard_signed_order` và `c1_material_guard_signed_allocation` cùng lệnh hủy đơn để kiểm `material_contracts` thay cho `material_order_contracts`. Bảng `material_order_contracts` (đang trống) ngừng dùng; không xóa trong A4/A5.
+8. Đơn có hợp đồng thì không sửa dòng, không hủy và không bị đình chỉ khi phiếu bị trả.
+   - Giữ `material_order_contracts` làm cờ "đơn đã ký", vì 8 hàm và trigger hiện có (tính `signedQuantity`, chặn sửa phiếu, chặn đình chỉ, chặn hủy đơn, guard trigger) đang kiểm tra bảng này.
+   - Migration nền chuyển FK `contract_id` của bảng (đang trống) từ `cost_workflow_contracts` sang `material_contracts`.
+   - Lệnh ghi hợp đồng chèn vào cả hai bảng.
 9. File gắn vào lệnh phải `finalized`, cùng scope, đúng loại file và đúng đối tượng; một file chỉ gắn vào một lệnh.
 
 ## 4. File chứng từ
@@ -364,6 +367,8 @@ Số liệu vật tư hiển thị riêng với nhãn "Vật tư". Không cộng
 - Không coi toàn bộ test suite là xanh vì baseline có lỗi sẵn; báo kết quả theo các file test liên quan và so với baseline.
 
 ## 12. Chia task và song song
+
+Plan chi tiết ở `docs/superpowers/plans/2026-10-15-materials-a4-a5-contract-payment.md`. Plan tách evidence thành task riêng T4, nên có T0–T8. Bảng dưới là phân chia ban đầu.
 
 Nền: worktree tách từ `0c226cdd`. Repo có `.insta/`, nên mỗi task song song dùng worktree riêng và branch environment InstaCloud riêng.
 
