@@ -30,15 +30,25 @@ describe('SMTP configuration', () => {
   })
 
   it.each([
-    { ...valid, port: 25 },
-    { ...valid, pass: '' },
-    { ...valid, from: 'not-an-email' },
-    { ...valid, host: 'smtp zoho.com' },
-    { ...valid, user: '' },
-  ])('fails closed to manual delivery for invalid config %#', raw => {
+    [{ ...valid, port: 25 }, ['port']],
+    [{ ...valid, pass: '' }, ['pass']],
+    [{ ...valid, from: 'not-an-email' }, ['from']],
+    [{ ...valid, host: 'smtp zoho.com' }, ['host']],
+    [{ ...valid, user: '' }, ['user']],
+    [{ ...valid, port: 'abc' }, ['port']],
+    [{ host: 'smtp.zoho.com', port: '', user: '', pass: '', from: '' }, ['from', 'pass', 'user']],
+  ])('fails closed to manual delivery for invalid config %#, logging only field names', (raw, fields) => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(parseSmtpConfig(raw)).toBeNull()
-    expect(log.mock.calls).toEqual([['SMTP_CONFIG_INVALID']])
+    expect(log.mock.calls).toEqual([['SMTP_CONFIG_INVALID', fields]])
+  })
+
+  it('accepts a numeric password that Nuxt env parsing turned into a number', () => {
+    expect(parseSmtpConfig({ ...valid, pass: 12345678 })?.pass).toBe('12345678')
+  })
+
+  it('keeps string passwords exactly as given', () => {
+    expect(parseSmtpConfig({ ...valid, pass: ' spaced pass ' })?.pass).toBe(' spaced pass ')
   })
 
   it('keeps SMTP credentials outside the public runtime configuration', () => {
