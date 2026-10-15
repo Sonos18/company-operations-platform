@@ -1,0 +1,43 @@
+import { z } from 'zod'
+import { materialInvoiceViewSchema, materialPaymentRequestViewSchema } from '../../../../shared/schemas/costs/material-finance'
+import type { UserSupabaseClient } from '../../../utils/supabase-client'
+import { financeCommand, financeRead, rpcClient, type MaterialFinanceRpcClient } from './repository'
+import type { MaterialPaymentDataRepository } from './payment-service'
+
+const invoiceListSchema = z.array(materialInvoiceViewSchema)
+const paymentRequestListSchema = z.array(materialPaymentRequestViewSchema)
+
+export class SupabaseMaterialPaymentRepository implements MaterialPaymentDataRepository {
+  private readonly client: MaterialFinanceRpcClient
+
+  constructor(client: UserSupabaseClient) {
+    this.client = rpcClient(client)
+  }
+
+  listInvoices: MaterialPaymentDataRepository['listInvoices'] = (context, projectId, contractId) =>
+    financeRead(this.client, context, 'c1_material_list_invoices', invoiceListSchema, { target_project_id: projectId, target_id: contractId })
+
+  recordInvoice: MaterialPaymentDataRepository['recordInvoice'] = (context, projectId, contractId, input, key) =>
+    financeCommand(this.client, context, 'c1_material_record_invoice', input, key, { target_project_id: projectId, target_id: contractId })
+
+  voidInvoice: MaterialPaymentDataRepository['voidInvoice'] = (context, projectId, invoiceId, input, key) =>
+    financeCommand(this.client, context, 'c1_material_void_invoice', input, key, { target_project_id: projectId, target_id: invoiceId })
+
+  listPaymentRequests: MaterialPaymentDataRepository['listPaymentRequests'] = (context, projectId, contractId) =>
+    financeRead(this.client, context, 'c1_material_list_payment_requests', paymentRequestListSchema, { target_project_id: projectId, target_id: contractId })
+
+  createPaymentRequest: MaterialPaymentDataRepository['createPaymentRequest'] = (context, projectId, contractId, input, key) =>
+    financeCommand(this.client, context, 'c1_material_create_payment_request', input, key, { target_project_id: projectId, target_id: contractId })
+
+  resubmitPaymentRequest: MaterialPaymentDataRepository['resubmitPaymentRequest'] = (context, projectId, requestId, input, key) =>
+    financeCommand(this.client, context, 'c1_material_resubmit_payment_request', input, key, { target_project_id: projectId, target_id: requestId })
+
+  cancelPaymentRequest: MaterialPaymentDataRepository['cancelPaymentRequest'] = (context, projectId, requestId, input, key) =>
+    financeCommand(this.client, context, 'c1_material_cancel_payment_request', input, key, { target_project_id: projectId, target_id: requestId })
+
+  decidePaymentRequest: MaterialPaymentDataRepository['decidePaymentRequest'] = (context, projectId, requestId, input, key) =>
+    financeCommand(this.client, context, 'c1_material_decide_payment_request', input, key, { target_project_id: projectId, target_id: requestId })
+
+  recordPayment: MaterialPaymentDataRepository['recordPayment'] = (context, projectId, requestId, input, key) =>
+    financeCommand(this.client, context, 'c1_material_record_payment', input, key, { target_project_id: projectId, target_id: requestId })
+}
