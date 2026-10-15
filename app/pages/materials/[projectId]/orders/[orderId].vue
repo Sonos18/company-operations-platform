@@ -73,7 +73,7 @@
                 <td>{{ line.specification }}</td>
                 <td>{{ line.unit }}</td>
                 <td class="num">{{ formatMaterialQuantity(line.quantity) }}</td>
-                <td class="num">{{ formatMaterialQuantity(line.unitPrice) }}</td>
+                <td class="num">{{ formatVnNumber(line.unitPrice) }}</td>
                 <td class="num">{{ lineTotal(line.quantity, line.unitPrice) }}</td>
               </tr>
             </tbody>
@@ -132,13 +132,16 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import Decimal from 'decimal.js'
+import type Decimal from 'decimal.js'
 import type { MaterialOrderState, MaterialOrderView } from '../../../../../shared/schemas/costs/material-procurement'
 import type { MaterialContractView } from '../../../../../shared/schemas/costs/material-finance'
 import { workflowUuidSchema } from '../../../../../shared/schemas/costs/cost-workflow'
 import { ClientError } from '../../../../errors/client-error'
 import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
+import { formatDate } from '../../../../utils/materials/date-display'
+import { computeOrderSubtotal } from '../../../../utils/materials/order-subtotal'
 import { formatMaterialQuantity } from '../../../../utils/materials/quantity-display'
+import { formatVnNumber } from '../../../../utils/materials/vn-number'
 import MaterialContractRecordPanel from '../../../../components/materials/finance/MaterialContractRecordPanel.vue'
 import MaterialContractSummary from '../../../../components/materials/finance/MaterialContractSummary.vue'
 import MaterialInstallmentTable from '../../../../components/materials/finance/MaterialInstallmentTable.vue'
@@ -176,21 +179,14 @@ const showRecordPanel = computed(() => Boolean(
   && canRecordContract.value && companyId.value,
 ))
 
-const orderSubtotal = computed(() => (order.value?.allocations ?? [])
-  .reduce((acc, line) => acc.plus(new Decimal(line.quantity).times(line.unitPrice)), new Decimal(0))
-  .toDecimalPlaces(4, Decimal.ROUND_HALF_UP))
+const orderSubtotal = computed(() => computeOrderSubtotal(order.value?.allocations ?? []))
 
-function money(value: Decimal) {
-  return `${formatMaterialQuantity(value.toFixed(4))} ${order.value?.currencyCode ?? ''}`.trim()
+function money(value: string | Decimal) {
+  return `${formatVnNumber(value)} ${order.value?.currencyCode ?? ''}`.trim()
 }
 
 function lineTotal(quantity: string, unitPrice: string) {
-  return formatMaterialQuantity(new Decimal(quantity).times(unitPrice).toDecimalPlaces(4, Decimal.ROUND_HALF_UP).toFixed(4))
-}
-
-function formatDate(value: string) {
-  const [year, month, day] = value.split('-')
-  return `${day}/${month}/${year}`
+  return formatVnNumber(computeOrderSubtotal([{ quantity, unitPrice }]))
 }
 
 function orderStateBadge(state: MaterialOrderState) {

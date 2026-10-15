@@ -40,7 +40,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { MaterialInstallmentView } from '../../../../shared/schemas/costs/material-finance'
-import { formatMaterialQuantity } from '../../../utils/materials/quantity-display'
+import { formatDate } from '../../../utils/materials/date-display'
+import { formatVnNumber } from '../../../utils/materials/vn-number'
 
 interface Props {
   installments: MaterialInstallmentView[]
@@ -52,12 +53,7 @@ const props = defineProps<Props>()
 const sortedInstallments = computed(() => [...props.installments].sort((a, b) => a.seq - b.seq))
 
 function money(value: string) {
-  return formatMaterialQuantity(value)
-}
-
-function formatDate(value: string) {
-  const [year, month, day] = value.split('-')
-  return `${day}/${month}/${year}`
+  return formatVnNumber(value)
 }
 
 function statusOf(status: MaterialInstallmentView['dueStatus']) {

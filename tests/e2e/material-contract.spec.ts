@@ -10,7 +10,6 @@ import {
   type RecordMaterialContractInput,
 } from '../../shared/schemas/costs/material-finance'
 import {
-  materialEvidenceTargetSchema,
   materialOrderViewSchema,
   type MaterialOrderView,
 } from '../../shared/schemas/costs/material-procurement'
@@ -401,9 +400,6 @@ test.describe('Chi tiết đơn mua và hợp đồng', () => {
   })
 
   test('5. Phụ lục: đợt đã chi 30 không hạ dưới 30, không xóa được, gửi expectedVersion đúng', async ({ page }) => {
-    const amendmentSupported = materialEvidenceTargetSchema.safeParse({ kind: 'material_contract', contractId }).success
-    test.skip(!amendmentSupported, 'Cần schema chứng từ phụ lục (Task 4) trên nhánh này.')
-
     const contract = createPaidContract()
     const state = createState({ order: orderWithContract(contract), contract })
     await installMocks(page, state)
@@ -449,5 +445,37 @@ test.describe('Chi tiết đơn mua và hợp đồng', () => {
     expect(body.varianceReason).toBeNull()
     const intent = state.captured.find(entry => entry.path === '/evidence/upload-intents')
     expect(intent?.body).toMatchObject({ evidenceRole: 'contract_amendment', target: { kind: 'material_contract', contractId } })
+  })
+
+  test('6. Tiền nhập theo định dạng Việt Nam: hiện giá trị đã hiểu, chặn định dạng sai, gửi số chuẩn', async ({ page }) => {
+    const state = createState()
+    await installMocks(page, state)
+    await page.goto(orderPath)
+
+    const panel = page.getByTestId('contract-record-panel')
+    await fillContractBasics(page, '1,000.50', '0')
+    await expect(page.getByTestId('contract-subtotal-interpreted')).toContainText('Số không đúng định dạng')
+    await panel.getByRole('button', { name: 'Lưu hợp đồng' }).click()
+    await expect(panel.getByRole('alert').filter({ hasText: 'Trước VAT:' })).toBeVisible()
+    expect(state.captured).toHaveLength(0)
+
+    await page.getByLabel('Trước VAT', { exact: true }).fill('1.00')
+    await expect(page.getByTestId('contract-subtotal-interpreted')).toContainText('Dấu "." chỉ ngăn cách hàng nghìn')
+
+    await page.getByLabel('Trước VAT', { exact: true }).fill('1.000.000')
+    await expect(page.getByTestId('contract-subtotal-interpreted')).toHaveText('Hiểu là: 1.000.000')
+    await page.getByLabel('VAT', { exact: true }).fill('100.000,5')
+    await expect(page.getByTestId('contract-vat-interpreted')).toHaveText('Hiểu là: 100.000,5')
+    await expect(page.getByLabel('Tổng giá trị hợp đồng')).toHaveValue('1.100.000,5')
+    await expect(page.getByTestId('installment-amount-1')).toHaveText('1.100.000,5')
+
+    await page.getByLabel('Lý do chênh lệch').fill('Giá thực tế theo hợp đồng')
+    await panel.getByRole('button', { name: 'Lưu hợp đồng' }).click()
+    await expect(page.getByTestId('contract-summary')).toBeVisible()
+
+    const record = state.captured.find(entry => entry.path === `/orders/${orderId}/contract`)
+    const body = recordMaterialContractInputSchema.parse(record?.body)
+    expect([body.subtotal, body.vatAmount, body.total]).toEqual(['1000000.0000', '100000.5000', '1100000.5000'])
+    expect(body.installments[0]?.amount).toBe('1100000.5000')
   })
 })

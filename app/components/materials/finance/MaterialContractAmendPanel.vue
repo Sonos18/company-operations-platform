@@ -26,9 +26,9 @@
             type="file"
             accept="application/pdf,.pdf"
             :disabled="busy"
-            @change="onFileChange"
+            @change="amendmentSlot.selectFile(pickedFile($event))"
           >
-          <p v-if="slot.fileId" class="field-hint field-hint--ok">Đã tải lên: {{ slot.file?.name }}</p>
+          <p v-if="amendmentSlot.state.fileId" class="field-hint field-hint--ok">Đã tải lên: {{ amendmentSlot.state.file?.name }}</p>
         </div>
         <div class="field">
           <label class="field-label" for="amendment-reason">Lý do phụ lục</label>
@@ -54,42 +54,48 @@
             :value="orderSubtotalLabel"
           >
         </div>
+        <MaterialMoneyInput
+          id="amendment-subtotal"
+          label="Trước VAT mới"
+          test-id="amendment-subtotal"
+          :model-value="money.subtotal.value"
+          :disabled="busy"
+          @update:model-value="money.setSubtotal"
+        />
+        <MaterialMoneyInput
+          id="amendment-vat"
+          label="VAT mới"
+          test-id="amendment-vat"
+          :model-value="money.vatAmount.value"
+          :disabled="busy"
+          @update:model-value="money.setVatAmount"
+        />
         <div class="field">
-          <label class="field-label" for="amendment-subtotal">Trước VAT mới</label>
-          <input id="amendment-subtotal" v-model="subtotal" class="cockpit-input" type="text" inputmode="decimal" :disabled="busy">
-        </div>
-        <div class="field">
-          <label class="field-label" for="amendment-vat">VAT mới</label>
-          <input id="amendment-vat" v-model="vatAmount" class="cockpit-input" type="text" inputmode="decimal" :disabled="busy">
-        </div>
-        <div class="field">
-          <label class="field-label" for="amendment-total">Tổng giá trị mới</label>
-          <input
+          <MaterialMoneyInput
             id="amendment-total"
-            class="cockpit-input"
-            type="text"
-            inputmode="decimal"
-            :value="total"
+            label="Tổng giá trị mới"
+            test-id="amendment-total"
+            :model-value="money.total.value"
             :disabled="busy"
-            @input="onTotalInput"
-          >
+            @update:model-value="money.setTotal"
+          />
           <p class="field-hint">
-            <template v-if="totalTouched">
+            <template v-if="money.totalTouched.value">
               Đã sửa tay.
-              <button type="button" class="link-btn" @click="resetTotal">Tự tính lại</button>
+              <button type="button" class="link-btn" @click="money.resetTotal">Tự tính lại</button>
             </template>
             <template v-else>Tự tính từ trước VAT + VAT.</template>
           </p>
         </div>
       </div>
 
-      <p v-if="totalMismatch" class="field-error" role="alert">Tổng giá trị phải bằng giá trị trước VAT cộng VAT.</p>
+      <p v-if="money.totalMismatch.value" class="field-error" role="alert">Tổng giá trị phải bằng giá trị trước VAT cộng VAT.</p>
 
-      <div v-if="varianceNeeded" class="field">
+      <div v-if="money.varianceNeeded.value" class="field">
         <label class="field-label" for="amendment-variance">Lý do chênh lệch</label>
         <textarea
           id="amendment-variance"
-          v-model="varianceReason"
+          v-model="money.varianceReason.value"
           class="cockpit-textarea"
           rows="2"
           maxlength="1000"
@@ -101,7 +107,7 @@
 
       <MaterialInstallmentEditor
         v-model="rows"
-        :total="total"
+        :total="money.totalCanonical.value"
         :floors="floors"
         :disabled="busy"
         :default-due-on="contract.signedOn"
@@ -129,24 +135,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import Decimal from 'decimal.js'
-import type {
-  MaterialEvidenceIntentInput,
-  MaterialEvidenceRole,
-} from '../../../../shared/schemas/costs/material-procurement'
 import {
   amendMaterialContractInputSchema,
   type MaterialContractView,
 } from '../../../../shared/schemas/costs/material-finance'
-import { formatMaterialQuantity } from '../../../utils/materials/quantity-display'
-import { uploadMaterialEvidence, type MaterialEvidenceUploadSession } from '../../../utils/costs/material-evidence-uploader'
-import MaterialInstallmentEditor, {
-  createCommandKeyKeeper,
-  describeContractError,
-  type InstallmentEditorResult,
-  type InstallmentRow,
-} from './MaterialInstallmentEditor.vue'
+import { createCommandKeyKeeper } from '../../../utils/materials/command-key'
+import { useContractMoneyFields } from '../../../utils/materials/contract-money-fields'
+import { describeContractError } from '../../../utils/materials/contract-errors'
+import { createEvidenceUploadSlot } from '../../../utils/materials/evidence-upload-slot'
+import type { InstallmentEditorResult, InstallmentRow } from '../../../utils/materials/installment-rows'
+import { formatVnNumber } from '../../../utils/materials/vn-number'
+import MaterialInstallmentEditor from './MaterialInstallmentEditor.vue'
+import MaterialMoneyInput from './MaterialMoneyInput.vue'
 
 interface Props {
   companyId: string
@@ -155,9 +157,7 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const emit = defineEmits<{
-  (e: 'refresh'): void
-}>()
+const emit = defineEmits<(e: 'refresh') => void>()
 
 const nuxtApp = useNuxtApp()
 const companyAccess = nuxtApp.$companyAccessStore
@@ -165,86 +165,59 @@ const supabaseClient = nuxtApp.$supabaseClient
 const procurementRepo = useRepositories().materialProcurement
 const financeRepo = useRepositories().materialFinance
 
-const moneyPattern = /^\d{1,16}(\.\d{1,4})?$/
 const keyKeeper = createCommandKeyKeeper()
 let disposed = false
 onBeforeUnmount(() => { disposed = true })
 
-const open = ref(false)
-const busy = ref(false)
-const submitAttempted = ref(false)
-const actionError = ref('')
-const needsReload = ref(false)
-
-const slot = reactive<{ file: File | null, fingerprint: string, session: MaterialEvidenceUploadSession | null, fileId: string | null }>({
-  file: null, fingerprint: '', session: null, fileId: null,
-})
-const reason = ref('')
-const subtotal = ref('')
-const vatAmount = ref('')
-const total = ref('')
-const totalTouched = ref(false)
-const varianceReason = ref('')
-const rows = ref<InstallmentRow[]>([])
-const resolved = ref<InstallmentEditorResult>({ installments: [], issues: [] })
-
-function parseMoney(value: string): Decimal | null {
-  const trimmed = value.trim()
-  return moneyPattern.test(trimmed) ? new Decimal(trimmed) : null
+function isScopeCurrent() {
+  return !disposed && companyAccess?.activeCompanyId === props.companyId
 }
+
+const amendmentSlot = createEvidenceUploadSlot({
+  evidenceRole: 'contract_amendment',
+  target: () => ({ kind: 'material_contract' as const, contractId: props.contract.id }),
+  context: () => ({
+    companyId: props.companyId,
+    projectId: props.projectId,
+    repository: procurementRepo,
+    supabaseClient,
+    isScopeCurrent,
+  }),
+})
 
 const currentVersion = computed(() =>
   props.contract.versions.find(version => version.versionNo === props.contract.currentVersionNo)
   ?? props.contract.versions[props.contract.versions.length - 1])
 
 const orderSubtotal = computed(() => new Decimal(currentVersion.value?.orderSubtotalSnapshot ?? '0'))
-const orderSubtotalLabel = computed(() => `${formatMaterialQuantity(orderSubtotal.value.toFixed(4))} ${props.contract.currencyCode}`)
+const orderSubtotalLabel = computed(() => `${formatVnNumber(orderSubtotal.value)} ${props.contract.currencyCode}`)
+const money = useContractMoneyFields(() => orderSubtotal.value)
 
 /** Paid plus pending per installment: the amendment may neither delete nor go below it. */
 const floors = computed<Record<string, string>>(() => Object.fromEntries(
   props.contract.installments.map(item => [item.installmentKey, new Decimal(item.paid).plus(item.pending).toFixed(4)]),
 ))
 
-const subtotalDecimal = computed(() => parseMoney(subtotal.value))
-const vatDecimal = computed(() => parseMoney(vatAmount.value))
-const totalDecimal = computed(() => parseMoney(total.value))
-const varianceNeeded = computed(() => subtotalDecimal.value !== null && !subtotalDecimal.value.equals(orderSubtotal.value))
-const totalMismatch = computed(() => Boolean(
-  subtotalDecimal.value && vatDecimal.value && totalDecimal.value
-  && !subtotalDecimal.value.plus(vatDecimal.value).equals(totalDecimal.value),
-))
+const open = ref(false)
+const busy = ref(false)
+const submitAttempted = ref(false)
+const actionError = ref('')
+const needsReload = ref(false)
+const reason = ref('')
+const rows = ref<InstallmentRow[]>([])
+const resolved = ref<InstallmentEditorResult>({ installments: [], issues: [] })
 
-function autoTotal() {
-  const sum = subtotalDecimal.value && vatDecimal.value ? subtotalDecimal.value.plus(vatDecimal.value) : null
-  total.value = sum ? formatMaterialQuantity(sum.toFixed(4)) : ''
-}
-
-watch([subtotal, vatAmount], () => {
-  if (!totalTouched.value) autoTotal()
-})
-
-function onTotalInput(event: Event) {
-  total.value = (event.target as HTMLInputElement).value
-  totalTouched.value = true
-}
-
-function resetTotal() {
-  totalTouched.value = false
-  autoTotal()
+function pickedFile(event: Event) {
+  return (event.target as HTMLInputElement).files?.[0] ?? null
 }
 
 function openForm() {
   const version = currentVersion.value
-  slot.file = null
-  slot.fingerprint = ''
-  slot.session = null
-  slot.fileId = null
+  amendmentSlot.selectFile(null)
   reason.value = ''
-  varianceReason.value = version?.varianceReason ?? ''
-  subtotal.value = version ? formatMaterialQuantity(version.subtotal) : ''
-  vatAmount.value = version ? formatMaterialQuantity(version.vatAmount) : ''
-  total.value = version ? formatMaterialQuantity(version.total) : ''
-  totalTouched.value = false
+  if (version) {
+    money.load(version, version.varianceReason)
+  }
   rows.value = [...props.contract.installments]
     .sort((a, b) => a.seq - b.seq)
     .map(item => ({
@@ -252,7 +225,7 @@ function openForm() {
       name: item.name,
       mode: 'amount' as const,
       percent: '',
-      amount: formatMaterialQuantity(item.amount),
+      amount: formatVnNumber(item.amount),
       dueOn: item.dueOn,
       isAdvance: item.isAdvance,
     }))
@@ -268,78 +241,35 @@ function closeForm() {
   open.value = false
 }
 
-function onFileChange(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0] ?? null
-  const fingerprint = file ? `${file.name}:${file.size}:${file.lastModified}` : ''
-  if (file && fingerprint === slot.fingerprint) return
-  slot.file = file
-  slot.fingerprint = fingerprint
-  slot.session = null
-  slot.fileId = null
-}
-
 const issues = computed(() => {
   const list: string[] = []
-  if (!slot.file) list.push('Chưa chọn file phụ lục (PDF).')
+  if (!amendmentSlot.state.file) list.push('Chưa chọn file phụ lục (PDF).')
   if (!reason.value.trim()) list.push('Chưa nhập lý do phụ lục.')
-  if (!subtotalDecimal.value || !subtotalDecimal.value.greaterThan(0)) list.push('Giá trị trước VAT phải là số lớn hơn 0.')
-  if (!vatDecimal.value) list.push('Chưa nhập VAT (nhập 0 nếu không có).')
-  if (!totalDecimal.value || !totalDecimal.value.greaterThan(0)) list.push('Tổng giá trị phải là số lớn hơn 0.')
-  if (totalMismatch.value) list.push('Tổng giá trị phải bằng giá trị trước VAT cộng VAT.')
-  if (varianceNeeded.value && !varianceReason.value.trim()) list.push('Cần nhập lý do chênh lệch so với tổng đơn.')
-  list.push(...resolved.value.issues)
+  list.push(...money.issues.value, ...resolved.value.issues)
   return list
 })
 
 // The installment editor already lists its own problems; the panel shows only the rest.
 const panelIssues = computed(() => issues.value.filter(issue => !resolved.value.issues.includes(issue)))
 
-function isScopeCurrent() {
-  return !disposed && companyAccess?.activeCompanyId === props.companyId
-}
-
-async function ensureUploaded(): Promise<string> {
-  if (slot.fileId) return slot.fileId
-  if (!slot.file) throw new Error('Chưa chọn tệp.')
-  const result = await uploadMaterialEvidence({
-    companyId: props.companyId,
-    projectId: props.projectId,
-    file: slot.file,
-    // The contract-amendment role and the material_contract target are added to the
-    // evidence schema by the evidence-policy task (Task 4); until it merges the local
-    // union does not list them, so this single call site is cast to the schema type.
-    evidenceRole: 'contract_amendment' as unknown as MaterialEvidenceRole,
-    target: { kind: 'material_contract', contractId: props.contract.id } as unknown as MaterialEvidenceIntentInput['target'],
-    repository: procurementRepo,
-    supabaseClient,
-    session: slot.session,
-    onSessionChange: (session) => { slot.session = session },
-    isScopeCurrent,
-  })
-  slot.fileId = result.evidenceFileId
-  return result.evidenceFileId
-}
-
 async function save() {
   if (busy.value) return
   submitAttempted.value = true
   actionError.value = ''
   needsReload.value = false
-  if (issues.value.length > 0 || !subtotalDecimal.value || !vatDecimal.value || !totalDecimal.value) return
+  const payload = money.toPayload()
+  if (issues.value.length > 0 || !payload) return
 
   busy.value = true
   try {
-    const amendmentFileId = await ensureUploaded()
+    const amendmentFileId = await amendmentSlot.ensureUploaded()
     if (!isScopeCurrent()) return
 
     const parsed = amendMaterialContractInputSchema.safeParse({
       expectedVersion: props.contract.version,
       amendmentFileId,
       reason: reason.value.trim(),
-      subtotal: subtotalDecimal.value.toFixed(4),
-      vatAmount: vatDecimal.value.toFixed(4),
-      total: totalDecimal.value.toFixed(4),
-      varianceReason: varianceNeeded.value ? varianceReason.value.trim() : null,
+      ...payload,
       installments: resolved.value.installments,
     })
     if (!parsed.success) {
@@ -360,10 +290,7 @@ async function save() {
     const described = describeContractError(err)
     actionError.value = described.message
     needsReload.value = described.code === 'VERSION_CONFLICT'
-    if (described.code === 'EVIDENCE_INVALID') {
-      slot.fileId = null
-      slot.session = null
-    }
+    if (described.code === 'EVIDENCE_INVALID') amendmentSlot.reset()
   }
   finally {
     if (!disposed) busy.value = false
