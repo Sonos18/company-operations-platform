@@ -305,11 +305,15 @@ select throws_ok($$
   )
 $$,'23514',null,'material_contract scope rejects the order-level signed_contract role');
 
--- Order reads no longer expose the retired cost-workflow cash shape.
+-- Order reads no longer expose the retired cost-workflow cash shape. Since the A4 contract
+-- commands (20261015090100) a contract is reported to a reader without finance permissions
+-- (the buyer here) as status only: money and cash stay hidden.
 select ok((
-  select order_json->'contract'='null'::jsonb and order_json->'cash'='null'::jsonb
+  select order_json->'contract'->>'contractNo'='HD-FIN-01'
+    and order_json->'contract'->'total'='null'::jsonb
+    and order_json->'cash'='null'::jsonb
   from (select private.c1_material_order_json('c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','c1250000-0000-4000-8000-000000000351') as order_json) as read_order
-),'order read reports contract null and cash null');
+),'order read hides contract money and cash from a reader without finance permissions');
 
 -- Cross-row integrity: children must stay on the same contract, supplier and installment.
 insert into public.business_parties(id,tenant_id,company_id,code,display_name,party_kind,created_by)
