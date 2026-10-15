@@ -78,6 +78,9 @@ export async function installAuthRoutes(page: Page, state: AuthTestState): Promi
   // override this exact read endpoint. Never reach a live DB from mocked browsers.
   await page.route(/\/api\/companies\/[^/]+\/cost-workflow\/projects(?:\?.*)?$/,route=>route.fulfill({json:{mode:'legacy',projects:[],nextCursor:null}}))
   await page.route(/\/api\/companies\/[^/]+\/cost-notifications$/,route=>route.fulfill({json:[]}))
+  // The bell also reads material app notifications. Unmocked, that request reaches the dev server, which
+  // verifies the fake token against the unreachable Supabase host and can stall on DNS inside a sandbox.
+  await page.route(/\/api\/companies\/[^/]+\/notifications(?:\?.*)?$/, route => route.fulfill({ json: { items: [], nextCursor: null } }))
 
   await page.route(`${supabaseAuthUrl}/auth/v1/**`, async (route) => {
     const request = route.request()

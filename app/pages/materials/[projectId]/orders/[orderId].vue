@@ -123,8 +123,8 @@
           @refresh="reload"
         />
 
-        <slot name="invoices" />
-        <slot name="payment-requests" />
+        <MaterialInvoicePanel :project-id="pId" :contract="contract" @changed="reload" />
+        <MaterialPaymentRequestPanel :project-id="pId" :contract="contract" @changed="reload" />
       </template>
     </template>
   </div>
@@ -146,6 +146,8 @@ import MaterialContractRecordPanel from '../../../../components/materials/financ
 import MaterialContractSummary from '../../../../components/materials/finance/MaterialContractSummary.vue'
 import MaterialInstallmentTable from '../../../../components/materials/finance/MaterialInstallmentTable.vue'
 import MaterialContractAmendPanel from '../../../../components/materials/finance/MaterialContractAmendPanel.vue'
+import MaterialInvoicePanel from '../../../../components/materials/finance/MaterialInvoicePanel.vue'
+import MaterialPaymentRequestPanel from '../../../../components/materials/finance/MaterialPaymentRequestPanel.vue'
 
 definePageMeta({ requiredPermission: 'material.read' })
 

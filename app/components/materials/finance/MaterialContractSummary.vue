@@ -57,7 +57,7 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import Decimal from 'decimal.js'
 import type { MaterialContractView } from '../../../../shared/schemas/costs/material-finance'
-import { formatDate } from '../../../utils/materials/date-display'
+import { formatDate, formatDateTime } from '../../../utils/materials/date-display'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
 
 interface Props {
@@ -76,10 +76,6 @@ const fileError = ref('')
 
 function money(value: string) {
   return `${formatVnNumber(value)} ${props.contract.currencyCode}`
-}
-
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Ho_Chi_Minh' })
 }
 
 const metrics = computed(() => {
