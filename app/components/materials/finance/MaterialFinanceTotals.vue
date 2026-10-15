@@ -25,7 +25,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { MaterialFinanceTotals } from '../../../../shared/utils/material-finance-summary'
-import { formatFinanceMoney, isDecimalGreaterThan } from '../../../utils/costs/finance-display'
+import { isDecimalGreaterThan } from '../../../utils/costs/finance-display'
+import { formatVnNumber } from '../../../utils/materials/vn-number'
 
 const props = defineProps<{
   totals: MaterialFinanceTotals
@@ -36,18 +37,15 @@ const headingId = useId()
 
 // Display formatting only: the server computes every figure, nothing is recalculated here.
 const metrics = computed(() => [
-  { key: 'committed', label: 'Cam kết', value: money(props.totals.committed), danger: false },
-  { key: 'paid', label: 'Đã chi', value: money(props.totals.paid), danger: false },
-  { key: 'pending', label: 'Đang chờ chi', value: money(props.totals.pending), danger: false },
-  { key: 'remaining', label: 'Còn phải trả', value: money(props.totals.remaining), danger: false },
-  { key: 'overdue', label: 'Quá hạn', value: money(props.totals.overdue), danger: isDecimalGreaterThan(props.totals.overdue, '0') },
-  { key: 'invoiced', label: 'Đã nhận hóa đơn', value: money(props.totals.invoiced), danger: false },
-  { key: 'paidWithoutInvoice', label: 'Đã chi chưa có hóa đơn', value: money(props.totals.paidWithoutInvoice), danger: false },
+  { key: 'committed', label: 'Cam kết', value: formatVnNumber(props.totals.committed), danger: false },
+  { key: 'paid', label: 'Đã chi', value: formatVnNumber(props.totals.paid), danger: false },
+  { key: 'pending', label: 'Đang chờ chi', value: formatVnNumber(props.totals.pending), danger: false },
+  { key: 'remaining', label: 'Còn phải trả', value: formatVnNumber(props.totals.remaining), danger: false },
+  { key: 'overdue', label: 'Quá hạn', value: formatVnNumber(props.totals.overdue), danger: isDecimalGreaterThan(props.totals.overdue, '0') },
+  { key: 'invoiced', label: 'Đã nhận hóa đơn', value: formatVnNumber(props.totals.invoiced), danger: false },
+  { key: 'paidWithoutInvoice', label: 'Đã chi chưa có hóa đơn', value: formatVnNumber(props.totals.paidWithoutInvoice), danger: false },
 ])
 
-function money(value: string): string {
-  return formatFinanceMoney(value) ?? '0'
-}
 </script>
 
 <style scoped>
