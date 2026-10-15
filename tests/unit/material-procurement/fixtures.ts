@@ -86,19 +86,3 @@ export const legacyOrder = {
   approved: '30.0000',
   paid: '10.0000',
 } as const
-
-export const signedContractInput = {
-  expectedOrderVersion: 1,
-  contractReference: 'HD-VT-001',
-  signedValue: '100.0000',
-  currencyCode: 'VND',
-  signedContractEvidenceFileId: ids.signedContract,
-  signedQuotationEvidenceFileId: ids.signedQuotation,
-  documentsReviewed: true,
-} as const
-
-export const signed100Paid30 = {
-  signedValue: '100.0000',
-  grossPaid: '30.0000',
-  availableToPay: '70.0000',
-} as const

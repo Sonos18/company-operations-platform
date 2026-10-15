@@ -26,6 +26,7 @@ const returnedProposal = {
   reviewState: 'returned',
   returnReason: 'Recheck specification',
   approvedRevisionId: null,
+  currentRevisionId: ids.proposalRevision,
   projectId: ids.project,
   createdBy: ids.user,
   neededOn: proposalInput.neededOn,
@@ -40,6 +41,7 @@ const returnedProposal = {
     effectiveInvoiceDisplayName: 'Cement',
     invoiceDisplayNameSource: 'canonical',
     buyerOverrideVersion: 0,
+    buyerInvoiceNameEditable: false,
     specification: 'PCB40',
     unit: 'bag',
     allocatedQuantity: '0.0000',
@@ -84,7 +86,7 @@ const orderView = {
   }],
   unsignedQuotationEvidenceFileId: ids.unsignedQuotation,
   contract: null,
-  cash: { grossPaid: '0.0000', availableToPay: '0.0000' },
+  cash: null,
 }
 const materialEvidence = {
   originalFilename: 'quotation.pdf',
@@ -342,7 +344,7 @@ describe('material procurement HTTP repository', () => {
     }))
   })
 
-  it('uses material PDF evidence routes and leaves the future contract method unavailable', async () => {
+  it('uses material PDF evidence routes and leaves contract commands to the material finance repository', async () => {
     const intent = {
       evidenceFileId: ids.unsignedQuotation,
       version: 0,
@@ -383,8 +385,7 @@ describe('material procurement HTTP repository', () => {
 
     const client = response(result)
     const repository = createHttpMaterialProcurementRepository({ companyId, client: client as never })
-    await expect(repository.recordContract(ids.project, ids.order, {} as never, command))
-      .rejects.toThrow('MATERIAL_PROCUREMENT_NOT_IMPLEMENTED: recordContract')
+    expect(repository).not.toHaveProperty('recordContract')
     expect(client.request).not.toHaveBeenCalled()
   })
 

@@ -3,7 +3,6 @@ import { permissionCodes } from '../../../shared/constants/permissions'
 import {
   cancelMaterialOrderInputSchema,
   chosenSupplierInputSchema,
-  commitMaterialContractInputSchema,
   createMaterialOrderInputSchema,
   materialEvidenceIntentInputSchema,
   materialCommandResultSchema,
@@ -31,8 +30,6 @@ import {
   ids,
   purchasingRoleScope,
   quote11ForAllocation10,
-  signed100Paid30,
-  signedContractInput,
   split10Of20,
   validLine,
   validProposal,
@@ -91,10 +88,10 @@ describe('material procurement contracts', () => {
   it('exposes the buyer return reason to engineers and rejects missing or blank reason fields', () => {
     const returned = {
       id: ids.proposal, version: 3, reviewState: 'returned', returnReason: 'Kiem tra lai quy cach xi mang',
-      approvedRevisionId: null, projectId: ids.project, createdBy: ids.user,
+      approvedRevisionId: null, currentRevisionId: ids.proposalRevision, projectId: ids.project, createdBy: ids.user,
       neededOn: validProposal.neededOn, deliveryAddress: validProposal.deliveryAddress, notes: null,
       lines: [{ ...validLine, materialName: 'Xi mang', specification: 'PCB40', unit: 'bao', notes: null,
-        engineerProposedInvoiceName: null, buyerProposedInvoiceName: null, effectiveInvoiceDisplayName: 'Xi mang', invoiceDisplayNameSource: 'canonical', buyerOverrideVersion: 0,
+        engineerProposedInvoiceName: null, buyerProposedInvoiceName: null, effectiveInvoiceDisplayName: 'Xi mang', invoiceDisplayNameSource: 'canonical', buyerOverrideVersion: 0, buyerInvoiceNameEditable: false,
         allocatedQuantity: '0.0000', signedQuantity: '0.0000', remainingQuantity: '20.0000' }],
       orderProgress: { orderCount: 0, signedOrderCount: 0 },
     }
@@ -131,11 +128,6 @@ describe('material procurement contracts', () => {
       ...order,
       allocations: [{ ...split10Of20.allocations[0], mappingConfirmed: false }],
     }).success).toBe(false)
-    expect(commitMaterialContractInputSchema.safeParse(signedContractInput).success).toBe(true)
-    expect(commitMaterialContractInputSchema.safeParse({
-      ...signedContractInput,
-      documentsReviewed: false,
-    }).success).toBe(false)
   })
 
   it('exposes proposal and order progress without turning a signed contract into cash', () => {
@@ -145,6 +137,7 @@ describe('material procurement contracts', () => {
       reviewState: 'approved',
       returnReason: null,
       approvedRevisionId: ids.proposalRevision,
+      currentRevisionId: ids.proposalRevision,
       projectId: ids.project,
       createdBy: ids.user,
       neededOn: validProposal.neededOn,
@@ -159,6 +152,7 @@ describe('material procurement contracts', () => {
         effectiveInvoiceDisplayName: 'Thep tren hoa don',
         invoiceDisplayNameSource: 'buyer',
         buyerOverrideVersion: 1,
+        buyerInvoiceNameEditable: true,
         specification: '100 x 100 mm',
         unit: 'cay',
         allocatedQuantity: '20.0000',
@@ -168,7 +162,7 @@ describe('material procurement contracts', () => {
       orderProgress: { orderCount: 2, signedOrderCount: 1 },
     }).success).toBe(true)
 
-    expect(materialOrderViewSchema.safeParse({
+    const orderView = {
       id: ids.order,
       version: 2,
       orderState: 'active',
@@ -188,16 +182,33 @@ describe('material procurement contracts', () => {
       unsignedQuotationEvidenceFileId: ids.unsignedQuotation,
       contract: {
         id: ids.contract,
-        signedValue: signed100Paid30.signedValue,
-        currencyCode: 'VND',
-        authorizationId: ids.authority,
-        installmentId: ids.installment,
+        contractNo: 'HD-VT-001',
+        signedOn: '2026-10-10',
+        currentVersionNo: 1,
+        total: '100.0000',
       },
       cash: {
-        grossPaid: signed100Paid30.grossPaid,
-        availableToPay: signed100Paid30.availableToPay,
+        committed: '100.0000',
+        paid: '30.0000',
+        pending: '20.0000',
+        remaining: '70.0000',
       },
+    }
+    expect(materialOrderViewSchema.safeParse(orderView).success).toBe(true)
+    expect(materialOrderViewSchema.safeParse({
+      ...orderView,
+      contract: { ...orderView.contract, total: null },
+      cash: null,
     }).success).toBe(true)
+    expect(materialOrderViewSchema.safeParse({ ...orderView, contract: null, cash: null }).success).toBe(true)
+    expect(materialOrderViewSchema.safeParse({
+      ...orderView,
+      contract: { ...orderView.contract, signedValue: '100.0000' },
+    }).success).toBe(false)
+    expect(materialOrderViewSchema.safeParse({
+      ...orderView,
+      cash: { grossPaid: '30.0000', availableToPay: '70.0000' },
+    }).success).toBe(false)
   })
 
   it('freezes buyer cancellation and material PDF role/target pairs without narrowing canonical evidence', () => {
@@ -332,7 +343,7 @@ describe('material procurement contracts', () => {
     }).success).toBe(false)
   })
 
-  it('registers scoped permissions without inventing proposal-update or manager-approval permissions', () => {
+  it('registers scoped material and payment permissions without inventing a proposal-update permission', () => {
     for (const code of [
       'material.read',
       'material.manage',
@@ -348,10 +359,15 @@ describe('material procurement contracts', () => {
     expect(directorRoleScope).toContain('cost.notification.read')
     expect(engineerRoleScope).not.toContain('material.order.manage')
     expect(permissionCodes).not.toContain('material.proposal.update')
-    expect(permissionCodes).not.toContain('material.payment.approve')
+    for (const code of [
+      'material.payment.request',
+      'material.payment.approve',
+      'material.payment.execute',
+      'material.finance.read',
+    ]) expect(permissionCodes).toContain(code)
   })
 
-  it('freezes command keys, receipts, and the endpoint manifest around the canonical payment route', () => {
+  it('freezes command keys, receipts, and the endpoint manifest without legacy contract or payment routes', () => {
     expect(materialCommandSchema.safeParse({ idempotencyKey: ids.order }).success).toBe(true)
     expect(materialCommandSchema.safeParse({ idempotencyKey: 'material-order-001' }).success).toBe(false)
     expect(materialCommandSchema.safeParse({ idempotencyKey: '' }).success).toBe(false)
@@ -360,15 +376,18 @@ describe('material procurement contracts', () => {
       resourceId: ids.order,
       version: 2,
       replayed: false,
-      contractId: ids.contract,
-      authorizationId: ids.authority,
-      installmentId: ids.installment,
     }).success).toBe(true)
+    for (const legacyKey of ['contractId', 'authorizationId', 'installmentId']) {
+      expect(materialCommandResultSchema.safeParse({
+        resourceId: ids.order,
+        version: 2,
+        replayed: false,
+        [legacyKey]: ids.contract,
+      }).success).toBe(false)
+    }
 
-    expect(materialProcurementEndpointManifest.payments).toEqual({
-      method: 'POST',
-      path: '/api/companies/:companyId/projects/:projectId/cost-workflow/installments/:installmentId/payments',
-    })
+    expect(materialProcurementEndpointManifest).not.toHaveProperty('payments')
+    expect(materialProcurementEndpointManifest).not.toHaveProperty('recordContract')
     expect(Object.values(materialProcurementEndpointManifest).some(endpoint =>
       endpoint.path.includes('material-payments'),
     )).toBe(false)

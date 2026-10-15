@@ -41,7 +41,7 @@ const orderView = {
   }],
   unsignedQuotationEvidenceFileId: ids.unsignedQuotation,
   contract: null,
-  cash: { grossPaid: '0.0000', availableToPay: '0.0000' },
+  cash: null,
 }
 const commandResult = { resourceId: ids.order, version: 1, replayed: false }
 
