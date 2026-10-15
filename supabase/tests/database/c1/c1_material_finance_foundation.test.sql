@@ -566,5 +566,5 @@ select is((select count(*) from public.cost_evidence_files where id in ('c125000
 select set_config('request.jwt.claims','{"sub":"c1250000-0000-4000-8000-000000000904","role":"authenticated"}',true);
 select is((select count(*) from public.cost_evidence_files where id in ('c1250000-0000-4000-8000-000000000501', 'c1250000-0000-4000-8000-000000000502', 'c1250000-0000-4000-8000-000000000503', 'c1250000-0000-4000-8000-000000000504', 'c1250000-0000-4000-8000-000000000506', 'c1250000-0000-4000-8000-000000000510')),5::bigint,'finance evidence: finance reader sees metadata of the finance files but not the unsigned quotation');
 
-select * from finish();
+select * from finish(true);
 rollback;

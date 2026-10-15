@@ -418,5 +418,5 @@ select throws_ok($$
   )
 $$,'P0001','PERMISSION_DENIED','generic finalizer replay rejects material namespace');
 
-select * from finish();
+select * from finish(true);
 rollback;

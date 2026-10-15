@@ -660,5 +660,5 @@ select is((
     'c1270000-0000-4000-8000-000000000020','c1270000-0000-4000-8000-000000000101','c1270000-0000-4000-8000-000000000601')) as listed(element)
 ),'["voided"]'::jsonb,'reads: contract C1 lists its voided invoice');
 
-select * from finish();
+select * from finish(true);
 rollback;

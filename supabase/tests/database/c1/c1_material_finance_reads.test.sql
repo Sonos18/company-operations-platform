@@ -483,5 +483,5 @@ select is(
 );
 
 reset role;
-select * from finish();
+select * from finish(true);
 rollback;
