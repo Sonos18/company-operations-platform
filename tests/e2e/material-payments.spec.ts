@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js'
 import { expect, test } from './fixtures/authenticated'
-import type { Page, Route } from '@playwright/test'
+import type { Locator, Page, Route } from '@playwright/test'
 import { createAuthTestState, createCompany, installAuthRoutes } from './fixtures/auth-routes'
 import {
   cancelPaymentRequestInputSchema,
@@ -635,6 +635,63 @@ test.describe('Material payment dialogs: stale data, retries and typing', () => 
       lines: [{ proposalLineId, invoiceMaterialName: 'Thép cuộn phi 8 (HĐ)' }],
     })
     await expect(page.getByRole('cell', { name: '1C26TAA' })).toBeVisible()
+  })
+})
+
+/**
+ * True when the element painted at the given point of the viewport is the target or one of its descendants.
+ * An open modal sets pointer-events: none on the rest of the page, which would hide a shell element that
+ * is painted above the modal from hit testing; it is lifted for the check so the paint order is what counts.
+ */
+async function isTopmostAt(page: Page, target: Locator, point: 'center' | 'left-edge'): Promise<boolean> {
+  const handle = await target.elementHandle()
+  if (!handle) throw new Error('Target element not found')
+  return page.evaluate(({ element, where }) => {
+    const box = element.getBoundingClientRect()
+    const x = where === 'center' ? box.left + box.width / 2 : box.left + 4
+    const y = box.top + box.height / 2
+    const previous = document.body.style.pointerEvents
+    document.body.style.pointerEvents = 'auto'
+    const hit = document.elementFromPoint(x, y)
+    document.body.style.pointerEvents = previous
+    return hit !== null && element.contains(hit)
+  }, { element: handle, where: point })
+}
+
+// Nuxt UI marks #__nuxt as an isolated stacking context, so the shell's fixed z-index values (sidebar 40,
+// mobile nav 60) stay inside it and any dialog portalled to <body> paints above them. These tests guard that.
+test.describe('Material finance dialogs stack above the app shell', () => {
+  test('11. on a phone the footer button is above the bottom navigation and clickable', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    await signIn(page, accountant, accountantPermissions)
+    const state = await installFinanceMocks(page)
+
+    await page.goto(orderPath)
+    await page.getByRole('button', { name: 'Lập đề nghị chi' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Lập đề nghị thanh toán chi' })
+    const submit = dialog.getByRole('button', { name: 'Gửi đề nghị chi' })
+    await submit.scrollIntoViewIfNeeded()
+
+    expect(await isTopmostAt(page, submit, 'center')).toBe(true)
+    await submit.click()
+    await expect(dialog).toBeHidden()
+    expect(state.calls.some(call => call.method === 'POST' && call.path === `/contracts/${contractId}/payment-requests`)).toBe(true)
+  })
+
+  test('12. at 1024px the left edge of the invoice dialog is not covered by the sidebar', async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 800 })
+    await signIn(page, accountant, accountantPermissions)
+    await installFinanceMocks(page)
+
+    await page.goto(orderPath)
+    // The sidebar starts collapsed (64px); expanded it is 224px wide and reaches into the dialog.
+    await page.getByRole('button', { name: 'Mở rộng thanh điều hướng bên trái' }).click()
+    await expect(page.getByTestId('app-sidebar')).toHaveCSS('width', '224px')
+    await page.getByRole('button', { name: 'Nhập hóa đơn' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Nhập hóa đơn nhà cung cấp' })
+    await expect(dialog).toBeVisible()
+
+    expect(await isTopmostAt(page, dialog, 'left-edge')).toBe(true)
   })
 })
 
