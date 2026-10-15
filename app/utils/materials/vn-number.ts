@@ -1,4 +1,5 @@
-import Decimal from 'decimal.js'
+import type Decimal from 'decimal.js'
+import { MoneyDecimal } from '../../../shared/utils/money-decimal'
 
 /**
  * Vietnamese number input: "." separates thousands and "," is the decimal mark
@@ -53,7 +54,7 @@ export function parseVnNumber(raw: string, options: VnNumberOptions): VnNumberPa
     return fail(`Số quá lớn (tối đa ${options.maxIntegerDigits} chữ số phần nguyên).`)
   }
 
-  const canonical = new Decimal(fractionPart === undefined ? integerDigits : `${integerDigits}.${fractionPart}`).toFixed()
+  const canonical = new MoneyDecimal(fractionPart === undefined ? integerDigits : `${integerDigits}.${fractionPart}`).toFixed()
   return { ok: true, value: canonical }
 }
 
@@ -67,12 +68,12 @@ export function parseVnMoney(raw: string): VnNumberParseResult {
 /** The money value as a Decimal, or null when the text is empty or invalid. */
 export function parseVnMoneyDecimal(raw: string): Decimal | null {
   const result = parseVnMoney(raw)
-  return result.ok ? new Decimal(result.value) : null
+  return result.ok ? new MoneyDecimal(result.value) : null
 }
 
 /** Formats a canonical decimal for display: 12500.5 -> "12.500,5"; "110.0000" -> "110". */
 export function formatVnNumber(value: string | Decimal): string {
-  const text = new Decimal(value).toFixed()
+  const text = new MoneyDecimal(value).toFixed()
   const negative = text.startsWith('-')
   const [integerPart = '0', fractionPart] = (negative ? text.slice(1) : text).split('.')
   const grouped = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.')

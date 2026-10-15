@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js'
+import { MoneyDecimal } from '../../../../shared/utils/money-decimal'
 import {
   appNotificationPageSchema,
   materialFinanceCommandResultSchema,
@@ -136,7 +136,7 @@ export class MaterialFinanceReadService {
           installmentKey: installment.installmentKey,
           name: installment.name,
           dueOn: installment.dueOn,
-          remaining: new Decimal(installment.amount).minus(installment.paid).toFixed(4),
+          remaining: new MoneyDecimal(installment.amount).minus(installment.paid).toFixed(4),
           dueStatus,
         })
       }

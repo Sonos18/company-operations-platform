@@ -152,7 +152,8 @@
 
 <script setup lang="ts">
 import { computed, watch } from 'vue'
-import Decimal from 'decimal.js'
+import type Decimal from 'decimal.js'
+import { MoneyDecimal } from '../../../../shared/utils/money-decimal'
 import {
   createInstallmentRow,
   MAX_INSTALLMENT_ROWS,
@@ -217,7 +218,7 @@ function addRow() {
 function floorFor(row: InstallmentRow): string | null {
   const floor = props.floors[row.installmentKey]
   if (floor === undefined) return null
-  return new Decimal(floor).greaterThan(0) ? floor : null
+  return new MoneyDecimal(floor).greaterThan(0) ? floor : null
 }
 
 function floorLabel(row: InstallmentRow) {
@@ -238,7 +239,7 @@ function removeRow(index: number) {
 const totalDecimal = computed<Decimal | null>(() => {
   const value = props.total.trim()
   if (!canonicalPattern.test(value)) return null
-  const parsed = new Decimal(value)
+  const parsed = new MoneyDecimal(value)
   return parsed.greaterThan(0) ? parsed : null
 })
 
@@ -263,7 +264,7 @@ const evaluation = computed(() => {
         issues.push(`${label}: tỷ lệ không hợp lệ. ${percent.message}`)
         return { percent: '0' }
       }
-      if (new Decimal(percent.value).greaterThan(100)) {
+      if (new MoneyDecimal(percent.value).greaterThan(100)) {
         issues.push(`${label}: tỷ lệ không được lớn hơn 100%.`)
         return { percent: '0' }
       }
@@ -281,15 +282,15 @@ const evaluation = computed(() => {
   // keeps its own value instead.
   const split = splitInstallments(total.toFixed(4), parts)
   rows.value.forEach((_, index) => {
-    amounts[index] = new Decimal(split[index] ?? '0')
+    amounts[index] = new MoneyDecimal(split[index] ?? '0')
   })
   const lastRow = rows.value[last]
   const lastAmount = parts[last]?.amount
   if (lastRow && lastRow.mode === 'amount' && lastAmount !== undefined) {
-    amounts[last] = new Decimal(lastAmount).toDecimalPlaces(4, Decimal.ROUND_HALF_UP)
+    amounts[last] = new MoneyDecimal(lastAmount).toDecimalPlaces(4, MoneyDecimal.ROUND_HALF_UP)
   }
 
-  const sum = amounts.reduce<Decimal>((acc, value) => acc.plus(value ?? 0), new Decimal(0))
+  const sum = amounts.reduce<Decimal>((acc, value) => acc.plus(value ?? 0), new MoneyDecimal(0))
 
   rows.value.forEach((row, index) => {
     const label = `Đợt ${index + 1}`
@@ -314,7 +315,7 @@ const result = computed<InstallmentEditorResult>(() => ({
   installments: rows.value.map((row, index) => ({
     installmentKey: row.installmentKey,
     name: row.name.trim(),
-    amount: (evaluation.value.amounts[index] ?? new Decimal(0)).toFixed(4),
+    amount: (evaluation.value.amounts[index] ?? new MoneyDecimal(0)).toFixed(4),
     dueOn: row.dueOn,
     isAdvance: row.isAdvance,
   })),
@@ -335,7 +336,7 @@ function effectivePercent(index: number) {
   const amount = evaluation.value.amounts[index]
   const total = totalDecimal.value
   if (!amount || !total) return ''
-  return formatVnNumber(amount.dividedBy(total).times(100).toDecimalPlaces(4, Decimal.ROUND_HALF_UP))
+  return formatVnNumber(amount.dividedBy(total).times(100).toDecimalPlaces(4, MoneyDecimal.ROUND_HALF_UP))
 }
 
 const totalLabel = computed(() => totalDecimal.value ? formatVnNumber(totalDecimal.value) : '—')

@@ -55,7 +55,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import Decimal from 'decimal.js'
+import { MoneyDecimal } from '../../../../shared/utils/money-decimal'
 import type { MaterialContractView } from '../../../../shared/schemas/costs/material-finance'
 import { formatDate, formatDateTime } from '../../../utils/materials/date-display'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
@@ -85,7 +85,7 @@ const metrics = computed(() => {
     { testId: 'total-paid', label: 'Đã chi', value: money(totals.paid), tone: '' },
     { testId: 'total-pending', label: 'Đang chờ chi', value: money(totals.pending), tone: '' },
     { testId: 'total-remaining', label: 'Còn phải trả', value: money(totals.remaining), tone: '' },
-    { testId: 'total-overdue', label: 'Quá hạn', value: money(totals.overdue), tone: new Decimal(totals.overdue).greaterThan(0) ? 'metric--danger' : '' },
+    { testId: 'total-overdue', label: 'Quá hạn', value: money(totals.overdue), tone: new MoneyDecimal(totals.overdue).greaterThan(0) ? 'metric--danger' : '' },
     { testId: 'total-invoiced', label: 'Đã nhận hóa đơn', value: money(totals.invoiced), tone: '' },
     { testId: 'total-paid-no-invoice', label: 'Đã chi chưa có hóa đơn', value: money(totals.paidWithoutInvoice), tone: '' },
   ]
