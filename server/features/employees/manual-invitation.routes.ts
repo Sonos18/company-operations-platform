@@ -8,12 +8,14 @@ import { AppApiError } from '../../utils/api-error'
 import { requireAuthenticatedRequest } from '../../utils/auth-context'
 import { createSupabaseAdminClient } from '../../utils/supabase-client'
 import { parseSupabaseAdminConfig } from '../../utils/supabase-config'
+import { createConfiguredInvitationMailer } from '../../utils/smtp-mailer'
 import { createSupabaseTenancyReader, createTenancyService } from '../tenancy/tenancy.service'
 import { createSupabaseAuthorizationReader } from '../authorization/authorization.service'
 import { createSupabaseEmployeeRepository } from './employee.repository'
 import type { EmployeeServiceContext } from './employee.service'
 import { createManualEmployeeInvitationService, requireInvitationPermission } from './manual-invitation.service'
 import { createSupabaseManualInvitationAuth } from './manual-invitation-auth'
+import { deliverInvitation } from './invitation-delivery'
 interface Dependencies {
   resolveContext(event: H3Event, companyId: string): Promise<EmployeeServiceContext>
   prepare(context: EmployeeServiceContext, input: EmployeeInvitationInput): Promise<unknown>
@@ -80,7 +82,8 @@ export function createSupabaseManualInvitationRoutes(event: H3Event) {
           return { employeeCode: data.employee_code, workEmail: data.work_email, fullName: data.full_name, departmentId: data.department_id, positionId: data.position_id, hireDate: data.hire_date, employmentStatus: data.employment_status }
         },
       }
-      return createManualEmployeeInvitationService(repository, auth, runtime.public.appUrl).prepare(context, input)
+      const draft = await createManualEmployeeInvitationService(repository, auth, runtime.public.appUrl).prepare(context, input)
+      return deliverInvitation(draft, createConfiguredInvitationMailer(runtime.smtp))
     },
     async options(context) {
       if (!userDb) throw new AppApiError(500, 'INTERNAL_ERROR', 'Không thể đọc danh mục.')

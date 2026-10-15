@@ -28,4 +28,17 @@ describe('manual invitation routes', () => {
   expect(prepare).toHaveBeenCalledWith(context, expect.objectContaining({ workEmail: 'pilot@example.test' }))
   expect(setResponseHeader).toHaveBeenCalledWith(expect.anything(), 'Referrer-Policy', 'no-referrer')
  })
+ it('returns the delivered result unchanged and still sets no-store', async () => {
+  readBody.mockResolvedValue({ employeeCode: 'P1', fullName: 'Pilot', workEmail: 'pilot@example.test', departmentId: context.actorId })
+  const sent = { status: 'sent', recipient: 'pilot@example.test', subject: 'Lời mời tham gia Taskovia' }
+  const routes = createManualInvitationRoutes({ resolveContext: vi.fn().mockResolvedValue(context), prepare: vi.fn().mockResolvedValue(sent), options: vi.fn(), takeSlot: vi.fn() })
+  await expect(routes.prepare({} as never)).resolves.toEqual(sent)
+  expect(setResponseHeader).toHaveBeenCalledWith(expect.anything(), 'Cache-Control', 'no-store')
+ })
+ it('composes preparation with SMTP delivery in the Supabase assembly', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { resolve } = await import('node:path')
+  const source = readFileSync(resolve(import.meta.dirname, '../../../server/features/employees/manual-invitation.routes.ts'), 'utf8')
+  expect(source).toContain('deliverInvitation(draft, createConfiguredInvitationMailer(runtime.smtp))')
+ })
 })
