@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(16);
+select plan(17);
 
 -- A4/A5 T8 access fixes (20261015090600). Rollback-only fixture with prefix c12a.
 -- Order 351 (buyer B) of proposal 301 (engineer E) has contract 601 totalling 110:
@@ -244,6 +244,11 @@ select is((
     'c12a0000-0000-4000-8000-000000000020','c12a0000-0000-4000-8000-000000000101',(select (body->>'resourceId')::uuid from t8_access_acks where name='C1'),
     '{"expectedVersion":2,"reason":"Khong chi nua"}','c12a0000-0000-4000-8000-000000000d06','c12a0000-0000-4000-8000-000000000c00') - 'resourceId'
 ),'{"version":3,"replayed":false}'::jsonb,'cancel: the treasurer cancels the approved request');
+select is((
+  public.c1_material_cancel_payment_request(
+    'c12a0000-0000-4000-8000-000000000020','c12a0000-0000-4000-8000-000000000101',(select (body->>'resourceId')::uuid from t8_access_acks where name='C1'),
+    '{"expectedVersion":2,"reason":"Khong chi nua"}','c12a0000-0000-4000-8000-000000000d06','c12a0000-0000-4000-8000-000000000c00') - 'resourceId'
+),'{"version":3,"replayed":true}'::jsonb,'cancel: the treasurer repeating the same key gets the stored result, not PERMISSION_DENIED');
 select set_config('request.jwt.claims','{"sub":"c12a0000-0000-4000-8000-000000000901","role":"authenticated"}',true);
 select throws_ok(format($$
   select public.c1_material_cancel_payment_request(
@@ -300,5 +305,5 @@ select throws_ok(format($$
 $$,(select body->>'resourceId' from t8_access_acks where name='Y')),'P0001','INVOICE_REQUIRED','invoice recheck: paying needs an invoice once the installment is no longer an advance');
 set local role none;
 
-select * from finish();
+select * from finish(true);
 rollback;
