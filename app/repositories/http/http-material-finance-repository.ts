@@ -23,7 +23,7 @@ import { materialCommandSchema } from '../../../shared/schemas/costs/material-pr
 import type { MaterialFinanceCommand, MaterialFinanceRepository } from '../material-finance.contracts'
 import type { AuthenticatedHttpClient } from './authenticated-http-client'
 
-const notificationCursorSchema = z.string().datetime({ offset: true })
+const notificationCursorSchema = z.string().min(1).max(200)
 const emptyBodySchema = z.object({}).strict()
 
 export function createHttpMaterialFinanceRepository(options: {

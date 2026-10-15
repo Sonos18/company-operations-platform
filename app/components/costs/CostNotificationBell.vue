@@ -5,46 +5,64 @@
       class="bell-btn"
       :aria-expanded="isOpen"
       :aria-controls="panelId"
-      aria-label="Thông báo phê duyệt khoản chi"
+      :aria-label="bellLabel"
       @click="togglePanel"
     >
       <span class="bell-icon" aria-hidden="true">🔔</span>
       <span v-if="unreadCount > 0" class="badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
     </button>
 
-    <div v-if="isOpen" :id="panelId" class="panel" role="region" aria-label="Danh sách thông báo phê duyệt">
+    <div v-if="isOpen" :id="panelId" class="panel" role="region" aria-label="Danh sách thông báo">
       <div class="panel-header">
-        <strong>Thông báo phê duyệt chi</strong>
+        <strong>{{ panelTitle }}</strong>
         <button type="button" class="link-btn" :disabled="loading" @click="loadNotifications">Làm mới</button>
       </div>
 
       <div v-if="loading" class="empty">Đang nạp thông báo...</div>
-      <div v-else-if="notifications.length === 0" class="empty">Không có thông báo nào.</div>
+      <div v-else-if="entries.length === 0" class="empty">Không có thông báo nào.</div>
       <ul v-else class="list">
+        <template v-for="entry in entries" :key="entry.key">
         <li
-          v-for="n in notifications"
-          :key="n.id"
+          v-if="entry.source === 'material'"
+          class="item item--material"
+          :class="{ unread: !entry.notification.readAt }"
+          data-testid="material-notification"
+        >
+          <button
+            type="button"
+            class="item-open"
+            :disabled="Boolean(openingMaterial)"
+            @click="openMaterial(entry.notification)"
+          >
+            <span class="item-title">{{ entry.text.title }}</span>
+            <span v-if="entry.text.body">{{ entry.text.body }}</span>
+            <span class="item-date">{{ formatDate(entry.notification.createdAt) }}</span>
+          </button>
+        </li>
+        <li
+          v-else
           class="item"
-          :class="{ unread: n.deliveryState === 'available' && !n.readAt, undelivered: n.deliveryState === 'undelivered' }"
+          :class="{ unread: entry.notification.deliveryState === 'available' && !entry.notification.readAt, undelivered: entry.notification.deliveryState === 'undelivered' }"
         >
           <div class="item-content">
-            <span class="item-title">{{ kindTitle(n.kind) }}</span>
+            <span class="item-title">{{ kindTitle(entry.notification.kind) }}</span>
             <span>Phê duyệt độc lập với xác nhận thu/chi thực tế.</span>
-            <span class="item-date">{{ formatDate(n.createdAt) }}</span>
-            <span v-if="n.deliveryState === 'undelivered'" class="pending-tag">Chưa nhận thông báo</span>
+            <span class="item-date">{{ formatDate(entry.notification.createdAt) }}</span>
+            <span v-if="entry.notification.deliveryState === 'undelivered'" class="pending-tag">Chưa nhận thông báo</span>
           </div>
           <div class="item-actions">
-            <NuxtLink :to="{path: `/costs/${n.projectId}/requests/${n.requestId}`, query: {kind:n.kind,submittedVersionId:n.submittedVersionId}}" class="view-link" @click="markRead(n)">Xem hồ sơ đã duyệt</NuxtLink>
+            <NuxtLink :to="{path: `/costs/${entry.notification.projectId}/requests/${entry.notification.requestId}`, query: {kind:entry.notification.kind,submittedVersionId:entry.notification.submittedVersionId}}" class="view-link" @click="markRead(entry.notification)">Xem hồ sơ đã duyệt</NuxtLink>
             <button
-              v-if="n.deliveryState === 'available' && !n.readAt"
+              v-if="entry.notification.deliveryState === 'available' && !entry.notification.readAt"
               type="button"
               class="ack-btn" :disabled="Boolean(acknowledging)"
-              @click="markRead(n)"
+              @click="markRead(entry.notification)"
             >
               Đã đọc
             </button>
           </div>
         </li>
+        </template>
       </ul>
     </div>
   </div>
@@ -53,11 +71,20 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import type { WorkflowNotificationView } from '../../../shared/schemas/costs/cost-workflow'
+import type { AppNotificationView } from '../../../shared/schemas/costs/material-finance'
 import type { CostWorkflowRepository } from '../../repositories/cost-workflow.contracts'
+import type { MaterialFinanceRepository } from '../../repositories/material-finance.contracts'
+import { appNotificationText, type AppNotificationText } from '../../utils/notifications/app-notification-text'
 import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 
 
-const repo: CostWorkflowRepository = useRepositories().costWorkflow
+type NotificationEntry =
+  | { source: 'cost', key: string, createdAt: string, notification: WorkflowNotificationView }
+  | { source: 'material', key: string, createdAt: string, notification: AppNotificationView, text: AppNotificationText }
+
+const repositories = useRepositories()
+const repo: CostWorkflowRepository = repositories.costWorkflow
+const materialRepo: MaterialFinanceRepository = repositories.materialFinance
 const store = useNuxtApp().$companyAccessStore
 const panelId = useId()
 const bellRef = ref<HTMLElement | null>(null)
@@ -65,9 +92,13 @@ const bellRef = ref<HTMLElement | null>(null)
 const isOpen = ref(false)
 const loading = ref(false)
 const notifications = ref<WorkflowNotificationView[]>([])
+const materialNotifications = ref<AppNotificationView[]>([])
+const openingMaterial = ref<string | null>(null)
+const materialAckKeys = new Map<string, string>()
 
 const tracker = createAsyncRequestTracker<{ fp: string }>()
 const ackTracker = createAsyncRequestTracker<{ id: string; fp: string }>()
+const materialTracker = createAsyncRequestTracker<{ id: string; fp: string }>()
 const acknowledging=ref<string|null>(null)
 const ackKeys = new Map<string, string>()
 
@@ -76,14 +107,33 @@ function getFingerprint(): string {
   return `${store?.activeCompanyId || ''}::${p}`
 }
 
-const canRead = computed(() => {
+function hasPermission(permission: 'cost.notification.read' | 'material.read'): boolean {
   if (!store?.activeCompanyId) return false
-  const perm = 'cost.notification.read'
-  return Boolean(store.hasPermission ? store.hasPermission(perm) : store.permissions?.includes(perm))
+  return Boolean(store.hasPermission ? store.hasPermission(permission) : store.permissions?.includes(permission))
+}
+
+const canReadCost = computed(() => hasPermission('cost.notification.read'))
+const canReadMaterial = computed(() => hasPermission('material.read'))
+const canRead = computed(() => canReadCost.value || canReadMaterial.value)
+
+const bellLabel = computed(() => canReadCost.value ? 'Thông báo phê duyệt khoản chi' : 'Thông báo vật tư')
+const panelTitle = computed(() => canReadCost.value && canReadMaterial.value
+  ? 'Thông báo'
+  : canReadCost.value ? 'Thông báo phê duyệt chi' : 'Thông báo vật tư')
+
+// Both sources merged newest-first. ISO timestamps with offsets are compared as instants.
+const entries = computed<NotificationEntry[]>(() => {
+  const merged: NotificationEntry[] = [
+    ...notifications.value.map((notification): NotificationEntry => ({ source: 'cost', key: 'cost:' + notification.id, createdAt: notification.createdAt, notification })),
+    ...materialNotifications.value.map((notification): NotificationEntry => ({ source: 'material', key: 'material:' + notification.id, createdAt: notification.createdAt, notification, text: appNotificationText(notification) })),
+  ]
+  return merged.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
 })
 
 const unreadCount = computed(() => {
-  return notifications.value.filter(n => n.deliveryState === 'available' && !n.readAt).length
+  const cost = notifications.value.filter(n => n.deliveryState === 'available' && !n.readAt).length
+  const material = materialNotifications.value.filter(n => !n.readAt).length
+  return cost + material
 })
 
 function kindTitle(kind:WorkflowNotificationView['kind']):string {
@@ -96,8 +146,9 @@ function formatDate(d: string): string {
 }
 
 function clear() {
-  tracker.invalidate(); ackTracker.invalidate()
-  notifications.value = []; isOpen.value = false; loading.value = false;ackKeys.clear();acknowledging.value=null
+  tracker.invalidate(); ackTracker.invalidate(); materialTracker.invalidate()
+  notifications.value = []; materialNotifications.value = []; isOpen.value = false; loading.value = false;ackKeys.clear();acknowledging.value=null
+  materialAckKeys.clear(); openingMaterial.value = null
 }
 
 watch([() => store.activeCompanyId, () => getFingerprint()], () => {clear();if(import.meta.client&&canRead.value)void loadNotifications()}, {flush:'sync'})
@@ -108,11 +159,14 @@ async function loadNotifications() {
   const token = tracker.start({ fp })
   loading.value = true
   try {
-    const list = await repo.listNotifications()
+    // Each source is read independently so one failing source never hides the other.
+    const [costResult, materialResult] = await Promise.allSettled([
+      canReadCost.value ? repo.listNotifications() : Promise.resolve<WorkflowNotificationView[]>([]),
+      canReadMaterial.value ? materialRepo.listNotifications() : Promise.resolve({ items: [] as AppNotificationView[] }),
+    ])
     if (!token.isCurrent() || getFingerprint() !== fp) return
-    notifications.value = list
-  } catch {
-    if (token.isCurrent() && getFingerprint()===fp) notifications.value = []
+    notifications.value = costResult.status === 'fulfilled' ? costResult.value : []
+    materialNotifications.value = materialResult.status === 'fulfilled' ? materialResult.value.items : []
   } finally {
     if (token.isCurrent() && getFingerprint() === fp) loading.value = false
   }
@@ -124,7 +178,7 @@ function togglePanel() {
 }
 
 async function markRead(n: WorkflowNotificationView) {
-  if (!canRead.value || acknowledging.value || !notifications.value.some(value=>value.id===n.id) || n.deliveryState !== 'available' || n.readAt) return
+  if (!canReadCost.value || acknowledging.value || !notifications.value.some(value=>value.id===n.id) || n.deliveryState !== 'available' || n.readAt) return
   acknowledging.value=n.id
   if (!ackKeys.has(n.id)) ackKeys.set(n.id, crypto.randomUUID())
   const fp = getFingerprint()
@@ -135,6 +189,27 @@ async function markRead(n: WorkflowNotificationView) {
     n.readAt = new Date().toISOString()
   } catch { /* Keep the acknowledgement key for an uncertain response. */ }
   finally{if(token.isCurrent()&&getFingerprint()===fp)acknowledging.value=null}
+}
+
+async function openMaterial(n: AppNotificationView) {
+  if (!canReadMaterial.value || openingMaterial.value) return
+  openingMaterial.value = n.id
+  const fp = getFingerprint()
+  const token = materialTracker.start({ id: n.id, fp })
+  try {
+    if (!n.readAt) {
+      if (!materialAckKeys.has(n.id)) materialAckKeys.set(n.id, crypto.randomUUID())
+      try {
+        await materialRepo.readNotification(n.id, { idempotencyKey: materialAckKeys.get(n.id)! })
+        if (token.isCurrent() && getFingerprint() === fp) n.readAt = new Date().toISOString()
+      } catch { /* Keep the acknowledgement key for an uncertain response; still open the target. */ }
+    }
+    if (!token.isCurrent() || getFingerprint() !== fp) return
+    isOpen.value = false
+    await navigateTo(n.linkPath)
+  } finally {
+    if (token.isCurrent() && getFingerprint() === fp) openingMaterial.value = null
+  }
 }
 
 function onKeydown(e: KeyboardEvent) { if (e.key === 'Escape') isOpen.value = false }
@@ -153,6 +228,7 @@ onUnmounted(() => {
   document.removeEventListener('click', onClickOutside)
   tracker.invalidate()
   ackTracker.invalidate()
+  materialTracker.invalidate()
 })
 </script>
 
@@ -171,6 +247,8 @@ onUnmounted(() => {
 .pending-tag { font-size: 10px; color: #d97706; }
 .item-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .view-link { color: #2563eb; text-decoration: none; }
+.item-open { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; background: none; border: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.item-open:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 .ack-btn { font-size: 11px; padding: 2px 6px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; cursor: pointer; }
 .empty { padding: 16px; text-align: center; color: #64748b; font-size: 13px; }
 </style>

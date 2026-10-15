@@ -51,7 +51,7 @@ async function signOut(): Promise<void> {
       @sign-out="signOut"
     />
     <main class="app-main" data-testid="app-main">
-      <div v-if="companyAccessStore.hasPermission('cost.notification.read')" class="cost-notification-toolbar"><CostNotificationBell /></div>
+      <div v-if="companyAccessStore.hasAnyPermission(['cost.notification.read', 'material.read'])" class="cost-notification-toolbar"><CostNotificationBell /></div>
       <slot />
     </main>
   </div>
