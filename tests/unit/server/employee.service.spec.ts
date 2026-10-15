@@ -66,6 +66,21 @@ function context(permissions: string[]) {
 }
 
 describe('employee service', () => {
+  it.each([
+    ['employee.read_directory', ['employee.read_directory']],
+    ['employee.read_all', ['employee.read_all']],
+    ['both directory permissions', ['employee.read_directory', 'employee.read_all']],
+  ] as const)('returns the same redacted directory page for %s', async (_caseName, permissions) => {
+    const employeeRepository = repository()
+
+    await expect(createEmployeeService(employeeRepository).list(
+      context([...permissions]),
+      { page: 2, pageSize: 10 },
+    )).resolves.toEqual({ items: [summary], page: 2, pageSize: 10, total: 1 })
+    expect(employeeRepository.listDirectory).toHaveBeenCalledWith(companyId, 2, 10)
+    expect(employeeRepository.getPrivateDetails).not.toHaveBeenCalled()
+  })
+
   it('denies directory access when neither directory permission is present', async () => {
     const employeeRepository = repository()
 
