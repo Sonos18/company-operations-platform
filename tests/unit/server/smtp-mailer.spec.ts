@@ -20,7 +20,7 @@ describe('SMTP invitation mailer', () => {
     expect(createTransport).toHaveBeenCalledWith({
       host: 'smtp.zoho.com', port: 465, secure: true, requireTLS: false,
       auth: { user: 'noreply@vqh.test', pass: 'app-password-value' },
-      connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 15_000,
+      connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 15_000, dnsTimeout: 5_000,
       tls: { minVersion: 'TLSv1.2' },
     })
     expect(sendMail).toHaveBeenCalledWith({
@@ -49,6 +49,31 @@ describe('SMTP invitation mailer', () => {
     const sendMail = vi.fn().mockRejectedValue(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }))
     const createTransport = vi.fn().mockReturnValue({ sendMail })
     await expect(createSmtpInvitationMailer(config, createTransport).send(message)).rejects.toMatchObject({ code: 'ETIMEDOUT' })
+  })
+
+  it('rejects with ETIMEDOUT when the whole send exceeds the 20 s deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      const sendMail = vi.fn().mockReturnValue(new Promise(() => {}))
+      const createTransport = vi.fn().mockReturnValue({ sendMail })
+      const result = createSmtpInvitationMailer(config, createTransport).send(message)
+      const assertion = expect(result).rejects.toMatchObject({ code: 'ETIMEDOUT' })
+      await vi.advanceTimersByTimeAsync(20_000)
+      await assertion
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('clears the deadline timer after a successful send', async () => {
+    vi.useFakeTimers()
+    try {
+      const { createTransport } = transport({ accepted: ['pilot@example.test'], rejected: [] })
+      await createSmtpInvitationMailer(config, createTransport).send(message)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('builds no mailer when SMTP is unset', () => {

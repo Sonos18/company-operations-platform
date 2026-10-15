@@ -17,10 +17,29 @@ interface SmtpTransport {
 
 export type CreateSmtpTransport = (options: SMTPTransport.Options) => SmtpTransport
 
+// Total budget for one send. nodemailer's socketTimeout is an inactivity timer and its DNS
+// lookup defaults to 30 s, so without this a dead server could outlive a serverless limit.
+const SEND_DEADLINE_MS = 20_000
+
 const defaultCreateTransport: CreateSmtpTransport = options => nodemailer.createTransport(options)
 
 function addressOf(entry: EnvelopeAddress): string {
   return (typeof entry === 'string' ? entry : entry.address).trim().toLowerCase()
+}
+
+async function withDeadline<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(Object.assign(new Error('SMTP send timed out'), { code: 'ETIMEDOUT' })),
+      SEND_DEADLINE_MS,
+    )
+  })
+  try {
+    return await Promise.race([operation, deadline])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export function createSmtpInvitationMailer(
@@ -39,14 +58,15 @@ export function createSmtpInvitationMailer(
         connectionTimeout: 10_000,
         greetingTimeout: 10_000,
         socketTimeout: 15_000,
+        dnsTimeout: 5_000,
         tls: { minVersion: 'TLSv1.2' },
       })
-      const info = await transporter.sendMail({
+      const info = await withDeadline(transporter.sendMail({
         from: { name: 'Taskovia', address: config.from },
         to: message.to,
         subject: message.subject,
         text: message.text,
-      })
+      }))
       const recipient = message.to.trim().toLowerCase()
       if (!info.accepted.map(addressOf).includes(recipient) || info.rejected.map(addressOf).includes(recipient)) {
         throw Object.assign(new Error('SMTP recipient not accepted'), { code: 'EENVELOPE' })
