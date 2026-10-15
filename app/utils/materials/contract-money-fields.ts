@@ -72,6 +72,14 @@ export function useContractMoneyFields(orderSubtotal: () => Decimal) {
     varianceReason.value = variance ?? ''
   }
 
+  function reset() {
+    subtotal.value = ''
+    vatAmount.value = ''
+    total.value = ''
+    totalTouched.value = false
+    varianceReason.value = ''
+  }
+
   const issues = computed(() => {
     const list: string[] = []
     const subtotalIssue = fieldIssue('Trước VAT', subtotal.value, 'Chưa nhập giá trị trước VAT.')
@@ -112,6 +120,7 @@ export function useContractMoneyFields(orderSubtotal: () => Decimal) {
     setTotal,
     resetTotal,
     load,
+    reset,
     toPayload,
   }
 }

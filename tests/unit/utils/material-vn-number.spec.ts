@@ -42,6 +42,23 @@ describe('parseVnMoney', () => {
     },
   )
 
+  it.each(['0.500', '0.001', '01.000', '000.000', '00.100', '0.000.000'])(
+    'rejects %j: a leading zero group must never read as a 1000x smaller or larger amount',
+    (raw) => {
+      const result = parseVnMoney(raw)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.message).toContain('Dấu "." chỉ ngăn cách hàng nghìn')
+    },
+  )
+
+  it('still reads valid thousands groups and a zero before the decimal comma', () => {
+    expect(value('1.000')).toBe('1000')
+    expect(value('999.999')).toBe('999999')
+    expect(value('10.000.000')).toBe('10000000')
+    expect(value('0,5')).toBe('0.5')
+    expect(value('0')).toBe('0')
+  })
+
   it('allows at most 4 decimals and 16 integer digits', () => {
     expect(parseVnMoney('1,23456').ok).toBe(false)
     expect(parseVnMoney('1234567890123456').ok).toBe(true)
@@ -61,6 +78,12 @@ describe('parseVnNumber with percent options', () => {
     expect(parseVnNumber('100', vnPercentOptions)).toEqual({ ok: true, value: '100' })
     expect(parseVnNumber('1000', vnPercentOptions).ok).toBe(false)
     expect(parseVnNumber('33,1234567', vnPercentOptions).ok).toBe(false)
+  })
+
+  it.each(['0.025', '0.100', '33.5', '1.000', '33.'])('rejects any "." in %j with a Vietnamese message', (raw) => {
+    const result = parseVnNumber(raw, vnPercentOptions)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toContain('Không dùng dấu "."')
   })
 })
 

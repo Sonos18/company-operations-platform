@@ -8,13 +8,16 @@ import Decimal from 'decimal.js'
 export interface VnNumberOptions {
   maxDecimals: number
   maxIntegerDigits: number
+  /** False for fields where "." has no meaning (percent): any "." is rejected. */
+  allowThousandsSeparator: boolean
 }
 
 export type VnNumberParseResult =
   | { ok: true, value: string }
   | { ok: false, message: string }
 
-const thousandsPattern = /^\d{1,3}(\.\d{3})+$/
+// The first group has no leading zero: "0.500" or "01.000" are ambiguous and must not read as 500 or 1000.
+const thousandsPattern = /^[1-9]\d{0,2}(\.\d{3})+$/
 const formatHint = 'Dấu "." chỉ ngăn cách hàng nghìn (ví dụ 1.000.000) và dấu "," là dấu thập phân (ví dụ 12.500,5).'
 
 function fail(message: string): VnNumberParseResult {
@@ -25,6 +28,9 @@ export function parseVnNumber(raw: string, options: VnNumberOptions): VnNumberPa
   const text = raw.trim()
   if (!text) return fail('Chưa nhập số.')
   if (/[^\d.,]/.test(text)) return fail(`Chỉ nhập chữ số. ${formatHint}`)
+  if (!options.allowThousandsSeparator && text.includes('.')) {
+    return fail('Không dùng dấu "." ở đây; phần thập phân dùng dấu "," (ví dụ 33,5).')
+  }
 
   const parts = text.split(',')
   if (parts.length > 2) return fail(`Số có quá nhiều dấu ",". ${formatHint}`)
@@ -51,8 +57,8 @@ export function parseVnNumber(raw: string, options: VnNumberOptions): VnNumberPa
   return { ok: true, value: canonical }
 }
 
-export const vnMoneyOptions: VnNumberOptions = { maxDecimals: 4, maxIntegerDigits: 16 }
-export const vnPercentOptions: VnNumberOptions = { maxDecimals: 6, maxIntegerDigits: 3 }
+export const vnMoneyOptions: VnNumberOptions = { maxDecimals: 4, maxIntegerDigits: 16, allowThousandsSeparator: true }
+export const vnPercentOptions: VnNumberOptions = { maxDecimals: 6, maxIntegerDigits: 3, allowThousandsSeparator: false }
 
 export function parseVnMoney(raw: string): VnNumberParseResult {
   return parseVnNumber(raw, vnMoneyOptions)

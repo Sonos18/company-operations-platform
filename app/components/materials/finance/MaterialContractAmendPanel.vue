@@ -218,6 +218,9 @@ function openForm() {
   if (version) {
     money.load(version, version.varianceReason)
   }
+  else {
+    money.reset()
+  }
   rows.value = [...props.contract.installments]
     .sort((a, b) => a.seq - b.seq)
     .map(item => ({

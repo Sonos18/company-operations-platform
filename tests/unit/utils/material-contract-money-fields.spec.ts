@@ -57,6 +57,16 @@ describe('useContractMoneyFields', () => {
     expect(form.toPayload()).toBeNull()
   })
 
+  it('reset clears every field so no stale value survives', () => {
+    const form = fields()
+    form.load({ subtotal: '900000', vatAmount: '90000', total: '990000' }, 'Lý do cũ')
+    form.setTotal('5')
+    form.reset()
+    expect([form.subtotal.value, form.vatAmount.value, form.total.value, form.varianceReason.value]).toEqual(['', '', '', ''])
+    expect(form.totalTouched.value).toBe(false)
+    expect(form.toPayload()).toBeNull()
+  })
+
   it('loads canonical server values in Vietnamese format', () => {
     const form = fields()
     form.load({ subtotal: '1000000.0000', vatAmount: '100000.0000', total: '1100000.0000' }, 'Lý do cũ')
