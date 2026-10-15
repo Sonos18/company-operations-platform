@@ -60,17 +60,18 @@
           </div>
         </div>
 
-        <div>
+        <!-- Only a return carries a reason: the database stores none for approvals and rejects one. -->
+        <div v-if="decision === 'return'">
           <label for="decision-reason-input" class="block font-semibold text-slate-700 mb-1">
-            {{ decision === 'return' ? 'Lý do trả lại đề nghị chi' : 'Ghi chú / ý kiến duyệt (tùy chọn)' }}
-            <span v-if="decision === 'return'" class="text-rose-500">*</span>
+            Lý do trả lại đề nghị chi
+            <span class="text-rose-500">*</span>
           </label>
           <textarea
             id="decision-reason-input"
             v-model="reason"
             rows="3"
             class="cockpit-input w-full text-xs"
-            :placeholder="decision === 'return' ? 'Nhập lý do trả lại đề nghị để kế toán điều chỉnh...' : 'Nhập ý kiến hoặc ghi chú bổ sung...'"
+            placeholder="Nhập lý do trả lại đề nghị để kế toán điều chỉnh..."
             :disabled="isSubmitting"
             maxlength="1000"
           />
@@ -173,7 +174,7 @@ async function submitDecision() {
   const payload: DecidePaymentRequestInput = {
     expectedVersion: request.version,
     decision: decision.value,
-    ...(trimmedReason ? { reason: trimmedReason } : {}),
+    ...(decision.value === 'return' && trimmedReason ? { reason: trimmedReason } : {}),
   }
   const idempotencyKey = props.commandKey.keyFor({ requestId: request.id, ...payload })
 

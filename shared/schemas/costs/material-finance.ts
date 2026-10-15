@@ -102,6 +102,10 @@ export const decidePaymentRequestInputSchema = z.object({
   if (value.decision === 'return' && value.reason === undefined) {
     context.addIssue({ code: 'custom', path: ['reason'], message: 'A return requires a reason' })
   }
+  // material_payment_decisions stores a reason only for returns; the database rejects it on approvals.
+  if (value.decision === 'approve' && value.reason !== undefined) {
+    context.addIssue({ code: 'custom', path: ['reason'], message: 'An approval carries no reason' })
+  }
 })
 export const recordMaterialPaymentInputSchema = z.object({
   expectedVersion: version,
