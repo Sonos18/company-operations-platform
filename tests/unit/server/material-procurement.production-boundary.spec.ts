@@ -89,7 +89,7 @@ describe('production material route service-role boundary', () => {
           replayed: false }, error: null }
       }
       if (name === 'c1_material_evidence_read_target') {
-        return { data: { bucketId: 'c1-accounting-evidence', objectPath }, error: null }
+        return { data: { bucketId: 'c1-accounting-evidence', objectPath, declaredMimeType: 'application/pdf' }, error: null }
       }
       if (name === 'c1_material_list_proposals' || name === 'c1_material_list_orders') {
         return { data: [], error: null }
