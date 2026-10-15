@@ -71,10 +71,6 @@ export function createHttpMaterialProcurementRepository(options: {
     })
   }
 
-  async function unsupported(operation: string): Promise<never> {
-    throw new Error('MATERIAL_PROCUREMENT_NOT_IMPLEMENTED: ' + operation)
-  }
-
   return {
     readOrderCurrency: async () => read(master('/currency'), materialOrderCurrencySchema),
     listProjects: async () => read(master('/projects'), z.array(materialProjectOptionSchema)),
@@ -101,7 +97,6 @@ export function createHttpMaterialProcurementRepository(options: {
     listOrders: async projectId => read(project(projectId, '/orders'), z.array(materialOrderViewSchema)),
     readOrder: async (projectId, orderId) => read(project(projectId, '/orders/' + targetId(orderId)), materialOrderViewSchema),
     cancelOrder: async (projectId, orderId, input, cmd) => command(project(projectId, '/orders/' + targetId(orderId) + '/cancellations'), input, cancelMaterialOrderInputSchema, materialCommandResultSchema, cmd),
-    recordContract: () => unsupported('recordContract'),
     createEvidenceIntent: async (projectId, input, cmd) => command(project(projectId, '/evidence/upload-intents'), input, materialEvidenceIntentInputSchema, costEvidenceUploadIntentSchema, cmd),
     finalizeEvidence: async (projectId, fileId, input, cmd) => command(project(projectId, '/evidence/' + targetId(fileId) + '/finalize'), input, costEvidenceFinalizeInputSchema, costEvidenceFinalizedSchema, cmd),
     readEvidenceUrl: async (projectId, fileId, input = { disposition: 'inline' }) => options.client.request({

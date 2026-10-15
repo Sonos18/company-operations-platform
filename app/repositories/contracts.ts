@@ -1,4 +1,5 @@
 import type { MaterialProcurementRepository } from './material-procurement.contracts'
+import type { MaterialFinanceRepository } from './material-finance.contracts'
 import type { Company, CompanyConfig } from '../features/companies/company.types'
 import type { AddDrawingVersionInput, DrawingFile } from '../features/drawings/drawing.types'
 import type { ProjectMedia } from '../features/media/media.types'
@@ -213,7 +214,8 @@ export interface RepositoryRegistry {
   costWorkflow:CostWorkflowRepository
   projectFinance: ProjectFinanceRepository
   materialProcurement: MaterialProcurementRepository
+  materialFinance: MaterialFinanceRepository
   prototype: PrototypeRepository
 }
 
-export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01' | 'stage01Config' | 'projectRegister' | 'businessParties' | 'engagements' | 'costSettings' | 'costSourceRead' | 'projectCosts' | 'costEvidence' | 'projectFinance' | 'costWorkflow' | 'materialProcurement'>
+export type PrototypeRepositoryRegistry = Omit<RepositoryRegistry, 'opportunities' | 'workflow' | 'stage01' | 'stage01Config' | 'projectRegister' | 'businessParties' | 'engagements' | 'costSettings' | 'costSourceRead' | 'projectCosts' | 'costEvidence' | 'projectFinance' | 'costWorkflow' | 'materialProcurement' | 'materialFinance'>

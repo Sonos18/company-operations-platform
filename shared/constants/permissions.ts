@@ -89,6 +89,10 @@ export const permissionCodes = [
   'material.order.manage',
   'material.supplier.record',
   'material.contract.record',
+  'material.payment.request',
+  'material.payment.approve',
+  'material.payment.execute',
+  'material.finance.read',
 ] as const
 
 export type PermissionCode = (typeof permissionCodes)[number]
