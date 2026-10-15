@@ -56,7 +56,7 @@ test('HR falls back to copying when automatic sending fails', async ({ page }) =
  await page.getByLabel('Email nhận lời mời').fill('pilot@example.test')
  await page.getByLabel('Phòng ban nhân viên').selectOption(departmentId)
  await page.getByRole('button', { name: 'Gửi lời mời', exact: true }).click()
- await expect(page.getByRole('alert')).toHaveText('Không gửi được email tự động. Hãy sao chép và gửi thủ công cho đúng người nhận.')
+ await expect(page.getByRole('alert').filter({ hasText: 'Không gửi được email tự động' })).toHaveText('Không gửi được email tự động. Hãy sao chép và gửi thủ công cho đúng người nhận.')
  await expect(page.getByText('Đã chuẩn bị · Chưa xác nhận gửi', { exact: true })).toBeVisible()
  await expect(page.getByRole('button', { name: 'Sao chép lời mời', exact: true })).toBeVisible()
 })
