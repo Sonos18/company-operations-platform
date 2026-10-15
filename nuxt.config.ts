@@ -17,6 +17,7 @@ export default defineNuxtConfig({
   devtools: { enabled: false },
   runtimeConfig: {
     materialQuotationOpenaiApiKey: '',
+    materialReminderSecret: '',
     supabaseServiceRoleKey: '',
     public: {
       appUrl: '',

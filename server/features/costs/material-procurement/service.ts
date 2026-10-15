@@ -3,7 +3,6 @@ import {
   costEvidenceFinalizeInputSchema,
   costEvidenceReadUrlInputSchema,
   type CostEvidenceFinalizeInput,
-  type CostEvidenceFinalized,
   type CostEvidenceReadUrl,
   type CostEvidenceReadUrlInput,
   type CostEvidenceUploadIntent,
@@ -14,6 +13,7 @@ import {
   chosenSupplierInputSchema,
   createMaterialInputSchema,
   materialEvidenceIntentInputSchema,
+  materialEvidenceUploadPermission,
   materialProposalCommandVersionSchema,
   materialProposalDecisionInputSchema,
   materialProposalInputSchema,
@@ -27,6 +27,7 @@ import {
   type MaterialOrderCurrency,
   type ChosenSupplierInput,
   type CreateMaterialInput,
+  type MaterialEvidenceFinalized,
   type MaterialEvidenceIntentInput,
   type MaterialCommandResult,
   type MaterialProjectOption,
@@ -43,6 +44,7 @@ import {
 } from '../../../../shared/schemas/costs/material-procurement'
 import { workflowUuidSchema } from '../../../../shared/schemas/costs/cost-workflow'
 import { AppApiError } from '../../../utils/api-error'
+import { financeReadPermissions } from '../material-finance/service'
 
 export interface MaterialProcurementContext {
   actorId: string
@@ -73,7 +75,7 @@ export interface MaterialProcurementDataRepository {
   readOrder(context: MaterialProcurementContext, projectId: string, orderId: string): Promise<MaterialOrderView>
   cancelOrder(context: MaterialProcurementContext, projectId: string, orderId: string, input: CancelMaterialOrderInput, key: string): Promise<MaterialCommandResult>
   createEvidenceIntent(context: MaterialProcurementContext, projectId: string, input: MaterialEvidenceIntentInput, key: string): Promise<CostEvidenceUploadIntent>
-  finalizeEvidence(context: MaterialProcurementContext, projectId: string, fileId: string, input: CostEvidenceFinalizeInput, key: string): Promise<CostEvidenceFinalized>
+  finalizeEvidence(context: MaterialProcurementContext, projectId: string, fileId: string, input: CostEvidenceFinalizeInput, key: string): Promise<MaterialEvidenceFinalized>
   readEvidenceUrl(context: MaterialProcurementContext, projectId: string, fileId: string, input: CostEvidenceReadUrlInput): Promise<CostEvidenceReadUrl>
 }
 
@@ -90,9 +92,19 @@ function requireOrderRead(context: MaterialProcurementContext): void {
   ].includes(permission))) requirePermission(context, 'material.order.manage')
 }
 
+// Coarse gate only: the finalize RPC re-checks the permission that matches the file's real role.
 function requireEvidenceWrite(context: MaterialProcurementContext): void {
   if (!context.permissions.some(permission => [
-    'material.order.manage', 'material.contract.record',
+    'material.order.manage', 'material.contract.record', 'material.payment.execute',
+  ].includes(permission))) requirePermission(context, 'material.order.manage')
+}
+
+// Coarse gate only: buyers may read unsigned quotations and finance readers the contract-level files.
+// The read-target RPC decides per file, so this just keeps unrelated roles out.
+function requireEvidenceRead(context: MaterialProcurementContext): void {
+  requirePermission(context, 'material.read')
+  if (!context.permissions.some(permission => [
+    'material.order.manage', 'material.contract.record', 'cost.notification.read', ...financeReadPermissions,
   ].includes(permission))) requirePermission(context, 'material.order.manage')
 }
 
@@ -228,10 +240,7 @@ export class MaterialProcurementService {
 
   async createEvidenceIntent(context: MaterialProcurementContext, projectId: string, value: unknown, key: string) {
     const input = parse(materialEvidenceIntentInputSchema, value)
-    requirePermission(
-      context,
-      input.evidenceRole === 'unsigned_quotation' ? 'material.order.manage' : 'material.contract.record',
-    )
+    requirePermission(context, materialEvidenceUploadPermission(input.evidenceRole))
     return this.repository.createEvidenceIntent(context, id(projectId), input, id(key))
   }
 
@@ -247,7 +256,7 @@ export class MaterialProcurementService {
   }
 
   async readEvidenceUrl(context: MaterialProcurementContext, projectId: string, fileId: string, value: unknown) {
-    requireOrderRead(context)
+    requireEvidenceRead(context)
     return this.repository.readEvidenceUrl(
       context,
       id(projectId),

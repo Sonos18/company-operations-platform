@@ -269,7 +269,7 @@ export const appNotificationViewSchema = z.object({
 
 export const appNotificationPageSchema = z.object({
   items: z.array(appNotificationViewSchema),
-  nextCursor: z.string().datetime({ offset: true }).nullable(),
+  nextCursor: z.string().min(1).max(200).nullable(),
 }).strict()
 
 export const materialFinanceCommandResultSchema = z.object({

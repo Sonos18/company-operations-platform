@@ -75,4 +75,82 @@ describe('material evidence uploader', () => {
     })).rejects.toThrow()
     expect(value.upload).not.toHaveBeenCalled()
   })
+
+  const contractTarget = { kind: 'material_contract' as const, contractId: '10000000-0000-4000-8000-0000000000c1' }
+
+  it('uploads an XML invoice with an application/xml or text/xml MIME type', async () => {
+    const value = fixture()
+    await uploadMaterialEvidence({
+      ...value,
+      companyId,
+      projectId: ids.project,
+      file: new File(['<HDon/>'], 'hoa-don.xml', { type: 'text/xml' }),
+      evidenceRole: 'invoice',
+      target: contractTarget,
+      isScopeCurrent: () => true,
+    })
+    expect(value.createEvidenceIntent).toHaveBeenCalledWith(
+      ids.project,
+      expect.objectContaining({ mimeType: 'text/xml', evidenceRole: 'invoice', target: contractTarget }),
+      expect.anything(),
+    )
+    expect(value.upload).toHaveBeenCalledOnce()
+  })
+
+  it('derives the XML MIME type from the extension when the browser leaves the type empty', async () => {
+    const value = fixture()
+    await uploadMaterialEvidence({
+      ...value,
+      companyId,
+      projectId: ids.project,
+      file: new File(['<HDon/>'], 'hoa-don.XML', { type: '' }),
+      evidenceRole: 'invoice',
+      target: contractTarget,
+      isScopeCurrent: () => true,
+    })
+    expect(value.createEvidenceIntent).toHaveBeenCalledWith(
+      ids.project,
+      expect.objectContaining({ mimeType: 'application/xml' }),
+      expect.anything(),
+    )
+  })
+
+  it('uploads a PNG payment proof', async () => {
+    const value = fixture()
+    await uploadMaterialEvidence({
+      ...value,
+      companyId,
+      projectId: ids.project,
+      file: new File(['png'], 'unc.png', { type: 'image/png' }),
+      evidenceRole: 'payment_proof',
+      target: contractTarget,
+      isScopeCurrent: () => true,
+    })
+    expect(value.createEvidenceIntent).toHaveBeenCalledWith(
+      ids.project,
+      expect.objectContaining({ mimeType: 'image/png', evidenceRole: 'payment_proof' }),
+      expect.anything(),
+    )
+  })
+
+  it('rejects a MIME type the evidence role does not allow before any intent or upload', async () => {
+    for (const [role, name, type] of [
+      ['invoice', 'hoa-don.png', 'image/png'],
+      ['payment_proof', 'unc.xml', 'application/xml'],
+      ['contract_amendment', 'phu-luc.xml', 'text/xml'],
+    ] as const) {
+      const value = fixture()
+      await expect(uploadMaterialEvidence({
+        ...value,
+        companyId,
+        projectId: ids.project,
+        file: new File(['x'], name, { type }),
+        evidenceRole: role,
+        target: contractTarget,
+        isScopeCurrent: () => true,
+      })).rejects.toThrow('Định dạng tệp không được hỗ trợ cho loại chứng từ này.')
+      expect(value.createEvidenceIntent).not.toHaveBeenCalled()
+      expect(value.upload).not.toHaveBeenCalled()
+    }
+  })
 })

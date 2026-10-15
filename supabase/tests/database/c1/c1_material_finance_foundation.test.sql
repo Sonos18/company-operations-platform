@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(69);
+select plan(117);
 
 -- Structural security: every new finance table forces RLS and denies direct writes.
 select ok(
@@ -305,11 +305,15 @@ select throws_ok($$
   )
 $$,'23514',null,'material_contract scope rejects the order-level signed_contract role');
 
--- Order reads no longer expose the retired cost-workflow cash shape.
+-- Order reads no longer expose the retired cost-workflow cash shape. Since the A4 contract
+-- commands (20261015090100) a contract is reported to a reader without finance permissions
+-- (the buyer here) as status only: money and cash stay hidden.
 select ok((
-  select order_json->'contract'='null'::jsonb and order_json->'cash'='null'::jsonb
+  select order_json->'contract'->>'contractNo'='HD-FIN-01'
+    and order_json->'contract'->'total'='null'::jsonb
+    and order_json->'cash'='null'::jsonb
   from (select private.c1_material_order_json('c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','c1250000-0000-4000-8000-000000000351') as order_json) as read_order
-),'order read reports contract null and cash null');
+),'order read hides contract money and cash from a reader without finance permissions');
 
 -- Cross-row integrity: children must stay on the same contract, supplier and installment.
 insert into public.business_parties(id,tenant_id,company_id,code,display_name,party_kind,created_by)
@@ -417,6 +421,150 @@ select is((
   select count(*) from public.material_contract_versions
   where contract_id='c1250000-0000-4000-8000-000000000601'
 ),0::bigint,'buyer with material.order.manage cannot read contract versions');
+
+-- finance evidence: scopes for the finalized fixture files, then the role-based read gate.
+set local role none;
+insert into public.material_evidence_scopes(
+  evidence_file_id,tenant_id,company_id,project_id,target_kind,proposal_id,revision_id,order_id,contract_id,evidence_role,created_by
+) values
+('c1250000-0000-4000-8000-000000000501','c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','material_proposal','c1250000-0000-4000-8000-000000000301','c1250000-0000-4000-8000-000000000401',null,null,'unsigned_quotation','c1250000-0000-4000-8000-000000000903'),
+('c1250000-0000-4000-8000-000000000502','c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','material_order',null,null,'c1250000-0000-4000-8000-000000000351',null,'signed_contract','c1250000-0000-4000-8000-000000000903'),
+('c1250000-0000-4000-8000-000000000503','c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','material_order',null,null,'c1250000-0000-4000-8000-000000000351',null,'signed_quotation','c1250000-0000-4000-8000-000000000903'),
+('c1250000-0000-4000-8000-000000000506','c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','material_contract',null,null,null,'c1250000-0000-4000-8000-000000000601','contract_amendment','c1250000-0000-4000-8000-000000000903'),
+('c1250000-0000-4000-8000-000000000510','c1250000-0000-4000-8000-000000000010','c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','material_contract',null,null,null,'c1250000-0000-4000-8000-000000000601','payment_proof','c1250000-0000-4000-8000-000000000903');
+set local role authenticated;
+
+-- finance evidence: upload intents follow the role permission and MIME table.
+select set_config('request.jwt.claims','{"sub":"c1250000-0000-4000-8000-000000000903","role":"authenticated"}',true);
+select lives_ok($$
+  select public.c1_material_create_evidence_intent('c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',jsonb_build_object('originalFilename','hoa-don.xml','mimeType','application/xml','sizeBytes',8,'sha256',repeat('a',64),'evidenceRole','invoice','target',jsonb_build_object('kind','material_contract','contractId','c1250000-0000-4000-8000-000000000601')),'c1250000-0000-4000-8000-000000000951','c1250000-0000-4000-8000-000000000961')
+$$,'finance evidence: accountant creates an XML invoice intent for a contract');
+select throws_ok($$
+  select public.c1_material_create_evidence_intent('c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',jsonb_build_object('originalFilename','unc.png','mimeType','image/png','sizeBytes',8,'sha256',repeat('a',64),'evidenceRole','payment_proof','target',jsonb_build_object('kind','material_contract','contractId','c1250000-0000-4000-8000-000000000601')),'c1250000-0000-4000-8000-000000000952','c1250000-0000-4000-8000-000000000962')
+$$,'P0001','PERMISSION_DENIED','finance evidence: accountant without material.payment.execute cannot create a payment proof intent');
+select throws_ok($$
+  select public.c1_material_create_evidence_intent('c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',jsonb_build_object('originalFilename','hoa-don.png','mimeType','image/png','sizeBytes',8,'sha256',repeat('a',64),'evidenceRole','invoice','target',jsonb_build_object('kind','material_contract','contractId','c1250000-0000-4000-8000-000000000601')),'c1250000-0000-4000-8000-000000000953','c1250000-0000-4000-8000-000000000963')
+$$,'P0001','INPUT_INVALID','finance evidence: invoice rejects an image MIME type');
+select throws_ok($$
+  select public.c1_material_create_evidence_intent('c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',jsonb_build_object('originalFilename','phu-luc.xml','mimeType','application/xml','sizeBytes',8,'sha256',repeat('a',64),'evidenceRole','contract_amendment','target',jsonb_build_object('kind','material_contract','contractId','c1250000-0000-4000-8000-000000000601')),'c1250000-0000-4000-8000-000000000954','c1250000-0000-4000-8000-000000000964')
+$$,'P0001','INPUT_INVALID','finance evidence: contract amendment accepts PDF only');
+select throws_ok($$
+  select public.c1_material_create_evidence_intent('c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',jsonb_build_object('originalFilename','hd.pdf','mimeType','application/pdf','sizeBytes',8,'sha256',repeat('a',64),'evidenceRole','signed_contract','target',jsonb_build_object('kind','material_contract','contractId','c1250000-0000-4000-8000-000000000601')),'c1250000-0000-4000-8000-000000000955','c1250000-0000-4000-8000-000000000965')
+$$,'P0001','INPUT_INVALID','finance evidence: order-level signed_contract role cannot target a contract');
+select set_config('request.jwt.claims','{"sub":"c1250000-0000-4000-8000-000000000904","role":"authenticated"}',true);
+select lives_ok($$
+  select public.c1_material_create_evidence_intent('c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',jsonb_build_object('originalFilename','unc.png','mimeType','image/png','sizeBytes',8,'sha256',repeat('a',64),'evidenceRole','payment_proof','target',jsonb_build_object('kind','material_contract','contractId','c1250000-0000-4000-8000-000000000601')),'c1250000-0000-4000-8000-000000000956','c1250000-0000-4000-8000-000000000966')
+$$,'finance evidence: treasurer creates a PNG payment proof intent');
+select throws_ok($$
+  select public.c1_material_create_evidence_intent('c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',jsonb_build_object('originalFilename','hoa-don.pdf','mimeType','application/pdf','sizeBytes',8,'sha256',repeat('a',64),'evidenceRole','invoice','target',jsonb_build_object('kind','material_contract','contractId','c1250000-0000-4000-8000-000000000601')),'c1250000-0000-4000-8000-000000000957','c1250000-0000-4000-8000-000000000967')
+$$,'P0001','PERMISSION_DENIED','finance evidence: treasurer without material.contract.record cannot create an invoice intent');
+select set_config('request.jwt.claims','{"sub":"c1250000-0000-4000-8000-000000000902","role":"authenticated"}',true);
+select throws_ok($$
+  select public.c1_material_create_evidence_intent('c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',jsonb_build_object('originalFilename','hoa-don.pdf','mimeType','application/pdf','sizeBytes',8,'sha256',repeat('a',64),'evidenceRole','invoice','target',jsonb_build_object('kind','material_contract','contractId','c1250000-0000-4000-8000-000000000601')),'c1250000-0000-4000-8000-000000000958','c1250000-0000-4000-8000-000000000968')
+$$,'P0001','PERMISSION_DENIED','finance evidence: buyer cannot create an invoice intent');
+
+-- finance evidence: read-target RPC.
+select set_config('request.jwt.claims','{"sub":"c1250000-0000-4000-8000-000000000902","role":"authenticated"}',true);
+select lives_ok(
+  format($q$select public.c1_material_evidence_read_target(%L,%L,%L)$q$,'c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',file.id),
+  'finance evidence: buyer reads the '||file.label||' through the read-target RPC'
+) from (values
+ ('c1250000-0000-4000-8000-000000000501'::uuid,'unsigned quotation')
+) as file(id,label);
+select throws_ok(
+  format($q$select public.c1_material_evidence_read_target(%L,%L,%L)$q$,'c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',file.id),
+  'P0001','PERMISSION_DENIED',
+  'finance evidence: buyer is denied the '||file.label||' through the read-target RPC'
+) from (values
+ ('c1250000-0000-4000-8000-000000000502'::uuid,'signed contract'),
+ ('c1250000-0000-4000-8000-000000000503'::uuid,'signed quotation'),
+ ('c1250000-0000-4000-8000-000000000504'::uuid,'invoice'),
+ ('c1250000-0000-4000-8000-000000000506'::uuid,'contract amendment'),
+ ('c1250000-0000-4000-8000-000000000510'::uuid,'payment proof')
+) as file(id,label);
+select set_config('request.jwt.claims','{"sub":"c1250000-0000-4000-8000-000000000903","role":"authenticated"}',true);
+select lives_ok(
+  format($q$select public.c1_material_evidence_read_target(%L,%L,%L)$q$,'c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',file.id),
+  'finance evidence: accountant reads the '||file.label||' through the read-target RPC'
+) from (values
+ ('c1250000-0000-4000-8000-000000000501'::uuid,'unsigned quotation'),
+ ('c1250000-0000-4000-8000-000000000502'::uuid,'signed contract'),
+ ('c1250000-0000-4000-8000-000000000503'::uuid,'signed quotation'),
+ ('c1250000-0000-4000-8000-000000000504'::uuid,'invoice'),
+ ('c1250000-0000-4000-8000-000000000506'::uuid,'contract amendment'),
+ ('c1250000-0000-4000-8000-000000000510'::uuid,'payment proof')
+) as file(id,label);
+select set_config('request.jwt.claims','{"sub":"c1250000-0000-4000-8000-000000000904","role":"authenticated"}',true);
+select lives_ok(
+  format($q$select public.c1_material_evidence_read_target(%L,%L,%L)$q$,'c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',file.id),
+  'finance evidence: treasurer reads the '||file.label||' through the read-target RPC'
+) from (values
+ ('c1250000-0000-4000-8000-000000000502'::uuid,'signed contract'),
+ ('c1250000-0000-4000-8000-000000000503'::uuid,'signed quotation'),
+ ('c1250000-0000-4000-8000-000000000504'::uuid,'invoice'),
+ ('c1250000-0000-4000-8000-000000000506'::uuid,'contract amendment'),
+ ('c1250000-0000-4000-8000-000000000510'::uuid,'payment proof')
+) as file(id,label);
+select throws_ok(
+  format($q$select public.c1_material_evidence_read_target(%L,%L,%L)$q$,'c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',file.id),
+  'P0001','PERMISSION_DENIED',
+  'finance evidence: treasurer is denied the '||file.label||' through the read-target RPC'
+) from (values
+ ('c1250000-0000-4000-8000-000000000501'::uuid,'unsigned quotation')
+) as file(id,label);
+select set_config('request.jwt.claims','{"sub":"c1250000-0000-4000-8000-000000000901","role":"authenticated"}',true);
+select throws_ok($$
+  select public.c1_material_evidence_read_target('c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101','c1250000-0000-4000-8000-000000000502')
+$$,'P0001','PERMISSION_DENIED','finance evidence: engineer without order or finance visibility is denied any material file');
+
+-- finance evidence: Storage SELECT predicate.
+select set_config('request.jwt.claims','{"sub":"c1250000-0000-4000-8000-000000000902","role":"authenticated"}',true);
+select is(
+  private.c1_can_select_evidence_object('c1-accounting-evidence','c1250000-0000-4000-8000-000000000010/c1250000-0000-4000-8000-000000000020/c1250000-0000-4000-8000-000000000101/'||file.id::text),
+  file.id::text in ('c1250000-0000-4000-8000-000000000501'),
+  'finance evidence: Storage SELECT predicate for the '||file.label||' matches the buyer rule'
+) from (values
+ ('c1250000-0000-4000-8000-000000000501'::uuid,'unsigned quotation'),
+ ('c1250000-0000-4000-8000-000000000502'::uuid,'signed contract'),
+ ('c1250000-0000-4000-8000-000000000503'::uuid,'signed quotation'),
+ ('c1250000-0000-4000-8000-000000000504'::uuid,'invoice'),
+ ('c1250000-0000-4000-8000-000000000506'::uuid,'contract amendment'),
+ ('c1250000-0000-4000-8000-000000000510'::uuid,'payment proof')
+) as file(id,label);
+select set_config('request.jwt.claims','{"sub":"c1250000-0000-4000-8000-000000000903","role":"authenticated"}',true);
+select is(
+  private.c1_can_select_evidence_object('c1-accounting-evidence','c1250000-0000-4000-8000-000000000010/c1250000-0000-4000-8000-000000000020/c1250000-0000-4000-8000-000000000101/'||file.id::text),
+  file.id::text in ('c1250000-0000-4000-8000-000000000501', 'c1250000-0000-4000-8000-000000000502', 'c1250000-0000-4000-8000-000000000503', 'c1250000-0000-4000-8000-000000000504', 'c1250000-0000-4000-8000-000000000506', 'c1250000-0000-4000-8000-000000000510'),
+  'finance evidence: Storage SELECT predicate for the '||file.label||' matches the accountant rule'
+) from (values
+ ('c1250000-0000-4000-8000-000000000501'::uuid,'unsigned quotation'),
+ ('c1250000-0000-4000-8000-000000000502'::uuid,'signed contract'),
+ ('c1250000-0000-4000-8000-000000000503'::uuid,'signed quotation'),
+ ('c1250000-0000-4000-8000-000000000504'::uuid,'invoice'),
+ ('c1250000-0000-4000-8000-000000000506'::uuid,'contract amendment'),
+ ('c1250000-0000-4000-8000-000000000510'::uuid,'payment proof')
+) as file(id,label);
+select set_config('request.jwt.claims','{"sub":"c1250000-0000-4000-8000-000000000904","role":"authenticated"}',true);
+select is(
+  private.c1_can_select_evidence_object('c1-accounting-evidence','c1250000-0000-4000-8000-000000000010/c1250000-0000-4000-8000-000000000020/c1250000-0000-4000-8000-000000000101/'||file.id::text),
+  file.id::text in ('c1250000-0000-4000-8000-000000000502', 'c1250000-0000-4000-8000-000000000503', 'c1250000-0000-4000-8000-000000000504', 'c1250000-0000-4000-8000-000000000506', 'c1250000-0000-4000-8000-000000000510'),
+  'finance evidence: Storage SELECT predicate for the '||file.label||' matches the treasurer rule'
+) from (values
+ ('c1250000-0000-4000-8000-000000000501'::uuid,'unsigned quotation'),
+ ('c1250000-0000-4000-8000-000000000502'::uuid,'signed contract'),
+ ('c1250000-0000-4000-8000-000000000503'::uuid,'signed quotation'),
+ ('c1250000-0000-4000-8000-000000000504'::uuid,'invoice'),
+ ('c1250000-0000-4000-8000-000000000506'::uuid,'contract amendment'),
+ ('c1250000-0000-4000-8000-000000000510'::uuid,'payment proof')
+) as file(id,label);
+
+-- finance evidence: file metadata rows follow the same rule.
+select set_config('request.jwt.claims','{"sub":"c1250000-0000-4000-8000-000000000902","role":"authenticated"}',true);
+select is((select count(*) from public.cost_evidence_files where id in ('c1250000-0000-4000-8000-000000000501', 'c1250000-0000-4000-8000-000000000502', 'c1250000-0000-4000-8000-000000000503', 'c1250000-0000-4000-8000-000000000504', 'c1250000-0000-4000-8000-000000000506', 'c1250000-0000-4000-8000-000000000510')),1::bigint,'finance evidence: buyer sees metadata of the unsigned quotation only');
+select set_config('request.jwt.claims','{"sub":"c1250000-0000-4000-8000-000000000903","role":"authenticated"}',true);
+select is((select count(*) from public.cost_evidence_files where id in ('c1250000-0000-4000-8000-000000000501', 'c1250000-0000-4000-8000-000000000502', 'c1250000-0000-4000-8000-000000000503', 'c1250000-0000-4000-8000-000000000504', 'c1250000-0000-4000-8000-000000000506', 'c1250000-0000-4000-8000-000000000510')),6::bigint,'finance evidence: contract recorder sees metadata of every material file');
+select set_config('request.jwt.claims','{"sub":"c1250000-0000-4000-8000-000000000904","role":"authenticated"}',true);
+select is((select count(*) from public.cost_evidence_files where id in ('c1250000-0000-4000-8000-000000000501', 'c1250000-0000-4000-8000-000000000502', 'c1250000-0000-4000-8000-000000000503', 'c1250000-0000-4000-8000-000000000504', 'c1250000-0000-4000-8000-000000000506', 'c1250000-0000-4000-8000-000000000510')),5::bigint,'finance evidence: finance reader sees metadata of the finance files but not the unsigned quotation');
 
 select * from finish();
 rollback;

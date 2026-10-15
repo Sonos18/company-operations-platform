@@ -151,7 +151,7 @@ describe('material finance HTTP repository', () => {
   })
 
   it('pages notifications with an encoded cursor and marks one read with an empty command body', async () => {
-    const cursor = '2026-10-15T08:00:00.000+07:00'
+    const cursor = '323032362d31302d31355431303a30303a30302e3030303030305a7c3235303030303030'
     const page = repositoryFor({ items: [], nextCursor: null })
     await page.repository.listNotifications(cursor)
     expect(page.client.request).toHaveBeenCalledWith(expect.objectContaining({
