@@ -85,10 +85,12 @@ function requirePermission(context: MaterialProcurementContext, permission: Perm
   }
 }
 
+// Buyers, contract recorders, notification readers and every finance reader (treasurer,
+// director, accountant) open orders. The RPC re-checks: order readers or finance readers.
 function requireOrderRead(context: MaterialProcurementContext): void {
   requirePermission(context, 'material.read')
   if (!context.permissions.some(permission => [
-    'material.order.manage', 'material.contract.record', 'cost.notification.read',
+    'material.order.manage', 'material.contract.record', 'cost.notification.read', ...financeReadPermissions,
   ].includes(permission))) requirePermission(context, 'material.order.manage')
 }
 

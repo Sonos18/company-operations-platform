@@ -47,6 +47,8 @@ const accountant = { id: accountantId, email: 'ke-toan@taskovia.test' }
 const treasurer = { id: treasurerId, email: 'thu-quy@taskovia.test' }
 const accountantPermissions: PermissionCode[] = ['material.read', 'material.finance.read', 'material.contract.record', 'material.payment.request']
 const treasurerPermissions: PermissionCode[] = ['material.read', 'material.finance.read', 'material.payment.approve', 'material.payment.execute']
+const director = { id: '33333333-3333-4333-8333-333333333333', email: 'giam-doc@taskovia.test' }
+const directorPermissions: PermissionCode[] = ['material.read', 'material.finance.read']
 
 const pdf = (name: string) => ({ name, mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7\nsynthetic') })
 const png = { name: 'unc.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64') }
@@ -348,9 +350,10 @@ test.describe('Luồng hợp đồng và chi tiền vật tư (mock dùng chung)
   const posts = (path: string) => state.calls.filter(call => call.method === 'POST' && call.path === path)
   const installment = (isAdvance: boolean) => state.contractInput?.installments.find(item => item.isAdvance === isAdvance)
 
-  async function openAs(page: Page, user: 'accountant' | 'treasurer', path = orderPath) {
+  async function openAs(page: Page, user: 'accountant' | 'treasurer' | 'director', path = orderPath) {
     if (user === 'accountant') await signIn(page, accountant, accountantPermissions)
-    else await signIn(page, treasurer, treasurerPermissions)
+    else if (user === 'treasurer') await signIn(page, treasurer, treasurerPermissions)
+    else await signIn(page, director, directorPermissions)
     await installFlowMocks(page, state)
     await page.goto(path)
   }
@@ -520,5 +523,17 @@ test.describe('Luồng hợp đồng và chi tiền vật tư (mock dùng chung)
       amount: '770000',
       invoiceIds: [invoiceId],
     })
+  })
+
+  // The server gate that lets finance-only roles read orders is covered by unit tests
+  // (material-orders.spec.ts) and pgTAP (c1_material_finance_access); this checks the page.
+  test('9. giám đốc chỉ có quyền xem số liệu mở được trang đơn, thấy hợp đồng nhưng không có thao tác', async ({ page }) => {
+    await openAs(page, 'director')
+    await expect(page.getByTestId('contract-summary')).toBeVisible()
+    await expect(page.getByTestId('total-committed')).toContainText('1.100.000')
+    await expect(page.getByRole('cell', { name: '1C26TAA' })).toBeVisible()
+    for (const action of ['Lập đề nghị chi', 'Nhập hóa đơn', 'Duyệt', 'Trả lại', 'Ghi chi', 'Thêm phụ lục']) {
+      await expect(page.getByRole('button', { name: action, exact: true })).toHaveCount(0)
+    }
   })
 })

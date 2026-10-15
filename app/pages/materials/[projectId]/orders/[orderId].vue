@@ -148,6 +148,7 @@ import MaterialInstallmentTable from '../../../../components/materials/finance/M
 import MaterialContractAmendPanel from '../../../../components/materials/finance/MaterialContractAmendPanel.vue'
 import MaterialInvoicePanel from '../../../../components/materials/finance/MaterialInvoicePanel.vue'
 import MaterialPaymentRequestPanel from '../../../../components/materials/finance/MaterialPaymentRequestPanel.vue'
+import { materialFinanceReadPermissions } from '../../../../../shared/constants/permissions'
 
 definePageMeta({ requiredPermission: 'material.read' })
 
@@ -176,6 +177,9 @@ const tracker = createAsyncRequestTracker<{ companyId: string, projectId: string
 onBeforeUnmount(() => tracker.invalidate())
 
 const canRecordContract = computed(() => Boolean(companyAccess?.hasPermission('material.contract.record')))
+// Buyers and engineers would only get 403 from the contract read (and a permission
+// revalidation on every load); they see the status from order.contract instead.
+const canReadFinance = computed(() => materialFinanceReadPermissions.some(permission => Boolean(companyAccess?.hasPermission(permission))))
 const showRecordPanel = computed(() => Boolean(
   order.value && order.value.contract === null && order.value.orderState === 'active'
   && canRecordContract.value && companyId.value,
@@ -213,7 +217,10 @@ async function reload() {
     if (!token.isCurrent()) return
     let loadedContract: MaterialContractView | null = null
     let hidden = false
-    if (loadedOrder.contract) {
+    if (loadedOrder.contract && !canReadFinance.value) {
+      hidden = true
+    }
+    else if (loadedOrder.contract) {
       try {
         loadedContract = await financeRepo.readContract(pId.value, oId.value)
       }
