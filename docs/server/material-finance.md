@@ -15,6 +15,7 @@ Applied in order; each takes `pg_advisory_xact_lock(71842, N)` and ends with `no
 | `20261015090300_c1_material_finance_reads` | 53 | Finance facts, inbox facts, app notifications, installment reminders |
 | `20261015090400_c1_material_finance_evidence` | 54 | Contract-level evidence roles, MIME rules, read gate |
 | `20261015090500_c1_material_finance_hardening` | 55 | `material.read` on every write, money-free submitter notifications, amend replay version, read target MIME type, XML stored as octet-stream |
+| `20261015090600_c1_material_finance_access` | 56 | Finance readers open orders, proposal contract status and creator link, reminder keys with contract id, cancel of approved requests by approvers, invoice re-check at approve/pay |
 
 `shared/types/database.types.ts` is generated (`pnpm db:dev:types`) and is not edited by hand.
 
@@ -52,10 +53,12 @@ the stored receipt version; the same key with another payload raises `IDEMPOTENC
 | `c1_material_record_contract`, `c1_material_amend_contract` | `material.contract.record` |
 | `c1_material_read_contract` | finance read |
 | `c1_material_record_invoice`, `c1_material_void_invoice` | `material.contract.record` |
-| `c1_material_create_payment_request`, `c1_material_resubmit_payment_request`, `c1_material_cancel_payment_request` | `material.payment.request` |
+| `c1_material_create_payment_request`, `c1_material_resubmit_payment_request` | `material.payment.request` |
+| `c1_material_cancel_payment_request` | `material.payment.request` for submitted/returned requests, `material.payment.approve` for approved ones |
 | `c1_material_decide_payment_request` | `material.payment.approve` |
 | `c1_material_record_payment` | `material.payment.execute` |
 | `c1_material_list_invoices`, `c1_material_list_payment_requests` | finance read |
+| `c1_material_read_order`, `c1_material_list_orders` (A3, widened in 090600) | order readers (`material.order.manage`, `material.contract.record`, assigned notification readers) or finance readers; money only for finance readers |
 | `c1_material_finance_facts`, `c1_material_finance_inbox_facts` | `material.read` (money only for finance readers) |
 | `c1_list_app_notifications`, `c1_read_app_notification` | own notifications |
 | `c1_material_create_evidence_intent`, `c1_material_evidence_finalization_target`, `c1_material_evidence_read_target` | role-dependent, see Evidence |
@@ -70,7 +73,8 @@ Rules enforced in SQL (and mirrored in Zod in `shared/schemas/costs/material-fin
 - An amendment may not lower an installment below what is paid or pending on it, and the total
   may not fall below the recorded invoices.
 - A request may not exceed the installment's remaining capacity (paid + submitted + approved).
-- Non-advance installments need at least one recorded invoice.
+- Non-advance installments need at least one recorded invoice. Approving and paying re-check this
+  against the current installment, because an amendment may turn an advance into a normal installment.
 - The latest submitter of a request may neither decide nor pay it (`SELF_DECISION_FORBIDDEN`).
 - A decision `reason` is required for `return` and rejected for `approve`.
 - A transfer proof (by SHA-256) backs only one payment per company (`PROOF_ALREADY_USED`).
@@ -103,7 +107,7 @@ Mapped to HTTP in `server/features/costs/rpc-errors.ts` and declared in `shared/
 | Event | Recipients | Payload |
 |---|---|---|
 | `material.order.created` | `material.contract.record` holders | `supplierName` |
-| `material.contract.recorded` / `material.contract.amended` | finance readers; buyer and proposal creator (by user id) | finance readers: `supplierName`, `contractNo`, `total`, `versionNo`; by user id: without `total` |
+| `material.contract.recorded` / `material.contract.amended` | finance readers; buyer and proposal creator (by user id) | finance readers: `supplierName`, `contractNo`, `total`, `versionNo`; by user id: without `total`. The proposal creator's link opens the proposal, which lists `contractStatus` (order, contract number, signing date) |
 | `material.payment.submitted` | `material.payment.approve` holders | `supplierName`, `contractNo`, `amount` |
 | `material.payment.returned` | the submitter (by user id) | `supplierName`, `contractNo`, `reason` (no amount) |
 | `material.payment.paid` | the submitter (by user id) | `supplierName`, `contractNo` (no amount) |
@@ -120,8 +124,8 @@ user id (not by a finance permission) never carry money. The bell renders them w
 (compared in constant time; any mismatch or an empty secret returns 401). It calls
 `c1_material_emit_installment_reminders(today)` with the service-role client, where `today` is the
 Asia/Ho_Chi_Minh date. Installments with a remaining amount due within 3 days become `due_soon`,
-past due become `overdue`; the dedupe key contains the due date, so reruns on the same day are
-no-ops and an amendment that moves the date reminds again. Response: `{ dueSoon, overdue }`.
+past due become `overdue`; the dedupe key is `inst:<contractId>:<installmentKey>:<kind>:<dueOn>`, so
+reruns on the same day are no-ops and an amendment that moves the date reminds again. Response: `{ dueSoon, overdue }`.
 
 Configuration:
 
@@ -157,14 +161,26 @@ XML invoices:
   no processing instruction besides the declaration, and only namespaces in
   `XML_EVIDENCE_NAMESPACES`. Extend those constants when a supplier's e-invoice format needs it.
 
+## Deploy order
+
+Apply `20261015090000` through `20261015090600` and deploy the app in the same window. The two
+halves depend on each other, so either one alone breaks material order reads and evidence:
+
+- Old app with the new database: the evidence read target now returns `declaredMimeType`, which the
+  old strict schema rejects; finance readers depend on the widened order reads only the new app uses.
+- New app with the old database: XML uploads are sent as `application/octet-stream`, which the old
+  bucket allow-list refuses; finance readers (treasurer, director) get 403 from the order RPCs.
+- The new app tolerates a missing `declaredMimeType` (it then always signs a download), so evidence
+  reads keep working if the app goes out a little before the migration.
+
 ## Known follow-ups
 
 - Older A1–A3 procurement writes (proposals, orders, supplier names) still check only their own
   permission, not `material.read`; `c1_material_context` is module-wide and was left unchanged.
 - Concurrency (two sessions creating requests for the same installment, T2 case 5) needs a
   two-session script; pgTAP has no `dblink` in this environment.
-- The new A4/A5 pgTAP files are not yet registered in `scripts/run-c1-cloud-dev-tests.mjs`
-  (`materialAllowlist`) for the Cloud DEV runner.
+- The A3 and A4/A5 material pgTAP files are registered in `scripts/run-c1-cloud-dev-tests.mjs`
+  (`materialSyntheticPrefixes`, run with `--materials`) but have not been executed on Cloud DEV yet.
 - The CI runner lacks memory for `nuxt dev`; run e2e against a production build there, or locally
   with a warmed dev server (`PLAYWRIGHT_REUSE_EXISTING_SERVER=true`).
 - XML evidence finalized before `20261015090500` (if any) is stored as `application/xml`; it is
