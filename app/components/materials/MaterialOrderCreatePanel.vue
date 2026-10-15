@@ -155,8 +155,8 @@
       </div>
     </div>
 
-    <!-- Alert 5: Pending Create command interrupted before ACK (e.g. network lost) -->
-    <div v-else-if="pendingCreateOrderCommand" class="cockpit-alert cockpit-alert--danger mt-4" role="alert">
+    <!-- Alert 5: Pending Create command interrupted before ACK (e.g. network lost) (shown only when not in flight) -->
+    <div v-else-if="pendingCreateOrderCommand && !isCreateBusy" class="cockpit-alert cockpit-alert--danger mt-4" role="alert">
       <div class="flex items-start gap-2">
         <UIcon name="i-lucide-alert-circle" class="text-rose-600 text-base shrink-0 mt-0.5" aria-hidden="true" />
         <div class="flex-1">
@@ -180,8 +180,8 @@
       </div>
     </div>
 
-    <!-- Alert 6: Pending Cancel command interrupted before ACK -->
-    <div v-else-if="pendingCancelCommand" class="cockpit-alert cockpit-alert--danger mt-4" role="alert">
+    <!-- Alert 6: Pending Cancel command interrupted before ACK (shown only when not in flight) -->
+    <div v-else-if="pendingCancelCommand && !isCancelBusy" class="cockpit-alert cockpit-alert--danger mt-4" role="alert">
       <div class="flex items-start gap-2">
         <UIcon name="i-lucide-alert-circle" class="text-rose-600 text-base shrink-0 mt-0.5" aria-hidden="true" />
         <div class="flex-1">
