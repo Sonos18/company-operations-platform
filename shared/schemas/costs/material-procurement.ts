@@ -179,8 +179,8 @@ export const materialOrderAllocationInputSchema = z.object({
   mappingConfirmed: z.literal(true),
 }).strict()
 
+// The supplier code is derived from displayName by the database; clients never send it.
 export const materialOrderSupplierInputSchema = z.object({
-  code: shortText,
   displayName: shortText,
   taxIdentifier: text.optional(),
   contactDisplayName: text.optional(),
