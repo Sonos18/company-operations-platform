@@ -131,6 +131,14 @@
               {{ proposal.orderProgress.orderCount }} đơn mua ({{ proposal.orderProgress.signedOrderCount }} hợp đồng đã ký kết)
             </span>
           </div>
+          <div v-if="proposal.contractStatus?.length" class="info-item full-width" data-testid="proposal-contract-status">
+            <span class="info-label">Hợp đồng:</span>
+            <ul class="info-value contract-status-list">
+              <li v-for="item in proposal.contractStatus" :key="item.orderId">
+                Hợp đồng {{ item.contractNo }} ký ngày {{ formatDate(item.signedOn) }}
+              </li>
+            </ul>
+          </div>
           <div class="info-item full-width">
             <span class="info-label">Ghi chú:</span>
             <span class="info-value text-muted">{{ proposal.notes || 'Không có ghi chú' }}</span>
@@ -303,6 +311,7 @@ import type {
 import { workflowUuidSchema } from '../../../../../shared/schemas/costs/cost-workflow'
 import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
 import { formatMaterialQuantity } from '../../../../utils/materials/quantity-display'
+import { formatDate } from '../../../../utils/materials/date-display'
 import { ClientError } from '../../../../errors/client-error'
 import MaterialProposalForm from '../../../../components/materials/MaterialProposalForm.vue'
 import MaterialProposalDecisionPanel from '../../../../components/materials/MaterialProposalDecisionPanel.vue'
@@ -1122,6 +1131,11 @@ onUnmounted(() => {
   font-weight: 600;
   color: var(--forest-deep, #475569);
 }
+.contract-status-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
 .info-value {
   font-size: 0.9rem;
   color: var(--ink, #0f172a);
