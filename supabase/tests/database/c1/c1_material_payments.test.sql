@@ -407,7 +407,8 @@ $$,(select body->>'resourceId' from t2_acks where name='R2')),'P0001','SELF_DECI
 select set_config('request.jwt.claims','{"sub":"c1270000-0000-4000-8000-000000000901","role":"authenticated"}',true);
 select is((
   select count(*) from public.app_notifications
-  where event_kind='material.payment.submitted'
+  where recipient_id='c1270000-0000-4000-8000-000000000901'
+    and event_kind='material.payment.submitted'
     and dedupe_key='pr:'||(select body->>'resourceId' from t2_acks where name='R2')||':sub:2'
 ),1::bigint,'case 8: original creator, now an approver, is notified of the resubmission');
 insert into t2_acks select 'D_R2_approve', public.c1_material_decide_payment_request(
