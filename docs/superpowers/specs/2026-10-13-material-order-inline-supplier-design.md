@@ -93,3 +93,13 @@ Theo lựa chọn chi phí của Sơn: không chạy suite đầy đủ; chạy 
 - Đây là thay đổi trên hàm tạo đơn A3 đã được duyệt; rollback DB là forward-only (cần migration mới để quay lại). Preview cũ (`8a356b1`) sẽ không tạo đơn được sau khi migration áp dụng, vì vẫn gửi `supplierId` — nên migration và preview mới đi liền nhau.
 - Khớp theo tên có thể gán nhầm nếu hai công ty khác nhau trùng tên hoàn toàn; giảm thiểu bằng ưu tiên mã (thường là `NCC-<MST>`) và báo lỗi khi trùng tên nhiều NCC.
 - Cloud DEV dùng chung giữa các nhánh: nhánh khác còn gửi `supplierId` sẽ lỗi sau migration.
+
+## Sửa đổi 2026-10-15 (Sơn duyệt; thay thế các mục mâu thuẫn ở trên)
+
+- Bỏ ô nhập Mã NCC và logic tự tạo mã ở UI. UI chỉ gửi `supplier: { displayName, taxIdentifier?, contactDisplayName?, contactPhone? }` (strict; gửi `code` → `INPUT_INVALID`).
+- Mã do **SQL** tính từ tên: NFC → bỏ dấu tiếng Việt (`translate`, cả chữ hoa, `đ/Đ`) → bỏ mọi ký tự ngoài `A-Za-z0-9` → chữ thường. Ví dụ "CÔNG TY TNHH SX-TM-XNK NGŨ KIM TRUNG NAM" → `congtytnhhsxtmxnkngukimtrungnam`. Kết quả rỗng → `INPUT_INVALID`. Hàm `private.c1_material_supplier_code(text)`.
+- Tra cứu **chỉ theo mã** (khoá `material.supplier:<tenant>:<company>:<code>`, `for update`). Bỏ tìm theo tên và lỗi `SUPPLIER_AMBIGUOUS`.
+- Trùng mã: `party_kind <> 'organization'` hoặc inactive → `SUPPLIER_UNAVAILABLE`. Ngược lại **ghi đè** các trường UI gửi lên mà khác DB (tên luôn gửi; MST/liên hệ/SĐT chỉ khi có giá trị — ô trống không xoá dữ liệu cũ), `version+1`, `updated_at=now()` như `private.c1_update_party`. Không khác → không update.
+- Tạo mới **hoặc ghi đè** cần `material.supplier.record`; thiếu quyền → `PERMISSION_DENIED`. Dùng lại không thay đổi gì thì không cần quyền này.
+- MST không bắt buộc, không dùng để chặn hay đối chiếu.
+- NCC cũ trên Cloud DEV có mã kiểu `NCC-...`/`SUP-A` sẽ không khớp mã mới; lần tạo đơn đầu tiên sẽ tạo bản ghi mới (chấp nhận).
