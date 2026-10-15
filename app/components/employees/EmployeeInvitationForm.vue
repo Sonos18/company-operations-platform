@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { employeeInvitationInputSchema } from '../../../shared/schemas/employees'
 import type { DepartmentSummary, PositionSummary } from '../../../shared/schemas/employees'
-import type { PreparedEmployeeInvitation } from '../../../shared/schemas/employee-invitations'
+import type { EmployeeInvitationResult } from '../../../shared/schemas/employee-invitations'
 import { ClientError } from '../../errors/client-error'
 const emit = defineEmits<{ close: []; prepared: [] }>()
 const app = useNuxtApp()
@@ -18,10 +18,11 @@ const loading = ref(true)
 const submitting = ref(false)
 const error = ref('')
 const copyMessage = ref('')
-const prepared = ref<PreparedEmployeeInvitation | null>(null)
+const result = ref<EmployeeInvitationResult | null>(null)
+const manual = computed(() => (result.value?.status === 'prepared' ? result.value : null))
 let disposed = false
-function close() { prepared.value = null; emit('close') }
-onBeforeUnmount(() => { disposed = true; prepared.value = null })
+function close() { result.value = null; emit('close') }
+onBeforeUnmount(() => { disposed = true; result.value = null })
 onMounted(async () => {
   const companyId = app.$companyAccessStore.activeCompanyId
   try {
@@ -34,7 +35,7 @@ onMounted(async () => {
 })
 async function submit() {
   if (submitting.value || loading.value) return
-  error.value = ''; copyMessage.value = ''; prepared.value = null
+  error.value = ''; copyMessage.value = ''; result.value = null
   const input = employeeInvitationInputSchema.safeParse({
     employeeCode: employeeCode.value, fullName: fullName.value, workEmail: workEmail.value, departmentId: departmentId.value,
     ...(positionId.value ? { positionId: positionId.value } : {}),
@@ -44,20 +45,21 @@ async function submit() {
   const companyId = app.$companyAccessStore.activeCompanyId
   submitting.value = true
   try {
-    const result = await repository.prepare(input.data)
+    const response = await repository.prepare(input.data)
     if (disposed || companyId !== app.$companyAccessStore.activeCompanyId) return
-    prepared.value = result
+    result.value = response
     emit('prepared')
   } catch (failure) {
     if (!disposed) error.value = failure instanceof ClientError ? failure.message : 'Không thể chuẩn bị lời mời. Vui lòng thử lại.'
   } finally { if (!disposed) submitting.value = false }
 }
 async function copyInvitation() {
-  if (!prepared.value) return
+  const invitation = manual.value
+  if (!invitation) return
   copyMessage.value = ''
   try {
-    await navigator.clipboard.writeText('Đến: ' + prepared.value.recipient + '\nTiêu đề: ' + prepared.value.subject + '\n\n' + prepared.value.body)
-    if (!disposed) copyMessage.value = 'Đã sao chép. Hãy dán vào Gmail và gửi riêng đúng người nhận.'
+    await navigator.clipboard.writeText('Đến: ' + invitation.recipient + '\nTiêu đề: ' + invitation.subject + '\n\n' + invitation.body)
+    if (!disposed) copyMessage.value = 'Đã sao chép. Hãy dán vào ứng dụng email và gửi riêng đúng người nhận.'
   } catch { if (!disposed) copyMessage.value = 'Trình duyệt không cho sao chép. Bạn có thể chọn và sao chép nội dung email bên dưới.' }
 }
 </script>
@@ -67,23 +69,30 @@ async function copyInvitation() {
       <div><p class="eyebrow">Lời mời tham gia</p><h2 id="invitation-heading">Mời nhân viên</h2></div>
       <UButton color="neutral" variant="ghost" aria-label="Đóng lời mời" @click="close">Đóng</UButton>
     </header>
-    <p class="invitation-help">Chuẩn bị email mời, rồi sao chép và gửi từ Gmail của bạn. Người nhận tự đặt mật khẩu; Taskovia không gửi email tự động.</p>
+    <p class="invitation-help">Taskovia gửi email mời từ địa chỉ email của công ty. Nếu chưa gửi được, bạn có thể sao chép và gửi thủ công.</p>
     <p v-if="error" class="invitation-error" role="alert">{{ error }}</p>
     <p v-if="loading" role="status">Đang tải phòng ban và chức danh…</p>
-    <form v-if="!prepared" class="invitation-fields" @submit.prevent="submit">
+    <form v-if="!result" class="invitation-fields" @submit.prevent="submit">
       <label>Mã nhân viên<input v-model="employeeCode" required autocomplete="off" :disabled="submitting"></label>
       <label>Họ và tên<input v-model="fullName" required autocomplete="off" :disabled="submitting"></label>
       <label class="invitation-wide">Email nhận lời mời<input v-model="workEmail" required type="email" autocomplete="off" :disabled="submitting"><small>Có thể dùng email cá nhân của người nhận.</small></label>
       <label>Phòng ban nhân viên<select v-model="departmentId" required :disabled="loading || submitting"><option value="">Chọn phòng ban</option><option v-for="department in departments" :key="department.id" :value="department.id">{{ department.name }}</option></select></label>
       <label>Chức danh (không bắt buộc)<select v-model="positionId" :disabled="loading || submitting"><option value="">Chưa chọn chức danh</option><option v-for="position in positions" :key="position.id" :value="position.id">{{ position.name }}</option></select></label>
       <label>Ngày vào làm (không bắt buộc)<input v-model="hireDate" type="date" :disabled="submitting"></label>
-      <div class="invitation-wide invitation-actions"><UButton type="submit" color="primary" :loading="submitting" :disabled="loading || !departments.length">Chuẩn bị lời mời</UButton><small>Nhân viên nhận quyền cơ bản. Vai trò nghiệp vụ được cấp riêng.</small></div>
+      <div class="invitation-wide invitation-actions"><UButton type="submit" color="primary" :loading="submitting" :disabled="loading || !departments.length">Gửi lời mời</UButton><small>Nhân viên nhận quyền cơ bản. Vai trò nghiệp vụ được cấp riêng.</small></div>
     </form>
-    <div v-else class="invitation-result">
+    <div v-else-if="result.status === 'sent'" class="invitation-result">
+      <p class="invitation-status" role="status">Đã gửi email mời · Máy chủ email đã nhận</p>
+      <label>Người nhận<input :value="result.recipient" readonly></label>
+      <label>Tiêu đề email<input :value="result.subject" readonly></label>
+      <p class="invitation-help">Nếu người nhận không thấy email, hãy nhờ họ kiểm tra thư mục Spam. Tạo lại lời mời sẽ cấp link mới.</p>
+    </div>
+    <div v-else-if="manual" class="invitation-result">
+      <p v-if="manual.delivery === 'failed'" class="invitation-error" role="alert">Không gửi được email tự động. Hãy sao chép và gửi thủ công cho đúng người nhận.</p>
       <p class="invitation-status" role="status">Đã chuẩn bị · Chưa xác nhận gửi</p>
-      <label>Người nhận<input :value="prepared.recipient" readonly></label>
-      <label>Tiêu đề email<input :value="prepared.subject" readonly></label>
-      <label>Nội dung email<textarea :value="prepared.body" readonly rows="10" spellcheck="false" /></label>
+      <label>Người nhận<input :value="manual.recipient" readonly></label>
+      <label>Tiêu đề email<input :value="manual.subject" readonly></label>
+      <label>Nội dung email<textarea :value="manual.body" readonly rows="10" spellcheck="false" /></label>
       <p class="invitation-help">Link trong email chỉ dành cho người nhận và dùng một lần. Không gửi vào nhóm hoặc chuyển tiếp cho người khác. Đóng khung này sẽ xóa lời mời khỏi màn hình.</p>
       <UButton color="primary" @click="copyInvitation">Sao chép lời mời</UButton>
       <p v-if="copyMessage" role="status">{{ copyMessage }}</p>

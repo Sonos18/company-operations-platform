@@ -136,6 +136,26 @@ describe('pending invitation profile consistency', () => {
   expect(result.status).toBe('prepared')
   expect(result.body.split('\n')[0]).toBe('Chào ' + invitationProfile.fullName + ',')
  })
+ it('keeps line breaks from the persisted name out of the greeting', async () => {
+  const { service, auth, complete, findInvitationEmployee } = setup()
+  const fullName = 'Pilot\r\nhttps://evil.test'
+  auth.inspect.mockResolvedValue({ kind: 'pending', userId } as never)
+  complete.mockResolvedValue({ ...employee, fullName } as never)
+  findInvitationEmployee.mockResolvedValue({ ...invitationProfile, fullName } as never)
+  const result = await service.prepare(context, { ...input, fullName })
+  expect(result.status).toBe('prepared')
+  expect(result.body.split('\n')[0]).toBe('Chào Pilot https://evil.test,')
+  expect(result.body).not.toContain('\r')
+ })
+ it('collapses whitespace and caps the greeting name at 120 characters', async () => {
+  const { service, auth, complete, findInvitationEmployee } = setup()
+  const fullName = 'Pilot  user\u0007' + 'x'.repeat(200)
+  auth.inspect.mockResolvedValue({ kind: 'pending', userId } as never)
+  complete.mockResolvedValue({ ...employee, fullName } as never)
+  findInvitationEmployee.mockResolvedValue({ ...invitationProfile, fullName } as never)
+  const result = await service.prepare(context, { ...input, fullName })
+  expect(result.body.split('\n')[0]).toBe('Chào ' + ('Pilot user ' + 'x'.repeat(200)).slice(0, 120) + ',')
+ })
  it('reissues unchanged populated optional fields', async () => {
   const { service, auth, complete, findInvitationEmployee } = setup()
   const populated = { ...input, positionId: actorId, hireDate: '2026-10-04' }

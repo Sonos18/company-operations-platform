@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { extname, join, relative, resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSupabaseUserClient } from '../../../server/utils/supabase-client'
@@ -10,7 +10,6 @@ vi.mock('@supabase/supabase-js', () => ({ createClient }))
 
 const root = resolve(import.meta.dirname, '../../..')
 const adminSecret = 'sb_secret_that_must_not_reach_user_queries'
-const invitationRedirectTo = 'http://127.0.0.1:3000/auth/callback'
 const historicalOnboardingMigration = 'supabase/migrations/20260818033418_employee_management_rbac.sql'
 const forwardMigrationSuffix = '_harden_employee_onboarding_permissions.sql'
 
@@ -28,14 +27,6 @@ function authUser(index: number, email = `user-${index}@vqh.local`) {
     id: `10000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
     email,
   }
-}
-
-function fullAuthPage(page: number) {
-  return Array.from({ length: 100 }, (_, index) => authUser(((page - 1) * 100) + index + 1))
-}
-
-function authPage(users: unknown[]) {
-  return { data: { users }, error: null }
 }
 
 function functionDefinition(source: string, declaration: string): string {
@@ -96,18 +87,6 @@ async function materialEvidenceFinalizerFactory() {
     : undefined
 }
 
-async function invitationAuthAdapter() {
-  const module = await import('../../../server/utils/supabase-client') as Record<string, unknown>
-  const factory = module.createSupabaseInvitationAuthAdmin
-  expect(factory).toBeTypeOf('function')
-  return typeof factory === 'function'
-    ? (client: unknown) => (factory as (client: unknown, options: { redirectTo: string }) => {
-          inviteUser(email: string): Promise<unknown>
-          findUserByEmail(email: string): Promise<unknown>
-        })(client, { redirectTo: invitationRedirectTo })
-    : undefined
-}
-
 async function offboardingAuthAdapter() {
   const module = await import('../../../server/utils/supabase-client') as Record<string, unknown>
   const factory = module.createSupabaseOffboardingAuthAdmin
@@ -123,7 +102,7 @@ describe('Supabase Auth admin boundary', () => {
   })
 
   it('returns only the runtime Auth-admin façade without persisting a browser session', async () => {
-    const rawAdmin = { inviteUserByEmail: vi.fn(), listUsers: vi.fn() }
+    const rawAdmin = { listUsers: vi.fn() }
     createClient.mockReturnValue({
       auth: { admin: rawAdmin },
       from: vi.fn(),
@@ -206,166 +185,6 @@ describe('Supabase Auth admin boundary', () => {
     await finalizer.finalize(args)
     expect(rpc).toHaveBeenCalledWith('c1_finalize_material_evidence_server', args)
     expect(finalizer).toEqual({ finalize: expect.any(Function) })
-  })
-
-  it('resolves one exact normalized retry user only after completing a valid page traversal', async () => {
-    const adapterFactory = await invitationAuthAdapter()
-    if (!adapterFactory) return
-    const firstPage = fullAuthPage(1)
-    firstPage[0] = authUser(1, ' Retry@VQH.Local ')
-    const listUsers = vi.fn()
-      .mockResolvedValueOnce({ data: { users: firstPage, nextPage: 1 }, error: null })
-      .mockResolvedValueOnce(authPage([]))
-    const admin = adapterFactory({ auth: { admin: { inviteUserByEmail: vi.fn(), listUsers } } })
-
-    await expect(admin.findUserByEmail(' retry@vqh.local ')).resolves.toEqual({
-      kind: 'found',
-      userId: '10000000-0000-4000-8000-000000000001',
-    })
-    expect(listUsers).toHaveBeenNthCalledWith(1, { page: 1, perPage: 100 })
-    expect(listUsers).toHaveBeenNthCalledWith(2, { page: 2, perPage: 100 })
-  })
-
-  it('fails closed when the same normalized email occurs twice in one Auth page', async () => {
-    const adapterFactory = await invitationAuthAdapter()
-    if (!adapterFactory) return
-    const admin = adapterFactory({
-      auth: {
-        admin: {
-          inviteUserByEmail: vi.fn(),
-          listUsers: vi.fn().mockResolvedValue(authPage([
-            authUser(11, 'retry@vqh.local'),
-            authUser(12, ' Retry@VQH.Local '),
-          ])),
-        },
-      },
-    })
-
-    await expect(admin.findUserByEmail('retry@vqh.local')).resolves.toEqual({ kind: 'failed' })
-  })
-
-  it('fails closed when the same normalized email occurs on different Auth pages', async () => {
-    const adapterFactory = await invitationAuthAdapter()
-    if (!adapterFactory) return
-    const firstPage = fullAuthPage(1)
-    firstPage[0] = authUser(1, 'retry@vqh.local')
-    const listUsers = vi.fn()
-      .mockResolvedValueOnce(authPage(firstPage))
-      .mockResolvedValueOnce(authPage([authUser(101, ' Retry@VQH.Local ')]))
-    const admin = adapterFactory({ auth: { admin: { inviteUserByEmail: vi.fn(), listUsers } } })
-
-    await expect(admin.findUserByEmail('retry@vqh.local')).resolves.toEqual({ kind: 'failed' })
-    expect(listUsers).toHaveBeenCalledTimes(2)
-  })
-
-  it.each([
-    [{ id: authUser(1).id }, 'a returned user without an email'],
-    [{ id: 'not-a-uuid', email: 'other@vqh.local' }, 'a returned user with an invalid ID'],
-  ])('fails closed for %s', async (malformedUser) => {
-    const adapterFactory = await invitationAuthAdapter()
-    if (!adapterFactory) return
-    const admin = adapterFactory({
-      auth: { admin: { inviteUserByEmail: vi.fn(), listUsers: vi.fn().mockResolvedValue(authPage([malformedUser])) } },
-    })
-
-    await expect(admin.findUserByEmail('retry@vqh.local')).resolves.toEqual({ kind: 'failed' })
-  })
-
-  it('returns not_found only after a complete valid traversal including an empty final-page probe', async () => {
-    const adapterFactory = await invitationAuthAdapter()
-    if (!adapterFactory) return
-    const listUsers = vi.fn()
-      .mockResolvedValueOnce(authPage(fullAuthPage(1)))
-      .mockResolvedValueOnce(authPage([]))
-    const admin = adapterFactory({ auth: { admin: { inviteUserByEmail: vi.fn(), listUsers } } })
-
-    await expect(admin.findUserByEmail('retry@vqh.local')).resolves.toEqual({ kind: 'not_found' })
-    expect(listUsers).toHaveBeenNthCalledWith(2, { page: 2, perPage: 100 })
-  })
-
-  it('uses explicit numeric pages through page ten instead of an Auth nextPage value', async () => {
-    const adapterFactory = await invitationAuthAdapter()
-    if (!adapterFactory) return
-    const listUsers = vi.fn().mockImplementation(({ page }: { page: number }) => {
-      if (page < 10) return Promise.resolve({ data: { users: fullAuthPage(page), nextPage: 1 }, error: null })
-      return Promise.resolve(authPage([authUser(1001, 'Retry@VQH.Local')]))
-    })
-    const admin = adapterFactory({ auth: { admin: { inviteUserByEmail: vi.fn(), listUsers } } })
-
-    await expect(admin.findUserByEmail('retry@vqh.local')).resolves.toEqual({
-      kind: 'found',
-      userId: '10000000-0000-4000-8000-000000001001',
-    })
-    expect(listUsers).toHaveBeenNthCalledWith(10, { page: 10, perPage: 100 })
-  })
-
-  it('fails closed for a repeating Auth page cycle', async () => {
-    const adapterFactory = await invitationAuthAdapter()
-    if (!adapterFactory) return
-    const repeatedPage = fullAuthPage(1)
-    const listUsers = vi.fn()
-      .mockResolvedValueOnce(authPage(repeatedPage))
-      .mockResolvedValueOnce(authPage(repeatedPage))
-    const admin = adapterFactory({ auth: { admin: { inviteUserByEmail: vi.fn(), listUsers } } })
-
-    await expect(admin.findUserByEmail('retry@vqh.local')).resolves.toEqual({ kind: 'failed' })
-  })
-
-  it('fails closed when one hundred full Auth pages exhaust the traversal cap', async () => {
-    const adapterFactory = await invitationAuthAdapter()
-    if (!adapterFactory) return
-    const listUsers = vi.fn().mockImplementation(({ page }: { page: number }) => Promise.resolve(authPage(fullAuthPage(page))))
-    const admin = adapterFactory({ auth: { admin: { inviteUserByEmail: vi.fn(), listUsers } } })
-
-    await expect(admin.findUserByEmail('retry@vqh.local')).resolves.toEqual({ kind: 'failed' })
-    expect(listUsers).toHaveBeenCalledTimes(100)
-  })
-
-  it('fails closed when Auth user pagination errors instead of accepting an unrelated user', async () => {
-    const adapterFactory = await invitationAuthAdapter()
-    if (!adapterFactory) return
-    const admin = adapterFactory({
-      auth: {
-        admin: {
-          inviteUserByEmail: vi.fn(),
-          listUsers: vi.fn().mockResolvedValue({ data: { users: [] }, error: { message: 'provider detail' } }),
-        },
-      },
-    })
-
-    await expect(admin.findUserByEmail('retry@vqh.local')).resolves.toEqual({ kind: 'failed' })
-  })
-
-  it('recognizes only documented duplicate invite codes and otherwise hides provider details', async () => {
-    const adapterFactory = await invitationAuthAdapter()
-    if (!adapterFactory) return
-    const listUsers = vi.fn()
-    const inviteUserByEmail = vi.fn()
-      .mockResolvedValueOnce({ data: { user: null }, error: { status: 422, code: 'email_exists', message: 'existing user detail' } })
-      .mockResolvedValueOnce({ data: { user: null }, error: { status: 422, code: 'invalid_email', message: 'secret provider detail' } })
-    const admin = adapterFactory({ auth: { admin: { inviteUserByEmail, listUsers } } })
-
-    await expect(admin.inviteUser('retry@vqh.local')).resolves.toEqual({ kind: 'existing' })
-    await expect(admin.inviteUser('retry@vqh.local')).resolves.toEqual({ kind: 'failed' })
-    expect(listUsers).not.toHaveBeenCalled()
-  })
-
-  it('closes the canonical callback redirect into normalized invitation requests', async () => {
-    const adapterFactory = await invitationAuthAdapter()
-    if (!adapterFactory) return
-    const inviteUserByEmail = vi.fn().mockResolvedValue({
-      data: { user: { id: authUser(1).id } },
-      error: null,
-    })
-    const admin = adapterFactory({ auth: { admin: { inviteUserByEmail, listUsers: vi.fn() } } })
-
-    await expect(admin.inviteUser(' Invitee@VQH.Local ')).resolves.toEqual({
-      kind: 'invited',
-      userId: authUser(1).id,
-    })
-    expect(inviteUserByEmail).toHaveBeenCalledWith('invitee@vqh.local', {
-      redirectTo: invitationRedirectTo,
-    })
   })
 
   it('uses the narrow Auth-only adapter to disable an account with an explicit non-destructive ban duration', async () => {
@@ -490,5 +309,11 @@ describe('Supabase Auth admin boundary', () => {
     expect(forward).toContain('grant execute on function private.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) to authenticated;')
     expect(forward).toContain('revoke all on function public.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) from public, anon;')
     expect(forward).toContain('grant execute on function public.complete_employee_onboarding(uuid, uuid, text, text, text, uuid, uuid, date) to authenticated;')
+  })
+
+  it('has no automatic inviteUserByEmail invitation path', () => {
+    expect(existsSync(resolve(root, 'server/api/companies/[companyId]/employee-invitations.post.ts'))).toBe(false)
+    const serverSources = filesRecursively(resolve(root, 'server')).map(path => readFileSync(path, 'utf8'))
+    expect(serverSources.some(source => source.includes('inviteUserByEmail'))).toBe(false)
   })
 })

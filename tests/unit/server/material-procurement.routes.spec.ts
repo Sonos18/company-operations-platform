@@ -19,7 +19,7 @@ const key = '10000000-0000-4000-8000-000000000002'
 const context = { actorId: ids.user, tenantId: companyId, companyId, requestId: key, permissions: [], db: {} }
 const orderInput = {
   approvedRevisionId: ids.proposalRevision,
-  supplierId: ids.supplier,
+  supplier: { displayName: 'Supplier A' },
   currencyCode: 'VND',
   unsignedQuotationEvidenceFileId: ids.unsignedQuotation,
   allocations: [split10Of20.allocations[0]],

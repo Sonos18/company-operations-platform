@@ -186,9 +186,17 @@ export const materialOrderAllocationInputSchema = z.object({
   mappingConfirmed: z.literal(true),
 }).strict()
 
+// The supplier code is derived from displayName by the database; clients never send it.
+export const materialOrderSupplierInputSchema = z.object({
+  displayName: shortText,
+  taxIdentifier: text.optional(),
+  contactDisplayName: text.optional(),
+  contactPhone: text.optional(),
+}).strict()
+
 export const createMaterialOrderInputSchema = z.object({
   approvedRevisionId: workflowUuidSchema,
-  supplierId: workflowUuidSchema,
+  supplier: materialOrderSupplierInputSchema,
   currencyCode: workflowCurrencySchema,
   unsignedQuotationEvidenceFileId: workflowUuidSchema,
   allocations: z.array(materialOrderAllocationInputSchema).min(1).max(1000),
@@ -376,6 +384,7 @@ export type ProposalDecisionInput = z.infer<typeof materialProposalDecisionInput
 export type SetBuyerInvoiceNameInput = z.infer<typeof setBuyerInvoiceNameInputSchema>
 export type MaterialProposalView = z.infer<typeof materialProposalViewSchema>
 export type MaterialOrderAllocationInput = z.infer<typeof materialOrderAllocationInputSchema>
+export type MaterialOrderSupplierInput = z.infer<typeof materialOrderSupplierInputSchema>
 export type CreateMaterialOrderInput = z.infer<typeof createMaterialOrderInputSchema>
 export type CancelMaterialOrderInput = z.infer<typeof cancelMaterialOrderInputSchema>
 export type MaterialOrderState = z.infer<typeof materialOrderStateSchema>

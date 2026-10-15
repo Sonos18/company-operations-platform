@@ -17,12 +17,12 @@ The application URL must be an absolute origin without credentials, query, or fr
 
 Cloud DEV CLI operations use only `SUPABASE_DEV_ACCESS_TOKEN` from ignored `.supabase.dev.env.local`, as described in [Cloud DEV backend development](../development/backend-cloud-dev.md). The PAT is not an application variable. Never put a PAT, service-role key, access token, refresh token, password, or email token in source control, logs, tickets, screenshots, or shell history.
 
-For the DEV pilot where HR copies and sends invitations from Gmail, see [HR manual invitations](hr-manual-invitations.md). The automatic email flow below remains separate.
+For HR employee invitations (domain SMTP delivery with a manual copy fallback), see [HR employee invitations](hr-manual-invitations.md).
 
 ## Invite and first password
 
-1. An authorized employee administrator starts onboarding through the Taskovia API. Do not create or transmit a password for the invitee.
-2. The server calls Supabase Admin `inviteUserByEmail` with the exact callback `http://127.0.0.1:3000/auth/callback` in local/Cloud DEV.
+1. An authorized employee administrator submits the HR invitation form (`POST /api/companies/:companyId/employee-invitations/manual`). Do not create or transmit a password for the invitee.
+2. The server creates the owned pending identity, generates an invite `hashed_token` with `generateLink(type: invite)`, and builds the callback link from the configured app origin. It sends the email through the domain SMTP mailbox, or returns it for manual sending; see [HR employee invitations](hr-manual-invitations.md).
 3. The versioned invite template must link to `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite`.
 4. `/auth/callback` accepts only one `token_hash` and `type=invite|recovery`, verifies it once with `verifyOtp`, immediately removes the sensitive query from browser history, and sends the user to `/reset-password`.
 5. The user sets an 8–72 character password. Taskovia does not trim it or require a composition rule; whitespace-only and non-matching confirmation are rejected locally.

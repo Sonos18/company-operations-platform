@@ -36,14 +36,14 @@ Unknown employment and private-detail values remain null. These identities estab
 
 ## Production invitation and onboarding
 
-1. Use an authenticated account with both `account.invite` and `employee.create` for `POST /api/companies/:companyId/employee-invitations`.
+1. Use an authenticated account with both `account.invite` and `employee.create` for `POST /api/companies/:companyId/employee-invitations/manual`.
 2. Supply employee code, full name, real work email, department ID, and optional position ID and hire date. The route derives actor, tenant, and company scope from the authenticated request; it accepts no caller-supplied actor or scope.
-3. The server-only Admin client sends the Supabase Auth invitation. Do not create, choose, transmit, or store a password.
+3. The server creates an owned pending Auth identity and an invite link (`generateLink`), then sends the invitation from the domain SMTP mailbox, or returns it for HR to send manually when SMTP is not configured or sending fails. See [HR employee invitations](hr-manual-invitations.md). Do not create, choose, transmit, or store a password.
 4. After Supabase Auth returns a user ID, the onboarding RPC links the tenant/company memberships, creates the employee and private-detail shell, and grants only the base `employee` role.
-5. If Auth reports an existing account, the service resolves it by normalized email and retries the onboarding RPC. The email and employee code must agree with an existing employee record.
-6. Treat `ONBOARDING_INCOMPLETE` as a partial operation: retain the error and request context, resolve the condition, then retry the same employee data. Do not send a duplicate invitation simply to repair database completion. Escalate `EMPLOYEE_EMAIL_CONFLICT` or `ACCOUNT_INVITE_FAILED` without disclosing provider errors or credentials.
+5. If the email already belongs to an activated account, or to a pending invitation not owned by this company, the invitation is rejected with `EMPLOYEE_EMAIL_CONFLICT`; existing accounts are never linked through the invitation form. A pending invitation owned by this company can be reissued with the same stored profile values.
+6. Treat `ONBOARDING_INCOMPLETE` as a partial operation: no invitation email was sent. Retain the error and request context, resolve the condition, then resubmit the same employee data (same company, email and employee code) through the invitation form. Escalate `EMPLOYEE_EMAIL_CONFLICT` or `ACCOUNT_INVITE_FAILED` without disclosing provider errors or credentials.
 
-The current feature does not implement invitation rate limiting or an idempotency-key request header. Operators must use the documented retry behavior rather than assuming either control exists. Additional business roles are a separate company-admin action; the invitation input has no role-selection field.
+The current feature has no distributed rate limiting and no idempotency-key request header; the instance-local throttle is described in [HR employee invitations](hr-manual-invitations.md). Operators must use the documented retry behavior rather than assuming either control exists. Additional business roles are a separate company-admin action; the invitation input has no role-selection field.
 
 ## Transfer `supplier_sourcing` or `inventory_auditor` from Như
 

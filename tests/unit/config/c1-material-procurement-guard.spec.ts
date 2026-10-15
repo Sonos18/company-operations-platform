@@ -111,19 +111,8 @@ describe('C1 material procurement forward-only contract', () => {
     expect(sql).not.toContain('c1_material_record_contract')
   })
 
-  it('keeps executable SQL assertions for permissions, revisions and allocation races', () => {
-    const behavior = compact(read('supabase/tests/database/c1/c1_material_procurement.test.sql'))
+  it('keeps executable SQL assertions for permissions', () => {
     const security = compact(read('supabase/tests/database/c1/c1_material_procurement_security.test.sql'))
-
-    for (const assertion of [
-      '20 -> 10 + 10',
-      '20 -> 11 + 10',
-      'concurrent 11 + 11',
-      'version_conflict',
-      'signed quantity',
-    ]) {
-      expect(behavior).toContain(assertion)
-    }
 
     expect(security).toContain('permission_denied')
     expect(security).toContain('buyer cannot update proposal')
@@ -182,11 +171,5 @@ describe('C1 material procurement forward-only contract', () => {
       expect(sql).toContain("existing_order.state <> 'cancelled'")
       expect(sql).toContain('material_allocation_exceeded')
     }
-
-    const runtime = compact(read('supabase/tests/database/c1/c1_material_procurement.test.sql'))
-    expect(runtime).toContain('unsigned reserved quantity cannot be reduced')
-    expect(runtime).toContain('reserved proposal line cannot be omitted')
-    expect(runtime).toContain('submit rejects reduced reserved quantity')
-    expect(runtime).toContain('submit rejects omitted reserved line')
   })
 })

@@ -56,7 +56,7 @@ delete missingReturnReason.returnReason
 
 const orderInput = {
   approvedRevisionId: ids.proposalRevision,
-  supplierId: ids.supplier,
+  supplier: { displayName: 'Supplier A' },
   currencyCode: 'VND' as const,
   unsignedQuotationEvidenceFileId: ids.unsignedQuotation,
   allocations: [{

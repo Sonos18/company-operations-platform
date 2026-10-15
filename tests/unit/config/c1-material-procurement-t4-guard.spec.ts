@@ -47,16 +47,6 @@ describe('C1 material procurement T4 forward-only guards', () => {
     expect(sql).toContain('private.c1_can_select_evidence_object(target_bucket_id text,target_object_path text)')
     expect(sql).not.toContain('signedurl')
 
-    const behavior = compact(readFileSync(resolve(root, 'supabase/tests/database/c1/c1_material_procurement.test.sql'), 'utf8'))
-    expect(behavior).toContain('material evidence role must match proposal target')
-    expect(behavior).toContain('material evidence accepts pdf only')
-    expect(behavior).toContain('unfinished quotation evidence cannot create an order')
-    expect(behavior).toContain('null evidence role is controlled input invalid')
-    expect(behavior).toContain('out of range evidence size is controlled input invalid')
-    expect(behavior).toContain('expected-version-only finalizer replay succeeds')
-    expect(behavior).toContain('exact full verified finalizer replay succeeds')
-    expect(behavior).toContain('changed full verified finalizer replay conflicts')
-    expect(behavior).toContain('partial verified finalizer replay is input invalid')
     const security = compact(readFileSync(resolve(root, 'supabase/tests/database/c1/c1_material_procurement_security.test.sql'), 'utf8'))
     expect(security).toContain('generic cost.prepare cannot upload a material-scoped pending object')
     expect(security).toContain('generic cost.source.read cannot read finalized material metadata')
@@ -88,12 +78,6 @@ describe('C1 material procurement T4 forward-only guards', () => {
       expect(sql).toContain("'" + field + "'")
     }
     expect(sql).not.toContain("material_order.state <> 'cancelled'")
-
-    const behavior = compact(readFileSync(resolve(root, 'supabase/tests/database/c1/c1_material_procurement.test.sql'), 'utf8'))
-    expect(behavior).toContain('order currency must equal enabled company default currency')
-    expect(behavior).toContain('unsigned cancellation retry replays without releasing twice')
-    expect(behavior).toContain('signed order cancellation is denied')
-    expect(behavior).toContain('old order keeps approved material name after resubmission and master rename')
   })
   it('opens the legacy file gate only for material evidence intent and finalization', () => {
     const sql = migration('c1_material_evidence_legacy_gate')

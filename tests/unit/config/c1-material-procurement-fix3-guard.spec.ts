@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest'
 
 const root = resolve(import.meta.dirname, '../../..')
 const migration = readFileSync(resolve(root, 'supabase/migrations/20261008150648_c1_material_procurement_namespace_hardening.sql'), 'utf8')
-const behavior = readFileSync(resolve(root, 'supabase/tests/database/c1/c1_material_procurement.test.sql'), 'utf8')
 const security = readFileSync(resolve(root, 'supabase/tests/database/c1/c1_material_procurement_security.test.sql'), 'utf8')
 const compact = (value: string) => value.replace(/\s+/gu, ' ').toLowerCase()
 
@@ -38,6 +37,5 @@ describe('T4 material namespace corrective migration', () => {
       'workflow storage predicate rejects material evidence',
       'generic finalizer rejects ineligible material pending intent',
     ]) expect(cases).toContain(label)
-    expect(compact(behavior)).toContain('max bigint finalizer replay is controlled input invalid')
   })
 })

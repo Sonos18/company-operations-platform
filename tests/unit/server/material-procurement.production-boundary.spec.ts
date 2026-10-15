@@ -125,7 +125,7 @@ describe('production material route service-role boundary', () => {
     const routes = createSupabaseMaterialProcurementRoutes(event)
     readBody
       .mockResolvedValueOnce({
-        approvedRevisionId: ids.proposalRevision, supplierId: ids.supplier, currencyCode: 'VND',
+        approvedRevisionId: ids.proposalRevision, supplier: { displayName: 'Supplier A' }, currencyCode: 'VND',
         unsignedQuotationEvidenceFileId: ids.unsignedQuotation, allocations: [split10Of20.allocations[0]],
       })
       .mockResolvedValueOnce({
