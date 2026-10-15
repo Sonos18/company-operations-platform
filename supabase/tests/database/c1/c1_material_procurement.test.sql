@@ -881,5 +881,5 @@ select throws_ok($$
   )
 $$,'P0001','INPUT_INVALID','max bigint finalizer replay is controlled input invalid');
 
-select * from finish();
+select * from finish(true);
 rollback;

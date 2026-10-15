@@ -84,3 +84,16 @@ it('requires the A1 completion sentinel before treating pgTAP as passed', async 
     spawn: () => ({ status: 0, stdout: '{"rows":[]}', stderr: '' }),
   })).toThrow(/completion/i)
 })
+
+it('ends every registered material file with finish(true) followed by rollback, so a failed assertion fails the CLI', async () => {
+  const runner = await import('../../scripts/run-c1-cloud-dev-tests.mjs')
+  const files: Array<{ path: string, sql: string }> = []
+  runner.runMaterialCloudDevTests({ cwd, run: ({ files: selected }: { files: typeof files }) => files.push(...selected) })
+  expect(files.map(file => file.path)).toEqual(Object.keys(runner.materialSyntheticPrefixes))
+  for (const file of files) {
+    const ending = file.sql.replace(/\r\n?/gu, '\n').trim()
+    // The A1 file wraps finish(true) in its completion sentinel row.
+    expect(ending, file.path).toMatch(/(?:select \* from finish\(true\)|\(select count\(\*\) from finish\(true\)\) as finish_count);\nrollback;$/u)
+    expect(ending, file.path).not.toMatch(/finish\(\)/u)
+  }
+})

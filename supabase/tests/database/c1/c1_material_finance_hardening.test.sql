@@ -332,5 +332,5 @@ select ok((
   from storage.buckets where id = 'c1-accounting-evidence'
 ),'finance evidence: the evidence bucket stores XML only as octet-stream and keeps PDF');
 
-select * from finish();
+select * from finish(true);
 rollback;

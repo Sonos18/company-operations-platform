@@ -482,5 +482,5 @@ select ok(
   'private contract helpers are not callable by anon or authenticated'
 );
 
-select * from finish();
+select * from finish(true);
 rollback;

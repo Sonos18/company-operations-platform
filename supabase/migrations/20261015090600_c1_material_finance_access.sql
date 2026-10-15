@@ -268,16 +268,20 @@ begin
     v_tenant_id, target_company_id, target_project_id,
     private.c1_material_request_contract_id(v_tenant_id, target_company_id, target_project_id, target_id));
   v_request := private.c1_material_lock_payment_request(v_contract, target_id);
-  -- Accountants (material.payment.request) cancel submitted or returned requests;
-  -- an approved request can be cancelled only by an approver (T8 M6).
-  perform private.c1_workflow_lock_actor(v_tenant_id, target_company_id,
-    case when v_request.state = 'approved' then 'material.payment.approve' else 'material.payment.request' end);
 
   v_hash := private.c1_workflow_hash(target_project_id, target_id, target_input);
   v_receipt := private.c1_workflow_receipt(v_tenant_id, target_company_id, 'material.cancel_payment_request', target_idempotency_key, v_hash);
   if v_receipt.id is not null then
     return private.c1_material_ack(v_receipt.result_resource_id, v_receipt.result_version, true);
   end if;
+
+  -- Per-state permission, checked under the request lock and after the replay
+  -- check, so an approver repeating a successful cancel (the request is now
+  -- cancelled) gets the stored result instead of PERMISSION_DENIED.
+  -- Accountants (material.payment.request) cancel submitted or returned requests;
+  -- an approved request can be cancelled only by an approver (T8 M6).
+  perform private.c1_workflow_lock_actor(v_tenant_id, target_company_id,
+    case when v_request.state = 'approved' then 'material.payment.approve' else 'material.payment.request' end);
 
   if v_request.version <> private.c1_material_version(target_input->'expectedVersion')
     or v_request.state not in ('submitted','returned','approved')

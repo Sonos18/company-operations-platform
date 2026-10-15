@@ -172,6 +172,8 @@ halves depend on each other, so either one alone breaks material order reads and
   bucket allow-list refuses; finance readers (treasurer, director) get 403 from the order RPCs.
 - The new app tolerates a missing `declaredMimeType` (it then always signs a download), so evidence
   reads keep working if the app goes out a little before the migration.
+- `20261015090600` changes the reminder dedupe key to `inst:<contractId>:<installmentKey>:<kind>:<dueOn>`.
+  If the 07:00 reminder job already ran on deploy day, due installments get one extra reminder that day.
 
 ## Known follow-ups
 

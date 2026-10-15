@@ -63,7 +63,14 @@ describe('material finance access migration', () => {
   it('M6: requires material.payment.approve to cancel an approved request', () => {
     const cancel = definitionOf('private.c1_material_cancel_payment_request')
     expect(cancel).toContain("case when v_request.state = 'approved' then 'material.payment.approve' else 'material.payment.request' end")
-    expect(cancel.indexOf("'material.payment.approve'")).toBeLessThan(cancel.indexOf('private.c1_workflow_receipt('))
+    const coarseGate = cancel.indexOf("'material.payment.approve'))")
+    const replay = cancel.indexOf('return private.c1_material_ack(v_receipt.result_resource_id, v_receipt.result_version, true);')
+    const perState = cancel.indexOf("case when v_request.state = 'approved' then 'material.payment.approve'")
+    // Coarse gate first, then the replay check, then the per-state permission under the lock.
+    expect(coarseGate).toBeGreaterThan(0)
+    expect(replay).toBeGreaterThan(coarseGate)
+    expect(perState).toBeGreaterThan(replay)
+    expect(perState).toBeLessThan(cancel.indexOf("update public.material_payment_requests as request set state = 'cancelled'"))
   })
 
   it('M7: re-checks INVOICE_REQUIRED against the current installment when approving and paying', () => {
@@ -76,7 +83,7 @@ describe('material finance access migration', () => {
 
 describe('material finance access pgTAP', () => {
   it('declares a plan, rolls back and labels every item', () => {
-    expect(pgtap).toMatch(/select plan\(16\);/u)
+    expect(pgtap).toMatch(/select plan\(17\);/u)
     expect(pgtap.trim().endsWith('rollback;')).toBe(true)
     for (const label of ['order access:', 'contract status:', 'reminders:', 'cancel:', 'invoice recheck:']) {
       expect(pgtap, label).toContain(label)
