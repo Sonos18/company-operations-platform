@@ -6,7 +6,6 @@ import {
   materialProposalInputSchema,
   updateMaterialProposalInputSchema,
   materialProposalCommandVersionSchema,
-  setBuyerInvoiceNameInputSchema,
   createMaterialInputSchema,
   updateMaterialInputSchema,
   type MaterialProjectOption,
@@ -102,12 +101,6 @@ function createMockProposal(overrides: Partial<MaterialProposalView> = {}): Mate
         materialId: material1Id,
         materialName: 'Thép cuộn phi 8',
         notes: null,
-        engineerProposedInvoiceName: null,
-        buyerProposedInvoiceName: null,
-        effectiveInvoiceDisplayName: 'Thép cuộn phi 8',
-        invoiceDisplayNameSource: 'canonical' as const,
-        buyerOverrideVersion: 0,
-        buyerInvoiceNameEditable: true,
         specification: 'Mác thép CB240-T, TCVN 1651-1:2018',
         unit: 'kg',
         quantity: '20.0000',
@@ -125,12 +118,6 @@ function createMockProposal(overrides: Partial<MaterialProposalView> = {}): Mate
   if (overrides.lines) {
     merged.lines = overrides.lines.map((l: any) => ({
       notes: null,
-      engineerProposedInvoiceName: null,
-      buyerProposedInvoiceName: null,
-      effectiveInvoiceDisplayName: l.materialName || 'Vật tư',
-      invoiceDisplayNameSource: 'canonical' as const,
-      buyerOverrideVersion: 0,
-      buyerInvoiceNameEditable: true,
       ...l,
     }))
   }
@@ -322,19 +309,12 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
         lines: parsedBody.lines.map((l) => {
           const mat = mockMaterials.find(m => m.id === l.materialId)
           const matName = mat?.name || 'Vật tư'
-          const engName = l.proposedInvoiceName ? (l.proposedInvoiceName.trim() || null) : null
           const lineNotes = (typeof l.notes === 'string' && l.notes.trim().length > 0) ? l.notes.trim() : null
           return {
             lineId: l.lineId,
             materialId: l.materialId,
             materialName: matName,
             notes: lineNotes,
-            engineerProposedInvoiceName: engName,
-            buyerProposedInvoiceName: null,
-            effectiveInvoiceDisplayName: engName || matName,
-            invoiceDisplayNameSource: engName ? ('engineer' as const) : ('canonical' as const),
-            buyerOverrideVersion: 0,
-            buyerInvoiceNameEditable: true,
             specification: mat?.specification || 'Quy cách',
             unit: mat?.unit || 'đơn vị',
             quantity: l.quantity,
@@ -419,7 +399,6 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
           const existingLine = activeProposal.lines.find(oldLine => oldLine.lineId === l.lineId)
           const mat = mockMaterials.find(m => m.id === l.materialId)
           const matName = mat?.name || existingLine?.materialName || 'Vật tư'
-          const engName = l.proposedInvoiceName ? (l.proposedInvoiceName.trim() || null) : null
           let lineNotes = existingLine?.notes ?? null
           if ('notes' in l) {
             lineNotes = (typeof l.notes === 'string' && l.notes.trim().length > 0) ? l.notes.trim() : null
@@ -429,16 +408,6 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
             materialId: l.materialId,
             materialName: matName,
             notes: lineNotes,
-            engineerProposedInvoiceName: engName,
-            buyerProposedInvoiceName: existingLine?.buyerProposedInvoiceName || null,
-            effectiveInvoiceDisplayName: existingLine?.buyerProposedInvoiceName || engName || matName,
-            invoiceDisplayNameSource: existingLine?.buyerProposedInvoiceName
-              ? ('buyer' as const)
-              : engName
-                ? ('engineer' as const)
-                : ('canonical' as const),
-            buyerOverrideVersion: existingLine?.buyerOverrideVersion || 0,
-            buyerInvoiceNameEditable: existingLine?.buyerInvoiceNameEditable ?? true,
             specification: mat?.specification || existingLine?.specification || 'Quy cách',
             unit: mat?.unit || existingLine?.unit || 'đơn vị',
             quantity: l.quantity,
@@ -467,84 +436,6 @@ async function setupMaterialMocks(page: Page, options: MockRouteOptions = {}) {
     await route.abort()
   })
 
-  // Buyer: Invoice Name Override
-  await page.route(/\/api\/companies\/[^/]+\/projects\/[^/]+\/material-procurement\/proposals\/[^/]+\/lines\/[^/]+\/invoice-name$/, async (route: Route) => {
-    const req = route.request()
-    if (req.method() === 'PATCH') {
-      const rawBody = req.postDataJSON()
-      const parsedBody = setBuyerInvoiceNameInputSchema.parse(rawBody)
-      const idempotencyKey = req.headers()['idempotency-key'] || ''
-
-      captured.push({
-        method: req.method(),
-        url: req.url(),
-        body: parsedBody,
-        headers: req.headers(),
-      })
-
-      const receiptKey = idempotencyKey
-      const bodyStr = JSON.stringify(parsedBody)
-      const cached = receipts.get(receiptKey)
-
-      if (cached) {
-        if (cached.bodyString === bodyStr) {
-          await route.fulfill({ json: { ...(cached.response as object), replayed: true } })
-          return
-        }
-        await route.fulfill({
-          status: 409,
-          json: { error: { code: 'IDEMPOTENCY_CONFLICT', message: 'Trùng idempotency key với payload khác' } },
-        })
-        return
-      }
-
-      const match = req.url().match(/\/proposals\/([^/]+)\/lines\/([^/]+)\/invoice-name$/)
-      const targetProposalId = match ? match[1] : proposalId
-      const targetLineId = match ? match[2] : ''
-
-      const targetLine = activeProposal.lines.find(l => l.lineId === targetLineId)
-      if (targetLine && parsedBody.expectedOverrideVersion !== targetLine.buyerOverrideVersion) {
-        await route.fulfill({
-          status: 409,
-          json: {
-            error: {
-              code: 'VERSION_CONFLICT',
-              message: 'Phiên bản không khớp (xung đột dữ liệu).',
-              requestId: 'mock-req-409',
-            },
-          },
-        })
-        return
-      }
-
-      const nextVersion = targetLine ? targetLine.buyerOverrideVersion + 1 : 1
-      if (targetLine) {
-        targetLine.buyerProposedInvoiceName = parsedBody.proposedInvoiceName
-        targetLine.buyerOverrideVersion = nextVersion
-        if (parsedBody.proposedInvoiceName) {
-          targetLine.effectiveInvoiceDisplayName = parsedBody.proposedInvoiceName
-          targetLine.invoiceDisplayNameSource = 'buyer'
-        } else if (targetLine.engineerProposedInvoiceName) {
-          targetLine.effectiveInvoiceDisplayName = targetLine.engineerProposedInvoiceName
-          targetLine.invoiceDisplayNameSource = 'engineer'
-        } else {
-          targetLine.effectiveInvoiceDisplayName = targetLine.materialName
-          targetLine.invoiceDisplayNameSource = 'canonical'
-        }
-      }
-
-      const responsePayload = {
-        resourceId: targetProposalId,
-        version: nextVersion,
-        replayed: false,
-      }
-      receipts.set(receiptKey, { bodyString: bodyStr, response: responsePayload })
-      await route.fulfill({ json: responsePayload })
-      return
-    }
-
-    await route.abort()
-  })
 
   // Proposals: Submit
   await page.route(/\/api\/companies\/[^/]+\/projects\/[^/]+\/material-procurement\/proposals\/[^/]+\/submit$/, async (route: Route) => {

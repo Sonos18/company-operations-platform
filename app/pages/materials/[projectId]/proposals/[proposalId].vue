@@ -28,7 +28,7 @@
       <button
         v-if="decisionRefreshRejected"
         type="button"
-        :disabled="isLoading || isBuyerBusy || isOrderBusy"
+        :disabled="isLoading || isOrderBusy"
         @click="loadProposal(true)"
       >
         Tải lại phiếu
@@ -36,8 +36,8 @@
       <button
         v-else-if="orderRefreshRejected"
         type="button"
-        :disabled="isLoading || isBuyerBusy || isDecisionBusy"
-        @click="loadProposal(true, undefined, true)"
+        :disabled="isLoading || isDecisionBusy"
+        @click="loadProposal(true, true)"
       >
         Tải lại phiếu
       </button>
@@ -289,29 +289,8 @@ const canManageOrders = computed(() => {
   return Boolean(companyAccess?.hasPermission('material.order.manage'))
 })
 
-type BuyerMutationScope = ParentScope & { revisionId: string; lineId: string }
-type BuyerCommand = Readonly<BuyerMutationScope & {
-  proposedInvoiceName: string | null
-  expectedOverrideVersion: number
-  idempotencyKey: string
-  phase: 'unknown' | 'acknowledged' | 'rejected'
-}>
-
-const buyerMutationTracker = createAsyncRequestTracker<BuyerMutationScope>()
 let isDisposed = false
 
-const isBuyerBusy = ref(false)
-const updatingLineId = ref<string | null>(null)
-const activeEditLineId = ref<string | null>(null)
-const buyerInputMap = ref<Record<string, string>>({})
-const lineActionErrors = ref<Record<string, string>>({})
-
-interface BuyerCommandTracker {
-  idempotencyKey: string
-  lastSignature: string
-}
-const buyerTrackers = ref<Record<string, BuyerCommandTracker>>({})
-const unresolvedBuyer = ref<BuyerCommand | null>(null)
 const contextEpoch = ref(0)
 const isDecisionBusy = ref(false)
 const decisionRefreshRejected = ref(false)
@@ -322,11 +301,11 @@ const canReadPermission = computed(() => Boolean(companyAccess?.hasPermission('m
 const canDecidePermission = computed(() => Boolean(companyAccess?.hasPermission('material.proposal.decide')))
 const canSupplierRecordPermission = computed(() => Boolean(companyAccess?.hasPermission('material.supplier.record')))
 const isDecisionDisabled = computed(() =>
-  isLoading.value || isBuyerBusy.value || Boolean(unresolvedBuyer.value) ||
+  isLoading.value ||
   isOrderBusy.value || orderRefreshRejected.value,
 )
 const orderControlsDisabled = computed(() =>
-  isLoading.value || isBuyerBusy.value || Boolean(unresolvedBuyer.value) ||
+  isLoading.value ||
   isDecisionBusy.value || decisionRefreshRejected.value ||
   orderRefreshRejected.value,
 )
@@ -379,10 +358,9 @@ const decisionListeners = computed(() => {
     event.projectId === scope.projectId && event.proposalId === scope.proposalId
   return {
     busy(event: DecisionEventScope & { value: boolean }) {
-      if (!accepts(event) || unresolvedBuyer.value || isBuyerBusy.value || isOrderBusy.value || orderRefreshRejected.value) return
+      if (!accepts(event) || isOrderBusy.value || orderRefreshRejected.value) return
       if (event.value) {
         tracker.invalidate()
-        buyerMutationTracker.invalidate()
         isLoading.value = false
         isDecisionBusy.value = true
       } else if (!decisionRefreshRejected.value) {
@@ -390,7 +368,7 @@ const decisionListeners = computed(() => {
       }
     },
     refreshed(event: DecisionEventScope & { proposal: MaterialProposalView }) {
-      if (!accepts(event) || !isDecisionBusy.value || unresolvedBuyer.value || isOrderBusy.value || orderRefreshRejected.value) return
+      if (!accepts(event) || !isDecisionBusy.value || isOrderBusy.value || orderRefreshRejected.value) return
       try {
         assertCanonicalProposal(event.proposal, scope)
       } catch (err) {
@@ -399,9 +377,7 @@ const decisionListeners = computed(() => {
         return
       }
       tracker.invalidate()
-      buyerMutationTracker.invalidate()
       proposal.value = event.proposal
-      resetBuyerState()
       decisionRefreshRejected.value = false
       errorMessage.value = ''
       shapeErrorMessage.value = ''
@@ -428,15 +404,12 @@ const orderListeners = computed(() => {
       if (!accepts()) return
       if (val) {
         if (
-          isBuyerBusy.value ||
-          Boolean(unresolvedBuyer.value) ||
           isDecisionBusy.value ||
           decisionRefreshRejected.value
         ) {
           return
         }
         tracker.invalidate()
-        buyerMutationTracker.invalidate()
         isLoading.value = false
         isOrderBusy.value = true
       } else {
@@ -448,8 +421,6 @@ const orderListeners = computed(() => {
     canonical(newProposal: MaterialProposalView) {
       if (!accepts() || !isOrderBusy.value) return
       if (
-        isBuyerBusy.value ||
-        Boolean(unresolvedBuyer.value) ||
         isDecisionBusy.value ||
         decisionRefreshRejected.value
       ) {
@@ -465,9 +436,7 @@ const orderListeners = computed(() => {
       }
 
       tracker.invalidate()
-      buyerMutationTracker.invalidate()
       proposal.value = newProposal
-      resetBuyerState()
       orderRefreshRejected.value = false
       errorMessage.value = ''
       shapeErrorMessage.value = ''
@@ -491,8 +460,6 @@ const orderListeners = computed(() => {
         return
       }
       if (
-        isBuyerBusy.value ||
-        Boolean(unresolvedBuyer.value) ||
         isDecisionBusy.value ||
         decisionRefreshRejected.value ||
         isOrderBusy.value ||
@@ -506,8 +473,6 @@ const orderListeners = computed(() => {
       if (
         !isCurrentParentScope(scope) ||
         !canDecidePermission.value ||
-        isBuyerBusy.value ||
-        Boolean(unresolvedBuyer.value) ||
         isDecisionBusy.value ||
         decisionRefreshRejected.value ||
         isOrderBusy.value ||
@@ -535,16 +500,6 @@ const orderListeners = computed(() => {
     },
   }
 })
-
-function resetBuyerState() {
-  isBuyerBusy.value = false
-  updatingLineId.value = null
-  activeEditLineId.value = null
-  buyerInputMap.value = {}
-  lineActionErrors.value = {}
-  buyerTrackers.value = {}
-  unresolvedBuyer.value = null
-}
 
 const readOnlyNoticeMessage = computed(() => {
   if (!proposal.value) return ''
@@ -596,7 +551,7 @@ function statusBadgeClass(state: MaterialReviewState): string {
   }
 }
 
-async function loadProposal(silent = false, buyerCommand?: BuyerCommand, allowOrderRecovery = false): Promise<boolean> {
+async function loadProposal(silent = false, allowOrderRecovery = false): Promise<boolean> {
   const scope = captureParentScope()
   const recoveringDecision = decisionRefreshRejected.value
   const recoveringOrder = orderRefreshRejected.value && allowOrderRecovery
@@ -606,9 +561,6 @@ async function loadProposal(silent = false, buyerCommand?: BuyerCommand, allowOr
   }
   if (isDecisionBusy.value && !recoveringDecision) return false
   if ((isOrderBusy.value || orderRefreshRejected.value) && !recoveringOrder) return false
-  if (unresolvedBuyer.value &&
-      (unresolvedBuyer.value.phase === 'unknown' ||
-        buyerCommand?.idempotencyKey !== unresolvedBuyer.value.idempotencyKey)) return false
   const token = tracker.start(scope)
   if ((!silent && !proposal.value) || recoveringDecision || recoveringOrder) isLoading.value = true
   errorMessage.value = ''
@@ -620,13 +572,9 @@ async function loadProposal(silent = false, buyerCommand?: BuyerCommand, allowOr
     assertCanonicalProposal(data, scope)
     proposal.value = data
     if (recoveringDecision) {
-      buyerMutationTracker.invalidate()
-      resetBuyerState()
       decisionRefreshRejected.value = false
       isDecisionBusy.value = false
     } else if (recoveringOrder) {
-      buyerMutationTracker.invalidate()
-      resetBuyerState()
       orderRefreshRejected.value = false
       isOrderBusy.value = false
     }
@@ -662,12 +610,10 @@ watch([
 ], () => {
   contextEpoch.value++
   tracker.invalidate()
-  buyerMutationTracker.invalidate()
   isDecisionBusy.value = false
   decisionRefreshRejected.value = false
   isOrderBusy.value = false
   orderRefreshRejected.value = false
-  resetBuyerState()
   proposal.value = null
   errorMessage.value = ''
   shapeErrorMessage.value = ''
@@ -682,8 +628,6 @@ onMounted(() => {
 onUnmounted(() => {
   isDisposed = true
   tracker.invalidate()
-  buyerMutationTracker.invalidate()
-  resetBuyerState()
   isDecisionBusy.value = false
   decisionRefreshRejected.value = false
   isOrderBusy.value = false
