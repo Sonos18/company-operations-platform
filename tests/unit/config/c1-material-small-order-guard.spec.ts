@@ -5,10 +5,14 @@ import { describe, expect, it } from 'vitest'
 const root = resolve(import.meta.dirname, '../../..')
 const migrationPath = 'supabase/migrations/20261016090000_c1_material_small_order_contracts.sql'
 const pgtapPath = 'supabase/tests/database/c1/c1_material_small_order_contracts.test.sql'
+const paymentsMigrationPath = 'supabase/migrations/20261016090100_c1_material_small_order_payments.sql'
+const paymentsPgtapPath = 'supabase/tests/database/c1/c1_material_small_order_payments.test.sql'
 const normalize = (text: string) => text.replace(/\s+/gu, ' ').toLowerCase()
 const read = (path: string) => (existsSync(resolve(root, path)) ? readFileSync(resolve(root, path), 'utf8') : '')
 const sql = normalize(read(migrationPath))
 const pgtap = read(pgtapPath)
+const paymentsSql = normalize(read(paymentsMigrationPath))
+const paymentsPgtap = read(paymentsPgtapPath)
 
 // TODO(T6): import MATERIAL_SMALL_ORDER_THRESHOLD from shared/constants/material-finance.ts
 // once Task 3 is merged, and compare against it instead of this literal.
@@ -119,5 +123,70 @@ describe('material small order contracts pgTAP', () => {
     }
     expect(pgtap).toContain('"subtotal":"4999999.9999"')
     expect(pgtap).toContain('"subtotal":"5000000.0000"')
+  })
+})
+
+describe('material small order payments migration', () => {
+  const recordPayment = () => {
+    const start = paymentsSql.indexOf('create or replace function private.c1_material_record_payment(')
+    expect(start, 'record_payment is redefined').toBeGreaterThanOrEqual(0)
+    return paymentsSql.slice(start, paymentsSql.indexOf(' $$;', paymentsSql.indexOf(' as $$', start)))
+  }
+
+  it('small order payments migration is pinned', () => {
+    expect(existsSync(resolve(root, paymentsMigrationPath))).toBe(true)
+    expect(paymentsSql).toContain('pg_advisory_xact_lock(71842, 58)')
+    expect(paymentsSql.startsWith("set local lock_timeout = '5s'; set local statement_timeout = '90s'; select pg_catalog.pg_advisory_xact_lock(71842, 58);")).toBe(true)
+    expect(paymentsSql.trim().endsWith("notify pgrst, 'reload schema';")).toBe(true)
+    expect(paymentsSql).toContain('create or replace function private.c1_material_record_payment')
+    const topLevel = paymentsSql.replace(/\$\$[\s\S]*?\$\$/gu, () => '$$ $$')
+    expect(topLevel).not.toMatch(/\bdrop table\b|\btruncate\b|\bdelete from\b|\bdrop function\b/u)
+    expect(paymentsSql).not.toMatch(/grant execute on function private\./u)
+  })
+
+  it('adds the method column and ties bank_reference to it', () => {
+    expect(paymentsSql).toContain("add column method text not null default 'bank_transfer'")
+    expect(paymentsSql).toContain("check (method in ('bank_transfer', 'cash'))")
+    expect(paymentsSql).toContain('alter column bank_reference drop not null')
+    expect(paymentsSql).toContain("check ((method = 'bank_transfer') = (bank_reference is not null))")
+  })
+
+  it('keeps record_payment security definer and checks the cash rules', () => {
+    const body = recordPayment()
+    expect(body).toContain('security definer')
+    expect(body).toContain("set search_path = ''")
+    expect(body).toContain("coalesce(target_input->>'method', 'bank_transfer')")
+    expect(body).toContain("message = 'cash_payment_not_allowed'")
+    expect(body).toContain('private.c1_material_is_small_amount(v_contract_total, v_contract.currency_code)')
+    expect(body).toContain("jsonb_typeof(target_input->'bankreference') is distinct from 'null'")
+    expect(body).toContain('private.c1_material_installment_requires_invoice(v_contract, private.c1_material_current_installment(v_contract, v_request.installment_key))')
+    expect(body).not.toContain(').is_advance')
+    expect(body).toMatch(/insert into public\.material_payments\( tenant_id, company_id, project_id, payment_request_id, contract_id, installment_key, amount, paid_on, method, bank_reference,/u)
+  })
+
+  it('exposes the method in the payment request view', () => {
+    const start = paymentsSql.indexOf('create or replace function private.c1_material_list_payment_requests(')
+    expect(start).toBeGreaterThanOrEqual(0)
+    const view = paymentsSql.slice(start, paymentsSql.indexOf(' $$;', paymentsSql.indexOf(' as $$', start)))
+    expect(view).toContain("'method', payment.method")
+    expect(view).toContain("'bankreference', payment.bank_reference")
+  })
+
+  it('does not re-grant or re-create public wrappers', () => {
+    expect(paymentsSql).not.toContain('create function public.')
+    expect(paymentsSql).not.toMatch(/\bgrant\b/u)
+  })
+})
+
+describe('material small order payments pgTAP', () => {
+  it('declares a plan, rolls back and covers the review focus cases', () => {
+    expect(paymentsPgtap).toMatch(/select plan\(\d+\);/u)
+    expect(paymentsPgtap.trim().endsWith('rollback;')).toBe(true)
+    for (const code of ['CASH_PAYMENT_NOT_ALLOWED', 'INPUT_INVALID', 'INVOICE_REQUIRED', 'PROOF_ALREADY_USED', '23514']) {
+      expect(paymentsPgtap, code).toContain(`'${code}'`)
+    }
+    const planned = Number(/select plan\((\d+)\);/u.exec(paymentsPgtap)?.[1])
+    const asserted = paymentsPgtap.match(/^select (?:is|ok|throws_ok)\(/gmu)?.length
+    expect(planned).toBe(asserted)
   })
 })
