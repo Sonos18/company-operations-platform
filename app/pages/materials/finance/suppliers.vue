@@ -95,7 +95,7 @@
                               {{ projectLabel(contract.projectId) }}
                             </NuxtLink>
                           </td>
-                          <td class="font-mono">{{ contract.contractNo }}</td>
+                          <td class="font-mono">{{ materialContractLabel(contract) }}</td>
                           <td class="num">{{ formatVnNumber(contract.totals.committed) }}</td>
                           <td class="num">{{ formatVnNumber(contract.totals.paid) }}</td>
                           <td class="num">{{ formatVnNumber(contract.totals.remaining) }}</td>
@@ -127,6 +127,7 @@ import type { SupplierMaterialFinance } from '../../../../shared/schemas/costs/m
 import { createAsyncRequestTracker } from '../../../utils/costs/async-request-tracker'
 import { isDecimalGreaterThan } from '../../../utils/costs/finance-display'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
+import { materialContractLabel } from '../../../utils/materials/contract-label'
 
 definePageMeta({ requiredPermission: 'material.finance.read' })
 
