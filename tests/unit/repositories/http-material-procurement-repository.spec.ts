@@ -36,12 +36,6 @@ const returnedProposal = {
     ...proposalInput.lines[0]!,
     materialName: 'Cement',
     notes: null,
-    engineerProposedInvoiceName: null,
-    buyerProposedInvoiceName: null,
-    effectiveInvoiceDisplayName: 'Cement',
-    invoiceDisplayNameSource: 'canonical',
-    buyerOverrideVersion: 0,
-    buyerInvoiceNameEditable: false,
     specification: 'PCB40',
     unit: 'bag',
     allocatedQuantity: '0.0000',
@@ -189,27 +183,9 @@ describe('material procurement HTTP repository', () => {
     expect(client.request).not.toHaveBeenCalled()
   })
 
-  it('sends the dedicated Buyer invoice-name PATCH with scoped IDs and idempotency', async () => {
-    const client = response(result)
-    const repository = createHttpMaterialProcurementRepository({ companyId, client: client as never })
-    const input = { revisionId: ids.proposalRevision, proposedInvoiceName: '  Buyer label  ', expectedOverrideVersion: 0 }
-
-    await repository.setBuyerInvoiceName(ids.project, ids.proposal, ids.proposalLine, input, command)
-    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({
-      method: 'PATCH',
-      url: '/api/companies/' + companyId + '/projects/' + ids.project + '/material-procurement/proposals/' + ids.proposal + '/lines/' + ids.proposalLine + '/invoice-name',
-      body: { ...input, proposedInvoiceName: 'Buyer label' },
-      idempotencyKey: key,
-    }))
-    await repository.setBuyerInvoiceName(ids.project, ids.proposal, ids.proposalLine, { ...input, proposedInvoiceName: null }, command)
-    expect(client.request).toHaveBeenLastCalledWith(expect.objectContaining({
-      method: 'PATCH',
-      body: { ...input, proposedInvoiceName: null },
-      idempotencyKey: key,
-    }))
-    await expect(repository.setBuyerInvoiceName(ids.project, ids.proposal, '../wrong-line', input, command)).rejects.toThrow()
-    await expect(repository.setBuyerInvoiceName(ids.project, ids.proposal, ids.proposalLine, { ...input, proposedInvoiceName: ' ' }, command)).rejects.toThrow()
-    expect(client.request).toHaveBeenCalledTimes(2)
+  it('no longer exposes the Buyer invoice-name command', () => {
+    const repository = createHttpMaterialProcurementRepository({ companyId, client: response(result) as never })
+    expect(repository).not.toHaveProperty('setBuyerInvoiceName')
   })
 
   it('uses strict proposal routes, bodies, and UUID idempotency keys', async () => {

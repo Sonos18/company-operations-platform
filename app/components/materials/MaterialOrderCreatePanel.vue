@@ -1288,10 +1288,6 @@ function getCanonicalLineProjection(): string {
       quantity: l.quantity,
       remainingQuantity: l.remainingQuantity,
       allocatedQuantity: l.allocatedQuantity,
-      engineerProposedInvoiceName: l.engineerProposedInvoiceName,
-      buyerProposedInvoiceName: l.buyerProposedInvoiceName,
-      effectiveInvoiceDisplayName: l.effectiveInvoiceDisplayName,
-      buyerOverrideVersion: l.buyerOverrideVersion,
     })),
   )
 }

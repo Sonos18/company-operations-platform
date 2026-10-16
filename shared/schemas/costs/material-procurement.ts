@@ -23,7 +23,6 @@ const text = z.string().trim().min(1).max(2000)
 const shortText = z.string().trim().min(1).max(200)
 const version = z.number().int().nonnegative()
 const positiveDecimal = workflowMoneySchema.refine(value => new Decimal(value).greaterThan(0), 'Must be positive')
-const optionalEngineerInvoiceName = z.string().trim().max(200).transform(value => value || null).nullable().optional()
 const optionalLineNotes = z.string().trim().max(2000).transform(value => value || null).nullable().optional()
 const uniqueBy = <T>(values: T[], identity: (value: T) => string) =>
   new Set(values.map(identity)).size === values.length
@@ -92,7 +91,6 @@ export const materialProposalLineInputSchema = z.object({
   lineId: workflowUuidSchema,
   materialId: workflowUuidSchema,
   quantity: positiveDecimal,
-  proposedInvoiceName: optionalEngineerInvoiceName,
   notes: optionalLineNotes,
 }).strict()
 
@@ -114,12 +112,6 @@ export const materialProposalCommandVersionSchema = z.object({
   expectedVersion: version,
 }).strict()
 
-export const setBuyerInvoiceNameInputSchema = z.object({
-  revisionId: workflowUuidSchema,
-  proposedInvoiceName: shortText.nullable(),
-  expectedOverrideVersion: version,
-}).strict()
-
 export const materialProposalDecisionInputSchema = z.object({
   expectedVersion: version,
   decision: z.enum(['approve', 'return']),
@@ -134,15 +126,9 @@ export const materialProposalDecisionInputSchema = z.object({
   }
 })
 
-export const materialProposalLineViewSchema = materialProposalLineInputSchema.omit({ proposedInvoiceName: true, notes: true }).extend({
+export const materialProposalLineViewSchema = materialProposalLineInputSchema.omit({ notes: true }).extend({
   notes: z.string().max(2000).nullable(),
   materialName: shortText,
-  engineerProposedInvoiceName: shortText.nullable(),
-  buyerProposedInvoiceName: shortText.nullable(),
-  effectiveInvoiceDisplayName: shortText,
-  invoiceDisplayNameSource: z.enum(['buyer', 'engineer', 'canonical']),
-  buyerOverrideVersion: version,
-  buyerInvoiceNameEditable: z.boolean(),
   specification: text,
   unit: shortText,
   allocatedQuantity: workflowMoneySchema,
@@ -362,7 +348,6 @@ export const materialProcurementEndpointManifest = {
   updateProposal: { method: 'PATCH', path: '/api/companies/:companyId/projects/:projectId/material-procurement/proposals/:proposalId' },
   submitProposal: { method: 'POST', path: '/api/companies/:companyId/projects/:projectId/material-procurement/proposals/:proposalId/submit' },
   decideProposal: { method: 'POST', path: '/api/companies/:companyId/projects/:projectId/material-procurement/proposals/:proposalId/decisions' },
-  setBuyerInvoiceName: { method: 'PATCH', path: '/api/companies/:companyId/projects/:projectId/material-procurement/proposals/:proposalId/lines/:lineId/invoice-name' },
   createOrder: { method: 'POST', path: '/api/companies/:companyId/projects/:projectId/material-procurement/proposals/:proposalId/orders' },
   listOrders: { method: 'GET', path: '/api/companies/:companyId/projects/:projectId/material-procurement/orders' },
   readOrder: { method: 'GET', path: '/api/companies/:companyId/projects/:projectId/material-procurement/orders/:orderId' },
@@ -385,7 +370,6 @@ export type MaterialProposalInput = z.infer<typeof materialProposalInputSchema>
 export type UpdateMaterialProposalInput = z.infer<typeof updateMaterialProposalInputSchema>
 export type MaterialProposalCommandVersion = z.infer<typeof materialProposalCommandVersionSchema>
 export type ProposalDecisionInput = z.infer<typeof materialProposalDecisionInputSchema>
-export type SetBuyerInvoiceNameInput = z.infer<typeof setBuyerInvoiceNameInputSchema>
 export type MaterialProposalView = z.infer<typeof materialProposalViewSchema>
 export type MaterialOrderAllocationInput = z.infer<typeof materialOrderAllocationInputSchema>
 export type MaterialOrderSupplierInput = z.infer<typeof materialOrderSupplierInputSchema>
@@ -417,7 +401,6 @@ export interface MaterialProcurementRepository {
   updateProposal(projectId: string, proposalId: string, input: UpdateMaterialProposalInput, command: MaterialCommand): Promise<MaterialCommandResult>
   submitProposal(projectId: string, proposalId: string, input: MaterialProposalCommandVersion, command: MaterialCommand): Promise<MaterialCommandResult>
   decideProposal(projectId: string, proposalId: string, input: ProposalDecisionInput, command: MaterialCommand): Promise<MaterialCommandResult>
-  setBuyerInvoiceName(projectId: string, proposalId: string, lineId: string, input: SetBuyerInvoiceNameInput, command: MaterialCommand): Promise<MaterialCommandResult>
   createOrder(projectId: string, proposalId: string, input: CreateMaterialOrderInput, command: MaterialCommand): Promise<MaterialCommandResult>
   listOrders(projectId: string): Promise<MaterialOrderView[]>
   readOrder(projectId: string, orderId: string): Promise<MaterialOrderView>

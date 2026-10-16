@@ -14,7 +14,6 @@ import {
   materialProposalDecisionInputSchema,
   materialProposalInputSchema,
   materialProposalLineInputSchema,
-  setBuyerInvoiceNameInputSchema,
   materialProposalViewSchema,
   materialQuotationComparisonInputSchema,
   materialQuotationComparisonViewSchema,
@@ -38,24 +37,17 @@ import {
 } from '../material-procurement/fixtures'
 
 describe('material procurement contracts', () => {
-  it('normalizes optional engineer invoice names and validates Buyer override input', () => {
+  it('normalizes line notes and no longer accepts invoice-name inputs or the buyer override endpoint', () => {
     expect(materialProposalLineInputSchema.parse(validLine)).not.toHaveProperty('proposedInvoiceName')
     expect(materialProposalLineInputSchema.parse(validLine)).not.toHaveProperty('notes')
     expect(materialProposalLineInputSchema.parse({ ...validLine, notes: null }).notes).toBeNull()
     expect(materialProposalLineInputSchema.parse({ ...validLine, notes: '   ' }).notes).toBeNull()
     expect(materialProposalLineInputSchema.parse({ ...validLine, notes: '  Keep dry  ' }).notes).toBe('Keep dry')
     expect(materialProposalLineInputSchema.safeParse({ ...validLine, notes: 'x'.repeat(2001) }).success).toBe(false)
-    expect(materialProposalLineInputSchema.parse({ ...validLine, proposedInvoiceName: null }).proposedInvoiceName).toBeNull()
-    expect(materialProposalLineInputSchema.parse({ ...validLine, proposedInvoiceName: '   ' }).proposedInvoiceName).toBeNull()
-    expect(materialProposalLineInputSchema.parse({ ...validLine, proposedInvoiceName: '  Steel invoice  ' }).proposedInvoiceName).toBe('Steel invoice')
-    expect(materialProposalLineInputSchema.safeParse({ ...validLine, proposedInvoiceName: 'x'.repeat(201) }).success).toBe(false)
-
-    const buyer = { revisionId: ids.proposalRevision, proposedInvoiceName: '  Buyer label  ', expectedOverrideVersion: 0 }
-    expect(setBuyerInvoiceNameInputSchema.parse(buyer)).toEqual({ ...buyer, proposedInvoiceName: 'Buyer label' })
-    expect(setBuyerInvoiceNameInputSchema.parse({ ...buyer, proposedInvoiceName: null }).proposedInvoiceName).toBeNull()
-    expect(setBuyerInvoiceNameInputSchema.safeParse({ ...buyer, proposedInvoiceName: '   ' }).success).toBe(false)
-    expect(setBuyerInvoiceNameInputSchema.safeParse({ ...buyer, proposedInvoiceName: 'x'.repeat(201) }).success).toBe(false)
-    expect(materialProcurementEndpointManifest.setBuyerInvoiceName).toEqual({ method: 'PATCH', path: '/api/companies/:companyId/projects/:projectId/material-procurement/proposals/:proposalId/lines/:lineId/invoice-name' })
+    expect(materialProposalLineInputSchema.safeParse({ ...validLine, proposedInvoiceName: 'x' }).success).toBe(false)
+    expect(materialProposalLineInputSchema.safeParse({ ...validLine, proposedInvoiceName: null }).success).toBe(false)
+    expect(materialProposalInputSchema.safeParse({ ...validProposal, lines: [{ ...validLine, proposedInvoiceName: 'x' }] }).success).toBe(false)
+    expect(materialProcurementEndpointManifest).not.toHaveProperty('setBuyerInvoiceName')
   })
 
   it('keeps engineer proposals owner-authored and validates positive decimal quantities', () => {
@@ -93,14 +85,12 @@ describe('material procurement contracts', () => {
       approvedRevisionId: null, currentRevisionId: ids.proposalRevision, projectId: ids.project, createdBy: ids.user,
       neededOn: validProposal.neededOn, deliveryAddress: validProposal.deliveryAddress, notes: null,
       lines: [{ ...validLine, materialName: 'Xi mang', specification: 'PCB40', unit: 'bao', notes: null,
-        engineerProposedInvoiceName: null, buyerProposedInvoiceName: null, effectiveInvoiceDisplayName: 'Xi mang', invoiceDisplayNameSource: 'canonical', buyerOverrideVersion: 0, buyerInvoiceNameEditable: false,
         allocatedQuantity: '0.0000', signedQuantity: '0.0000', remainingQuantity: '20.0000' }],
       orderProgress: { orderCount: 0, signedOrderCount: 0 },
     }
     expect(materialProposalViewSchema.safeParse(returned).success).toBe(true)
-    for (const field of ['engineerProposedInvoiceName', 'buyerProposedInvoiceName', 'effectiveInvoiceDisplayName', 'invoiceDisplayNameSource', 'buyerOverrideVersion']) {
-      const line = { ...returned.lines[0] } as Record<string, unknown>
-      delete line[field]
+    for (const field of ['engineerProposedInvoiceName', 'buyerProposedInvoiceName', 'effectiveInvoiceDisplayName', 'invoiceDisplayNameSource', 'buyerOverrideVersion', 'buyerInvoiceNameEditable']) {
+      const line = { ...returned.lines[0], [field]: field === 'buyerOverrideVersion' ? 0 : 'x' }
       expect(materialProposalViewSchema.safeParse({ ...returned, lines: [line] }).success).toBe(false)
     }
     expect(materialProposalViewSchema.safeParse({ ...returned, reviewState: 'draft', returnReason: null }).success).toBe(true)
@@ -183,12 +173,6 @@ describe('material procurement contracts', () => {
         ...validLine,
         materialName: 'Thep hop',
         notes: null,
-        engineerProposedInvoiceName: null,
-        buyerProposedInvoiceName: 'Thep tren hoa don',
-        effectiveInvoiceDisplayName: 'Thep tren hoa don',
-        invoiceDisplayNameSource: 'buyer',
-        buyerOverrideVersion: 1,
-        buyerInvoiceNameEditable: true,
         specification: '100 x 100 mm',
         unit: 'cay',
         allocatedQuantity: '20.0000',

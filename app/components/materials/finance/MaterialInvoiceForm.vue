@@ -481,7 +481,7 @@ async function uploadFile() {
 async function loadProposalLineNames(proposalId: string): Promise<Record<string, string>> {
   try {
     const proposal = await procurementRepo.readProposal(props.projectId, proposalId)
-    return Object.fromEntries(proposal.lines.map(line => [line.lineId, line.effectiveInvoiceDisplayName]))
+    return Object.fromEntries(proposal.lines.map(line => [line.lineId, line.materialName]))
   }
   catch {
     return {}

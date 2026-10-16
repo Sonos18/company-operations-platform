@@ -176,13 +176,6 @@ export class SupabaseMaterialProcurementRepository implements MaterialProcuremen
   decideProposal: MaterialProcurementDataRepository['decideProposal'] = (context, projectId, id, input, key) =>
     this.command(context, 'c1_material_decide_proposal', input, key, { target_project_id: projectId, target_id: id })
 
-  setBuyerInvoiceName: MaterialProcurementDataRepository['setBuyerInvoiceName'] = (context, projectId, proposalId, lineId, input, key) =>
-    this.command(context, 'c1_material_set_proposal_invoice_name', input, key, {
-      target_project_id: projectId,
-      target_id: proposalId,
-      target_line_id: lineId,
-    })
-
   createOrder: MaterialProcurementDataRepository['createOrder'] = (context, projectId, proposalId, input, key) =>
     this.command(context, 'c1_material_create_order', input, key, { target_project_id: projectId, target_id: proposalId })
 
