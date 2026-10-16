@@ -2811,7 +2811,7 @@ export type Database = {
       material_contract_versions: {
         Row: {
           company_id: string
-          contract_file_id: string
+          contract_file_id: string | null
           contract_id: string
           id: string
           kind: string
@@ -2830,7 +2830,7 @@ export type Database = {
         }
         Insert: {
           company_id: string
-          contract_file_id: string
+          contract_file_id?: string | null
           contract_id: string
           id?: string
           kind: string
@@ -2849,7 +2849,7 @@ export type Database = {
         }
         Update: {
           company_id?: string
-          contract_file_id?: string
+          contract_file_id?: string | null
           contract_id?: string
           id?: string
           kind?: string
@@ -2903,11 +2903,12 @@ export type Database = {
       material_contracts: {
         Row: {
           company_id: string
-          contract_no: string
+          contract_no: string | null
           created_at: string
           created_by: string
           currency_code: string
           current_version_no: number
+          documentation: string
           id: string
           order_id: string
           project_id: string
@@ -2919,11 +2920,12 @@ export type Database = {
         }
         Insert: {
           company_id: string
-          contract_no: string
+          contract_no?: string | null
           created_at?: string
           created_by: string
           currency_code: string
           current_version_no?: number
+          documentation?: string
           id?: string
           order_id: string
           project_id: string
@@ -2935,11 +2937,12 @@ export type Database = {
         }
         Update: {
           company_id?: string
-          contract_no?: string
+          contract_no?: string | null
           created_at?: string
           created_by?: string
           currency_code?: string
           current_version_no?: number
+          documentation?: string
           id?: string
           order_id?: string
           project_id?: string
@@ -3766,11 +3769,12 @@ export type Database = {
       material_payments: {
         Row: {
           amount: number
-          bank_reference: string
+          bank_reference: string | null
           company_id: string
           contract_id: string
           id: string
           installment_key: string
+          method: string
           paid_by: string
           paid_on: string
           payment_request_id: string
@@ -3782,11 +3786,12 @@ export type Database = {
         }
         Insert: {
           amount: number
-          bank_reference: string
+          bank_reference?: string | null
           company_id: string
           contract_id: string
           id?: string
           installment_key: string
+          method?: string
           paid_by: string
           paid_on: string
           payment_request_id: string
@@ -3798,11 +3803,12 @@ export type Database = {
         }
         Update: {
           amount?: number
-          bank_reference?: string
+          bank_reference?: string | null
           company_id?: string
           contract_id?: string
           id?: string
           installment_key?: string
+          method?: string
           paid_by?: string
           paid_on?: string
           payment_request_id?: string
