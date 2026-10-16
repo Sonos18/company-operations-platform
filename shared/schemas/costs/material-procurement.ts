@@ -295,7 +295,8 @@ export const materialEvidenceMimeTypes = {
   signed_quotation: ['application/pdf', 'image/jpeg', 'image/png'],
   signed_contract: ['application/pdf'],
   contract_amendment: ['application/pdf'],
-  invoice: ['application/pdf', 'application/xml', 'text/xml'],
+  // An invoice may also be a photo taken on site (C3); the database rule is the same.
+  invoice: ['application/pdf', 'application/xml', 'text/xml', 'image/jpeg', 'image/png'],
   payment_proof: ['application/pdf', 'image/jpeg', 'image/png'],
 } as const satisfies Record<z.infer<typeof materialEvidenceRoleSchema>, readonly z.infer<typeof materialEvidenceMimeTypeSchema>[]>
 

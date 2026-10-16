@@ -116,6 +116,7 @@ describe('material procurement contracts', () => {
   it('accepts a signed quotation as pdf or image but a signed contract only as pdf', () => {
     expect(materialEvidenceMimeTypes.signed_quotation).toEqual(['application/pdf', 'image/jpeg', 'image/png'])
     expect(materialEvidenceMimeTypes.signed_contract).toEqual(['application/pdf'])
+    expect(materialEvidenceMimeTypes.invoice).toEqual(['application/pdf', 'application/xml', 'text/xml', 'image/jpeg', 'image/png'])
   })
 
   it('freezes split-order allocation and signed-contract inputs', () => {
@@ -290,7 +291,9 @@ describe('material procurement contracts', () => {
     expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'image/png', evidenceRole: 'payment_proof', target }).success).toBe(true)
     expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'application/pdf', evidenceRole: 'contract_amendment', target }).success).toBe(true)
     expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'application/xml', evidenceRole: 'payment_proof', target }).success).toBe(false)
-    expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'image/png', evidenceRole: 'invoice', target }).success).toBe(false)
+    expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'image/png', evidenceRole: 'invoice', target }).success).toBe(true)
+    expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'image/jpeg', evidenceRole: 'invoice', target }).success).toBe(true)
+    expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'image/png', evidenceRole: 'signed_contract', target: { kind: 'material_order', orderId: target.contractId } }).success).toBe(false)
     expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'application/xml', evidenceRole: 'contract_amendment', target }).success).toBe(false)
     expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'application/pdf', evidenceRole: 'signed_contract', target }).success).toBe(false)
     expect(materialEvidenceIntentInputSchema.safeParse({ ...base, mimeType: 'application/pdf', evidenceRole: 'invoice', target: { kind: 'material_order', orderId: target.contractId } }).success).toBe(false)
