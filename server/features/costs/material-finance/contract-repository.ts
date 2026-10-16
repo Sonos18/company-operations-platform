@@ -22,7 +22,11 @@ export class SupabaseMaterialContractRepository implements MaterialContractDataR
   }
 
   recordContract(context: MaterialFinanceContext, projectId: string, orderId: string, input: RecordMaterialContractInput, key: string) {
-    return financeCommand(this.client, context, 'c1_material_record_contract', input, key, {
+    // The default documentation is left out so an old database (and an old idempotency receipt)
+    // sees the same input as before; only quotation_only needs the new key.
+    const { documentation, ...withoutDocumentation } = input
+    const targetInput = documentation === 'contract' ? withoutDocumentation : input
+    return financeCommand(this.client, context, 'c1_material_record_contract', targetInput, key, {
       target_project_id: projectId,
       target_id: orderId,
     })

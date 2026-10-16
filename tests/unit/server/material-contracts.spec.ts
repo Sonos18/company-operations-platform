@@ -123,7 +123,7 @@ describe('material contract repository', () => {
   const ack = { resourceId: ids.contract, version: 1, replayed: false }
   const clientWith = (result: { data: unknown, error: unknown }) => ({ rpc: vi.fn(async () => result) })
 
-  it('forwards documentation to the RPC untouched', async () => {
+  it('omits the default documentation key and forwards quotation_only', async () => {
     const quotationOnly = {
       documentation: 'quotation_only' as const, expectedOrderVersion: 1, signedOn: '2026-10-10',
       subtotal: '4500000.0000', varianceReason: null, signedQuotationFileId: ids.file2,
@@ -133,6 +133,15 @@ describe('material contract repository', () => {
     expect(client.rpc).toHaveBeenCalledWith('c1_material_record_contract', expect.objectContaining({
       target_id: ids.order, target_input: quotationOnly, target_idempotency_key: ids.key,
     }))
+  })
+
+  it('omits the default documentation key for a contract so old receipts hash the same', async () => {
+    const client = clientWith({ data: ack, error: null })
+    await new SupabaseMaterialContractRepository(client as never).recordContract(context, ids.project, ids.order, input, ids.key)
+    const { documentation: _documentation, ...legacyInput } = input
+    expect(client.rpc).toHaveBeenCalledWith('c1_material_record_contract', expect.objectContaining({ target_input: legacyInput }))
+    const sent = (client.rpc.mock.calls[0] as unknown as [string, { target_input: object }])[1].target_input
+    expect(sent).not.toHaveProperty('documentation')
   })
 
   it.each([

@@ -88,9 +88,17 @@ describe('material finance input schemas', () => {
       expect(recordMaterialContractInputSchema.parse(valid)).toMatchObject({ documentation: 'contract' })
       expect(recordMaterialContractInputSchema.parse(quotationOnly)).toMatchObject({ documentation: 'quotation_only' })
     })
-    it('rejects a payload without the documentation key', () => {
+    it('reads a payload without the documentation key as a contract', () => {
       const { documentation: _documentation, ...legacy } = valid
-      expect(recordMaterialContractInputSchema.safeParse(legacy).success).toBe(false)
+      expect(recordMaterialContractInputSchema.parse(legacy)).toMatchObject({ documentation: 'contract', contractNo: valid.contractNo })
+    })
+    it('still validates the contract branch when the documentation key is missing', () => {
+      const { documentation: _documentation, ...legacy } = valid
+      expect(recordMaterialContractInputSchema.safeParse({ ...legacy, total: '111.0000' }).success).toBe(false)
+    })
+    it('does not turn a quotation_only body without its key into a valid record', () => {
+      const { documentation: _documentation, ...withoutKey } = quotationOnly
+      expect(recordMaterialContractInputSchema.safeParse(withoutKey).success).toBe(false)
     })
     it.each(['contractNo', 'contractFileId', 'vatAmount', 'total', 'installments'] as const)('rejects quotation_only carrying %s', key => {
       expect(recordMaterialContractInputSchema.safeParse({ ...quotationOnly, [key]: valid[key] }).success).toBe(false)
@@ -102,6 +110,11 @@ describe('material finance input schemas', () => {
 
   describe('payment method', () => {
     const base = { expectedVersion: 2, paidOn: '2026-10-12', proofFileId: file }
+    it('reads a payload without the method key as a bank transfer', () => {
+      expect(recordMaterialPaymentInputSchema.parse({ ...base, bankReference: ' UNC-1 ' }))
+        .toMatchObject({ method: 'bank_transfer', bankReference: 'UNC-1' })
+      expect(recordMaterialPaymentInputSchema.safeParse({ ...base, bankReference: null }).success).toBe(false)
+    })
     it('normalizes a blank cash reference to null', () => {
       expect(recordMaterialPaymentInputSchema.parse({ ...base, method: 'cash', bankReference: '  ' }))
         .toMatchObject({ method: 'cash', bankReference: null })

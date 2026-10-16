@@ -101,7 +101,7 @@ guard test keeps it equal to the value in `private.c1_material_small_order_thres
 | R4 | A `quotation_only` record generates exactly one installment: `name = 'Thanh toán 100%'`, `amount = total`, `due_on = signed_on`, `is_advance = false`. The server sets `vat_amount = 0` and `total = subtotal`; the client sends no schedule. |
 | R5 | A `quotation_only` record cannot be amended (`CONTRACT_AMENDMENT_UNAVAILABLE`). |
 | R6 | A payment request of a `quotation_only` record needs no invoice. This applies to create/resubmit, approve and record payment through `private.c1_material_installment_requires_invoice`. Invoices may still be recorded. |
-| R7 | Cash needs the current version total below the threshold and VND, checked when the payment is recorded. If an amendment raised the total to the threshold or above after the request, recording cash fails with `CASH_PAYMENT_NOT_ALLOWED`. |
+| R7 | Cash needs both the current version total and that version's order subtotal snapshot (`order_subtotal_snapshot`) below the threshold, and VND, checked when the payment is recorded. If an amendment raised the total to the threshold or above after the request, or the order itself is at or above the threshold but was recorded as a contract with a low subtotal (and a variance reason), recording cash fails with `CASH_PAYMENT_NOT_ALLOWED`. The UI offers cash only when both values are small. |
 | R8 | A bank transfer needs `bankReference`. A cash payment needs `bankReference` to be `null` (the TS schema normalizes an empty or blank string to `null`; the RPC rejects anything else with `INPUT_INVALID`). A CHECK ties `bank_reference` to the method. |
 | R9 | A payment proof (PDF, JPEG or PNG) is required for both methods; `PROOF_ALREADY_USED` is unchanged. |
 | R10 | A `signed_quotation` accepts PDF, JPEG and PNG on upload. A record with a contract needs the signed quotation to be `application/pdf` (`EVIDENCE_INVALID` otherwise); an image is valid only for `quotation_only`. |
@@ -145,8 +145,8 @@ Mapped to HTTP in `server/features/costs/rpc-errors.ts` and declared in `shared/
 `INVOICE_REQUIRED`, `INSTALLMENT_NOT_FOUND`, `INSTALLMENT_CAPACITY_EXCEEDED`,
 `SELF_DECISION_FORBIDDEN`, `PROOF_ALREADY_USED`, `EVIDENCE_INVALID`, plus the small order codes
 `CONTRACT_REQUIRED` (the order is not below the threshold, is not VND, or the entered subtotal is not
-below it), `CASH_PAYMENT_NOT_ALLOWED` (the committed total is not below the threshold or the
-currency is not VND) and `CONTRACT_AMENDMENT_UNAVAILABLE` (amending a `quotation_only` record), plus the shared
+below it), `CASH_PAYMENT_NOT_ALLOWED` (the current total or the order subtotal snapshot is not below the
+threshold, or the currency is not VND) and `CONTRACT_AMENDMENT_UNAVAILABLE` (amending a `quotation_only` record), plus the shared
 `PERMISSION_DENIED`, `RESOURCE_NOT_FOUND`, `VERSION_CONFLICT`, `IDEMPOTENCY_CONFLICT`,
 `INPUT_INVALID`, `PROJECT_COMPLETED`, `EVIDENCE_UPLOAD_MISMATCH`.
 
@@ -237,13 +237,21 @@ halves depend on each other, so either one alone breaks material order reads and
 
 ### Small orders (`20261016090000`, `20261016090100`)
 
-Apply both migrations and pull the app code immediately afterwards. The strict Zod schemas of an old
-client reject the new keys (`documentation`, `method`, a null `contractNo`, `contractFileId` or
-`bankReference`), so an old app on the new database fails to read orders, contracts, finance facts,
-proposals and payment requests. Code cannot fix that direction. The new app reads the old database
-(missing keys default to `contract` and `bank_transfer`), so the app may go out slightly before the
-migrations. Apply `20261016090000` before `20261016090100`, which uses its helpers. Regenerate
-`shared/types/database.types.ts` with `pnpm db:dev:types` after applying them.
+Apply both migrations and pull the app code immediately afterwards. Apply `20261016090000` before
+`20261016090100`, which uses its helpers. Regenerate `shared/types/database.types.ts` with
+`pnpm db:dev:types` after applying them.
+
+- Old app with the new database: the strict Zod schemas of an old client reject the new keys
+  (`documentation`, `method`, a null `contractNo`, `contractFileId` or `bankReference`), so an old app
+  fails to read orders, contracts, finance facts, proposals and payment requests. Code cannot fix
+  that direction.
+- New app with the old database: ordinary orders keep working for reads and writes, so the app may
+  go out slightly before the migrations. The view schemas default a missing `documentation` /
+  `method` to `contract` / `bank_transfer`. The server repositories leave `documentation` out of the
+  RPC input when it is `contract` and `method` out when it is `bank_transfer` (the RPCs treat a
+  missing key as those values, and an idempotency receipt written before the migration hashes the
+  same input). The API body schemas also accept a body without these keys and default them. Only
+  recording a `quotation_only` record or a `cash` payment needs the migrations.
 
 ## Known follow-ups
 

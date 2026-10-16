@@ -152,7 +152,26 @@ describe('material payment method', () => {
     expect(repository.recordPayment).not.toHaveBeenCalled()
   })
 
-  it('forwards method and a null reference to the RPC untouched', async () => {
+  it('omits the default method key for a bank transfer so old receipts hash the same', async () => {
+    const client = { rpc: vi.fn(async () => ({ data: ack, error: null })) }
+    const input = { expectedVersion: 2, paidOn: '2026-10-12', method: 'bank_transfer' as const, bankReference: 'UNC-1', proofFileId: ids.file }
+    await new SupabaseMaterialPaymentRepository(client as never).recordPayment(payer, ids.project, ids.request, input, ids.key)
+    const sent = (client.rpc.mock.calls[0] as unknown as [string, { target_input: object }])[1].target_input
+    expect(sent).toEqual({ expectedVersion: 2, paidOn: '2026-10-12', bankReference: 'UNC-1', proofFileId: ids.file })
+    expect(sent).not.toHaveProperty('method')
+  })
+
+  it('accepts a service body without the method key as a bank transfer', async () => {
+    const repository = repo()
+    await new MaterialPaymentService(repository).recordPayment(
+      payer, ids.project, ids.request, { expectedVersion: 2, paidOn: '2026-10-12', bankReference: 'UNC-1', proofFileId: ids.file }, ids.key,
+    )
+    expect(repository.recordPayment).toHaveBeenCalledWith(
+      expect.anything(), ids.project, ids.request, expect.objectContaining({ method: 'bank_transfer', bankReference: 'UNC-1' }), ids.key,
+    )
+  })
+
+  it('forwards cash and a null reference to the RPC', async () => {
     const client = { rpc: vi.fn(async () => ({ data: ack, error: null })) }
     const input = { expectedVersion: 2, paidOn: '2026-10-12', method: 'cash' as const, bankReference: null, proofFileId: ids.file }
     await new SupabaseMaterialPaymentRepository(client as never).recordPayment(payer, ids.project, ids.request, input, ids.key)

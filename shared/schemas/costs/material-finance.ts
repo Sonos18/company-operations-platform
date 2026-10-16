@@ -72,10 +72,22 @@ const recordQuotationOnlyInputSchema = z.object({
   varianceReason: reason.nullable(),
 }).strict()
 
-export const recordMaterialContractInputSchema = z.discriminatedUnion('documentation', [
-  recordWithContractInputSchema,
-  recordQuotationOnlyInputSchema,
-])
+// A body without the discriminator is the pre-small-order shape and means the default branch.
+// The key is added before the union, so each branch keeps its own strict key set.
+function withDefaultKey(key: string, defaultValue: string) {
+  return (input: unknown): unknown => {
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) return input
+    return (input as Record<string, unknown>)[key] === undefined ? { ...input, [key]: defaultValue } : input
+  }
+}
+
+export const recordMaterialContractInputSchema = z.preprocess(
+  withDefaultKey('documentation', 'contract'),
+  z.discriminatedUnion('documentation', [
+    recordWithContractInputSchema,
+    recordQuotationOnlyInputSchema,
+  ]),
+)
 
 export const amendMaterialContractInputSchema = z.object({
   expectedVersion: version,
@@ -135,21 +147,24 @@ const recordPaymentCommon = {
   proofFileId: uuid,
 }
 
-export const recordMaterialPaymentInputSchema = z.discriminatedUnion('method', [
-  z.object({
-    method: z.literal('bank_transfer'),
-    ...recordPaymentCommon,
-    bankReference: z.string().trim().min(1).max(100),
-  }).strict(),
-  z.object({
-    method: z.literal('cash'),
-    ...recordPaymentCommon,
-    // A blank reference is the same as none; anything else is refused (the database agrees).
-    bankReference: z.string().trim().nullable()
-      .transform(value => value === '' ? null : value)
-      .refine(value => value === null, 'A cash payment carries no bank reference'),
-  }).strict(),
-])
+export const recordMaterialPaymentInputSchema = z.preprocess(
+  withDefaultKey('method', 'bank_transfer'),
+  z.discriminatedUnion('method', [
+    z.object({
+      method: z.literal('bank_transfer'),
+      ...recordPaymentCommon,
+      bankReference: z.string().trim().min(1).max(100),
+    }).strict(),
+    z.object({
+      method: z.literal('cash'),
+      ...recordPaymentCommon,
+      // A blank reference is the same as none; anything else is refused (the database agrees).
+      bankReference: z.string().trim().nullable()
+        .transform(value => value === '' ? null : value)
+        .refine(value => value === null, 'A cash payment carries no bank reference'),
+    }).strict(),
+  ]),
+)
 
 export const materialFinanceTotalsSchema = z.object({
   committed: workflowMoneySchema,
