@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { MATERIAL_SMALL_ORDER_THRESHOLD } from '../../../shared/constants/material-finance'
 
 const root = resolve(import.meta.dirname, '../../..')
 const migrationPath = 'supabase/migrations/20261016090000_c1_material_small_order_contracts.sql'
@@ -13,10 +14,6 @@ const sql = normalize(read(migrationPath))
 const pgtap = read(pgtapPath)
 const paymentsSql = normalize(read(paymentsMigrationPath))
 const paymentsPgtap = read(paymentsPgtapPath)
-
-// TODO(T6): import MATERIAL_SMALL_ORDER_THRESHOLD from shared/constants/material-finance.ts
-// once Task 3 is merged, and compare against it instead of this literal.
-const MATERIAL_SMALL_ORDER_THRESHOLD = '5000000'
 
 function definitionOf(signature: string, created = false) {
   const start = sql.indexOf(`create ${created ? '' : 'or replace '}function ${signature}(`)
