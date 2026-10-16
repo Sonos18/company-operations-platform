@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.15"
   }
   graphql_public: {
     Tables: {
@@ -174,6 +174,69 @@ export type Database = {
           {
             foreignKeyName: "accounting_sources_suggested_project_id_tenant_id_company__fkey"
             columns: ["suggested_project_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
+      app_notifications: {
+        Row: {
+          company_id: string
+          created_at: string
+          dedupe_key: string
+          event_kind: string
+          id: string
+          link_path: string
+          payload: Json
+          project_id: string | null
+          read_at: string | null
+          recipient_id: string
+          source_id: string
+          source_type: string
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          dedupe_key: string
+          event_kind: string
+          id?: string
+          link_path: string
+          payload?: Json
+          project_id?: string | null
+          read_at?: string | null
+          recipient_id: string
+          source_id: string
+          source_type: string
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          dedupe_key?: string
+          event_kind?: string
+          id?: string
+          link_path?: string
+          payload?: Json
+          project_id?: string | null
+          read_at?: string | null
+          recipient_id?: string
+          source_id?: string
+          source_type?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_notifications_company_id_tenant_id_fkey"
+            columns: ["company_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "app_notifications_project_id_tenant_id_company_id_fkey"
+            columns: ["project_id", "tenant_id", "company_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id", "tenant_id", "company_id"]
@@ -2673,9 +2736,240 @@ export type Database = {
           },
         ]
       }
+      material_contract_installments: {
+        Row: {
+          amount: number
+          company_id: string
+          contract_id: string
+          contract_version_id: string
+          due_on: string
+          id: string
+          installment_key: string
+          is_advance: boolean
+          name: string
+          project_id: string
+          seq: number
+          tenant_id: string
+        }
+        Insert: {
+          amount: number
+          company_id: string
+          contract_id: string
+          contract_version_id: string
+          due_on: string
+          id?: string
+          installment_key: string
+          is_advance: boolean
+          name: string
+          project_id: string
+          seq: number
+          tenant_id: string
+        }
+        Update: {
+          amount?: number
+          company_id?: string
+          contract_id?: string
+          contract_version_id?: string
+          due_on?: string
+          id?: string
+          installment_key?: string
+          is_advance?: boolean
+          name?: string
+          project_id?: string
+          seq?: number
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_contract_installment_contract_id_tenant_id_compan_fkey"
+            columns: ["contract_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "material_contracts"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_contract_installment_contract_version_id_contract_fkey"
+            columns: ["contract_version_id", "contract_id"]
+            isOneToOne: false
+            referencedRelation: "material_contract_versions"
+            referencedColumns: ["id", "contract_id"]
+          },
+          {
+            foreignKeyName: "material_contract_installment_contract_version_id_tenant_i_fkey"
+            columns: [
+              "contract_version_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "material_contract_versions"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      material_contract_versions: {
+        Row: {
+          company_id: string
+          contract_file_id: string
+          contract_id: string
+          id: string
+          kind: string
+          order_subtotal_snapshot: number
+          project_id: string
+          reason: string | null
+          recorded_at: string
+          recorded_by: string
+          signed_quotation_file_id: string | null
+          subtotal: number
+          tenant_id: string
+          total: number
+          variance_reason: string | null
+          vat_amount: number
+          version_no: number
+        }
+        Insert: {
+          company_id: string
+          contract_file_id: string
+          contract_id: string
+          id?: string
+          kind: string
+          order_subtotal_snapshot: number
+          project_id: string
+          reason?: string | null
+          recorded_at?: string
+          recorded_by: string
+          signed_quotation_file_id?: string | null
+          subtotal: number
+          tenant_id: string
+          total: number
+          variance_reason?: string | null
+          vat_amount: number
+          version_no: number
+        }
+        Update: {
+          company_id?: string
+          contract_file_id?: string
+          contract_id?: string
+          id?: string
+          kind?: string
+          order_subtotal_snapshot?: number
+          project_id?: string
+          reason?: string | null
+          recorded_at?: string
+          recorded_by?: string
+          signed_quotation_file_id?: string | null
+          subtotal?: number
+          tenant_id?: string
+          total?: number
+          variance_reason?: string | null
+          vat_amount?: number
+          version_no?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_contract_versions_contract_file_id_tenant_id_comp_fkey"
+            columns: [
+              "contract_file_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_evidence_files"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_contract_versions_contract_id_tenant_id_company_i_fkey"
+            columns: ["contract_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "material_contracts"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_contract_versions_signed_quotation_file_id_tenant_fkey"
+            columns: [
+              "signed_quotation_file_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "cost_evidence_files"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      material_contracts: {
+        Row: {
+          company_id: string
+          contract_no: string
+          created_at: string
+          created_by: string
+          currency_code: string
+          current_version_no: number
+          id: string
+          order_id: string
+          project_id: string
+          signed_on: string
+          supplier_id: string
+          tenant_id: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          company_id: string
+          contract_no: string
+          created_at?: string
+          created_by: string
+          currency_code: string
+          current_version_no?: number
+          id?: string
+          order_id: string
+          project_id: string
+          signed_on: string
+          supplier_id: string
+          tenant_id: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          company_id?: string
+          contract_no?: string
+          created_at?: string
+          created_by?: string
+          currency_code?: string
+          current_version_no?: number
+          id?: string
+          order_id?: string
+          project_id?: string
+          signed_on?: string
+          supplier_id?: string
+          tenant_id?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_contracts_order_id_tenant_id_company_id_project_i_fkey"
+            columns: ["order_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "material_orders"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_contracts_supplier_id_tenant_id_company_id_fkey"
+            columns: ["supplier_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "business_parties"
+            referencedColumns: ["id", "tenant_id", "company_id"]
+          },
+        ]
+      }
       material_evidence_scopes: {
         Row: {
           company_id: string
+          contract_id: string | null
           created_at: string
           created_by: string
           evidence_file_id: string
@@ -2689,6 +2983,7 @@ export type Database = {
         }
         Insert: {
           company_id: string
+          contract_id?: string | null
           created_at?: string
           created_by: string
           evidence_file_id: string
@@ -2702,6 +2997,7 @@ export type Database = {
         }
         Update: {
           company_id?: string
+          contract_id?: string | null
           created_at?: string
           created_by?: string
           evidence_file_id?: string
@@ -2714,6 +3010,13 @@ export type Database = {
           tenant_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "material_evidence_scopes_contract_fkey"
+            columns: ["contract_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "material_contracts"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
           {
             foreignKeyName: "material_evidence_scopes_evidence_file_id_tenant_id_compan_fkey"
             columns: [
@@ -2751,6 +3054,139 @@ export type Database = {
               "company_id",
               "project_id",
             ]
+          },
+        ]
+      }
+      material_invoice_lines: {
+        Row: {
+          company_id: string
+          invoice_id: string
+          invoice_material_name: string
+          project_id: string
+          proposal_line_id: string
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          invoice_id: string
+          invoice_material_name: string
+          project_id: string
+          proposal_line_id: string
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          invoice_id?: string
+          invoice_material_name?: string
+          project_id?: string
+          proposal_line_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_invoice_lines_invoice_id_tenant_id_company_id_pro_fkey"
+            columns: ["invoice_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "material_invoices"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      material_invoices: {
+        Row: {
+          company_id: string
+          contract_id: string
+          file_id: string
+          id: string
+          invoice_no: string
+          invoice_symbol: string
+          issued_on: string
+          project_id: string
+          recorded_at: string
+          recorded_by: string
+          state: string
+          subtotal: number
+          supplier_id: string
+          tenant_id: string
+          total: number
+          vat_amount: number
+          version: number
+          void_reason: string | null
+          voided_at: string | null
+          voided_by: string | null
+        }
+        Insert: {
+          company_id: string
+          contract_id: string
+          file_id: string
+          id?: string
+          invoice_no: string
+          invoice_symbol: string
+          issued_on: string
+          project_id: string
+          recorded_at?: string
+          recorded_by: string
+          state?: string
+          subtotal: number
+          supplier_id: string
+          tenant_id: string
+          total: number
+          vat_amount: number
+          version?: number
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
+        }
+        Update: {
+          company_id?: string
+          contract_id?: string
+          file_id?: string
+          id?: string
+          invoice_no?: string
+          invoice_symbol?: string
+          issued_on?: string
+          project_id?: string
+          recorded_at?: string
+          recorded_by?: string
+          state?: string
+          subtotal?: number
+          supplier_id?: string
+          tenant_id?: string
+          total?: number
+          vat_amount?: number
+          version?: number
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_invoices_contract_id_supplier_id_fkey"
+            columns: ["contract_id", "supplier_id"]
+            isOneToOne: false
+            referencedRelation: "material_contracts"
+            referencedColumns: ["id", "supplier_id"]
+          },
+          {
+            foreignKeyName: "material_invoices_contract_id_tenant_id_company_id_project_fkey"
+            columns: ["contract_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "material_contracts"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_invoices_file_id_tenant_id_company_id_project_id_fkey"
+            columns: ["file_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_evidence_files"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_invoices_supplier_id_tenant_id_company_id_fkey"
+            columns: ["supplier_id", "tenant_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "business_parties"
+            referencedColumns: ["id", "tenant_id", "company_id"]
           },
         ]
       }
@@ -2976,10 +3412,10 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "material_order_contracts_contract_id_tenant_id_company_id__fkey"
+            foreignKeyName: "material_order_contracts_material_contract_fkey"
             columns: ["contract_id", "tenant_id", "company_id", "project_id"]
             isOneToOne: false
-            referencedRelation: "cost_workflow_contracts"
+            referencedRelation: "material_contracts"
             referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
           },
           {
@@ -3082,6 +3518,330 @@ export type Database = {
               "company_id",
               "project_id",
             ]
+            isOneToOne: false
+            referencedRelation: "cost_evidence_files"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      material_payment_decisions: {
+        Row: {
+          company_id: string
+          decided_at: string
+          decided_by: string
+          decision: string
+          id: string
+          payment_request_id: string
+          project_id: string
+          reason: string | null
+          request_revision_no: number
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          decided_at?: string
+          decided_by: string
+          decision: string
+          id?: string
+          payment_request_id: string
+          project_id: string
+          reason?: string | null
+          request_revision_no: number
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          decided_at?: string
+          decided_by?: string
+          decision?: string
+          id?: string
+          payment_request_id?: string
+          project_id?: string
+          reason?: string | null
+          request_revision_no?: number
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_payment_decisions_payment_request_id_tenant_id_co_fkey"
+            columns: [
+              "payment_request_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "material_payment_requests"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      material_payment_request_invoices: {
+        Row: {
+          company_id: string
+          contract_id: string
+          invoice_id: string
+          payment_request_id: string
+          project_id: string
+          tenant_id: string
+        }
+        Insert: {
+          company_id: string
+          contract_id: string
+          invoice_id: string
+          payment_request_id: string
+          project_id: string
+          tenant_id: string
+        }
+        Update: {
+          company_id?: string
+          contract_id?: string
+          invoice_id?: string
+          payment_request_id?: string
+          project_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_payment_request_invo_invoice_id_tenant_id_company_fkey"
+            columns: ["invoice_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "material_invoices"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_payment_request_invo_payment_request_id_contract__fkey"
+            columns: ["payment_request_id", "contract_id"]
+            isOneToOne: false
+            referencedRelation: "material_payment_requests"
+            referencedColumns: ["id", "contract_id"]
+          },
+          {
+            foreignKeyName: "material_payment_request_invo_payment_request_id_tenant_id_fkey"
+            columns: [
+              "payment_request_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "material_payment_requests"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_payment_request_invoices_invoice_id_contract_id_fkey"
+            columns: ["invoice_id", "contract_id"]
+            isOneToOne: false
+            referencedRelation: "material_invoices"
+            referencedColumns: ["id", "contract_id"]
+          },
+        ]
+      }
+      material_payment_request_revisions: {
+        Row: {
+          amount: number
+          company_id: string
+          id: string
+          installment_key: string
+          invoice_ids: string[]
+          note: string | null
+          payment_request_id: string
+          project_id: string
+          revision_no: number
+          submitted_at: string
+          submitted_by: string
+          tenant_id: string
+        }
+        Insert: {
+          amount: number
+          company_id: string
+          id?: string
+          installment_key: string
+          invoice_ids: string[]
+          note?: string | null
+          payment_request_id: string
+          project_id: string
+          revision_no: number
+          submitted_at?: string
+          submitted_by: string
+          tenant_id: string
+        }
+        Update: {
+          amount?: number
+          company_id?: string
+          id?: string
+          installment_key?: string
+          invoice_ids?: string[]
+          note?: string | null
+          payment_request_id?: string
+          project_id?: string
+          revision_no?: number
+          submitted_at?: string
+          submitted_by?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_payment_request_revi_payment_request_id_tenant_id_fkey"
+            columns: [
+              "payment_request_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "material_payment_requests"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      material_payment_requests: {
+        Row: {
+          amount: number
+          cancel_reason: string | null
+          company_id: string
+          contract_id: string
+          created_at: string
+          created_by: string
+          id: string
+          installment_key: string
+          note: string | null
+          project_id: string
+          revision_no: number
+          state: string
+          submitted_at: string
+          submitted_by: string
+          tenant_id: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          amount: number
+          cancel_reason?: string | null
+          company_id: string
+          contract_id: string
+          created_at?: string
+          created_by: string
+          id?: string
+          installment_key: string
+          note?: string | null
+          project_id: string
+          revision_no?: number
+          state?: string
+          submitted_at?: string
+          submitted_by: string
+          tenant_id: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          amount?: number
+          cancel_reason?: string | null
+          company_id?: string
+          contract_id?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          installment_key?: string
+          note?: string | null
+          project_id?: string
+          revision_no?: number
+          state?: string
+          submitted_at?: string
+          submitted_by?: string
+          tenant_id?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_payment_requests_contract_id_tenant_id_company_id_fkey"
+            columns: ["contract_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "material_contracts"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+        ]
+      }
+      material_payments: {
+        Row: {
+          amount: number
+          bank_reference: string
+          company_id: string
+          contract_id: string
+          id: string
+          installment_key: string
+          paid_by: string
+          paid_on: string
+          payment_request_id: string
+          project_id: string
+          proof_file_id: string
+          proof_sha256: string
+          recorded_at: string
+          tenant_id: string
+        }
+        Insert: {
+          amount: number
+          bank_reference: string
+          company_id: string
+          contract_id: string
+          id?: string
+          installment_key: string
+          paid_by: string
+          paid_on: string
+          payment_request_id: string
+          project_id: string
+          proof_file_id: string
+          proof_sha256: string
+          recorded_at?: string
+          tenant_id: string
+        }
+        Update: {
+          amount?: number
+          bank_reference?: string
+          company_id?: string
+          contract_id?: string
+          id?: string
+          installment_key?: string
+          paid_by?: string
+          paid_on?: string
+          payment_request_id?: string
+          project_id?: string
+          proof_file_id?: string
+          proof_sha256?: string
+          recorded_at?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_payments_contract_id_tenant_id_company_id_project_fkey"
+            columns: ["contract_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "material_contracts"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_payments_payment_request_id_contract_id_installme_fkey"
+            columns: ["payment_request_id", "contract_id", "installment_key"]
+            isOneToOne: false
+            referencedRelation: "material_payment_requests"
+            referencedColumns: ["id", "contract_id", "installment_key"]
+          },
+          {
+            foreignKeyName: "material_payments_payment_request_id_tenant_id_company_id__fkey"
+            columns: [
+              "payment_request_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "material_payment_requests"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_payments_proof_file_id_tenant_id_company_id_proje_fkey"
+            columns: ["proof_file_id", "tenant_id", "company_id", "project_id"]
             isOneToOne: false
             referencedRelation: "cost_evidence_files"
             referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
@@ -6832,6 +7592,14 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_list_app_notifications: {
+        Args: {
+          target_company_id: string
+          target_cursor: string
+          target_limit: number
+        }
+        Returns: Json
+      }
       c1_list_project_cost_detail_drafts: {
         Args: { target_company_id: string; target_project_id: string }
         Returns: Json
@@ -6840,7 +7608,29 @@ export type Database = {
         Args: { target_company_id: string; target_project_id: string }
         Returns: Json
       }
+      c1_material_amend_contract: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_material_cancel_order: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_cancel_payment_request: {
         Args: {
           target_company_id: string
           target_id: string
@@ -6881,9 +7671,31 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_material_create_payment_request: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_material_create_proposal: {
         Args: {
           target_company_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_decide_payment_request: {
+        Args: {
+          target_company_id: string
+          target_id: string
           target_idempotency_key: string
           target_input: Json
           target_project_id: string
@@ -6902,6 +7714,10 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_material_emit_installment_reminders: {
+        Args: { target_today: string }
+        Returns: Json
+      }
       c1_material_evidence_finalization_target: {
         Args: {
           target_company_id: string
@@ -6918,12 +7734,36 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_material_finance_facts: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
+      c1_material_finance_inbox_facts: {
+        Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
+      c1_material_list_invoices: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_project_id: string
+        }
+        Returns: Json
+      }
       c1_material_list_items: {
         Args: { target_company_id: string }
         Returns: Json
       }
       c1_material_list_orders: {
         Args: { target_company_id: string; target_project_id: string }
+        Returns: Json
+      }
+      c1_material_list_payment_requests: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_project_id: string
+        }
         Returns: Json
       }
       c1_material_list_projects: {
@@ -6936,6 +7776,14 @@ export type Database = {
       }
       c1_material_list_supplier_names: {
         Args: { target_company_id: string; target_id: string }
+        Returns: Json
+      }
+      c1_material_read_contract: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_project_id: string
+        }
         Returns: Json
       }
       c1_material_read_order: {
@@ -6958,6 +7806,39 @@ export type Database = {
         }
         Returns: Json
       }
+      c1_material_record_contract: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_record_invoice: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_record_payment: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_material_record_supplier_name: {
         Args: {
           target_company_id: string
@@ -6973,6 +7854,17 @@ export type Database = {
           target_company_id: string
           target_idempotency_key: string
           target_input: Json
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_resubmit_payment_request: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
           target_request_id: string
         }
         Returns: Json
@@ -7011,6 +7903,17 @@ export type Database = {
         Returns: Json
       }
       c1_material_update_proposal: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      c1_material_void_invoice: {
         Args: {
           target_company_id: string
           target_id: string
@@ -7070,6 +7973,10 @@ export type Database = {
           target_input: Json
           target_request_id: string
         }
+        Returns: Json
+      }
+      c1_read_app_notification: {
+        Args: { target_company_id: string; target_id: string }
         Returns: Json
       }
       c1_read_cost_source_hierarchy: {
