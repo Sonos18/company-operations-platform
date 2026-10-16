@@ -301,7 +301,7 @@ select is((
   select payload from public.app_notifications
   where recipient_id='c1270000-0000-4000-8000-000000000903'
     and dedupe_key='pr:'||(select body->>'resourceId' from t2_acks where name='R1')||':sub:1'
-),'{"supplierName":"Payment supplier","contractNo":"HD-PAY-01","amount":"20.0000"}'::jsonb,
+),'{"supplierName":"Payment supplier","contractNo":"HD-PAY-01","documentation":"contract","amount":"20.0000"}'::jsonb,
 'case 2: submitted payload carries supplier, contract number and request amount only');
 
 -- Case 3: non-advance installment requires an invoice ---------------------------

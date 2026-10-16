@@ -195,7 +195,7 @@ select set_config('request.jwt.claims','{"sub":"c12a0000-0000-4000-8000-00000000
 select is((
   public.c1_material_read_proposal('c12a0000-0000-4000-8000-000000000020','c12a0000-0000-4000-8000-000000000101','c12a0000-0000-4000-8000-000000000301')
   -> 'contractStatus'
-),'[{"orderId":"c12a0000-0000-4000-8000-000000000351","contractNo":"HD-ACC-01","signedOn":"2026-01-05"}]'::jsonb,
+),'[{"orderId":"c12a0000-0000-4000-8000-000000000351","contractNo":"HD-ACC-01","signedOn":"2026-01-05","documentation":"contract"}]'::jsonb,
 'contract status: the engineer reads contract number and date per order, without money');
 
 -- M4: reminder dedupe keys carry the contract id ---------------------------------
