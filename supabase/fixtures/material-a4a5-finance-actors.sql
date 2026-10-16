@@ -50,21 +50,29 @@ begin
     raise exception 'A4/A5 finance role collision';
   end if;
 
-  -- docs/server/material-finance.md: accountant records contracts/invoices and requests payment;
-  -- treasurer approves and executes. Both read finance amounts.
+  -- docs/server/material-finance.md: accountant records contracts/invoices, requests payment and
+  -- records the payment; treasurer approves it. Both read finance amounts.
+  -- Rerunning moves a role granted under the earlier split (treasurer executing) to this one: the
+  -- delete is limited to these two fixture roles and removes only permissions outside their own list.
+  delete from public.role_permissions
+  where role_id in ('a1000000-0000-4000-8000-000000000033','a1000000-0000-4000-8000-000000000034')
+    and (
+      (role_id='a1000000-0000-4000-8000-000000000033' and permission_code not in('material.read','material.finance.read','material.contract.record','material.payment.request','material.payment.execute'))
+      or (role_id='a1000000-0000-4000-8000-000000000034' and permission_code not in('material.read','material.finance.read','material.payment.approve'))
+    );
   insert into public.role_permissions(role_id,permission_code)
   values
     ('a1000000-0000-4000-8000-000000000033','material.read'),
     ('a1000000-0000-4000-8000-000000000033','material.finance.read'),
     ('a1000000-0000-4000-8000-000000000033','material.contract.record'),
     ('a1000000-0000-4000-8000-000000000033','material.payment.request'),
+    ('a1000000-0000-4000-8000-000000000033','material.payment.execute'),
     ('a1000000-0000-4000-8000-000000000034','material.read'),
     ('a1000000-0000-4000-8000-000000000034','material.finance.read'),
-    ('a1000000-0000-4000-8000-000000000034','material.payment.approve'),
-    ('a1000000-0000-4000-8000-000000000034','material.payment.execute')
+    ('a1000000-0000-4000-8000-000000000034','material.payment.approve')
   on conflict do nothing;
-  if (select count(*) from public.role_permissions where role_id='a1000000-0000-4000-8000-000000000033') <> 4
-     or (select count(*) from public.role_permissions where role_id='a1000000-0000-4000-8000-000000000034') <> 4 then
+  if (select count(*) from public.role_permissions where role_id='a1000000-0000-4000-8000-000000000033') <> 5
+     or (select count(*) from public.role_permissions where role_id='a1000000-0000-4000-8000-000000000034') <> 3 then
     raise exception 'A4/A5 finance permission collision';
   end if;
 
