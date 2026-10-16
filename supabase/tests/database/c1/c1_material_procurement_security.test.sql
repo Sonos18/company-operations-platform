@@ -395,11 +395,14 @@ insert into public.cost_command_receipts(
   'c1210000-0000-4000-8000-000000000622',repeat('a',64),
   'c1210000-0000-4000-8000-000000000502',1
 );
-set local role authenticated;
+-- private.c1_material_can_upload_evidence is not executable by authenticated (Storage policies reach it through
+-- security-definer wrappers), so the predicate is evaluated as the owner role with the buyer's claims so auth.uid() resolves.
+set local role none;
 select set_config('request.jwt.claims','{"sub":"c1210000-0000-4000-8000-000000000901","role":"authenticated"}',true);
 select ok(not private.c1_material_can_upload_evidence(
   'c1210000-0000-4000-8000-000000000501'
 ),'changed proposal makes pending material target ineligible');
+set local role authenticated;
 set local role service_role;
 select set_config('request.jwt.claims','{"sub":"c1210000-0000-4000-8000-000000000901","role":"service_role"}',true);
 select throws_ok($$
