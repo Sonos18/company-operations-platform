@@ -426,15 +426,35 @@ select ok(
 reset role;
 set local role service_role;
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
+-- The emitter scans every company on a shared database, so assert on the fixture company's own rows,
+-- never on the global counts it returns.
 insert into read_results values('emit_first',public.c1_material_emit_installment_reminders('2026-10-15'));
+reset role;
+insert into read_results
+select 'emit_first_rows',jsonb_build_object(
+  'dueSoon',count(*) filter (where event_kind='material.installment.due_soon'),
+  'overdue',count(*) filter (where event_kind='material.installment.overdue'))
+from public.app_notifications
+where company_id='c1280000-0000-4000-8000-000000000020'
+  and event_kind in ('material.installment.due_soon','material.installment.overdue');
+set local role service_role;
+select set_config('request.jwt.claims','{"role":"service_role"}',true);
 insert into read_results values('emit_again',public.c1_material_emit_installment_reminders('2026-10-15'));
+reset role;
+insert into read_results
+select 'emit_again_rows',jsonb_build_object(
+  'dueSoon',count(*) filter (where event_kind='material.installment.due_soon'),
+  'overdue',count(*) filter (where event_kind='material.installment.overdue'))
+from public.app_notifications
+where company_id='c1280000-0000-4000-8000-000000000020'
+  and event_kind in ('material.installment.due_soon','material.installment.overdue');
 select is(
-  (select body from read_results where name='emit_first'),
-  '{"dueSoon":2,"overdue":2}'::jsonb,'one due-soon and one overdue reminder per accountant'
+  (select body from read_results where name='emit_first_rows'),
+  '{"dueSoon":2,"overdue":2}'::jsonb,'one due-soon and one overdue reminder per accountant in the fixture company'
 );
 select is(
-  (select body from read_results where name='emit_again'),
-  '{"dueSoon":0,"overdue":0}'::jsonb,'a second run on the same day creates no new reminders'
+  (select body from read_results where name='emit_again_rows'),
+  (select body from read_results where name='emit_first_rows'),'a second run on the same day creates no new reminders for the fixture company'
 );
 reset role;
 select is(
