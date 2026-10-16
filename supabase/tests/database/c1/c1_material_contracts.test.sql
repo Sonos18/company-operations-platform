@@ -65,34 +65,49 @@ update public.material_proposals
 set review_state='approved',current_revision_id='c1260000-0000-4000-8000-000000000401',approved_revision_id='c1260000-0000-4000-8000-000000000401',version=2
 where id='c1260000-0000-4000-8000-000000000301';
 
-insert into public.cost_evidence_files(
-  id,tenant_id,company_id,project_id,object_path,original_filename,declared_mime_type,declared_size_bytes,declared_sha256,
-  verified_mime_type,verified_size_bytes,verified_sha256,status,intent_expires_at,created_by,finalized_by,finalized_at,version
-)
-select file.id,'c1260000-0000-4000-8000-000000000010','c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101','c1260000-0000-4000-8000-000000000010/c1260000-0000-4000-8000-000000000020/c1260000-0000-4000-8000-000000000101/'||file.id::text,
-  file.name,'application/pdf',8,repeat(file.hash_char,64),'application/pdf',8,repeat(file.hash_char,64),'finalized',
-  now()+interval '15 minutes','c1260000-0000-4000-8000-000000000903','c1260000-0000-4000-8000-000000000903',now(),1
-from (values
-  ('c1260000-0000-4000-8000-000000000501'::uuid,'unsigned-quotation.pdf','a'),
-  ('c1260000-0000-4000-8000-000000000511'::uuid,'a-contract.pdf','b'),
-  ('c1260000-0000-4000-8000-000000000512'::uuid,'a-signed-quotation.pdf','c'),
-  ('c1260000-0000-4000-8000-000000000521'::uuid,'c-contract.pdf','d'),
-  ('c1260000-0000-4000-8000-000000000522'::uuid,'c-signed-quotation.pdf','e'),
-  ('c1260000-0000-4000-8000-000000000533'::uuid,'wrong-scope.pdf','f'),
-  ('c1260000-0000-4000-8000-000000000534'::uuid,'wrong-role.pdf','1'),
-  ('c1260000-0000-4000-8000-000000000535'::uuid,'attached-contract.pdf','2'),
-  ('c1260000-0000-4000-8000-000000000536'::uuid,'attached-quotation.pdf','3'),
-  ('c1260000-0000-4000-8000-000000000541'::uuid,'amendment.pdf','4'),
-  ('c1260000-0000-4000-8000-000000000551'::uuid,'invoice.pdf','5'),
-  ('c1260000-0000-4000-8000-000000000561'::uuid,'payment-proof.pdf','6')
-) as file(id,name,hash_char);
-insert into public.cost_evidence_files(
-  id,tenant_id,company_id,project_id,object_path,original_filename,declared_mime_type,declared_size_bytes,declared_sha256,
-  status,intent_expires_at,created_by,version
-) values(
-  'c1260000-0000-4000-8000-000000000531','c1260000-0000-4000-8000-000000000010','c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101','c1260000-0000-4000-8000-000000000010/c1260000-0000-4000-8000-000000000020/c1260000-0000-4000-8000-000000000101/c1260000-0000-4000-8000-000000000531',
-  'pending-contract.pdf','application/pdf',8,repeat('7',64),'pending_upload',now()+interval '15 minutes','c1260000-0000-4000-8000-000000000903',0
-);
+-- The legacy evidence gate admits a direct insert only for the file id named by the material intent setting.
+do $fixture$
+declare
+  v_file record;
+begin
+  for v_file in
+    select * from (values
+      ('c1260000-0000-4000-8000-000000000501'::uuid,'unsigned-quotation.pdf','a'),
+      ('c1260000-0000-4000-8000-000000000511'::uuid,'a-contract.pdf','b'),
+      ('c1260000-0000-4000-8000-000000000512'::uuid,'a-signed-quotation.pdf','c'),
+      ('c1260000-0000-4000-8000-000000000521'::uuid,'c-contract.pdf','d'),
+      ('c1260000-0000-4000-8000-000000000522'::uuid,'c-signed-quotation.pdf','e'),
+      ('c1260000-0000-4000-8000-000000000533'::uuid,'wrong-scope.pdf','f'),
+      ('c1260000-0000-4000-8000-000000000534'::uuid,'wrong-role.pdf','1'),
+      ('c1260000-0000-4000-8000-000000000535'::uuid,'attached-contract.pdf','2'),
+      ('c1260000-0000-4000-8000-000000000536'::uuid,'attached-quotation.pdf','3'),
+      ('c1260000-0000-4000-8000-000000000541'::uuid,'amendment.pdf','4'),
+      ('c1260000-0000-4000-8000-000000000551'::uuid,'invoice.pdf','5'),
+      ('c1260000-0000-4000-8000-000000000561'::uuid,'payment-proof.pdf','6')
+    ) as file(id,name,hash_char)
+  loop
+    perform set_config('taskovia.c1_material_evidence.intent', v_file.id::text, true);
+    insert into public.cost_evidence_files(
+      id,tenant_id,company_id,project_id,object_path,original_filename,declared_mime_type,declared_size_bytes,declared_sha256,
+      verified_mime_type,verified_size_bytes,verified_sha256,status,intent_expires_at,created_by,finalized_by,finalized_at,version
+    ) values (
+      v_file.id,'c1260000-0000-4000-8000-000000000010','c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101',
+      'c1260000-0000-4000-8000-000000000010/c1260000-0000-4000-8000-000000000020/c1260000-0000-4000-8000-000000000101/'||v_file.id::text,
+      v_file.name,'application/pdf',8,repeat(v_file.hash_char,64),'application/pdf',8,repeat(v_file.hash_char,64),'finalized',
+      now()+interval '15 minutes','c1260000-0000-4000-8000-000000000903','c1260000-0000-4000-8000-000000000903',now(),1
+    );
+  end loop;
+  perform set_config('taskovia.c1_material_evidence.intent', 'c1260000-0000-4000-8000-000000000531', true);
+  insert into public.cost_evidence_files(
+    id,tenant_id,company_id,project_id,object_path,original_filename,declared_mime_type,declared_size_bytes,declared_sha256,
+    status,intent_expires_at,created_by,version
+  ) values(
+    'c1260000-0000-4000-8000-000000000531','c1260000-0000-4000-8000-000000000010','c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101','c1260000-0000-4000-8000-000000000010/c1260000-0000-4000-8000-000000000020/c1260000-0000-4000-8000-000000000101/c1260000-0000-4000-8000-000000000531',
+    'pending-contract.pdf','application/pdf',8,repeat('7',64),'pending_upload',now()+interval '15 minutes','c1260000-0000-4000-8000-000000000903',0
+  );
+  perform set_config('taskovia.c1_material_evidence.intent', '', true);
+end
+$fixture$;
 
 -- Orders: A active (recorded in the tests), B cancelled, C active (variance and evidence cases),
 -- D active without a contract, E active with a contract that already holds two files.
@@ -111,7 +126,9 @@ insert into public.material_order_allocations(
   quotation_material_name,mapping_confirmed
 )
 select 'c1260000-0000-4000-8000-000000000010','c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101',material_order.id,'c1260000-0000-4000-8000-000000000301','c1260000-0000-4000-8000-000000000401','c1260000-0000-4000-8000-000000000311',10,10,'Steel Supplier A',true
-from public.material_orders as material_order;
+from public.material_orders as material_order
+where material_order.tenant_id = 'c1260000-0000-4000-8000-000000000010'
+  and material_order.company_id = 'c1260000-0000-4000-8000-000000000020';
 
 -- Evidence scopes. Contract-level scopes are added after the contract exists.
 insert into public.material_evidence_scopes(evidence_file_id,tenant_id,company_id,project_id,target_kind,order_id,evidence_role,created_by) values

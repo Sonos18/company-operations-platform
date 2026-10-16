@@ -170,6 +170,8 @@ select ok((
 
 -- I1: the proposal creator is sent to the proposal, which shows the contract status --
 set local role none;
+-- The real flow's actor is the accountant who records the contract; the notifier excludes the acting user.
+select set_config('request.jwt.claims','{"sub":"c12a0000-0000-4000-8000-000000000905","role":"authenticated"}',true);
 select private.c1_material_notify_contract_saved(
   (select contract from public.material_contracts as contract where contract.id='c12a0000-0000-4000-8000-000000000601'),
   (select material_order from public.material_orders as material_order where material_order.id='c12a0000-0000-4000-8000-000000000351'),
