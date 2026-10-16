@@ -130,12 +130,12 @@ New keys. The RPCs treat a missing key as the old behaviour, so old clients keep
 |---|---|
 | `c1_material_record_contract` | `documentation`: `'contract'` (default when missing) with the existing keys, or `'quotation_only'` with `expectedOrderVersion`, `signedOn`, `subtotal`, `varianceReason`, `signedQuotationFileId` and the optional `vatAmount` (default `'0'`) and `total` (default `subtotal + vatAmount`). Sending `contractNo`, `contractFileId` or `installments` with `quotation_only` raises `INPUT_INVALID`. |
 | `c1_material_record_invoice` | Optional `stage`: `'draft'` or `'official'` (default when missing) |
-| `c1_material_officialize_invoice` | `{ expectedVersion, officialFileId }` on the invoice id |
+| `c1_material_officialize_invoice` | `{ expectedVersion, officialFileId }` on the invoice id; the caller needs `material.contract.record` and `material.read` |
 | `c1_material_record_payment` | `method`: `'bank_transfer'` (default when missing) or `'cash'`; `bankReference` is `null` for cash |
 
 | JSON | Change |
 |---|---|
-| `c1_material_read_contract` | `documentation`; `contractNo` may be `null`; a version's `contractFileId` may be `null`; `totals.draftInvoiced` |
+| `c1_material_read_contract` | `documentation`; `contractNo` may be `null`; a version's `contractFileId` may be `null`; top-level `draftInvoiced` (only the API view nests it as `totals.draftInvoiced`) |
 | `c1_material_list_invoices` | `stage`, `officialFileId` and `officializedAt` (both `null` until officialized) |
 | `c1_material_order_json`.`contract` | `documentation`; `contractNo` may be `null` |
 | `c1_material_finance_facts` (each contract) | `documentation`; `contractNo` may be `null`; `draftInvoiced` (also in the totals) |

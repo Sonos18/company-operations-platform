@@ -503,8 +503,8 @@ test.describe('Đơn 4 triệu không hợp đồng, chi tiền mặt (mock dùn
   test('3. thủ quỹ duyệt rồi chi tiền mặt kèm hóa đơn bán hàng dạng ảnh', async ({ page }) => {
     await openAs(page, state, 'treasurer')
     await page.getByRole('button', { name: 'Xác nhận đã lập UNC / đã chi tiền mặt', exact: true }).click()
-    const approve = page.getByRole('dialog', { name: 'Phê duyệt đề nghị chi' })
-    await approve.getByRole('button', { name: 'Xác nhận duyệt' }).click()
+    const approve = page.getByRole('dialog', { name: 'Xác nhận đã lập UNC' })
+    await approve.getByRole('button', { name: 'Xác nhận đã lập UNC' }).click()
     await expect(approve).toBeHidden()
     await expect(page.getByRole('cell', { name: 'Đã lập UNC – chờ giám đốc duyệt', exact: true })).toBeVisible()
 

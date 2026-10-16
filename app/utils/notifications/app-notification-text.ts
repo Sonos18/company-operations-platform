@@ -134,7 +134,7 @@ export function appNotificationText(notification: AppNotificationView): AppNotif
     case 'material.payment.approved': {
       return {
         title: 'Đề nghị chi đã lập UNC',
-        body: `Đề nghị chi cho ${requestContractPart(payload)}${supplierPart(payload)} đã được xác nhận lập UNC. Vui lòng cập nhật biên lai.`,
+        body: `Đề nghị chi cho ${requestContractPart(payload)}${supplierPart(payload)} đã được xác nhận lập UNC. Vui lòng cập nhật biên lai chuyển khoản sau khi giám đốc duyệt trên ngân hàng.`,
       }
     }
     // Goes to the treasurer who confirmed the UNC: the accountant has recorded the payment.

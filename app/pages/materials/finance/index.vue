@@ -88,7 +88,7 @@
       <UIcon name="i-lucide-shield-alert" class="text-amber-500 text-3xl mx-auto mb-2" aria-hidden="true" />
       <h3 class="text-sm font-bold text-slate-800 m-0">Không có quyền truy cập hộp việc</h3>
       <p class="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-        Tài khoản của bạn cần có quyền kế toán (material.payment.request) hoặc thủ quỹ (material.payment.approve / material.payment.execute) để xem các tác vụ hộp việc.
+        Tài khoản của bạn cần có quyền kế toán (material.payment.request / material.payment.execute) hoặc thủ quỹ (material.payment.approve) để xem các tác vụ hộp việc.
       </p>
     </div>
 

@@ -297,7 +297,7 @@
                   v-if="getProposalLineName(alloc.proposalLineId)"
                   type="button"
                   class="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer flex items-center gap-1"
-                  :title="'Tên dự kiến theo đề xuất: ' + getProposalLineName(alloc.proposalLineId)"
+                  :title="'Tên vật tư theo đề xuất: ' + getProposalLineName(alloc.proposalLineId)"
                   @click="lineMaterialNames[alloc.proposalLineId] = getProposalLineName(alloc.proposalLineId)"
                 >
                   <UIcon name="i-lucide-file-text" class="text-[10px]" aria-hidden="true" />

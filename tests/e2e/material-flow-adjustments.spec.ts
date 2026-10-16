@@ -450,8 +450,8 @@ test.describe('Luồng chi mới: hóa đơn nháp, UNC, biên lai, hóa đơn c
     await openAs(page, state, 'treasurer')
     await expect(page.getByRole('button', { name: 'Cập nhật biên lai chuyển khoản', exact: true })).toHaveCount(0)
     await page.getByRole('button', { name: 'Xác nhận đã lập UNC', exact: true }).click()
-    const approve = page.getByRole('dialog', { name: 'Phê duyệt đề nghị chi' })
-    await approve.getByRole('button', { name: 'Xác nhận duyệt' }).click()
+    const approve = page.getByRole('dialog', { name: 'Xác nhận đã lập UNC' })
+    await approve.getByRole('button', { name: 'Xác nhận đã lập UNC' }).click()
     await expect(approve).toBeHidden()
     await expect(page.getByRole('cell', { name: 'Đã lập UNC – chờ giám đốc duyệt', exact: true })).toBeVisible()
     // The treasurer cannot record the payment: that is the accountant's step now.

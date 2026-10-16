@@ -336,6 +336,7 @@
       :request="decisionRequestTarget"
       :initial-decision="decisionInitialAction"
       :open="isDecisionOpen"
+      :allow-cash="allowCash"
       :command-key="commandKeys.forScope(`decide:${decisionRequestTarget?.id ?? ''}`)"
       @update:open="val => isDecisionOpen = val"
       @saved="onDecisionSaved"
@@ -454,9 +455,10 @@ function getInstallmentName(key: string): string {
 }
 
 // The approve button reads "...đã chi tiền mặt" only where cash is allowed (same rule as the payment dialog).
-const approveLabel = computed(() => approveActionLabel(
+const allowCash = computed(() =>
   canPayInCash(contractTotalForPayment.value, props.contract.currencyCode, orderSubtotalSnapshotForPayment.value),
-))
+)
+const approveLabel = computed(() => approveActionLabel(allowCash.value))
 const recordPaymentLabel = 'Cập nhật biên lai chuyển khoản'
 
 function getStateLabel(req: MaterialPaymentRequestView): string {

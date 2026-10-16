@@ -506,7 +506,7 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
 
     await page.goto(orderPath)
     await page.getByRole('button', { name: 'Xác nhận đã lập UNC / đã chi tiền mặt', exact: true }).click()
-    await page.getByRole('dialog', { name: 'Phê duyệt đề nghị chi' }).getByRole('button', { name: 'Xác nhận duyệt' }).click()
+    await page.getByRole('dialog', { name: 'Xác nhận đã lập UNC' }).getByRole('button', { name: 'Xác nhận đã lập UNC' }).click()
     await expect(page.getByRole('cell', { name: 'Đã lập UNC – chờ giám đốc duyệt', exact: true })).toBeVisible()
 
     await page.getByRole('button', { name: 'Cập nhật biên lai chuyển khoản', exact: true }).click()
@@ -558,14 +558,14 @@ test.describe('Material payment dialogs: stale data, retries and typing', () => 
     state.requests[0] = buildRequest({ version: 2 })
 
     await page.getByRole('button', { name: 'Xác nhận đã lập UNC / đã chi tiền mặt', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'Phê duyệt đề nghị chi' })
-    await dialog.getByRole('button', { name: 'Xác nhận duyệt' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Xác nhận đã lập UNC' })
+    await dialog.getByRole('button', { name: 'Xác nhận đã lập UNC' }).click()
 
     await expect(dialog).toBeHidden()
     await expect(page.getByRole('alert').filter({ hasText: 'Dữ liệu đã thay đổi' })).toBeVisible()
 
     await page.getByRole('button', { name: 'Xác nhận đã lập UNC / đã chi tiền mặt', exact: true }).click()
-    await page.getByRole('dialog', { name: 'Phê duyệt đề nghị chi' }).getByRole('button', { name: 'Xác nhận duyệt' }).click()
+    await page.getByRole('dialog', { name: 'Xác nhận đã lập UNC' }).getByRole('button', { name: 'Xác nhận đã lập UNC' }).click()
     await expect(page.getByRole('cell', { name: 'Đã lập UNC – chờ giám đốc duyệt', exact: true })).toBeVisible()
 
     const decisions = state.calls.filter(call => call.path === `/payment-requests/${requestId}/decisions`)
