@@ -24,13 +24,6 @@
             Đã phân bổ đủ
           </span>
         </div>
-
-        <!-- Anticipated invoice display name and source -->
-        <div class="anticipated-invoice-row mt-1 flex items-center gap-2 flex-wrap text-xs text-slate-600">
-          <span class="text-slate-500">Tên dự kiến HĐ:</span>
-          <span class="font-medium text-slate-800">{{ line.effectiveInvoiceDisplayName }}</span>
-          <span class="source-tag text-slate-400">({{ sourceLabel }})</span>
-        </div>
       </div>
 
       <!-- Quantities summary from canonical GET -->
@@ -299,18 +292,6 @@ const isLineExhausted = computed(() => {
     return new Decimal(props.line.remainingQuantity ?? '0').lte(0)
   } catch {
     return false
-  }
-})
-
-const sourceLabel = computed(() => {
-  switch (props.line.invoiceDisplayNameSource) {
-    case 'buyer':
-      return 'Người mua hàng đề xuất'
-    case 'engineer':
-      return 'Kỹ sư đề xuất'
-    case 'canonical':
-    default:
-      return 'Tên vật tư chuẩn'
   }
 })
 

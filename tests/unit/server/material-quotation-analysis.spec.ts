@@ -21,9 +21,8 @@ const proposal = materialProposalViewSchema.parse({
   reviewState: 'approved', returnReason: null, approvedRevisionId: ids.proposalRevision,
   currentRevisionId: ids.proposalRevision, neededOn: '2026-10-30', deliveryAddress: 'Site', notes: null,
   lines: [{ lineId: ids.proposalLine, materialId: ids.material, materialName: 'Steel', specification: 'D10',
-    unit: 'kg', quantity: '20.0000', notes: null, engineerProposedInvoiceName: null, buyerProposedInvoiceName: null,
-    effectiveInvoiceDisplayName: 'Steel', invoiceDisplayNameSource: 'canonical', buyerOverrideVersion: 0,
-    buyerInvoiceNameEditable: true, allocatedQuantity: '8', signedQuantity: '0', remainingQuantity: '12' }],
+    unit: 'kg', quantity: '20.0000', notes: null,
+    allocatedQuantity: '8', signedQuantity: '0', remainingQuantity: '12' }],
   orderProgress: { orderCount: 1, signedOrderCount: 0 },
 })
 const source = {
@@ -227,6 +226,11 @@ describe('quotation analysis guarded suggestions (source only; not run during al
     const payload = JSON.parse(String(request.body))
     expect(payload).toMatchObject({ model: 'gpt-5.4-mini', store: false, max_output_tokens: 12000, text: { format: { strict: true } } })
     expect(payload.input[0].content[0].file_data).toContain('data:application/pdf;base64,')
+    const sentLines = JSON.parse(payload.input[0].content[1].text).approvedProposalLines as Array<Record<string, unknown>>
+    expect(sentLines[0]).toMatchObject({ materialName: 'Steel' })
+    expect(sentLines[0]).not.toHaveProperty('effectiveInvoiceDisplayName')
+    expect(sentLines[0]).not.toHaveProperty('engineerProposedInvoiceName')
+    expect(sentLines[0]).not.toHaveProperty('buyerProposedInvoiceName')
     const lineSchema = payload.text.format.schema.properties.lines.items
     expect(lineSchema.additionalProperties).toBe(false)
     expect(lineSchema.required).toEqual(expect.arrayContaining(['rawLineTotal', 'lineTotal', 'lineTotalBasis']))
@@ -291,7 +295,7 @@ describe('quotation route scope and in-flight canonical changes', () => {
     const event = { context: { params: { companyId, projectId: ids.project, proposalId: ids.proposal }, analysisInput: input } } as unknown as H3Event
     const route = createMaterialQuotationAnalysisRoute({ resolveContext, apiKey: () => 'test-key', extract })
     return { route, event, extract, from, resolveContext, calls: () => calls,
-      changeProposal: () => { currentProposal = { ...proposal, lines: [{ ...proposal.lines[0]!, buyerOverrideVersion: 1, effectiveInvoiceDisplayName: 'New buyer name' }] } },
+      changeProposal: () => { currentProposal = { ...proposal, lines: [{ ...proposal.lines[0]!, materialName: 'Steel renamed' }] } },
       hideSource: () => { sourceVisible = false },
     }
   }
