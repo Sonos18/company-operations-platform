@@ -143,6 +143,9 @@ declare
     ), '[]'::jsonb),
     'orderProgress', jsonb_build_object($replacement$;
 begin
+  -- pg_get_functiondef returns LF line endings; strip CR so a CRLF checkout of this file still matches.
+  v_anchor := replace(v_anchor, chr(13), '');
+  v_replacement := replace(v_replacement, chr(13), '');
   if to_regprocedure('private.c1_material_proposal_json(uuid,uuid,uuid,uuid)') is null then
     raise exception using errcode='P0001', message='C1_MATERIAL_PROPOSAL_JSON_BASELINE_MISSING';
   end if;
