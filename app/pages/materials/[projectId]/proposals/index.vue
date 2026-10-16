@@ -161,7 +161,7 @@
                   <div class="progress-info text-sm">
                     <span>{{ prop.orderProgress.orderCount }} đơn mua</span>
                     <span v-if="prop.orderProgress.signedOrderCount > 0" class="signed-order-text">
-                      ({{ prop.orderProgress.signedOrderCount }} đã ký HĐ)
+                      ({{ prop.orderProgress.signedOrderCount }} đã ghi nhận)
                     </span>
                   </div>
                 </td>

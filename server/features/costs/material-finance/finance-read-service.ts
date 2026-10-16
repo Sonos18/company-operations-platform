@@ -31,7 +31,7 @@ export interface MaterialFinanceContractFacts extends MaterialContractFacts {
   orderId: string
   supplierId: string
   supplierName: string
-  contractNo: string
+  contractNo: string | null
   installments: MaterialFinanceInstallmentFacts[]
 }
 
@@ -57,6 +57,7 @@ function contractRow(contract: MaterialFinanceContractFacts, today: string) {
     orderId: contract.orderId,
     supplierId: contract.supplierId,
     supplierName: contract.supplierName,
+    documentation: contract.documentation,
     contractNo: contract.contractNo,
     totals: summarizeMaterialFinance([contract], today),
   }

@@ -36,7 +36,7 @@ const financeErrorMessages: Readonly<Record<string, string>> = {
   INSTALLMENT_CAPACITY_EXCEEDED: 'Số tiền đề nghị vượt quá hạn mức còn lại của đợt thanh toán.',
   INVOICE_REQUIRED: 'Đợt không phải tạm ứng cần ít nhất một hóa đơn đã ghi nhận.',
   SELF_DECISION_FORBIDDEN: 'Bạn là người lập đề nghị này nên không được tự duyệt, trả lại hoặc ghi chi.',
-  PROOF_ALREADY_USED: 'Tệp ủy nhiệm chi này đã được dùng cho một lần chi khác. Hãy chọn tệp khác.',
+  PROOF_ALREADY_USED: 'Tệp chứng từ chi này đã được dùng cho một lần chi khác. Hãy chọn tệp khác.',
   INVOICE_IN_USE: 'Hóa đơn đang gắn với một đề nghị chi nên chưa thể hủy.',
   INSTALLMENT_NOT_FOUND: 'Không tìm thấy đợt thanh toán này trong hợp đồng.',
   INVOICE_TOTAL_EXCEEDED: 'Tổng giá trị hóa đơn đã vượt tổng giá trị hợp đồng.',

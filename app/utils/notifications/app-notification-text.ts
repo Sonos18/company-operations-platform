@@ -38,13 +38,20 @@ function dateValue(payload: NotificationPayload, key: string): string | null {
   return `${day}/${month}/${year}`
 }
 
+/** An order recorded from a signed quotation only has no contract number to show. */
+function isQuotationOnly(payload: NotificationPayload): boolean {
+  return textValue(payload, 'documentation') === 'quotation_only'
+}
+
 function contractLabel(payload: NotificationPayload): string {
+  if (isQuotationOnly(payload)) return 'Đơn không hợp đồng'
   const contractNo = textValue(payload, 'contractNo')
   return contractNo ? `Hợp đồng ${contractNo}` : 'Hợp đồng'
 }
 
-/** "hợp đồng HD-01" inside a sentence, or "hợp đồng" when the number is missing. */
+/** "hợp đồng HD-01" inside a sentence, "đơn không hợp đồng" for a quotation-only order, or "hợp đồng" when the number is missing. */
 function requestContractPart(payload: NotificationPayload): string {
+  if (isQuotationOnly(payload)) return 'đơn không hợp đồng'
   const contractNo = textValue(payload, 'contractNo')
   return contractNo ? `hợp đồng ${contractNo}` : 'hợp đồng'
 }
@@ -77,7 +84,7 @@ export function appNotificationText(notification: AppNotificationView): AppNotif
       const total = moneyValue(payload, 'total')
       const totalPart = total ? `, tổng giá trị ${total}` : ''
       return {
-        title: 'Hợp đồng vật tư đã được ghi nhận',
+        title: isQuotationOnly(payload) ? 'Đơn không hợp đồng đã được ghi nhận' : 'Hợp đồng vật tư đã được ghi nhận',
         body: `${contractLabel(payload)}${supplierPart(payload)}${totalPart}.`,
       }
     }

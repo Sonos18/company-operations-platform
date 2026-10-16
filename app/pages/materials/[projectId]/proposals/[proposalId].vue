@@ -13,7 +13,7 @@
             {{ statusText(proposal.reviewState) }}
           </span>
           <span v-if="proposal?.orderProgress" class="cockpit-badge cockpit-badge--neutral">
-            {{ proposal.orderProgress.orderCount }} đơn mua / {{ proposal.orderProgress.signedOrderCount }} đã ký HĐ
+            {{ proposal.orderProgress.orderCount }} đơn mua / {{ proposal.orderProgress.signedOrderCount }} đã ghi nhận
           </span>
         </div>
         <p class="subtitle">
@@ -128,14 +128,15 @@
           <div class="info-item">
             <span class="info-label">Tiến độ mua hàng:</span>
             <span class="info-value font-medium">
-              {{ proposal.orderProgress.orderCount }} đơn mua ({{ proposal.orderProgress.signedOrderCount }} hợp đồng đã ký kết)
+              {{ proposal.orderProgress.orderCount }} đơn mua ({{ recordedOrdersText }})
             </span>
           </div>
           <div v-if="proposal.contractStatus?.length" class="info-item full-width" data-testid="proposal-contract-status">
             <span class="info-label">Hợp đồng:</span>
             <ul class="info-value contract-status-list">
               <li v-for="item in proposal.contractStatus" :key="item.orderId">
-                Hợp đồng {{ item.contractNo }} ký ngày {{ formatDate(item.signedOn) }}
+                <template v-if="item.documentation === 'quotation_only'">{{ materialContractLabel(item) }} (ghi nhận ngày {{ formatDate(item.signedOn) }})</template>
+                <template v-else>{{ materialContractLabel(item) }} ký ngày {{ formatDate(item.signedOn) }}</template>
               </li>
             </ul>
           </div>
@@ -312,6 +313,7 @@ import { workflowUuidSchema } from '../../../../../shared/schemas/costs/cost-wor
 import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
 import { formatMaterialQuantity } from '../../../../utils/materials/quantity-display'
 import { formatDate } from '../../../../utils/materials/date-display'
+import { materialContractLabel, materialRecordedOrdersText } from '../../../../utils/materials/contract-label'
 import { ClientError } from '../../../../errors/client-error'
 import MaterialProposalForm from '../../../../components/materials/MaterialProposalForm.vue'
 import MaterialProposalDecisionPanel from '../../../../components/materials/MaterialProposalDecisionPanel.vue'
@@ -341,6 +343,10 @@ const propId = computed(() => {
 })
 
 const proposal = ref<MaterialProposalView | null>(null)
+const recordedOrdersText = computed(() => materialRecordedOrdersText(
+  proposal.value?.orderProgress?.signedOrderCount ?? 0,
+  proposal.value?.contractStatus,
+))
 const isLoading = ref(true)
 const errorMessage = ref('')
 const shapeErrorMessage = ref('')

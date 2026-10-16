@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { workflowCurrencySchema, workflowMoneySchema, workflowUuidSchema } from '../../../../shared/schemas/costs/cost-workflow'
+import { materialContractDocumentationSchema } from '../../../../shared/schemas/costs/material-documentation'
 import { appNotificationPageSchema, materialFinanceCommandResultSchema, materialFinanceInboxSchema } from '../../../../shared/schemas/costs/material-finance'
 import type { UserSupabaseClient } from '../../../utils/supabase-client'
 import { financeRead, rpcClient, type MaterialFinanceRpcClient } from './repository'
@@ -30,7 +31,8 @@ const contractFactsSchema = z.object({
   orderId: uuid,
   supplierId: uuid,
   supplierName: z.string().min(1),
-  contractNo: z.string().min(1),
+  documentation: materialContractDocumentationSchema,
+  contractNo: z.string().min(1).nullable(),
   total: money,
   invoiced: money,
   installments: z.array(installmentFactsSchema),

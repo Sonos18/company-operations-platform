@@ -47,7 +47,7 @@ const tenantId = '10000000-0000-4000-8000-000000000001'
 const companyId = '10000000-0000-4000-8000-000000000002'
 
 const orderPath = `/materials/${projectId}/orders/${orderId}`
-const proofAlreadyUsedMessage = 'Tệp ủy nhiệm chi này đã được dùng cho một lần chi khác. Hãy chọn tệp khác.'
+const proofAlreadyUsedMessage = 'Tệp chứng từ chi này đã được dùng cho một lần chi khác. Hãy chọn tệp khác.'
 
 interface Call {
   method: string

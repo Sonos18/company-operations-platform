@@ -38,6 +38,13 @@ export class SupabaseMaterialPaymentRepository implements MaterialPaymentDataRep
   decidePaymentRequest: MaterialPaymentDataRepository['decidePaymentRequest'] = (context, projectId, requestId, input, key) =>
     financeCommand(this.client, context, 'c1_material_decide_payment_request', input, key, { target_project_id: projectId, target_id: requestId })
 
-  recordPayment: MaterialPaymentDataRepository['recordPayment'] = (context, projectId, requestId, input, key) =>
-    financeCommand(this.client, context, 'c1_material_record_payment', input, key, { target_project_id: projectId, target_id: requestId })
+  // The default method is left out so an old database (and an old idempotency receipt) sees the
+  // same input as before; only a cash payment needs the new key.
+  recordPayment: MaterialPaymentDataRepository['recordPayment'] = (context, projectId, requestId, input, key) => {
+    const { method, ...withoutMethod } = input
+    return financeCommand(this.client, context, 'c1_material_record_payment', method === 'bank_transfer' ? withoutMethod : input, key, {
+      target_project_id: projectId,
+      target_id: requestId,
+    })
+  }
 }

@@ -1,7 +1,7 @@
 <template>
   <UModal
     :open="open && Boolean(request)"
-    title="Ghi nhận chuyển khoản thực chi"
+    :title="method === 'cash' ? 'Ghi nhận chi tiền mặt' : 'Ghi nhận chuyển khoản thực chi'"
     :description="request ? `Xác nhận lệnh chi - Số tiền: ${formatVnNumber(request.amount)}` : ''"
     :dismissible="!isSubmitting && !isUploading"
     @update:open="onOpenChange"
@@ -33,10 +33,60 @@
           </div>
         </div>
 
+        <!-- Payment Method Selection (when cash is allowed) -->
+        <fieldset v-if="allowCash" class="space-y-1.5 border-0 p-0 m-0">
+          <legend class="block font-semibold text-slate-700 text-xs mb-1.5">
+            Hình thức chi <span class="text-rose-500">*</span>
+          </legend>
+          <div class="grid grid-cols-2 gap-2">
+            <label
+              class="p-2.5 rounded-lg border text-left flex items-center gap-2.5 transition-all cursor-pointer has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-sky-500"
+              :class="method === 'bank_transfer'
+                ? 'border-sky-500 bg-sky-50/70 text-sky-900 font-semibold ring-1 ring-sky-500'
+                : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'"
+            >
+              <input
+                type="radio"
+                name="payment-record-method"
+                value="bank_transfer"
+                :checked="method === 'bank_transfer'"
+                :disabled="isSubmitting || isUploading"
+                class="h-4 w-4 cursor-pointer text-sky-600 focus:ring-sky-500"
+                @change="method = 'bank_transfer'"
+              >
+              <div class="flex items-center gap-1.5">
+                <UIcon name="i-lucide-building-2" class="text-sky-600 text-base" aria-hidden="true" />
+                <span>Chuyển khoản</span>
+              </div>
+            </label>
+
+            <label
+              class="p-2.5 rounded-lg border text-left flex items-center gap-2.5 transition-all cursor-pointer has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-sky-500"
+              :class="method === 'cash'
+                ? 'border-sky-500 bg-sky-50/70 text-sky-900 font-semibold ring-1 ring-sky-500'
+                : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'"
+            >
+              <input
+                type="radio"
+                name="payment-record-method"
+                value="cash"
+                :checked="method === 'cash'"
+                :disabled="isSubmitting || isUploading"
+                class="h-4 w-4 cursor-pointer text-sky-600 focus:ring-sky-500"
+                @change="method = 'cash'"
+              >
+              <div class="flex items-center gap-1.5">
+                <UIcon name="i-lucide-banknote" class="text-emerald-600 text-base" aria-hidden="true" />
+                <span>Tiền mặt</span>
+              </div>
+            </label>
+          </div>
+        </fieldset>
+
         <!-- Transfer Date (paidOn) -->
         <div>
           <label for="paid-on-input" class="block font-semibold text-slate-700 mb-1">
-            Ngày chuyển khoản ngân hàng <span class="text-rose-500">*</span>
+            {{ method === 'cash' ? 'Ngày chi tiền mặt' : 'Ngày chuyển khoản ngân hàng' }} <span class="text-rose-500">*</span>
           </label>
           <input
             id="paid-on-input"
@@ -46,12 +96,14 @@
             :max="todayDate"
             :disabled="isSubmitting || isUploading"
           >
-          <span v-if="paidOnInvalid" class="text-[11px] font-medium text-rose-600" role="alert">Ngày chuyển phải có giá trị và không được ở tương lai</span>
+          <span v-if="paidOnInvalid" class="text-[11px] font-medium text-rose-600" role="alert">
+            {{ method === 'cash' ? 'Ngày chi phải có giá trị và không được ở tương lai' : 'Ngày chuyển phải có giá trị và không được ở tương lai' }}
+          </span>
           <span v-else class="text-[10px] text-slate-400">Mặc định hôm nay, không được chọn ngày trong tương lai</span>
         </div>
 
-        <!-- Reference Number (bankReference) -->
-        <div>
+        <!-- Reference Number (bankReference) - hidden in cash mode -->
+        <div v-if="method === 'bank_transfer'">
           <label for="bank-reference-input" class="block font-semibold text-slate-700 mb-1">
             Số tham chiếu / Mã giao dịch ngân hàng <span class="text-rose-500">*</span>
           </label>
@@ -70,12 +122,12 @@
           </div>
         </div>
 
-        <!-- Proof File Upload (Ủy nhiệm chi - PDF/JPG/PNG) -->
+        <!-- Proof File Upload (Ủy nhiệm chi hoặc Hóa đơn bán hàng / Phiếu chi hộ) -->
         <div class="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
           <div class="flex items-center justify-between">
             <label for="proof-file-input" class="font-semibold text-slate-700 text-xs m-0 flex items-center gap-1.5">
               <UIcon name="i-lucide-file-text" class="text-sky-600" aria-hidden="true" />
-              <span>Ủy nhiệm chi / Chứng từ thanh toán <span class="text-rose-500">*</span></span>
+              <span>{{ method === 'cash' ? 'Hóa đơn bán hàng hoặc phiếu chi hộ' : 'Ủy nhiệm chi / Chứng từ thanh toán' }} <span class="text-rose-500">*</span></span>
             </label>
             <span v-if="finalizedProofFileId" class="cockpit-badge bg-emerald-100 text-emerald-800 text-[10px] font-semibold flex items-center gap-1">
               <UIcon name="i-lucide-check" class="text-[10px]" aria-hidden="true" />
@@ -84,7 +136,9 @@
           </div>
 
           <p class="text-[11px] text-slate-500 m-0">
-            Tải lên ủy nhiệm chi đã có dấu ngân hàng (PDF, JPG, PNG &le; 25 MiB).
+            {{ method === 'cash'
+              ? 'Tải lên hóa đơn bán hàng hoặc phiếu chi hộ (PDF, JPG, PNG ≤ 25 MiB).'
+              : 'Tải lên ủy nhiệm chi đã có dấu ngân hàng (PDF, JPG, PNG ≤ 25 MiB).' }}
           </p>
 
           <div class="flex items-center gap-2 flex-wrap pt-1">
@@ -138,6 +192,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import type {
+  MaterialPaymentMethod,
   MaterialPaymentRequestView,
   RecordMaterialPaymentInput,
 } from '../../../../shared/schemas/costs/material-finance'
@@ -146,6 +201,7 @@ import {
   uploadMaterialEvidence,
   type MaterialEvidenceUploadSession,
 } from '../../../utils/costs/material-evidence-uploader'
+import { canPayInCash } from '../../../utils/materials/payment-method'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
 import {
   financeErrorCode,
@@ -159,6 +215,9 @@ import {
 interface Props {
   projectId: string
   contractId: string
+  contractTotal: string
+  orderSubtotalSnapshot: string
+  currencyCode: string
   request: MaterialPaymentRequestView | null
   installmentName?: string
   open: boolean
@@ -273,17 +332,30 @@ async function uploadProof() {
   }
   catch (err: unknown) {
     if (isDisposed) return
-    uploadError.value = uploadErrorMessage(err, 'Lỗi khi tải tệp ủy nhiệm chi.')
+    uploadError.value = uploadErrorMessage(err, 'Lỗi khi tải tệp chứng từ chi.')
   }
   finally {
     isUploading.value = false
   }
 }
 
+const allowCash = computed(() => {
+  return canPayInCash(props.contractTotal, props.currencyCode, props.orderSubtotalSnapshot)
+})
+
+const method = ref<MaterialPaymentMethod>('bank_transfer')
+
+watch(allowCash, (allowed) => {
+  if (!allowed && method.value === 'cash') {
+    method.value = 'bank_transfer'
+  }
+})
+
 watch(
   () => props.open,
   (isOpen) => {
     if (!isOpen) return
+    method.value = 'bank_transfer'
     paidOn.value = todayDate
     bankReference.value = ''
     discardProofFile()
@@ -298,7 +370,7 @@ const paidOnInvalid = computed(() => !paidOn.value || paidOn.value > todayDate)
 const canSubmit = computed(() => {
   if (isSubmitting.value || isUploading.value || !props.request) return false
   if (paidOnInvalid.value) return false
-  if (!bankReference.value.trim()) return false
+  if (method.value === 'bank_transfer' && !bankReference.value.trim()) return false
   return Boolean(finalizedProofFileId.value)
 })
 
@@ -307,12 +379,21 @@ async function submitRecord() {
   const proofFileId = finalizedProofFileId.value
   if (!request || !proofFileId || !canSubmit.value) return
 
-  const payload: RecordMaterialPaymentInput = {
-    expectedVersion: request.version,
-    paidOn: paidOn.value,
-    bankReference: bankReference.value.trim(),
-    proofFileId,
-  }
+  const payload: RecordMaterialPaymentInput = method.value === 'cash'
+    ? {
+        expectedVersion: request.version,
+        paidOn: paidOn.value,
+        method: 'cash',
+        bankReference: null,
+        proofFileId,
+      }
+    : {
+        expectedVersion: request.version,
+        paidOn: paidOn.value,
+        method: 'bank_transfer',
+        bankReference: bankReference.value.trim(),
+        proofFileId,
+      }
   const idempotencyKey = props.commandKey.keyFor({ requestId: request.id, ...payload })
 
   isSubmitting.value = true

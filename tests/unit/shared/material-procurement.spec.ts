@@ -5,6 +5,7 @@ import {
   chosenSupplierInputSchema,
   createMaterialOrderInputSchema,
   materialEvidenceIntentInputSchema,
+  materialEvidenceMimeTypes,
   materialCommandResultSchema,
   materialCommandSchema,
   materialOrderViewSchema,
@@ -114,9 +115,17 @@ describe('material procurement contracts', () => {
     const approved = { ...returned, reviewState: 'approved', returnReason: null }
     const status = { orderId: ids.order, contractNo: 'HD-01', signedOn: '2026-10-10' }
     expect(materialProposalViewSchema.safeParse(approved).success).toBe(true)
-    expect(materialProposalViewSchema.parse({ ...approved, contractStatus: [status] }).contractStatus).toEqual([status])
+    expect(materialProposalViewSchema.parse({ ...approved, contractStatus: [status] }).contractStatus).toEqual([{ ...status, documentation: 'contract' }])
     expect(materialProposalViewSchema.safeParse({ ...approved, contractStatus: [{ ...status, total: '110.0000' }] }).success).toBe(false)
     expect(materialProposalViewSchema.safeParse({ ...approved, contractStatus: [{ ...status, signedOn: '10/10/2026' }] }).success).toBe(false)
+    expect(materialProposalViewSchema.parse({ ...approved, contractStatus: [status] }).contractStatus?.[0]?.documentation).toBe('contract')
+    const noContract = { ...status, contractNo: null, documentation: 'quotation_only' }
+    expect(materialProposalViewSchema.parse({ ...approved, contractStatus: [noContract] }).contractStatus).toEqual([noContract])
+  })
+
+  it('accepts a signed quotation as pdf or image but a signed contract only as pdf', () => {
+    expect(materialEvidenceMimeTypes.signed_quotation).toEqual(['application/pdf', 'image/jpeg', 'image/png'])
+    expect(materialEvidenceMimeTypes.signed_contract).toEqual(['application/pdf'])
   })
 
   it('freezes split-order allocation and signed-contract inputs', () => {

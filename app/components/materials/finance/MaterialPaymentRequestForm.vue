@@ -2,7 +2,7 @@
   <UModal
     :open="open"
     :title="resubmitRequest ? 'Gửi lại đề nghị thanh toán' : 'Lập đề nghị thanh toán chi'"
-    :description="`Hợp đồng số: ${contract.contractNo} - Nhà cung cấp: ${contract.supplierName}`"
+    :description="`${materialContractLabel(contract)} - Nhà cung cấp: ${contract.supplierName}`"
     :dismissible="!isSubmitting"
     :ui="{ content: 'max-w-2xl' }"
     @update:open="onOpenChange"
@@ -122,17 +122,17 @@
         <fieldset v-if="selectedInstallment" class="space-y-2 pt-2 border-t border-slate-200 border-x-0 border-b-0 m-0 px-0 pb-0">
           <legend class="block font-semibold text-slate-800 text-xs pt-2">
             3. Chọn hóa đơn đính kèm
-            <span v-if="!selectedInstallment.isAdvance" class="text-rose-500">* (Bắt buộc)</span>
+            <span v-if="requiresInvoice" class="text-rose-500">* (Bắt buộc)</span>
             <span v-else class="text-slate-400 font-normal">(Tùy chọn)</span>
           </legend>
 
           <p
             class="m-0 text-[11px] font-medium"
-            :class="selectedInstallment.isAdvance ? 'text-slate-500' : 'text-amber-700'"
+            :class="requiresInvoice ? 'text-amber-700' : 'text-slate-500'"
           >
-            {{ selectedInstallment.isAdvance
-              ? 'Đợt tạm ứng: không bắt buộc đính kèm hóa đơn.'
-              : 'Đợt không phải tạm ứng: bắt buộc chọn ít nhất một hóa đơn đã ghi nhận.' }}
+            {{ requiresInvoice
+              ? 'Đợt không phải tạm ứng: bắt buộc chọn ít nhất một hóa đơn đã ghi nhận.'
+              : (selectedInstallment.isAdvance ? 'Đợt tạm ứng: không bắt buộc đính kèm hóa đơn.' : 'Đơn không hợp đồng: không bắt buộc đính kèm hóa đơn.') }}
           </p>
 
           <div v-if="isLoadingInvoices" class="py-4 text-center text-slate-400">
@@ -150,11 +150,13 @@
               <UIcon name="i-lucide-alert-triangle" class="text-amber-600 text-base shrink-0 mt-0.5" aria-hidden="true" />
               <div>
                 <p class="font-semibold m-0">Chưa có hóa đơn nào ở trạng thái "Đã ghi nhận"!</p>
-                <p v-if="!selectedInstallment.isAdvance" class="m-0 mt-0.5 text-[11px]">
+                <p v-if="requiresInvoice" class="m-0 mt-0.5 text-[11px]">
                   Vì đợt này không phải là tạm ứng, bạn cần quay lại bảng "Hóa đơn" và nhập hóa đơn trước khi lập đề nghị chi.
                 </p>
                 <p v-else class="m-0 mt-0.5 text-[11px]">
-                  Với đợt tạm ứng, bạn vẫn có thể lập đề nghị chi mà không cần chọn hóa đơn.
+                  {{ selectedInstallment.isAdvance
+                    ? 'Với đợt tạm ứng, bạn vẫn có thể lập đề nghị chi mà không cần chọn hóa đơn.'
+                    : 'Với đơn không hợp đồng, bạn vẫn có thể lập đề nghị chi mà không cần chọn hóa đơn.' }}
                 </p>
               </div>
             </div>
@@ -249,6 +251,8 @@ import type {
 } from '../../../../shared/schemas/costs/material-finance'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
 import { formatDate } from '../../../utils/materials/date-display'
+import { materialContractLabel } from '../../../utils/materials/contract-label'
+import { requestRequiresInvoice } from '../../../utils/materials/payment-method'
 import MaterialMoneyInput from './MaterialMoneyInput.vue'
 import {
   financeErrorMessage,
@@ -324,8 +328,13 @@ const amountProblem = computed<'zero' | 'exceeded' | null>(() => {
   return moneyGreaterThan(value, selectedInstallment.value.remaining) ? 'exceeded' : null
 })
 
+const requiresInvoice = computed(() => {
+  if (!selectedInstallment.value) return false
+  return requestRequiresInvoice(props.contract.documentation, selectedInstallment.value.isAdvance)
+})
+
 const invoiceMissing = computed(() => {
-  return Boolean(selectedInstallment.value && !selectedInstallment.value.isAdvance && selectedInvoiceIds.value.length === 0)
+  return requiresInvoice.value && selectedInvoiceIds.value.length === 0
 })
 
 const canSubmit = computed(() => {

@@ -19,6 +19,7 @@ const command = { idempotencyKey: key }
 const commandResult = { resourceId: contractId, version: 1, replayed: false }
 
 const contractInput = {
+  documentation: 'contract',
   expectedOrderVersion: 1,
   contractNo: 'HD-01/2026',
   signedOn: '2026-10-10',
@@ -91,7 +92,7 @@ const calls: Record<EndpointName, { data: unknown, call(repository: MaterialFina
   decidePaymentRequest: { data: commandResult, call: repository => repository.decidePaymentRequest(projectId, requestId, { expectedVersion: 2, decision: 'approve' }, command) },
   recordPayment: {
     data: commandResult,
-    call: repository => repository.recordPayment(projectId, requestId, { expectedVersion: 3, paidOn: '2026-10-15', bankReference: 'UNC-01', proofFileId: fileId }, command),
+    call: repository => repository.recordPayment(projectId, requestId, { expectedVersion: 3, paidOn: '2026-10-15', method: 'bank_transfer', bankReference: 'UNC-01', proofFileId: fileId }, command),
   },
   projectSummary: { data: { projectId, currencyCode: 'VND', totals, contracts: [] }, call: repository => repository.projectSummary(projectId) },
   inbox: { data: emptyInbox, call: repository => repository.inbox() },

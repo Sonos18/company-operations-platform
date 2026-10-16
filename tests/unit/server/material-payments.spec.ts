@@ -4,6 +4,7 @@ import {
   MaterialPaymentService,
   type MaterialPaymentDataRepository,
 } from '../../../server/features/costs/material-finance/payment-service'
+import { SupabaseMaterialPaymentRepository } from '../../../server/features/costs/material-finance/payment-repository'
 import type { MaterialFinanceContext } from '../../../server/features/costs/material-finance/service'
 
 const ids = {
@@ -50,7 +51,7 @@ const inputs = {
   resubmitPaymentRequest: { expectedVersion: 2, amount: '20.0000', invoiceIds: [ids.invoice], note: 'Gửi lại' },
   cancelPaymentRequest: { expectedVersion: 1, reason: 'Không chi nữa' },
   decidePaymentRequest: { expectedVersion: 1, decision: 'approve' },
-  recordPayment: { expectedVersion: 2, paidOn: '2026-10-12', bankReference: 'UNC-001', proofFileId: ids.file },
+  recordPayment: { expectedVersion: 2, paidOn: '2026-10-12', method: 'bank_transfer', bankReference: 'UNC-001', proofFileId: ids.file },
 } as const
 
 type CommandMethod = keyof typeof inputs
@@ -129,5 +130,58 @@ describe('material payment service', () => {
       .rejects.toMatchObject({ statusCode: 403 })
     await expect(service.listInvoices(ctx(['material.read', 'material.finance.read']), ids.project, ids.contract))
       .resolves.toEqual([])
+  })
+})
+
+describe('material payment method', () => {
+  const payer = ctx(['material.read', 'material.payment.execute'])
+  const cash = { expectedVersion: 2, paidOn: '2026-10-12', method: 'cash', bankReference: '  ', proofFileId: ids.file }
+
+  it('normalizes a blank cash reference to null before calling the repository', async () => {
+    const repository = repo()
+    await new MaterialPaymentService(repository).recordPayment(payer, ids.project, ids.request, cash, ids.key)
+    expect(repository.recordPayment).toHaveBeenCalledWith(
+      expect.anything(), ids.project, ids.request, expect.objectContaining({ method: 'cash', bankReference: null }), ids.key,
+    )
+  })
+
+  it('rejects a cash payment that carries a reference as 400', async () => {
+    const repository = repo()
+    await expect(new MaterialPaymentService(repository).recordPayment(payer, ids.project, ids.request, { ...cash, bankReference: 'UNC-1' }, ids.key))
+      .rejects.toMatchObject({ statusCode: 400 })
+    expect(repository.recordPayment).not.toHaveBeenCalled()
+  })
+
+  it('omits the default method key for a bank transfer so old receipts hash the same', async () => {
+    const client = { rpc: vi.fn(async () => ({ data: ack, error: null })) }
+    const input = { expectedVersion: 2, paidOn: '2026-10-12', method: 'bank_transfer' as const, bankReference: 'UNC-1', proofFileId: ids.file }
+    await new SupabaseMaterialPaymentRepository(client as never).recordPayment(payer, ids.project, ids.request, input, ids.key)
+    const sent = (client.rpc.mock.calls[0] as unknown as [string, { target_input: object }])[1].target_input
+    expect(sent).toEqual({ expectedVersion: 2, paidOn: '2026-10-12', bankReference: 'UNC-1', proofFileId: ids.file })
+    expect(sent).not.toHaveProperty('method')
+  })
+
+  it('accepts a service body without the method key as a bank transfer', async () => {
+    const repository = repo()
+    await new MaterialPaymentService(repository).recordPayment(
+      payer, ids.project, ids.request, { expectedVersion: 2, paidOn: '2026-10-12', bankReference: 'UNC-1', proofFileId: ids.file }, ids.key,
+    )
+    expect(repository.recordPayment).toHaveBeenCalledWith(
+      expect.anything(), ids.project, ids.request, expect.objectContaining({ method: 'bank_transfer', bankReference: 'UNC-1' }), ids.key,
+    )
+  })
+
+  it('forwards cash and a null reference to the RPC', async () => {
+    const client = { rpc: vi.fn(async () => ({ data: ack, error: null })) }
+    const input = { expectedVersion: 2, paidOn: '2026-10-12', method: 'cash' as const, bankReference: null, proofFileId: ids.file }
+    await new SupabaseMaterialPaymentRepository(client as never).recordPayment(payer, ids.project, ids.request, input, ids.key)
+    expect(client.rpc).toHaveBeenCalledWith('c1_material_record_payment', expect.objectContaining({ target_id: ids.request, target_input: input }))
+  })
+
+  it('maps CASH_PAYMENT_NOT_ALLOWED to a dedicated 409', async () => {
+    const client = { rpc: vi.fn(async () => ({ data: null, error: { message: 'CASH_PAYMENT_NOT_ALLOWED' } })) }
+    const input = { expectedVersion: 2, paidOn: '2026-10-12', method: 'cash' as const, bankReference: null, proofFileId: ids.file }
+    await expect(new SupabaseMaterialPaymentRepository(client as never).recordPayment(payer, ids.project, ids.request, input, ids.key))
+      .rejects.toMatchObject({ statusCode: 409, code: 'CASH_PAYMENT_NOT_ALLOWED', message: expect.stringContaining('tiền mặt') })
   })
 })

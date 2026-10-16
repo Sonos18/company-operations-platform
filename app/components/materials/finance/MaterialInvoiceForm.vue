@@ -2,7 +2,7 @@
   <UModal
     :open="open"
     title="Nhập hóa đơn nhà cung cấp"
-    :description="`Hợp đồng số: ${contract.contractNo} - Nhà cung cấp: ${contract.supplierName}`"
+    :description="`${materialContractLabel(contract)} - Nhà cung cấp: ${contract.supplierName}`"
     :dismissible="!isSubmitting && !isUploading"
     :ui="{ content: 'max-w-3xl' }"
     @update:open="onOpenChange"
@@ -314,6 +314,7 @@ import {
   type MaterialEvidenceUploadSession,
 } from '../../../utils/costs/material-evidence-uploader'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
+import { materialContractLabel } from '../../../utils/materials/contract-label'
 import MaterialMoneyInput from './MaterialMoneyInput.vue'
 import {
   financeErrorMessage,

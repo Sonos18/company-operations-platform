@@ -172,7 +172,10 @@
                     <UIcon name="i-lucide-check-check" class="text-emerald-700 text-xs" aria-hidden="true" />
                     <span>Đã chi: {{ formatDate(req.payment.paidOn) }}</span>
                   </div>
-                  <div class="text-slate-600 font-mono text-[10px]">
+                  <div class="text-[10px] text-slate-600">
+                    Hình thức: <span class="font-medium text-slate-800">{{ req.payment.method === 'cash' ? 'Tiền mặt' : 'Chuyển khoản' }}</span>
+                  </div>
+                  <div v-if="req.payment.method !== 'cash'" class="text-slate-600 font-mono text-[10px]">
                     Tham chiếu: <strong class="text-slate-800">{{ req.payment.bankReference }}</strong>
                   </div>
                   <div class="pt-1">
@@ -184,7 +187,7 @@
                     >
                       <UIcon v-if="isFileReading === req.payment.proofFileId" name="i-lucide-loader-2" class="animate-spin text-[10px]" aria-hidden="true" />
                       <UIcon v-else name="i-lucide-external-link" class="text-[10px]" aria-hidden="true" />
-                      <span>Xem ủy nhiệm chi</span>
+                      <span>{{ req.payment.method === 'cash' ? 'Xem chứng từ chi' : 'Xem ủy nhiệm chi' }}</span>
                     </button>
                   </div>
                 </div>
@@ -223,7 +226,7 @@
                     v-if="getRequestActions(req).includes('record_payment')"
                     type="button"
                     class="cockpit-btn bg-emerald-600 hover:bg-emerald-700 text-white btn-sm text-[11px] py-1 px-2 flex items-center gap-1"
-                    title="Ghi nhận chuyển khoản chi tiền kèm ủy nhiệm chi"
+                    title="Ghi nhận chi tiền kèm chứng từ chi"
                     @click="openRecordPaymentDialog(req)"
                   >
                     <UIcon name="i-lucide-banknote" class="text-xs" aria-hidden="true" />
@@ -344,6 +347,9 @@
       v-if="isRecordPaymentOpen"
       :project-id="projectId"
       :contract-id="contract.id"
+      :contract-total="contractTotalForPayment"
+      :order-subtotal-snapshot="orderSubtotalSnapshotForPayment"
+      :currency-code="contract.currencyCode"
       :request="recordPaymentRequestTarget"
       :installment-name="recordPaymentRequestTarget ? getInstallmentName(recordPaymentRequestTarget.installmentKey) : ''"
       :open="isRecordPaymentOpen"
@@ -362,6 +368,8 @@ import type {
   MaterialPaymentRequestView,
   CancelPaymentRequestInput,
 } from '../../../../shared/schemas/costs/material-finance'
+import { MATERIAL_SMALL_ORDER_THRESHOLD } from '../../../../shared/constants/material-finance'
+import { currentContractTotal, currentOrderSubtotalSnapshot } from '../../../utils/materials/payment-method'
 import { paymentRequestActions } from '../../../utils/materials/payment-request-actions'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
 import { formatDate, formatDateTime } from '../../../utils/materials/date-display'
@@ -428,6 +436,15 @@ const hasInstallmentsWithRemaining = computed(() => {
   return (props.contract?.installments ?? []).some(i => moneyGreaterThan(i.remaining, '0'))
 })
 
+const contractTotalForPayment = computed(() => {
+  return currentContractTotal(props.contract) ?? MATERIAL_SMALL_ORDER_THRESHOLD
+})
+
+// A missing snapshot is treated as not small, so cash is never offered on a guess.
+const orderSubtotalSnapshotForPayment = computed(() => {
+  return currentOrderSubtotalSnapshot(props.contract) ?? MATERIAL_SMALL_ORDER_THRESHOLD
+})
+
 function getInstallmentName(key: string): string {
   const inst = props.contract?.installments?.find(i => i.installmentKey === key)
   return inst?.name || key.slice(0, 8) + '...'
@@ -487,7 +504,7 @@ async function viewProofFile(fileId: string) {
     }
   }
   catch (err: unknown) {
-    actionError.value = financeErrorMessage(err, 'Không mở được tệp ủy nhiệm chi.')
+    actionError.value = financeErrorMessage(err, 'Không mở được tệp chứng từ chi.')
   }
   finally {
     isFileReading.value = null

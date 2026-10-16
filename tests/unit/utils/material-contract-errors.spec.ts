@@ -12,6 +12,9 @@ describe('describeContractError', () => {
     ['INVOICE_TOTAL_EXCEEDED', 'hóa đơn'],
     ['EVIDENCE_INVALID', 'Tệp đính kèm'],
     ['VERSION_CONFLICT', 'Dữ liệu đã thay đổi, vui lòng tải lại'],
+    ['CONTRACT_REQUIRED', 'bắt buộc có hợp đồng'],
+    ['CASH_PAYMENT_NOT_ALLOWED', 'tiền mặt'],
+    ['CONTRACT_AMENDMENT_UNAVAILABLE', 'không thể thêm phụ lục'],
   ])('maps the %s code of a ClientError to Vietnamese', (code, fragment) => {
     const error = new ClientError({ kind: 'api', code: code as never, message: 'generic', retryable: false })
     const described = describeContractError(error)

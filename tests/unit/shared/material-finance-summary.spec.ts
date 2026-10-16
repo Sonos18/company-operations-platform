@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { installmentDueStatus, summarizeMaterialFinance, vietnamToday } from '../../../shared/utils/material-finance-summary'
 
-const contract = (total: string, invoiced: string, installments: Array<[string, string, string, string]>) => ({
+const contract = (total: string, invoiced: string, installments: Array<[string, string, string, string]>, documentation: 'contract' | 'quotation_only' = 'contract') => ({
+  documentation,
   total,
   invoiced,
   installments: installments.map(([amount, dueOn, paid, pending], index) => ({
@@ -33,6 +34,24 @@ describe('material finance summary', () => {
       contract('0.2000', '0.0000', [['0.2000', '2027-01-01', '0.2000', '0.0000']]),
     ], '2026-10-15')
     expect(result.paid).toBe('0.3000')
+  })
+
+  it('leaves quotation-only orders out of the invoice check but keeps them in paid and invoiced', () => {
+    const result = summarizeMaterialFinance([
+      contract('10.0000', '0.0000', [['10.0000', '2026-12-01', '10.0000', '0.0000']]),
+      contract('4.0000', '4.0000', [['4.0000', '2026-12-01', '4.0000', '0.0000']], 'quotation_only'),
+    ], '2026-10-15')
+    expect(result.paidWithoutInvoice).toBe('10.0000')
+    expect(result.invoiced).toBe('4.0000')
+    expect(result.paid).toBe('14.0000')
+  })
+
+  it('does not let an invoiced quotation-only order offset a contract paid without invoice', () => {
+    const result = summarizeMaterialFinance([
+      contract('10.0000', '0.0000', [['10.0000', '2026-12-01', '10.0000', '0.0000']]),
+      contract('50.0000', '50.0000', [['50.0000', '2026-12-01', '0.0000', '0.0000']], 'quotation_only'),
+    ], '2026-10-15')
+    expect(result.paidWithoutInvoice).toBe('10.0000')
   })
 
   it('classifies installment due status with a 3 day window', () => {

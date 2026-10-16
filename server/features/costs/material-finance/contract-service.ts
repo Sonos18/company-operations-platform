@@ -40,7 +40,7 @@ export function contractViewFromFacts(facts: MaterialContractFacts, today: strin
       remaining: MoneyDecimal.max(0, new MoneyDecimal(installment.amount).minus(installment.paid).minus(installment.pending)).toFixed(4),
       dueStatus: installmentDueStatus(installment, today),
     })),
-    totals: summarizeMaterialFinance([{ total: current.total, invoiced, installments: facts.installments }], today),
+    totals: summarizeMaterialFinance([{ documentation: facts.documentation, total: current.total, invoiced, installments: facts.installments }], today),
   })
 }
 

@@ -2,9 +2,9 @@
   <section class="cockpit-card summary-card" role="region" aria-label="Hợp đồng và cam kết" data-testid="contract-summary">
     <header class="summary-head">
       <div>
-        <h3 class="summary-title">Hợp đồng {{ contract.contractNo }}</h3>
+        <h3 class="summary-title">{{ materialContractLabel(contract) }}</h3>
         <p class="summary-sub">
-          Ký ngày {{ formatDate(contract.signedOn) }} · Phiên bản hiện hành v{{ contract.currentVersionNo }}
+          {{ isQuotationOnly ? 'Ghi nhận ngày' : 'Ký ngày' }} {{ formatDate(contract.signedOn) }} · Phiên bản hiện hành v{{ contract.currentVersionNo }}
         </p>
       </div>
       <span class="cockpit-badge cockpit-badge--primary font-mono">v{{ contract.currentVersionNo }}</span>
@@ -22,7 +22,7 @@
       <li v-for="version in versionsDescending" :key="version.versionNo" class="version" :data-testid="`contract-version-${version.versionNo}`">
         <div class="version-main">
           <span class="cockpit-badge" :class="version.kind === 'original' ? 'cockpit-badge--neutral' : 'cockpit-badge--accent'">
-            {{ version.kind === 'original' ? 'Hợp đồng gốc' : 'Phụ lục' }} v{{ version.versionNo }}
+            {{ version.kind === 'original' ? (isQuotationOnly ? 'Bản ghi gốc' : 'Hợp đồng gốc') : 'Phụ lục' }} v{{ version.versionNo }}
           </span>
           <strong class="font-mono">{{ money(version.total) }}</strong>
           <span class="version-meta">
@@ -32,7 +32,7 @@
         <p v-if="version.reason" class="version-note">Lý do: {{ version.reason }}</p>
         <p v-if="version.varianceReason" class="version-note">Chênh lệch so với tổng đơn: {{ version.varianceReason }}</p>
         <div class="version-files">
-          <button type="button" class="cockpit-btn cockpit-btn--ghost cockpit-btn--xs" :disabled="openingFile !== null" @click="openFile(version.contractFileId)">
+          <button v-if="version.contractFileId" type="button" class="cockpit-btn cockpit-btn--ghost cockpit-btn--xs" :disabled="openingFile !== null" @click="openFile(version.contractFileId)">
             <UIcon name="i-lucide-file-text" aria-hidden="true" />
             {{ version.kind === 'original' ? 'Xem hợp đồng' : 'Xem phụ lục' }}
           </button>
@@ -59,6 +59,7 @@ import { MoneyDecimal } from '../../../../shared/utils/money-decimal'
 import type { MaterialContractView } from '../../../../shared/schemas/costs/material-finance'
 import { formatDate, formatDateTime } from '../../../utils/materials/date-display'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
+import { materialContractLabel } from '../../../utils/materials/contract-label'
 
 interface Props {
   projectId: string
@@ -66,6 +67,8 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+// An order recorded from a signed quotation only was never signed as a contract.
+const isQuotationOnly = computed(() => props.contract.documentation === 'quotation_only')
 const repo = useRepositories().materialProcurement
 
 let disposed = false

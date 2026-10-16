@@ -1,7 +1,10 @@
 import Decimal from 'decimal.js'
 import { z } from 'zod'
 import { workflowCurrencySchema, workflowMoneySchema, workflowUuidSchema } from './cost-workflow'
+import { materialContractDocumentationSchema, materialPaymentMethodSchema } from './material-documentation'
 import type { MaterialFinanceTotals } from '../../utils/material-finance-summary'
+
+export type { MaterialContractDocumentation, MaterialPaymentMethod } from '../../constants/material-finance'
 
 const uuid = workflowUuidSchema
 const version = z.number().int().nonnegative()
@@ -46,14 +49,45 @@ const contractMoney = {
   installments,
 }
 
-export const recordMaterialContractInputSchema = z.object({
+const recordContractCommon = {
   expectedOrderVersion: version,
-  contractNo: z.string().trim().min(1).max(100),
   signedOn: date,
-  contractFileId: uuid,
   signedQuotationFileId: uuid,
+}
+
+const recordWithContractInputSchema = z.object({
+  documentation: z.literal('contract'),
+  ...recordContractCommon,
+  contractNo: z.string().trim().min(1).max(100),
+  contractFileId: uuid,
   ...contractMoney,
 }).strict().superRefine(balanced)
+
+// No contract number, contract file, VAT, total or installment schedule: the server sets VAT to 0,
+// the total to the subtotal and generates the single installment (R3, R4).
+const recordQuotationOnlyInputSchema = z.object({
+  documentation: z.literal('quotation_only'),
+  ...recordContractCommon,
+  subtotal: positiveMoney,
+  varianceReason: reason.nullable(),
+}).strict()
+
+// A body without the discriminator is the pre-small-order shape and means the default branch.
+// The key is added before the union, so each branch keeps its own strict key set.
+function withDefaultKey(key: string, defaultValue: string) {
+  return (input: unknown): unknown => {
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) return input
+    return (input as Record<string, unknown>)[key] === undefined ? { ...input, [key]: defaultValue } : input
+  }
+}
+
+export const recordMaterialContractInputSchema = z.preprocess(
+  withDefaultKey('documentation', 'contract'),
+  z.discriminatedUnion('documentation', [
+    recordWithContractInputSchema,
+    recordQuotationOnlyInputSchema,
+  ]),
+)
 
 export const amendMaterialContractInputSchema = z.object({
   expectedVersion: version,
@@ -107,12 +141,30 @@ export const decidePaymentRequestInputSchema = z.object({
     context.addIssue({ code: 'custom', path: ['reason'], message: 'An approval carries no reason' })
   }
 })
-export const recordMaterialPaymentInputSchema = z.object({
+const recordPaymentCommon = {
   expectedVersion: version,
   paidOn: date,
-  bankReference: z.string().trim().min(1).max(100),
   proofFileId: uuid,
-}).strict()
+}
+
+export const recordMaterialPaymentInputSchema = z.preprocess(
+  withDefaultKey('method', 'bank_transfer'),
+  z.discriminatedUnion('method', [
+    z.object({
+      method: z.literal('bank_transfer'),
+      ...recordPaymentCommon,
+      bankReference: z.string().trim().min(1).max(100),
+    }).strict(),
+    z.object({
+      method: z.literal('cash'),
+      ...recordPaymentCommon,
+      // A blank reference is the same as none; anything else is refused (the database agrees).
+      bankReference: z.string().trim().nullable()
+        .transform(value => value === '' ? null : value)
+        .refine(value => value === null, 'A cash payment carries no bank reference'),
+    }).strict(),
+  ]),
+)
 
 export const materialFinanceTotalsSchema = z.object({
   committed: workflowMoneySchema,
@@ -143,7 +195,7 @@ export const materialContractVersionViewSchema = z.object({
   total: workflowMoneySchema,
   orderSubtotalSnapshot: workflowMoneySchema,
   varianceReason: z.string().nullable(),
-  contractFileId: uuid,
+  contractFileId: uuid.nullable(),
   signedQuotationFileId: uuid.nullable(),
   reason: z.string().nullable(),
   recordedBy: uuid,
@@ -157,7 +209,8 @@ export const materialContractViewSchema = z.object({
   supplierId: uuid,
   supplierName: z.string().min(1),
   currencyCode: workflowCurrencySchema,
-  contractNo: z.string().min(1),
+  documentation: materialContractDocumentationSchema,
+  contractNo: z.string().min(1).nullable(),
   signedOn: date,
   currentVersionNo: z.number().int().positive(),
   version,
@@ -207,7 +260,8 @@ export const materialPaymentRequestViewSchema = z.object({
   payment: z.object({
     id: uuid,
     paidOn: date,
-    bankReference: z.string().min(1),
+    method: materialPaymentMethodSchema,
+    bankReference: z.string().min(1).nullable(),
     proofFileId: uuid,
     paidBy: uuid,
     recordedAt: z.string().datetime({ offset: true }),
@@ -220,7 +274,8 @@ const contractRow = z.object({
   orderId: uuid,
   supplierId: uuid,
   supplierName: z.string().min(1),
-  contractNo: z.string().min(1),
+  documentation: materialContractDocumentationSchema,
+  contractNo: z.string().min(1).nullable(),
   totals: materialFinanceTotalsSchema,
 }).strict()
 

@@ -17,7 +17,7 @@
           class="cockpit-badge cockpit-badge--success"
           data-testid="contract-status-badge"
         >
-          Đã có hợp đồng
+          {{ order.contract.documentation === 'quotation_only' ? 'Đã ghi nhận không hợp đồng' : 'Đã có hợp đồng' }}
         </span>
         <span v-else-if="order" class="cockpit-badge cockpit-badge--warning" data-testid="contract-status-badge">
           Chưa có hợp đồng
@@ -89,7 +89,9 @@
         data-testid="contract-status-only"
       >
         <p class="status-line">
-          Đã có hợp đồng <strong>{{ order.contract.contractNo }}</strong> ngày {{ formatDate(order.contract.signedOn) }}.
+          <template v-if="order.contract.documentation === 'quotation_only'">Đã ghi nhận <strong>đơn không hợp đồng</strong></template>
+          <template v-else>Đã có hợp đồng <strong>{{ order.contract.contractNo }}</strong></template>
+          ngày {{ formatDate(order.contract.signedOn) }}.
         </p>
       </section>
 
@@ -115,7 +117,7 @@
         <MaterialInstallmentTable :installments="contract.installments" :currency-code="contract.currencyCode" />
 
         <MaterialContractAmendPanel
-          v-if="canRecordContract && order.orderState !== 'cancelled'"
+          v-if="canRecordContract && order.orderState !== 'cancelled' && contract.documentation !== 'quotation_only'"
           :key="`${contract.id}:${contract.version}`"
           :company-id="companyId"
           :project-id="pId"
