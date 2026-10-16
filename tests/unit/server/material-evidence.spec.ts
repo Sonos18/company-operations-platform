@@ -86,6 +86,80 @@ describe('material evidence service', () => {
   })
 })
 
+const contractId = '10000000-0000-4000-8000-0000000000c1'
+const invoiceIntent = {
+  originalFilename: 'hoa-don.xml',
+  mimeType: 'application/xml' as const,
+  sizeBytes: 100,
+  sha256,
+  evidenceRole: 'invoice' as const,
+  target: { kind: 'material_contract' as const, contractId },
+}
+const proofIntent = {
+  ...invoiceIntent,
+  originalFilename: 'uy-nhiem-chi.png',
+  mimeType: 'image/png' as const,
+  evidenceRole: 'payment_proof' as const,
+}
+const amendmentIntent = {
+  ...invoiceIntent,
+  originalFilename: 'phu-luc.pdf',
+  mimeType: 'application/pdf' as const,
+  evidenceRole: 'contract_amendment' as const,
+}
+const treasurerRoleScope: readonly PermissionCode[] = ['material.read', 'material.payment.approve', 'material.payment.execute']
+
+describe('material finance evidence service', () => {
+  it('requires material.payment.execute for payment proofs', async () => {
+    const data = serviceRepository()
+    const service = new MaterialProcurementService(data)
+
+    await expect(service.createEvidenceIntent(context(accountantRoleScope), ids.project, proofIntent, key))
+      .rejects.toMatchObject({ statusCode: 403 })
+    expect(data.createEvidenceIntent).not.toHaveBeenCalled()
+
+    await service.createEvidenceIntent(context(treasurerRoleScope), ids.project, proofIntent, key)
+    expect(data.createEvidenceIntent).toHaveBeenCalledTimes(1)
+  })
+
+  it('requires material.contract.record for invoices and contract amendments', async () => {
+    const data = serviceRepository()
+    const service = new MaterialProcurementService(data)
+
+    for (const input of [invoiceIntent, amendmentIntent]) {
+      await expect(service.createEvidenceIntent(context(treasurerRoleScope), ids.project, input, key))
+        .rejects.toMatchObject({ statusCode: 403 })
+      await expect(service.createEvidenceIntent(context(purchasingRoleScope), ids.project, input, key))
+        .rejects.toMatchObject({ statusCode: 403 })
+      await service.createEvidenceIntent(context(accountantRoleScope), ids.project, input, key)
+    }
+    expect(data.createEvidenceIntent).toHaveBeenCalledTimes(2)
+  })
+
+  it('lets a treasurer finalize but still blocks engineers; the RPC checks the real role', async () => {
+    const data = serviceRepository()
+    const service = new MaterialProcurementService(data)
+
+    await expect(service.finalizeEvidence(context(engineerRoleScope), ids.project, ids.unsignedQuotation, { expectedVersion: 0 }, key))
+      .rejects.toMatchObject({ statusCode: 403 })
+    await service.finalizeEvidence(context(treasurerRoleScope), ids.project, ids.unsignedQuotation, { expectedVersion: 0 }, key)
+    expect(data.finalizeEvidence).toHaveBeenCalledTimes(1)
+  })
+
+  it('pre-checks reads: buyers and finance readers pass, engineers do not (the RPC is the source of truth)', async () => {
+    const data = serviceRepository()
+    const service = new MaterialProcurementService(data)
+
+    await expect(service.readEvidenceUrl(context(engineerRoleScope), ids.project, ids.unsignedQuotation, {}))
+      .rejects.toMatchObject({ statusCode: 403 })
+    await service.readEvidenceUrl(context(purchasingRoleScope), ids.project, ids.unsignedQuotation, {})
+    await service.readEvidenceUrl(context(accountantRoleScope), ids.project, ids.unsignedQuotation, {})
+    await service.readEvidenceUrl(context(treasurerRoleScope), ids.project, ids.unsignedQuotation, {})
+    await service.readEvidenceUrl(context(['material.read', 'material.finance.read']), ids.project, ids.unsignedQuotation, {})
+    expect(data.readEvidenceUrl).toHaveBeenCalledTimes(4)
+  })
+})
+
 describe('material evidence repository', () => {
   it('uses a creator-bound target before download and sends only verified identity to service role', async () => {
     const download = vi.fn(async () => ({ data: new Blob([bytes], { type: 'application/pdf' }), error: null }))
@@ -139,7 +213,7 @@ describe('material evidence repository', () => {
 
   it('signs only the guarded material read target for 60 seconds', async () => {
     const signed = vi.fn(async () => ({ data: { signedUrl: 'https://example.invalid/material' }, error: null }))
-    const rpc = vi.fn(async () => ({ data: { bucketId: 'c1-accounting-evidence', objectPath: uploadIntent.objectPath }, error: null }))
+    const rpc = vi.fn(async () => ({ data: { bucketId: 'c1-accounting-evidence', objectPath: uploadIntent.objectPath, declaredMimeType: 'application/pdf' }, error: null }))
     const client = { rpc, storage: { from: vi.fn(() => ({ createSignedUrl: signed })) } }
     const repository = new SupabaseMaterialProcurementRepository(client as never)
 
@@ -151,5 +225,87 @@ describe('material evidence repository', () => {
       target_id: ids.unsignedQuotation,
     })
     expect(signed).toHaveBeenCalledWith(uploadIntent.objectPath, 60, { download: true })
+  })
+
+  function readTarget(declaredMimeType: string) {
+    const signed = vi.fn(async () => ({ data: { signedUrl: 'https://example.invalid/material' }, error: null }))
+    const rpc = vi.fn(async () => ({ data: { bucketId: 'c1-accounting-evidence', objectPath: uploadIntent.objectPath, declaredMimeType }, error: null }))
+    const client = { rpc, storage: { from: vi.fn(() => ({ createSignedUrl: signed })) } }
+    return { signed, repository: new SupabaseMaterialProcurementRepository(client as never) }
+  }
+
+  it.each(['application/pdf', 'image/png', 'image/jpeg'])('opens %s evidence inline when asked to', async (mimeType) => {
+    const { signed, repository } = readTarget(mimeType)
+    await repository.readEvidenceUrl(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { disposition: 'inline' })
+    expect(signed).toHaveBeenCalledWith(uploadIntent.objectPath, 60, { download: false })
+  })
+
+  it.each(['application/xml', 'text/xml'])('always downloads %s evidence, even when inline is requested', async (mimeType) => {
+    const { signed, repository } = readTarget(mimeType)
+    await repository.readEvidenceUrl(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { disposition: 'inline' })
+    expect(signed).toHaveBeenCalledWith(uploadIntent.objectPath, 60, { download: true })
+  })
+
+  it('signs a download when the read target does not report its MIME type (database without 20261015090500)', async () => {
+    const signed = vi.fn(async () => ({ data: { signedUrl: 'https://example.invalid/material' }, error: null }))
+    const rpc = vi.fn(async () => ({ data: { bucketId: 'c1-accounting-evidence', objectPath: uploadIntent.objectPath }, error: null }))
+    const client = { rpc, storage: { from: vi.fn(() => ({ createSignedUrl: signed })) } }
+    const repository = new SupabaseMaterialProcurementRepository(client as never)
+    await repository.readEvidenceUrl(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { disposition: 'inline' })
+    expect(signed).toHaveBeenCalledWith(uploadIntent.objectPath, 60, { download: true })
+  })
+
+  function pendingUpload(content: Uint8Array, blobType: string, declaredMimeType: string) {
+    const contentSha = createHash('sha256').update(content).digest('hex')
+    const download = vi.fn(async () => ({ data: new Blob([content], { type: blobType }), error: null }))
+    const rpc = vi.fn(async () => ({
+      data: {
+        status: 'pending_upload',
+        bucketId: 'c1-accounting-evidence',
+        objectPath: uploadIntent.objectPath,
+        declaredMimeType,
+        declaredSizeBytes: content.byteLength,
+        declaredSha256: contentSha,
+      },
+      error: null,
+    }))
+    const finalizer = { finalize: vi.fn(async () => ({ data: { ...finalized, mimeType: declaredMimeType }, error: null })) }
+    const client = { rpc, storage: { from: vi.fn(() => ({ download })) } }
+    return { finalizer, contentSha, repository: new SupabaseMaterialProcurementRepository(client as never, () => finalizer) }
+  }
+
+  it('rejects an XML invoice stored with an XML content type, so no stored XML object can render inline', async () => {
+    const xml = new TextEncoder().encode('<?xml version="1.0"?><HDon/>')
+    const { finalizer, repository } = pendingUpload(xml, 'application/xml', 'application/xml')
+
+    await expect(repository.finalizeEvidence(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { expectedVersion: 0 }, key))
+      .rejects.toMatchObject({ statusCode: 409, code: 'EVIDENCE_UPLOAD_MISMATCH' })
+    expect(finalizer.finalize).not.toHaveBeenCalled()
+  })
+
+  it('finalizes a well-formed XML invoice stored as octet-stream, tolerating a BOM and whitespace', async () => {
+    const xml = new TextEncoder().encode('﻿  \n<?xml version="1.0"?><HDon/>')
+    const { finalizer, contentSha, repository } = pendingUpload(xml, 'application/octet-stream', 'application/xml')
+
+    await repository.finalizeEvidence(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { expectedVersion: 0 }, key)
+    expect(finalizer.finalize).toHaveBeenCalledWith(expect.objectContaining({
+      target_input: { expectedVersion: 0, mimeType: 'application/xml', sizeBytes: xml.byteLength, sha256: contentSha },
+    }))
+  })
+
+  it('rejects an XML invoice that does not start with a tag before calling the finalizer', async () => {
+    const { finalizer, repository } = pendingUpload(new TextEncoder().encode('%PDF-1.7 pretending to be xml'), 'application/octet-stream', 'application/xml')
+
+    await expect(repository.finalizeEvidence(context(accountantRoleScope), ids.project, ids.unsignedQuotation, { expectedVersion: 0 }, key))
+      .rejects.toMatchObject({ statusCode: 409, code: 'EVIDENCE_UPLOAD_MISMATCH' })
+    expect(finalizer.finalize).not.toHaveBeenCalled()
+  })
+
+  it('rejects a payment proof whose bytes are not the declared image type', async () => {
+    const { finalizer, repository } = pendingUpload(new TextEncoder().encode('not a png'), 'image/png', 'image/png')
+
+    await expect(repository.finalizeEvidence(context(treasurerRoleScope), ids.project, ids.unsignedQuotation, { expectedVersion: 0 }, key))
+      .rejects.toMatchObject({ statusCode: 409, code: 'EVIDENCE_UPLOAD_MISMATCH' })
+    expect(finalizer.finalize).not.toHaveBeenCalled()
   })
 })

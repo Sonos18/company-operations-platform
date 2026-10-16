@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(25);
+select plan(29);
 
 insert into auth.users(id,email) values
 ('c1300000-0000-4000-8000-000000000901','inline-engineer@test.invalid'),
@@ -28,6 +28,17 @@ insert into public.role_permissions(role_id,permission_code) values
 insert into public.company_role_assignments(tenant_id,company_id,user_id,role_id,granted_by,grant_reason) values
 ('c1300000-0000-4000-8000-000000000010','c1300000-0000-4000-8000-000000000020','c1300000-0000-4000-8000-000000000902','c1300000-0000-4000-8000-000000000912','c1300000-0000-4000-8000-000000000902','test'),
 ('c1300000-0000-4000-8000-000000000010','c1300000-0000-4000-8000-000000000020','c1300000-0000-4000-8000-000000000905','c1300000-0000-4000-8000-000000000915','c1300000-0000-4000-8000-000000000902','test');
+-- Contract recorder: the A4/A5 order-created trigger notifies material.contract.record holders other than the actor.
+insert into auth.users(id,email) values('c1300000-0000-4000-8000-000000000903','inline-contract-recorder@test.invalid');
+insert into public.tenant_memberships(user_id,tenant_id,roles) values('c1300000-0000-4000-8000-000000000903','c1300000-0000-4000-8000-000000000010',array['member']);
+insert into public.company_memberships(user_id,tenant_id,company_id,roles,is_active) values('c1300000-0000-4000-8000-000000000903','c1300000-0000-4000-8000-000000000010','c1300000-0000-4000-8000-000000000020',array['member'],true);
+insert into public.roles(id,tenant_id,company_id,code,name,description,is_system) values
+('c1300000-0000-4000-8000-000000000913','c1300000-0000-4000-8000-000000000010','c1300000-0000-4000-8000-000000000020','inline_contract_recorder','Inline contract recorder','test',false);
+insert into public.role_permissions(role_id,permission_code) values
+('c1300000-0000-4000-8000-000000000913','material.read'),
+('c1300000-0000-4000-8000-000000000913','material.contract.record');
+insert into public.company_role_assignments(tenant_id,company_id,user_id,role_id,granted_by,grant_reason) values
+('c1300000-0000-4000-8000-000000000010','c1300000-0000-4000-8000-000000000020','c1300000-0000-4000-8000-000000000903','c1300000-0000-4000-8000-000000000913','c1300000-0000-4000-8000-000000000902','test');
 insert into public.company_cost_settings(company_id,tenant_id,enabled,created_by)
 values('c1300000-0000-4000-8000-000000000020','c1300000-0000-4000-8000-000000000010',true,'c1300000-0000-4000-8000-000000000902');
 insert into public.cost_workflow_companies(company_id,tenant_id,mode,notification_recipient_id)
@@ -178,5 +189,27 @@ select throws_ok($$
     'c1300000-0000-4000-8000-000000000699','c1300000-0000-4000-8000-000000000799')
 $$,'P0001','INPUT_INVALID','legacy supplierId input is rejected');
 
-select * from finish();
+-- A4/A5 order-created notification: the contract recorder (not the acting buyer) is notified once, with the supplier display name.
+insert into inline_ids(name,value) select 'notified',(pg_temp.inline_create(10,'{"displayName":"Notify Co"}')->>'resourceId')::uuid;
+set local role none;
+select is((
+  select count(*)::int from public.app_notifications as notification
+  where notification.event_kind='material.order.created' and notification.recipient_id='c1300000-0000-4000-8000-000000000903'
+    and notification.source_id=(select value from inline_ids where name='notified')
+),1,'contract recorder gets exactly one order-created notification');
+select is((
+  select notification.payload->>'supplierName' from public.app_notifications as notification
+  where notification.event_kind='material.order.created' and notification.recipient_id='c1300000-0000-4000-8000-000000000903'
+    and notification.source_id=(select value from inline_ids where name='notified')
+),'Notify Co','the notification carries the supplier display name used by the order');
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"c1300000-0000-4000-8000-000000000902","role":"authenticated"}',true);
+select is((pg_temp.inline_create(10,'{"displayName":"Notify Co"}')->>'resourceId')::uuid,(select value from inline_ids where name='notified'),'replaying the create_order request returns the original order');
+set local role none;
+select is((
+  select count(*)::int from public.app_notifications as notification
+  where notification.event_kind='material.order.created' and notification.source_id=(select value from inline_ids where name='notified')
+),1,'idempotent replay adds no further order-created notification');
+
+select * from finish(true);
 rollback;

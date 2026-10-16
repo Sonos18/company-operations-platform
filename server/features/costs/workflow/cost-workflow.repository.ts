@@ -3,11 +3,12 @@ import { apiErrorCodeSchema } from '../../../../shared/schemas/api-error'
 import { workflowSourceSubcontractOptionSchema,workflowDirectorySchema,workflowRequestHistorySchema,costRequestViewSchema,workflowAdjustmentViewSchema,workflowCommandResultSchema,workflowContractViewSchema,workflowNotificationViewSchema,workflowProjectContextSchema } from '../../../../shared/schemas/costs/cost-workflow'
 import type { UserSupabaseClient } from '../../../utils/supabase-client'
 import { AppApiError } from '../../../utils/api-error'
+import { costRpcErrorMappings } from '../rpc-errors'
 import type { WorkflowContext,WorkflowRepository } from './cost-workflow.service'
 type RpcResult={data:unknown;error:unknown}
 interface Client {rpc(name:string,args:Record<string,unknown>):Promise<RpcResult>}
 export function workflowResponse<T>(result:RpcResult,schema:z.ZodType<T>):T{
- if(result.error){const error=z.object({message:z.string()}).safeParse(result.error);const accepted=apiErrorCodeSchema.safeParse(error.success?error.data.message:'INTERNAL_ERROR');const code=accepted.success?accepted.data:'INTERNAL_ERROR';const status=code==='PERMISSION_DENIED'?403:code==='RESOURCE_NOT_FOUND'?404:code==='INPUT_INVALID'?400:code==='INTERNAL_ERROR'?500:409;throw new AppApiError(status,code,'Không thể xử lý yêu cầu chi phí.')}
+ if(result.error){const error=z.object({message:z.string()}).safeParse(result.error);const accepted=apiErrorCodeSchema.safeParse(error.success?error.data.message:'INTERNAL_ERROR');const code=accepted.success?accepted.data:'INTERNAL_ERROR';const mapped=costRpcErrorMappings[code];if(mapped)throw new AppApiError(mapped.status,code,mapped.message);const status=code==='PERMISSION_DENIED'?403:code==='RESOURCE_NOT_FOUND'?404:code==='INPUT_INVALID'?400:code==='INTERNAL_ERROR'?500:409;throw new AppApiError(status,code,'Không thể xử lý yêu cầu chi phí.')}
  const parsed=schema.safeParse(result.data);if(!parsed.success)throw new AppApiError(500,'INTERNAL_ERROR','Phản hồi yêu cầu chi phí không hợp lệ.');return parsed.data
 }
 export class SupabaseWorkflowRepository implements WorkflowRepository {

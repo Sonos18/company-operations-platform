@@ -84,6 +84,25 @@ export function createSupabaseMaterialEvidenceFinalizer(config: SupabaseAdminCon
   }
 }
 
+export type SupabaseMaterialReminderEmitter = {
+  emit(args: { target_today: string }): Promise<{ data: unknown, error: unknown }>
+}
+
+export function createSupabaseMaterialReminderEmitter(config: SupabaseAdminConfig): SupabaseMaterialReminderEmitter {
+  const client = createClient(config.url, config.serviceRoleKey, { auth })
+  return {
+    emit: async args => await client.rpc('c1_material_emit_installment_reminders', args),
+  }
+}
+
+/** Service-role port for the scheduled installment reminder run; the shared secret is checked before it is used. */
+export function resolveSupabaseMaterialReminderEmitter(event: H3Event): SupabaseMaterialReminderEmitter {
+  const runtime = useRuntimeConfig(event)
+  return createSupabaseMaterialReminderEmitter(
+    parseSupabaseAdminConfig({ url: runtime.public.supabaseUrl, serviceRoleKey: runtime.supabaseServiceRoleKey }),
+  )
+}
+
 /** Narrow private job/completed-result port; fresh user authorization is supplied by its request-bound wrapper. */
 export function resolveSupabaseAzureF0PrivateRpc(event:H3Event):AzureF0PrivateRpc{
  const runtime=useRuntimeConfig(event)

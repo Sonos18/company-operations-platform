@@ -11,6 +11,7 @@ import type {
   CostEvidenceUploadIntent,
 } from '../../../shared/schemas/costs/cost-evidence'
 import type { CostEvidenceRepository } from '../../repositories/contracts'
+import { evidenceStorageContentType } from '../../../shared/utils/evidence-storage-content-type'
 
 export type CostEvidenceKind = z.infer<typeof costEvidenceKindSchema>
 export type CostEvidenceMimeType = z.infer<typeof costEvidenceMimeTypeSchema>
@@ -72,6 +73,27 @@ function resolveEvidenceMimeType(file: File): CostEvidenceMimeType {
   throw new Error('Định dạng tệp không được hỗ trợ.')
 }
 
+const MIME_TYPE_BY_EXTENSION: Readonly<Record<string, string>> = {
+  '.pdf': 'application/pdf',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.xml': 'application/xml',
+}
+
+/**
+ * Resolves a file's MIME type against a caller-supplied allow-list. The browser type wins when
+ * allowed; otherwise the extension is used. Returns null when the file is not an allowed type.
+ */
+export function resolveAllowedMimeType(file: File, allowed: readonly string[]): string | null {
+  if (allowed.includes(file.type)) return file.type
+  const extension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
+  const fromExtension = MIME_TYPE_BY_EXTENSION[extension]
+  return fromExtension && allowed.includes(fromExtension) ? fromExtension : null
+}
+
 export async function computeFileSha256Hex(file: File): Promise<string> {
   const buffer = await file.arrayBuffer()
   const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', buffer)
@@ -99,17 +121,27 @@ export async function createEvidenceIntent(
   }, { idempotencyKey })
 }
 
+// Content types a browser renders as an active document. Evidence is never stored with them,
+// whatever the browser reported for the picked file.
+const ACTIVE_DOCUMENT_MIME_PATTERN = /html|svg/iu
+
+/**
+ * Uploads the file with the Content-Type derived from the declared MIME type (never the browser's
+ * file.type), so it always matches what the server verifies at finalize. XML is stored as
+ * application/octet-stream (see shared/utils/evidence-storage-content-type.ts).
+ */
 export async function uploadToStorageWithIntent(
   supabaseClient: SupabaseClient,
   intent: CostEvidenceUploadIntent,
   file: File,
   mimeType: string,
 ): Promise<{ error: unknown | null }> {
+  if (!mimeType.trim() || ACTIVE_DOCUMENT_MIME_PATTERN.test(mimeType)) throw new Error('Định dạng tệp không được hỗ trợ.')
   const { error } = await supabaseClient.storage
     .from(intent.bucketId)
     .upload(intent.objectPath, file, {
       upsert: false,
-      contentType: mimeType,
+      contentType: evidenceStorageContentType(mimeType),
     })
   return { error }
 }
@@ -164,6 +196,8 @@ export interface UploadEvidenceOptions {
   session?: EvidenceUploadSession | null
   onSessionChange?: (session: EvidenceUploadSession) => void
   isCompanyContextCurrent?: () => boolean
+  /** Overrides the generic cost-evidence MIME allow-list (for example material XML invoices). */
+  allowedMimeTypes?: readonly string[]
 }
 
 export interface UploadEvidenceResult {
@@ -183,12 +217,20 @@ export async function uploadAndFinalizeEvidence(options: UploadEvidenceOptions):
   }
 
   assertCompanyContextCurrent()
-  const validation = validateEvidenceFile(file)
-  if (!validation.valid) {
-    throw new Error(validation.error)
+  let mimeType: string
+  if (options.allowedMimeTypes) {
+    const allowedMimeType = resolveAllowedMimeType(file, options.allowedMimeTypes)
+    if (file.size > COST_EVIDENCE_MAX_BYTES) throw new Error('Dung lượng tệp vượt quá giới hạn tối đa 25 MiB.')
+    if (!allowedMimeType) throw new Error('Định dạng tệp không được hỗ trợ.')
+    mimeType = allowedMimeType
   }
-
-  const mimeType = resolveEvidenceMimeType(file)
+  else {
+    const validation = validateEvidenceFile(file)
+    if (!validation.valid) {
+      throw new Error(validation.error)
+    }
+    mimeType = resolveEvidenceMimeType(file)
+  }
 
   assertCompanyContextCurrent()
   onProgress?.('hashing')

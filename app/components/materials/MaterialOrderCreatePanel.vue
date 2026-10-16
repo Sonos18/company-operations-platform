@@ -703,9 +703,15 @@
               </td>
 
               <td class="p-2.5 text-center align-top">
-                <span v-if="order.contract !== null" class="cockpit-badge bg-sky-100 text-sky-800 text-[11px] font-medium">
+                <NuxtLink
+                  v-if="order.contract !== null"
+                  :to="'/materials/' + projectId + '/orders/' + order.id"
+                  class="cockpit-badge bg-sky-100 text-sky-800 hover:bg-sky-200 text-[11px] font-medium"
+                  title="Xem chi tiết đơn và hợp đồng"
+                  data-testid="order-contract-link"
+                >
                   Đã ký HĐ
-                </span>
+                </NuxtLink>
                 <span v-else class="text-slate-500 text-[11px] italic">
                   Chưa có dữ liệu hợp đồng
                 </span>

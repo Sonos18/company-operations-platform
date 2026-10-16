@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
 import JSZip, { type JSZipObject } from 'jszip'
+import { isXmlEvidenceMimeType } from '../../../../shared/utils/evidence-storage-content-type'
 import { AppApiError } from '../../../utils/api-error'
 import { inspectZipCentralDirectory } from '../../../utils/zip-archive-metadata'
+import { validateXmlEvidence, XmlEvidenceRejected } from './xml-evidence-validation'
 
 const signatures: Record<string, readonly number[]> = {
   'application/pdf': [0x25, 0x50, 0x44, 0x46, 0x2d],
@@ -86,6 +88,18 @@ async function verifyXlsx(bytes: Uint8Array) {
   }
 }
 
+// Allowlist check for XML invoices. Not the XSS control: XML evidence is stored as
+// application/octet-stream and always signed as a download (see xml-evidence-validation.ts).
+function verifyXml(bytes: Uint8Array) {
+  try {
+    validateXmlEvidence(bytes)
+  }
+  catch (error) {
+    if (error instanceof XmlEvidenceRejected) mismatch()
+    throw error
+  }
+}
+
 export async function verifyEvidenceBlob(blob: Blob, maxBytes: number, mimeType: string) {
   const hash = createHash('sha256')
   let sizeBytes = 0
@@ -99,6 +113,7 @@ export async function verifyEvidenceBlob(blob: Blob, maxBytes: number, mimeType:
   }
   const bytes = new Uint8Array(Buffer.concat(chunks))
   if (mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') await verifyXlsx(bytes)
+  else if (isXmlEvidenceMimeType(mimeType)) verifyXml(bytes)
   else if (!signatures[mimeType] || !hasPrefix(bytes, signatures[mimeType])) mismatch()
   return { sizeBytes, sha256: hash.digest('hex'), mimeType }
 }

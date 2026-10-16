@@ -1,4 +1,5 @@
 import { createHttpMaterialProcurementRepository } from '../repositories/http/http-material-procurement-repository'
+import { createHttpMaterialFinanceRepository } from '../repositories/http/http-material-finance-repository'
 import { PROTOTYPE_CONFIG } from '../config/prototype'
 import type { RepositoryRegistry } from '../repositories/contracts'
 import { createMockRepositories } from '../repositories/mock/mock-repositories'
@@ -60,6 +61,7 @@ export default defineNuxtPlugin({
       costWorkflow:createHttpCostWorkflowRepository({companyId:financeCompanyId,client}),
       projectFinance: createHttpProjectFinanceRepository({ companyId: financeCompanyId, client }),
       materialProcurement: createHttpMaterialProcurementRepository({ companyId: financeCompanyId, client }),
+      materialFinance: createHttpMaterialFinanceRepository({ companyId: financeCompanyId, client }),
     }
 
     return { provide: { repositories } }

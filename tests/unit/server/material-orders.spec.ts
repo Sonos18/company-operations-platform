@@ -41,7 +41,7 @@ const orderView = {
   }],
   unsignedQuotationEvidenceFileId: ids.unsignedQuotation,
   contract: null,
-  cash: { grossPaid: '0.0000', availableToPay: '0.0000' },
+  cash: null,
 }
 const commandResult = { resourceId: ids.order, version: 1, replayed: false }
 
@@ -108,6 +108,24 @@ describe('material order service', () => {
 
     await expect(service.listOrders(context(purchasingRoleScope), ids.project)).resolves.toEqual([orderView])
     await expect(service.readOrder(context(accountantRoleScope), ids.project, ids.order)).resolves.toEqual(orderView)
+  })
+
+  it('lets finance-only roles (treasurer, director, request-only accountant) read orders', async () => {
+    const data = repository()
+    const service = new MaterialProcurementService(data)
+    for (const permissions of [
+      ['material.read', 'material.finance.read', 'material.payment.approve', 'material.payment.execute'],
+      ['material.read', 'material.finance.read'],
+      ['material.read', 'material.payment.request'],
+    ] as PermissionCode[][]) {
+      await expect(service.readOrder(context(permissions), ids.project, ids.order)).resolves.toEqual(orderView)
+      await expect(service.listOrders(context(permissions), ids.project)).resolves.toEqual([orderView])
+    }
+    // Finance permissions without material.read stay denied.
+    await expect(service.readOrder(context(['material.finance.read', 'material.payment.approve']), ids.project, ids.order))
+      .rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
+    await expect(service.readOrder(context(engineerRoleScope), ids.project, ids.order))
+      .rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' })
   })
 
   it('lets only a buyer create and cancel orders with validated input', async () => {

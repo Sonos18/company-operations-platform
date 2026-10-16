@@ -1,12 +1,13 @@
 import { z } from 'zod'
 import {
   COST_EVIDENCE_MAX_BYTES,
-  costEvidenceFinalizedSchema,
   costEvidenceReadUrlSchema,
   costEvidenceUploadIntentSchema,
 } from '../../../../shared/schemas/costs/cost-evidence'
 import {
   materialCommandResultSchema,
+  materialEvidenceFinalizedSchema,
+  materialEvidenceMimeTypeSchema,
   materialOrderViewSchema,
   materialOrderCurrencySchema,
   materialProjectOptionSchema,
@@ -14,6 +15,7 @@ import {
   materialSupplierNameViewSchema,
   materialViewSchema,
 } from '../../../../shared/schemas/costs/material-procurement'
+import { evidenceStorageContentType, isXmlEvidenceMimeType } from '../../../../shared/utils/evidence-storage-content-type'
 import { AppApiError } from '../../../utils/api-error'
 import type { SupabaseMaterialEvidenceFinalizer, UserSupabaseClient } from '../../../utils/supabase-client'
 import { verifyEvidenceBlob } from '../evidence/evidence-file-integrity'
@@ -68,12 +70,28 @@ const finalizationTargetSchema = z.discriminatedUnion('status', [
     status: z.literal('pending_upload'),
     bucketId: z.literal('c1-accounting-evidence'),
     objectPath: z.string().min(1),
-    declaredMimeType: z.literal('application/pdf'),
+    declaredMimeType: materialEvidenceMimeTypeSchema,
     declaredSizeBytes: z.number().int().positive(),
     declaredSha256: z.string().regex(/^[a-f0-9]{64}$/u),
   }).strict(),
 ])
-const readTargetSchema = z.object({ bucketId: z.literal('c1-accounting-evidence'), objectPath: z.string().min(1) }).strict()
+const readTargetSchema = z.object({
+  bucketId: z.literal('c1-accounting-evidence'),
+  objectPath: z.string().min(1),
+  // Optional so the app and the database can be deployed in either order: a target without it
+  // (database before 20261015090500) is always signed as a download.
+  declaredMimeType: z.string().min(1).optional(),
+}).strict()
+// Types a browser may render inline safely. Everything else, XML invoices in particular (a browser
+// can execute XML as XHTML/SVG), is always signed as a download, whatever the caller asked for.
+const inlineEvidenceMimeTypes: ReadonlySet<string> = new Set(['application/pdf', 'image/png', 'image/jpeg'])
+
+function mustDownload(declaredMimeType: string | undefined, disposition: 'inline' | 'attachment' | undefined) {
+  return disposition === 'attachment'
+    || declaredMimeType === undefined
+    || isXmlEvidenceMimeType(declaredMimeType)
+    || !inlineEvidenceMimeTypes.has(declaredMimeType)
+}
 
 export class SupabaseMaterialProcurementRepository implements MaterialProcurementDataRepository {
   private readonly client: Client
@@ -211,7 +229,10 @@ export class SupabaseMaterialProcurementRepository implements MaterialProcuremen
         throw new AppApiError(409, 'EVIDENCE_UPLOAD_MISMATCH', 'Không thể xác minh tệp tải lên.')
       }
       const identity = await verifyEvidenceBlob(downloaded.data, COST_EVIDENCE_MAX_BYTES, target.declaredMimeType)
-      if (downloaded.data.type !== target.declaredMimeType
+      // Storage may append parameters (for example a charset) to text types. XML must be stored
+      // as application/octet-stream so the object can never be rendered inline.
+      const storedMimeType = downloaded.data.type.split(';')[0]!.trim().toLowerCase()
+      if (storedMimeType !== evidenceStorageContentType(target.declaredMimeType)
         || identity.sizeBytes !== target.declaredSizeBytes
         || identity.sha256 !== target.declaredSha256) {
         throw new AppApiError(409, 'EVIDENCE_UPLOAD_MISMATCH', 'Tệp tải lên không khớp với khai báo.')
@@ -228,7 +249,7 @@ export class SupabaseMaterialProcurementRepository implements MaterialProcuremen
       target_input: finalInput,
       target_idempotency_key: key,
       target_request_id: context.requestId,
-    }), costEvidenceFinalizedSchema)
+    }), materialEvidenceFinalizedSchema)
   }
 
   async readEvidenceUrl(context: MaterialProcurementContext, projectId: string, fileId: string, input: Parameters<MaterialProcurementDataRepository['readEvidenceUrl']>[3]) {
@@ -238,7 +259,9 @@ export class SupabaseMaterialProcurementRepository implements MaterialProcuremen
       target_id: fileId,
     }), readTargetSchema)
     const signed = workflowResponse(
-      await this.client.storage.from(target.bucketId).createSignedUrl(target.objectPath, 60, { download: input.disposition === 'attachment' }),
+      await this.client.storage.from(target.bucketId).createSignedUrl(target.objectPath, 60, {
+        download: mustDownload(target.declaredMimeType, input.disposition),
+      }),
       z.object({ signedUrl: z.string().url() }).passthrough(),
     )
     return costEvidenceReadUrlSchema.parse({ url: signed.signedUrl, expiresAt: new Date(Date.now() + 60_000).toISOString() })
