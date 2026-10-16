@@ -231,7 +231,7 @@
                 >
               </div>
 
-              <!-- Suggestions chips: Saved supplier names, then effectiveInvoiceDisplayName -->
+              <!-- Suggestions chips: Saved supplier names, then the canonical materialName -->
               <div class="flex items-center gap-1.5 flex-wrap pt-0.5 text-[11px]">
                 <span class="text-slate-400">Gợi ý:</span>
 
@@ -248,7 +248,7 @@
                   <span>NCC: {{ savedName }}</span>
                 </button>
 
-                <!-- Proposal effective invoice display name -->
+                <!-- Canonical material name from the proposal line -->
                 <button
                   v-if="getProposalLineName(alloc.proposalLineId)"
                   type="button"

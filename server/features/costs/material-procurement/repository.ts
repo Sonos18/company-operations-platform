@@ -40,7 +40,6 @@ type RpcName =
   | 'c1_material_update_proposal'
   | 'c1_material_submit_proposal'
   | 'c1_material_decide_proposal'
-  | 'c1_material_set_proposal_invoice_name'
   | 'c1_material_create_order'
   | 'c1_material_list_orders'
   | 'c1_material_read_order'
