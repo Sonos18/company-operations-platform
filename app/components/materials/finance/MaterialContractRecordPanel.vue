@@ -62,6 +62,7 @@
         </label>
         <input
           id="quotation-file"
+          ref="quotationFileInput"
           class="cockpit-input"
           type="file"
           :accept="isQuotationOnly ? '.pdf,.jpg,.jpeg,.png' : 'application/pdf,.pdf'"
@@ -244,6 +245,14 @@ const canRecordWithout = computed(() => canRecordWithoutContract(orderSubtotal.v
 const documentationMode = ref<'contract' | 'quotation_only'>('contract')
 const isQuotationOnly = computed(() => canRecordWithout.value && documentationMode.value === 'quotation_only')
 
+const quotationFileInput = ref<HTMLInputElement | null>(null)
+
+// Clear quotation slot and DOM input when switching documentation modes to prevent stale files (e.g. JPG in contract mode).
+watch(documentationMode, () => {
+  quotationSlot.selectFile(null)
+  if (quotationFileInput.value) quotationFileInput.value.value = ''
+})
+
 const money = useContractMoneyFields(() => orderSubtotal.value)
 const subtotalLabel = computed(() => money.subtotalDecimal.value ? formatVnNumber(money.subtotalDecimal.value) : '—')
 const quotationOnlyTotalLabel = computed(() => formatVnNumber(money.subtotalDecimal.value ?? '0'))
@@ -265,6 +274,10 @@ watch(signedOn, (next, previous) => {
 
 function pickedFile(event: Event) {
   return (event.target as HTMLInputElement).files?.[0] ?? null
+}
+
+function isPdfFile(file: File): boolean {
+  return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
 }
 
 const issues = computed(() => {
@@ -290,7 +303,12 @@ const issues = computed(() => {
   }
   else {
     if (!contractSlot.state.file) list.push('Chưa chọn file hợp đồng đã ký (PDF).')
-    if (!quotationSlot.state.file) list.push('Chưa chọn file báo giá có chữ ký (PDF).')
+    if (!quotationSlot.state.file) {
+      list.push('Chưa chọn file báo giá có chữ ký (PDF).')
+    }
+    else if (!isPdfFile(quotationSlot.state.file)) {
+      list.push('Báo giá có chữ ký phải là file PDF khi có hợp đồng.')
+    }
     if (!contractNo.value.trim()) list.push('Chưa nhập số hợp đồng.')
     if (!signedOn.value) list.push('Chưa chọn ngày ký.')
     list.push(...money.issues.value, ...resolved.value.issues)
@@ -304,6 +322,41 @@ const panelIssues = computed(() => {
   return issues.value.filter(issue => !resolved.value.issues.includes(issue))
 })
 
+interface EvidenceSlotLike {
+  reset: () => void
+}
+
+async function submitRecord(buildInput: () => Promise<unknown>, slotsToReset: EvidenceSlotLike[]) {
+  busy.value = true
+  try {
+    const rawInput = await buildInput()
+    if (!isScopeCurrent()) return
+
+    const parsed = recordMaterialContractInputSchema.safeParse(rawInput)
+    if (!parsed.success) {
+      actionError.value = describeContractError({ code: parsed.error.issues[0]?.message }).message
+      return
+    }
+
+    await financeRepo.recordContract(props.projectId, props.order.id, parsed.data, {
+      idempotencyKey: keyKeeper.keyFor(parsed.data),
+    })
+    if (isScopeCurrent()) emit('refresh')
+  }
+  catch (err: unknown) {
+    if (!isScopeCurrent()) return
+    const described = describeContractError(err)
+    actionError.value = described.message
+    needsReload.value = described.code === 'CONTRACT_EXISTS' || described.code === 'VERSION_CONFLICT'
+    if (described.code === 'EVIDENCE_INVALID') {
+      for (const slot of slotsToReset) slot.reset()
+    }
+  }
+  finally {
+    if (!disposed) busy.value = false
+  }
+}
+
 async function save() {
   if (busy.value) return
   submitAttempted.value = true
@@ -314,53 +367,26 @@ async function save() {
     const subtotalDec = money.subtotalDecimal.value
     if (issues.value.length > 0 || !subtotalDec) return
 
-    busy.value = true
-    try {
+    await submitRecord(async () => {
       const signedQuotationFileId = await quotationSlot.ensureUploaded()
-      if (!isScopeCurrent()) return
-
-      const parsed = recordMaterialContractInputSchema.safeParse({
+      return {
         documentation: 'quotation_only',
         expectedOrderVersion: props.order.version,
         signedOn: signedOn.value,
         subtotal: subtotalDec.toFixed(4),
         varianceReason: money.varianceNeeded.value ? money.varianceReason.value.trim() : null,
         signedQuotationFileId,
-      })
-      if (!parsed.success) {
-        actionError.value = describeContractError({ code: parsed.error.issues[0]?.message }).message
-        return
       }
-
-      await financeRepo.recordContract(props.projectId, props.order.id, parsed.data, {
-        idempotencyKey: keyKeeper.keyFor(parsed.data),
-      })
-      if (isScopeCurrent()) emit('refresh')
-    }
-    catch (err: unknown) {
-      if (!isScopeCurrent()) return
-      const described = describeContractError(err)
-      actionError.value = described.message
-      needsReload.value = described.code === 'CONTRACT_EXISTS' || described.code === 'VERSION_CONFLICT'
-      if (described.code === 'EVIDENCE_INVALID') {
-        quotationSlot.reset()
-      }
-    }
-    finally {
-      if (!disposed) busy.value = false
-    }
+    }, [quotationSlot])
   }
   else {
     const payload = money.toPayload()
     if (issues.value.length > 0 || !payload) return
 
-    busy.value = true
-    try {
+    await submitRecord(async () => {
       const contractFileId = await contractSlot.ensureUploaded()
       const signedQuotationFileId = await quotationSlot.ensureUploaded()
-      if (!isScopeCurrent()) return
-
-      const parsed = recordMaterialContractInputSchema.safeParse({
+      return {
         documentation: 'contract',
         expectedOrderVersion: props.order.version,
         contractNo: contractNo.value.trim(),
@@ -369,30 +395,8 @@ async function save() {
         signedQuotationFileId,
         ...payload,
         installments: resolved.value.installments,
-      })
-      if (!parsed.success) {
-        actionError.value = describeContractError({ code: parsed.error.issues[0]?.message }).message
-        return
       }
-
-      await financeRepo.recordContract(props.projectId, props.order.id, parsed.data, {
-        idempotencyKey: keyKeeper.keyFor(parsed.data),
-      })
-      if (isScopeCurrent()) emit('refresh')
-    }
-    catch (err: unknown) {
-      if (!isScopeCurrent()) return
-      const described = describeContractError(err)
-      actionError.value = described.message
-      needsReload.value = described.code === 'CONTRACT_EXISTS' || described.code === 'VERSION_CONFLICT'
-      if (described.code === 'EVIDENCE_INVALID') {
-        contractSlot.reset()
-        quotationSlot.reset()
-      }
-    }
-    finally {
-      if (!disposed) busy.value = false
-    }
+    }, [contractSlot, quotationSlot])
   }
 }
 </script>
