@@ -89,7 +89,9 @@
         data-testid="contract-status-only"
       >
         <p class="status-line">
-          {{ order.contract.documentation === 'quotation_only' ? 'Đã ghi nhận' : 'Đã có' }} <strong>{{ materialContractLabel(order.contract) }}</strong> ngày {{ formatDate(order.contract.signedOn) }}.
+          <template v-if="order.contract.documentation === 'quotation_only'">Đã ghi nhận <strong>{{ materialContractLabel(order.contract) }}</strong></template>
+          <template v-else>Đã có hợp đồng <strong>{{ order.contract.contractNo }}</strong></template>
+          ngày {{ formatDate(order.contract.signedOn) }}.
         </p>
       </section>
 
