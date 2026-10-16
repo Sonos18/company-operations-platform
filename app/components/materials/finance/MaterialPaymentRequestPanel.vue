@@ -172,7 +172,10 @@
                     <UIcon name="i-lucide-check-check" class="text-emerald-700 text-xs" aria-hidden="true" />
                     <span>Đã chi: {{ formatDate(req.payment.paidOn) }}</span>
                   </div>
-                  <div class="text-slate-600 font-mono text-[10px]">
+                  <div class="text-[10px] text-slate-600">
+                    Hình thức: <span class="font-medium text-slate-800">{{ req.payment.method === 'cash' ? 'Tiền mặt' : 'Chuyển khoản' }}</span>
+                  </div>
+                  <div v-if="req.payment.method !== 'cash'" class="text-slate-600 font-mono text-[10px]">
                     Tham chiếu: <strong class="text-slate-800">{{ req.payment.bankReference }}</strong>
                   </div>
                   <div class="pt-1">
@@ -184,7 +187,7 @@
                     >
                       <UIcon v-if="isFileReading === req.payment.proofFileId" name="i-lucide-loader-2" class="animate-spin text-[10px]" aria-hidden="true" />
                       <UIcon v-else name="i-lucide-external-link" class="text-[10px]" aria-hidden="true" />
-                      <span>Xem ủy nhiệm chi</span>
+                      <span>{{ req.payment.method === 'cash' ? 'Xem chứng từ chi' : 'Xem ủy nhiệm chi' }}</span>
                     </button>
                   </div>
                 </div>
@@ -344,6 +347,8 @@
       v-if="isRecordPaymentOpen"
       :project-id="projectId"
       :contract-id="contract.id"
+      :contract-total="contractTotalForPayment"
+      :currency-code="contract.currencyCode"
       :request="recordPaymentRequestTarget"
       :installment-name="recordPaymentRequestTarget ? getInstallmentName(recordPaymentRequestTarget.installmentKey) : ''"
       :open="isRecordPaymentOpen"
@@ -362,6 +367,8 @@ import type {
   MaterialPaymentRequestView,
   CancelPaymentRequestInput,
 } from '../../../../shared/schemas/costs/material-finance'
+import { MATERIAL_SMALL_ORDER_THRESHOLD } from '../../../../shared/constants/material-finance'
+import { currentContractTotal } from '../../../utils/materials/payment-method'
 import { paymentRequestActions } from '../../../utils/materials/payment-request-actions'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
 import { formatDate, formatDateTime } from '../../../utils/materials/date-display'
@@ -426,6 +433,10 @@ const canCreateRequest = computed(() => {
 
 const hasInstallmentsWithRemaining = computed(() => {
   return (props.contract?.installments ?? []).some(i => moneyGreaterThan(i.remaining, '0'))
+})
+
+const contractTotalForPayment = computed(() => {
+  return currentContractTotal(props.contract) ?? MATERIAL_SMALL_ORDER_THRESHOLD
 })
 
 function getInstallmentName(key: string): string {
