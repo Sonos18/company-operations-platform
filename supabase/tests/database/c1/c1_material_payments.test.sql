@@ -468,13 +468,6 @@ insert into public.company_role_assignments(tenant_id,company_id,user_id,role_id
 values('c1270000-0000-4000-8000-000000000010','c1270000-0000-4000-8000-000000000020','c1270000-0000-4000-8000-000000000901',
   'c1270000-0000-4000-8000-000000000917','c1270000-0000-4000-8000-000000000901','rollback fixture');
 set local role authenticated;
-select set_config('request.jwt.claims','{"sub":"c1270000-0000-4000-8000-000000000901","role":"authenticated"}',true);
-select throws_ok(format($$
-  select public.c1_material_record_payment(
-    'c1270000-0000-4000-8000-000000000020','c1270000-0000-4000-8000-000000000101',%L,
-    '{"expectedVersion":2,"paidOn":"2026-01-12","bankReference":"UNC-000","proofFileId":"c1270000-0000-4000-8000-000000000521"}',
-    'c1270000-0000-4000-8000-000000000d62','c1270000-0000-4000-8000-000000000c00')
-$$,(select body->>'resourceId' from t2_acks where name='R1')),'P0001','SELF_DECISION_FORBIDDEN','case 10: payer cannot be the submitter');
 select set_config('request.jwt.claims','{"sub":"c1270000-0000-4000-8000-000000000903","role":"authenticated"}',true);
 select throws_ok(format($$
   select public.c1_material_record_payment(
@@ -482,23 +475,31 @@ select throws_ok(format($$
     '{"expectedVersion":2,"paidOn":"2026-01-12","bankReference":"UNC-000","proofFileId":"c1270000-0000-4000-8000-000000000524"}',
     'c1270000-0000-4000-8000-000000000d63','c1270000-0000-4000-8000-000000000c00')
 $$,(select body->>'resourceId' from t2_acks where name='R1')),'P0001','EVIDENCE_INVALID','case 10: proof must be a payment_proof file of the contract');
+-- C4 (20261016100100): the accountant who submitted the request records the payment.
+select set_config('request.jwt.claims','{"sub":"c1270000-0000-4000-8000-000000000901","role":"authenticated"}',true);
 insert into t2_acks select 'P_R1', public.c1_material_record_payment(
   'c1270000-0000-4000-8000-000000000020','c1270000-0000-4000-8000-000000000101',(select (body->>'resourceId')::uuid from t2_acks where name='R1'),
   (select body from t2_inputs where name='P_R1'),'c1270000-0000-4000-8000-000000000d61','c1270000-0000-4000-8000-000000000c00');
 select is((
-  select request.state||':'||count(payment.id)::text||':'||coalesce(max(payment.amount)::text,'none')
+  select request.state||':'||count(payment.id)::text||':'||coalesce(max(payment.amount)::text,'none')||':'||max(payment.paid_by::text)
   from public.material_payment_requests as request
   left join public.material_payments as payment on payment.payment_request_id=request.id
   where request.id=(select (body->>'resourceId')::uuid from t2_acks where name='R1')
   group by request.state
-),'paid:1:20.0000','case 10: payment recorded with the request amount');
+),'paid:1:20.0000:c1270000-0000-4000-8000-000000000901','case 10: the submitter, holding execute, records the payment with the request amount');
 set local role none;
+select is((
+  select count(*) from public.app_notifications
+  where recipient_id='c1270000-0000-4000-8000-000000000903'
+    and event_kind='material.payment.paid'
+    and dedupe_key='pr:'||(select body->>'resourceId' from t2_acks where name='R1')||':paid'
+),1::bigint,'case 10: paid notification to the treasurer who approved');
 select is((
   select count(*) from public.app_notifications
   where recipient_id='c1270000-0000-4000-8000-000000000901'
     and event_kind='material.payment.paid'
-    and dedupe_key='pr:'||(select body->>'resourceId' from t2_acks where name='R1')||':paid'
-),1::bigint,'case 10: paid notification to submitter');
+    and source_id=(select (body->>'resourceId')::uuid from t2_acks where name='R1')
+),0::bigint,'case 10: the payer is not notified of their own payment');
 
 -- Case 11: proof hash reuse ------------------------------------------------------
 set local role authenticated;
@@ -567,6 +568,8 @@ select throws_ok(format($$
     'c1270000-0000-4000-8000-000000000020','c1270000-0000-4000-8000-000000000101',%L,
     (select body from t2_inputs where name='D_R3_changed'),'c1270000-0000-4000-8000-000000000d31','c1270000-0000-4000-8000-000000000c00')
 $$,(select body->>'resourceId' from t2_acks where name='R3')),'P0001','IDEMPOTENCY_CONFLICT','case 14: decide with the same key and another payload');
+-- Receipts belong to their actor: K recorded P_R1 (case 10), so K replays it.
+select set_config('request.jwt.claims','{"sub":"c1270000-0000-4000-8000-000000000901","role":"authenticated"}',true);
 select is(
   public.c1_material_record_payment(
     'c1270000-0000-4000-8000-000000000020','c1270000-0000-4000-8000-000000000101',(select (body->>'resourceId')::uuid from t2_acks where name='R1'),
