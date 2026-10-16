@@ -41,7 +41,7 @@
               id="invoice-file-input"
               aria-label="Chọn tệp hóa đơn PDF, XML, JPG hoặc PNG"
               type="file"
-              accept=".pdf,.xml,.jpg,.jpeg,.png,application/pdf,application/xml,text/xml,image/jpeg,image/png"
+              :accept="INVOICE_EVIDENCE_ACCEPT"
               class="cockpit-input text-xs file:mr-3 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100 cursor-pointer"
               :disabled="isSubmitting || isUploading"
               @change="onFileSelected"
@@ -359,6 +359,7 @@ import {
   type MaterialEvidenceUploadSession,
 } from '../../../utils/costs/material-evidence-uploader'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
+import { INVOICE_EVIDENCE_ACCEPT, INVOICE_EVIDENCE_MAX_BYTES, isInvoiceEvidenceFile } from '../../../utils/materials/invoice-evidence-file'
 import { materialContractLabel } from '../../../utils/materials/contract-label'
 import MaterialMoneyInput from './MaterialMoneyInput.vue'
 import {
@@ -392,7 +393,6 @@ const emit = defineEmits<{
   (e: 'stale', message: string): void
 }>()
 
-const maxFileBytes = 25 * 1024 * 1024
 
 const nuxtApp = useNuxtApp()
 const companyAccess = nuxtApp.$companyAccessStore
@@ -462,18 +462,13 @@ function onFileSelected(e: Event) {
   const file = input.files?.[0]
   if (!file) return
 
-  if (file.size > maxFileBytes) {
+  if (file.size > INVOICE_EVIDENCE_MAX_BYTES) {
     uploadError.value = 'Dung lượng tệp không được vượt quá 25 MiB.'
     input.value = ''
     return
   }
 
-  const name = file.name.toLowerCase()
-  const isPdf = name.endsWith('.pdf') || file.type === 'application/pdf'
-  const isXml = name.endsWith('.xml') || file.type === 'application/xml' || file.type === 'text/xml'
-  const isJpg = name.endsWith('.jpg') || name.endsWith('.jpeg') || file.type === 'image/jpeg'
-  const isPng = name.endsWith('.png') || file.type === 'image/png'
-  if (!isPdf && !isXml && !isJpg && !isPng) {
+  if (!isInvoiceEvidenceFile(file)) {
     uploadError.value = 'Chỉ chấp nhận tệp định dạng PDF, XML, JPG hoặc PNG.'
     input.value = ''
     return

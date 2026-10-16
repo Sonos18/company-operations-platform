@@ -68,10 +68,12 @@ interface FlowState {
   evidence: Map<string, { originalFilename: string, mimeType: string, sizeBytes: number, sha256: string }>
   calls: Call[]
   counters: { evidence: number, request: number, invoice: number }
+  /** The next officialize command is refused because its file is not a valid evidence file. */
+  refuseNextOfficialFile: boolean
 }
 
 function createFlowState(): FlowState {
-  return { contractInput: null, invoices: [], requests: [], evidence: new Map(), calls: [], counters: { evidence: 0, request: 0, invoice: 0 } }
+  return { contractInput: null, invoices: [], requests: [], evidence: new Map(), calls: [], counters: { evidence: 0, request: 0, invoice: 0 }, refuseNextOfficialFile: false }
 }
 
 const zero = new Decimal(0)
@@ -266,6 +268,10 @@ async function installFlowMocks(page: Page, state: FlowState) {
     const officialMatch = /^\/invoices\/([^/]+)\/official$/.exec(path)
     if (officialMatch) {
       const input = officializeMaterialInvoiceInputSchema.parse(body)
+      if (state.refuseNextOfficialFile) {
+        state.refuseNextOfficialFile = false
+        return route.fulfill({ status: 409, json: apiError('EVIDENCE_INVALID', 'Tệp không hợp lệ.') })
+      }
       const at = state.invoices.findIndex(item => item.id === officialMatch[1])
       const target = state.invoices[at]
       if (!target || target.stage !== 'draft' || input.expectedVersion !== target.version) {
@@ -560,6 +566,38 @@ test.describe('Luồng hợp đồng và chi tiền vật tư (mock dùng chung)
     await expect(page.getByRole('button', { name: 'Cập nhật hóa đơn chính thức' })).toHaveCount(0)
     const call = posts(`/invoices/${state.invoices[0]?.id}/official`)[0]
     expect(officializeMaterialInvoiceInputSchema.parse(call?.body)).toMatchObject({ expectedVersion: 1 })
+  })
+
+  test('8c. tệp hóa đơn chính thức bị từ chối thì phải chọn tệp khác', async ({ page }) => {
+    // 8b already officialized the invoice, so put it back to a draft for this scenario.
+    const draft = materialInvoiceViewSchema.parse({ ...state.invoices[0], stage: 'draft', officialFileId: null, officializedAt: null, version: 1 })
+    state.invoices[0] = draft
+    state.refuseNextOfficialFile = true
+    await openAs(page, 'accountant')
+    await page.getByRole('button', { name: 'Cập nhật hóa đơn chính thức' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Cập nhật hóa đơn chính thức' })
+    await dialog.locator('#official-file-input').setInputFiles(pdf('hoa-don-loi.pdf'))
+    await dialog.getByRole('button', { name: 'Tải lên', exact: true }).click()
+    await expect(dialog.getByText('Đã tải lên tệp')).toBeVisible()
+    const confirm = dialog.getByRole('button', { name: 'Cập nhật hóa đơn chính thức' })
+    await confirm.click()
+
+    // The refused file is dropped: nothing to resend until another file is uploaded.
+    await expect(dialog.getByRole('alert')).toContainText('Vui lòng chọn lại tệp')
+    await expect(dialog.getByText('Đã tải lên tệp')).toHaveCount(0)
+    await expect(confirm).toBeDisabled()
+    await expect(dialog.getByText('Tệp:')).toHaveCount(0)
+
+    await dialog.locator('#official-file-input').setInputFiles(pdf('hoa-don-dung.pdf'))
+    await dialog.getByRole('button', { name: 'Tải lên', exact: true }).click()
+    await expect(dialog.getByText('Đã tải lên tệp')).toBeVisible()
+    await confirm.click()
+    await expect(dialog).toBeHidden()
+    await expect(page.getByRole('cell', { name: 'Chính thức', exact: true })).toBeVisible()
+    const attempts = posts(`/invoices/${draft.id}/official`)
+    expect(attempts.length).toBeGreaterThanOrEqual(2)
+    const bodies = attempts.slice(-2).map(call => officializeMaterialInvoiceInputSchema.parse(call.body).officialFileId)
+    expect(bodies[0]).not.toBe(bodies[1])
   })
 
   // The server gate that lets finance-only roles read orders is covered by unit tests

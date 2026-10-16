@@ -35,7 +35,7 @@ const contractRowA = {
   supplierId: supplierA,
   supplierName: 'NCC Thép Hòa Phát',
   contractNo: 'HD-VT-01',
-  totals: totals({ committed: '110.0000', paid: '30.0000', pending: '10.0000', remaining: '80.0000', overdue: '70.0000', invoiced: '60.0000' }),
+  totals: totals({ committed: '110.0000', paid: '30.0000', pending: '10.0000', remaining: '80.0000', overdue: '70.0000', invoiced: '60.0000', draftInvoiced: '25.0000' }),
 }
 const contractRowB = {
   contractId: contractB,
@@ -181,6 +181,7 @@ test.describe('Số liệu tài chính vật tư', () => {
     await page.goto('/materials/finance/suppliers')
 
     await expect(page.getByTestId('supplier-row')).toHaveCount(2)
+    await expect(page.getByTestId('supplier-draft-invoiced').first()).toHaveText('25')
     const toggle = page.getByRole('button', { name: /NCC Thép Hòa Phát/ })
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
     await expect(page.getByText('HD-VT-01')).toHaveCount(0)
