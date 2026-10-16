@@ -347,9 +347,8 @@
       v-if="isRecordPaymentOpen"
       :project-id="projectId"
       :contract-id="contract.id"
-      :contract-total="currentContractTotal"
+      :contract-total="contractTotalForPayment"
       :currency-code="contract.currencyCode"
-      :contract="contract"
       :request="recordPaymentRequestTarget"
       :installment-name="recordPaymentRequestTarget ? getInstallmentName(recordPaymentRequestTarget.installmentKey) : ''"
       :open="isRecordPaymentOpen"
@@ -368,6 +367,8 @@ import type {
   MaterialPaymentRequestView,
   CancelPaymentRequestInput,
 } from '../../../../shared/schemas/costs/material-finance'
+import { MATERIAL_SMALL_ORDER_THRESHOLD } from '../../../../shared/constants/material-finance'
+import { currentContractTotal } from '../../../utils/materials/payment-method'
 import { paymentRequestActions } from '../../../utils/materials/payment-request-actions'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
 import { formatDate, formatDateTime } from '../../../utils/materials/date-display'
@@ -434,9 +435,8 @@ const hasInstallmentsWithRemaining = computed(() => {
   return (props.contract?.installments ?? []).some(i => moneyGreaterThan(i.remaining, '0'))
 })
 
-const currentContractTotal = computed(() => {
-  const currentVersion = props.contract.versions?.find(v => v.versionNo === props.contract.currentVersionNo)
-  return currentVersion?.total ?? props.contract.totals?.committed ?? '0'
+const contractTotalForPayment = computed(() => {
+  return currentContractTotal(props.contract) ?? MATERIAL_SMALL_ORDER_THRESHOLD
 })
 
 function getInstallmentName(key: string): string {

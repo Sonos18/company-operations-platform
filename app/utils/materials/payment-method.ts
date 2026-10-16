@@ -1,4 +1,5 @@
 import type { MaterialContractDocumentation } from '../../../shared/constants/material-finance'
+import type { MaterialContractView } from '../../../shared/schemas/costs/material-finance'
 import { isMaterialSmallAmount } from '../../../shared/utils/material-small-order'
 
 /**
@@ -18,4 +19,12 @@ export function requestRequiresInvoice(
   isAdvance: boolean,
 ): boolean {
   return documentation === 'contract' && !isAdvance
+}
+
+/**
+ * Returns the total of the contract's current version, or null if the current version is missing.
+ */
+export function currentContractTotal(contract: MaterialContractView): string | null {
+  const current = contract.versions?.find(v => v.versionNo === contract.currentVersionNo)
+  return current?.total ?? null
 }

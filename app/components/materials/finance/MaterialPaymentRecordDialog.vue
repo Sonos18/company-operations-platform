@@ -40,7 +40,7 @@
           </legend>
           <div class="grid grid-cols-2 gap-2">
             <label
-              class="p-2.5 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer"
+              class="p-2.5 rounded-lg border text-left flex items-center gap-2.5 transition-all cursor-pointer has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-sky-500"
               :class="method === 'bank_transfer'
                 ? 'border-sky-500 bg-sky-50/70 text-sky-900 font-semibold ring-1 ring-sky-500'
                 : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'"
@@ -51,15 +51,17 @@
                 value="bank_transfer"
                 :checked="method === 'bank_transfer'"
                 :disabled="isSubmitting || isUploading"
-                class="sr-only"
+                class="h-4 w-4 cursor-pointer text-sky-600 focus:ring-sky-500"
                 @change="method = 'bank_transfer'"
               >
-              <UIcon name="i-lucide-building-2" class="text-sky-600 text-base" aria-hidden="true" />
-              <span>Chuyển khoản</span>
+              <div class="flex items-center gap-1.5">
+                <UIcon name="i-lucide-building-2" class="text-sky-600 text-base" aria-hidden="true" />
+                <span>Chuyển khoản</span>
+              </div>
             </label>
 
             <label
-              class="p-2.5 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer"
+              class="p-2.5 rounded-lg border text-left flex items-center gap-2.5 transition-all cursor-pointer has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-sky-500"
               :class="method === 'cash'
                 ? 'border-sky-500 bg-sky-50/70 text-sky-900 font-semibold ring-1 ring-sky-500'
                 : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'"
@@ -70,11 +72,13 @@
                 value="cash"
                 :checked="method === 'cash'"
                 :disabled="isSubmitting || isUploading"
-                class="sr-only"
+                class="h-4 w-4 cursor-pointer text-sky-600 focus:ring-sky-500"
                 @change="method = 'cash'"
               >
-              <UIcon name="i-lucide-banknote" class="text-emerald-600 text-base" aria-hidden="true" />
-              <span>Tiền mặt</span>
+              <div class="flex items-center gap-1.5">
+                <UIcon name="i-lucide-banknote" class="text-emerald-600 text-base" aria-hidden="true" />
+                <span>Tiền mặt</span>
+              </div>
             </label>
           </div>
         </fieldset>
@@ -188,7 +192,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import type {
-  MaterialContractView,
   MaterialPaymentMethod,
   MaterialPaymentRequestView,
   RecordMaterialPaymentInput,
@@ -199,7 +202,6 @@ import {
   type MaterialEvidenceUploadSession,
 } from '../../../utils/costs/material-evidence-uploader'
 import { canPayInCash } from '../../../utils/materials/payment-method'
-import { describeContractError } from '../../../utils/materials/contract-errors'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
 import {
   financeErrorCode,
@@ -213,9 +215,8 @@ import {
 interface Props {
   projectId: string
   contractId: string
-  contractTotal?: string
-  currencyCode?: string
-  contract?: MaterialContractView
+  contractTotal: string
+  currencyCode: string
   request: MaterialPaymentRequestView | null
   installmentName?: string
   open: boolean
@@ -224,9 +225,6 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  contractTotal: undefined,
-  currencyCode: undefined,
-  contract: undefined,
   installmentName: '',
 })
 
@@ -340,21 +338,8 @@ async function uploadProof() {
   }
 }
 
-const effectiveContractTotal = computed(() => {
-  if (props.contractTotal !== undefined) return props.contractTotal
-  if (props.contract) {
-    const currentVersion = props.contract.versions?.find(v => v.versionNo === props.contract?.currentVersionNo)
-    return currentVersion?.total ?? props.contract.totals?.committed ?? '0'
-  }
-  return '0'
-})
-
-const effectiveCurrency = computed(() => {
-  return props.currencyCode ?? props.contract?.currencyCode ?? 'VND'
-})
-
 const allowCash = computed(() => {
-  return canPayInCash(effectiveContractTotal.value, effectiveCurrency.value)
+  return canPayInCash(props.contractTotal, props.currencyCode)
 })
 
 const method = ref<MaterialPaymentMethod>('bank_transfer')
@@ -421,11 +406,7 @@ async function submitRecord() {
   }
   catch (err: unknown) {
     resetCommandKeyAfterError(props.commandKey, err)
-    const errCode = financeErrorCode(err)
-      ?? (typeof err === 'object' && err !== null && 'code' in err && typeof (err as { code: unknown }).code === 'string' ? (err as { code: string }).code : undefined)
-    const message = errCode === 'CASH_PAYMENT_NOT_ALLOWED'
-      ? describeContractError(err).message
-      : financeErrorMessage(err, 'Lỗi khi ghi nhận thực chi.')
+    const message = financeErrorMessage(err, 'Lỗi khi ghi nhận thực chi.')
     if (isVersionConflict(err)) emit('stale', message)
     else submitError.value = message
     // The proof is single use: after a duplicate-proof refusal the user must pick another file.
