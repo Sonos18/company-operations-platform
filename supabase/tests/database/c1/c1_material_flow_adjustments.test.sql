@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(41);
+select plan(44);
 
 -- A4/A5 finance flow adjustments (20261016100100, C2-C4). Rollback-only fixture with prefix c134.
 -- Every order has one allocation of quantity 1, so the order subtotal is the unit price:
@@ -11,14 +11,16 @@ select plan(41);
 --   353  4800000 VND  quotation_only with VAT 500000 (total 5300000): CONTRACT_REQUIRED
 --   355  4000000 VND  contract row written directly for the version CHECK and a legacy invoice row
 -- Users: accountant K (901) records contracts and invoices, requests and records payments;
--- treasurer Q (903) approves; KQ (904) requests and approves; buyer B (905) owns the orders.
+-- treasurer Q (903) approves; KQ (904) requests and approves; buyer B (905) owns the orders;
+-- R (906) holds material.contract.record without material.read.
 -- Labels: "C2:", "invoice required:", "C3:", "C4:", "facts:", "legacy:", "privileges:".
 
 insert into auth.users(id,email) values
 ('c1340000-0000-4000-8000-000000000901','flow-k@test.invalid'),
 ('c1340000-0000-4000-8000-000000000903','flow-q@test.invalid'),
 ('c1340000-0000-4000-8000-000000000904','flow-kq@test.invalid'),
-('c1340000-0000-4000-8000-000000000905','flow-buyer@test.invalid');
+('c1340000-0000-4000-8000-000000000905','flow-buyer@test.invalid'),
+('c1340000-0000-4000-8000-000000000906','flow-record-only@test.invalid');
 insert into public.tenants(id,code,name)
 values('c1340000-0000-4000-8000-000000000010','C1FLOW','Flow adjustment tenant');
 insert into public.companies(id,tenant_id,code,name)
@@ -35,7 +37,8 @@ from (values
  ('c1340000-0000-4000-8000-000000000911'::uuid,'flow_accountant'),
  ('c1340000-0000-4000-8000-000000000913'::uuid,'flow_treasurer'),
  ('c1340000-0000-4000-8000-000000000914'::uuid,'flow_request_approve'),
- ('c1340000-0000-4000-8000-000000000915'::uuid,'flow_buyer')
+ ('c1340000-0000-4000-8000-000000000915'::uuid,'flow_buyer'),
+ ('c1340000-0000-4000-8000-000000000916'::uuid,'flow_record_only')
 ) as role_row(id,code);
 insert into public.role_permissions(role_id,permission_code) values
 ('c1340000-0000-4000-8000-000000000911','material.read'),
@@ -50,16 +53,19 @@ insert into public.role_permissions(role_id,permission_code) values
 ('c1340000-0000-4000-8000-000000000914','material.payment.request'),
 ('c1340000-0000-4000-8000-000000000914','material.payment.approve'),
 ('c1340000-0000-4000-8000-000000000915','material.read'),
-('c1340000-0000-4000-8000-000000000915','material.order.manage');
+('c1340000-0000-4000-8000-000000000915','material.order.manage'),
+('c1340000-0000-4000-8000-000000000916','material.contract.record');
 insert into public.company_role_assignments(tenant_id,company_id,user_id,role_id,granted_by,grant_reason)
 select 'c1340000-0000-4000-8000-000000000010','c1340000-0000-4000-8000-000000000020',
   ('c1340000-0000-4000-8000-00000000090'||suffix)::uuid,('c1340000-0000-4000-8000-00000000091'||suffix)::uuid,
   'c1340000-0000-4000-8000-000000000901','rollback fixture'
-from unnest(array['1','3','4','5']) as suffix;
+from unnest(array['1','3','4','5','6']) as suffix;
 insert into public.company_cost_settings(company_id,tenant_id,enabled,created_by)
 values('c1340000-0000-4000-8000-000000000020','c1340000-0000-4000-8000-000000000010',true,'c1340000-0000-4000-8000-000000000901');
 insert into public.projects(id,tenant_id,company_id,code,name,operational_state,origin,created_by)
 values('c1340000-0000-4000-8000-000000000101','c1340000-0000-4000-8000-000000000010','c1340000-0000-4000-8000-000000000020','FLOW-P','Flow adjustment project','active','manual','c1340000-0000-4000-8000-000000000901');
+insert into public.projects(id,tenant_id,company_id,code,name,operational_state,origin,created_by)
+values('c1340000-0000-4000-8000-000000000102','c1340000-0000-4000-8000-000000000010','c1340000-0000-4000-8000-000000000020','FLOW-P2','Flow adjustment other project','active','manual','c1340000-0000-4000-8000-000000000901');
 insert into public.business_parties(id,tenant_id,company_id,code,display_name,party_kind,created_by)
 values('c1340000-0000-4000-8000-000000000201','c1340000-0000-4000-8000-000000000010','c1340000-0000-4000-8000-000000000020','FLOW-S','Flow supplier','organization','c1340000-0000-4000-8000-000000000905');
 insert into public.material_items(id,tenant_id,company_id,code,name,specification,unit,created_by)
@@ -352,6 +358,29 @@ select is((
 ),'3150000.0000|2150000.0000','facts: read_contract carries draftInvoiced before officialize');
 
 -- C3: officialize ---------------------------------------------------------------------------
+-- Access: officialize needs material.contract.record and material.read, and the invoice must
+-- belong to the project of the call.
+select set_config('request.jwt.claims','{"sub":"c1340000-0000-4000-8000-000000000903","role":"authenticated"}',true);
+select throws_ok(format($$
+  select public.c1_material_officialize_invoice(
+    'c1340000-0000-4000-8000-000000000020','c1340000-0000-4000-8000-000000000101',%L,
+    '{"expectedVersion":1,"officialFileId":"c1340000-0000-4000-8000-000000000712"}',
+    'c1340000-0000-4000-8000-000000000d37','c1340000-0000-4000-8000-000000000c00')
+$$,(select body->>'resourceId' from flow_acks where name='I1')),'P0001','PERMISSION_DENIED','C3: a treasurer without material.contract.record cannot officialize');
+select set_config('request.jwt.claims','{"sub":"c1340000-0000-4000-8000-000000000906","role":"authenticated"}',true);
+select throws_ok(format($$
+  select public.c1_material_officialize_invoice(
+    'c1340000-0000-4000-8000-000000000020','c1340000-0000-4000-8000-000000000101',%L,
+    '{"expectedVersion":1,"officialFileId":"c1340000-0000-4000-8000-000000000712"}',
+    'c1340000-0000-4000-8000-000000000d38','c1340000-0000-4000-8000-000000000c00')
+$$,(select body->>'resourceId' from flow_acks where name='I1')),'P0001','PERMISSION_DENIED','C3: material.contract.record without material.read cannot officialize');
+select set_config('request.jwt.claims','{"sub":"c1340000-0000-4000-8000-000000000901","role":"authenticated"}',true);
+select throws_ok(format($$
+  select public.c1_material_officialize_invoice(
+    'c1340000-0000-4000-8000-000000000020','c1340000-0000-4000-8000-000000000102',%L,
+    '{"expectedVersion":1,"officialFileId":"c1340000-0000-4000-8000-000000000712"}',
+    'c1340000-0000-4000-8000-000000000d39','c1340000-0000-4000-8000-000000000c00')
+$$,(select body->>'resourceId' from flow_acks where name='I1')),'P0001','RESOURCE_NOT_FOUND','C3: an invoice of another project is RESOURCE_NOT_FOUND');
 select throws_ok(format($$
   select public.c1_material_officialize_invoice(
     'c1340000-0000-4000-8000-000000000020','c1340000-0000-4000-8000-000000000101',%L,

@@ -531,6 +531,8 @@ declare
   v_invoice public.material_invoices%rowtype;
   v_official_file_id uuid;
 begin
+  -- finance_command_start requires the given permission plus material.read (T8 hardening A),
+  -- so officialize needs material.contract.record and material.read, as the spec says.
   v_tenant_id := private.c1_material_finance_command_start(
     target_company_id, target_project_id, 'material.contract.record', target_input,
     array['expectedVersion','officialFileId'], array['expectedVersion','officialFileId']
