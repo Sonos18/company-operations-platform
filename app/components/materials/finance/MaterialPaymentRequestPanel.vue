@@ -172,7 +172,10 @@
                     <UIcon name="i-lucide-check-check" class="text-emerald-700 text-xs" aria-hidden="true" />
                     <span>Đã chi: {{ formatDate(req.payment.paidOn) }}</span>
                   </div>
-                  <div class="text-slate-600 font-mono text-[10px]">
+                  <div class="text-[10px] text-slate-600">
+                    Hình thức: <span class="font-medium text-slate-800">{{ req.payment.method === 'cash' ? 'Tiền mặt' : 'Chuyển khoản' }}</span>
+                  </div>
+                  <div v-if="req.payment.method !== 'cash'" class="text-slate-600 font-mono text-[10px]">
                     Tham chiếu: <strong class="text-slate-800">{{ req.payment.bankReference }}</strong>
                   </div>
                   <div class="pt-1">
@@ -184,7 +187,7 @@
                     >
                       <UIcon v-if="isFileReading === req.payment.proofFileId" name="i-lucide-loader-2" class="animate-spin text-[10px]" aria-hidden="true" />
                       <UIcon v-else name="i-lucide-external-link" class="text-[10px]" aria-hidden="true" />
-                      <span>Xem ủy nhiệm chi</span>
+                      <span>{{ req.payment.method === 'cash' ? 'Xem chứng từ chi' : 'Xem ủy nhiệm chi' }}</span>
                     </button>
                   </div>
                 </div>
@@ -344,6 +347,9 @@
       v-if="isRecordPaymentOpen"
       :project-id="projectId"
       :contract-id="contract.id"
+      :contract-total="currentContractTotal"
+      :currency-code="contract.currencyCode"
+      :contract="contract"
       :request="recordPaymentRequestTarget"
       :installment-name="recordPaymentRequestTarget ? getInstallmentName(recordPaymentRequestTarget.installmentKey) : ''"
       :open="isRecordPaymentOpen"
@@ -426,6 +432,11 @@ const canCreateRequest = computed(() => {
 
 const hasInstallmentsWithRemaining = computed(() => {
   return (props.contract?.installments ?? []).some(i => moneyGreaterThan(i.remaining, '0'))
+})
+
+const currentContractTotal = computed(() => {
+  const currentVersion = props.contract.versions?.find(v => v.versionNo === props.contract.currentVersionNo)
+  return currentVersion?.total ?? props.contract.totals?.committed ?? '0'
 })
 
 function getInstallmentName(key: string): string {
