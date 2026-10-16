@@ -89,7 +89,7 @@
         data-testid="contract-status-only"
       >
         <p class="status-line">
-          Đã có hợp đồng <strong>{{ order.contract.contractNo }}</strong> ngày {{ formatDate(order.contract.signedOn) }}.
+          {{ order.contract.documentation === 'quotation_only' ? 'Đã ghi nhận' : 'Đã có' }} <strong>{{ materialContractLabel(order.contract) }}</strong> ngày {{ formatDate(order.contract.signedOn) }}.
         </p>
       </section>
 
@@ -115,7 +115,7 @@
         <MaterialInstallmentTable :installments="contract.installments" :currency-code="contract.currencyCode" />
 
         <MaterialContractAmendPanel
-          v-if="canRecordContract && order.orderState !== 'cancelled'"
+          v-if="canRecordContract && order.orderState !== 'cancelled' && contract.documentation !== 'quotation_only'"
           :key="`${contract.id}:${contract.version}`"
           :company-id="companyId"
           :project-id="pId"
@@ -142,6 +142,7 @@ import { formatDate } from '../../../../utils/materials/date-display'
 import { computeOrderSubtotal } from '../../../../utils/materials/order-subtotal'
 import { formatMaterialQuantity } from '../../../../utils/materials/quantity-display'
 import { formatVnNumber } from '../../../../utils/materials/vn-number'
+import { materialContractLabel } from '../../../../utils/materials/contract-label'
 import MaterialContractRecordPanel from '../../../../components/materials/finance/MaterialContractRecordPanel.vue'
 import MaterialContractSummary from '../../../../components/materials/finance/MaterialContractSummary.vue'
 import MaterialInstallmentTable from '../../../../components/materials/finance/MaterialInstallmentTable.vue'

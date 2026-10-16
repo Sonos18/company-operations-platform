@@ -135,7 +135,7 @@
             <span class="info-label">Hợp đồng:</span>
             <ul class="info-value contract-status-list">
               <li v-for="item in proposal.contractStatus" :key="item.orderId">
-                Hợp đồng {{ item.contractNo }} ký ngày {{ formatDate(item.signedOn) }}
+                {{ materialContractLabel(item) }} ký ngày {{ formatDate(item.signedOn) }}
               </li>
             </ul>
           </div>
@@ -312,6 +312,7 @@ import { workflowUuidSchema } from '../../../../../shared/schemas/costs/cost-wor
 import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
 import { formatMaterialQuantity } from '../../../../utils/materials/quantity-display'
 import { formatDate } from '../../../../utils/materials/date-display'
+import { materialContractLabel } from '../../../../utils/materials/contract-label'
 import { ClientError } from '../../../../errors/client-error'
 import MaterialProposalForm from '../../../../components/materials/MaterialProposalForm.vue'
 import MaterialProposalDecisionPanel from '../../../../components/materials/MaterialProposalDecisionPanel.vue'

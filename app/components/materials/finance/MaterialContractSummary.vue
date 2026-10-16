@@ -2,7 +2,7 @@
   <section class="cockpit-card summary-card" role="region" aria-label="Hợp đồng và cam kết" data-testid="contract-summary">
     <header class="summary-head">
       <div>
-        <h3 class="summary-title">Hợp đồng {{ contract.contractNo }}</h3>
+        <h3 class="summary-title">{{ materialContractLabel(contract) }}</h3>
         <p class="summary-sub">
           Ký ngày {{ formatDate(contract.signedOn) }} · Phiên bản hiện hành v{{ contract.currentVersionNo }}
         </p>
@@ -59,6 +59,7 @@ import { MoneyDecimal } from '../../../../shared/utils/money-decimal'
 import type { MaterialContractView } from '../../../../shared/schemas/costs/material-finance'
 import { formatDate, formatDateTime } from '../../../utils/materials/date-display'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
+import { materialContractLabel } from '../../../utils/materials/contract-label'
 
 interface Props {
   projectId: string
