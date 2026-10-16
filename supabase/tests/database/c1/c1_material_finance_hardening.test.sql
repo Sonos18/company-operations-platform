@@ -240,7 +240,7 @@ select is((
   where recipient_id='c1290000-0000-4000-8000-000000000901'
     and event_kind='material.payment.returned'
     and dedupe_key='pr:'||(select body->>'resourceId' from t8_acks where name='R1')||':ret:1'
-),'{"supplierName":"Hardening supplier","contractNo":"HD-HARD-01","reason":"Thieu chung tu"}'::jsonb,
+),'{"supplierName":"Hardening supplier","contractNo":"HD-HARD-01","documentation":"contract","reason":"Thieu chung tu"}'::jsonb,
 'notifications: returned payload carries supplier, contract and reason');
 select ok((
   select bool_and(not (payload ? 'amount')) and count(*) = 1 from public.app_notifications
@@ -252,7 +252,7 @@ select is((
   where recipient_id='c1290000-0000-4000-8000-000000000901'
     and event_kind='material.payment.paid'
     and dedupe_key='pr:'||(select body->>'resourceId' from t8_acks where name='R1')||':paid'
-),'{"supplierName":"Hardening supplier","contractNo":"HD-HARD-01"}'::jsonb,
+),'{"supplierName":"Hardening supplier","contractNo":"HD-HARD-01","documentation":"contract"}'::jsonb,
 'notifications: paid payload carries supplier and contract only');
 select ok((
   select bool_and(not (payload ? 'amount')) and count(*) = 1 from public.app_notifications
