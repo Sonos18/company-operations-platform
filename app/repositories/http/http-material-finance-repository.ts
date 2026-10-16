@@ -11,6 +11,7 @@ import {
   materialFinanceInboxSchema,
   materialInvoiceViewSchema,
   materialPaymentRequestViewSchema,
+  officializeMaterialInvoiceInputSchema,
   projectMaterialFinanceSummarySchema,
   recordMaterialContractInputSchema,
   recordMaterialInvoiceInputSchema,
@@ -74,6 +75,8 @@ export function createHttpMaterialFinanceRepository(options: {
       command(project(projectId, '/contracts/' + targetId(contractId) + '/invoices'), input, recordMaterialInvoiceInputSchema, cmd),
     voidInvoice: async (projectId, invoiceId, input, cmd) =>
       command(project(projectId, '/invoices/' + targetId(invoiceId) + '/void'), input, voidMaterialInvoiceInputSchema, cmd),
+    officializeInvoice: async (projectId, invoiceId, input, cmd) =>
+      command(project(projectId, '/invoices/' + targetId(invoiceId) + '/official'), input, officializeMaterialInvoiceInputSchema, cmd),
     listPaymentRequests: async (projectId, contractId) =>
       read(project(projectId, '/contracts/' + targetId(contractId) + '/payment-requests'), z.array(materialPaymentRequestViewSchema)),
     createPaymentRequest: async (projectId, contractId, input, cmd) =>

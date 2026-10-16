@@ -38,20 +38,12 @@ describe('payment-method utils', () => {
   })
 
   describe('requestRequiresInvoice', () => {
-    it('does not require invoice for quotation_only orders even if not advance', () => {
-      expect(requestRequiresInvoice('quotation_only', false)).toBe(false)
+    it('requires an invoice for every installment that is not an advance payment', () => {
+      expect(requestRequiresInvoice(false)).toBe(true)
     })
 
-    it('requires invoice for contract orders when not advance', () => {
-      expect(requestRequiresInvoice('contract', false)).toBe(true)
-    })
-
-    it('does not require invoice for contract advance installments', () => {
-      expect(requestRequiresInvoice('contract', true)).toBe(false)
-    })
-
-    it('does not require invoice for quotation_only advance installments', () => {
-      expect(requestRequiresInvoice('quotation_only', true)).toBe(false)
+    it('does not require an invoice for an advance installment', () => {
+      expect(requestRequiresInvoice(true)).toBe(false)
     })
   })
 

@@ -572,6 +572,7 @@ async function submitInvoice() {
     .filter(line => line.invoiceMaterialName.length > 0)
 
   const input: RecordMaterialInvoiceInput = {
+    stage: 'official', // T6 replaces this with the draft/official choice
     invoiceSymbol: invoiceSymbol.value.trim(),
     invoiceNo: invoiceNo.value.trim(),
     issuedOn: issuedOn.value,

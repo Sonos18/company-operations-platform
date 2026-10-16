@@ -35,6 +35,7 @@ const contractFactsSchema = z.object({
   contractNo: z.string().min(1).nullable(),
   total: money,
   invoiced: money,
+  draftInvoiced: money,
   installments: z.array(installmentFactsSchema),
 }).strict()
 

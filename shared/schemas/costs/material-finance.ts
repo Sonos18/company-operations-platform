@@ -63,14 +63,21 @@ const recordWithContractInputSchema = z.object({
   ...contractMoney,
 }).strict().superRefine(balanced)
 
-// No contract number, contract file, VAT, total or installment schedule: the server sets VAT to 0,
-// the total to the subtotal and generates the single installment (R3, R4).
+// No contract number, contract file or installment schedule. VAT and total are optional (C2): the
+// server takes a missing VAT as 0 and a missing total as subtotal + VAT, and generates the single
+// installment (R3, R4). A body that sends them must balance like a contract does.
 const recordQuotationOnlyInputSchema = z.object({
   documentation: z.literal('quotation_only'),
   ...recordContractCommon,
   subtotal: positiveMoney,
+  vatAmount: workflowMoneySchema.optional(),
+  total: positiveMoney.optional(),
   varianceReason: reason.nullable(),
-}).strict()
+}).strict().superRefine((value, context) => {
+  if (value.total !== undefined && !new Decimal(value.subtotal).plus(value.vatAmount ?? 0).equals(value.total)) {
+    context.addIssue({ code: 'custom', path: ['total'], message: 'CONTRACT_TOTAL_MISMATCH' })
+  }
+})
 
 // A body without the discriminator is the pre-small-order shape and means the default branch.
 // The key is added before the union, so each branch keeps its own strict key set.
@@ -96,7 +103,11 @@ export const amendMaterialContractInputSchema = z.object({
   ...contractMoney,
 }).strict().superRefine(balanced)
 
+export const materialInvoiceStageSchema = z.enum(['draft', 'official'])
+
 export const recordMaterialInvoiceInputSchema = z.object({
+  // A draft is the supplier's draft or signed copy; the official file is attached later (C3).
+  stage: materialInvoiceStageSchema.default('official'),
   invoiceSymbol: z.string().trim().min(1).max(20),
   invoiceNo: z.string().trim().min(1).max(50),
   issuedOn: date,
@@ -118,6 +129,8 @@ export const recordMaterialInvoiceInputSchema = z.object({
 })
 
 export const voidMaterialInvoiceInputSchema = z.object({ expectedVersion: version, reason }).strict()
+
+export const officializeMaterialInvoiceInputSchema = z.object({ expectedVersion: version, officialFileId: uuid }).strict()
 
 const requestBody = {
   amount: positiveMoney,
@@ -173,6 +186,7 @@ export const materialFinanceTotalsSchema = z.object({
   remaining: z.string().regex(/^-?(?:0|[1-9]\d{0,15})\.\d{4}$/),
   overdue: workflowMoneySchema,
   invoiced: workflowMoneySchema,
+  draftInvoiced: workflowMoneySchema,
   paidWithoutInvoice: workflowMoneySchema,
 }).strict() satisfies z.ZodType<MaterialFinanceTotals>
 
@@ -229,6 +243,10 @@ export const materialInvoiceViewSchema = z.object({
   vatAmount: workflowMoneySchema,
   total: workflowMoneySchema,
   fileId: uuid,
+  // A database that predates C3 sends neither key: such an invoice is official with no second file.
+  stage: materialInvoiceStageSchema.default('official'),
+  officialFileId: uuid.nullable().default(null),
+  officializedAt: z.string().datetime({ offset: true }).nullable().default(null),
   state: z.enum(['recorded', 'voided']),
   voidReason: z.string().nullable(),
   version,
@@ -316,6 +334,7 @@ export const appNotificationEventKindSchema = z.enum([
   'material.payment.submitted',
   'material.payment.returned',
   'material.payment.paid',
+  'material.payment.approved',
 ])
 
 export const appNotificationViewSchema = z.object({
@@ -347,6 +366,7 @@ export const materialFinanceEndpointManifest = {
   listInvoices: { method: 'GET', path: project + '/contracts/:contractId/invoices' },
   recordInvoice: { method: 'POST', path: project + '/contracts/:contractId/invoices' },
   voidInvoice: { method: 'POST', path: project + '/invoices/:invoiceId/void' },
+  officializeInvoice: { method: 'POST', path: project + '/invoices/:invoiceId/official' },
   listPaymentRequests: { method: 'GET', path: project + '/contracts/:contractId/payment-requests' },
   createPaymentRequest: { method: 'POST', path: project + '/contracts/:contractId/payment-requests' },
   resubmitPaymentRequest: { method: 'PATCH', path: project + '/payment-requests/:requestId' },
@@ -365,6 +385,9 @@ export type RecordMaterialContractInput = z.infer<typeof recordMaterialContractI
 export type AmendMaterialContractInput = z.infer<typeof amendMaterialContractInputSchema>
 export type RecordMaterialInvoiceInput = z.infer<typeof recordMaterialInvoiceInputSchema>
 export type VoidMaterialInvoiceInput = z.infer<typeof voidMaterialInvoiceInputSchema>
+export type OfficializeMaterialInvoiceInput = z.infer<typeof officializeMaterialInvoiceInputSchema>
+export type MaterialInvoiceStage = z.infer<typeof materialInvoiceStageSchema>
+export type MaterialPaymentRequestState = z.infer<typeof paymentRequestStateSchema>
 export type CreatePaymentRequestInput = z.infer<typeof createPaymentRequestInputSchema>
 export type ResubmitPaymentRequestInput = z.infer<typeof resubmitPaymentRequestInputSchema>
 export type CancelPaymentRequestInput = z.infer<typeof cancelPaymentRequestInputSchema>
@@ -389,6 +412,7 @@ export interface MaterialFinanceRepository {
   listInvoices(projectId: string, contractId: string): Promise<MaterialInvoiceView[]>
   recordInvoice(projectId: string, contractId: string, input: RecordMaterialInvoiceInput, command: MaterialFinanceCommand): Promise<MaterialFinanceCommandResult>
   voidInvoice(projectId: string, invoiceId: string, input: VoidMaterialInvoiceInput, command: MaterialFinanceCommand): Promise<MaterialFinanceCommandResult>
+  officializeInvoice(projectId: string, invoiceId: string, input: OfficializeMaterialInvoiceInput, command: MaterialFinanceCommand): Promise<MaterialFinanceCommandResult>
   listPaymentRequests(projectId: string, contractId: string): Promise<MaterialPaymentRequestView[]>
   createPaymentRequest(projectId: string, contractId: string, input: CreatePaymentRequestInput, command: MaterialFinanceCommand): Promise<MaterialFinanceCommandResult>
   resubmitPaymentRequest(projectId: string, requestId: string, input: ResubmitPaymentRequestInput, command: MaterialFinanceCommand): Promise<MaterialFinanceCommandResult>

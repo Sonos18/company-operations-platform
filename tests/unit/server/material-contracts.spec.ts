@@ -25,7 +25,7 @@ const input = {
 }
 const facts = {
   id: ids.contract, orderId: ids.order, projectId: ids.project, supplierId: ids.user, supplierName: 'NCC A',
-  currencyCode: 'VND', documentation: 'contract', contractNo: 'HD-01', signedOn: '2026-10-10', currentVersionNo: 1, version: 1, invoiced: '0.0000',
+  currencyCode: 'VND', documentation: 'contract', contractNo: 'HD-01', signedOn: '2026-10-10', currentVersionNo: 1, version: 1, invoiced: '0.0000', draftInvoiced: '0.0000',
   versions: [{
     versionNo: 1, kind: 'original', subtotal: '100.0000', vatAmount: '10.0000', total: '110.0000',
     orderSubtotalSnapshot: '100.0000', varianceReason: null, contractFileId: ids.file1, signedQuotationFileId: ids.file2,
@@ -98,6 +98,14 @@ describe('material contract service', () => {
     }))
     const view = await service.readContract(ctx(['material.read', 'material.finance.read']), ids.project, ids.order)
     expect(view).toMatchObject({ documentation: 'quotation_only', contractNo: null })
+  })
+
+  it('reports draftInvoiced in the contract totals', async () => {
+    const service = new MaterialContractService(repo({
+      readContractFacts: vi.fn(async () => ({ ...facts, invoiced: '110.0000', draftInvoiced: '110.0000' } as never)),
+    }))
+    const view = await service.readContract(ctx(['material.read', 'material.finance.read']), ids.project, ids.order)
+    expect(view?.totals).toMatchObject({ invoiced: '110.0000', draftInvoiced: '110.0000' })
   })
 
   it('returns null when the order has no contract', async () => {

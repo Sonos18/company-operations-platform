@@ -2,6 +2,7 @@ import {
   cancelPaymentRequestInputSchema,
   createPaymentRequestInputSchema,
   decidePaymentRequestInputSchema,
+  officializeMaterialInvoiceInputSchema,
   recordMaterialInvoiceInputSchema,
   recordMaterialPaymentInputSchema,
   resubmitPaymentRequestInputSchema,
@@ -12,6 +13,7 @@ import {
   type MaterialFinanceCommandResult,
   type MaterialInvoiceView,
   type MaterialPaymentRequestView,
+  type OfficializeMaterialInvoiceInput,
   type RecordMaterialInvoiceInput,
   type RecordMaterialPaymentInput,
   type ResubmitPaymentRequestInput,
@@ -27,6 +29,7 @@ export interface MaterialPaymentDataRepository {
   listInvoices(context: MaterialFinanceContext, projectId: string, contractId: string): Promise<MaterialInvoiceView[]>
   recordInvoice: Command<RecordMaterialInvoiceInput>
   voidInvoice: Command<VoidMaterialInvoiceInput>
+  officializeInvoice: Command<OfficializeMaterialInvoiceInput>
   listPaymentRequests(context: MaterialFinanceContext, projectId: string, contractId: string): Promise<MaterialPaymentRequestView[]>
   createPaymentRequest: Command<CreatePaymentRequestInput>
   resubmitPaymentRequest: Command<ResubmitPaymentRequestInput>
@@ -51,6 +54,11 @@ export class MaterialPaymentService {
   async voidInvoice(context: MaterialFinanceContext, projectId: string, invoiceId: string, value: unknown, key: string) {
     requirePermission(context, 'material.contract.record')
     return this.repository.voidInvoice(context, id(projectId), id(invoiceId), parse(voidMaterialInvoiceInputSchema, value), id(key))
+  }
+
+  async officializeInvoice(context: MaterialFinanceContext, projectId: string, invoiceId: string, value: unknown, key: string) {
+    requirePermission(context, 'material.contract.record')
+    return this.repository.officializeInvoice(context, id(projectId), id(invoiceId), parse(officializeMaterialInvoiceInputSchema, value), id(key))
   }
 
   async listPaymentRequests(context: MaterialFinanceContext, projectId: string, contractId: string) {

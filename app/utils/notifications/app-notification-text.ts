@@ -115,13 +115,13 @@ export function appNotificationText(notification: AppNotificationView): AppNotif
     case 'material.payment.submitted': {
       const amount = moneyValue(payload, 'amount')
       return {
-        title: 'Đề nghị chi chờ duyệt',
+        title: 'Đề nghị chi chờ lập UNC',
         body: amount
-          ? `Đề nghị chi trị giá ${amount} đang chờ duyệt.`
-          : 'Có đề nghị chi đang chờ duyệt.',
+          ? `Đề nghị chi trị giá ${amount} đang chờ lập UNC.`
+          : 'Có đề nghị chi đang chờ lập UNC.',
       }
     }
-    // Returned and paid notifications go to the submitter by user id, so they never show money.
+    // Returned, approved and paid notifications go to a person by user id, so they never show money.
     case 'material.payment.returned': {
       const reason = textValue(payload, 'reason')
       const reasonPart = reason ? ` Lý do: ${reason}.` : ''
@@ -130,10 +130,18 @@ export function appNotificationText(notification: AppNotificationView): AppNotif
         body: `Đề nghị chi cho ${requestContractPart(payload)}${supplierPart(payload)} đã bị trả lại.${reasonPart}`,
       }
     }
+    // Goes to the accountant who submitted the request: the treasurer has made the UNC.
+    case 'material.payment.approved': {
+      return {
+        title: 'Đề nghị chi đã lập UNC',
+        body: `Đề nghị chi cho ${requestContractPart(payload)}${supplierPart(payload)} đã được xác nhận lập UNC. Vui lòng cập nhật biên lai.`,
+      }
+    }
+    // Goes to the treasurer who confirmed the UNC: the accountant has recorded the payment.
     case 'material.payment.paid': {
       return {
         title: 'Đề nghị chi đã được chi',
-        body: `Đề nghị chi cho ${requestContractPart(payload)}${supplierPart(payload)} đã được thanh toán.`,
+        body: `Đề nghị chi cho ${requestContractPart(payload)}${supplierPart(payload)} đã được kế toán ghi chi.`,
       }
     }
     default:
