@@ -170,6 +170,7 @@ function buildContract(state: FinanceState): MaterialContractView {
       overdue: '0.0000',
       invoiced: state.invoices.reduce((acc, item) => acc.plus(item.total), new Decimal(0)).toFixed(4),
       paidWithoutInvoice: '0.0000',
+      draftInvoiced: '0.0000',
     },
   })
 }
@@ -421,7 +422,7 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
       note: 'Tạm ứng đợt 1',
     })
     expect(post?.key).toBeTruthy()
-    await expect(page.getByRole('cell', { name: 'Chờ duyệt' })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'Chờ lập UNC' })).toBeVisible()
   })
 
   test('2. a regular installment without an invoice cannot be submitted', async ({ page }) => {
@@ -444,7 +445,7 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
     const state = await installFinanceMocks(page, { invoices: [buildInvoice()], requests: [buildRequest()] })
 
     await page.goto(orderPath)
-    await expect(page.getByRole('button', { name: 'Duyệt', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Xác nhận đã lập UNC / đã chi tiền mặt', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Trả lại', exact: true }).click()
 
     const dialog = page.getByRole('dialog', { name: 'Trả lại đề nghị chi' })
@@ -496,7 +497,7 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
       invoiceIds: [invoiceId],
       note: null,
     })
-    await expect(page.getByRole('cell', { name: 'Chờ duyệt' })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'Chờ lập UNC' })).toBeVisible()
   })
 
   test('5. treasurer approves, then records the payment with a PNG proof', async ({ page }) => {
@@ -504,12 +505,12 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
     const state = await installFinanceMocks(page, { invoices: [buildInvoice()], requests: [buildRequest()] })
 
     await page.goto(orderPath)
-    await page.getByRole('button', { name: 'Duyệt', exact: true }).click()
+    await page.getByRole('button', { name: 'Xác nhận đã lập UNC / đã chi tiền mặt', exact: true }).click()
     await page.getByRole('dialog', { name: 'Phê duyệt đề nghị chi' }).getByRole('button', { name: 'Xác nhận duyệt' }).click()
-    await expect(page.getByRole('cell', { name: 'Đã duyệt', exact: true })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'Đã lập UNC – chờ giám đốc duyệt', exact: true })).toBeVisible()
 
-    await page.getByRole('button', { name: 'Ghi chi', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'Ghi nhận chuyển khoản thực chi' })
+    await page.getByRole('button', { name: 'Cập nhật biên lai chuyển khoản', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Cập nhật biên lai chuyển khoản' })
     await dialog.getByLabel(/Số tham chiếu/).pressSequentially('FT26288000189')
     await expect(dialog.getByLabel(/Số tham chiếu/)).toHaveValue('FT26288000189')
     await dialog.locator('input[type=file]').setInputFiles({ name: 'unc.png', mimeType: 'image/png', buffer: png })
@@ -533,8 +534,8 @@ test.describe('Material invoices, payment requests and finance inbox', () => {
     })
 
     await page.goto(orderPath)
-    await page.getByRole('button', { name: 'Ghi chi', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'Ghi nhận chuyển khoản thực chi' })
+    await page.getByRole('button', { name: 'Cập nhật biên lai chuyển khoản', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Cập nhật biên lai chuyển khoản' })
     await dialog.getByLabel(/Số tham chiếu/).fill('FT26288000190')
     await dialog.locator('input[type=file]').setInputFiles({ name: 'unc.png', mimeType: 'image/png', buffer: png })
     await dialog.getByRole('button', { name: 'Tải lên', exact: true }).click()
@@ -552,20 +553,20 @@ test.describe('Material payment dialogs: stale data, retries and typing', () => 
     const state = await installFinanceMocks(page, { invoices: [buildInvoice()], requests: [buildRequest()] })
 
     await page.goto(orderPath)
-    await expect(page.getByRole('button', { name: 'Duyệt', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Xác nhận đã lập UNC / đã chi tiền mặt', exact: true })).toBeVisible()
     // Someone else changes the request after the page loaded.
     state.requests[0] = buildRequest({ version: 2 })
 
-    await page.getByRole('button', { name: 'Duyệt', exact: true }).click()
+    await page.getByRole('button', { name: 'Xác nhận đã lập UNC / đã chi tiền mặt', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Phê duyệt đề nghị chi' })
     await dialog.getByRole('button', { name: 'Xác nhận duyệt' }).click()
 
     await expect(dialog).toBeHidden()
     await expect(page.getByRole('alert').filter({ hasText: 'Dữ liệu đã thay đổi' })).toBeVisible()
 
-    await page.getByRole('button', { name: 'Duyệt', exact: true }).click()
+    await page.getByRole('button', { name: 'Xác nhận đã lập UNC / đã chi tiền mặt', exact: true }).click()
     await page.getByRole('dialog', { name: 'Phê duyệt đề nghị chi' }).getByRole('button', { name: 'Xác nhận duyệt' }).click()
-    await expect(page.getByRole('cell', { name: 'Đã duyệt', exact: true })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'Đã lập UNC – chờ giám đốc duyệt', exact: true })).toBeVisible()
 
     const decisions = state.calls.filter(call => call.path === `/payment-requests/${requestId}/decisions`)
     expect(decisions.map(call => decidePaymentRequestInputSchema.parse(call.body).expectedVersion)).toEqual([1, 2])
@@ -586,7 +587,7 @@ test.describe('Material payment dialogs: stale data, retries and typing', () => 
 
     await page.getByRole('button', { name: 'Lập đề nghị chi' }).click()
     await page.getByRole('dialog', { name: 'Lập đề nghị thanh toán chi' }).getByRole('button', { name: 'Gửi đề nghị chi' }).click()
-    await expect(page.getByRole('cell', { name: 'Chờ duyệt' })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'Chờ lập UNC' })).toBeVisible()
 
     const creates = state.calls.filter(call => call.method === 'POST' && call.path === `/contracts/${contractId}/payment-requests`)
     expect(creates).toHaveLength(2)
@@ -732,14 +733,14 @@ test.describe('Material finance inbox', () => {
 
     const tabs = page.getByRole('tab')
     await expect(tabs).toHaveCount(2)
-    await expect(page.getByRole('tab', { name: /Chờ duyệt/ })).toBeVisible()
-    await expect(page.getByRole('tab', { name: /Đã duyệt – chờ chi/ })).toBeVisible()
+    await expect(page.getByRole('tab', { name: /Chờ lập UNC/ })).toBeVisible()
+    await expect(page.getByRole('tab', { name: /Đã lập UNC – chờ giám đốc duyệt/ })).toBeVisible()
     await expect(page.getByRole('tab', { name: /Đơn chờ hợp đồng/ })).toHaveCount(0)
     await expect(page.getByRole('tab', { name: /Đề nghị bị trả lại/ })).toHaveCount(0)
 
     await expect(page.getByRole('cell', { name: 'Công ty Thép Hòa Phát' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Công nợ nhà cung cấp' })).toHaveAttribute('href', '/materials/finance/suppliers')
-    await page.getByRole('link', { name: 'Xét duyệt' }).click()
+    await page.getByRole('link', { name: 'Xác nhận đã lập UNC' }).click()
     await expect(page).toHaveURL(new RegExp(`${orderPath}$`))
   })
 
@@ -753,7 +754,7 @@ test.describe('Material finance inbox', () => {
     await expect(page.getByRole('tab', { name: /Đơn chờ hợp đồng/ })).toBeVisible()
     await expect(page.getByRole('tab', { name: /Đợt sắp\/quá hạn/ })).toBeVisible()
     await expect(page.getByRole('tab', { name: /Đề nghị bị trả lại/ })).toBeVisible()
-    await expect(page.getByRole('tab', { name: /Chờ duyệt/ })).toHaveCount(0)
+    await expect(page.getByRole('tab', { name: /Chờ lập UNC/ })).toHaveCount(0)
 
     await page.getByLabel('Dự án:').selectOption(projectId)
     await expect.poll(() => inboxUrls.some(url => url.includes(`projectId=${projectId}`))).toBe(true)
@@ -769,12 +770,12 @@ test.describe('Material finance inbox', () => {
 
     await page.goto('/materials/finance')
     await expect(page.getByRole('tab')).toHaveCount(1)
-    await expect(page.getByRole('tab', { name: /Chờ duyệt/ })).toBeVisible()
+    await expect(page.getByRole('tab', { name: /Chờ lập UNC/ })).toBeVisible()
 
     await signIn(page, treasurer, ['material.read', 'material.payment.execute'])
     await page.goto('/materials/finance')
     await expect(page.getByRole('tab')).toHaveCount(1)
-    await expect(page.getByRole('tab', { name: /Đã duyệt – chờ chi/ })).toBeVisible()
+    await expect(page.getByRole('tab', { name: /Đã lập UNC – chờ giám đốc duyệt/ })).toBeVisible()
   })
 
   test('7c. an inbox load failure shows a message and reload recovers', async ({ page }) => {

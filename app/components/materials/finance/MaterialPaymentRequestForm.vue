@@ -131,8 +131,8 @@
             :class="requiresInvoice ? 'text-amber-700' : 'text-slate-500'"
           >
             {{ requiresInvoice
-              ? 'Đợt không phải tạm ứng: bắt buộc chọn ít nhất một hóa đơn đã ghi nhận.'
-              : (selectedInstallment.isAdvance ? 'Đợt tạm ứng: không bắt buộc đính kèm hóa đơn.' : 'Đơn không hợp đồng: không bắt buộc đính kèm hóa đơn.') }}
+              ? 'Đợt không phải tạm ứng: bắt buộc chọn ít nhất một hóa đơn đã ghi nhận (bản nháp hoặc chính thức).'
+              : 'Đợt tạm ứng: không bắt buộc đính kèm hóa đơn.' }}
           </p>
 
           <div v-if="isLoadingInvoices" class="py-4 text-center text-slate-400">
@@ -154,9 +154,7 @@
                   Vì đợt này không phải là tạm ứng, bạn cần quay lại bảng "Hóa đơn" và nhập hóa đơn trước khi lập đề nghị chi.
                 </p>
                 <p v-else class="m-0 mt-0.5 text-[11px]">
-                  {{ selectedInstallment.isAdvance
-                    ? 'Với đợt tạm ứng, bạn vẫn có thể lập đề nghị chi mà không cần chọn hóa đơn.'
-                    : 'Với đơn không hợp đồng, bạn vẫn có thể lập đề nghị chi mà không cần chọn hóa đơn.' }}
+                  Với đợt tạm ứng, bạn vẫn có thể lập đề nghị chi mà không cần chọn hóa đơn.
                 </p>
               </div>
             </div>
@@ -180,6 +178,10 @@
                 <div>
                   <div class="font-semibold text-slate-900 font-mono">
                     {{ inv.invoiceNo }} <span class="text-slate-400 font-normal">({{ inv.invoiceSymbol }})</span>
+                    <span
+                      class="cockpit-badge text-[10px] font-semibold ml-1 font-sans"
+                      :class="inv.stage === 'draft' ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-800'"
+                    >{{ inv.stage === 'draft' ? 'Nháp' : 'Chính thức' }}</span>
                   </div>
                   <div class="text-[10px] text-slate-500">
                     Ngày lập: {{ formatDate(inv.issuedOn) }}

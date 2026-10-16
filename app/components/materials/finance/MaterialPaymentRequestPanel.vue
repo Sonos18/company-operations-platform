@@ -122,7 +122,7 @@
                   class="cockpit-badge text-[11px] font-semibold"
                   :class="getStateBadgeClass(req.state)"
                 >
-                  {{ getStateLabel(req.state) }}
+                  {{ getStateLabel(req) }}
                 </span>
                 <div v-if="req.state === 'cancelled' && req.cancelReason" class="text-[10px] text-slate-500 mt-0.5 max-w-[140px] truncate mx-auto" :title="'Lý do hủy: ' + req.cancelReason">
                   Lý do: {{ req.cancelReason }}
@@ -152,7 +152,7 @@
                   >
                     <div class="font-semibold flex items-center gap-1">
                       <UIcon :name="dec.decision === 'approve' ? 'i-lucide-check' : 'i-lucide-corner-up-left'" class="text-xs" aria-hidden="true" />
-                      <span>{{ dec.decision === 'approve' ? 'Đã duyệt' : 'Đã trả lại' }} (lần {{ dec.revisionNo }})</span>
+                      <span>{{ dec.decision === 'approve' ? 'Đã lập UNC' : 'Đã trả lại' }} (lần {{ dec.revisionNo }})</span>
                     </div>
                     <div v-if="dec.reason" class="text-[10px] mt-0.5 italic text-slate-700">
                       "{{ dec.reason }}"
@@ -187,7 +187,7 @@
                     >
                       <UIcon v-if="isFileReading === req.payment.proofFileId" name="i-lucide-loader-2" class="animate-spin text-[10px]" aria-hidden="true" />
                       <UIcon v-else name="i-lucide-external-link" class="text-[10px]" aria-hidden="true" />
-                      <span>{{ req.payment.method === 'cash' ? 'Xem chứng từ chi' : 'Xem ủy nhiệm chi' }}</span>
+                      <span>{{ req.payment.method === 'cash' ? 'Xem chứng từ chi' : 'Xem biên lai chuyển khoản' }}</span>
                     </button>
                   </div>
                 </div>
@@ -202,11 +202,11 @@
                     v-if="getRequestActions(req).includes('approve')"
                     type="button"
                     class="cockpit-btn cockpit-btn--primary btn-sm text-[11px] py-1 px-2 flex items-center gap-1"
-                    title="Phê duyệt đề nghị chi"
+                    :title="approveLabel"
                     @click="openDecisionDialog(req, 'approve')"
                   >
                     <UIcon name="i-lucide-check" class="text-xs" aria-hidden="true" />
-                    <span>Duyệt</span>
+                    <span>{{ approveLabel }}</span>
                   </button>
 
                   <!-- Return -->
@@ -226,11 +226,11 @@
                     v-if="getRequestActions(req).includes('record_payment')"
                     type="button"
                     class="cockpit-btn bg-emerald-600 hover:bg-emerald-700 text-white btn-sm text-[11px] py-1 px-2 flex items-center gap-1"
-                    title="Ghi nhận chi tiền kèm chứng từ chi"
+                    :title="recordPaymentLabel"
                     @click="openRecordPaymentDialog(req)"
                   >
                     <UIcon name="i-lucide-banknote" class="text-xs" aria-hidden="true" />
-                    <span>Ghi chi</span>
+                    <span>{{ recordPaymentLabel }}</span>
                   </button>
 
                   <!-- Resubmit -->
@@ -362,14 +362,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import type {
   MaterialContractView,
+  MaterialInvoiceView,
   MaterialPaymentRequestView,
   CancelPaymentRequestInput,
 } from '../../../../shared/schemas/costs/material-finance'
 import { MATERIAL_SMALL_ORDER_THRESHOLD } from '../../../../shared/constants/material-finance'
-import { currentContractTotal, currentOrderSubtotalSnapshot } from '../../../utils/materials/payment-method'
+import { canPayInCash, currentContractTotal, currentOrderSubtotalSnapshot } from '../../../utils/materials/payment-method'
+import { approveActionLabel, invoiceStagesForRequest, paymentRequestStateLabel } from '../../../utils/materials/payment-request-labels'
 import { paymentRequestActions } from '../../../utils/materials/payment-request-actions'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
 import { formatDate, formatDateTime } from '../../../utils/materials/date-display'
@@ -403,6 +405,7 @@ const financeRepo = repositories.materialFinance
 const procurementRepo = repositories.materialProcurement
 
 const requests = ref<MaterialPaymentRequestView[]>([])
+const invoices = ref<MaterialInvoiceView[]>([])
 const isLoading = ref(false)
 const actionError = ref('')
 const isFileReading = ref<string | null>(null)
@@ -450,15 +453,14 @@ function getInstallmentName(key: string): string {
   return inst?.name || key.slice(0, 8) + '...'
 }
 
-function getStateLabel(state: MaterialPaymentRequestView['state']): string {
-  switch (state) {
-    case 'submitted': return 'Chờ duyệt'
-    case 'returned': return 'Bị trả lại'
-    case 'approved': return 'Đã duyệt'
-    case 'paid': return 'Đã chi'
-    case 'cancelled': return 'Đã hủy'
-    default: return state
-  }
+// The approve button reads "...đã chi tiền mặt" only where cash is allowed (same rule as the payment dialog).
+const approveLabel = computed(() => approveActionLabel(
+  canPayInCash(contractTotalForPayment.value, props.contract.currencyCode, orderSubtotalSnapshotForPayment.value),
+))
+const recordPaymentLabel = 'Cập nhật biên lai chuyển khoản'
+
+function getStateLabel(req: MaterialPaymentRequestView): string {
+  return paymentRequestStateLabel(req.state, invoiceStagesForRequest(req, invoices.value))
 }
 
 function getStateBadgeClass(state: MaterialPaymentRequestView['state']): string {
@@ -479,12 +481,27 @@ function getRequestActions(req: MaterialPaymentRequestView) {
   return paymentRequestActions(req, actorId.value, permissions)
 }
 
+async function loadInvoices() {
+  if (!props.contract?.id) return
+  try {
+    invoices.value = await financeRepo.listInvoices(props.projectId, props.contract.id)
+  }
+  catch {
+    // The invoices only refine the "waiting for the official invoice" label, so a failure keeps the plain one.
+    invoices.value = []
+  }
+}
+
 async function loadRequests() {
   if (!props.contract?.id) return
   isLoading.value = true
   actionError.value = ''
   try {
-    requests.value = await financeRepo.listPaymentRequests(props.projectId, props.contract.id)
+    const [loadedRequests] = await Promise.all([
+      financeRepo.listPaymentRequests(props.projectId, props.contract.id),
+      loadInvoices(),
+    ])
+    requests.value = loadedRequests
   }
   catch (err: unknown) {
     actionError.value = financeErrorMessage(err, 'Chưa tải được danh sách đề nghị thanh toán.')
@@ -621,6 +638,11 @@ function onRecordPaymentSaved() {
   void loadRequests()
   emit('changed')
 }
+
+// An invoice officialized elsewhere on the page changes the contract's draft total.
+watch(() => props.contract.totals?.draftInvoiced, () => {
+  void loadInvoices()
+})
 
 onMounted(() => {
   void loadRequests()

@@ -84,7 +84,7 @@
       </div>
     </div>
 
-    <div :class="isQuotationOnly ? 'grid-2' : 'grid-4'">
+    <div class="grid-4">
       <div class="field">
         <label class="field-label" for="order-subtotal">Tổng đơn (đối chiếu)</label>
         <input
@@ -104,37 +104,39 @@
         :disabled="busy"
         @update:model-value="money.setSubtotal"
       />
-      <template v-if="!isQuotationOnly">
+      <MaterialMoneyInput
+        id="contract-vat"
+        label="VAT"
+        test-id="contract-vat"
+        :model-value="money.vatAmount.value"
+        :disabled="busy"
+        @update:model-value="money.setVatAmount"
+      />
+      <div class="field">
         <MaterialMoneyInput
-          id="contract-vat"
-          label="VAT"
-          test-id="contract-vat"
-          :model-value="money.vatAmount.value"
+          id="contract-total"
+          :label="isQuotationOnly ? 'Tổng giá trị' : 'Tổng giá trị hợp đồng'"
+          test-id="contract-total"
+          :model-value="money.total.value"
           :disabled="busy"
-          @update:model-value="money.setVatAmount"
+          @update:model-value="money.setTotal"
         />
-        <div class="field">
-          <MaterialMoneyInput
-            id="contract-total"
-            label="Tổng giá trị hợp đồng"
-            test-id="contract-total"
-            :model-value="money.total.value"
-            :disabled="busy"
-            @update:model-value="money.setTotal"
-          />
-          <p class="field-hint">
-            <template v-if="money.totalTouched.value">
-              Đã sửa tay.
-              <button type="button" class="link-btn" @click="money.resetTotal">Tự tính lại</button>
-            </template>
-            <template v-else>Tự tính từ trước VAT + VAT.</template>
-          </p>
-        </div>
-      </template>
+        <p class="field-hint">
+          <template v-if="money.totalTouched.value">
+            Đã sửa tay.
+            <button type="button" class="link-btn" @click="money.resetTotal">Tự tính lại</button>
+          </template>
+          <template v-else>Tự tính từ trước VAT + VAT.</template>
+        </p>
+      </div>
     </div>
 
-    <p v-if="!isQuotationOnly && money.totalMismatch.value" class="field-error" role="alert">
+    <p v-if="money.totalMismatch.value" class="field-error" role="alert">
       Tổng giá trị phải bằng giá trị trước VAT cộng VAT.
+    </p>
+
+    <p v-if="isQuotationOnlyTotalTooHigh" class="field-error" role="alert" data-testid="quotation-threshold-warning">
+      Tổng sau VAT từ 5.000.000 đ trở lên phải có hợp đồng.
     </p>
 
     <div v-if="money.varianceNeeded.value" class="field">
@@ -154,7 +156,7 @@
     </div>
 
     <p v-if="isQuotationOnly" class="summary-line" data-testid="quotation-only-summary">
-      VAT 0 · Thanh toán 100% · Tổng {{ quotationOnlyTotalLabel }}
+      Thanh toán 100% · Tổng {{ quotationOnlyTotalLabel }}
     </p>
 
     <MaterialInstallmentEditor
@@ -199,7 +201,7 @@ import { describeContractError } from '../../../utils/materials/contract-errors'
 import { createEvidenceUploadSlot } from '../../../utils/materials/evidence-upload-slot'
 import { createInstallmentRow, type InstallmentEditorResult, type InstallmentRow } from '../../../utils/materials/installment-rows'
 import { computeOrderSubtotal } from '../../../utils/materials/order-subtotal'
-import { formatVnNumber, parseVnMoney } from '../../../utils/materials/vn-number'
+import { formatVnNumber } from '../../../utils/materials/vn-number'
 import { canRecordWithoutContract } from '../../../utils/materials/contract-record-mode'
 import MaterialInstallmentEditor from './MaterialInstallmentEditor.vue'
 import MaterialMoneyInput from './MaterialMoneyInput.vue'
@@ -257,7 +259,11 @@ watch(documentationMode, () => {
 
 const money = useContractMoneyFields(() => orderSubtotal.value)
 const subtotalLabel = computed(() => money.subtotalDecimal.value ? formatVnNumber(money.subtotalDecimal.value) : '—')
-const quotationOnlyTotalLabel = computed(() => formatVnNumber(money.subtotalDecimal.value ?? '0'))
+const quotationOnlyTotalLabel = computed(() => (money.totalCanonical.value ? formatVnNumber(money.totalCanonical.value) : '—'))
+// A no-contract order must stay under the threshold after VAT too (C2).
+const isQuotationOnlyTotalTooHigh = computed(() => isQuotationOnly.value
+  && Boolean(money.totalCanonical.value)
+  && !canRecordWithoutContract(money.totalCanonical.value, props.order.currencyCode))
 
 const contractNo = ref('')
 const signedOn = ref('')
@@ -287,21 +293,7 @@ const issues = computed(() => {
   if (isQuotationOnly.value) {
     if (!quotationSlot.state.file) list.push('Chưa chọn file báo giá có chữ ký.')
     if (!signedOn.value) list.push('Chưa chọn ngày ghi nhận.')
-    if (!money.subtotal.value.trim()) {
-      list.push('Chưa nhập giá trị trước VAT.')
-    }
-    else {
-      const parsed = parseVnMoney(money.subtotal.value)
-      if (!parsed.ok) {
-        list.push(`Trước VAT: ${parsed.message}`)
-      }
-      else if (money.subtotalDecimal.value && !money.subtotalDecimal.value.greaterThan(0)) {
-        list.push('Giá trị trước VAT phải lớn hơn 0.')
-      }
-    }
-    if (money.varianceNeeded.value && !money.varianceReason.value.trim()) {
-      list.push('Cần nhập lý do chênh lệch so với tổng đơn.')
-    }
+    list.push(...money.issues.value)
   }
   else {
     if (!contractSlot.state.file) list.push('Chưa chọn file hợp đồng đã ký (PDF).')
@@ -366,8 +358,8 @@ async function save() {
   needsReload.value = false
 
   if (isQuotationOnly.value) {
-    const subtotalDec = money.subtotalDecimal.value
-    if (issues.value.length > 0 || !subtotalDec) return
+    const payload = money.toPayload()
+    if (issues.value.length > 0 || isQuotationOnlyTotalTooHigh.value || !payload) return
 
     await submitRecord(async () => {
       const signedQuotationFileId = await quotationSlot.ensureUploaded()
@@ -375,8 +367,7 @@ async function save() {
         documentation: 'quotation_only',
         expectedOrderVersion: props.order.version,
         signedOn: signedOn.value,
-        subtotal: subtotalDec.toFixed(4),
-        varianceReason: money.varianceNeeded.value ? money.varianceReason.value.trim() : null,
+        ...payload,
         signedQuotationFileId,
       }
     }, [quotationSlot])

@@ -44,6 +44,7 @@
               <th scope="col" class="num">Đã chi</th>
               <th scope="col" class="num">Còn phải trả</th>
               <th scope="col" class="num">Quá hạn</th>
+              <th scope="col" class="num">Hóa đơn chờ bản chính thức</th>
             </tr>
           </thead>
           <tbody>
@@ -71,9 +72,10 @@
                 <td class="num" :class="{ 'is-overdue': isOverdue(supplier.totals.overdue) }">
                   {{ formatVnNumber(supplier.totals.overdue) }}
                 </td>
+                <td class="num" data-testid="supplier-draft-invoiced">{{ formatVnNumber(supplier.totals.draftInvoiced) }}</td>
               </tr>
               <tr v-if="isExpanded(supplier.supplierId)" class="contracts-row">
-                <td colspan="5">
+                <td colspan="6">
                   <div :id="contractsPanelId(supplier.supplierId)" class="contracts-panel" role="region" :aria-label="`Hợp đồng của ${supplier.supplierName}`">
                     <p v-if="supplier.contracts.length === 0" class="empty-inline">Nhà cung cấp chưa có hợp đồng.</p>
                     <table v-else class="cockpit-table nested-table">
@@ -85,6 +87,7 @@
                           <th scope="col" class="num">Đã chi</th>
                           <th scope="col" class="num">Còn phải trả</th>
                           <th scope="col" class="num">Quá hạn</th>
+                          <th scope="col" class="num">Hóa đơn chờ bản chính thức</th>
                           <th scope="col">Liên kết</th>
                         </tr>
                       </thead>
@@ -102,6 +105,7 @@
                           <td class="num" :class="{ 'is-overdue': isOverdue(contract.totals.overdue) }">
                             {{ formatVnNumber(contract.totals.overdue) }}
                           </td>
+                          <td class="num">{{ formatVnNumber(contract.totals.draftInvoiced) }}</td>
                           <td>
                             <NuxtLink :to="`/materials/${contract.projectId}/orders/${contract.orderId}`" class="table-link">
                               Xem đơn
