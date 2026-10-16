@@ -28,7 +28,7 @@ const allowlist = [
 export const materialSyntheticPrefixes = {
   'c1_material_procurement_security.test.sql': 'c121',
   'c1_material_procurement_a1.test.sql': 'c122',
-  'c1_material_engineer_invoice_name.test.sql': 'c123',
+  'c1_material_invoice_name_removal.test.sql': 'c123',
   'c1_material_finance_foundation.test.sql': 'c125',
   'c1_material_contracts.test.sql': 'c126',
   'c1_material_payments.test.sql': 'c127',

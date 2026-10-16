@@ -7,7 +7,7 @@ const scriptPath = resolve('scripts/run-c1-cloud-dev-tests.mjs')
 const materialPaths = [
   'c1_material_procurement_security.test.sql',
   'c1_material_procurement_a1.test.sql',
-  'c1_material_engineer_invoice_name.test.sql',
+  'c1_material_invoice_name_removal.test.sql',
   'c1_material_finance_foundation.test.sql',
   'c1_material_contracts.test.sql',
   'c1_material_payments.test.sql',
