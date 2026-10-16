@@ -32,6 +32,7 @@
     "db:dev:a1:test": "node scripts/run-c1-cloud-dev-tests.mjs --materials",
     "db:dev:a1:fixture": "node scripts/material-a1-fixture.mjs --execute",
     "db:dev:c1:ordinary-detail-concurrency": "node scripts/run-c1-ordinary-detail-concurrency.mjs",
+    "db:dev:c1:material-payment-concurrency": "node scripts/run-c1-material-payment-concurrency.mjs",
     "db:dev:c1:rehearse": "node scripts/run-c1-cloud-dev-migration-rehearsal.mjs",
     "c1:import:prepare": "tsx scripts/c1-import.ts prepare",
     "db:dev:c1:import": "node scripts/assert-cloud-dev-target.mjs && tsx scripts/c1-import.ts execute",
