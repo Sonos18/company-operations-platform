@@ -31,7 +31,7 @@ export interface MaterialFinanceContractFacts extends MaterialContractFacts {
   orderId: string
   supplierId: string
   supplierName: string
-  contractNo: string
+  contractNo: string | null
   installments: MaterialFinanceInstallmentFacts[]
 }
 

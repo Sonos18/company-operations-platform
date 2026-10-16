@@ -310,6 +310,7 @@ async function submitRecord() {
   const payload: RecordMaterialPaymentInput = {
     expectedVersion: request.version,
     paidOn: paidOn.value,
+    method: 'bank_transfer',
     bankReference: bankReference.value.trim(),
     proofFileId,
   }

@@ -35,4 +35,8 @@ export const costRpcErrorMappings: Partial<Record<ApiErrorCode, RpcErrorMapping>
   SELF_DECISION_FORBIDDEN: { status: 403, message: 'Bạn không thể tự duyệt hoặc tự chi cho đề nghị do chính mình lập.' },
   PROOF_ALREADY_USED: { status: 409, message: 'Chứng từ chuyển khoản này đã được dùng cho một lần chi khác.' },
   EVIDENCE_INVALID: { status: 400, message: 'Tệp chứng từ không hợp lệ hoặc không đúng đối tượng.' },
+  // Small orders without a contract and cash payments.
+  CONTRACT_REQUIRED: { status: 409, message: 'Đơn từ 5.000.000 đ trở lên bắt buộc có hợp đồng.' },
+  CASH_PAYMENT_NOT_ALLOWED: { status: 409, message: 'Chỉ chi tiền mặt cho đơn có cam kết dưới 5.000.000 đ.' },
+  CONTRACT_AMENDMENT_UNAVAILABLE: { status: 409, message: 'Đơn không hợp đồng không thể thêm phụ lục.' },
 }

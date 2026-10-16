@@ -251,6 +251,7 @@ async function save() {
     if (!isScopeCurrent()) return
 
     const parsed = recordMaterialContractInputSchema.safeParse({
+      documentation: 'contract',
       expectedOrderVersion: props.order.version,
       contractNo: contractNo.value.trim(),
       signedOn: signedOn.value,

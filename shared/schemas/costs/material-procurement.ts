@@ -12,6 +12,7 @@ import type {
   CostEvidenceUploadIntent,
 } from './cost-evidence'
 import { createBusinessPartyInputSchema } from './master-data'
+import { materialContractDocumentationSchema } from './material-documentation'
 import {
   workflowCurrencySchema,
   workflowMoneySchema,
@@ -170,7 +171,8 @@ export const materialProposalViewSchema = z.object({
   // Optional so a database without that migration still parses.
   contractStatus: z.array(z.object({
     orderId: workflowUuidSchema,
-    contractNo: z.string().min(1),
+    documentation: materialContractDocumentationSchema,
+    contractNo: z.string().min(1).nullable(),
     signedOn: z.string().date(),
   }).strict()).max(1000).optional(),
 }).strict().refine(
@@ -231,7 +233,8 @@ export const materialOrderViewSchema = z.object({
   unsignedQuotationEvidenceFileId: workflowUuidSchema,
   contract: z.object({
     id: workflowUuidSchema,
-    contractNo: z.string().min(1).max(100),
+    documentation: materialContractDocumentationSchema,
+    contractNo: z.string().min(1).max(100).nullable(),
     signedOn: z.string().date(),
     currentVersionNo: z.number().int().positive(),
     total: workflowMoneySchema.nullable(),
@@ -302,7 +305,8 @@ export const materialEvidenceMimeTypeSchema = z.enum([
 /** MIME types each evidence role may carry. The database enforces the same table. */
 export const materialEvidenceMimeTypes = {
   unsigned_quotation: ['application/pdf'],
-  signed_quotation: ['application/pdf'],
+  // A signed quotation may be a photo or scan; a record with a contract still accepts only a pdf (database rule).
+  signed_quotation: ['application/pdf', 'image/jpeg', 'image/png'],
   signed_contract: ['application/pdf'],
   contract_amendment: ['application/pdf'],
   invoice: ['application/pdf', 'application/xml', 'text/xml'],

@@ -32,7 +32,7 @@
         <p v-if="version.reason" class="version-note">Lý do: {{ version.reason }}</p>
         <p v-if="version.varianceReason" class="version-note">Chênh lệch so với tổng đơn: {{ version.varianceReason }}</p>
         <div class="version-files">
-          <button type="button" class="cockpit-btn cockpit-btn--ghost cockpit-btn--xs" :disabled="openingFile !== null" @click="openFile(version.contractFileId)">
+          <button v-if="version.contractFileId" type="button" class="cockpit-btn cockpit-btn--ghost cockpit-btn--xs" :disabled="openingFile !== null" @click="openFile(version.contractFileId)">
             <UIcon name="i-lucide-file-text" aria-hidden="true" />
             {{ version.kind === 'original' ? 'Xem hợp đồng' : 'Xem phụ lục' }}
           </button>

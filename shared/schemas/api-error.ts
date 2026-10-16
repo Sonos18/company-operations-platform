@@ -110,6 +110,9 @@ export const apiErrorCodeSchema = z.enum([
   'SELF_DECISION_FORBIDDEN',
   'PROOF_ALREADY_USED',
   'EVIDENCE_INVALID',
+  'CONTRACT_REQUIRED',
+  'CASH_PAYMENT_NOT_ALLOWED',
+  'CONTRACT_AMENDMENT_UNAVAILABLE',
   'INTERNAL_ERROR',
 ])
 export type ApiErrorCode = z.infer<typeof apiErrorCodeSchema>
