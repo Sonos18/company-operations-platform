@@ -5,6 +5,8 @@ import {
   materialContractViewSchema,
   materialPaymentRequestViewSchema,
   recordMaterialContractInputSchema,
+  materialInvoiceViewSchema,
+  officializeMaterialInvoiceInputSchema,
   recordMaterialInvoiceInputSchema,
   recordMaterialPaymentInputSchema,
 } from '../../../shared/schemas/costs/material-finance'
@@ -100,7 +102,7 @@ describe('material finance input schemas', () => {
       const { documentation: _documentation, ...withoutKey } = quotationOnly
       expect(recordMaterialContractInputSchema.safeParse(withoutKey).success).toBe(false)
     })
-    it.each(['contractNo', 'contractFileId', 'vatAmount', 'total', 'installments'] as const)('rejects quotation_only carrying %s', key => {
+    it.each(['contractNo', 'contractFileId', 'installments'] as const)('rejects quotation_only carrying %s', key => {
       expect(recordMaterialContractInputSchema.safeParse({ ...quotationOnly, [key]: valid[key] }).success).toBe(false)
     })
     it('requires a positive subtotal on quotation_only', () => {
@@ -132,6 +134,73 @@ describe('material finance input schemas', () => {
     })
   })
 
+  describe('quotation-only VAT (C2)', () => {
+    const quotationOnly = {
+      documentation: 'quotation_only' as const,
+      expectedOrderVersion: 1,
+      signedOn: '2026-10-10',
+      subtotal: '4500000.0000',
+      varianceReason: null,
+      signedQuotationFileId: '00000000-0000-4000-8000-0000000000f2',
+    }
+    it('parses without vatAmount and total', () => {
+      const parsed = recordMaterialContractInputSchema.parse(quotationOnly)
+      expect(parsed).toMatchObject({ documentation: 'quotation_only', subtotal: '4500000.0000' })
+      expect(parsed).not.toHaveProperty('vatAmount')
+    })
+    it('accepts a balanced vatAmount and total', () => {
+      expect(recordMaterialContractInputSchema.parse({ ...quotationOnly, vatAmount: '300000.0000', total: '4800000.0000' }))
+        .toMatchObject({ vatAmount: '300000.0000', total: '4800000.0000' })
+    })
+    it('accepts a vatAmount without total (the server completes it)', () => {
+      expect(recordMaterialContractInputSchema.safeParse({ ...quotationOnly, vatAmount: '300000' }).success).toBe(true)
+    })
+    it('rejects a total that does not equal subtotal + vatAmount', () => {
+      const result = recordMaterialContractInputSchema.safeParse({ ...quotationOnly, vatAmount: '300000', total: '4900000' })
+      expect(result.success).toBe(false)
+      expect(result.error?.issues[0]?.message).toBe('CONTRACT_TOTAL_MISMATCH')
+    })
+    it('rejects a total without vatAmount that differs from the subtotal', () => {
+      expect(recordMaterialContractInputSchema.safeParse({ ...quotationOnly, total: '4900000' }).success).toBe(false)
+    })
+    it('still rejects contract number, contract file and installments', () => {
+      expect(recordMaterialContractInputSchema.safeParse({ ...quotationOnly, contractNo: 'HD-1' }).success).toBe(false)
+      expect(recordMaterialContractInputSchema.safeParse({ ...quotationOnly, contractFileId: file }).success).toBe(false)
+      expect(recordMaterialContractInputSchema.safeParse({ ...quotationOnly, installments: valid.installments }).success).toBe(false)
+    })
+  })
+
+  describe('draft and official invoices (C3)', () => {
+    const invoice = {
+      invoiceSymbol: '1C26TAA', invoiceNo: '0000001', issuedOn: '2026-10-10',
+      subtotal: '100.0000', vatAmount: '10.0000', total: '110.0000', fileId: file, lines: [],
+    }
+    it('defaults the stage of a recorded invoice to official', () => {
+      expect(recordMaterialInvoiceInputSchema.parse(invoice).stage).toBe('official')
+      expect(recordMaterialInvoiceInputSchema.parse({ ...invoice, stage: 'draft' }).stage).toBe('draft')
+      expect(recordMaterialInvoiceInputSchema.safeParse({ ...invoice, stage: 'final' }).success).toBe(false)
+    })
+    it('parses an invoice view without stage as official with no official file', () => {
+      const view = materialInvoiceViewSchema.parse({
+        id: key1, contractId: key2, ...invoice, state: 'recorded', voidReason: null, version: 1,
+      })
+      expect(view).toMatchObject({ stage: 'official', officialFileId: null, officializedAt: null })
+    })
+    it('parses a draft invoice that was made official', () => {
+      const view = materialInvoiceViewSchema.parse({
+        id: key1, contractId: key2, ...invoice, state: 'recorded', voidReason: null, version: 2,
+        stage: 'official', officialFileId: key2, officializedAt: '2026-10-12T01:00:00+00:00',
+      })
+      expect(view).toMatchObject({ stage: 'official', officialFileId: key2 })
+    })
+    it('officializes with exactly expectedVersion and officialFileId', () => {
+      expect(officializeMaterialInvoiceInputSchema.parse({ expectedVersion: 1, officialFileId: file }))
+        .toEqual({ expectedVersion: 1, officialFileId: file })
+      expect(officializeMaterialInvoiceInputSchema.safeParse({ expectedVersion: 1 }).success).toBe(false)
+      expect(officializeMaterialInvoiceInputSchema.safeParse({ expectedVersion: 1, officialFileId: file, extra: 1 }).success).toBe(false)
+    })
+  })
+
   describe('views read from a database that may predate the migration', () => {
     const request = {
       id: key1, contractId: key2, installmentKey: key1, amount: '10.0000', note: null, state: 'paid', revisionNo: 1,
@@ -152,7 +221,7 @@ describe('material finance input schemas', () => {
       }],
       totals: {
         committed: '110.0000', paid: '0.0000', pending: '0.0000', remaining: '110.0000',
-        overdue: '0.0000', invoiced: '0.0000', paidWithoutInvoice: '0.0000',
+        overdue: '0.0000', invoiced: '0.0000', draftInvoiced: '0.0000', paidWithoutInvoice: '0.0000',
       },
     }
     it('defaults a missing documentation to contract and a missing method to bank_transfer', () => {

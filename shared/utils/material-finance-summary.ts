@@ -16,6 +16,8 @@ export interface MaterialContractFacts {
   documentation: MaterialContractDocumentation
   total: string
   invoiced: string
+  /** Total of the recorded invoices still in the draft stage; already part of `invoiced`. */
+  draftInvoiced: string
   installments: MaterialInstallmentFacts[]
 }
 
@@ -26,6 +28,7 @@ export interface MaterialFinanceTotals {
   remaining: string
   overdue: string
   invoiced: string
+  draftInvoiced: string
   paidWithoutInvoice: string
 }
 
@@ -53,8 +56,9 @@ export function installmentDueStatus(installment: MaterialInstallmentFacts, toda
 /**
  * Aggregates contract facts. `paidWithoutInvoice` is computed on the aggregated
  * totals (max(0, paid - invoiced)), not per contract, per spec section 10. Orders
- * without a contract (`quotation_only`) take part in every total but this check:
- * they need no invoice, so their payments and invoices stay out of it.
+ * without a contract (`quotation_only`) follow the same flow and take part in it.
+ * `invoiced` counts draft and official invoices alike; `draftInvoiced` is the part
+ * still waiting for the official file.
  */
 export function summarizeMaterialFinance(contracts: readonly MaterialContractFacts[], today: string): MaterialFinanceTotals {
   let committed = new MoneyDecimal(0)
@@ -62,16 +66,13 @@ export function summarizeMaterialFinance(contracts: readonly MaterialContractFac
   let pending = new MoneyDecimal(0)
   let overdue = new MoneyDecimal(0)
   let invoiced = new MoneyDecimal(0)
-  let paidForInvoiceCheck = new MoneyDecimal(0)
-  let invoicedForInvoiceCheck = new MoneyDecimal(0)
+  let draftInvoiced = new MoneyDecimal(0)
   for (const contract of contracts) {
     committed = committed.plus(contract.total)
     invoiced = invoiced.plus(contract.invoiced)
-    const needsInvoice = contract.documentation === 'contract'
-    if (needsInvoice) invoicedForInvoiceCheck = invoicedForInvoiceCheck.plus(contract.invoiced)
+    draftInvoiced = draftInvoiced.plus(contract.draftInvoiced)
     for (const installment of contract.installments) {
       paid = paid.plus(installment.paid)
-      if (needsInvoice) paidForInvoiceCheck = paidForInvoiceCheck.plus(installment.paid)
       pending = pending.plus(installment.pending)
       if (installmentDueStatus(installment, today) === 'overdue') {
         overdue = overdue.plus(MoneyDecimal.max(0, new MoneyDecimal(installment.amount).minus(installment.paid)))
@@ -85,6 +86,7 @@ export function summarizeMaterialFinance(contracts: readonly MaterialContractFac
     remaining: money(committed.minus(paid)),
     overdue: money(overdue),
     invoiced: money(invoiced),
-    paidWithoutInvoice: money(MoneyDecimal.max(0, paidForInvoiceCheck.minus(invoicedForInvoiceCheck))),
+    draftInvoiced: money(draftInvoiced),
+    paidWithoutInvoice: money(MoneyDecimal.max(0, paid.minus(invoiced))),
   }
 }

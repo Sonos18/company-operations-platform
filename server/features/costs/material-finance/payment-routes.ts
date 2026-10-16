@@ -3,6 +3,7 @@ import {
   cancelPaymentRequestInputSchema,
   createPaymentRequestInputSchema,
   decidePaymentRequestInputSchema,
+  officializeMaterialInvoiceInputSchema,
   recordMaterialInvoiceInputSchema,
   recordMaterialPaymentInputSchema,
   resubmitPaymentRequestInputSchema,
@@ -39,6 +40,10 @@ export function createMaterialPaymentRoutes(dependencies: MaterialPaymentRouteDe
     async voidInvoice(event: H3Event) {
       const value = await resolved(event)
       return value.service.voidInvoice(value.context, param(event, 'projectId'), param(event, 'invoiceId'), await body(event, voidMaterialInvoiceInputSchema), key(event))
+    },
+    async officializeInvoice(event: H3Event) {
+      const value = await resolved(event)
+      return value.service.officializeInvoice(value.context, param(event, 'projectId'), param(event, 'invoiceId'), await body(event, officializeMaterialInvoiceInputSchema), key(event))
     },
     async listPaymentRequests(event: H3Event) {
       const value = await resolved(event)

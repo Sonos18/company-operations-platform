@@ -330,7 +330,7 @@ const amountProblem = computed<'zero' | 'exceeded' | null>(() => {
 
 const requiresInvoice = computed(() => {
   if (!selectedInstallment.value) return false
-  return requestRequiresInvoice(props.contract.documentation, selectedInstallment.value.isAdvance)
+  return requestRequiresInvoice(selectedInstallment.value.isAdvance)
 })
 
 const invoiceMissing = computed(() => {

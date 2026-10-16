@@ -13,9 +13,27 @@ describe('appNotificationText', () => {
     expect(appNotificationText(n('material.contract.amended', { contractNo: 'HD-01', versionNo: 2 })).title).toBe('Hợp đồng có phụ lục mới')
     expect(appNotificationText(n('material.installment.due_soon', { installmentName: 'Tạm ứng', dueOn: '2026-10-17' })).title).toBe('Đợt thanh toán sắp đến hạn')
     expect(appNotificationText(n('material.installment.overdue', { installmentName: 'Tạm ứng', dueOn: '2026-10-10' })).title).toBe('Đợt thanh toán quá hạn')
-    expect(appNotificationText(n('material.payment.submitted', { amount: '33.0000' })).title).toBe('Đề nghị chi chờ duyệt')
+    expect(appNotificationText(n('material.payment.submitted', { amount: '33.0000' })).title).toBe('Đề nghị chi chờ lập UNC')
     expect(appNotificationText(n('material.payment.returned', { reason: 'Sai số tiền' })).body).toContain('Sai số tiền')
     expect(appNotificationText(n('material.payment.paid', { amount: '33.0000' })).title).toBe('Đề nghị chi đã được chi')
+    expect(appNotificationText(n('material.payment.approved', {})).title).toBe('Đề nghị chi đã lập UNC')
+  })
+  it('tells the accountant a payment request is approved without any amount', () => {
+    const approved = appNotificationText(n('material.payment.approved', { supplierName: 'NCC A', contractNo: 'HD-01', documentation: 'contract', amount: '33.0000' }))
+    expect(approved.title).not.toBe('Thông báo vật tư')
+    expect(approved.body).toContain('HD-01')
+    expect(approved.body).toContain('NCC A')
+    expect(approved.body).toContain('biên lai')
+    expect(approved.body).not.toMatch(/33/)
+    const quotationOnly = appNotificationText(n('material.payment.approved', { supplierName: 'NCC A', contractNo: null, documentation: 'quotation_only' }))
+    expect(quotationOnly.body).toContain('đơn không hợp đồng')
+    expect(appNotificationText(n('material.payment.approved', {})).body).not.toMatch(/undefined|null/)
+  })
+  it('uses the new flow wording for submitted and paid notifications', () => {
+    expect(appNotificationText(n('material.payment.submitted', { amount: '33.0000' })).title).toBe('Đề nghị chi chờ lập UNC')
+    expect(appNotificationText(n('material.payment.submitted', { amount: '33.0000' })).body).toContain('chờ lập UNC')
+    expect(appNotificationText(n('material.payment.submitted', {})).body).toContain('chờ lập UNC')
+    expect(appNotificationText(n('material.payment.paid', { supplierName: 'NCC A', contractNo: 'HD-01' })).body).toContain('ghi chi')
   })
   it('names a quotation-only order instead of a contract number', () => {
     const payload = { documentation: 'quotation_only', contractNo: null, supplierName: 'NCC A', total: '4500000.0000' }
@@ -54,6 +72,7 @@ describe('appNotificationText', () => {
       'material.payment.submitted',
       'material.payment.returned',
       'material.payment.paid',
+      'material.payment.approved',
     ]
     const payloads = [
       {},
