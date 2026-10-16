@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(27);
+select plan(28);
 
 -- Cash payments for small orders (20261016090100). Rollback-only fixture with prefix c132.
 -- Contracts and amendments are written directly as the fixture owner so this suite does not
@@ -11,6 +11,8 @@ select plan(27);
 --   603  order 353  contract, 48000000, advance installment a03
 --   604  order 354  contract, 4000000, advance a04; amended to 6000000 after the request is approved
 --   605  order 355  contract, 3000000, advance a05; amended so a05 is no longer an advance
+--   606  order 356  contract, a 48000000 order recorded as a contract of 4900000 (with a variance
+--                   reason), advance a06: the contract total is small, the order is not
 -- Users: accountant K (901) records invoices and requests payments, treasurer Q (903) approves
 -- and pays, buyer B (905) owns the orders.
 
@@ -111,14 +113,16 @@ from (values
  ('c1320000-0000-4000-8000-000000000811'::uuid,6811,'image/png'),
  ('c1320000-0000-4000-8000-000000000821'::uuid,6821,'image/png'),
  ('c1320000-0000-4000-8000-000000000831'::uuid,6831,'image/png'),
- ('c1320000-0000-4000-8000-000000000841'::uuid,6841,'image/png')
+ ('c1320000-0000-4000-8000-000000000841'::uuid,6841,'image/png'),
+ ('c1320000-0000-4000-8000-000000000851'::uuid,6851,'image/png'),
+ ('c1320000-0000-4000-8000-000000000861'::uuid,6861,'application/pdf'),('c1320000-0000-4000-8000-000000000862'::uuid,6862,'application/pdf')
 ) as file(id,hash_seed,mime);
 
 insert into public.material_orders(
   id,tenant_id,company_id,project_id,proposal_id,approved_revision_id,supplier_id,currency_code,unsigned_quotation_evidence_file_id,created_by
 )
 select order_row.id,'c1320000-0000-4000-8000-000000000010','c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','c1320000-0000-4000-8000-000000000301','c1320000-0000-4000-8000-000000000401','c1320000-0000-4000-8000-000000000201','VND','c1320000-0000-4000-8000-000000000501','c1320000-0000-4000-8000-000000000905'
-from (values ('c1320000-0000-4000-8000-000000000351'::uuid),('c1320000-0000-4000-8000-000000000352'::uuid),('c1320000-0000-4000-8000-000000000353'::uuid),('c1320000-0000-4000-8000-000000000354'::uuid),('c1320000-0000-4000-8000-000000000355'::uuid)) as order_row(id);
+from (values ('c1320000-0000-4000-8000-000000000351'::uuid),('c1320000-0000-4000-8000-000000000352'::uuid),('c1320000-0000-4000-8000-000000000353'::uuid),('c1320000-0000-4000-8000-000000000354'::uuid),('c1320000-0000-4000-8000-000000000355'::uuid),('c1320000-0000-4000-8000-000000000356'::uuid)) as order_row(id);
 insert into public.material_order_allocations(
   tenant_id,company_id,project_id,order_id,proposal_id,approved_revision_id,proposal_line_id,quantity,unit_price,quotation_material_name,mapping_confirmed
 )
@@ -128,7 +132,8 @@ from (values
  ('c1320000-0000-4000-8000-000000000352'::uuid,4000000::numeric),
  ('c1320000-0000-4000-8000-000000000353'::uuid,48000000::numeric),
  ('c1320000-0000-4000-8000-000000000354'::uuid,4000000::numeric),
- ('c1320000-0000-4000-8000-000000000355'::uuid,3000000::numeric)
+ ('c1320000-0000-4000-8000-000000000355'::uuid,3000000::numeric),
+ ('c1320000-0000-4000-8000-000000000356'::uuid,48000000::numeric)
 ) as allocation(order_id,unit_price);
 
 insert into public.material_contracts(id,tenant_id,company_id,project_id,order_id,supplier_id,currency_code,documentation,contract_no,signed_on,created_by)
@@ -138,21 +143,24 @@ from (values
  ('c1320000-0000-4000-8000-000000000602'::uuid,'c1320000-0000-4000-8000-000000000352'::uuid,'contract','HD-SP-02'),
  ('c1320000-0000-4000-8000-000000000603'::uuid,'c1320000-0000-4000-8000-000000000353'::uuid,'contract','HD-SP-03'),
  ('c1320000-0000-4000-8000-000000000604'::uuid,'c1320000-0000-4000-8000-000000000354'::uuid,'contract','HD-SP-04'),
- ('c1320000-0000-4000-8000-000000000605'::uuid,'c1320000-0000-4000-8000-000000000355'::uuid,'contract','HD-SP-05')
+ ('c1320000-0000-4000-8000-000000000605'::uuid,'c1320000-0000-4000-8000-000000000355'::uuid,'contract','HD-SP-05'),
+ ('c1320000-0000-4000-8000-000000000606'::uuid,'c1320000-0000-4000-8000-000000000356'::uuid,'contract','HD-SP-06')
 ) as contract(id,order_id,documentation,contract_no);
 insert into public.material_contract_versions(
   id,tenant_id,company_id,project_id,contract_id,version_no,kind,subtotal,vat_amount,total,
   order_subtotal_snapshot,variance_reason,contract_file_id,signed_quotation_file_id,reason,recorded_by
 )
-select version_row.id,'c1320000-0000-4000-8000-000000000010','c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101',version_row.contract_id,1,'original',version_row.subtotal,version_row.vat,version_row.subtotal+version_row.vat,version_row.subtotal,null,
+select version_row.id,'c1320000-0000-4000-8000-000000000010','c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101',version_row.contract_id,1,'original',version_row.subtotal,version_row.vat,version_row.subtotal+version_row.vat,
+  coalesce(version_row.order_subtotal,version_row.subtotal),version_row.variance_reason,
   version_row.contract_file_id,version_row.quotation_file_id,null,'c1320000-0000-4000-8000-000000000901'
 from (values
- ('c1320000-0000-4000-8000-000000000611'::uuid,'c1320000-0000-4000-8000-000000000601'::uuid,4000000::numeric,0::numeric,null::uuid,'c1320000-0000-4000-8000-000000000511'::uuid),
- ('c1320000-0000-4000-8000-000000000621'::uuid,'c1320000-0000-4000-8000-000000000602'::uuid,4000000::numeric,500000::numeric,'c1320000-0000-4000-8000-000000000521'::uuid,'c1320000-0000-4000-8000-000000000522'::uuid),
- ('c1320000-0000-4000-8000-000000000631'::uuid,'c1320000-0000-4000-8000-000000000603'::uuid,48000000::numeric,0::numeric,'c1320000-0000-4000-8000-000000000531'::uuid,'c1320000-0000-4000-8000-000000000532'::uuid),
- ('c1320000-0000-4000-8000-000000000641'::uuid,'c1320000-0000-4000-8000-000000000604'::uuid,4000000::numeric,0::numeric,'c1320000-0000-4000-8000-000000000541'::uuid,'c1320000-0000-4000-8000-000000000542'::uuid),
- ('c1320000-0000-4000-8000-000000000651'::uuid,'c1320000-0000-4000-8000-000000000605'::uuid,3000000::numeric,0::numeric,'c1320000-0000-4000-8000-000000000551'::uuid,'c1320000-0000-4000-8000-000000000552'::uuid)
-) as version_row(id,contract_id,subtotal,vat,contract_file_id,quotation_file_id);
+ ('c1320000-0000-4000-8000-000000000611'::uuid,'c1320000-0000-4000-8000-000000000601'::uuid,4000000::numeric,0::numeric,null::uuid,'c1320000-0000-4000-8000-000000000511'::uuid,null::numeric,null::text),
+ ('c1320000-0000-4000-8000-000000000621'::uuid,'c1320000-0000-4000-8000-000000000602'::uuid,4000000::numeric,500000::numeric,'c1320000-0000-4000-8000-000000000521'::uuid,'c1320000-0000-4000-8000-000000000522'::uuid,null::numeric,null::text),
+ ('c1320000-0000-4000-8000-000000000631'::uuid,'c1320000-0000-4000-8000-000000000603'::uuid,48000000::numeric,0::numeric,'c1320000-0000-4000-8000-000000000531'::uuid,'c1320000-0000-4000-8000-000000000532'::uuid,null::numeric,null::text),
+ ('c1320000-0000-4000-8000-000000000641'::uuid,'c1320000-0000-4000-8000-000000000604'::uuid,4000000::numeric,0::numeric,'c1320000-0000-4000-8000-000000000541'::uuid,'c1320000-0000-4000-8000-000000000542'::uuid,null::numeric,null::text),
+ ('c1320000-0000-4000-8000-000000000651'::uuid,'c1320000-0000-4000-8000-000000000605'::uuid,3000000::numeric,0::numeric,'c1320000-0000-4000-8000-000000000551'::uuid,'c1320000-0000-4000-8000-000000000552'::uuid,null::numeric,null::text),
+ ('c1320000-0000-4000-8000-000000000661'::uuid,'c1320000-0000-4000-8000-000000000606'::uuid,4900000::numeric,0::numeric,'c1320000-0000-4000-8000-000000000861'::uuid,'c1320000-0000-4000-8000-000000000862'::uuid,48000000::numeric,'Hop dong chi cho mot phan don')
+) as version_row(id,contract_id,subtotal,vat,contract_file_id,quotation_file_id,order_subtotal,variance_reason);
 insert into public.material_contract_installments(
   tenant_id,company_id,project_id,contract_id,contract_version_id,seq,installment_key,name,amount,due_on,is_advance
 )
@@ -162,7 +170,8 @@ from (values
  ('c1320000-0000-4000-8000-000000000602'::uuid,'c1320000-0000-4000-8000-000000000621'::uuid,'c1320000-0000-4000-8000-000000000a02'::uuid,'Dot 1',4500000::numeric,false),
  ('c1320000-0000-4000-8000-000000000603'::uuid,'c1320000-0000-4000-8000-000000000631'::uuid,'c1320000-0000-4000-8000-000000000a03'::uuid,'Tam ung',48000000::numeric,true),
  ('c1320000-0000-4000-8000-000000000604'::uuid,'c1320000-0000-4000-8000-000000000641'::uuid,'c1320000-0000-4000-8000-000000000a04'::uuid,'Tam ung',4000000::numeric,true),
- ('c1320000-0000-4000-8000-000000000605'::uuid,'c1320000-0000-4000-8000-000000000651'::uuid,'c1320000-0000-4000-8000-000000000a05'::uuid,'Tam ung',3000000::numeric,true)
+ ('c1320000-0000-4000-8000-000000000605'::uuid,'c1320000-0000-4000-8000-000000000651'::uuid,'c1320000-0000-4000-8000-000000000a05'::uuid,'Tam ung',3000000::numeric,true),
+ ('c1320000-0000-4000-8000-000000000606'::uuid,'c1320000-0000-4000-8000-000000000661'::uuid,'c1320000-0000-4000-8000-000000000a06'::uuid,'Tam ung',4900000::numeric,true)
 ) as installment(contract_id,version_id,installment_key,name,amount,is_advance);
 
 insert into public.material_evidence_scopes(evidence_file_id,tenant_id,company_id,project_id,target_kind,contract_id,evidence_role,created_by)
@@ -177,7 +186,8 @@ from (values
  ('c1320000-0000-4000-8000-000000000811'::uuid,'c1320000-0000-4000-8000-000000000602'::uuid,'payment_proof'),
  ('c1320000-0000-4000-8000-000000000821'::uuid,'c1320000-0000-4000-8000-000000000603'::uuid,'payment_proof'),
  ('c1320000-0000-4000-8000-000000000831'::uuid,'c1320000-0000-4000-8000-000000000604'::uuid,'payment_proof'),
- ('c1320000-0000-4000-8000-000000000841'::uuid,'c1320000-0000-4000-8000-000000000605'::uuid,'payment_proof')
+ ('c1320000-0000-4000-8000-000000000841'::uuid,'c1320000-0000-4000-8000-000000000605'::uuid,'payment_proof'),
+ ('c1320000-0000-4000-8000-000000000851'::uuid,'c1320000-0000-4000-8000-000000000606'::uuid,'payment_proof')
 ) as scope(file_id,contract_id,evidence_role);
 
 create temporary table sp_acks(name text primary key, body jsonb not null);
@@ -210,12 +220,14 @@ insert into sp_acks select 'R7', public.c1_material_create_payment_request(
   'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','c1320000-0000-4000-8000-000000000604','{"installmentKey":"c1320000-0000-4000-8000-000000000a04","amount":"4000000","invoiceIds":[],"note":null}','c1320000-0000-4000-8000-000000000d17','c1320000-0000-4000-8000-000000000c00');
 insert into sp_acks select 'R8', public.c1_material_create_payment_request(
   'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','c1320000-0000-4000-8000-000000000605','{"installmentKey":"c1320000-0000-4000-8000-000000000a05","amount":"3000000","invoiceIds":[],"note":null}','c1320000-0000-4000-8000-000000000d18','c1320000-0000-4000-8000-000000000c00');
+insert into sp_acks select 'R9', public.c1_material_create_payment_request(
+  'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','c1320000-0000-4000-8000-000000000606','{"installmentKey":"c1320000-0000-4000-8000-000000000a06","amount":"1000000","invoiceIds":[],"note":null}','c1320000-0000-4000-8000-000000000d19','c1320000-0000-4000-8000-000000000c00');
 
 select set_config('request.jwt.claims','{"sub":"c1320000-0000-4000-8000-000000000903","role":"authenticated"}',true);
 insert into sp_acks select 'D_'||request.name, public.c1_material_decide_payment_request(
   'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101',(select (body->>'resourceId')::uuid from sp_acks where name=request.name),
   '{"expectedVersion":1,"decision":"approve"}',request.key::uuid,'c1320000-0000-4000-8000-000000000c00')
-from (values ('RL','c1320000-0000-4000-8000-000000000d21'),('R1','c1320000-0000-4000-8000-000000000d22'),('R2','c1320000-0000-4000-8000-000000000d23'),('R3','c1320000-0000-4000-8000-000000000d24'),('R4','c1320000-0000-4000-8000-000000000d25'),('R6','c1320000-0000-4000-8000-000000000d26'),('R7','c1320000-0000-4000-8000-000000000d27'),('R8','c1320000-0000-4000-8000-000000000d28')) as request(name,key);
+from (values ('RL','c1320000-0000-4000-8000-000000000d21'),('R1','c1320000-0000-4000-8000-000000000d22'),('R2','c1320000-0000-4000-8000-000000000d23'),('R3','c1320000-0000-4000-8000-000000000d24'),('R4','c1320000-0000-4000-8000-000000000d25'),('R6','c1320000-0000-4000-8000-000000000d26'),('R7','c1320000-0000-4000-8000-000000000d27'),('R8','c1320000-0000-4000-8000-000000000d28'),('R9','c1320000-0000-4000-8000-000000000d29')) as request(name,key);
 
 -- Amendments written as the fixture owner after approval:
 --   604 rises from 4000000 to 6000000 (above the cash limit);
@@ -303,6 +315,15 @@ select is((
   select payment.method||':'||payment.bank_reference
   from public.material_payments as payment where payment.payment_request_id=(select (body->>'resourceId')::uuid from sp_acks where name='R6')
 ),'bank_transfer:UNC-48','cash: the 48000000 contract is still paid by bank transfer');
+
+-- A 48000000 order recorded as a contract of 4900000: the contract total is small, but the
+-- order subtotal snapshot is not, so cash is rejected for it too (R7).
+select throws_ok(format($$
+  select public.c1_material_record_payment(
+    'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101',%L,
+    '{"expectedVersion":2,"paidOn":"2026-01-12","method":"cash","bankReference":null,"proofFileId":"c1320000-0000-4000-8000-000000000851"}',
+    'c1320000-0000-4000-8000-000000000e17','c1320000-0000-4000-8000-000000000c00')
+$$,(select body->>'resourceId' from sp_acks where name='R9')),'P0001','CASH_PAYMENT_NOT_ALLOWED','cash: a 48000000 order recorded as a contract of 4900000 cannot be paid in cash');
 
 -- INPUT_INVALID ----------------------------------------------------------------------------------------
 select throws_ok(format($$

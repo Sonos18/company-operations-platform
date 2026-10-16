@@ -3,11 +3,18 @@ import type { MaterialContractView } from '../../../shared/schemas/costs/materia
 import { isMaterialSmallAmount } from '../../../shared/utils/material-small-order'
 
 /**
- * True when a contract total qualifies for cash payment: strictly below 5.000.000 VND (R7).
+ * True when a payment qualifies for cash (R7): both the current contract version total and
+ * that version's order subtotal snapshot are strictly below 5.000.000 VND. A large order
+ * recorded as a contract with a low contract subtotal is not a small order.
  * Delegates to isMaterialSmallAmount.
  */
-export function canPayInCash(contractTotal: string, currencyCode: string): boolean {
+export function canPayInCash(
+  contractTotal: string,
+  currencyCode: string,
+  orderSubtotalSnapshot: string,
+): boolean {
   return isMaterialSmallAmount(contractTotal, currencyCode)
+    && isMaterialSmallAmount(orderSubtotalSnapshot, currencyCode)
 }
 
 /**
@@ -25,6 +32,17 @@ export function requestRequiresInvoice(
  * Returns the total of the contract's current version, or null if the current version is missing.
  */
 export function currentContractTotal(contract: MaterialContractView): string | null {
-  const current = contract.versions?.find(v => v.versionNo === contract.currentVersionNo)
-  return current?.total ?? null
+  return currentContractVersion(contract)?.total ?? null
+}
+
+/**
+ * Returns the order subtotal snapshot of the contract's current version, or null if the
+ * current version is missing.
+ */
+export function currentOrderSubtotalSnapshot(contract: MaterialContractView): string | null {
+  return currentContractVersion(contract)?.orderSubtotalSnapshot ?? null
+}
+
+function currentContractVersion(contract: MaterialContractView): MaterialContractView['versions'][number] | undefined {
+  return contract.versions?.find(v => v.versionNo === contract.currentVersionNo)
 }

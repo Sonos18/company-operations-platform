@@ -348,6 +348,7 @@
       :project-id="projectId"
       :contract-id="contract.id"
       :contract-total="contractTotalForPayment"
+      :order-subtotal-snapshot="orderSubtotalSnapshotForPayment"
       :currency-code="contract.currencyCode"
       :request="recordPaymentRequestTarget"
       :installment-name="recordPaymentRequestTarget ? getInstallmentName(recordPaymentRequestTarget.installmentKey) : ''"
@@ -368,7 +369,7 @@ import type {
   CancelPaymentRequestInput,
 } from '../../../../shared/schemas/costs/material-finance'
 import { MATERIAL_SMALL_ORDER_THRESHOLD } from '../../../../shared/constants/material-finance'
-import { currentContractTotal } from '../../../utils/materials/payment-method'
+import { currentContractTotal, currentOrderSubtotalSnapshot } from '../../../utils/materials/payment-method'
 import { paymentRequestActions } from '../../../utils/materials/payment-request-actions'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
 import { formatDate, formatDateTime } from '../../../utils/materials/date-display'
@@ -437,6 +438,11 @@ const hasInstallmentsWithRemaining = computed(() => {
 
 const contractTotalForPayment = computed(() => {
   return currentContractTotal(props.contract) ?? MATERIAL_SMALL_ORDER_THRESHOLD
+})
+
+// A missing snapshot is treated as not small, so cash is never offered on a guess.
+const orderSubtotalSnapshotForPayment = computed(() => {
+  return currentOrderSubtotalSnapshot(props.contract) ?? MATERIAL_SMALL_ORDER_THRESHOLD
 })
 
 function getInstallmentName(key: string): string {

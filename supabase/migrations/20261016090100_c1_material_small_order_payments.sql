@@ -29,7 +29,8 @@ alter table public.material_payments
 
 -- record_payment (20261015090600) ----------------------------------------------------
 -- Changes: reads method (a missing key means 'bank_transfer'); cash requires a null or
--- absent bankReference and a current total below the threshold; the invoice
+-- absent bankReference, and a current total and order subtotal snapshot below the
+-- threshold; the invoice
 -- requirement goes through the shared helper; the payment stores method.
 
 create or replace function private.c1_material_record_payment(
@@ -52,6 +53,7 @@ declare
   v_method text;
   v_bank_reference text;
   v_contract_total numeric;
+  v_order_subtotal numeric;
   v_proof_file_id uuid;
   v_sha256 text;
   v_constraint text;
@@ -98,12 +100,15 @@ begin
     v_bank_reference := null;
     -- The contract is locked above, so the current version cannot change under us.
     -- An amendment may have raised the total past the threshold after the request
-    -- was approved (R9).
-    select version_row.total into v_contract_total
+    -- was approved (R9). The order subtotal snapshot must also be small: a large order
+    -- recorded as a contract with a low contract subtotal is not a small order (R7).
+    select version_row.total, version_row.order_subtotal_snapshot into v_contract_total, v_order_subtotal
     from public.material_contract_versions as version_row
     where version_row.contract_id = v_contract.id and version_row.version_no = v_contract.current_version_no;
     if not found then raise exception using errcode = 'P0001', message = 'RESOURCE_NOT_FOUND'; end if;
-    if not private.c1_material_is_small_amount(v_contract_total, v_contract.currency_code) then
+    if not private.c1_material_is_small_amount(v_contract_total, v_contract.currency_code)
+      or not private.c1_material_is_small_amount(v_order_subtotal, v_contract.currency_code)
+    then
       raise exception using errcode = 'P0001', message = 'CASH_PAYMENT_NOT_ALLOWED';
     end if;
   elsif v_method = 'bank_transfer' then

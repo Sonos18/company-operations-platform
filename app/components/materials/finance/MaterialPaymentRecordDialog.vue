@@ -216,6 +216,7 @@ interface Props {
   projectId: string
   contractId: string
   contractTotal: string
+  orderSubtotalSnapshot: string
   currencyCode: string
   request: MaterialPaymentRequestView | null
   installmentName?: string
@@ -339,7 +340,7 @@ async function uploadProof() {
 }
 
 const allowCash = computed(() => {
-  return canPayInCash(props.contractTotal, props.currencyCode)
+  return canPayInCash(props.contractTotal, props.currencyCode, props.orderSubtotalSnapshot)
 })
 
 const method = ref<MaterialPaymentMethod>('bank_transfer')
