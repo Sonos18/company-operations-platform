@@ -4,7 +4,7 @@
       <div>
         <h3 class="summary-title">{{ materialContractLabel(contract) }}</h3>
         <p class="summary-sub">
-          Ký ngày {{ formatDate(contract.signedOn) }} · Phiên bản hiện hành v{{ contract.currentVersionNo }}
+          {{ isQuotationOnly ? 'Ghi nhận ngày' : 'Ký ngày' }} {{ formatDate(contract.signedOn) }} · Phiên bản hiện hành v{{ contract.currentVersionNo }}
         </p>
       </div>
       <span class="cockpit-badge cockpit-badge--primary font-mono">v{{ contract.currentVersionNo }}</span>
@@ -22,7 +22,7 @@
       <li v-for="version in versionsDescending" :key="version.versionNo" class="version" :data-testid="`contract-version-${version.versionNo}`">
         <div class="version-main">
           <span class="cockpit-badge" :class="version.kind === 'original' ? 'cockpit-badge--neutral' : 'cockpit-badge--accent'">
-            {{ version.kind === 'original' ? 'Hợp đồng gốc' : 'Phụ lục' }} v{{ version.versionNo }}
+            {{ version.kind === 'original' ? (isQuotationOnly ? 'Bản ghi gốc' : 'Hợp đồng gốc') : 'Phụ lục' }} v{{ version.versionNo }}
           </span>
           <strong class="font-mono">{{ money(version.total) }}</strong>
           <span class="version-meta">
@@ -67,6 +67,8 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+// An order recorded from a signed quotation only was never signed as a contract.
+const isQuotationOnly = computed(() => props.contract.documentation === 'quotation_only')
 const repo = useRepositories().materialProcurement
 
 let disposed = false

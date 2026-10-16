@@ -56,7 +56,7 @@
             <tbody>
               <tr v-for="contract in summary.contracts" :key="contract.contractId">
                 <th scope="row" class="supplier-cell">{{ contract.supplierName }}</th>
-                <td class="font-mono">{{ materialContractLabel(contract) }}</td>
+                <td class="font-mono">{{ materialContractNumberText(contract) }}</td>
                 <td class="num">{{ formatVnNumber(contract.totals.committed) }}</td>
                 <td class="num">{{ formatVnNumber(contract.totals.paid) }}</td>
                 <td class="num">{{ formatVnNumber(contract.totals.remaining) }}</td>
@@ -85,7 +85,7 @@ import { workflowUuidSchema } from '../../../../shared/schemas/costs/cost-workfl
 import { createAsyncRequestTracker } from '../../../utils/costs/async-request-tracker'
 import { isDecimalGreaterThan } from '../../../utils/costs/finance-display'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
-import { materialContractLabel } from '../../../utils/materials/contract-label'
+import { materialContractNumberText } from '../../../utils/materials/contract-label'
 import MaterialFinanceTotals from '../../../components/materials/finance/MaterialFinanceTotals.vue'
 
 definePageMeta({ requiredPermission: 'material.finance.read' })

@@ -332,7 +332,7 @@ async function uploadProof() {
   }
   catch (err: unknown) {
     if (isDisposed) return
-    uploadError.value = uploadErrorMessage(err, 'Lỗi khi tải tệp ủy nhiệm chi.')
+    uploadError.value = uploadErrorMessage(err, 'Lỗi khi tải tệp chứng từ chi.')
   }
   finally {
     isUploading.value = false

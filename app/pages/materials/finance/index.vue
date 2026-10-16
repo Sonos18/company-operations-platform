@@ -398,7 +398,7 @@
             >
               <UIcon name="i-lucide-check-check" class="text-slate-400 text-3xl mx-auto mb-2" aria-hidden="true" />
               <p class="font-medium text-xs m-0">Không có đề nghị chi nào đã duyệt đang chờ chi tiền.</p>
-              <p class="text-[11px] text-slate-400 m-0 mt-0.5">Tất cả đề nghị chi được duyệt đều đã hoàn tất chuyển khoản và có ủy nhiệm chi.</p>
+              <p class="text-[11px] text-slate-400 m-0 mt-0.5">Tất cả đề nghị chi được duyệt đều đã hoàn tất chi tiền và có chứng từ chi.</p>
             </div>
 
             <div v-else class="overflow-x-auto">

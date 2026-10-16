@@ -17,7 +17,7 @@
           class="cockpit-badge cockpit-badge--success"
           data-testid="contract-status-badge"
         >
-          Đã có hợp đồng
+          {{ order.contract.documentation === 'quotation_only' ? 'Đã ghi nhận không hợp đồng' : 'Đã có hợp đồng' }}
         </span>
         <span v-else-if="order" class="cockpit-badge cockpit-badge--warning" data-testid="contract-status-badge">
           Chưa có hợp đồng
@@ -89,7 +89,7 @@
         data-testid="contract-status-only"
       >
         <p class="status-line">
-          <template v-if="order.contract.documentation === 'quotation_only'">Đã ghi nhận <strong>{{ materialContractLabel(order.contract) }}</strong></template>
+          <template v-if="order.contract.documentation === 'quotation_only'">Đã ghi nhận <strong>đơn không hợp đồng</strong></template>
           <template v-else>Đã có hợp đồng <strong>{{ order.contract.contractNo }}</strong></template>
           ngày {{ formatDate(order.contract.signedOn) }}.
         </p>
@@ -144,7 +144,6 @@ import { formatDate } from '../../../../utils/materials/date-display'
 import { computeOrderSubtotal } from '../../../../utils/materials/order-subtotal'
 import { formatMaterialQuantity } from '../../../../utils/materials/quantity-display'
 import { formatVnNumber } from '../../../../utils/materials/vn-number'
-import { materialContractLabel } from '../../../../utils/materials/contract-label'
 import MaterialContractRecordPanel from '../../../../components/materials/finance/MaterialContractRecordPanel.vue'
 import MaterialContractSummary from '../../../../components/materials/finance/MaterialContractSummary.vue'
 import MaterialInstallmentTable from '../../../../components/materials/finance/MaterialInstallmentTable.vue'

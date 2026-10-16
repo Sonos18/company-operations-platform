@@ -226,7 +226,7 @@
                     v-if="getRequestActions(req).includes('record_payment')"
                     type="button"
                     class="cockpit-btn bg-emerald-600 hover:bg-emerald-700 text-white btn-sm text-[11px] py-1 px-2 flex items-center gap-1"
-                    title="Ghi nhận chuyển khoản chi tiền kèm ủy nhiệm chi"
+                    title="Ghi nhận chi tiền kèm chứng từ chi"
                     @click="openRecordPaymentDialog(req)"
                   >
                     <UIcon name="i-lucide-banknote" class="text-xs" aria-hidden="true" />
@@ -504,7 +504,7 @@ async function viewProofFile(fileId: string) {
     }
   }
   catch (err: unknown) {
-    actionError.value = financeErrorMessage(err, 'Không mở được tệp ủy nhiệm chi.')
+    actionError.value = financeErrorMessage(err, 'Không mở được tệp chứng từ chi.')
   }
   finally {
     isFileReading.value = null

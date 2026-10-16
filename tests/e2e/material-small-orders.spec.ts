@@ -421,9 +421,13 @@ test.describe('Đơn 4 triệu không hợp đồng, chi tiền mặt (mock dùn
     await typeMoney(page.getByLabel('Trước VAT', { exact: true }), '4.000.000')
     await expect(page.getByTestId('quotation-only-summary')).toHaveText('VAT 0 · Thanh toán 100% · Tổng 4.000.000')
 
-    await panel.getByRole('button', { name: 'Lưu hợp đồng' }).click()
+    await expect(panel.getByRole('heading', { name: 'Ghi nhận đơn không hợp đồng' })).toBeVisible()
+    await panel.getByRole('button', { name: 'Lưu ghi nhận' }).click()
     await expect(page.getByTestId('contract-summary')).toBeVisible()
     await expect(page.getByTestId('contract-summary').getByRole('heading', { name: 'Không hợp đồng' })).toBeVisible()
+    await expect(page.getByTestId('contract-summary')).toContainText('Ghi nhận ngày 10/10/2026')
+    await expect(page.getByTestId('contract-summary')).toContainText('Bản ghi gốc v1')
+    await expect(page.getByTestId('contract-summary')).not.toContainText('Ký ngày')
     await expect(page.getByTestId('total-committed')).toContainText('4.000.000')
     // There is no amendment for an order without a contract.
     await expect(page.getByRole('button', { name: 'Thêm phụ lục', exact: true })).toHaveCount(0)

@@ -2,15 +2,17 @@
   <section
     class="cockpit-card record-panel"
     role="region"
-    aria-label="Ghi nhận hợp đồng mua hàng"
+    :aria-label="isQuotationOnly ? 'Ghi nhận đơn mua không hợp đồng' : 'Ghi nhận hợp đồng mua hàng'"
     data-testid="contract-record-panel"
   >
     <header class="panel-head">
       <UIcon name="i-lucide-file-signature" class="text-sky-600 text-xl shrink-0" aria-hidden="true" />
       <div>
-        <h3 class="panel-title">Ghi nhận hợp đồng</h3>
+        <h3 class="panel-title">{{ isQuotationOnly ? 'Ghi nhận đơn không hợp đồng' : 'Ghi nhận hợp đồng' }}</h3>
         <p class="panel-desc">
-          Tải hợp đồng và báo giá đã ký với nhà cung cấp, nhập giá trị và lịch thanh toán các đợt.
+          {{ isQuotationOnly
+            ? 'Tải báo giá có chữ ký và nhập giá trị đơn. Hệ thống tạo một đợt thanh toán 100%.'
+            : 'Tải hợp đồng và báo giá đã ký với nhà cung cấp, nhập giá trị và lịch thanh toán các đợt.' }}
         </p>
       </div>
     </header>
@@ -181,7 +183,7 @@
         @click="save"
       >
         <UIcon v-if="busy" name="i-lucide-loader-circle" class="animate-spin" aria-hidden="true" />
-        {{ busy ? 'Đang lưu...' : 'Lưu hợp đồng' }}
+        {{ busy ? 'Đang lưu...' : isQuotationOnly ? 'Lưu ghi nhận' : 'Lưu hợp đồng' }}
       </button>
     </footer>
   </section>
