@@ -44,6 +44,14 @@ describe('appNotificationText', () => {
     expect(appNotificationText(n('material.payment.paid', payload)).body).toContain('đơn không hợp đồng')
     expect(appNotificationText(n('material.payment.returned', payload)).body).toContain('đơn không hợp đồng')
   })
+  it('names a quotation-only order instead of a contract number', () => {
+    const payload = { documentation: 'quotation_only', contractNo: null, supplierName: 'NCC A', total: '4500000.0000' }
+    const recorded = appNotificationText(n('material.contract.recorded', payload))
+    expect(recorded.body).toContain('Đơn không hợp đồng')
+    expect(recorded.body).not.toContain('Hợp đồng')
+    expect(appNotificationText(n('material.payment.paid', payload)).body).toContain('đơn không hợp đồng')
+    expect(appNotificationText(n('material.payment.returned', payload)).body).toContain('đơn không hợp đồng')
+  })
   it('formats money without trailing zeros and dates as dd/MM/yyyy', () => {
     expect(appNotificationText(n('material.contract.recorded', { supplierName: 'NCC A', contractNo: 'HD-01', total: '1100000.0000' })).body).toContain('1.100.000')
     expect(appNotificationText(n('material.payment.submitted', { amount: '1234567.5000' })).body).toContain('1.234.567,5')
