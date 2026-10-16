@@ -19,12 +19,12 @@
           </div>
         </div>
 
-        <!-- Section 1: File Upload (PDF / XML) -->
+        <!-- Section 1: File Upload (PDF / XML / JPG / PNG) -->
         <section class="space-y-2 p-3.5 bg-slate-50 border border-slate-200 rounded-lg" aria-labelledby="section-file-title">
           <div class="flex items-center justify-between">
             <h4 id="section-file-title" class="font-bold text-slate-900 text-xs m-0 flex items-center gap-1.5">
               <UIcon name="i-lucide-file-up" class="text-sky-600" aria-hidden="true" />
-              <span>1. Tệp hóa đơn (PDF hoặc XML) <span class="text-rose-500">*</span></span>
+              <span>1. Tệp hóa đơn (PDF, XML, JPG, PNG) <span class="text-rose-500">*</span></span>
             </h4>
             <span v-if="finalizedFileId" class="cockpit-badge bg-emerald-100 text-emerald-800 text-[11px] font-semibold flex items-center gap-1">
               <UIcon name="i-lucide-check" class="text-xs" aria-hidden="true" />
@@ -33,15 +33,15 @@
           </div>
 
           <p class="text-slate-500 text-[11px] m-0">
-            Chấp nhận tệp định dạng PDF hoặc XML hóa đơn điện tử (&le; 25 MiB).
+            Chấp nhận tệp định dạng PDF, XML, JPG hoặc PNG (&le; 25 MiB).
           </p>
 
           <div class="flex items-center gap-3 flex-wrap pt-1">
             <input
               id="invoice-file-input"
-              aria-label="Chọn tệp hóa đơn PDF hoặc XML"
+              aria-label="Chọn tệp hóa đơn PDF, XML, JPG hoặc PNG"
               type="file"
-              accept=".pdf,.xml,application/pdf,application/xml,text/xml"
+              accept=".pdf,.xml,.jpg,.jpeg,.png,application/pdf,application/xml,text/xml,image/jpeg,image/png"
               class="cockpit-input text-xs file:mr-3 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100 cursor-pointer"
               :disabled="isSubmitting || isUploading"
               @change="onFileSelected"
@@ -75,6 +75,50 @@
             <UIcon name="i-lucide-hash" class="text-sky-600" aria-hidden="true" />
             <span>2. Thông tin và giá trị hóa đơn</span>
           </h4>
+
+          <!-- Stage Selection: draft (default) vs official -->
+          <fieldset class="space-y-1.5 border-0 p-0 m-0">
+            <legend class="block font-semibold text-slate-700 text-xs mb-1.5">
+              Giai đoạn hóa đơn <span class="text-rose-500">*</span>
+            </legend>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <label
+                class="p-2.5 rounded-lg border text-left flex items-center gap-2.5 transition-all cursor-pointer has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-sky-500"
+                :class="stage === 'draft'
+                  ? 'border-sky-500 bg-sky-50/70 text-sky-900 font-semibold ring-1 ring-sky-500'
+                  : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'"
+              >
+                <input
+                  type="radio"
+                  name="invoice-stage"
+                  value="draft"
+                  :checked="stage === 'draft'"
+                  :disabled="isSubmitting"
+                  class="h-4 w-4 cursor-pointer text-sky-600 focus:ring-sky-500"
+                  @change="stage = 'draft'"
+                >
+                <span>Bản nháp / bản đã ký (chờ bản chính thức)</span>
+              </label>
+
+              <label
+                class="p-2.5 rounded-lg border text-left flex items-center gap-2.5 transition-all cursor-pointer has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-sky-500"
+                :class="stage === 'official'
+                  ? 'border-sky-500 bg-sky-50/70 text-sky-900 font-semibold ring-1 ring-sky-500'
+                  : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'"
+              >
+                <input
+                  type="radio"
+                  name="invoice-stage"
+                  value="official"
+                  :checked="stage === 'official'"
+                  :disabled="isSubmitting"
+                  class="h-4 w-4 cursor-pointer text-sky-600 focus:ring-sky-500"
+                  @change="stage = 'official'"
+                >
+                <span>Hóa đơn chính thức</span>
+              </label>
+            </div>
+          </fieldset>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
@@ -304,6 +348,7 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import type {
   MaterialContractView,
+  MaterialInvoiceStage,
   RecordMaterialInvoiceInput,
 } from '../../../../shared/schemas/costs/material-finance'
 import type { MaterialOrderView } from '../../../../shared/schemas/costs/material-procurement'
@@ -363,6 +408,7 @@ onBeforeUnmount(() => {
 })
 
 // Form fields
+const stage = ref<MaterialInvoiceStage>('draft')
 const invoiceSymbol = ref('')
 const invoiceNo = ref('')
 const issuedOn = ref(todayDate)
@@ -425,8 +471,10 @@ function onFileSelected(e: Event) {
   const name = file.name.toLowerCase()
   const isPdf = name.endsWith('.pdf') || file.type === 'application/pdf'
   const isXml = name.endsWith('.xml') || file.type === 'application/xml' || file.type === 'text/xml'
-  if (!isPdf && !isXml) {
-    uploadError.value = 'Chỉ chấp nhận tệp định dạng PDF hoặc XML.'
+  const isJpg = name.endsWith('.jpg') || name.endsWith('.jpeg') || file.type === 'image/jpeg'
+  const isPng = name.endsWith('.png') || file.type === 'image/png'
+  if (!isPdf && !isXml && !isJpg && !isPng) {
+    uploadError.value = 'Chỉ chấp nhận tệp định dạng PDF, XML, JPG hoặc PNG.'
     input.value = ''
     return
   }
@@ -572,7 +620,7 @@ async function submitInvoice() {
     .filter(line => line.invoiceMaterialName.length > 0)
 
   const input: RecordMaterialInvoiceInput = {
-    stage: 'official', // T6 replaces this with the draft/official choice
+    stage: stage.value,
     invoiceSymbol: invoiceSymbol.value.trim(),
     invoiceNo: invoiceNo.value.trim(),
     issuedOn: issuedOn.value,
@@ -614,7 +662,10 @@ watch([subtotal, vatAmount], onSubtotalOrVatChange)
 watch(
   () => props.open,
   (isOpen) => {
-    if (isOpen) void loadLinesAndSuggestions()
+    if (isOpen) {
+      stage.value = 'draft'
+      void loadLinesAndSuggestions()
+    }
   },
   { immediate: true },
 )

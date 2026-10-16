@@ -6,11 +6,13 @@ import {
   createPaymentRequestInputSchema,
   decidePaymentRequestInputSchema,
   materialContractViewSchema,
+  materialInvoiceViewSchema,
   materialPaymentRequestViewSchema,
   projectMaterialFinanceSummarySchema,
   recordMaterialContractInputSchema,
   recordMaterialPaymentInputSchema,
   type MaterialContractView,
+  type MaterialInvoiceView,
   type MaterialPaymentRequestView,
   type ProjectMaterialFinanceSummary,
   type RecordMaterialContractInput,
@@ -64,6 +66,8 @@ interface SmallOrderState {
   unitPrice: string
   record: RecordMaterialContractInput | null
   requests: MaterialPaymentRequestView[]
+  /** A draft (signed copy) invoice the accountant already recorded; every non-advance request needs one (C4). */
+  invoices: MaterialInvoiceView[]
   evidence: Map<string, { originalFilename: string, mimeType: string, sizeBytes: number, sha256: string }>
   calls: Call[]
   counters: { evidence: number, request: number }
@@ -71,8 +75,30 @@ interface SmallOrderState {
 
 const QUANTITY = '10.0000'
 
+const draftInvoiceId = 'c0000000-0000-4000-8000-000000000001'
+
+function buildDraftInvoice(unitPrice: string): MaterialInvoiceView {
+  const total = new Decimal(QUANTITY).times(unitPrice).toFixed(4)
+  return materialInvoiceViewSchema.parse({
+    id: draftInvoiceId,
+    contractId,
+    invoiceSymbol: '1C26TBB',
+    invoiceNo: '0000123',
+    issuedOn: '2026-10-10',
+    subtotal: total,
+    vatAmount: '0.0000',
+    total,
+    fileId: 'e0000000-0000-4000-8000-000000000001',
+    stage: 'draft',
+    state: 'recorded',
+    voidReason: null,
+    version: 1,
+    lines: [],
+  })
+}
+
 function createState(unitPrice: string): SmallOrderState {
-  return { unitPrice, record: null, requests: [], evidence: new Map(), calls: [], counters: { evidence: 0, request: 0 } }
+  return { unitPrice, record: null, requests: [], invoices: [buildDraftInvoice(unitPrice)], evidence: new Map(), calls: [], counters: { evidence: 0, request: 0 } }
 }
 
 const zero = new Decimal(0)
@@ -89,15 +115,16 @@ function derive(state: SmallOrderState) {
   const record = state.record
   if (!record) return null
   if (record.documentation === 'quotation_only') {
+    const total = record.total ?? new Decimal(record.subtotal).plus(record.vatAmount ?? 0).toFixed(4)
     return {
       documentation: 'quotation_only' as const,
       contractNo: null,
       subtotal: record.subtotal,
-      vatAmount: money(0),
-      total: record.subtotal,
+      vatAmount: record.vatAmount ?? money(0),
+      total,
       contractFileId: null,
       varianceReason: record.varianceReason,
-      installments: [{ installmentKey, name: 'Thanh toán 100%', amount: record.subtotal, dueOn: record.signedOn, isAdvance: false }],
+      installments: [{ installmentKey, name: 'Thanh toán 100%', amount: total, dueOn: record.signedOn, isAdvance: false }],
     }
   }
   return {
@@ -168,6 +195,7 @@ function buildContract(state: SmallOrderState): MaterialContractView | null {
       invoiced: money(0),
       // Orders without a contract need no invoice, so they stay out of this figure.
       paidWithoutInvoice: money(derived.documentation === 'quotation_only' ? 0 : totalPaid),
+      draftInvoiced: money(0),
     },
   })
 }
@@ -249,7 +277,7 @@ async function installMocks(page: Page, state: SmallOrderState) {
     if (method === 'GET') {
       if (path === `/orders/${orderId}`) return route.fulfill({ json: buildOrder(state) })
       if (path === `/orders/${orderId}/contract`) return route.fulfill({ json: buildContract(state) })
-      if (path === `/contracts/${contractId}/invoices`) return route.fulfill({ json: [] })
+      if (path === `/contracts/${contractId}/invoices`) return route.fulfill({ json: state.invoices })
       if (path === `/contracts/${contractId}/payment-requests`) return route.fulfill({ json: state.requests })
       if (path === '/material-finance/summary') return route.fulfill({ json: buildSummary(state) })
       return route.fulfill({ status: 404, json: apiError('RESOURCE_NOT_FOUND', 'Không tìm thấy ' + path) })
@@ -304,7 +332,7 @@ async function installMocks(page: Page, state: SmallOrderState) {
       const derived = derive(state)
       const target = derived?.installments.find(item => item.installmentKey === input.installmentKey)
       if (!derived || !target) return route.fulfill({ status: 409, json: apiError('INSTALLMENT_NOT_FOUND', 'Không tìm thấy đợt') })
-      if (derived.documentation === 'contract' && !target.isAdvance && input.invoiceIds.length === 0) {
+      if (!target.isAdvance && input.invoiceIds.length === 0) {
         return route.fulfill({ status: 409, json: apiError('INVOICE_REQUIRED', 'Cần hóa đơn') })
       }
       state.counters.request += 1
@@ -412,14 +440,24 @@ test.describe('Đơn 4 triệu không hợp đồng, chi tiền mặt (mock dùn
     // The contract fields are gone and the date is the record date.
     await expect(page.getByLabel('Số hợp đồng')).toHaveCount(0)
     await expect(page.getByLabel('Hợp đồng đã ký (PDF)')).toHaveCount(0)
-    await expect(page.getByLabel('VAT', { exact: true })).toHaveCount(0)
+    // A no-contract order shows VAT and the total after VAT (C2).
+    await expect(page.getByLabel('VAT', { exact: true })).toBeVisible()
     await expect(page.getByLabel('Ngày ghi nhận')).toBeVisible()
     await expect(panel.getByText('Báo giá có ít nhất chữ ký bên bán')).toBeVisible()
 
     await page.getByLabel('Báo giá có chữ ký', { exact: true }).setInputFiles(png('bao-gia.png'))
     await page.getByLabel('Ngày ghi nhận').fill('2026-10-10')
     await typeMoney(page.getByLabel('Trước VAT', { exact: true }), '4.000.000')
-    await expect(page.getByTestId('quotation-only-summary')).toHaveText('VAT 0 · Thanh toán 100% · Tổng 4.000.000')
+    await typeMoney(page.getByLabel('VAT', { exact: true }), '1.000.000')
+    // 4.000.000 + 1.000.000 reaches the threshold: the warning shows and saving is refused.
+    await expect(page.getByTestId('quotation-only-summary')).toHaveText('Thanh toán 100% · Tổng 5.000.000')
+    await expect(page.getByTestId('quotation-threshold-warning')).toHaveText('Tổng sau VAT từ 5.000.000 đ trở lên phải có hợp đồng.')
+    await panel.getByRole('button', { name: 'Lưu ghi nhận' }).click()
+    expect(posts(`/orders/${orderId}/contract`)).toHaveLength(0)
+
+    await typeMoney(page.getByLabel('VAT', { exact: true }), '0')
+    await expect(page.getByTestId('quotation-threshold-warning')).toHaveCount(0)
+    await expect(page.getByTestId('quotation-only-summary')).toHaveText('Thanh toán 100% · Tổng 4.000.000')
 
     await expect(panel.getByRole('heading', { name: 'Ghi nhận đơn không hợp đồng' })).toBeVisible()
     await panel.getByRole('button', { name: 'Lưu ghi nhận' }).click()
@@ -433,40 +471,44 @@ test.describe('Đơn 4 triệu không hợp đồng, chi tiền mặt (mock dùn
     await expect(page.getByRole('button', { name: 'Thêm phụ lục', exact: true })).toHaveCount(0)
 
     const record = recordMaterialContractInputSchema.parse(posts(`/orders/${orderId}/contract`)[0]?.body)
-    expect(record).toMatchObject({ documentation: 'quotation_only', signedOn: '2026-10-10', subtotal: '4000000.0000', varianceReason: null })
-    expect(Object.keys(record).sort()).toEqual(['documentation', 'expectedOrderVersion', 'signedOn', 'signedQuotationFileId', 'subtotal', 'varianceReason'])
+    expect(record).toMatchObject({ documentation: 'quotation_only', signedOn: '2026-10-10', subtotal: '4000000.0000', vatAmount: '0.0000', total: '4000000.0000', varianceReason: null })
+    expect(Object.keys(record).sort()).toEqual(['documentation', 'expectedOrderVersion', 'signedOn', 'signedQuotationFileId', 'subtotal', 'total', 'varianceReason', 'vatAmount'])
     expect([...state.evidence.values()].find(item => item.originalFilename === 'bao-gia.png')?.mimeType).toBe('image/png')
   })
 
-  test('2. kế toán lập đề nghị chi mà không chọn hóa đơn', async ({ page }) => {
+  test('2. kế toán lập đề nghị chi kèm hóa đơn nháp (đơn không hợp đồng cũng cần hóa đơn)', async ({ page }) => {
     await openAs(page, state, 'accountant')
     await page.getByRole('button', { name: 'Lập đề nghị chi' }).click()
     const dialog = page.getByRole('dialog', { name: 'Lập đề nghị thanh toán chi' })
     await expect(dialog.getByText('Không hợp đồng - Nhà cung cấp', { exact: false })).toBeVisible()
     await dialog.getByRole('radio', { name: /Thanh toán 100%/ }).check()
-    await expect(dialog.getByText('Đơn không hợp đồng: không bắt buộc đính kèm hóa đơn.')).toBeVisible()
+    await expect(dialog.getByText(/Đợt không phải tạm ứng: bắt buộc chọn ít nhất một hóa đơn/)).toBeVisible()
+    await expect(dialog.getByText('Cần chọn ít nhất một hóa đơn')).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Gửi đề nghị chi' })).toBeDisabled()
+    await expect(dialog.getByText('Nháp', { exact: true })).toBeVisible()
+    await dialog.getByRole('checkbox', { name: /0000123/ }).check()
     await expect(dialog.getByText('Cần chọn ít nhất một hóa đơn')).toHaveCount(0)
     await typeMoney(dialog.getByLabel(/Số tiền đề nghị chi/), '4.000.000')
     await dialog.getByRole('button', { name: 'Gửi đề nghị chi' }).click()
     await expect(dialog).toBeHidden()
-    await expect(page.getByRole('cell', { name: 'Chờ duyệt' })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'Chờ lập UNC' })).toBeVisible()
 
     expect(createPaymentRequestInputSchema.parse(posts(`/contracts/${contractId}/payment-requests`)[0]?.body)).toMatchObject({
       installmentKey,
       amount: '4000000',
-      invoiceIds: [],
+      invoiceIds: [draftInvoiceId],
     })
   })
 
   test('3. thủ quỹ duyệt rồi chi tiền mặt kèm hóa đơn bán hàng dạng ảnh', async ({ page }) => {
     await openAs(page, state, 'treasurer')
-    await page.getByRole('button', { name: 'Duyệt', exact: true }).click()
+    await page.getByRole('button', { name: 'Xác nhận đã lập UNC / đã chi tiền mặt', exact: true }).click()
     const approve = page.getByRole('dialog', { name: 'Phê duyệt đề nghị chi' })
     await approve.getByRole('button', { name: 'Xác nhận duyệt' }).click()
     await expect(approve).toBeHidden()
-    await expect(page.getByRole('cell', { name: 'Đã duyệt', exact: true })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'Đã lập UNC – chờ giám đốc duyệt', exact: true })).toBeVisible()
 
-    await page.getByRole('button', { name: 'Ghi chi', exact: true }).click()
+    await page.getByRole('button', { name: 'Cập nhật biên lai chuyển khoản', exact: true }).click()
     const pay = page.getByRole('dialog')
     await expect(pay.getByRole('radio', { name: 'Chuyển khoản' })).toBeChecked()
     await expect(pay.getByLabel(/Số tham chiếu/)).toBeVisible()
@@ -478,7 +520,8 @@ test.describe('Đơn 4 triệu không hợp đồng, chi tiền mặt (mock dùn
     await expect(pay.getByText('Đã tải chứng từ')).toBeVisible()
     await pay.getByRole('button', { name: 'Xác nhận đã chi' }).click()
     await expect(pay).toBeHidden()
-    await expect(page.getByRole('cell', { name: 'Đã chi', exact: true })).toBeVisible()
+    // The linked invoice is still a draft, so the request waits for the official one (C5).
+    await expect(page.getByRole('cell', { name: 'Đã chi – chờ hóa đơn chính thức', exact: true })).toBeVisible()
 
     const payment = state.calls.find(call => call.path.endsWith('/payment'))
     expect(recordMaterialPaymentInputSchema.parse(payment?.body)).toMatchObject({ method: 'cash', bankReference: null, expectedVersion: 2 })
@@ -548,8 +591,8 @@ test.describe('Đơn 48 triệu vẫn cần hợp đồng và chuyển khoản (
     }))
 
     await openAs(page, state, 'treasurer')
-    await page.getByRole('button', { name: 'Ghi chi', exact: true }).click()
-    const pay = page.getByRole('dialog', { name: 'Ghi nhận chuyển khoản thực chi' })
+    await page.getByRole('button', { name: 'Cập nhật biên lai chuyển khoản', exact: true }).click()
+    const pay = page.getByRole('dialog', { name: 'Cập nhật biên lai chuyển khoản' })
     await expect(pay.getByLabel(/Số tham chiếu/)).toBeVisible()
     await expect(pay.getByRole('radio')).toHaveCount(0)
     await expect(pay.getByText('Tiền mặt')).toHaveCount(0)

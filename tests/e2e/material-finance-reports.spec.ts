@@ -23,8 +23,8 @@ const materialNotificationNewId = '36000000-0000-4000-8000-000000000001'
 const materialNotificationOldId = '36000000-0000-4000-8000-000000000002'
 
 const zero = '0.0000'
-const totals = (overrides: Partial<Record<'committed' | 'paid' | 'pending' | 'remaining' | 'overdue' | 'invoiced' | 'paidWithoutInvoice', string>>) => ({
-  committed: zero, paid: zero, pending: zero, remaining: zero, overdue: zero, invoiced: zero, paidWithoutInvoice: zero,
+const totals = (overrides: Partial<Record<'committed' | 'paid' | 'pending' | 'remaining' | 'overdue' | 'invoiced' | 'paidWithoutInvoice' | 'draftInvoiced', string>>) => ({
+  committed: zero, paid: zero, pending: zero, remaining: zero, overdue: zero, invoiced: zero, paidWithoutInvoice: zero, draftInvoiced: zero,
   ...overrides,
 })
 
@@ -52,7 +52,7 @@ const projectSummary = projectMaterialFinanceSummarySchema.parse({
   currencyCode: 'VND',
   totals: totals({
     committed: '1100170.5000', paid: '60.0000', pending: '20.0000', remaining: '1100110.5000',
-    overdue: '70.0000', invoiced: '100.0000', paidWithoutInvoice: '0.0000',
+    overdue: '70.0000', invoiced: '100.0000', paidWithoutInvoice: '0.0000', draftInvoiced: '0.0000',
   }),
   contracts: [contractRowA, contractRowB],
 })

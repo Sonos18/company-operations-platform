@@ -87,6 +87,7 @@
               <th scope="col" class="p-2.5 text-right">Trước VAT</th>
               <th scope="col" class="p-2.5 text-right">VAT</th>
               <th scope="col" class="p-2.5 text-right">Tổng tiền</th>
+              <th scope="col" class="p-2.5 text-center">Giai đoạn</th>
               <th scope="col" class="p-2.5 text-center">Trạng thái</th>
               <th scope="col" class="p-2.5 text-center">Tệp đính kèm</th>
               <th scope="col" class="p-2.5 text-center">Thao tác</th>
@@ -126,6 +127,15 @@
               <td class="p-2.5 text-center">
                 <span
                   class="cockpit-badge text-[11px] font-semibold"
+                  :class="inv.stage === 'draft' ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-800'"
+                >
+                  {{ inv.stage === 'draft' ? 'Nháp' : 'Chính thức' }}
+                </span>
+              </td>
+
+              <td class="p-2.5 text-center">
+                <span
+                  class="cockpit-badge text-[11px] font-semibold"
                   :class="inv.state === 'recorded' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'"
                 >
                   {{ inv.state === 'recorded' ? 'Đã ghi nhận' : 'Đã hủy' }}
@@ -135,29 +145,56 @@
                 </div>
               </td>
 
-              <td class="p-2.5 text-center">
-                <button
-                  type="button"
-                  class="text-sky-600 hover:text-sky-800 text-xs inline-flex items-center gap-1 font-medium"
-                  :disabled="isFileReading === inv.fileId"
-                  @click="viewInvoiceFile(inv.fileId)"
-                >
-                  <UIcon v-if="isFileReading === inv.fileId" name="i-lucide-loader-2" class="animate-spin text-xs" aria-hidden="true" />
-                  <UIcon v-else name="i-lucide-file-text" class="text-xs" aria-hidden="true" />
-                  <span>Xem file</span>
-                </button>
+              <td class="p-2.5 text-center space-y-1">
+                <div>
+                  <button
+                    type="button"
+                    class="text-sky-600 hover:text-sky-800 text-xs inline-flex items-center gap-1 font-medium"
+                    :disabled="isFileReading === inv.fileId"
+                    @click="viewInvoiceFile(inv.fileId)"
+                  >
+                    <UIcon v-if="isFileReading === inv.fileId" name="i-lucide-loader-2" class="animate-spin text-xs" aria-hidden="true" />
+                    <UIcon v-else name="i-lucide-file-text" class="text-xs" aria-hidden="true" />
+                    <span>{{ inv.officialFileId ? 'Xem file nháp' : 'Xem file' }}</span>
+                  </button>
+                </div>
+                <div v-if="inv.officialFileId">
+                  <button
+                    type="button"
+                    class="text-sky-600 hover:text-sky-800 text-xs inline-flex items-center gap-1 font-medium"
+                    :disabled="isFileReading === inv.officialFileId"
+                    @click="viewInvoiceFile(inv.officialFileId)"
+                  >
+                    <UIcon v-if="isFileReading === inv.officialFileId" name="i-lucide-loader-2" class="animate-spin text-xs" aria-hidden="true" />
+                    <UIcon v-else name="i-lucide-file-check" class="text-xs" aria-hidden="true" />
+                    <span>Xem file chính thức</span>
+                  </button>
+                </div>
               </td>
 
               <td class="p-2.5 text-center">
-                <button
-                  v-if="inv.state === 'recorded' && canRecordInvoice"
-                  type="button"
-                  class="cockpit-btn cockpit-btn--danger btn-sm text-[11px] py-1 px-2"
-                  @click="openVoidDialog(inv)"
-                >
-                  Hủy hóa đơn
-                </button>
-                <span v-else class="text-slate-400 text-[11px]">—</span>
+                <div class="flex items-center justify-center gap-1.5 flex-wrap">
+                  <button
+                    v-if="inv.state === 'recorded' && inv.stage === 'draft' && canRecordInvoice"
+                    type="button"
+                    class="cockpit-btn cockpit-btn--primary btn-sm text-[11px] py-1 px-2 flex items-center gap-1"
+                    title="Cập nhật hóa đơn chính thức"
+                    @click="openOfficializeDialog(inv)"
+                  >
+                    <UIcon name="i-lucide-file-check" class="text-xs" aria-hidden="true" />
+                    <span>Cập nhật hóa đơn chính thức</span>
+                  </button>
+
+                  <button
+                    v-if="inv.state === 'recorded' && canRecordInvoice"
+                    type="button"
+                    class="cockpit-btn cockpit-btn--danger btn-sm text-[11px] py-1 px-2"
+                    @click="openVoidDialog(inv)"
+                  >
+                    Hủy hóa đơn
+                  </button>
+                  <span v-if="inv.state !== 'recorded' || !canRecordInvoice" class="text-slate-400 text-[11px]">—</span>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -227,16 +264,105 @@
       @saved="onInvoiceSaved"
       @stale="onStale"
     />
+
+    <!-- Officialize Invoice Modal Dialog -->
+    <UModal
+      :open="Boolean(officializingInvoice)"
+      title="Cập nhật hóa đơn chính thức"
+      description="Đính kèm tệp hóa đơn chính thức từ nhà cung cấp cho hóa đơn nháp."
+      :dismissible="!isOfficialBusy && !isOfficialUploading"
+      @update:open="onOfficializeOpenChange"
+    >
+      <template #body>
+        <div v-if="officializingInvoice" class="space-y-4 text-xs">
+          <div class="text-slate-600 space-y-1 bg-slate-50 p-2.5 rounded border border-slate-100">
+            <div>Hóa đơn số: <strong class="font-mono text-slate-900">{{ officializingInvoice.invoiceNo }}</strong> (Ký hiệu: {{ officializingInvoice.invoiceSymbol }})</div>
+            <div>Tổng tiền: <strong class="font-mono text-slate-900">{{ formatVnNumber(officializingInvoice.total) }} {{ contract.currencyCode }}</strong></div>
+          </div>
+
+          <div class="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+            <div class="flex items-center justify-between">
+              <label for="official-file-input" class="font-semibold text-slate-700 text-xs m-0 flex items-center gap-1.5">
+                <UIcon name="i-lucide-file-text" class="text-sky-600" aria-hidden="true" />
+                <span>Tệp hóa đơn chính thức <span class="text-rose-500">*</span></span>
+              </label>
+              <span v-if="finalizedOfficialFileId" class="cockpit-badge bg-emerald-100 text-emerald-800 text-[10px] font-semibold flex items-center gap-1">
+                <UIcon name="i-lucide-check" class="text-[10px]" aria-hidden="true" />
+                Đã tải lên tệp
+              </span>
+            </div>
+
+            <p class="text-[11px] text-slate-500 m-0">
+              Chấp nhận tệp định dạng PDF, XML, JPG hoặc PNG (&le; 25 MiB).
+            </p>
+
+            <div class="flex items-center gap-2 flex-wrap pt-1">
+              <input
+                id="official-file-input"
+                :key="officialFileInputKey"
+                type="file"
+                accept=".pdf,.xml,.jpg,.jpeg,.png,application/pdf,application/xml,text/xml,image/jpeg,image/png"
+                class="cockpit-input text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11px] file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100 cursor-pointer"
+                :disabled="isOfficialBusy || isOfficialUploading"
+                @change="onOfficialFileSelected"
+              >
+
+              <button
+                v-if="selectedOfficialFile && !finalizedOfficialFileId"
+                type="button"
+                class="cockpit-btn cockpit-btn--primary btn-sm flex items-center gap-1.5"
+                :disabled="isOfficialUploading || isOfficialBusy"
+                @click="uploadOfficialFile"
+              >
+                <UIcon v-if="isOfficialUploading" name="i-lucide-loader-2" class="animate-spin text-xs" aria-hidden="true" />
+                <UIcon v-else name="i-lucide-upload" class="text-xs" aria-hidden="true" />
+                <span>Tải lên</span>
+              </button>
+            </div>
+
+            <div v-if="selectedOfficialFile" class="text-[10px] text-slate-600 mt-1">
+              Tệp: <strong>{{ selectedOfficialFile.name }}</strong> ({{ (selectedOfficialFile.size / 1024 / 1024).toFixed(2) }} MiB)
+            </div>
+
+            <div v-if="officialError" class="cockpit-alert cockpit-alert--danger p-2 text-xs text-rose-700" role="alert">
+              {{ officialError }}
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full items-center justify-end gap-2">
+          <UButton color="neutral" variant="outline" :disabled="isOfficialBusy || isOfficialUploading" @click="closeOfficializeDialog">
+            Đóng
+          </UButton>
+          <UButton
+            color="primary"
+            icon="i-lucide-file-check"
+            :loading="isOfficialBusy"
+            :disabled="!finalizedOfficialFileId"
+            @click="confirmOfficializeInvoice"
+          >
+            Cập nhật hóa đơn chính thức
+          </UButton>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import type {
   MaterialContractView,
   MaterialInvoiceView,
+  OfficializeMaterialInvoiceInput,
   VoidMaterialInvoiceInput,
 } from '../../../../shared/schemas/costs/material-finance'
+import {
+  uploadMaterialEvidence,
+  type MaterialEvidenceUploadSession,
+} from '../../../utils/costs/material-evidence-uploader'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
 import { formatDate } from '../../../utils/materials/date-display'
 import { materialContractLabel } from '../../../utils/materials/contract-label'
@@ -245,6 +371,7 @@ import {
   financeErrorMessage,
   isVersionConflict,
   resetCommandKeyAfterError,
+  uploadErrorMessage,
 } from '../../../utils/materials/finance-ui'
 import MaterialInvoiceForm from './MaterialInvoiceForm.vue'
 
@@ -261,6 +388,7 @@ const emit = defineEmits<{
 
 const nuxtApp = useNuxtApp()
 const companyAccess = nuxtApp.$companyAccessStore
+const supabaseClient = nuxtApp.$supabaseClient
 const repositories = useRepositories()
 const financeRepo = repositories.materialFinance
 const procurementRepo = repositories.materialProcurement
@@ -281,6 +409,21 @@ const voidingInvoice = ref<MaterialInvoiceView | null>(null)
 const voidReason = ref('')
 const isVoidBusy = ref(false)
 const voidError = ref('')
+
+// Officialize dialog state
+const officializingInvoice = ref<MaterialInvoiceView | null>(null)
+const selectedOfficialFile = ref<File | null>(null)
+const finalizedOfficialFileId = ref<string | null>(null)
+const officialUploadSession = ref<MaterialEvidenceUploadSession | null>(null)
+const officialFileInputKey = ref(0)
+const isOfficialUploading = ref(false)
+const isOfficialBusy = ref(false)
+const officialError = ref('')
+let isDisposed = false
+onBeforeUnmount(() => {
+  isDisposed = true
+})
+
 const commandKeys = createScopedCommandKeys()
 
 async function loadInvoices() {
@@ -364,10 +507,136 @@ function onVoidOpenChange(value: boolean) {
   if (!value) closeVoidDialog()
 }
 
+function openOfficializeDialog(inv: MaterialInvoiceView) {
+  officializingInvoice.value = inv
+  selectedOfficialFile.value = null
+  finalizedOfficialFileId.value = null
+  officialUploadSession.value = null
+  officialError.value = ''
+  officialFileInputKey.value += 1
+}
+
+function closeOfficializeDialog() {
+  if (isOfficialBusy.value || isOfficialUploading.value) return
+  officializingInvoice.value = null
+  selectedOfficialFile.value = null
+  finalizedOfficialFileId.value = null
+  officialUploadSession.value = null
+  officialError.value = ''
+}
+
+function onOfficialFileSelected(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  if (file.size > 25 * 1024 * 1024) {
+    officialError.value = 'Dung lượng tệp không được vượt quá 25 MiB.'
+    input.value = ''
+    return
+  }
+
+  const name = file.name.toLowerCase()
+  const isPdf = name.endsWith('.pdf') || file.type === 'application/pdf'
+  const isXml = name.endsWith('.xml') || file.type === 'application/xml' || file.type === 'text/xml'
+  const isJpg = name.endsWith('.jpg') || name.endsWith('.jpeg') || file.type === 'image/jpeg'
+  const isPng = name.endsWith('.png') || file.type === 'image/png'
+  if (!isPdf && !isXml && !isJpg && !isPng) {
+    officialError.value = 'Chỉ chấp nhận tệp định dạng PDF, XML, JPG hoặc PNG.'
+    input.value = ''
+    return
+  }
+
+  selectedOfficialFile.value = file
+  finalizedOfficialFileId.value = null
+  officialUploadSession.value = null
+  officialError.value = ''
+}
+
+async function uploadOfficialFile() {
+  const file = selectedOfficialFile.value
+  if (!file || isOfficialUploading.value || !officializingInvoice.value) return
+  const companyId = companyAccess?.activeCompanyId
+  if (!companyId) {
+    officialError.value = 'Chưa chọn công ty làm việc.'
+    return
+  }
+
+  isOfficialUploading.value = true
+  officialError.value = ''
+  const projectId = props.projectId
+  try {
+    const result = await uploadMaterialEvidence({
+      companyId,
+      projectId,
+      file,
+      evidenceRole: 'invoice',
+      target: { kind: 'material_contract', contractId: props.contract.id },
+      repository: procurementRepo,
+      supabaseClient,
+      session: officialUploadSession.value,
+      onSessionChange: (session) => {
+        if (!isDisposed) officialUploadSession.value = session
+      },
+      isScopeCurrent: () => !isDisposed
+        && companyAccess?.activeCompanyId === companyId
+        && props.projectId === projectId,
+    })
+    if (isDisposed || selectedOfficialFile.value !== file) return
+    finalizedOfficialFileId.value = result.evidenceFileId
+  }
+  catch (err: unknown) {
+    if (isDisposed) return
+    officialError.value = uploadErrorMessage(err, 'Lỗi khi tải tệp hóa đơn chính thức.')
+  }
+  finally {
+    isOfficialUploading.value = false
+  }
+}
+
+async function confirmOfficializeInvoice() {
+  const invoice = officializingInvoice.value
+  const officialFileId = finalizedOfficialFileId.value
+  if (!invoice || !officialFileId || isOfficialBusy.value) return
+
+  const payload: OfficializeMaterialInvoiceInput = {
+    expectedVersion: invoice.version,
+    officialFileId,
+  }
+  const officializeKey = commandKeys.forScope(`officialize:${invoice.id}`)
+  const idempotencyKey = officializeKey.keyFor({ invoiceId: invoice.id, ...payload })
+
+  isOfficialBusy.value = true
+  officialError.value = ''
+  try {
+    await financeRepo.officializeInvoice(props.projectId, invoice.id, payload, { idempotencyKey })
+    officializeKey.reset()
+    isOfficialBusy.value = false
+    closeOfficializeDialog()
+    await loadInvoices()
+    emit('changed')
+  }
+  catch (err: unknown) {
+    resetCommandKeyAfterError(officializeKey, err)
+    const message = financeErrorMessage(err, 'Lỗi khi cập nhật hóa đơn chính thức.')
+    isOfficialBusy.value = false
+    if (isVersionConflict(err)) await onStale(message)
+    else officialError.value = message
+  }
+  finally {
+    isOfficialBusy.value = false
+  }
+}
+
+function onOfficializeOpenChange(value: boolean) {
+  if (!value) closeOfficializeDialog()
+}
+
 /** The invoice changed since it was loaded: close the dialogs, reload, and tell the user why. */
 async function onStale(message: string) {
   isFormOpen.value = false
   closeVoidDialog()
+  closeOfficializeDialog()
   await loadInvoices()
   actionError.value = message
   emit('changed')

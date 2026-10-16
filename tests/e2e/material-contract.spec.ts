@@ -121,6 +121,7 @@ function contractFromInput(input: RecordMaterialContractInput, version = 1): Mat
       overdue: money(0),
       invoiced: money(0),
       paidWithoutInvoice: money(0),
+      draftInvoiced: money(0),
     },
   })
 }
@@ -164,6 +165,7 @@ function createPaidContract(): MaterialContractView {
       overdue: money(20),
       invoiced: money(0),
       paidWithoutInvoice: money(30),
+      draftInvoiced: money(0),
     },
   })
 }

@@ -43,6 +43,7 @@ const metrics = computed(() => [
   { key: 'remaining', label: 'Còn phải trả', value: formatVnNumber(props.totals.remaining), danger: false },
   { key: 'overdue', label: 'Quá hạn', value: formatVnNumber(props.totals.overdue), danger: isDecimalGreaterThan(props.totals.overdue, '0') },
   { key: 'invoiced', label: 'Đã nhận hóa đơn', value: formatVnNumber(props.totals.invoiced), danger: false },
+  { key: 'draftInvoiced', label: 'Hóa đơn chờ bản chính thức', value: formatVnNumber(props.totals.draftInvoiced), danger: false },
   { key: 'paidWithoutInvoice', label: 'Đã chi chưa có hóa đơn', value: formatVnNumber(props.totals.paidWithoutInvoice), danger: false },
 ])
 

@@ -10,7 +10,7 @@
           <div>
             <h1 class="text-xl font-bold text-slate-900 m-0">Hộp việc tài chính vật tư</h1>
             <p class="text-xs text-slate-500 m-0 mt-0.5">
-              Theo dõi và xử lý các đơn mua chờ hợp đồng, đợt thanh toán đến hạn và phê duyệt chi tiền.
+              Theo dõi và xử lý các đơn mua chờ hợp đồng, đợt thanh toán đến hạn, lập UNC và cập nhật biên lai chi tiền.
             </p>
           </div>
         </div>
@@ -272,7 +272,7 @@
             >
               <UIcon name="i-lucide-check-circle-2" class="text-slate-400 text-3xl mx-auto mb-2" aria-hidden="true" />
               <p class="font-medium text-xs m-0">Không có đề nghị chi nào bị trả lại.</p>
-              <p class="text-[11px] text-slate-400 m-0 mt-0.5">Các đề nghị thanh toán gửi đi đều đang chờ duyệt hoặc đã được phê duyệt.</p>
+              <p class="text-[11px] text-slate-400 m-0 mt-0.5">Các đề nghị thanh toán gửi đi đều đang chờ lập UNC hoặc đã được xử lý.</p>
             </div>
 
             <div v-else class="overflow-x-auto">
@@ -325,15 +325,15 @@
             </div>
           </div>
 
-          <!-- TAB 4: Chờ duyệt (pendingApproval) -->
+          <!-- TAB 4: Chờ lập UNC (pendingApproval) -->
           <div v-else-if="activeTab === 'pendingApproval'">
             <div
               v-if="!inboxData?.pendingApproval || inboxData.pendingApproval.length === 0"
               class="py-10 text-center text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-200"
             >
               <UIcon name="i-lucide-clock-check" class="text-slate-400 text-3xl mx-auto mb-2" aria-hidden="true" />
-              <p class="font-medium text-xs m-0">Không có đề nghị chi nào đang chờ thủ quỹ duyệt.</p>
-              <p class="text-[11px] text-slate-400 m-0 mt-0.5">Tất cả đề nghị chi gửi đến đều đã được duyệt hoặc xử lý xong.</p>
+              <p class="font-medium text-xs m-0">Không có đề nghị chi nào đang chờ lập UNC.</p>
+              <p class="text-[11px] text-slate-400 m-0 mt-0.5">Tất cả đề nghị chi gửi đến đều đã được lập UNC hoặc xử lý xong.</p>
             </div>
 
             <div v-else class="overflow-x-auto">
@@ -380,7 +380,7 @@
                         :to="`/materials/${row.projectId}/orders/${row.orderId}`"
                         class="cockpit-btn cockpit-btn--primary btn-sm text-[11px] inline-flex items-center gap-1 py-1 px-2.5"
                       >
-                        <span>Xét duyệt</span>
+                        <span>Xác nhận đã lập UNC</span>
                         <UIcon name="i-lucide-arrow-right" class="text-xs" aria-hidden="true" />
                       </NuxtLink>
                     </td>
@@ -390,15 +390,15 @@
             </div>
           </div>
 
-          <!-- TAB 5: Đã duyệt – chờ chi (approvedAwaitingPayment) -->
+          <!-- TAB 5: Đã lập UNC – chờ giám đốc duyệt (approvedAwaitingPayment) -->
           <div v-else-if="activeTab === 'approvedAwaitingPayment'">
             <div
               v-if="!inboxData?.approvedAwaitingPayment || inboxData.approvedAwaitingPayment.length === 0"
               class="py-10 text-center text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-200"
             >
               <UIcon name="i-lucide-check-check" class="text-slate-400 text-3xl mx-auto mb-2" aria-hidden="true" />
-              <p class="font-medium text-xs m-0">Không có đề nghị chi nào đã duyệt đang chờ chi tiền.</p>
-              <p class="text-[11px] text-slate-400 m-0 mt-0.5">Tất cả đề nghị chi được duyệt đều đã hoàn tất chi tiền và có chứng từ chi.</p>
+              <p class="font-medium text-xs m-0">Không có đề nghị chi nào đã lập UNC đang chờ cập nhật biên lai.</p>
+              <p class="text-[11px] text-slate-400 m-0 mt-0.5">Tất cả đề nghị chi đã lập UNC đều đã có biên lai chuyển khoản hoặc chứng từ chi.</p>
             </div>
 
             <div v-else class="overflow-x-auto">
@@ -410,7 +410,7 @@
                     <th scope="col" class="p-2.5">Dự án</th>
                     <th scope="col" class="p-2.5">Nhà cung cấp</th>
                     <th scope="col" class="p-2.5 text-right">Số tiền cần chi</th>
-                    <th scope="col" class="p-2.5">Thời gian duyệt</th>
+                    <th scope="col" class="p-2.5">Thời gian lập UNC</th>
                     <th scope="col" class="p-2.5 text-center">Thao tác</th>
                   </tr>
                 </thead>
@@ -441,7 +441,7 @@
                         :to="`/materials/${row.projectId}/orders/${row.orderId}`"
                         class="cockpit-btn bg-emerald-600 hover:bg-emerald-700 text-white btn-sm text-[11px] inline-flex items-center gap-1 py-1 px-2.5"
                       >
-                        <span>Ghi nhận chi</span>
+                        <span>Cập nhật biên lai chuyển khoản</span>
                         <UIcon name="i-lucide-arrow-right" class="text-xs" aria-hidden="true" />
                       </NuxtLink>
                     </td>
@@ -526,14 +526,14 @@ const availableTabs = computed<TabItem[]>(() => {
   if (canApprove.value) {
     tabs.push({
       key: 'pendingApproval',
-      label: 'Chờ duyệt',
+      label: 'Chờ lập UNC',
       count: inboxData.value?.pendingApproval?.length ?? 0,
     })
   }
   if (canExecute.value) {
     tabs.push({
       key: 'approvedAwaitingPayment',
-      label: 'Đã duyệt – chờ chi',
+      label: 'Đã lập UNC – chờ giám đốc duyệt',
       count: inboxData.value?.approvedAwaitingPayment?.length ?? 0,
     })
   }

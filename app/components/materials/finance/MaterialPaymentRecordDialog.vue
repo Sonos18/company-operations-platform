@@ -1,7 +1,7 @@
 <template>
   <UModal
     :open="open && Boolean(request)"
-    :title="method === 'cash' ? 'Ghi nhận chi tiền mặt' : 'Ghi nhận chuyển khoản thực chi'"
+    :title="method === 'cash' ? 'Ghi nhận chi tiền mặt' : 'Cập nhật biên lai chuyển khoản'"
     :description="request ? `Xác nhận lệnh chi - Số tiền: ${formatVnNumber(request.amount)}` : ''"
     :dismissible="!isSubmitting && !isUploading"
     @update:open="onOpenChange"
@@ -122,12 +122,12 @@
           </div>
         </div>
 
-        <!-- Proof File Upload (Ủy nhiệm chi hoặc Hóa đơn bán hàng / Phiếu chi hộ) -->
+        <!-- Proof File Upload (Biên lai chuyển khoản hoặc Hóa đơn bán hàng / Phiếu chi hộ) -->
         <div class="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
           <div class="flex items-center justify-between">
             <label for="proof-file-input" class="font-semibold text-slate-700 text-xs m-0 flex items-center gap-1.5">
               <UIcon name="i-lucide-file-text" class="text-sky-600" aria-hidden="true" />
-              <span>{{ method === 'cash' ? 'Hóa đơn bán hàng hoặc phiếu chi hộ' : 'Ủy nhiệm chi / Chứng từ thanh toán' }} <span class="text-rose-500">*</span></span>
+              <span>{{ method === 'cash' ? 'Hóa đơn bán hàng hoặc phiếu chi hộ' : 'Biên lai chuyển khoản' }} <span class="text-rose-500">*</span></span>
             </label>
             <span v-if="finalizedProofFileId" class="cockpit-badge bg-emerald-100 text-emerald-800 text-[10px] font-semibold flex items-center gap-1">
               <UIcon name="i-lucide-check" class="text-[10px]" aria-hidden="true" />
@@ -138,7 +138,7 @@
           <p class="text-[11px] text-slate-500 m-0">
             {{ method === 'cash'
               ? 'Tải lên hóa đơn bán hàng hoặc phiếu chi hộ (PDF, JPG, PNG ≤ 25 MiB).'
-              : 'Tải lên ủy nhiệm chi đã có dấu ngân hàng (PDF, JPG, PNG ≤ 25 MiB).' }}
+              : 'Tải lên biên lai chuyển khoản của ngân hàng (PDF, JPG, PNG ≤ 25 MiB).' }}
           </p>
 
           <div class="flex items-center gap-2 flex-wrap pt-1">
