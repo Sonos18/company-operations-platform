@@ -126,7 +126,9 @@ insert into public.material_order_allocations(
   quotation_material_name,mapping_confirmed
 )
 select 'c1260000-0000-4000-8000-000000000010','c1260000-0000-4000-8000-000000000020','c1260000-0000-4000-8000-000000000101',material_order.id,'c1260000-0000-4000-8000-000000000301','c1260000-0000-4000-8000-000000000401','c1260000-0000-4000-8000-000000000311',10,10,'Steel Supplier A',true
-from public.material_orders as material_order;
+from public.material_orders as material_order
+where material_order.tenant_id = 'c1260000-0000-4000-8000-000000000010'
+  and material_order.company_id = 'c1260000-0000-4000-8000-000000000020';
 
 -- Evidence scopes. Contract-level scopes are added after the contract exists.
 insert into public.material_evidence_scopes(evidence_file_id,tenant_id,company_id,project_id,target_kind,order_id,evidence_role,created_by) values

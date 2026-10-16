@@ -62,7 +62,7 @@ from unnest(array[
 
 select ok(
   coalesce((
-    select procedure.prosecdef and procedure.proconfig @> array['search_path=']
+    select procedure.prosecdef and coalesce(procedure.proconfig, '{}') @> array['search_path=""']
     from pg_proc as procedure
     where procedure.oid=to_regprocedure(signature)
   ),false),
