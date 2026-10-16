@@ -7,7 +7,8 @@ select plan(24);
 -- Contract C1 (601) totals 110: installment A (advance, key a0a) 33 and B (key a0b) 77.
 -- Contract C2 (602) totals 110 with one advance installment (key a0c); used for amendments.
 -- Users: K (901) accountant, Q (902) treasurer, N (903) holds contract.record,
--- payment.request, payment.approve and payment.execute but NOT material.read, B (904) buyer.
+-- payment.request, payment.approve and payment.execute but NOT material.read, B (904) buyer,
+-- E (905) records payments (material.read and payment.execute only).
 -- Labels: "material.read:" (A), "notifications:" (C), "amend replay:" (D),
 -- "finance evidence:" (F). The material.read case is table-driven: one throws_ok
 -- per command row (9 rows).
@@ -16,7 +17,8 @@ insert into auth.users(id,email) values
 ('c1290000-0000-4000-8000-000000000901','hard-k@test.invalid'),
 ('c1290000-0000-4000-8000-000000000902','hard-q@test.invalid'),
 ('c1290000-0000-4000-8000-000000000903','hard-noread@test.invalid'),
-('c1290000-0000-4000-8000-000000000904','hard-buyer@test.invalid');
+('c1290000-0000-4000-8000-000000000904','hard-buyer@test.invalid'),
+('c1290000-0000-4000-8000-000000000905','hard-executor@test.invalid');
 insert into public.tenants(id,code,name)
 values('c1290000-0000-4000-8000-000000000010','C1HARD','Material hardening tenant');
 insert into public.companies(id,tenant_id,code,name)
@@ -33,7 +35,8 @@ from (values
  ('c1290000-0000-4000-8000-000000000911'::uuid,'hard_accountant'),
  ('c1290000-0000-4000-8000-000000000912'::uuid,'hard_treasurer'),
  ('c1290000-0000-4000-8000-000000000913'::uuid,'hard_no_read'),
- ('c1290000-0000-4000-8000-000000000914'::uuid,'hard_buyer')
+ ('c1290000-0000-4000-8000-000000000914'::uuid,'hard_buyer'),
+ ('c1290000-0000-4000-8000-000000000915'::uuid,'hard_executor')
 ) as role_row(id,code);
 insert into public.role_permissions(role_id,permission_code) values
 ('c1290000-0000-4000-8000-000000000911','material.read'),
@@ -47,7 +50,9 @@ insert into public.role_permissions(role_id,permission_code) values
 ('c1290000-0000-4000-8000-000000000913','material.payment.approve'),
 ('c1290000-0000-4000-8000-000000000913','material.payment.execute'),
 ('c1290000-0000-4000-8000-000000000914','material.read'),
-('c1290000-0000-4000-8000-000000000914','material.order.manage');
+('c1290000-0000-4000-8000-000000000914','material.order.manage'),
+('c1290000-0000-4000-8000-000000000915','material.read'),
+('c1290000-0000-4000-8000-000000000915','material.payment.execute');
 insert into public.company_role_assignments(tenant_id,company_id,user_id,role_id,granted_by,grant_reason)
 select 'c1290000-0000-4000-8000-000000000010','c1290000-0000-4000-8000-000000000020',assignment.user_id,assignment.role_id,
   'c1290000-0000-4000-8000-000000000901','rollback fixture'
@@ -55,7 +60,8 @@ from (values
  ('c1290000-0000-4000-8000-000000000901'::uuid,'c1290000-0000-4000-8000-000000000911'::uuid),
  ('c1290000-0000-4000-8000-000000000902'::uuid,'c1290000-0000-4000-8000-000000000912'::uuid),
  ('c1290000-0000-4000-8000-000000000903'::uuid,'c1290000-0000-4000-8000-000000000913'::uuid),
- ('c1290000-0000-4000-8000-000000000904'::uuid,'c1290000-0000-4000-8000-000000000914'::uuid)
+ ('c1290000-0000-4000-8000-000000000904'::uuid,'c1290000-0000-4000-8000-000000000914'::uuid),
+ ('c1290000-0000-4000-8000-000000000905'::uuid,'c1290000-0000-4000-8000-000000000915'::uuid)
 ) as assignment(user_id,role_id);
 insert into public.company_cost_settings(company_id,tenant_id,enabled,created_by)
 values('c1290000-0000-4000-8000-000000000020','c1290000-0000-4000-8000-000000000010',true,'c1290000-0000-4000-8000-000000000901');
@@ -227,6 +233,8 @@ select set_config('request.jwt.claims','{"sub":"c1290000-0000-4000-8000-00000000
 insert into t8_acks select 'R1_approve', public.c1_material_decide_payment_request(
   'c1290000-0000-4000-8000-000000000020','c1290000-0000-4000-8000-000000000101',(select (body->>'resourceId')::uuid from t8_acks where name='R1'),
   '{"expectedVersion":3,"decision":"approve"}','c1290000-0000-4000-8000-000000000d14','c1290000-0000-4000-8000-000000000c00');
+-- C4 (20261016100100): the paid notification goes to the approver Q, so another user (E) pays.
+select set_config('request.jwt.claims','{"sub":"c1290000-0000-4000-8000-000000000905","role":"authenticated"}',true);
 insert into t8_acks select 'R1_pay', public.c1_material_record_payment(
   'c1290000-0000-4000-8000-000000000020','c1290000-0000-4000-8000-000000000101',(select (body->>'resourceId')::uuid from t8_acks where name='R1'),
   '{"expectedVersion":4,"paidOn":"2026-01-12","bankReference":"UNC-H01","proofFileId":"c1290000-0000-4000-8000-000000000521"}',
@@ -249,11 +257,11 @@ select ok((
 ),'notifications: returned payload has no amount key');
 select is((
   select payload from public.app_notifications
-  where recipient_id='c1290000-0000-4000-8000-000000000901'
+  where recipient_id='c1290000-0000-4000-8000-000000000902'
     and event_kind='material.payment.paid'
     and dedupe_key='pr:'||(select body->>'resourceId' from t8_acks where name='R1')||':paid'
 ),'{"supplierName":"Hardening supplier","contractNo":"HD-HARD-01","documentation":"contract"}'::jsonb,
-'notifications: paid payload carries supplier and contract only');
+'notifications: paid payload to the approver carries supplier and contract only');
 select ok((
   select bool_and(not (payload ? 'amount')) and count(*) = 1 from public.app_notifications
   where event_kind='material.payment.paid'

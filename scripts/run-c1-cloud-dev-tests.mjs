@@ -38,6 +38,7 @@ export const materialSyntheticPrefixes = {
   'c1_material_order_inline_supplier.test.sql': 'c130',
   'c1_material_small_order_contracts.test.sql': 'c131',
   'c1_material_small_order_payments.test.sql': 'c132',
+  'c1_material_flow_adjustments.test.sql': 'c134',
 }
 
 const materialAllowlist = Object.keys(materialSyntheticPrefixes)

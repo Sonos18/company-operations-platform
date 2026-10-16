@@ -442,9 +442,10 @@ $$,'finance evidence: accountant creates an XML invoice intent for a contract');
 select throws_ok($$
   select public.c1_material_create_evidence_intent('c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',jsonb_build_object('originalFilename','unc.png','mimeType','image/png','sizeBytes',8,'sha256',repeat('a',64),'evidenceRole','payment_proof','target',jsonb_build_object('kind','material_contract','contractId','c1250000-0000-4000-8000-000000000601')),'c1250000-0000-4000-8000-000000000952','c1250000-0000-4000-8000-000000000962')
 $$,'P0001','PERMISSION_DENIED','finance evidence: accountant without material.payment.execute cannot create a payment proof intent');
-select throws_ok($$
+-- Invoices accept photos since 20261016100100 (C3).
+select lives_ok($$
   select public.c1_material_create_evidence_intent('c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',jsonb_build_object('originalFilename','hoa-don.png','mimeType','image/png','sizeBytes',8,'sha256',repeat('a',64),'evidenceRole','invoice','target',jsonb_build_object('kind','material_contract','contractId','c1250000-0000-4000-8000-000000000601')),'c1250000-0000-4000-8000-000000000953','c1250000-0000-4000-8000-000000000963')
-$$,'P0001','INPUT_INVALID','finance evidence: invoice rejects an image MIME type');
+$$,'finance evidence: invoice accepts an image MIME type');
 select throws_ok($$
   select public.c1_material_create_evidence_intent('c1250000-0000-4000-8000-000000000020','c1250000-0000-4000-8000-000000000101',jsonb_build_object('originalFilename','phu-luc.xml','mimeType','application/xml','sizeBytes',8,'sha256',repeat('a',64),'evidenceRole','contract_amendment','target',jsonb_build_object('kind','material_contract','contractId','c1250000-0000-4000-8000-000000000601')),'c1250000-0000-4000-8000-000000000954','c1250000-0000-4000-8000-000000000964')
 $$,'P0001','INPUT_INVALID','finance evidence: contract amendment accepts PDF only');
