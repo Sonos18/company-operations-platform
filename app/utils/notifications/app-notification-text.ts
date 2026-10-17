@@ -128,6 +128,12 @@ function proposalSubject(payload: NotificationPayload): string {
   return proposalNo === null ? 'đơn đề xuất vật tư' : proposalCodeLabel(proposalNo)
 }
 
+/** " Lý do: Sai số lượng." without doubling the full stop when the reason already ends with punctuation. */
+function reasonPart(reason: string | null): string {
+  if (!reason) return ''
+  return ` Lý do: ${reason}${/[.!?]$/.test(reason) ? '' : '.'}`
+}
+
 function actorPart(payload: NotificationPayload): string {
   return textValue(payload, 'actorName') ?? 'Một nhân viên'
 }
@@ -153,7 +159,7 @@ export function appNotificationText(notification: AppNotificationView): AppNotif
       const reason = textValue(payload, 'reason')
       return {
         title: proposalTitle(payload, 'Bị trả lại'),
-        body: `${actorPart(payload)} đã trả lại ${proposalSubject(payload)}${summaryPart(payload)}.${reason ? ` Lý do: ${reason}.` : ''}`,
+        body: `${actorPart(payload)} đã trả lại ${proposalSubject(payload)}${summaryPart(payload)}.${reasonPart(reason)}`,
       }
     }
     case 'material.order.created': {
@@ -206,20 +212,21 @@ export function appNotificationText(notification: AppNotificationView): AppNotif
     }
     case 'material.payment.submitted': {
       const amount = moneyValue(payload, 'amount')
+      // Notifications stored before the order codes existed keep the previous wording.
+      const target = orderLabel(payload) ? ` cho ${requestContractPart(payload)}${supplierPart(payload)}` : ''
       return {
         title: 'Đề nghị chi chờ lập UNC',
         body: amount
-          ? `Đề nghị chi trị giá ${amount} đang chờ lập UNC.`
+          ? `Đề nghị chi trị giá ${amount}${target} đang chờ lập UNC.`
           : 'Có đề nghị chi đang chờ lập UNC.',
       }
     }
     // Returned, approved and paid notifications go to a person by user id, so they never show money.
     case 'material.payment.returned': {
       const reason = textValue(payload, 'reason')
-      const reasonPart = reason ? ` Lý do: ${reason}.` : ''
       return {
         title: 'Đề nghị chi bị trả lại',
-        body: `Đề nghị chi cho ${requestContractPart(payload)}${supplierPart(payload)} đã bị trả lại.${reasonPart}`,
+        body: `Đề nghị chi cho ${requestContractPart(payload)}${supplierPart(payload)} đã bị trả lại.${reasonPart(reason)}`,
       }
     }
     // Goes to the accountant who submitted the request: the treasurer has made the UNC.

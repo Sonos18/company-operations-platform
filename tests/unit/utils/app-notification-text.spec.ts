@@ -115,6 +115,14 @@ describe('appNotificationText', () => {
         body: 'Trần Thị B đã trả lại Đơn 18 (Thép D10, Xi măng PCB40 và 3 vật tư khác). Lý do: Sai số lượng.',
       })
     })
+    it('does not double the full stop when the reason already ends with punctuation', () => {
+      expect(appNotificationText(n('material.proposal.returned', { ...proposal, actorName: 'Trần Thị B', reason: 'Sai số lượng.' })).body)
+        .toBe('Trần Thị B đã trả lại Đơn 18 (Thép D10, Xi măng PCB40 và 3 vật tư khác). Lý do: Sai số lượng.')
+      expect(appNotificationText(n('material.proposal.returned', { ...proposal, actorName: 'Trần Thị B', reason: 'Sao lại thế?' })).body)
+        .toContain('Lý do: Sao lại thế?')
+      expect(appNotificationText(n('material.proposal.returned', { ...proposal, actorName: 'Trần Thị B', reason: 'Sao lại thế?' })).body)
+        .not.toContain('?.')
+    })
     it('lists one or two materials without the "others" part when the total matches', () => {
       expect(appNotificationText(n('material.proposal.approved', { ...proposal, summaryName2: null, summaryTotal: 1 })).body)
         .toBe('Nguyễn Văn A đã duyệt Đơn 18 (Thép D10).')
@@ -171,6 +179,24 @@ describe('appNotificationText', () => {
         .toContain('Đề nghị chi cho hợp đồng HD-01 (Eo Gió · ĐH 18-1) với Hòa Phát đã được xác nhận lập UNC.')
       expect(appNotificationText(n('material.payment.paid', payload)).body)
         .toBe('Đề nghị chi cho hợp đồng HD-01 (Eo Gió · ĐH 18-1) với Hòa Phát đã được kế toán ghi chi.')
+    })
+    it('does not double the full stop in a returned payment request reason', () => {
+      expect(appNotificationText(n('material.payment.returned', { ...order, contractNo: 'HD-01', documentation: 'contract', reason: 'Sai số tiền.' })).body)
+        .toBe('Đề nghị chi cho hợp đồng HD-01 (Eo Gió · ĐH 18-1) với Hòa Phát đã bị trả lại. Lý do: Sai số tiền.')
+    })
+    it('labels a pending payment request with the contract', () => {
+      const text = appNotificationText(n('material.payment.submitted', { ...order, contractNo: 'HD-01', documentation: 'contract', amount: '1100000.0000' }))
+      expect(text.title).toBe('Đề nghị chi chờ lập UNC')
+      expect(text.body).toBe('Đề nghị chi trị giá 1.100.000 cho hợp đồng HD-01 (Eo Gió · ĐH 18-1) với Hòa Phát đang chờ lập UNC.')
+    })
+    it('labels a pending payment request of a quotation-only order', () => {
+      expect(appNotificationText(n('material.payment.submitted', { ...order, contractNo: null, documentation: 'quotation_only', amount: '4500000.0000' })).body)
+        .toBe('Đề nghị chi trị giá 4.500.000 cho Eo Gió · ĐH 18-1 với Hòa Phát đang chờ lập UNC.')
+    })
+    it('keeps the previous pending payment text without the order code', () => {
+      expect(appNotificationText(n('material.payment.submitted', { amount: '1100000.0000', contractNo: 'HD-01', supplierName: 'Hòa Phát' })).body)
+        .toBe('Đề nghị chi trị giá 1.100.000 đang chờ lập UNC.')
+      expect(appNotificationText(n('material.payment.submitted', {})).body).toBe('Có đề nghị chi đang chờ lập UNC.')
     })
     it('says which order an installment belongs to', () => {
       expect(appNotificationText(n('material.installment.due_soon', { ...order, installmentName: 'Đợt 2', dueOn: '2026-10-17' })).body)

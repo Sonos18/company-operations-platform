@@ -31,7 +31,7 @@ Applied in order; each takes `pg_advisory_xact_lock(71842, N)` and ends with `no
 
 ## Proposal numbers and order codes
 
-Spec: `docs/superpowers/plans/2026-10-17-materials-proposal-codes.md`. Every proposal has a per-project
+Plan: `docs/superpowers/plans/2026-10-17-materials-proposal-codes.md`. Spec: `docs/superpowers/specs/2026-10-17-materials-proposal-codes-design.md`. Every proposal has a per-project
 number ("Đơn 18") and every order a per-proposal sequence ("ĐH 18-1"); the UI builds the labels with
 `shared/utils/material-codes.ts`. The numbers are assigned by the database, never by the client.
 
@@ -44,9 +44,11 @@ number ("Đơn 18") and every order a per-proposal sequence ("ĐH 18-1"); the UI
   `proposal_no` sent by the client is overwritten. Drafts are numbered too.
 - Trigger `material_order_seq_assign` (before insert on `material_orders`) locks the proposal row and sets
   `order_seq` to the proposal's largest sequence + 1. A cancelled order keeps its sequence, so the next order
-  never fills the gap.
+  never fills the gap. Numbers are max + 1 over every existing row, so they are only guaranteed never to be
+  reused because no delete path exists for proposals or orders; adding one would need a different scheme.
 - Trigger `material_codes_immutable` (before update on both tables) refuses any change of `proposal_no` or
-  `order_seq`.
+  `order_seq` with `P0001` / `MATERIAL_CODE_IMMUTABLE`. It is a database guard that no command should hit, so
+  `server/features/costs/rpc-errors.ts` has no mapping for it: it would surface as an unexpected error.
 - Existing rows are numbered by creation order (`created_at`, then `id`). The backfill writes only the two new
   columns: no version bump and no history rows.
 
@@ -72,14 +74,17 @@ permission logic in them.
 ### Notifications (migration 62)
 
 - `material_proposal_submitted_notify` (after insert on `material_proposal_revisions`) sends
-  `material.proposal.submitted` to the readers who can decide the proposal; `material_proposal_decided_notify` (after insert on
+  `material.proposal.submitted` to the active company members who hold `material.proposal.decide` and can read
+  the proposal (`material.read` plus creator, decide, `material.order.manage` or `material.contract.record`),
+  except the submitter of the revision. `material_proposal_decided_notify` (after insert on
   `material_proposal_decisions`) sends `material.proposal.approved` / `material.proposal.returned` to the
-  proposal creator. New source type `material_proposal`; dedupe keys `proposal:{id}:sub:{revision_no}`,
+  `submitted_by` of the decided revision (today the same person as the proposal creator, because only the
+  creator may submit), unless that person made the decision or cannot read the proposal. New source type `material_proposal`; dedupe keys `proposal:{id}:sub:{revision_no}`,
   `proposal:{id}:appr:{revision_no}` and `proposal:{id}:ret:{revision_no}`; link `/materials/{projectId}/proposals/{proposalId}`.
 - `app_notifications_order_label` (before insert on `app_notifications`) adds `projectName`, `proposalNo` and
   `orderSeq` to the payload of every notification whose source is `material_order`, `material_contract`,
-  `material_installment` or `material_payment_request`, only when the payload does not already carry them.
-  Notifications stored before this migration have no such keys and keep their old text.
+  `material_installment` or `material_payment_request`. The merge is per key (`label || payload`): a key the payload already carries wins,
+  the missing ones are added. A source that resolves to no order keeps its payload unchanged. Notifications stored before this migration have no such keys and keep their old text.
 - `material_order_created_notify` is now a deferred constraint trigger, so it runs after the order's
   allocations exist and can add the summary (`summaryName1`, `summaryName2`, `summaryTotal`) to
   `material.order.created`.
@@ -268,6 +273,9 @@ threshold, or the currency is not VND) and `CONTRACT_AMENDMENT_UNAVAILABLE` (ame
 `PERMISSION_DENIED`, `RESOURCE_NOT_FOUND`, `VERSION_CONFLICT`, `IDEMPOTENCY_CONFLICT`,
 `INPUT_INVALID`, `PROJECT_COMPLETED`, `EVIDENCE_UPLOAD_MISMATCH`.
 
+Database guard, not mapped in `rpc-errors.ts`: `MATERIAL_CODE_IMMUTABLE` (`P0001`, raised by trigger
+`material_codes_immutable` when an update would change `proposal_no` or `order_seq`).
+
 ## Permissions
 
 | Permission | Typical role |
@@ -288,7 +296,7 @@ moved from the treasurer to the accountant). The fixture script `supabase/fixtur
 | Event | Recipients | Payload |
 |---|---|---|
 | `material.order.created` | `material.contract.record` holders | `supplierName`, `summaryName1`, `summaryName2`, `summaryTotal` |
-| `material.proposal.submitted` / `approved` / `returned` | readers who can decide the proposal (submitted); the proposal creator (approved, returned); recipients need `material.read`, the actor is never notified | `projectName`, `proposalNo`, `revisionNo`, `actorName`, `summaryName1`, `summaryName2`, `summaryTotal`; `reason` on returned |
+| `material.proposal.submitted` / `approved` / `returned` | readers who can decide the proposal (submitted); the `submitted_by` of the decided revision (approved, returned; today the proposal creator); recipients need `material.read`, the actor is never notified | `projectName`, `proposalNo`, `revisionNo`, `actorName`, `summaryName1`, `summaryName2`, `summaryTotal`; `reason` on returned |
 | `material.contract.recorded` / `material.contract.amended` | finance readers; buyer and proposal creator (by user id) | finance readers: `supplierName`, `contractNo`, `total`, `versionNo`; by user id: without `total`. The proposal creator's link opens the proposal, which lists `contractStatus` (order, contract number, signing date) |
 | `material.payment.submitted` | `material.payment.approve` holders | `supplierName`, `contractNo`, `amount` |
 | `material.payment.approved` | the submitter of the request, i.e. the accountant (by user id) | `projectId`, `contractId`, `supplierName`, `contractNo`, `documentation` (no amount). Sent when the treasurer confirms the payment order; it tells the accountant to upload the receipt |
