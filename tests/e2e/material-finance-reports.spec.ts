@@ -31,6 +31,9 @@ const totals = (overrides: Partial<Record<'committed' | 'paid' | 'pending' | 're
 const contractRowA = {
   contractId: contractA,
   projectId,
+  projectName: 'Công trình Tòa nhà VQH',
+  proposalNo: 7,
+  orderSeq: 1,
   orderId: orderA,
   supplierId: supplierA,
   supplierName: 'NCC Thép Hòa Phát',
@@ -40,6 +43,9 @@ const contractRowA = {
 const contractRowB = {
   contractId: contractB,
   projectId,
+  projectName: 'Công trình Tòa nhà VQH',
+  proposalNo: 7,
+  orderSeq: 2,
   orderId: orderB,
   supplierId: supplierB,
   supplierName: 'NCC Xi măng Vicem',

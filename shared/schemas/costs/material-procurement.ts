@@ -13,6 +13,7 @@ import type {
 } from './cost-evidence'
 import { createBusinessPartyInputSchema } from './master-data'
 import { materialContractDocumentationSchema } from './material-documentation'
+import { materialSummarySchema } from '../../utils/material-codes'
 import {
   workflowCurrencySchema,
   workflowMoneySchema,
@@ -139,6 +140,11 @@ export const materialProposalLineViewSchema = materialProposalLineInputSchema.om
 export const materialProposalViewSchema = z.object({
   id: workflowUuidSchema,
   version,
+  // Per-project proposal number ("Đơn 18"), revision of current_revision_id (null before the first
+  // submission) and the first two material names of the proposal.
+  proposalNo: z.number().int().positive(),
+  revisionNo: z.number().int().positive().nullable(),
+  summary: materialSummarySchema,
   reviewState: materialReviewStateSchema,
   returnReason: text.nullable(),
   approvedRevisionId: workflowUuidSchema.nullable(),
@@ -157,6 +163,7 @@ export const materialProposalViewSchema = z.object({
   // Optional so a database without that migration still parses.
   contractStatus: z.array(z.object({
     orderId: workflowUuidSchema,
+    orderSeq: z.number().int().positive(),
     documentation: materialContractDocumentationSchema,
     contractNo: z.string().min(1).nullable(),
     signedOn: z.string().date(),
@@ -209,6 +216,10 @@ export const cancelMaterialOrderInputSchema = z.object({
 export const materialOrderViewSchema = z.object({
   id: workflowUuidSchema,
   version,
+  // "ĐH {proposalNo}-{orderSeq}" and the first two material names of the order.
+  proposalNo: z.number().int().positive(),
+  orderSeq: z.number().int().positive(),
+  summary: materialSummarySchema,
   orderState: materialOrderStateSchema,
   proposalId: workflowUuidSchema,
   approvedRevisionId: workflowUuidSchema,

@@ -95,10 +95,10 @@
                         <tr v-for="contract in supplier.contracts" :key="contract.contractId">
                           <td>
                             <NuxtLink :to="`/materials/${contract.projectId}/finance`" class="table-link">
-                              {{ projectLabel(contract.projectId) }}
+                              {{ contract.projectName }}
                             </NuxtLink>
                           </td>
-                          <td class="font-mono">{{ materialContractNumberText(contract) }}</td>
+                          <td class="font-mono">{{ orderCodeLabel(contract.proposalNo, contract.orderSeq) }} · {{ materialContractNumberText(contract) }}</td>
                           <td class="num">{{ formatVnNumber(contract.totals.committed) }}</td>
                           <td class="num">{{ formatVnNumber(contract.totals.paid) }}</td>
                           <td class="num">{{ formatVnNumber(contract.totals.remaining) }}</td>
@@ -128,6 +128,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import type { SupplierMaterialFinance } from '../../../../shared/schemas/costs/material-finance'
+import { orderCodeLabel } from '../../../../shared/utils/material-codes'
 import { createAsyncRequestTracker } from '../../../utils/costs/async-request-tracker'
 import { isDecimalGreaterThan } from '../../../utils/costs/finance-display'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
@@ -140,7 +141,6 @@ const companyAccess = useNuxtApp().$companyAccessStore
 const panelPrefix = useId()
 
 const suppliers = ref<SupplierMaterialFinance>([])
-const projectNames = ref<Map<string, string>>(new Map())
 const expanded = ref<Set<string>>(new Set())
 const isLoading = ref(false)
 const errorMessage = ref('')
@@ -165,10 +165,6 @@ function toggle(supplierId: string) {
   expanded.value = next
 }
 
-function projectLabel(projectId: string): string {
-  return projectNames.value.get(projectId) ?? 'Số liệu dự án'
-}
-
 async function loadData() {
   const companyId = companyAccess?.activeCompanyId
   if (!companyId) {
@@ -181,32 +177,28 @@ async function loadData() {
   isLoading.value = true
   errorMessage.value = ''
 
-  // Project names are cosmetic: a failing project list must not hide supplier balances.
-  const [suppliersResult, projectsResult] = await Promise.allSettled([
-    repositories.materialFinance.suppliers(),
-    repositories.materialProcurement.listProjects(),
-  ])
-  if (!token.isCurrent()) return
-
-  if (suppliersResult.status === 'fulfilled') {
-    suppliers.value = suppliersResult.value
+  try {
+    const data = await repositories.materialFinance.suppliers()
+    if (!token.isCurrent()) return
+    suppliers.value = data
   }
-  else {
+  catch (err: unknown) {
+    if (!token.isCurrent()) return
     suppliers.value = []
-    errorMessage.value = suppliersResult.reason instanceof Error
-      ? suppliersResult.reason.message
+    errorMessage.value = err instanceof Error
+      ? err.message
       : 'Không thể tải công nợ nhà cung cấp.'
   }
-  projectNames.value = projectsResult.status === 'fulfilled'
-    ? new Map(projectsResult.value.map(project => [project.projectId, project.name || project.code]))
-    : new Map()
-  isLoading.value = false
+  finally {
+    if (token.isCurrent()) {
+      isLoading.value = false
+    }
+  }
 }
 
 watch(() => companyAccess?.activeCompanyId, () => {
   tracker.invalidate()
   suppliers.value = []
-  projectNames.value = new Map()
   expanded.value = new Set()
   errorMessage.value = ''
   void loadData()

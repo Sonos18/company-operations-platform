@@ -2,7 +2,7 @@
   <UModal
     :open="open"
     :title="resubmitRequest ? 'Gửi lại đề nghị thanh toán' : 'Lập đề nghị thanh toán chi'"
-    :description="`${materialContractLabel(contract)} - Nhà cung cấp: ${contract.supplierName}`"
+    :description="`${orderCodeLabel(contract.proposalNo, contract.orderSeq)} · ${materialContractLabel(contract)} - Nhà cung cấp: ${contract.supplierName}`"
     :dismissible="!isSubmitting"
     :ui="{ content: 'max-w-2xl' }"
     @update:open="onOpenChange"
@@ -254,6 +254,7 @@ import type {
 import { formatVnNumber } from '../../../utils/materials/vn-number'
 import { formatDate } from '../../../utils/materials/date-display'
 import { materialContractLabel } from '../../../utils/materials/contract-label'
+import { orderCodeLabel } from '../../../../shared/utils/material-codes'
 import { requestRequiresInvoice } from '../../../utils/materials/payment-method'
 import MaterialMoneyInput from './MaterialMoneyInput.vue'
 import {

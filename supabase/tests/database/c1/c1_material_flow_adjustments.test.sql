@@ -308,7 +308,8 @@ select is((
 ),'approved','C4: the treasurer confirms the bank order (approve)');
 set local role none;
 select is((
-  select payload from public.app_notifications
+  -- Order labels (projectName, proposalNo, orderSeq) are added on insert since 20261017090100.
+  select payload - array['projectName','proposalNo','orderSeq'] from public.app_notifications
   where recipient_id='c1340000-0000-4000-8000-000000000901' and event_kind='material.payment.approved'
     and dedupe_key='pr:'||(select body->>'resourceId' from flow_acks where name='R1')||':appr:1'
 ),jsonb_build_object('supplierName','Flow supplier','contractNo',null,'documentation','quotation_only',

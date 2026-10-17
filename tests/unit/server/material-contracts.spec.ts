@@ -24,7 +24,7 @@ const input = {
   installments: [{ installmentKey: ids.inst1, name: 'Thanh toán 100%', amount: '110.0000', dueOn: '2026-10-10', isAdvance: false }],
 }
 const facts = {
-  id: ids.contract, orderId: ids.order, projectId: ids.project, supplierId: ids.user, supplierName: 'NCC A',
+  id: ids.contract, orderId: ids.order, projectId: ids.project, projectName: 'Eo Gió', proposalNo: 18, orderSeq: 1, supplierId: ids.user, supplierName: 'NCC A',
   currencyCode: 'VND', documentation: 'contract', contractNo: 'HD-01', signedOn: '2026-10-10', currentVersionNo: 1, version: 1, invoiced: '0.0000', draftInvoiced: '0.0000',
   versions: [{
     versionNo: 1, kind: 'original', subtotal: '100.0000', vatAmount: '10.0000', total: '110.0000',
@@ -65,6 +65,12 @@ describe('material contract service', () => {
     const view = await service.readContract(ctx(['material.read', 'material.finance.read']), ids.project, ids.order)
     expect(view?.totals).toMatchObject({ committed: '110.0000', paid: '10.0000', remaining: '100.0000', overdue: '100.0000' })
     expect(view?.installments[0]).toMatchObject({ remaining: '100.0000', dueStatus: 'overdue' })
+  })
+
+  it('carries the project name, proposal number and order sequence into the contract view', async () => {
+    const service = new MaterialContractService(repo(), () => new Date('2026-10-14T18:00:00Z'))
+    const view = await service.readContract(ctx(['material.read', 'material.finance.read']), ids.project, ids.order)
+    expect(view).toMatchObject({ projectName: 'Eo Gió', proposalNo: 18, orderSeq: 1 })
   })
 
   it('passes a quotation-only record through the service without contract fields', async () => {

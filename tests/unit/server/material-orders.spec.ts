@@ -25,6 +25,9 @@ const orderInput = {
 const orderView = {
   id: ids.order,
   version: 1,
+  proposalNo: 18,
+  orderSeq: 1,
+  summary: { names: ['Cement'], total: 1 },
   orderState: 'active' as const,
   proposalId: ids.proposal,
   approvedRevisionId: ids.proposalRevision,

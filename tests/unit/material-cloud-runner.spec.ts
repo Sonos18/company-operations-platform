@@ -18,6 +18,8 @@ const materialPaths = [
   'c1_material_small_order_contracts.test.sql',
   'c1_material_small_order_payments.test.sql',
   'c1_material_flow_adjustments.test.sql',
+  'c1_material_proposal_codes.test.sql',
+  'c1_material_proposal_notifications.test.sql',
 ]
 
 it('selects only rollback material SQL through the guarded C1 runner', async () => {

@@ -2,13 +2,15 @@
   <div class="order-page">
     <header class="cockpit-card page-header">
       <NuxtLink v-if="order" :to="`/materials/${pId}/proposals/${order.proposalId}`" class="back-link">
-        ← Quay lại phiếu yêu cầu
+        ← Về {{ proposalCodeLabel(order.proposalNo) }}
       </NuxtLink>
       <NuxtLink v-else :to="`/materials/${pId}/proposals`" class="back-link">
         ← Quay lại danh sách phiếu yêu cầu
       </NuxtLink>
       <div class="title-row">
-        <h2>Đơn mua vật tư</h2>
+        <h2>
+          {{ order ? withSupplierName(orderCodeLabel(order.proposalNo, order.orderSeq), order.supplierName) : 'Đơn mua vật tư' }}
+        </h2>
         <span v-if="order" class="cockpit-badge" :class="orderStateBadge(order.orderState).badge">
           {{ orderStateBadge(order.orderState).label }}
         </span>
@@ -23,8 +25,8 @@
           Chưa có hợp đồng
         </span>
       </div>
-      <p class="subtitle">
-        Mã đơn: <span class="font-mono">{{ oId }}</span>
+      <p v-if="order?.summary" class="subtitle">
+        {{ materialSummaryText(order.summary.names, order.summary.total) }}
       </p>
     </header>
 
@@ -138,6 +140,12 @@ import type Decimal from 'decimal.js'
 import type { MaterialOrderState, MaterialOrderView } from '../../../../../shared/schemas/costs/material-procurement'
 import type { MaterialContractView } from '../../../../../shared/schemas/costs/material-finance'
 import { workflowUuidSchema } from '../../../../../shared/schemas/costs/cost-workflow'
+import {
+  orderCodeLabel,
+  proposalCodeLabel,
+  withSupplierName,
+  materialSummaryText,
+} from '../../../../../shared/utils/material-codes'
 import { ClientError } from '../../../../errors/client-error'
 import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
 import { formatDate } from '../../../../utils/materials/date-display'

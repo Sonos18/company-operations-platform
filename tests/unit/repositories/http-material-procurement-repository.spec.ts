@@ -23,6 +23,9 @@ const proposalInput = {
 const returnedProposal = {
   id: ids.proposal,
   version: 4,
+  proposalNo: 18,
+  revisionNo: 1,
+  summary: { names: ['Cement'], total: 1 },
   reviewState: 'returned',
   returnReason: 'Recheck specification',
   approvedRevisionId: null,
@@ -64,6 +67,9 @@ const orderInput = {
 const orderView = {
   id: ids.order,
   version: 1,
+  proposalNo: 18,
+  orderSeq: 1,
+  summary: { names: ['Cement'], total: 1 },
   orderState: 'active' as const,
   proposalId: ids.proposal,
   approvedRevisionId: ids.proposalRevision,

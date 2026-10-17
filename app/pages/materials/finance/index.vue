@@ -165,7 +165,7 @@
                         :to="`/materials/${row.projectId}/orders/${row.orderId}`"
                         class="text-sky-600 hover:text-sky-800 hover:underline font-semibold"
                       >
-                        {{ row.orderId.slice(0, 8) }}...
+                        {{ orderCodeLabel(row.proposalNo, row.orderSeq) }}
                       </NuxtLink>
                     </td>
                     <td class="p-2.5 font-medium text-slate-800">
@@ -226,7 +226,7 @@
                     <td class="p-2.5 font-semibold text-slate-900">
                       {{ row.name }}
                       <div class="text-[10px] text-slate-400 font-mono">
-                        Đơn: {{ row.orderId.slice(0, 8) }}...
+                        {{ orderCodeLabel(row.proposalNo, row.orderSeq) }}
                       </div>
                     </td>
                     <td class="p-2.5 font-medium text-slate-800">
@@ -299,7 +299,7 @@
                       </NuxtLink>
                     </td>
                     <td class="p-2.5 font-medium text-slate-800">
-                      {{ row.projectName }}
+                      {{ withProjectName(row.projectName, orderCodeLabel(row.proposalNo, row.orderSeq)) }}
                     </td>
                     <td class="p-2.5 text-slate-700">
                       {{ row.supplierName }}
@@ -361,7 +361,7 @@
                       </NuxtLink>
                     </td>
                     <td class="p-2.5 font-medium text-slate-800">
-                      {{ row.projectName }}
+                      {{ withProjectName(row.projectName, orderCodeLabel(row.proposalNo, row.orderSeq)) }}
                     </td>
                     <td class="p-2.5 text-slate-700">
                       {{ row.supplierName }}
@@ -425,7 +425,7 @@
                       </NuxtLink>
                     </td>
                     <td class="p-2.5 font-medium text-slate-800">
-                      {{ row.projectName }}
+                      {{ withProjectName(row.projectName, orderCodeLabel(row.proposalNo, row.orderSeq)) }}
                     </td>
                     <td class="p-2.5 text-slate-700">
                       {{ row.supplierName }}
@@ -464,6 +464,7 @@ import type {
 import type {
   MaterialProjectOption,
 } from '../../../../shared/schemas/costs/material-procurement'
+import { orderCodeLabel, withProjectName } from '../../../../shared/utils/material-codes'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
 import { formatDate, formatDateTime } from '../../../utils/materials/date-display'
 import { financeErrorMessage } from '../../../utils/materials/finance-ui'

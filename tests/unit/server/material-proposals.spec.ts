@@ -55,9 +55,13 @@ const submitted: MaterialCommandResult = {
 const returnedProposal = {
   id: ids.proposal,
   version: 4,
+  proposalNo: 18,
+  revisionNo: 1,
+  summary: { names: ['Cement'], total: 1 },
   reviewState: 'returned',
   returnReason: 'Recheck specification',
   approvedRevisionId: null,
+  currentRevisionId: ids.proposalRevision,
   projectId: ids.project,
   createdBy: ids.user,
   neededOn: proposalInput.neededOn,

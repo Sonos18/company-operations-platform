@@ -28,6 +28,8 @@ const contractFactsSchema = z.object({
   contractId: uuid,
   projectId: uuid,
   projectName: z.string().min(1),
+  proposalNo: z.number().int().positive(),
+  orderSeq: z.number().int().positive(),
   orderId: uuid,
   supplierId: uuid,
   supplierName: z.string().min(1),

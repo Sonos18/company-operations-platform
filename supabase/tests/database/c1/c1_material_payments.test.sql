@@ -301,8 +301,16 @@ select is((
   select payload from public.app_notifications
   where recipient_id='c1270000-0000-4000-8000-000000000903'
     and dedupe_key='pr:'||(select body->>'resourceId' from t2_acks where name='R1')||':sub:1'
-),'{"supplierName":"Payment supplier","contractNo":"HD-PAY-01","documentation":"contract","amount":"20.0000"}'::jsonb,
-'case 2: submitted payload carries supplier, contract number and request amount only');
+),'{"supplierName":"Payment supplier","contractNo":"HD-PAY-01","documentation":"contract","amount":"20.0000"}'::jsonb
+  -- Order label of the request's contract, added on insert since 20261017090100. Proposal 301 is
+  -- the only proposal of the project (number 1); the order number is read from the order row.
+  || jsonb_build_object('projectName','Payment project','proposalNo',1,'orderSeq',(
+    select material_order.order_seq
+    from public.material_payment_requests as request
+    join public.material_contracts as contract on contract.id=request.contract_id
+    join public.material_orders as material_order on material_order.id=contract.order_id
+    where request.id=(select (body->>'resourceId')::uuid from t2_acks where name='R1'))),
+'case 2: submitted payload carries supplier, contract number, request amount and the order label');
 
 -- Case 3: non-advance installment requires an invoice ---------------------------
 set local role authenticated;

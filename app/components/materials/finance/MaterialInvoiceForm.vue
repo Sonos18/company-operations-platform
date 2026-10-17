@@ -2,7 +2,7 @@
   <UModal
     :open="open"
     title="Nhập hóa đơn nhà cung cấp"
-    :description="`${materialContractLabel(contract)} - Nhà cung cấp: ${contract.supplierName}`"
+    :description="`${orderCodeLabel(contract.proposalNo, contract.orderSeq)} · ${materialContractLabel(contract)} - Nhà cung cấp: ${contract.supplierName}`"
     :dismissible="!isSubmitting && !isUploading"
     :ui="{ content: 'max-w-3xl' }"
     @update:open="onOpenChange"
@@ -354,6 +354,7 @@ import type {
 import type { MaterialOrderView } from '../../../../shared/schemas/costs/material-procurement'
 import { formatMaterialQuantity } from '../../../utils/materials/quantity-display'
 import { vietnamToday } from '../../../../shared/utils/material-finance-summary'
+import { orderCodeLabel } from '../../../../shared/utils/material-codes'
 import {
   uploadMaterialEvidence,
   type MaterialEvidenceUploadSession,
