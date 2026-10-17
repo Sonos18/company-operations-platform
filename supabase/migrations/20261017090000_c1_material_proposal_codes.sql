@@ -53,20 +53,20 @@ alter table public.material_orders
   add constraint material_orders_proposal_order_seq_key unique (proposal_id, order_seq);
 
 -- Number assignment -----------------------------------------------------------------------
--- Two creators in the same project serialize on the project row (proposals) or the
--- proposal row (orders); the unique constraints stay as the backstop. A value sent by
--- the client is always overwritten. The maximum counts every row, cancelled orders and
--- abandoned drafts included, so a number is never handed out twice.
+-- Two creators in the same project serialize on a transaction advisory lock keyed
+-- (71843, hashtext(project_id)) for proposals, and on the proposal row for orders; the
+-- unique constraints stay as the backstop. Proposals use the advisory key 71843 instead
+-- of a lock on the projects row, because every cost write in the project takes a share
+-- lock on that row (c1_lock_writable_project) and must not wait on proposal creation.
+-- Key 71843 is reserved for proposal numbering (71842 is the migration lock). A value
+-- sent by the client is always overwritten. The maximum counts every row, cancelled
+-- orders and abandoned drafts included, so a number is never handed out twice.
 
 create function private.c1_material_assign_proposal_no()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
-  perform 1
-  from public.projects as project
-  where project.id = new.project_id
-    and project.tenant_id = new.tenant_id
-    and project.company_id = new.company_id
-  for no key update;
+  -- Advisory key 71843: proposal numbering, one lock per project.
+  perform pg_catalog.pg_advisory_xact_lock(71843, pg_catalog.hashtext(new.project_id::text));
   new.proposal_no := coalesce((
     select max(proposal.proposal_no)
     from public.material_proposals as proposal

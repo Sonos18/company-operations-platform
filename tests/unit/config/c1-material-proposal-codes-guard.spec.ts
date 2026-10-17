@@ -64,12 +64,23 @@ describe('C1 material proposal numbers and order codes', () => {
     expect(sql).not.toMatch(/\bdisable trigger\b/u)
   })
 
-  it('assigns numbers in before-insert triggers under a row lock and keeps them immutable', () => {
+  it('assigns numbers in before-insert triggers under a lock and keeps them immutable', () => {
     expect(sql).toContain('create trigger material_proposal_no_assign before insert on public.material_proposals')
     expect(sql).toContain('create trigger material_order_seq_assign before insert on public.material_orders')
     expect(sql).toContain('create trigger material_codes_immutable before update on public.material_proposals')
     expect(sql).toContain('create trigger material_codes_immutable before update on public.material_orders')
-    expect(sql.match(/for no key update;/gu) ?? []).toHaveLength(2)
+    // Proposals serialize on advisory key 71843 per project, not on the projects row,
+    // so cost writes that share-lock the project never wait on proposal creation.
+    const proposalTrigger = sql.slice(
+      sql.indexOf('create function private.c1_material_assign_proposal_no()'),
+      sql.indexOf('create trigger material_proposal_no_assign'),
+    )
+    expect(proposalTrigger).toContain('perform pg_catalog.pg_advisory_xact_lock(71843, pg_catalog.hashtext(new.project_id::text));')
+    expect(proposalTrigger).not.toContain('from public.projects')
+    expect(proposalTrigger).not.toContain('for no key update')
+    // Orders still lock their proposal row.
+    expect(sql.match(/for no key update;/gu) ?? []).toHaveLength(1)
+    expect(sql).not.toMatch(/from public\.projects as project\s+where project\.id = new\.project_id/u)
     expect(sql).toContain("message = 'material_code_immutable'")
     // The immutability guard only exists after the backfill has run.
     const lastBackfill = sql.lastIndexOf('update public.material_')
