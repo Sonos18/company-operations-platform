@@ -178,6 +178,28 @@ describe('useNotificationRealtime', () => {
     expect(onChange).toHaveBeenCalledTimes(1)
   })
 
+  it('reloads at least every 3000 ms while signals keep arriving', () => {
+    const { fake, onChange } = mount()
+    const channel = firstChannel(fake)
+    // A signal every 400 ms never leaves a 1000 ms quiet period, so only the max-wait can fire.
+    for (let elapsed = 0; elapsed < 2800; elapsed += 400) {
+      emit(channel)
+      vi.advanceTimersByTime(400)
+    }
+    expect(onChange).not.toHaveBeenCalled()
+    emit(channel)
+    vi.advanceTimersByTime(399)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    // The next burst starts a fresh max-wait window.
+    for (let elapsed = 0; elapsed < 2800; elapsed += 400) {
+      emit(channel)
+      vi.advanceTimersByTime(400)
+    }
+    expect(onChange).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(400)
+    expect(onChange).toHaveBeenCalledTimes(2)
+  })
+
   it('removes the old channel before opening a new one when the key changes', async () => {
     const { fake, key } = mount()
     key.value = 'company-b::perm'

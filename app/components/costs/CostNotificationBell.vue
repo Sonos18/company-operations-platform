@@ -41,7 +41,7 @@
           variant="outline"
           size="xs"
           :disabled="loading || markingAll"
-          @click="loadNotifications"
+          @click="refreshNotifications"
         >
           Làm mới
         </UButton>
@@ -51,7 +51,7 @@
         <p v-if="markAllFailed" class="mb-3 text-sm text-red-600" role="alert">
           Không thể đánh dấu đã đọc hết. Vui lòng thử lại.
         </p>
-        <p v-if="loading" class="py-6 text-center text-sm text-slate-500">Đang nạp thông báo...</p>
+        <p v-if="showLoadingPlaceholder(loading, loadIsBackground, entries.length)" class="py-6 text-center text-sm text-slate-500">Đang nạp thông báo...</p>
         <p v-else-if="entries.length === 0" class="py-6 text-center text-sm text-slate-500">Không có thông báo nào.</p>
         <template v-else>
           <ul class="m-0 flex list-none flex-col gap-3 p-0">
@@ -107,6 +107,8 @@ import {
   materialNotificationBadge,
   readAllCutoff,
 } from '../../utils/notifications/notification-display'
+import { createRealtimeReloadGate } from '../../utils/notifications/realtime-reload-gate'
+import { showLoadingPlaceholder, sourceAfterLoad } from '../../utils/notifications/notification-list-refresh'
 import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 import { useNotificationRealtime } from '../../composables/useNotificationRealtime'
 import NotificationCard from '../notifications/NotificationCard.vue'
@@ -123,6 +125,8 @@ const store = nuxtApp.$companyAccessStore
 
 const isOpen = ref(false)
 const loading = ref(false)
+// Whether the load in flight came from a realtime signal; the placeholder never replaces cards for those.
+const loadIsBackground = ref(false)
 const loadingMore = ref(false)
 const loadMoreFailed = ref(false)
 const markingAll = ref(false)
@@ -135,9 +139,6 @@ const materialCursor = ref<string | null>(null)
 const openingMaterial = ref<string | null>(null)
 const openingCost = ref(false)
 const materialAckKeys = new Map<string, string>()
-// A realtime signal that arrives while a load or "mark all read" is running is remembered and served once afterwards,
-// so the result of the running request cannot overwrite the newer data.
-let reloadRequested = false
 let stopRealtime: (() => void) | null = null
 
 const tracker = createAsyncRequestTracker<{ fp: string }>()
@@ -149,6 +150,12 @@ const acknowledging = ref<string | null>(null)
 // One shared lock: while any card is opening or being acknowledged, every card is disabled so navigations cannot race.
 const isOpeningAny = computed(() => Boolean(openingMaterial.value) || Boolean(acknowledging.value) || openingCost.value)
 const ackKeys = new Map<string, string>()
+// A realtime signal that arrives while a load or "mark all read" runs, or right after one finished (an echo of the bell's
+// own writes), is remembered and served by one background reload, so the running request cannot overwrite newer data.
+const reloadGate = createRealtimeReloadGate({
+  reload: () => { if (canRead.value) void loadNotifications({ background: true }) },
+  isBusy: () => loading.value || markingAll.value,
+})
 
 function getFingerprint(): string {
   const p = store?.permissions ? [...store.permissions].sort().join(',') : ''
@@ -198,7 +205,7 @@ function clear() {
   notifications.value = []; materialNotifications.value = []; materialCursor.value = null
   isOpen.value = false; loading.value = false; loadingMore.value = false; loadMoreFailed.value = false
   markingAll.value = false; markAllFailed.value = false
-  reloadRequested = false
+  reloadGate.clear()
   ackKeys.clear(); acknowledging.value = null
   materialAckKeys.clear(); openingMaterial.value = null; openingCost.value = false
 }
@@ -209,16 +216,19 @@ watch(isOpen, (open) => {
   if (open) void loadNotifications()
 })
 
-async function loadNotifications() {
+// A background load (realtime signal) keeps the cards on screen and leaves a "mark all" error alone.
+async function loadNotifications(options: { background?: boolean } = {}) {
   if (!canRead.value) return
+  const background = options.background === true
   const fp = getFingerprint()
   const token = tracker.start({ fp })
   // A reload replaces the first page, so a pending "Xem thêm" request is now stale.
   moreTracker.invalidate()
   loadingMore.value = false
   loadMoreFailed.value = false
-  markAllFailed.value = false
+  if (!background) markAllFailed.value = false
   now.value = new Date()
+  loadIsBackground.value = background
   loading.value = true
   try {
     // Each source is read independently so one failing source never hides the other.
@@ -227,12 +237,25 @@ async function loadNotifications() {
       canReadMaterial.value ? materialRepo.listNotifications() : Promise.resolve({ items: [] as AppNotificationView[], nextCursor: null }),
     ])
     if (!token.isCurrent() || getFingerprint() !== fp) return
-    notifications.value = costResult.status === 'fulfilled' ? costResult.value : []
-    materialNotifications.value = materialResult.status === 'fulfilled' ? materialResult.value.items : []
-    materialCursor.value = materialResult.status === 'fulfilled' ? materialResult.value.nextCursor : null
+    notifications.value = sourceAfterLoad(notifications.value, costResult, background, [])
+    const materialPage = sourceAfterLoad(
+      { items: materialNotifications.value, nextCursor: materialCursor.value },
+      materialResult,
+      background,
+      { items: [] as AppNotificationView[], nextCursor: null },
+    )
+    materialNotifications.value = materialPage.items
+    materialCursor.value = materialPage.nextCursor
   } finally {
-    if (token.isCurrent() && getFingerprint() === fp) loading.value = false
+    if (token.isCurrent() && getFingerprint() === fp) {
+      loading.value = false
+      reloadGate.settled()
+    }
   }
+}
+
+function refreshNotifications() {
+  void loadNotifications()
 }
 
 async function loadMoreMaterial() {
@@ -273,7 +296,10 @@ async function markAllRead() {
   } catch {
     if (token.isCurrent() && getFingerprint() === fp) markAllFailed.value = true
   } finally {
-    if (token.isCurrent() && getFingerprint() === fp) markingAll.value = false
+    if (token.isCurrent() && getFingerprint() === fp) {
+      markingAll.value = false
+      reloadGate.settled()
+    }
   }
 }
 
@@ -331,18 +357,8 @@ async function openMaterial(n: AppNotificationView) {
 
 function handleRealtimeChange() {
   if (!canRead.value) return
-  if (loading.value || markingAll.value) {
-    reloadRequested = true
-    return
-  }
-  void loadNotifications()
+  reloadGate.signal()
 }
-
-watch([loading, markingAll], ([isLoading, isMarkingAll]) => {
-  if (isLoading || isMarkingAll || !reloadRequested) return
-  reloadRequested = false
-  void loadNotifications()
-})
 
 onMounted(() => {
   if (canRead.value) loadNotifications()
@@ -361,6 +377,7 @@ onMounted(() => {
 onUnmounted(() => {
   stopRealtime?.()
   stopRealtime = null
+  reloadGate.clear()
   tracker.invalidate()
   moreTracker.invalidate()
   markAllTracker.invalidate()

@@ -7,12 +7,15 @@ export interface NotificationRealtimeOptions {
   sources: () => { material: boolean, cost: boolean }
   /** A new key closes the current channel and opens a fresh one (the bell passes its access fingerprint). */
   key: () => string
-  /** Called once per burst of changes, after `debounceMs`. */
+  /** Called once per burst of changes: after `debounceMs` of quiet, or at the latest `maxWaitMs` after the burst began. */
   onChange: () => void
   debounceMs?: number
+  maxWaitMs?: number
 }
 
 const DEFAULT_DEBOUNCE_MS = 1000
+// A steady stream of signals would keep postponing a pure trailing debounce, so a reload is forced at this age.
+const DEFAULT_MAX_WAIT_MS = 3000
 const NOTIFICATION_TABLES = {
   material: 'app_notifications',
   cost: 'cost_workflow_notifications',
@@ -29,8 +32,11 @@ function reportRealtimeProblem(message: string, error?: unknown): void {
 
 export function useNotificationRealtime(options: NotificationRealtimeOptions): { stop: () => void } {
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS
+  const maxWaitMs = options.maxWaitMs ?? DEFAULT_MAX_WAIT_MS
   let activeChannel: RealtimeChannel | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
+  // When the first signal of the current burst arrived; null while nothing is pending.
+  let burstStartedAt: number | null = null
   // Bumped whenever a channel is closed so late callbacks from that channel are ignored.
   let generation = 0
   let stopped = false
@@ -39,16 +45,21 @@ export function useNotificationRealtime(options: NotificationRealtimeOptions): {
     if (timer === null) return
     clearTimeout(timer)
     timer = null
+    burstStartedAt = null
   }
 
   function scheduleChange(channelGeneration: number): void {
     if (stopped || channelGeneration !== generation) return
+    const startedAt = burstStartedAt ?? Date.now()
     clearTimer()
+    burstStartedAt = startedAt
+    const delay = Math.max(0, Math.min(debounceMs, startedAt + maxWaitMs - Date.now()))
     timer = setTimeout(() => {
       timer = null
+      burstStartedAt = null
       if (stopped || channelGeneration !== generation) return
       options.onChange()
-    }, debounceMs)
+    }, delay)
   }
 
   function closeChannel(): void {

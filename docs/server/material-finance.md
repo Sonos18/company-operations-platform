@@ -129,11 +129,25 @@ notification arrives instead of waiting for the user to open it.
   triggers the same reload through the existing APIs (`GET /notifications`, `GET /cost-notifications`), which stay the
   only source of what the bell shows. The Realtime row payload does carry columns such as `tenant_id` and `source_id`,
   but they are columns the recipient can already read under the same RLS, so nothing new is exposed.
-- Debounce: signals are collected for 1000 ms and cause one reload (ten signals within 200 ms load once).
-- Reconnect: when a channel returns to `SUBSCRIBED` after an error (`CHANNEL_ERROR`, timeout or close), the bell reloads
-  once to catch up on what it missed. If Realtime cannot connect at all (for example the fake Supabase URL of the e2e build),
+- Debounce: a trailing debounce of 1000 ms collects signals into one reload (ten signals within 200 ms load once), with a
+  max-wait of 3000 ms so a steady stream of signals still reloads at least every 3 s.
+- Background reloads: a reload caused by a signal never blanks the open list. The "Đang nạp thông báo..." placeholder is
+  shown only while there is nothing to show, the cards and the scroll position stay, a source that fails to load keeps its
+  cards, and a background reload does not clear the "mark all read" error (only a user-started load or retry does).
+- Deferral: a signal that arrives while a load or "Đánh dấu đã đọc hết" is running is remembered and served by one
+  background reload after the request finished, so the running request cannot overwrite newer data.
+- Echo suppression: for 1500 ms after a load or mark-all that the bell started finishes, signals are treated as echoes of
+  its own writes (`read_at` updates, cost notifications flipping from undelivered to available). They do not reload at once; if
+  any arrived, one background reload runs at the end of the window, so a real new notification is delayed by at most
+  1500 ms and never lost.
+- Loading: the bell also loads on mount and whenever the company or the permissions change (the pending request is
+  dropped on a change).
+- Reconnect: when a channel returns to `SUBSCRIBED` after `CHANNEL_ERROR` or `TIMED_OUT`, the bell reloads once to catch
+  up on what it missed. A channel closed by the server (`CLOSED`) is not re-subscribed until the key changes (company,
+  permissions or user). If Realtime cannot connect at all (for example the fake Supabase URL of the e2e build),
   the bell still loads when the box is opened and nothing throws on the page.
-- Channels: a user without `cost.notification.read` does not subscribe to `cost_workflow_notifications`. Changing company or
+- Channels: the material channel is gated by `material.read` (`app_notifications`) and the cost channel by
+  `cost.notification.read` (`cost_workflow_notifications`); a user without one does not subscribe to its table. Changing company or
   signing out removes the old channels, and none is left after the component unmounts.
 
 Other changes in the same migration and the app:
@@ -352,7 +366,7 @@ moved from the treasurer to the accountant). The fixture script `supabase/fixtur
 
 | Event | Recipients | Payload |
 |---|---|---|
-| `material.order.created` | `material.contract.record` holders | `supplierName`, `summaryName1`, `summaryName2`, `summaryTotal` |
+| `material.order.created` | `material.contract.record` holders | `supplierName`, `summaryName1`, `summaryName2`, `summaryTotal`, `projectName`, `proposalNo`, `orderSeq`, `actorName` |
 | `material.proposal.submitted` / `approved` / `returned` | readers who can decide the proposal (submitted); the `submitted_by` of the decided revision (approved, returned; today the proposal creator); recipients need `material.read`, the actor is never notified | `projectName`, `proposalNo`, `revisionNo`, `actorName`, `summaryName1`, `summaryName2`, `summaryTotal`; `reason` on returned |
 | `material.contract.recorded` / `material.contract.amended` | finance readers; buyer and proposal creator (by user id) | finance readers: `supplierName`, `contractNo`, `total`, `versionNo`; by user id: without `total`. The proposal creator's link opens the proposal, which lists `contractStatus` (order, contract number, signing date) |
 | `material.payment.submitted` | `material.payment.approve` holders | `supplierName`, `contractNo`, `amount` |
