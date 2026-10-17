@@ -120,6 +120,8 @@ test.describe('Trung tâm thông báo', () => {
 
     await page.goto('/materials')
     await expect(bellButton(page).getByTestId('notification-unread-count')).toHaveText('3')
+    // Screen readers hear the unread count with its meaning, not a bare number.
+    await expect(page.getByRole('button', { name: 'Thông báo 3 chưa đọc' })).toBeVisible()
 
     await bellButton(page).click()
     const box = dialog(page)
@@ -170,6 +172,36 @@ test.describe('Trung tâm thông báo', () => {
     await expect(bellButton(page).getByTestId('notification-unread-count')).toHaveCount(0)
     await expect(box.getByRole('img', { name: 'Chưa đọc' })).toHaveCount(0)
     await expect(box.getByRole('button', { name: 'Đánh dấu đã đọc hết', exact: true })).toBeDisabled()
+  })
+
+  test('"Đánh dấu đã đọc hết" bị khóa khi danh sách đang nạp', async ({ page }) => {
+    await openMaterialsPage(page)
+    await mockNotificationSources(page)
+    // Registered after the shared mock, so this handler runs first and holds the list back.
+    let releaseList: () => void = () => {}
+    const listGate = new Promise<void>((resolve) => { releaseList = resolve })
+    let hold = false
+    await page.route(`**${base}/cost-notifications`, async (route) => {
+      if (hold) await listGate
+      await route.fallback()
+    })
+
+    await page.goto('/materials')
+    await expect(bellButton(page).getByTestId('notification-unread-count')).toHaveText('3')
+    await bellButton(page).click()
+    const box = dialog(page)
+    await expect(box.getByTestId('material-notification')).toHaveCount(2)
+    const markAll = box.getByRole('button', { name: 'Đánh dấu đã đọc hết', exact: true })
+    await expect(markAll).toBeEnabled()
+
+    hold = true
+    await box.getByRole('button', { name: 'Làm mới', exact: true }).click()
+    await expect(box.getByText('Đang nạp thông báo...')).toBeVisible()
+    await expect(markAll).toBeDisabled()
+
+    releaseList()
+    await expect(box.getByText('Đang nạp thông báo...')).toHaveCount(0)
+    await expect(markAll).toBeEnabled()
   })
 
   test('nguồn khoản chi lỗi 500 thì costUpTo là null và nguồn vật tư vẫn được đánh dấu', async ({ page }) => {

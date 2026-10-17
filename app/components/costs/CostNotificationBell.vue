@@ -22,6 +22,7 @@
         class="min-w-5 rounded-full bg-red-600 px-1.5 text-center text-xs font-semibold leading-5 text-white"
         data-testid="notification-unread-count"
       >{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
+      <span v-if="unreadCount > 0" class="sr-only"> chưa đọc</span>
     </button>
 
     <template #body>
@@ -30,7 +31,7 @@
           color="neutral"
           variant="outline"
           size="xs"
-          :disabled="markingAll || unreadCount === 0"
+          :disabled="markingAll || loading || unreadCount === 0"
           @click="markAllRead"
         >
           Đánh dấu đã đọc hết
@@ -64,7 +65,7 @@
                 :created-at="entry.createdAt"
                 :now="now"
                 :unread="!entry.notification.readAt"
-                :disabled="Boolean(openingMaterial)"
+                :disabled="isOpeningAny"
                 @open="openMaterial(entry.notification)"
               />
               <NotificationCard
@@ -77,7 +78,7 @@
                 :now="now"
                 :unread="isCostUnread(entry.notification)"
                 :undelivered="entry.notification.deliveryState === 'undelivered'"
-                :disabled="Boolean(acknowledging) || openingCost"
+                :disabled="isOpeningAny"
                 @open="openCost(entry.notification)"
               />
             </li>
@@ -139,6 +140,8 @@ const markAllTracker = createAsyncRequestTracker<{ fp: string }>()
 const ackTracker = createAsyncRequestTracker<{ id: string; fp: string }>()
 const materialTracker = createAsyncRequestTracker<{ id: string; fp: string }>()
 const acknowledging = ref<string | null>(null)
+// One shared lock: while any card is opening or being acknowledged, every card is disabled so navigations cannot race.
+const isOpeningAny = computed(() => Boolean(openingMaterial.value) || Boolean(acknowledging.value) || openingCost.value)
 const ackKeys = new Map<string, string>()
 
 function getFingerprint(): string {
@@ -207,6 +210,7 @@ async function loadNotifications() {
   moreTracker.invalidate()
   loadingMore.value = false
   loadMoreFailed.value = false
+  markAllFailed.value = false
   now.value = new Date()
   loading.value = true
   try {
@@ -247,7 +251,7 @@ async function loadMoreMaterial() {
 // Each source gets its own cut-off. A source that failed to load or is empty has no items, so its cut-off is null
 // and the server marks nothing for it.
 async function markAllRead() {
-  if (!canRead.value || markingAll.value || unreadCount.value === 0) return
+  if (!canRead.value || markingAll.value || loading.value || unreadCount.value === 0) return
   const fp = getFingerprint()
   const token = markAllTracker.start({ fp })
   markingAll.value = true
