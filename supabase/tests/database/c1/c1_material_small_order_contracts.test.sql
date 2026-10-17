@@ -380,13 +380,15 @@ select is((
   where contract->>'orderId'='c1310000-0000-4000-8000-000000000357'
 ),'{"documentation":"contract","contractNo":"HD-LEGACY"}'::jsonb,'reads: finance facts of a legacy contract carry documentation = contract');
 select set_config('request.jwt.claims','{"sub":"c1310000-0000-4000-8000-000000000901","role":"authenticated"}',true);
+-- The six orders of this fixture come from one multi-row insert, so their orderSeq order is
+-- not fixed; only its presence as a number is pinned here (c135 pins the values).
 select is((
-  select status
+  select (status - 'orderSeq') || jsonb_build_object('orderSeq', jsonb_typeof(status->'orderSeq'))
   from jsonb_array_elements(
     public.c1_material_read_proposal('c1310000-0000-4000-8000-000000000020','c1310000-0000-4000-8000-000000000101','c1310000-0000-4000-8000-000000000301')->'contractStatus'
   ) as status
   where status->>'orderId'='c1310000-0000-4000-8000-000000000351'
-),'{"orderId":"c1310000-0000-4000-8000-000000000351","contractNo":null,"signedOn":"2026-10-10","documentation":"quotation_only"}'::jsonb,
+),'{"orderId":"c1310000-0000-4000-8000-000000000351","contractNo":null,"signedOn":"2026-10-10","documentation":"quotation_only","orderSeq":"number"}'::jsonb,
 'reads: the proposal contractStatus of a quotation_only order carries documentation and a null contract number');
 select is((
   select status->>'documentation'
