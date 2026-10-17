@@ -27,6 +27,7 @@ const toneClasses: Record<NotificationTone, string> = {
   error: 'bg-red-100 text-red-800',
   reminder: 'bg-orange-100 text-orange-800',
   info: 'bg-blue-100 text-blue-800',
+  action: 'bg-violet-100 text-violet-800',
 }
 
 const relativeTime = computed(() => relativeTimeText(props.createdAt, props.now))

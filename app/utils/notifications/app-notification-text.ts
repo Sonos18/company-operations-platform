@@ -36,15 +36,21 @@ function integerValue(payload: NotificationPayload, key: string): number | null 
 }
 
 /**
- * "Eo Gió · ĐH 18-1" for a notification whose payload carries the order code.
+ * "ĐH 18-1" for a notification whose payload carries the order code.
  * Notifications stored before the codes existed have no `proposalNo` or `orderSeq`: they return null
  * so the caller keeps the previous wording.
  */
-function orderLabel(payload: NotificationPayload): string | null {
+function orderCode(payload: NotificationPayload): string | null {
   const proposalNo = integerValue(payload, 'proposalNo')
   const orderSeq = integerValue(payload, 'orderSeq')
   if (proposalNo === null || orderSeq === null) return null
-  return withProjectName(textValue(payload, 'projectName'), orderCodeLabel(proposalNo, orderSeq))
+  return orderCodeLabel(proposalNo, orderSeq)
+}
+
+/** "Eo Gió · ĐH 18-1", or null when the payload has no order code. */
+function orderLabel(payload: NotificationPayload): string | null {
+  const code = orderCode(payload)
+  return code === null ? null : withProjectName(textValue(payload, 'projectName'), code)
 }
 
 /** "Thép D10 và 2 vật tư khác" from the summary keys of the payload, or "" when there is nothing to list. */
@@ -58,6 +64,11 @@ function summaryText(payload: NotificationPayload): string {
 function summaryPart(payload: NotificationPayload): string {
   const summary = summaryText(payload)
   return summary ? ` (${summary})` : ''
+}
+
+/** Like summaryPart, but an order with no lines (summaryTotal 0) never shows a summary. */
+function orderSummaryPart(payload: NotificationPayload): string {
+  return integerValue(payload, 'summaryTotal') === 0 ? '' : summaryPart(payload)
 }
 
 /**
@@ -134,8 +145,8 @@ function reasonPart(reason: string | null): string {
   return ` Lý do: ${reason}${/[.!?]$/.test(reason) ? '' : '.'}`
 }
 
-function actorPart(payload: NotificationPayload): string {
-  return textValue(payload, 'actorName') ?? 'Một nhân viên'
+function actorPart(payload: NotificationPayload, fallback = 'Một nhân viên'): string {
+  return textValue(payload, 'actorName') ?? fallback
 }
 
 /** Builds the user-facing title and body for a material finance app notification. */
@@ -164,11 +175,11 @@ export function appNotificationText(notification: AppNotificationView): AppNotif
     }
     case 'material.order.created': {
       const supplierName = textValue(payload, 'supplierName')
-      const label = orderLabel(payload)
-      if (label) {
+      const code = orderCode(payload)
+      if (code !== null) {
         return {
-          title: 'Đơn mua mới chờ hợp đồng',
-          body: `${withSupplierName(label, supplierName)}${summaryPart(payload)} cần ghi nhận hợp đồng.`,
+          title: `${withProjectName(textValue(payload, 'projectName'), code)} – Chờ hợp đồng`,
+          body: `${actorPart(payload, 'Mua hàng')} vừa tạo ${withSupplierName(code, supplierName)}${orderSummaryPart(payload)}, cần bạn bổ sung hợp đồng và chứng từ.`,
         }
       }
       return {
