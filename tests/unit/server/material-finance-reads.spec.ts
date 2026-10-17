@@ -1,5 +1,16 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createMaterialFinanceReadRoutes } from '../../../server/features/costs/material-finance/finance-read-routes'
 import { MaterialFinanceReadService, type MaterialFinanceReadDataRepository } from '../../../server/features/costs/material-finance/finance-read-service'
+
+const { getRouterParam, readBody } = vi.hoisted(() => ({
+  getRouterParam: vi.fn(),
+  readBody: vi.fn(),
+}))
+vi.mock('h3', async importOriginal => ({
+  ...await importOriginal<typeof import('h3')>(),
+  getRouterParam,
+  readBody,
+}))
 
 const p1 = '30000000-0000-4000-8000-000000000001'
 const s1 = '30000000-0000-4000-8000-000000000002'
@@ -24,6 +35,7 @@ const repo = (): MaterialFinanceReadDataRepository => ({
   inboxFacts: vi.fn(async () => ({ awaitingContract: [], returnedRequests: [], pendingApproval: [], approvedAwaitingPayment: [] })),
   listNotifications: vi.fn(async () => ({ items: [], nextCursor: null })),
   readNotification: vi.fn(async () => ({ resourceId: k(1), version: 1, replayed: false })),
+  readAllNotifications: vi.fn(async () => ({ material: 0, cost: 0 })),
 })
 const now = () => new Date('2026-10-15T01:00:00Z')
 
@@ -93,5 +105,46 @@ describe('material finance read service', () => {
   it('denies summary without finance permission', async () => {
     await expect(new MaterialFinanceReadService(repo(), now).projectSummary(ctx(['material.read', 'material.order.manage']), p1))
       .rejects.toMatchObject({ statusCode: 403 })
+  })
+})
+
+describe('read-all notifications route', () => {
+  const companyId = k(97)
+  const rpc = vi.fn()
+  const routes = () => createMaterialFinanceReadRoutes({
+    resolveContext: async () => ({ ...(ctx([]) as object), companyId, db: { rpc } }) as never,
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getRouterParam.mockReturnValue(companyId)
+    rpc.mockResolvedValue({ data: { material: 3, cost: 1 }, error: null })
+  })
+
+  it('maps the body to the database RPC arguments and parses the counts', async () => {
+    readBody.mockResolvedValue({ materialUpTo: '2026-10-17T01:00:00+07:00', costUpTo: null })
+    await expect(routes().readAllNotifications({} as never)).resolves.toEqual({ material: 3, cost: 1 })
+    expect(rpc).toHaveBeenCalledWith('c1_mark_notifications_read_all', {
+      target_company_id: companyId,
+      target_material_up_to: '2026-10-17T01:00:00+07:00',
+      target_cost_up_to: null,
+    })
+  })
+
+  it.each([
+    ['an unknown key', { materialUpTo: null, costUpTo: null, extra: 1 }],
+    ['an invalid datetime', { materialUpTo: 'yesterday', costUpTo: null }],
+    ['a datetime without offset', { materialUpTo: '2026-10-17T01:00:00', costUpTo: null }],
+    ['a missing field', { materialUpTo: null }],
+  ])('rejects %s before calling the database', async (_name, input) => {
+    readBody.mockResolvedValue(input)
+    await expect(routes().readAllNotifications({} as never)).rejects.toMatchObject({ statusCode: 400 })
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('rejects a malformed RPC result', async () => {
+    readBody.mockResolvedValue({ materialUpTo: null, costUpTo: null })
+    rpc.mockResolvedValue({ data: { material: -1, cost: 0 }, error: null })
+    await expect(routes().readAllNotifications({} as never)).rejects.toBeDefined()
   })
 })

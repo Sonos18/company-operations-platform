@@ -100,6 +100,10 @@ const calls: Record<EndpointName, { data: unknown, call(repository: MaterialFina
   suppliers: { data: [], call: repository => repository.suppliers() },
   listNotifications: { data: { items: [], nextCursor: null }, call: repository => repository.listNotifications() },
   readNotification: { data: commandResult, call: repository => repository.readNotification(notificationId, command) },
+  readAllNotifications: {
+    data: { material: 2, cost: 1 },
+    call: repository => repository.readAllNotifications({ materialUpTo: '2026-10-17T01:00:00+07:00', costUpTo: null }),
+  },
 }
 
 describe('material finance HTTP repository', () => {
@@ -113,7 +117,8 @@ describe('material finance HTTP repository', () => {
       url: expand(endpoint.path),
     }))
     const request = client.request.mock.calls[0]![0] as { idempotencyKey?: string }
-    expect(request.idempotencyKey).toBe(endpoint.method === 'GET' ? undefined : key)
+    // Reads and the idempotent read-all route carry no idempotency key.
+    expect(request.idempotencyKey).toBe(endpoint.method === 'GET' || name === 'readAllNotifications' ? undefined : key)
   })
 
   it('posts a contract to the order contract route with the idempotency key and parsed body', async () => {
@@ -180,6 +185,25 @@ describe('material finance HTTP repository', () => {
       body: {},
       idempotencyKey: key,
     }))
+  })
+
+  it('marks all notifications read with the exact body and no idempotency key', async () => {
+    const { client, repository } = repositoryFor({ material: 2, cost: 1 })
+    const input = { materialUpTo: '2026-10-17T01:00:00+07:00', costUpTo: null }
+    await expect(repository.readAllNotifications(input)).resolves.toEqual({ material: 2, cost: 1 })
+    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'POST',
+      url: '/api/companies/' + companyId + '/notifications/read-all',
+      body: input,
+    }))
+    expect(client.request.mock.calls[0]?.[0]).not.toHaveProperty('idempotencyKey')
+  })
+
+  it('rejects an invalid read-all input before sending', async () => {
+    const { client, repository } = repositoryFor({ material: 0, cost: 0 })
+    await expect(repository.readAllNotifications({ materialUpTo: 'soon', costUpTo: null })).rejects.toThrow()
+    await expect(repository.readAllNotifications({ materialUpTo: null, costUpTo: null, extra: 1 } as never)).rejects.toThrow()
+    expect(client.request).not.toHaveBeenCalled()
   })
 
   it('accepts a missing contract as null', async () => {
