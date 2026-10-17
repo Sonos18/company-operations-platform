@@ -1,11 +1,12 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(34);
+select plan(35);
 
 -- Small orders without a contract (20261016090000). Rollback-only fixture with prefix c131.
 -- Every order has one allocation of quantity 1, so the order subtotal is the unit price:
---   351  4999999.9999 VND  recorded as quotation_only with a PNG quotation (511)
+--   351  4999999.9999 VND  recorded as quotation_only with a PNG quotation (511); its payment
+--                         request needs an invoice (513) since 20261016100100 (C2)
 --   352  5000000      VND  exactly the threshold: CONTRACT_REQUIRED
 --   353  48000000     VND  subtotal entered as 4900000 with a variance reason: CONTRACT_REQUIRED
 --   354  100          USD  created while the company default currency was USD: CONTRACT_REQUIRED
@@ -95,6 +96,7 @@ select
 from (values
  ('c1310000-0000-4000-8000-000000000501'::uuid,3501,'application/pdf'),
  ('c1310000-0000-4000-8000-000000000511'::uuid,3511,'image/png'),
+ ('c1310000-0000-4000-8000-000000000513'::uuid,3513,'application/pdf'),
  ('c1310000-0000-4000-8000-000000000521'::uuid,3521,'image/png'),
  ('c1310000-0000-4000-8000-000000000531'::uuid,3531,'image/png'),
  ('c1310000-0000-4000-8000-000000000541'::uuid,3541,'image/png'),
@@ -251,6 +253,10 @@ join public.material_contracts as contract on contract.id=item.contract_id
 where contract.order_id='c1310000-0000-4000-8000-000000000351';
 insert into small_refs
 select 'contract_356', contract.id from public.material_contracts as contract where contract.order_id='c1310000-0000-4000-8000-000000000356';
+insert into public.material_evidence_scopes(evidence_file_id,tenant_id,company_id,project_id,target_kind,contract_id,evidence_role,created_by)
+select 'c1310000-0000-4000-8000-000000000513','c1310000-0000-4000-8000-000000000010','c1310000-0000-4000-8000-000000000020','c1310000-0000-4000-8000-000000000101',
+  'material_contract',id,'invoice','c1310000-0000-4000-8000-000000000903'
+from small_refs where name='quotation_contract';
 
 select is((
   select documentation||':'||coalesce(contract_no,'<null>') from public.material_contracts where id=(select id from small_refs where name='quotation_contract')
@@ -290,13 +296,26 @@ select throws_ok(format($$
 $$,(select id from small_refs where name='quotation_contract')),'P0001','CONTRACT_AMENDMENT_UNAVAILABLE','amendment: a quotation_only record cannot be amended');
 
 -- payment requests -------------------------------------------------------------------
+-- Since 20261016100100 (C2) a record without a contract needs an invoice like a contract.
+select throws_ok(format($$
+  select public.c1_material_create_payment_request(
+    'c1310000-0000-4000-8000-000000000020','c1310000-0000-4000-8000-000000000101',%L,
+    jsonb_build_object('installmentKey',%L,'amount','1000000','invoiceIds','[]'::jsonb,'note',null),
+    'c1310000-0000-4000-8000-000000000613','c1310000-0000-4000-8000-000000000713')
+$$,(select id from small_refs where name='quotation_contract'),(select id from small_refs where name='quotation_installment')),
+'P0001','INVOICE_REQUIRED','invoice: a quotation_only request without an invoice is INVOICE_REQUIRED');
+insert into small_acks select 'quotation_invoice', public.c1_material_record_invoice(
+  'c1310000-0000-4000-8000-000000000020','c1310000-0000-4000-8000-000000000101',(select id from small_refs where name='quotation_contract'),
+  '{"invoiceSymbol":"1C26TSM","invoiceNo":"0000001","issuedOn":"2026-10-10","subtotal":"1000000","vatAmount":"0","total":"1000000","fileId":"c1310000-0000-4000-8000-000000000513","lines":[]}',
+  'c1310000-0000-4000-8000-000000000614','c1310000-0000-4000-8000-000000000714');
 insert into small_acks select 'quotation_request', public.c1_material_create_payment_request(
   'c1310000-0000-4000-8000-000000000020','c1310000-0000-4000-8000-000000000101',(select id from small_refs where name='quotation_contract'),
-  jsonb_build_object('installmentKey',(select id from small_refs where name='quotation_installment'),'amount','1000000','invoiceIds','[]'::jsonb,'note',null),
+  jsonb_build_object('installmentKey',(select id from small_refs where name='quotation_installment'),'amount','1000000','note',null,
+    'invoiceIds',jsonb_build_array((select body->>'resourceId' from small_acks where name='quotation_invoice'))),
   'c1310000-0000-4000-8000-000000000610','c1310000-0000-4000-8000-000000000710');
 select is((
   select body - 'resourceId' from small_acks where name='quotation_request'
-),'{"version":1,"replayed":false}'::jsonb,'invoice: a quotation_only request without an invoice is submitted');
+),'{"version":1,"replayed":false}'::jsonb,'invoice: a quotation_only request with a recorded invoice is submitted');
 select throws_ok(format($$
   select public.c1_material_create_payment_request(
     'c1310000-0000-4000-8000-000000000020','c1310000-0000-4000-8000-000000000101',%L,
@@ -309,7 +328,7 @@ select is((
     'c1310000-0000-4000-8000-000000000020','c1310000-0000-4000-8000-000000000101',
     (select (body->>'resourceId')::uuid from small_acks where name='quotation_request'),
     '{"expectedVersion":1,"decision":"approve"}','c1310000-0000-4000-8000-000000000612','c1310000-0000-4000-8000-000000000712') - 'resourceId'
-),'{"version":2,"replayed":false}'::jsonb,'invoice: the treasurer approves a quotation_only request without an invoice');
+),'{"version":2,"replayed":false}'::jsonb,'invoice: the treasurer approves a quotation_only request with its invoice');
 set local role none;
 select is((
   select count(*) from public.app_notifications as notification

@@ -6,7 +6,8 @@ select plan(28);
 -- Cash payments for small orders (20261016090100). Rollback-only fixture with prefix c132.
 -- Contracts and amendments are written directly as the fixture owner so this suite does not
 -- depend on the contract commands; requests, approvals, invoices and payments use the real RPCs.
---   601  order 351  quotation_only, 4000000, installment a01 (no invoice needed)
+--   601  order 351  quotation_only, 4000000, installment a01; its requests link invoice I1
+--                   (711), required for records without a contract since 20261016100100 (C2)
 --   602  order 352  contract, 4000000 + 500000 VAT = 4500000, installment a02 (needs an invoice)
 --   603  order 353  contract, 48000000, advance installment a03
 --   604  order 354  contract, 4000000, advance a04; amended to 6000000 after the request is approved
@@ -107,6 +108,7 @@ from (values
  ('c1320000-0000-4000-8000-000000000551'::uuid,551,'application/pdf'),('c1320000-0000-4000-8000-000000000552'::uuid,552,'application/pdf'),
  ('c1320000-0000-4000-8000-000000000743'::uuid,743,'application/pdf'),
  ('c1320000-0000-4000-8000-000000000753'::uuid,753,'application/pdf'),
+ ('c1320000-0000-4000-8000-000000000711'::uuid,711,'application/pdf'),
  ('c1320000-0000-4000-8000-000000000721'::uuid,721,'application/pdf'),
  ('c1320000-0000-4000-8000-000000000801'::uuid,6801,'image/png'),('c1320000-0000-4000-8000-000000000802'::uuid,6802,'image/png'),('c1320000-0000-4000-8000-000000000803'::uuid,6801,'image/png'),
  ('c1320000-0000-4000-8000-000000000804'::uuid,6804,'image/png'),('c1320000-0000-4000-8000-000000000805'::uuid,6805,'image/png'),
@@ -177,6 +179,7 @@ from (values
 insert into public.material_evidence_scopes(evidence_file_id,tenant_id,company_id,project_id,target_kind,contract_id,evidence_role,created_by)
 select scope.file_id,'c1320000-0000-4000-8000-000000000010','c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','material_contract',scope.contract_id,scope.evidence_role,'c1320000-0000-4000-8000-000000000901'
 from (values
+ ('c1320000-0000-4000-8000-000000000711'::uuid,'c1320000-0000-4000-8000-000000000601'::uuid,'invoice'),
  ('c1320000-0000-4000-8000-000000000721'::uuid,'c1320000-0000-4000-8000-000000000602'::uuid,'invoice'),
  ('c1320000-0000-4000-8000-000000000801'::uuid,'c1320000-0000-4000-8000-000000000601'::uuid,'payment_proof'),
  ('c1320000-0000-4000-8000-000000000802'::uuid,'c1320000-0000-4000-8000-000000000601'::uuid,'payment_proof'),
@@ -201,15 +204,31 @@ insert into sp_acks select 'I4', public.c1_material_record_invoice(
   'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','c1320000-0000-4000-8000-000000000602',
   '{"invoiceSymbol":"1C26TAA","invoiceNo":"0000001","issuedOn":"2026-01-10","subtotal":"4000000","vatAmount":"500000","total":"4500000","fileId":"c1320000-0000-4000-8000-000000000721","lines":[{"proposalLineId":"c1320000-0000-4000-8000-000000000311","invoiceMaterialName":"Thep cuon D10"}]}',
   'c1320000-0000-4000-8000-000000000d01','c1320000-0000-4000-8000-000000000c00');
--- A quotation_only record needs no invoice for its installment.
+insert into sp_acks select 'I1', public.c1_material_record_invoice(
+  'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','c1320000-0000-4000-8000-000000000601',
+  '{"invoiceSymbol":"1C26TAA","invoiceNo":"0000011","issuedOn":"2026-01-10","subtotal":"4000000","vatAmount":"0","total":"4000000","fileId":"c1320000-0000-4000-8000-000000000711","lines":[]}',
+  'c1320000-0000-4000-8000-000000000d02','c1320000-0000-4000-8000-000000000c00');
+-- A quotation_only record needs an invoice for its installment, like a contract (C2).
 insert into sp_acks select 'RL', public.c1_material_create_payment_request(
-  'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','c1320000-0000-4000-8000-000000000601','{"installmentKey":"c1320000-0000-4000-8000-000000000a01","amount":"500000","invoiceIds":[],"note":null}','c1320000-0000-4000-8000-000000000d11','c1320000-0000-4000-8000-000000000c00');
+  'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','c1320000-0000-4000-8000-000000000601',
+  jsonb_build_object('installmentKey','c1320000-0000-4000-8000-000000000a01','amount','500000','note',null,
+    'invoiceIds',jsonb_build_array((select body->>'resourceId' from sp_acks where name='I1'))),
+  'c1320000-0000-4000-8000-000000000d11','c1320000-0000-4000-8000-000000000c00');
 insert into sp_acks select 'R1', public.c1_material_create_payment_request(
-  'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','c1320000-0000-4000-8000-000000000601','{"installmentKey":"c1320000-0000-4000-8000-000000000a01","amount":"1000000","invoiceIds":[],"note":null}','c1320000-0000-4000-8000-000000000d12','c1320000-0000-4000-8000-000000000c00');
+  'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','c1320000-0000-4000-8000-000000000601',
+  jsonb_build_object('installmentKey','c1320000-0000-4000-8000-000000000a01','amount','1000000','note',null,
+    'invoiceIds',jsonb_build_array((select body->>'resourceId' from sp_acks where name='I1'))),
+  'c1320000-0000-4000-8000-000000000d12','c1320000-0000-4000-8000-000000000c00');
 insert into sp_acks select 'R2', public.c1_material_create_payment_request(
-  'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','c1320000-0000-4000-8000-000000000601','{"installmentKey":"c1320000-0000-4000-8000-000000000a01","amount":"1000000","invoiceIds":[],"note":null}','c1320000-0000-4000-8000-000000000d13','c1320000-0000-4000-8000-000000000c00');
+  'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','c1320000-0000-4000-8000-000000000601',
+  jsonb_build_object('installmentKey','c1320000-0000-4000-8000-000000000a01','amount','1000000','note',null,
+    'invoiceIds',jsonb_build_array((select body->>'resourceId' from sp_acks where name='I1'))),
+  'c1320000-0000-4000-8000-000000000d13','c1320000-0000-4000-8000-000000000c00');
 insert into sp_acks select 'R3', public.c1_material_create_payment_request(
-  'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','c1320000-0000-4000-8000-000000000601','{"installmentKey":"c1320000-0000-4000-8000-000000000a01","amount":"500000","invoiceIds":[],"note":null}','c1320000-0000-4000-8000-000000000d14','c1320000-0000-4000-8000-000000000c00');
+  'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','c1320000-0000-4000-8000-000000000601',
+  jsonb_build_object('installmentKey','c1320000-0000-4000-8000-000000000a01','amount','500000','note',null,
+    'invoiceIds',jsonb_build_array((select body->>'resourceId' from sp_acks where name='I1'))),
+  'c1320000-0000-4000-8000-000000000d14','c1320000-0000-4000-8000-000000000c00');
 insert into sp_acks select 'R4', public.c1_material_create_payment_request(
   'c1320000-0000-4000-8000-000000000020','c1320000-0000-4000-8000-000000000101','c1320000-0000-4000-8000-000000000602',
   jsonb_build_object('installmentKey','c1320000-0000-4000-8000-000000000a02','amount','4500000','invoiceIds',jsonb_build_array((select body->>'resourceId' from sp_acks where name='I4')),'note',null),
@@ -279,7 +298,7 @@ select is((
 select is((
   select count(*) from public.material_payment_request_invoices
   where payment_request_id=(select (body->>'resourceId')::uuid from sp_acks where name='R1')
-),0::bigint,'invoice: the paid quotation_only request never had an invoice');
+),1::bigint,'invoice: the paid quotation_only request links its recorded invoice');
 
 -- cash on a contract record of 4500000 with VAT, bankReference left out entirely -------------------------------
 insert into sp_acks select 'P4', public.c1_material_record_payment(

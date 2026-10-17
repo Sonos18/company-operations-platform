@@ -16,6 +16,7 @@ export const materialContractFactsSchema = materialContractViewSchema
   .omit({ installments: true, totals: true })
   .extend({
     invoiced: z.string(),
+    draftInvoiced: z.string(),
     installments: z.array(z.object({
       installmentKey: z.string().uuid(), seq: z.number().int().positive(), name: z.string().min(1),
       amount: z.string(), dueOn: z.string().date(), isAdvance: z.boolean(), paid: z.string(), pending: z.string(),
@@ -30,7 +31,7 @@ export interface MaterialContractDataRepository {
 }
 
 export function contractViewFromFacts(facts: MaterialContractFacts, today: string): MaterialContractView {
-  const { invoiced, ...rest } = facts
+  const { invoiced, draftInvoiced, ...rest } = facts
   const current = facts.versions.find(version => version.versionNo === facts.currentVersionNo)
   if (!current) throw new Error('Contract facts are missing the current version')
   return materialContractViewSchema.parse({
@@ -40,7 +41,7 @@ export function contractViewFromFacts(facts: MaterialContractFacts, today: strin
       remaining: MoneyDecimal.max(0, new MoneyDecimal(installment.amount).minus(installment.paid).minus(installment.pending)).toFixed(4),
       dueStatus: installmentDueStatus(installment, today),
     })),
-    totals: summarizeMaterialFinance([{ documentation: facts.documentation, total: current.total, invoiced, installments: facts.installments }], today),
+    totals: summarizeMaterialFinance([{ documentation: facts.documentation, total: current.total, invoiced, draftInvoiced, installments: facts.installments }], today),
   })
 }
 

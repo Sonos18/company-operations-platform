@@ -7,7 +7,7 @@ const s2 = '30000000-0000-4000-8000-000000000003'
 const k = (n: number) => `30000000-0000-4000-8000-0000000001${String(n).padStart(2, '0')}`
 const contractFacts = (n: number, supplierId: string, total: string, paid: string, dueOn: string) => ({
   contractId: k(n), projectId: p1, projectName: 'Dự án 1', orderId: k(n + 50), supplierId,
-  supplierName: supplierId === s1 ? 'NCC A' : 'NCC B', documentation: 'contract' as const, contractNo: 'HD-' + n as string | null, total, invoiced: '0.0000',
+  supplierName: supplierId === s1 ? 'NCC A' : 'NCC B', documentation: 'contract' as const, contractNo: 'HD-' + n as string | null, total, invoiced: '0.0000', draftInvoiced: '0.0000',
   installments: [{ installmentKey: k(n + 20), name: 'Đợt 1', amount: total, dueOn, paid, pending: '0.0000' }],
 })
 const facts = {
@@ -49,7 +49,7 @@ describe('material finance read service', () => {
     const summary = await service.projectSummary(permissions, p1)
     expect(summary.contracts.map(row => [row.contractId, row.documentation, row.contractNo]))
       .toEqual([[k(1), 'contract', 'HD-1'], [k(4), 'quotation_only', null]])
-    expect(summary.contracts[1]?.totals.paidWithoutInvoice).toBe('0.0000')
+    expect(summary.contracts[1]?.totals.paidWithoutInvoice).toBe('4.0000')
 
     const suppliers = await service.suppliers(permissions)
     const rows = suppliers.flatMap(supplier => supplier.contracts)

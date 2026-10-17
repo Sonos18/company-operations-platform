@@ -28,7 +28,7 @@ const allowlist = [
 export const materialSyntheticPrefixes = {
   'c1_material_procurement_security.test.sql': 'c121',
   'c1_material_procurement_a1.test.sql': 'c122',
-  'c1_material_engineer_invoice_name.test.sql': 'c123',
+  'c1_material_invoice_name_removal.test.sql': 'c123',
   'c1_material_finance_foundation.test.sql': 'c125',
   'c1_material_contracts.test.sql': 'c126',
   'c1_material_payments.test.sql': 'c127',
@@ -38,6 +38,7 @@ export const materialSyntheticPrefixes = {
   'c1_material_order_inline_supplier.test.sql': 'c130',
   'c1_material_small_order_contracts.test.sql': 'c131',
   'c1_material_small_order_payments.test.sql': 'c132',
+  'c1_material_flow_adjustments.test.sql': 'c134',
 }
 
 const materialAllowlist = Object.keys(materialSyntheticPrefixes)

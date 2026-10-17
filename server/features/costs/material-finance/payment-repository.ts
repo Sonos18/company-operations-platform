@@ -17,11 +17,21 @@ export class SupabaseMaterialPaymentRepository implements MaterialPaymentDataRep
   listInvoices: MaterialPaymentDataRepository['listInvoices'] = (context, projectId, contractId) =>
     financeRead(this.client, context, 'c1_material_list_invoices', invoiceListSchema, { target_project_id: projectId, target_id: contractId })
 
-  recordInvoice: MaterialPaymentDataRepository['recordInvoice'] = (context, projectId, contractId, input, key) =>
-    financeCommand(this.client, context, 'c1_material_record_invoice', input, key, { target_project_id: projectId, target_id: contractId })
+  // The default stage is left out so an old database (and an old idempotency receipt) sees the same
+  // input as before; only a draft needs the new key.
+  recordInvoice: MaterialPaymentDataRepository['recordInvoice'] = (context, projectId, contractId, input, key) => {
+    const { stage, ...withoutStage } = input
+    return financeCommand(this.client, context, 'c1_material_record_invoice', stage === 'official' ? withoutStage : input, key, {
+      target_project_id: projectId,
+      target_id: contractId,
+    })
+  }
 
   voidInvoice: MaterialPaymentDataRepository['voidInvoice'] = (context, projectId, invoiceId, input, key) =>
     financeCommand(this.client, context, 'c1_material_void_invoice', input, key, { target_project_id: projectId, target_id: invoiceId })
+
+  officializeInvoice: MaterialPaymentDataRepository['officializeInvoice'] = (context, projectId, invoiceId, input, key) =>
+    financeCommand(this.client, context, 'c1_material_officialize_invoice', input, key, { target_project_id: projectId, target_id: invoiceId })
 
   listPaymentRequests: MaterialPaymentDataRepository['listPaymentRequests'] = (context, projectId, contractId) =>
     financeRead(this.client, context, 'c1_material_list_payment_requests', paymentRequestListSchema, { target_project_id: projectId, target_id: contractId })

@@ -1,4 +1,3 @@
-import type { MaterialContractDocumentation } from '../../../shared/constants/material-finance'
 import type { MaterialContractView } from '../../../shared/schemas/costs/material-finance'
 import { isMaterialSmallAmount } from '../../../shared/utils/material-small-order'
 
@@ -18,14 +17,11 @@ export function canPayInCash(
 }
 
 /**
- * True only when documentation is 'contract' and the installment is not an advance payment (R6).
- * Quotation-only orders never require an invoice.
+ * True when the installment is not an advance payment. Every order, with or without a contract,
+ * needs an invoice (draft or official) on a payment request for such an installment.
  */
-export function requestRequiresInvoice(
-  documentation: MaterialContractDocumentation,
-  isAdvance: boolean,
-): boolean {
-  return documentation === 'contract' && !isAdvance
+export function requestRequiresInvoice(isAdvance: boolean): boolean {
+  return !isAdvance
 }
 
 /**

@@ -3104,9 +3104,13 @@ export type Database = {
           invoice_no: string
           invoice_symbol: string
           issued_on: string
+          official_file_id: string | null
+          officialized_at: string | null
+          officialized_by: string | null
           project_id: string
           recorded_at: string
           recorded_by: string
+          stage: string
           state: string
           subtotal: number
           supplier_id: string
@@ -3126,9 +3130,13 @@ export type Database = {
           invoice_no: string
           invoice_symbol: string
           issued_on: string
+          official_file_id?: string | null
+          officialized_at?: string | null
+          officialized_by?: string | null
           project_id: string
           recorded_at?: string
           recorded_by: string
+          stage?: string
           state?: string
           subtotal: number
           supplier_id: string
@@ -3148,9 +3156,13 @@ export type Database = {
           invoice_no?: string
           invoice_symbol?: string
           issued_on?: string
+          official_file_id?: string | null
+          officialized_at?: string | null
+          officialized_by?: string | null
           project_id?: string
           recorded_at?: string
           recorded_by?: string
+          stage?: string
           state?: string
           subtotal?: number
           supplier_id?: string
@@ -3180,6 +3192,18 @@ export type Database = {
           {
             foreignKeyName: "material_invoices_file_id_tenant_id_company_id_project_id_fkey"
             columns: ["file_id", "tenant_id", "company_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "cost_evidence_files"
+            referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
+          },
+          {
+            foreignKeyName: "material_invoices_official_file_fkey"
+            columns: [
+              "official_file_id",
+              "tenant_id",
+              "company_id",
+              "project_id",
+            ]
             isOneToOne: false
             referencedRelation: "cost_evidence_files"
             referencedColumns: ["id", "tenant_id", "company_id", "project_id"]
@@ -3923,115 +3947,11 @@ export type Database = {
           },
         ]
       }
-      material_proposal_invoice_name_overrides: {
-        Row: {
-          company_id: string
-          created_at: string
-          created_by: string
-          project_id: string
-          proposal_id: string
-          proposal_line_id: string
-          proposed_invoice_name: string | null
-          revision_id: string
-          tenant_id: string
-          updated_at: string
-          updated_by: string
-          version: number
-        }
-        Insert: {
-          company_id: string
-          created_at?: string
-          created_by: string
-          project_id: string
-          proposal_id: string
-          proposal_line_id: string
-          proposed_invoice_name?: string | null
-          revision_id: string
-          tenant_id: string
-          updated_at?: string
-          updated_by: string
-          version?: number
-        }
-        Update: {
-          company_id?: string
-          created_at?: string
-          created_by?: string
-          project_id?: string
-          proposal_id?: string
-          proposal_line_id?: string
-          proposed_invoice_name?: string | null
-          revision_id?: string
-          tenant_id?: string
-          updated_at?: string
-          updated_by?: string
-          version?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "material_proposal_invoice_nam_proposal_line_id_proposal_id_fkey"
-            columns: [
-              "proposal_line_id",
-              "proposal_id",
-              "tenant_id",
-              "company_id",
-              "project_id",
-            ]
-            isOneToOne: false
-            referencedRelation: "material_proposal_lines"
-            referencedColumns: [
-              "id",
-              "proposal_id",
-              "tenant_id",
-              "company_id",
-              "project_id",
-            ]
-          },
-          {
-            foreignKeyName: "material_proposal_invoice_nam_revision_id_proposal_id_tena_fkey"
-            columns: [
-              "revision_id",
-              "proposal_id",
-              "tenant_id",
-              "company_id",
-              "project_id",
-            ]
-            isOneToOne: false
-            referencedRelation: "material_proposal_revisions"
-            referencedColumns: [
-              "id",
-              "proposal_id",
-              "tenant_id",
-              "company_id",
-              "project_id",
-            ]
-          },
-          {
-            foreignKeyName: "material_proposal_invoice_nam_revision_id_proposal_line_id_fkey"
-            columns: [
-              "revision_id",
-              "proposal_line_id",
-              "tenant_id",
-              "company_id",
-              "project_id",
-            ]
-            isOneToOne: true
-            referencedRelation: "material_proposal_revision_lines"
-            referencedColumns: [
-              "revision_id",
-              "proposal_line_id",
-              "tenant_id",
-              "company_id",
-              "project_id",
-            ]
-          },
-        ]
-      }
       material_proposal_lines: {
         Row: {
           company_id: string
           created_at: string
           created_by: string
-          engineer_proposed_invoice_name: string | null
           id: string
           is_active: boolean
           material_id: string
@@ -4046,7 +3966,6 @@ export type Database = {
           company_id: string
           created_at?: string
           created_by: string
-          engineer_proposed_invoice_name?: string | null
           id: string
           is_active?: boolean
           material_id: string
@@ -4061,7 +3980,6 @@ export type Database = {
           company_id?: string
           created_at?: string
           created_by?: string
-          engineer_proposed_invoice_name?: string | null
           id?: string
           is_active?: boolean
           material_id?: string
@@ -4092,7 +4010,6 @@ export type Database = {
       material_proposal_revision_lines: {
         Row: {
           company_id: string
-          engineer_proposed_invoice_name: string | null
           material_id: string
           material_name: string
           notes: string | null
@@ -4107,7 +4024,6 @@ export type Database = {
         }
         Insert: {
           company_id: string
-          engineer_proposed_invoice_name?: string | null
           material_id: string
           material_name: string
           notes?: string | null
@@ -4122,7 +4038,6 @@ export type Database = {
         }
         Update: {
           company_id?: string
-          engineer_proposed_invoice_name?: string | null
           material_id?: string
           material_name?: string
           notes?: string | null
@@ -7784,6 +7699,17 @@ export type Database = {
         Args: { target_company_id: string; target_id: string }
         Returns: Json
       }
+      c1_material_officialize_invoice: {
+        Args: {
+          target_company_id: string
+          target_id: string
+          target_idempotency_key: string
+          target_input: Json
+          target_project_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
       c1_material_read_contract: {
         Args: {
           target_company_id: string
@@ -7870,18 +7796,6 @@ export type Database = {
           target_id: string
           target_idempotency_key: string
           target_input: Json
-          target_project_id: string
-          target_request_id: string
-        }
-        Returns: Json
-      }
-      c1_material_set_proposal_invoice_name: {
-        Args: {
-          target_company_id: string
-          target_id: string
-          target_idempotency_key: string
-          target_input: Json
-          target_line_id: string
           target_project_id: string
           target_request_id: string
         }

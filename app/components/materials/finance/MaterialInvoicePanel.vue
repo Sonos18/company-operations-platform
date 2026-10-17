@@ -87,6 +87,7 @@
               <th scope="col" class="p-2.5 text-right">Trước VAT</th>
               <th scope="col" class="p-2.5 text-right">VAT</th>
               <th scope="col" class="p-2.5 text-right">Tổng tiền</th>
+              <th scope="col" class="p-2.5 text-center">Giai đoạn</th>
               <th scope="col" class="p-2.5 text-center">Trạng thái</th>
               <th scope="col" class="p-2.5 text-center">Tệp đính kèm</th>
               <th scope="col" class="p-2.5 text-center">Thao tác</th>
@@ -126,6 +127,15 @@
               <td class="p-2.5 text-center">
                 <span
                   class="cockpit-badge text-[11px] font-semibold"
+                  :class="inv.stage === 'draft' ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-800'"
+                >
+                  {{ inv.stage === 'draft' ? 'Nháp' : 'Chính thức' }}
+                </span>
+              </td>
+
+              <td class="p-2.5 text-center">
+                <span
+                  class="cockpit-badge text-[11px] font-semibold"
                   :class="inv.state === 'recorded' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'"
                 >
                   {{ inv.state === 'recorded' ? 'Đã ghi nhận' : 'Đã hủy' }}
@@ -135,29 +145,56 @@
                 </div>
               </td>
 
-              <td class="p-2.5 text-center">
-                <button
-                  type="button"
-                  class="text-sky-600 hover:text-sky-800 text-xs inline-flex items-center gap-1 font-medium"
-                  :disabled="isFileReading === inv.fileId"
-                  @click="viewInvoiceFile(inv.fileId)"
-                >
-                  <UIcon v-if="isFileReading === inv.fileId" name="i-lucide-loader-2" class="animate-spin text-xs" aria-hidden="true" />
-                  <UIcon v-else name="i-lucide-file-text" class="text-xs" aria-hidden="true" />
-                  <span>Xem file</span>
-                </button>
+              <td class="p-2.5 text-center space-y-1">
+                <div>
+                  <button
+                    type="button"
+                    class="text-sky-600 hover:text-sky-800 text-xs inline-flex items-center gap-1 font-medium"
+                    :disabled="isFileReading === inv.fileId"
+                    @click="viewInvoiceFile(inv.fileId)"
+                  >
+                    <UIcon v-if="isFileReading === inv.fileId" name="i-lucide-loader-2" class="animate-spin text-xs" aria-hidden="true" />
+                    <UIcon v-else name="i-lucide-file-text" class="text-xs" aria-hidden="true" />
+                    <span>{{ inv.officialFileId ? 'Xem file nháp' : 'Xem file' }}</span>
+                  </button>
+                </div>
+                <div v-if="inv.officialFileId">
+                  <button
+                    type="button"
+                    class="text-sky-600 hover:text-sky-800 text-xs inline-flex items-center gap-1 font-medium"
+                    :disabled="isFileReading === inv.officialFileId"
+                    @click="viewInvoiceFile(inv.officialFileId)"
+                  >
+                    <UIcon v-if="isFileReading === inv.officialFileId" name="i-lucide-loader-2" class="animate-spin text-xs" aria-hidden="true" />
+                    <UIcon v-else name="i-lucide-file-check" class="text-xs" aria-hidden="true" />
+                    <span>Xem file chính thức</span>
+                  </button>
+                </div>
               </td>
 
               <td class="p-2.5 text-center">
-                <button
-                  v-if="inv.state === 'recorded' && canRecordInvoice"
-                  type="button"
-                  class="cockpit-btn cockpit-btn--danger btn-sm text-[11px] py-1 px-2"
-                  @click="openVoidDialog(inv)"
-                >
-                  Hủy hóa đơn
-                </button>
-                <span v-else class="text-slate-400 text-[11px]">—</span>
+                <div class="flex items-center justify-center gap-1.5 flex-wrap">
+                  <button
+                    v-if="inv.state === 'recorded' && inv.stage === 'draft' && canRecordInvoice"
+                    type="button"
+                    class="cockpit-btn cockpit-btn--primary btn-sm text-[11px] py-1 px-2 flex items-center gap-1"
+                    title="Cập nhật hóa đơn chính thức"
+                    @click="openOfficializeDialog(inv)"
+                  >
+                    <UIcon name="i-lucide-file-check" class="text-xs" aria-hidden="true" />
+                    <span>Cập nhật hóa đơn chính thức</span>
+                  </button>
+
+                  <button
+                    v-if="inv.state === 'recorded' && canRecordInvoice"
+                    type="button"
+                    class="cockpit-btn cockpit-btn--danger btn-sm text-[11px] py-1 px-2"
+                    @click="openVoidDialog(inv)"
+                  >
+                    Hủy hóa đơn
+                  </button>
+                  <span v-if="inv.state !== 'recorded' || !canRecordInvoice" class="text-slate-400 text-[11px]">—</span>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -227,6 +264,18 @@
       @saved="onInvoiceSaved"
       @stale="onStale"
     />
+
+    <!-- Officialize Invoice Modal Dialog -->
+    <MaterialInvoiceOfficializeDialog
+      v-if="officializingInvoice"
+      :open="Boolean(officializingInvoice)"
+      :invoice="officializingInvoice"
+      :contract="contract"
+      :project-id="projectId"
+      @update:open="onOfficializeOpenChange"
+      @saved="onOfficializeSaved"
+      @stale="onStale"
+    />
   </div>
 </template>
 
@@ -247,6 +296,7 @@ import {
   resetCommandKeyAfterError,
 } from '../../../utils/materials/finance-ui'
 import MaterialInvoiceForm from './MaterialInvoiceForm.vue'
+import MaterialInvoiceOfficializeDialog from './MaterialInvoiceOfficializeDialog.vue'
 
 interface Props {
   projectId: string
@@ -281,6 +331,10 @@ const voidingInvoice = ref<MaterialInvoiceView | null>(null)
 const voidReason = ref('')
 const isVoidBusy = ref(false)
 const voidError = ref('')
+
+// Officialize dialog state
+const officializingInvoice = ref<MaterialInvoiceView | null>(null)
+
 const commandKeys = createScopedCommandKeys()
 
 async function loadInvoices() {
@@ -364,10 +418,29 @@ function onVoidOpenChange(value: boolean) {
   if (!value) closeVoidDialog()
 }
 
+function openOfficializeDialog(inv: MaterialInvoiceView) {
+  officializingInvoice.value = inv
+}
+
+function closeOfficializeDialog() {
+  officializingInvoice.value = null
+}
+
+function onOfficializeOpenChange(value: boolean) {
+  if (!value) closeOfficializeDialog()
+}
+
+async function onOfficializeSaved() {
+  closeOfficializeDialog()
+  await loadInvoices()
+  emit('changed')
+}
+
 /** The invoice changed since it was loaded: close the dialogs, reload, and tell the user why. */
 async function onStale(message: string) {
   isFormOpen.value = false
   closeVoidDialog()
+  closeOfficializeDialog()
   await loadInvoices()
   actionError.value = message
   emit('changed')

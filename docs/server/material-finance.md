@@ -3,7 +3,9 @@
 Server reference for supplier contracts, invoices, payment requests and payments on material
 orders. Specs: `docs/superpowers/specs/2026-10-15-materials-a4-a5-contract-payment-design.md` and,
 for small orders without a contract and cash payments,
-`docs/superpowers/specs/2026-10-16-materials-a4a5-small-orders-design.md`.
+`docs/superpowers/specs/2026-10-16-materials-a4a5-small-orders-design.md`. The flow adjustments of
+`docs/superpowers/specs/2026-10-16-materials-a4a5-flow-adjustments-design.md` (C1-C5, see below) change
+the small order rules R3, R4, R6 and the payment steps and supersede the earlier specs where they differ.
 
 ## Migrations
 
@@ -20,6 +22,8 @@ Applied in order; each takes `pg_advisory_xact_lock(71842, N)` and ends with `no
 | `20261015090600_c1_material_finance_access` | 56 | Finance readers open orders, proposal contract status and creator link, reminder keys with contract id, cancel of approved requests by approvers, invoice re-check at approve/pay |
 | `20261016090000_c1_material_small_order_contracts` | 57 | `documentation` on contracts (`contract` / `quotation_only`), nullable contract number and contract file, threshold helpers, image signed quotations, invoice requirement helper, `documentation` in the JSON views and notifications |
 | `20261016090100_c1_material_small_order_payments` | 58 | `method` on payments (`bank_transfer` / `cash`), nullable `bank_reference`, cash rule in `c1_material_record_payment`, `method` in the payment request view |
+| `20261016100000_c1_material_remove_proposal_invoice_names` | 59 | C1: drops the engineer and buyer invoice names (columns, override table, `c1_material_set_proposal_invoice_name`, helper) and their JSON keys; deletes the data |
+| `20261016100100_c1_material_finance_flow_adjustments` | 60 | C2-C4: VAT on `quotation_only`, invoice `stage` and `c1_material_officialize_invoice`, image invoices, the accountant records payments, `material.payment.approved`, `draftInvoiced` |
 
 `shared/types/database.types.ts` is generated (`pnpm db:dev:types`) and is not edited by hand.
 
@@ -30,12 +34,12 @@ Applied in order; each takes `pg_advisory_xact_lock(71842, N)` and ends with `no
 | `material_contracts` | One record per material order (`order_id` unique), supplier, `documentation`, contract number (null for `quotation_only`), signing date, `current_version_no`, row `version` |
 | `material_contract_versions` | Version 1 is the original, later ones are amendments: subtotal, VAT, total, order subtotal snapshot, variance reason, files (`contract_file_id` is null for `quotation_only`), amendment reason |
 | `material_contract_installments` | Payment schedule per contract version; `installment_key` is stable across versions; `is_advance` marks advances |
-| `material_invoices` / `material_invoice_lines` | Supplier invoices of a contract (`recorded` or `voided`) and the invoice material name per proposal line |
+| `material_invoices` / `material_invoice_lines` | Supplier invoices of a contract (`recorded` or `voided`) and the invoice material name per proposal line. `stage` is `draft` (a draft or signed copy) or `official` (default); `official_file_id`, `officialized_by` and `officialized_at` are filled when a draft is officialized (see Invoice stages) |
 | `material_payment_requests` | Request against one installment: amount, state (`submitted`, `returned`, `approved`, `paid`, `cancelled`), revision, latest submitter |
 | `material_payment_request_revisions` | Every submission of a request |
 | `material_payment_request_invoices` | Invoices attached to a request (required for non-advance installments) |
 | `material_payment_decisions` | Approve/return decisions per revision; a reason only for returns |
-| `material_payments` | The recorded payment: paid date, `method` (`bank_transfer` or `cash`), bank reference (null for cash), proof file and its SHA-256 (unique per company) |
+| `material_payments` | The recorded payment (by the accountant): paid date, `method` (`bank_transfer` or `cash`), bank reference (null for cash), proof file and its SHA-256 (unique per company) |
 | `app_notifications` | In-app notifications per recipient, deduplicated by `(recipient_id, dedupe_key)` |
 
 All tables have RLS. Money columns are readable only through `private.c1_material_can_read_finance`
@@ -56,11 +60,11 @@ the stored receipt version; the same key with another payload raises `IDEMPOTENC
 |---|---|
 | `c1_material_record_contract`, `c1_material_amend_contract` | `material.contract.record` |
 | `c1_material_read_contract` | finance read |
-| `c1_material_record_invoice`, `c1_material_void_invoice` | `material.contract.record` |
+| `c1_material_record_invoice`, `c1_material_void_invoice`, `c1_material_officialize_invoice` | `material.contract.record` |
 | `c1_material_create_payment_request`, `c1_material_resubmit_payment_request` | `material.payment.request` |
 | `c1_material_cancel_payment_request` | `material.payment.request` for submitted/returned requests, `material.payment.approve` for approved ones |
-| `c1_material_decide_payment_request` | `material.payment.approve` |
-| `c1_material_record_payment` | `material.payment.execute` |
+| `c1_material_decide_payment_request` | `material.payment.approve` (the treasurer confirms the payment order or returns the request) |
+| `c1_material_record_payment` | `material.payment.execute` (the accountant records the payment with the transfer receipt) |
 | `c1_material_list_invoices`, `c1_material_list_payment_requests` | finance read |
 | `c1_material_read_order`, `c1_material_list_orders` (A3, widened in 090600) | order readers (`material.order.manage`, `material.contract.record`, assigned notification readers) or finance readers; money only for finance readers |
 | `c1_material_finance_facts`, `c1_material_finance_inbox_facts` | `material.read` (money only for finance readers) |
@@ -79,11 +83,16 @@ Rules enforced in SQL (and mirrored in Zod in `shared/schemas/costs/material-fin
 - A request may not exceed the installment's remaining capacity (paid + submitted + approved).
 - Non-advance installments need at least one recorded invoice. Approving and paying re-check this
   against the current installment, because an amendment may turn an advance into a normal installment.
-- The latest submitter of a request may neither decide nor pay it (`SELF_DECISION_FORBIDDEN`).
+- The latest submitter of a request may not decide it (`SELF_DECISION_FORBIDDEN`). Recording the payment has no such block: the accountant who requested a payment records it (C4).
+- A non-advance installment needs a recorded invoice, draft or official, for every record, with or without a contract document.
 - A decision `reason` is required for `return` and rejected for `approve`.
 - A payment proof (by SHA-256) backs only one payment per company (`PROOF_ALREADY_USED`).
 
 ### Small orders without a contract and cash payments (R1-R12)
+
+The flow adjustments (C2) supersede R3 (the threshold now also applies to the total after VAT), R4 (VAT is
+allowed, so the single installment equals the total after VAT), R6 (withdrawn) and the exclusion in R12 and in
+spec section 7 (see the rows below).
 
 An order whose total is below the threshold may be recorded with a signed quotation instead of a
 contract (`documentation = 'quotation_only'`), and its payment may be paid in cash. The same
@@ -97,16 +106,16 @@ guard test keeps it equal to the value in `private.c1_material_small_order_thres
 | R1 | The threshold is `5000000` VND, compared with `<`. Exactly 5,000,000 still needs a contract and a bank transfer. |
 | R1b | The threshold applies per order. Orders of the same supplier, receipt or day are never added up, and splitting one purchase into several small orders is not blocked (product decision). |
 | R2 | The threshold applies only when the order currency is `VND`. Any other currency can neither skip the contract nor pay in cash. |
-| R3 | `quotation_only` needs both the order total (`order_subtotal_snapshot`) and the entered `subtotal` below the threshold, else `CONTRACT_REQUIRED`. The first check stops a 48 million order from being recorded as 4.9 million with a variance reason. The `subtotal` still needs a variance reason when it differs from the order total. |
-| R4 | A `quotation_only` record generates exactly one installment: `name = 'Thanh toán 100%'`, `amount = total`, `due_on = signed_on`, `is_advance = false`. The server sets `vat_amount = 0` and `total = subtotal`; the client sends no schedule. |
+| R3 | `quotation_only` needs the order total (`order_subtotal_snapshot`), the entered `subtotal` and, since C2, the total after VAT all below the threshold, else `CONTRACT_REQUIRED`. The first check stops a 48 million order from being recorded as 4.9 million with a variance reason. The `subtotal` still needs a variance reason when it differs from the order total. |
+| R4 | A `quotation_only` record generates exactly one installment: `name = 'Thanh toán 100%'`, `amount = total`, `due_on = signed_on`, `is_advance = false`. `amount` is the total after VAT (superseded by C2: VAT is optional, see Flow adjustments). The client sends no schedule. |
 | R5 | A `quotation_only` record cannot be amended (`CONTRACT_AMENDMENT_UNAVAILABLE`). |
-| R6 | A payment request of a `quotation_only` record needs no invoice. This applies to create/resubmit, approve and record payment through `private.c1_material_installment_requires_invoice`. Invoices may still be recorded. |
+| R6 | **Superseded (withdrawn by C2).** A payment request of a `quotation_only` record used to need no invoice. Now `private.c1_material_installment_requires_invoice` is `not is_advance` again, so a `quotation_only` request needs a draft or official invoice like any other non-advance installment (create/resubmit, approve and record payment). |
 | R7 | Cash needs both the current version total and that version's order subtotal snapshot (`order_subtotal_snapshot`) below the threshold, and VND, checked when the payment is recorded. If an amendment raised the total to the threshold or above after the request, or the order itself is at or above the threshold but was recorded as a contract with a low subtotal (and a variance reason), recording cash fails with `CASH_PAYMENT_NOT_ALLOWED`. The UI offers cash only when both values are small. |
 | R8 | A bank transfer needs `bankReference`. A cash payment needs `bankReference` to be `null` (the TS schema normalizes an empty or blank string to `null`; the RPC rejects anything else with `INPUT_INVALID`). A CHECK ties `bank_reference` to the method. |
 | R9 | A payment proof (PDF, JPEG or PNG) is required for both methods; `PROOF_ALREADY_USED` is unchanged. |
 | R10 | A `signed_quotation` accepts PDF, JPEG and PNG on upload. A record with a contract needs the signed quotation to be `application/pdf` (`EVIDENCE_INVALID` otherwise); an image is valid only for `quotation_only`. |
 | R11 | After recording (with or without a contract) the order is locked as before. |
-| R12 | Notifications, reminders and the committed, paid and remaining figures treat these orders like orders with a contract. The exception is "paid without invoice" in `shared/utils/material-finance-summary.ts`, which leaves out `quotation_only` records (payments and invoices both). |
+| R12 | Notifications, reminders and the committed, paid and remaining figures treat these orders like orders with a contract. The former exception for "paid without invoice" in `shared/utils/material-finance-summary.ts` (spec section 7, which left out `quotation_only` records) is **superseded**: those records are counted again. |
 
 Table checks that back the rules: `documentation in ('contract', 'quotation_only')`,
 `(documentation = 'contract') = (contract_no is not null)`, a null `contract_file_id` only for an
@@ -119,21 +128,73 @@ New keys. The RPCs treat a missing key as the old behaviour, so old clients keep
 
 | RPC | Input |
 |---|---|
-| `c1_material_record_contract` | `documentation`: `'contract'` (default when missing) with the existing keys, or `'quotation_only'` with only `expectedOrderVersion`, `signedOn`, `subtotal`, `varianceReason`, `signedQuotationFileId`. Sending `contractNo`, `contractFileId`, `vatAmount`, `total` or `installments` with `quotation_only` raises `INPUT_INVALID`. |
+| `c1_material_record_contract` | `documentation`: `'contract'` (default when missing) with the existing keys, or `'quotation_only'` with `expectedOrderVersion`, `signedOn`, `subtotal`, `varianceReason`, `signedQuotationFileId` and the optional `vatAmount` (default `'0'`) and `total` (default `subtotal + vatAmount`). Sending `contractNo`, `contractFileId` or `installments` with `quotation_only` raises `INPUT_INVALID`. |
+| `c1_material_record_invoice` | Optional `stage`: `'draft'` or `'official'` (default when missing) |
+| `c1_material_officialize_invoice` | `{ expectedVersion, officialFileId }` on the invoice id; the caller needs `material.contract.record` and `material.read` |
 | `c1_material_record_payment` | `method`: `'bank_transfer'` (default when missing) or `'cash'`; `bankReference` is `null` for cash |
 
 | JSON | Change |
 |---|---|
-| `c1_material_read_contract` | `documentation`; `contractNo` may be `null`; a version's `contractFileId` may be `null` |
+| `c1_material_read_contract` | `documentation`; `contractNo` may be `null`; a version's `contractFileId` may be `null`; top-level `draftInvoiced` (only the API view nests it as `totals.draftInvoiced`) |
+| `c1_material_list_invoices` | `stage`, `officialFileId` and `officializedAt` (both `null` until officialized) |
 | `c1_material_order_json`.`contract` | `documentation`; `contractNo` may be `null` |
-| `c1_material_finance_facts` (each contract) | `documentation`; `contractNo` may be `null` |
+| `c1_material_finance_facts` (each contract) | `documentation`; `contractNo` may be `null`; `draftInvoiced` (also in the totals) |
 | Proposal `contractStatus[]` | `documentation`; `contractNo` may be `null` |
 | Payment in the payment request view | `method`; `bankReference` may be `null` |
+| Proposal lines | The invoice name keys are gone (C1): `engineerProposedInvoiceName`, `buyerProposedInvoiceName`, `effectiveInvoiceDisplayName`, `invoiceDisplayNameSource`, `buyerOverrideVersion`, `buyerInvoiceNameEditable`; the input no longer takes `proposedInvoiceName`. `currentRevisionId` stays |
 | Notification payloads `material.contract.*`, `material.payment.*`, `material.installment.*` | `documentation`; `contractNo` may be `null` (the bell then shows "Đơn không hợp đồng") |
 
 In the Zod view schemas `documentation` is `z.enum(['contract', 'quotation_only']).default('contract')`
 and `method` is `z.enum(['bank_transfer', 'cash']).default('bank_transfer')`, so the new app still
 reads a database that does not have the migrations yet.
+
+## Flow adjustments (C1-C5)
+
+Spec: `docs/superpowers/specs/2026-10-16-materials-a4a5-flow-adjustments-design.md`. No new error codes.
+
+| # | Change |
+|---|---|
+| C1 | The invoice name proposed by the engineer and the name overridden by the buyer are removed with their data (migration 59). The invoice material name is only entered by the accountant on the invoice (`material_invoice_lines.invoice_material_name`); the form hints show the supplier name and the original material name. The route `.../proposals/:proposalId/lines/:lineId/invoice-name` is gone. |
+| C2 | A `quotation_only` record may carry VAT. `vatAmount` and `total` are optional; a wrong sum raises `CONTRACT_TOTAL_MISMATCH`. The order total and the total after VAT must both be below `5000000` (else `CONTRACT_REQUIRED`; the form warns "Tổng sau VAT từ 5.000.000 đ trở lên phải có hợp đồng."). The generated installment "Thanh toán 100%" equals the total after VAT. R6 and the section 7 exclusion are superseded (see above). |
+| C3 | Invoices have two stages (below). |
+| C4 | The treasurer only confirms the payment order (UNC) or returns the request; the accountant records the payment with the transfer receipt (see Permissions). `SELF_DECISION_FORBIDDEN` stays on `decide_payment_request` only. |
+| C5 | Labels only, no new state (below). |
+
+### Invoice stages
+
+- `stage = 'draft'` is a draft or signed copy waiting for the official invoice; `'official'` is the default and the
+  value of every row that existed before. A CHECK allows exactly three combinations: draft with
+  `official_file_id`, `officialized_by` and `officialized_at` all null; official with all three null (recorded as
+  official directly); official with all three set (a draft that was officialized). `file_id` is the first file and is never overwritten.
+- `c1_material_officialize_invoice` (`POST /api/companies/:companyId/projects/:projectId/material-procurement/invoices/:invoiceId/official`
+  with an `Idempotency-Key` header; body `{ expectedVersion, officialFileId }`) needs `material.contract.record` and
+  `material.read`. The invoice must be `recorded` and a draft, else `VERSION_CONFLICT`. The file must be an
+  `invoice` role file of the same contract, finalized and unused, else `EVIDENCE_INVALID`;
+  `c1_material_require_contract_file` now also checks `official_file_id`, so one file cannot back two invoices.
+  The command bumps the row version, writes a receipt and an audit event, and sends no notification.
+- A draft invoice counts as a valid invoice for `INVOICE_REQUIRED`. The links in `material_payment_request_invoices`
+  do not change when the draft is officialized.
+- The invoice evidence role accepts `application/pdf`, `application/xml`, `text/xml`, `image/jpeg` and `image/png` (drafts and official files alike).
+- The invoice form offers "Bản nháp / bản đã ký (chờ bản chính thức)" (default) and "Hóa đơn chính thức"; the list shows the
+  badge "Nháp" or "Chính thức" and a draft has the button "Cập nhật hóa đơn chính thức" (component `MaterialInvoiceOfficializeDialog`).
+
+### Payment request labels (C5)
+
+| State | Label |
+|---|---|
+| `submitted` | Chờ lập UNC |
+| `approved` | Đã lập UNC – chờ giám đốc duyệt |
+| `paid` | "Đã chi – chờ hóa đơn chính thức" while a linked invoice is a draft, else "Đã chi" |
+| `returned` / `cancelled` | Bị trả lại / Đã hủy |
+
+Buttons: the treasurer sees "Xác nhận đã lập UNC" ("Xác nhận đã lập UNC / đã chi tiền mặt" when the commitment allows cash) and "Trả lại";
+the accountant sees "Cập nhật biên lai chuyển khoản" (`record_payment`).
+
+### Figures
+
+`totals.draftInvoiced` is the sum of `total` of `recorded` invoices with `stage = 'draft'`, per contract and per project;
+the UI shows it as "Hóa đơn chờ bản chính thức". "Đã nhận hóa đơn" (`invoiced`) still counts every recorded invoice, draft or official, so officializing a
+draft lowers `draftInvoiced` by that invoice's total and leaves `invoiced` unchanged.
 
 ## Error codes
 
@@ -156,10 +217,14 @@ threshold, or the currency is not VND) and `CONTRACT_AMENDMENT_UNAVAILABLE` (ame
 |---|---|
 | `material.read` | Everyone using the materials module; required by every A4/A5 command |
 | `material.finance.read` | Director, accountant, treasurer: finance pages and amounts |
-| `material.contract.record` | Accountant: contracts, amendments, invoices |
+| `material.contract.record` | Accountant: contracts, amendments, invoices, officializing invoices |
 | `material.payment.request` | Accountant: payment requests |
-| `material.payment.approve` | Treasurer: approve or return |
-| `material.payment.execute` | Treasurer: record the transfer and upload the proof |
+| `material.payment.approve` | Treasurer: confirm the payment order (UNC) or return the request |
+| `material.payment.execute` | Accountant: record the payment with the transfer receipt (for cash, the sales invoice or the paid-on-behalf slip) |
+
+The permission codes did not change in the flow adjustments; only the roles holding them did (`material.payment.execute`
+moved from the treasurer to the accountant). The fixture script `supabase/fixtures/material-a4a5-finance-actors.sql`
+(`pnpm db:dev:a4a5:finance-actors`) grants the permissions and, for the two fixture roles, removes the extra ones.
 
 ## Notification events
 
@@ -168,8 +233,9 @@ threshold, or the currency is not VND) and `CONTRACT_AMENDMENT_UNAVAILABLE` (ame
 | `material.order.created` | `material.contract.record` holders | `supplierName` |
 | `material.contract.recorded` / `material.contract.amended` | finance readers; buyer and proposal creator (by user id) | finance readers: `supplierName`, `contractNo`, `total`, `versionNo`; by user id: without `total`. The proposal creator's link opens the proposal, which lists `contractStatus` (order, contract number, signing date) |
 | `material.payment.submitted` | `material.payment.approve` holders | `supplierName`, `contractNo`, `amount` |
+| `material.payment.approved` | the submitter of the request, i.e. the accountant (by user id) | `projectId`, `contractId`, `supplierName`, `contractNo`, `documentation` (no amount). Sent when the treasurer confirms the payment order; it tells the accountant to upload the receipt |
 | `material.payment.returned` | the submitter (by user id) | `supplierName`, `contractNo`, `reason` (no amount) |
-| `material.payment.paid` | the submitter (by user id) | `supplierName`, `contractNo` (no amount) |
+| `material.payment.paid` | the treasurer who last approved the request (`decided_by` of the latest `approve` decision, by user id) | `supplierName`, `contractNo` (no amount) |
 | `material.installment.due_soon` / `material.installment.overdue` | `material.contract.record` + `material.read` holders | `supplierName`, `contractNo`, `installmentName`, `dueOn`, `remaining` |
 
 Recipients always need `material.read`; the acting user is never notified. Notifications sent by
@@ -201,8 +267,8 @@ Contract-level evidence uses `material_evidence_scopes` with `target_kind = 'mat
 | `unsigned_quotation` | PDF | `material.order.manage` | order readers |
 | `signed_quotation` | PDF, JPEG, PNG | `material.contract.record` | finance readers |
 | `signed_contract`, `contract_amendment` | PDF | `material.contract.record` | finance readers |
-| `invoice` | PDF, `application/xml`, `text/xml` | `material.contract.record` | finance readers |
-| `payment_proof` | PDF, JPEG, PNG | `material.payment.execute` | finance readers |
+| `invoice` | PDF, `application/xml`, `text/xml`, JPEG, PNG | `material.contract.record` | finance readers |
+| `payment_proof` | PDF, JPEG, PNG | `material.payment.execute` (accountant) | finance readers |
 
 Finalize downloads the object server-side and checks size, SHA-256, magic bytes and the stored
 Content-Type before the service-role finalizer marks it finalized.
@@ -252,6 +318,23 @@ Apply both migrations and pull the app code immediately afterwards. Apply `20261
   missing key as those values, and an idempotency receipt written before the migration hashes the
   same input). The API body schemas also accept a body without these keys and default them. Only
   recording a `quotation_only` record or a `cash` payment needs the migrations.
+
+### Flow adjustments (`20261016100000`, `20261016100100`)
+
+Apply both migrations in this order and ship the app in the same window; then regenerate `shared/types/database.types.ts`
+with `pnpm db:dev:types` and rerun `pnpm db:dev:a4a5:finance-actors`. The two halves must go out together,
+because the strict Zod schemas reject keys that were removed or added:
+
+- Old app with the new database: proposal line views no longer have the six invoice name keys, invoice views have
+  `stage`, `officialFileId` and `officializedAt`, and finance totals have `draftInvoiced`. The old strict schemas
+  reject all of these, and the old app still sends `proposedInvoiceName`, which the new RPCs refuse.
+- New app with the old database: the finance totals schema requires `draftInvoiced` and the strict proposal line schema rejects the
+  name keys the old database still sends, so proposal and finance reads fail until `20261016100000` and
+  `20261016100100` are applied (invoice views default a missing `stage` to `official`).
+- Migration 59 deletes the engineer and buyer invoice names on Cloud DEV (agreed; the data is not kept). Existing
+  proposals still read, edit and submit.
+- `material.payment.approved` is added to the `event_kind` CHECK by migration 60. `material.payment.paid` now goes to
+  the treasurer who approved the request.
 
 ## Known follow-ups
 

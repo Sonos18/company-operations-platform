@@ -90,6 +90,7 @@ const metrics = computed(() => {
     { testId: 'total-remaining', label: 'Còn phải trả', value: money(totals.remaining), tone: '' },
     { testId: 'total-overdue', label: 'Quá hạn', value: money(totals.overdue), tone: new MoneyDecimal(totals.overdue).greaterThan(0) ? 'metric--danger' : '' },
     { testId: 'total-invoiced', label: 'Đã nhận hóa đơn', value: money(totals.invoiced), tone: '' },
+    { testId: 'total-draft-invoiced', label: 'Hóa đơn chờ bản chính thức', value: money(totals.draftInvoiced), tone: '' },
     { testId: 'total-paid-no-invoice', label: 'Đã chi chưa có hóa đơn', value: money(totals.paidWithoutInvoice), tone: '' },
   ]
 })

@@ -33,7 +33,7 @@ const contractInput = {
 }
 const totals = {
   committed: '0.0000', paid: '0.0000', pending: '0.0000', remaining: '0.0000',
-  overdue: '0.0000', invoiced: '0.0000', paidWithoutInvoice: '0.0000',
+  overdue: '0.0000', invoiced: '0.0000', draftInvoiced: '0.0000', paidWithoutInvoice: '0.0000',
 }
 const emptyInbox = {
   awaitingContract: [], dueInstallments: [], returnedRequests: [], pendingApproval: [], approvedAwaitingPayment: [],
@@ -79,6 +79,7 @@ const calls: Record<EndpointName, { data: unknown, call(repository: MaterialFina
     }, command),
   },
   voidInvoice: { data: commandResult, call: repository => repository.voidInvoice(projectId, invoiceId, { expectedVersion: 1, reason: 'Sai số' }, command) },
+  officializeInvoice: { data: commandResult, call: repository => repository.officializeInvoice(projectId, invoiceId, { expectedVersion: 1, officialFileId: fileId }, command) },
   listPaymentRequests: { data: [], call: repository => repository.listPaymentRequests(projectId, contractId) },
   createPaymentRequest: {
     data: commandResult,
@@ -122,6 +123,17 @@ describe('material finance HTTP repository', () => {
       method: 'POST',
       url: '/api/companies/' + companyId + '/projects/' + projectId + '/material-procurement/orders/' + orderId + '/contract',
       body: contractInput,
+      idempotencyKey: key,
+    }))
+  })
+
+  it('officializes an invoice with POST to the official route, the idempotency key and the parsed body', async () => {
+    const { client, repository } = repositoryFor(commandResult)
+    await expect(repository.officializeInvoice(projectId, invoiceId, { expectedVersion: 1, officialFileId: fileId }, command)).resolves.toEqual(commandResult)
+    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'POST',
+      url: '/api/companies/' + companyId + '/projects/' + projectId + '/material-procurement/invoices/' + invoiceId + '/official',
+      body: { expectedVersion: 1, officialFileId: fileId },
       idempotencyKey: key,
     }))
   })

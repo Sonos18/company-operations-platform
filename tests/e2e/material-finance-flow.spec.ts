@@ -8,6 +8,7 @@ import {
   materialContractViewSchema,
   materialInvoiceViewSchema,
   materialPaymentRequestViewSchema,
+  officializeMaterialInvoiceInputSchema,
   projectMaterialFinanceSummarySchema,
   recordMaterialContractInputSchema,
   recordMaterialInvoiceInputSchema,
@@ -67,10 +68,12 @@ interface FlowState {
   evidence: Map<string, { originalFilename: string, mimeType: string, sizeBytes: number, sha256: string }>
   calls: Call[]
   counters: { evidence: number, request: number, invoice: number }
+  /** The next officialize command is refused because its file is not a valid evidence file. */
+  refuseNextOfficialFile: boolean
 }
 
 function createFlowState(): FlowState {
-  return { contractInput: null, invoices: [], requests: [], evidence: new Map(), calls: [], counters: { evidence: 0, request: 0, invoice: 0 } }
+  return { contractInput: null, invoices: [], requests: [], evidence: new Map(), calls: [], counters: { evidence: 0, request: 0, invoice: 0 }, refuseNextOfficialFile: false }
 }
 
 const zero = new Decimal(0)
@@ -135,6 +138,7 @@ function buildContract(state: FlowState): MaterialContractView | null {
       overdue: money(0),
       invoiced: money(state.invoices.filter(item => item.state === 'recorded').reduce((acc, item) => acc.plus(item.total), zero)),
       paidWithoutInvoice: money(paidWithoutInvoice),
+      draftInvoiced: money(0),
     },
   })
 }
@@ -259,6 +263,25 @@ async function installFlowMocks(page: Page, state: FlowState) {
       const id = `c0000000-0000-4000-8000-${String(state.counters.invoice).padStart(12, '0')}`
       state.invoices.push(materialInvoiceViewSchema.parse({ id, contractId, ...input, state: 'recorded', voidReason: null, version: 1 }))
       return ack(id, 1)
+    }
+
+    const officialMatch = /^\/invoices\/([^/]+)\/official$/.exec(path)
+    if (officialMatch) {
+      const input = officializeMaterialInvoiceInputSchema.parse(body)
+      if (state.refuseNextOfficialFile) {
+        state.refuseNextOfficialFile = false
+        return route.fulfill({ status: 409, json: apiError('EVIDENCE_INVALID', 'Tệp không hợp lệ.') })
+      }
+      const at = state.invoices.findIndex(item => item.id === officialMatch[1])
+      const target = state.invoices[at]
+      if (!target || target.stage !== 'draft' || input.expectedVersion !== target.version) {
+        return route.fulfill({ status: 409, json: apiError('VERSION_CONFLICT', 'Phiên bản không khớp.') })
+      }
+      const next = materialInvoiceViewSchema.parse({
+        ...target, stage: 'official', officialFileId: input.officialFileId, officializedAt: '2026-10-16T03:00:00.000Z', version: target.version + 1,
+      })
+      state.invoices[at] = next
+      return ack(next.id, next.version)
     }
 
     if (path === `/contracts/${contractId}/payment-requests`) {
@@ -404,7 +427,7 @@ test.describe('Luồng hợp đồng và chi tiền vật tư (mock dùng chung)
     await expect(dialog.getByTestId('request-amount-interpreted')).toHaveText('Hiểu là: 330.000')
     await dialog.getByRole('button', { name: 'Gửi đề nghị chi' }).click()
     await expect(dialog).toBeHidden()
-    await expect(page.getByRole('cell', { name: 'Chờ duyệt' })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'Chờ lập UNC' })).toBeVisible()
 
     expect(createPaymentRequestInputSchema.parse(posts(`/contracts/${contractId}/payment-requests`)[0]?.body)).toMatchObject({
       installmentKey: installment(true)?.installmentKey,
@@ -431,7 +454,7 @@ test.describe('Luồng hợp đồng và chi tiền vật tư (mock dùng chung)
     await expect(dialog.getByLabel(/Số tiền đề nghị chi/)).toHaveValue('330.000')
     await dialog.getByRole('button', { name: 'Gửi lại đề nghị' }).click()
     await expect(dialog).toBeHidden()
-    await expect(page.getByRole('cell', { name: 'Chờ duyệt' })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'Chờ lập UNC' })).toBeVisible()
 
     const patch = state.calls.find(call => call.method === 'PATCH')
     expect(resubmitPaymentRequestInputSchema.parse(patch?.body)).toMatchObject({ expectedVersion: 2, amount: '330000', invoiceIds: [] })
@@ -439,19 +462,19 @@ test.describe('Luồng hợp đồng và chi tiền vật tư (mock dùng chung)
 
   test('5. thủ quỹ duyệt rồi ghi nhận đã chi với ủy nhiệm chi', async ({ page }) => {
     await openAs(page, 'treasurer')
-    await page.getByRole('button', { name: 'Duyệt', exact: true }).click()
-    const approve = page.getByRole('dialog', { name: 'Phê duyệt đề nghị chi' })
-    await approve.getByRole('button', { name: 'Xác nhận duyệt' }).click()
+    await page.getByRole('button', { name: 'Xác nhận đã lập UNC / đã chi tiền mặt', exact: true }).click()
+    const approve = page.getByRole('dialog', { name: 'Xác nhận đã lập UNC' })
+    await approve.getByRole('button', { name: 'Xác nhận đã lập UNC' }).click()
     await expect(approve).toBeHidden()
-    await expect(page.getByRole('cell', { name: 'Đã duyệt', exact: true })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'Đã lập UNC – chờ giám đốc duyệt', exact: true })).toBeVisible()
     const decisions = state.calls.filter(call => call.path.endsWith('/decisions')).map(call => decidePaymentRequestInputSchema.parse(call.body))
     expect(decisions).toEqual([
       { expectedVersion: 1, decision: 'return', reason: 'Thiếu đề nghị tạm ứng có ký duyệt' },
       { expectedVersion: 3, decision: 'approve' },
     ])
 
-    await page.getByRole('button', { name: 'Ghi chi', exact: true }).click()
-    const pay = page.getByRole('dialog', { name: 'Ghi nhận chuyển khoản thực chi' })
+    await page.getByRole('button', { name: 'Cập nhật biên lai chuyển khoản', exact: true }).click()
+    const pay = page.getByRole('dialog', { name: 'Cập nhật biên lai chuyển khoản' })
     await pay.getByLabel(/Số tham chiếu/).pressSequentially('FT26288000189')
     await pay.locator('input[type=file]').setInputFiles(png)
     await pay.getByRole('button', { name: 'Tải lên', exact: true }).click()
@@ -504,6 +527,9 @@ test.describe('Luồng hợp đồng và chi tiền vật tư (mock dùng chung)
     await expect(page.getByRole('cell', { name: '1C26TAA' })).toBeVisible()
     const recordedInvoice = recordMaterialInvoiceInputSchema.parse(posts(`/contracts/${contractId}/invoices`)[0]?.body)
     expect([recordedInvoice.subtotal, recordedInvoice.vatAmount, recordedInvoice.total]).toEqual(['700000', '70000', '770000'])
+    // The stage defaults to the draft / signed copy waiting for the official invoice (C3).
+    expect(recordedInvoice.stage).toBe('draft')
+    await expect(page.getByRole('cell', { name: 'Nháp', exact: true })).toBeVisible()
     const invoiceId = state.invoices[0]?.id
 
     await page.getByRole('button', { name: 'Lập đề nghị chi' }).click()
@@ -514,7 +540,7 @@ test.describe('Luồng hợp đồng và chi tiền vật tư (mock dùng chung)
     await typeMoney(dialog.getByLabel(/Số tiền đề nghị chi/), '770.000')
     await dialog.getByRole('button', { name: 'Gửi đề nghị chi' }).click()
     await expect(dialog).toBeHidden()
-    await expect(page.getByRole('cell', { name: 'Chờ duyệt' })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'Chờ lập UNC' })).toBeVisible()
 
     const creates = posts(`/contracts/${contractId}/payment-requests`)
     expect(creates).toHaveLength(2)
@@ -525,6 +551,55 @@ test.describe('Luồng hợp đồng và chi tiền vật tư (mock dùng chung)
     })
   })
 
+  test('8b. kế toán cập nhật hóa đơn chính thức cho hóa đơn nháp', async ({ page }) => {
+    await openAs(page, 'accountant')
+    await expect(page.getByRole('cell', { name: 'Nháp', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Cập nhật hóa đơn chính thức' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Cập nhật hóa đơn chính thức' })
+    await dialog.locator('#official-file-input').setInputFiles(pdf('hoa-don-chinh-thuc.pdf'))
+    await dialog.getByRole('button', { name: 'Tải lên', exact: true }).click()
+    await expect(dialog.getByText('Đã tải lên tệp')).toBeVisible()
+    await dialog.getByRole('button', { name: 'Cập nhật hóa đơn chính thức' }).click()
+    await expect(dialog).toBeHidden()
+
+    await expect(page.getByRole('cell', { name: 'Chính thức', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Cập nhật hóa đơn chính thức' })).toHaveCount(0)
+    const call = posts(`/invoices/${state.invoices[0]?.id}/official`)[0]
+    expect(officializeMaterialInvoiceInputSchema.parse(call?.body)).toMatchObject({ expectedVersion: 1 })
+  })
+
+  test('8c. tệp hóa đơn chính thức bị từ chối thì phải chọn tệp khác', async ({ page }) => {
+    // 8b already officialized the invoice, so put it back to a draft for this scenario.
+    const draft = materialInvoiceViewSchema.parse({ ...state.invoices[0], stage: 'draft', officialFileId: null, officializedAt: null, version: 1 })
+    state.invoices[0] = draft
+    state.refuseNextOfficialFile = true
+    await openAs(page, 'accountant')
+    await page.getByRole('button', { name: 'Cập nhật hóa đơn chính thức' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Cập nhật hóa đơn chính thức' })
+    await dialog.locator('#official-file-input').setInputFiles(pdf('hoa-don-loi.pdf'))
+    await dialog.getByRole('button', { name: 'Tải lên', exact: true }).click()
+    await expect(dialog.getByText('Đã tải lên tệp')).toBeVisible()
+    const confirm = dialog.getByRole('button', { name: 'Cập nhật hóa đơn chính thức' })
+    await confirm.click()
+
+    // The refused file is dropped: nothing to resend until another file is uploaded.
+    await expect(dialog.getByRole('alert')).toContainText('Vui lòng chọn lại tệp')
+    await expect(dialog.getByText('Đã tải lên tệp')).toHaveCount(0)
+    await expect(confirm).toBeDisabled()
+    await expect(dialog.getByText('Tệp:')).toHaveCount(0)
+
+    await dialog.locator('#official-file-input').setInputFiles(pdf('hoa-don-dung.pdf'))
+    await dialog.getByRole('button', { name: 'Tải lên', exact: true }).click()
+    await expect(dialog.getByText('Đã tải lên tệp')).toBeVisible()
+    await confirm.click()
+    await expect(dialog).toBeHidden()
+    await expect(page.getByRole('cell', { name: 'Chính thức', exact: true })).toBeVisible()
+    const attempts = posts(`/invoices/${draft.id}/official`)
+    expect(attempts.length).toBeGreaterThanOrEqual(2)
+    const bodies = attempts.slice(-2).map(call => officializeMaterialInvoiceInputSchema.parse(call.body).officialFileId)
+    expect(bodies[0]).not.toBe(bodies[1])
+  })
+
   // The server gate that lets finance-only roles read orders is covered by unit tests
   // (material-orders.spec.ts) and pgTAP (c1_material_finance_access); this checks the page.
   test('9. giám đốc chỉ có quyền xem số liệu mở được trang đơn, thấy hợp đồng nhưng không có thao tác', async ({ page }) => {
@@ -532,7 +607,7 @@ test.describe('Luồng hợp đồng và chi tiền vật tư (mock dùng chung)
     await expect(page.getByTestId('contract-summary')).toBeVisible()
     await expect(page.getByTestId('total-committed')).toContainText('1.100.000')
     await expect(page.getByRole('cell', { name: '1C26TAA' })).toBeVisible()
-    for (const action of ['Lập đề nghị chi', 'Nhập hóa đơn', 'Duyệt', 'Trả lại', 'Ghi chi', 'Thêm phụ lục']) {
+    for (const action of ['Lập đề nghị chi', 'Nhập hóa đơn', 'Xác nhận đã lập UNC / đã chi tiền mặt', 'Xác nhận đã lập UNC', 'Trả lại', 'Cập nhật biên lai chuyển khoản', 'Thêm phụ lục']) {
       await expect(page.getByRole('button', { name: action, exact: true })).toHaveCount(0)
     }
   })

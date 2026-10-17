@@ -7,7 +7,7 @@ const scriptPath = resolve('scripts/run-c1-cloud-dev-tests.mjs')
 const materialPaths = [
   'c1_material_procurement_security.test.sql',
   'c1_material_procurement_a1.test.sql',
-  'c1_material_engineer_invoice_name.test.sql',
+  'c1_material_invoice_name_removal.test.sql',
   'c1_material_finance_foundation.test.sql',
   'c1_material_contracts.test.sql',
   'c1_material_payments.test.sql',
@@ -17,6 +17,7 @@ const materialPaths = [
   'c1_material_order_inline_supplier.test.sql',
   'c1_material_small_order_contracts.test.sql',
   'c1_material_small_order_payments.test.sql',
+  'c1_material_flow_adjustments.test.sql',
 ]
 
 it('selects only rollback material SQL through the guarded C1 runner', async () => {

@@ -17,7 +17,21 @@ it('grants the approved accountant and treasurer finance roles in one A1 Alpha t
     for (const permission of ['material.read', 'material.finance.read', 'material.contract.record', 'material.payment.request', 'material.payment.approve', 'material.payment.execute']) {
       expect(sql).toContain(`'${permission}'`)
     }
-    expect(sql).not.toMatch(/\b(?:delete|update|drop|truncate)\b/i)
+    const accountantRole = 'a1000000-0000-4000-8000-000000000033'
+    const treasurerRole = 'a1000000-0000-4000-8000-000000000034'
+    expect(sql).toContain(`('${accountantRole}','material.payment.execute')`)
+    expect(sql).not.toContain(`('${treasurerRole}','material.payment.execute')`)
+    // The only delete trims surplus permissions from exactly these two fixture roles.
+    const statements = sql.replace(/--.*$/gm, '')
+    const deletes = statements.match(/\bdelete\b[^;]*;/gi) ?? []
+    expect(deletes).not.toHaveLength(0)
+    for (const statement of deletes) {
+      expect(statement).toMatch(/^delete\s+from\s+public\.role_permissions\b/i)
+      expect(statement).toContain(`role_id in ('${accountantRole}','${treasurerRole}')`)
+    }
+    expect(sql).toMatch(/role_id='a1000000-0000-4000-8000-000000000033'\) <> 5/)
+    expect(sql).toMatch(/role_id='a1000000-0000-4000-8000-000000000034'\) <> 3/)
+    expect(statements).not.toMatch(/\b(?:update|drop|truncate)\b/i)
     return { status: 0, stdout: '', stderr: '' }
   })
   fixture.runMaterialA4A5FinanceActors({ cwd: process.cwd(), env: {}, assertTarget: target, createCliEnvironment: () => dedicated, spawn })

@@ -135,7 +135,7 @@ describe('material evidence uploader', () => {
 
   it('rejects a MIME type the evidence role does not allow before any intent or upload', async () => {
     for (const [role, name, type] of [
-      ['invoice', 'hoa-don.png', 'image/png'],
+      ['invoice', 'hoa-don.gif', 'image/gif'],
       ['payment_proof', 'unc.xml', 'application/xml'],
       ['contract_amendment', 'phu-luc.xml', 'text/xml'],
     ] as const) {

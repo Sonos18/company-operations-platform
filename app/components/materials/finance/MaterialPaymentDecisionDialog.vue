@@ -1,7 +1,7 @@
 <template>
   <UModal
     :open="open && Boolean(request)"
-    :title="decision === 'approve' ? 'Phê duyệt đề nghị chi' : 'Trả lại đề nghị chi'"
+    :title="decision === 'approve' ? approveLabel : 'Trả lại đề nghị chi'"
     :description="request ? `Đề nghị chi lần ${request.revisionNo} - Số tiền: ${formatVnNumber(request.amount)}` : ''"
     :dismissible="!isSubmitting"
     @update:open="onOpenChange"
@@ -98,7 +98,7 @@
           :disabled="!canSubmit"
           @click="submitDecision"
         >
-          {{ decision === 'approve' ? 'Xác nhận duyệt' : 'Xác nhận trả lại' }}
+          {{ decision === 'approve' ? approveLabel : 'Xác nhận trả lại' }}
         </UButton>
       </div>
     </template>
@@ -113,6 +113,7 @@ import type {
 } from '../../../../shared/schemas/costs/material-finance'
 import { formatDateTime } from '../../../utils/materials/date-display'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
+import { approveActionLabel } from '../../../utils/materials/payment-request-labels'
 import {
   financeErrorMessage,
   isVersionConflict,
@@ -127,10 +128,13 @@ interface Props {
   open: boolean
   /** Owned by the panel (scoped per request) so the key survives closing and reopening. */
   commandKey: CommandKeyKeeper
+  /** Cash is possible only for small orders; the approve wording names it only then. */
+  allowCash?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   initialDecision: 'approve',
+  allowCash: false,
 })
 
 const emit = defineEmits<{
@@ -158,6 +162,8 @@ watch(
   },
   { immediate: true },
 )
+
+const approveLabel = computed(() => approveActionLabel(props.allowCash))
 
 const reasonMissing = computed(() => decision.value === 'return' && !reason.value.trim())
 

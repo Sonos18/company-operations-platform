@@ -58,6 +58,12 @@ describe('financeErrorMessage', () => {
     expect(message).toMatch(/[ạảãàáâấầẩẫậăắằẳẵặẹẻẽèéêếềểễệỉịọỏõòóôốồổỗộơớờởỡợụủũùúưứừửữựỳỵỷỹđ]/i)
   })
 
+  it('words SELF_DECISION_FORBIDDEN for the approve or return decision only', () => {
+    const message = financeErrorMessage(clientError('SELF_DECISION_FORBIDDEN', false), 'fallback')
+    expect(message).toContain('xác nhận đã lập UNC hoặc trả lại')
+    expect(message).not.toContain('ghi chi')
+  })
+
   it('uses the client error message for unmapped codes and the fallback for other errors', () => {
     expect(financeErrorMessage(clientError('INTERNAL_ERROR', true), 'fallback')).toBe('server text')
     expect(financeErrorMessage(new Error('boom'), 'fallback')).toBe('fallback')

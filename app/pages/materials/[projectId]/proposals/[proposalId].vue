@@ -28,7 +28,7 @@
       <button
         v-if="decisionRefreshRejected"
         type="button"
-        :disabled="isLoading || isBuyerBusy || isOrderBusy"
+        :disabled="isLoading || isOrderBusy"
         @click="loadProposal(true)"
       >
         Tải lại phiếu
@@ -36,8 +36,8 @@
       <button
         v-else-if="orderRefreshRejected"
         type="button"
-        :disabled="isLoading || isBuyerBusy || isDecisionBusy"
-        @click="loadProposal(true, undefined, true)"
+        :disabled="isLoading || isDecisionBusy"
+        @click="loadProposal(true, true)"
       >
         Tải lại phiếu
       </button>
@@ -46,18 +46,6 @@
     <!-- Shape Error Alert for Returned state -->
     <div v-if="shapeErrorMessage" class="cockpit-alert cockpit-alert--danger" role="alert">
       {{ shapeErrorMessage }}
-    </div>
-
-    <div v-if="unresolvedBuyer" class="cockpit-alert cockpit-alert--danger" role="alert">
-      <p>{{ lineActionErrors[unresolvedBuyer.lineId] || 'Chưa xác định được dữ liệu tên trên HĐ mới nhất.' }}</p>
-      <button
-        type="button"
-        :disabled="isBuyerBusy || isDecisionBusy || isOrderBusy || orderRefreshRejected || isLoading ||
-          !isCurrentParentScope(unresolvedBuyer) || !canManageOrders"
-        @click="recoverBuyerOverride"
-      >
-        {{ unresolvedBuyer.phase === 'unknown' ? 'Thử lại lệnh vừa gửi' : 'Tải lại phiếu' }}
-      </button>
     </div>
 
     <!-- Loading State -->
@@ -162,7 +150,6 @@
               <tr>
                 <th scope="col" style="width: 40px;">STT</th>
                 <th scope="col">Tên vật tư chuẩn</th>
-                <th scope="col" style="min-width: 180px;">Tên dự kiến trên HĐ</th>
                 <th scope="col">Quy cách chuẩn</th>
                 <th scope="col" style="width: 100px;">Đơn vị</th>
                 <th scope="col" style="min-width: 120px;">Số lượng yêu cầu</th>
@@ -178,89 +165,6 @@
                 <td>
                   <span class="font-medium text-slate-900 block">{{ line.materialName }}</span>
                   <span v-if="isLineSigned(line)" class="signed-badge">Đã ký HĐ</span>
-                </td>
-                <td>
-                  <!-- Inline edit mode in place: ONLY when line is eligible AND activeEditLineId matches -->
-                  <div v-if="isBuyerInvoiceNameEditable(line) && activeEditLineId === line.lineId" class="flex items-center gap-1">
-                    <input
-                      :id="'buyer-cell-input-' + line.lineId"
-                      v-model="buyerInputMap[line.lineId]"
-                      type="text"
-                      class="cockpit-input text-xs flex-1 py-1 px-2"
-                      placeholder="Nhập tên mới hoặc để trống để xóa..."
-                      maxlength="200"
-                      :disabled="buyerControlsDisabled"
-                      :aria-label="'Tên dự kiến trên HĐ dòng ' + (index + 1)"
-                      @keydown.enter.prevent="saveBuyerOverride(line)"
-                      @keydown.esc.prevent="cancelBuyerEdit"
-                    >
-                    <button
-                      type="button"
-                      class="inline-flex items-center justify-center w-7 h-7 rounded bg-sky-600 hover:bg-sky-700 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50 transition-colors shrink-0"
-                      :disabled="buyerControlsDisabled"
-                      title="Lưu"
-                      :aria-label="'Lưu tên dự kiến dòng ' + (index + 1)"
-                      @click="saveBuyerOverride(line)"
-                    >
-                      <UIcon v-if="updatingLineId === line.lineId && isBuyerBusy" name="i-lucide-loader-2" class="animate-spin text-xs" aria-hidden="true" />
-                      <UIcon v-else name="i-lucide-check" class="text-xs" aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      class="inline-flex items-center justify-center w-7 h-7 rounded border border-slate-300 hover:bg-slate-100 text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:opacity-50 transition-colors shrink-0"
-                      :disabled="buyerControlsDisabled"
-                      title="Hủy"
-                      :aria-label="'Hủy chỉnh sửa dòng ' + (index + 1)"
-                      @click="cancelBuyerEdit"
-                    >
-                      <UIcon name="i-lucide-x" class="text-xs" aria-hidden="true" />
-                    </button>
-                  </div>
-
-                  <!-- Display mode: in all other cases -->
-                  <div v-else class="flex items-center gap-1.5">
-                    <span
-                      class="text-slate-800 break-words flex-1"
-                      :title="'Tên dự kiến trên HĐ (' + sourceBadgeLabel(line.invoiceDisplayNameSource) + ')'"
-                      :aria-label="'Tên dự kiến trên HĐ: ' + (line.effectiveInvoiceDisplayName || line.materialName) + ' (' + sourceBadgeLabel(line.invoiceDisplayNameSource) + ')'"
-                    >
-                      {{ line.effectiveInvoiceDisplayName || line.materialName }}
-                    </span>
-
-                    <!-- Buyer edit trigger when editable -->
-                    <button
-                      v-if="isBuyerInvoiceNameEditable(line)"
-                      type="button"
-                      class="inline-flex items-center justify-center w-7 h-7 -my-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-colors shrink-0"
-                      :disabled="buyerControlsDisabled"
-                      title="Sửa tên dự kiến trên HĐ"
-                      :aria-label="'Sửa tên dự kiến trên HĐ dòng ' + (index + 1)"
-                      @click="startBuyerEdit(line)"
-                    >
-                      <UIcon name="i-lucide-pencil" class="text-xs" aria-hidden="true" />
-                    </button>
-
-                    <!-- Locked indicator when line enters order -->
-                    <span
-                      v-else-if="canManageOrders && isSubmittedOrApproved && proposal?.currentRevisionId && !line.buyerInvoiceNameEditable"
-                      class="inline-flex items-center justify-center w-7 h-7 -my-1 text-slate-400 shrink-0"
-                      title="Đã vào đơn mua hàng: không thể chỉnh sửa"
-                      :aria-label="'Đã vào đơn mua hàng: không thể chỉnh sửa dòng ' + (index + 1)"
-                    >
-                      <UIcon name="i-lucide-lock" class="text-xs" aria-hidden="true" />
-                    </span>
-                  </div>
-
-                  <!-- Per-line action error rendered beneath cell content -->
-                  <div
-                    v-if="lineActionErrors[line.lineId]"
-                    :id="'line-action-error-' + line.lineId"
-                    class="field-error block mt-1 text-xs text-rose-600 font-normal"
-                    role="alert"
-                    aria-live="polite"
-                  >
-                    {{ lineActionErrors[line.lineId] }}
-                  </div>
                 </td>
                 <td class="text-muted text-sm">{{ line.specification }}</td>
                 <td>
@@ -314,7 +218,6 @@ import { createAsyncRequestTracker } from '../../../../utils/costs/async-request
 import { formatMaterialQuantity } from '../../../../utils/materials/quantity-display'
 import { formatDate } from '../../../../utils/materials/date-display'
 import { materialContractLabel, materialRecordedOrdersText } from '../../../../utils/materials/contract-label'
-import { ClientError } from '../../../../errors/client-error'
 import MaterialProposalForm from '../../../../components/materials/MaterialProposalForm.vue'
 import MaterialProposalDecisionPanel from '../../../../components/materials/MaterialProposalDecisionPanel.vue'
 import MaterialOrderCreatePanel from '../../../../components/materials/MaterialOrderCreatePanel.vue'
@@ -386,43 +289,8 @@ const canManageOrders = computed(() => {
   return Boolean(companyAccess?.hasPermission('material.order.manage'))
 })
 
-const isSubmittedOrApproved = computed(() => {
-  if (!proposal.value) return false
-  return proposal.value.reviewState === 'submitted' || proposal.value.reviewState === 'approved'
-})
-
-function isBuyerInvoiceNameEditable(line: MaterialProposalLineView): boolean {
-  return Boolean(
-    canManageOrders.value &&
-    isSubmittedOrApproved.value &&
-    proposal.value?.currentRevisionId &&
-    line.buyerInvoiceNameEditable,
-  )
-}
-
-type BuyerMutationScope = ParentScope & { revisionId: string; lineId: string }
-type BuyerCommand = Readonly<BuyerMutationScope & {
-  proposedInvoiceName: string | null
-  expectedOverrideVersion: number
-  idempotencyKey: string
-  phase: 'unknown' | 'acknowledged' | 'rejected'
-}>
-
-const buyerMutationTracker = createAsyncRequestTracker<BuyerMutationScope>()
 let isDisposed = false
 
-const isBuyerBusy = ref(false)
-const updatingLineId = ref<string | null>(null)
-const activeEditLineId = ref<string | null>(null)
-const buyerInputMap = ref<Record<string, string>>({})
-const lineActionErrors = ref<Record<string, string>>({})
-
-interface BuyerCommandTracker {
-  idempotencyKey: string
-  lastSignature: string
-}
-const buyerTrackers = ref<Record<string, BuyerCommandTracker>>({})
-const unresolvedBuyer = ref<BuyerCommand | null>(null)
 const contextEpoch = ref(0)
 const isDecisionBusy = ref(false)
 const decisionRefreshRejected = ref(false)
@@ -432,16 +300,12 @@ const decisionPanelWrapperRef = ref<HTMLElement | null>(null)
 const canReadPermission = computed(() => Boolean(companyAccess?.hasPermission('material.read')))
 const canDecidePermission = computed(() => Boolean(companyAccess?.hasPermission('material.proposal.decide')))
 const canSupplierRecordPermission = computed(() => Boolean(companyAccess?.hasPermission('material.supplier.record')))
-const buyerControlsDisabled = computed(() =>
-  isBuyerBusy.value || isDecisionBusy.value || isOrderBusy.value || orderRefreshRejected.value ||
-  isLoading.value || Boolean(unresolvedBuyer.value),
-)
 const isDecisionDisabled = computed(() =>
-  isLoading.value || isBuyerBusy.value || Boolean(unresolvedBuyer.value) ||
+  isLoading.value ||
   isOrderBusy.value || orderRefreshRejected.value,
 )
 const orderControlsDisabled = computed(() =>
-  isLoading.value || isBuyerBusy.value || Boolean(unresolvedBuyer.value) ||
+  isLoading.value ||
   isDecisionBusy.value || decisionRefreshRejected.value ||
   orderRefreshRejected.value,
 )
@@ -494,10 +358,9 @@ const decisionListeners = computed(() => {
     event.projectId === scope.projectId && event.proposalId === scope.proposalId
   return {
     busy(event: DecisionEventScope & { value: boolean }) {
-      if (!accepts(event) || unresolvedBuyer.value || isBuyerBusy.value || isOrderBusy.value || orderRefreshRejected.value) return
+      if (!accepts(event) || isOrderBusy.value || orderRefreshRejected.value) return
       if (event.value) {
         tracker.invalidate()
-        buyerMutationTracker.invalidate()
         isLoading.value = false
         isDecisionBusy.value = true
       } else if (!decisionRefreshRejected.value) {
@@ -505,7 +368,7 @@ const decisionListeners = computed(() => {
       }
     },
     refreshed(event: DecisionEventScope & { proposal: MaterialProposalView }) {
-      if (!accepts(event) || !isDecisionBusy.value || unresolvedBuyer.value || isOrderBusy.value || orderRefreshRejected.value) return
+      if (!accepts(event) || !isDecisionBusy.value || isOrderBusy.value || orderRefreshRejected.value) return
       try {
         assertCanonicalProposal(event.proposal, scope)
       } catch (err) {
@@ -514,9 +377,7 @@ const decisionListeners = computed(() => {
         return
       }
       tracker.invalidate()
-      buyerMutationTracker.invalidate()
       proposal.value = event.proposal
-      resetBuyerState()
       decisionRefreshRejected.value = false
       errorMessage.value = ''
       shapeErrorMessage.value = ''
@@ -543,15 +404,12 @@ const orderListeners = computed(() => {
       if (!accepts()) return
       if (val) {
         if (
-          isBuyerBusy.value ||
-          Boolean(unresolvedBuyer.value) ||
           isDecisionBusy.value ||
           decisionRefreshRejected.value
         ) {
           return
         }
         tracker.invalidate()
-        buyerMutationTracker.invalidate()
         isLoading.value = false
         isOrderBusy.value = true
       } else {
@@ -563,8 +421,6 @@ const orderListeners = computed(() => {
     canonical(newProposal: MaterialProposalView) {
       if (!accepts() || !isOrderBusy.value) return
       if (
-        isBuyerBusy.value ||
-        Boolean(unresolvedBuyer.value) ||
         isDecisionBusy.value ||
         decisionRefreshRejected.value
       ) {
@@ -580,9 +436,7 @@ const orderListeners = computed(() => {
       }
 
       tracker.invalidate()
-      buyerMutationTracker.invalidate()
       proposal.value = newProposal
-      resetBuyerState()
       orderRefreshRejected.value = false
       errorMessage.value = ''
       shapeErrorMessage.value = ''
@@ -606,8 +460,6 @@ const orderListeners = computed(() => {
         return
       }
       if (
-        isBuyerBusy.value ||
-        Boolean(unresolvedBuyer.value) ||
         isDecisionBusy.value ||
         decisionRefreshRejected.value ||
         isOrderBusy.value ||
@@ -621,8 +473,6 @@ const orderListeners = computed(() => {
       if (
         !isCurrentParentScope(scope) ||
         !canDecidePermission.value ||
-        isBuyerBusy.value ||
-        Boolean(unresolvedBuyer.value) ||
         isDecisionBusy.value ||
         decisionRefreshRejected.value ||
         isOrderBusy.value ||
@@ -650,250 +500,6 @@ const orderListeners = computed(() => {
     },
   }
 })
-
-function getBuyerCommandSignature(
-  companyId: string,
-  projectId: string,
-  proposalId: string,
-  lineId: string,
-  revisionId: string,
-  name: string | null,
-  expectedVersion: number,
-): string {
-  return JSON.stringify({
-    companyId,
-    projectId,
-    proposalId,
-    lineId,
-    revisionId,
-    name,
-    expectedVersion,
-  })
-}
-
-function getBuyerIdempotencyKey(lineId: string, signature: string): string {
-  const current = buyerTrackers.value[lineId]
-  if (current && current.lastSignature === signature) {
-    return current.idempotencyKey
-  }
-  const newKey = crypto.randomUUID()
-  buyerTrackers.value[lineId] = {
-    idempotencyKey: newKey,
-    lastSignature: signature,
-  }
-  return newKey
-}
-
-function resetBuyerState() {
-  isBuyerBusy.value = false
-  updatingLineId.value = null
-  activeEditLineId.value = null
-  buyerInputMap.value = {}
-  lineActionErrors.value = {}
-  buyerTrackers.value = {}
-  unresolvedBuyer.value = null
-}
-
-function startBuyerEdit(line: MaterialProposalLineView) {
-  const scope = captureParentScope()
-  if (buyerControlsDisabled.value || !isCurrentParentScope(scope) || !canManageOrders.value) return
-  if (!isBuyerInvoiceNameEditable(line)) return
-  activeEditLineId.value = line.lineId
-  buyerInputMap.value[line.lineId] = line.effectiveInvoiceDisplayName || line.materialName || ''
-  delete lineActionErrors.value[line.lineId]
-  nextTick(() => {
-    if (!isCurrentParentScope(scope) || !canManageOrders.value ||
-        buyerControlsDisabled.value || activeEditLineId.value !== line.lineId) return
-    const el = document.getElementById(`buyer-cell-input-${line.lineId}`)
-    if (el) {
-      ;(el as HTMLInputElement).focus()
-      ;(el as HTMLInputElement).select()
-    }
-  })
-}
-
-function cancelBuyerEdit() {
-  if (buyerControlsDisabled.value || !isCurrentParentScope(captureParentScope()) || !canManageOrders.value) return
-  activeEditLineId.value = null
-}
-
-function sourceBadgeLabel(source?: string | null): string {
-  switch (source) {
-    case 'buyer': return 'Buyer ghi đè'
-    case 'engineer': return 'Kỹ sư đề xuất'
-    case 'canonical': return 'Tên chuẩn'
-    default: return 'Tên chuẩn'
-  }
-}
-
-async function executeBuyerOverride(line: MaterialProposalLineView, rawInput: string | null) {
-  const scope = captureParentScope()
-  if (buyerControlsDisabled.value || !isCurrentParentScope(scope) || !canManageOrders.value) return
-  const revisionId = proposal.value?.currentRevisionId
-  const lineId = line.lineId
-  if (!revisionId) return
-
-  if (!isBuyerInvoiceNameEditable(line)) {
-    lineActionErrors.value[lineId] = 'Dòng vật tư đã vào đơn mua hàng hoặc không thể chỉnh sửa.'
-    return
-  }
-
-  const normalizedName = rawInput ? rawInput.trim() : null
-  const payloadName = (normalizedName && normalizedName.length > 0) ? normalizedName : null
-  if (payloadName && payloadName.length > 200) {
-    lineActionErrors.value[lineId] = 'Tên dự kiến trên hóa đơn không được vượt quá 200 ký tự.'
-    return
-  }
-
-  const expectedVersion = line.buyerOverrideVersion
-  const signature = getBuyerCommandSignature(
-    scope.companyId, scope.projectId, scope.proposalId, lineId,
-    revisionId, payloadName, expectedVersion,
-  )
-  const idempotencyKey = getBuyerIdempotencyKey(lineId, signature)
-  const command: BuyerCommand = Object.freeze({
-    ...scope, revisionId, lineId,
-    proposedInvoiceName: payloadName,
-    expectedOverrideVersion: expectedVersion,
-    idempotencyKey,
-    phase: 'unknown',
-  })
-  await dispatchBuyerOverride(command)
-}
-
-async function dispatchBuyerOverride(command: BuyerCommand) {
-  if (command.phase !== 'unknown' || isBuyerBusy.value || isDecisionBusy.value || isOrderBusy.value || orderRefreshRejected.value || isLoading.value ||
-      !isCurrentParentScope(command) || !canManageOrders.value ||
-      (unresolvedBuyer.value && unresolvedBuyer.value !== command)) return
-
-  tracker.invalidate()
-  const token = buyerMutationTracker.start(command)
-  const isCurrent = () => token.isCurrent() && isCurrentParentScope(command) && canManageOrders.value
-  unresolvedBuyer.value = command
-  isBuyerBusy.value = true
-  updatingLineId.value = command.lineId
-  delete lineActionErrors.value[command.lineId]
-
-  try {
-    try {
-      await repo.setBuyerInvoiceName(
-        command.projectId, command.proposalId, command.lineId,
-        {
-          revisionId: command.revisionId,
-          proposedInvoiceName: command.proposedInvoiceName,
-          expectedOverrideVersion: command.expectedOverrideVersion,
-        },
-        { idempotencyKey: command.idempotencyKey },
-      )
-      if (!isCurrent()) return
-      unresolvedBuyer.value = Object.freeze({ ...command, phase: 'acknowledged' })
-    } catch (err: unknown) {
-      if (!isCurrent()) return
-      const isConflict = err instanceof ClientError &&
-        (err.code === 'VERSION_CONFLICT' || err.code === 'IDEMPOTENCY_CONFLICT' || err.code === 'HISTORY_IMMUTABLE')
-      lineActionErrors.value[command.lineId] = err instanceof Error
-        ? err.message : 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.'
-      if (isConflict) {
-        if (err.code === 'HISTORY_IMMUTABLE') {
-          lineActionErrors.value[command.lineId] = 'Không thể chỉnh sửa: Dòng vật tư đã vào đơn mua hàng hoặc lịch sử đã đóng.'
-        } else if (err.code === 'IDEMPOTENCY_CONFLICT') {
-          lineActionErrors.value[command.lineId] = 'Xung đột yêu cầu trùng lặp với nội dung khác nhau. Vui lòng thử lại.'
-        } else {
-          lineActionErrors.value[command.lineId] = 'Xung đột dữ liệu: Tên dự kiến hoặc đơn hàng đã thay đổi trên hệ thống.'
-        }
-        unresolvedBuyer.value = Object.freeze({ ...command, phase: 'rejected' })
-      } else {
-        const isPreCommitRejection = err instanceof ClientError &&
-          (err.kind === 'authentication' || err.kind === 'authorization' || err.kind === 'validation' ||
-            err.code === 'AUTH_INVALID' || err.code === 'AUTH_REQUIRED' ||
-            err.code === 'INPUT_INVALID' || err.code === 'RESOURCE_NOT_FOUND' ||
-            err.code === 'COMPANY_CONTEXT_REQUIRED')
-        if (isPreCommitRejection) {
-          unresolvedBuyer.value = null
-          delete buyerTrackers.value[command.lineId]
-        }
-        return
-      }
-    }
-
-    if (!isCurrent()) return
-    const reloadOk = await loadProposal(true, command)
-    if (!isCurrent()) return
-    if (reloadOk) {
-      delete buyerTrackers.value[command.lineId]
-      unresolvedBuyer.value = null
-      if (activeEditLineId.value === command.lineId) activeEditLineId.value = null
-    } else {
-      lineActionErrors.value[command.lineId] = 'Chưa tải lại được phiếu từ máy chủ. Vui lòng thử lại.'
-    }
-  } finally {
-    if (isCurrent()) {
-      isBuyerBusy.value = false
-      updatingLineId.value = null
-    }
-  }
-}
-
-async function recoverBuyerOverride() {
-  const command = unresolvedBuyer.value
-  if (!command || isBuyerBusy.value || isDecisionBusy.value || isOrderBusy.value || orderRefreshRejected.value || isLoading.value ||
-      !isCurrentParentScope(command) || !canManageOrders.value) return
-  if (command.phase === 'unknown') {
-    await dispatchBuyerOverride(command)
-    return
-  }
-
-  const token = buyerMutationTracker.start(command)
-  const isCurrent = () => token.isCurrent() && isCurrentParentScope(command) && canManageOrders.value
-  isBuyerBusy.value = true
-  updatingLineId.value = command.lineId
-  try {
-    const ok = await loadProposal(true, command)
-    if (!isCurrent()) return
-    if (ok) {
-      delete buyerTrackers.value[command.lineId]
-      unresolvedBuyer.value = null
-      activeEditLineId.value = null
-    } else {
-      lineActionErrors.value[command.lineId] = 'Chưa tải lại được phiếu. Vui lòng thử lại.'
-    }
-  } finally {
-    if (isCurrent()) {
-      isBuyerBusy.value = false
-      updatingLineId.value = null
-    }
-  }
-}
-
-async function saveBuyerOverride(line: MaterialProposalLineView) {
-  if (buyerControlsDisabled.value || !isCurrentParentScope(captureParentScope()) || !canManageOrders.value) return
-  if (!isBuyerInvoiceNameEditable(line)) return
-
-  const lineId = line.lineId
-  const rawInput = buyerInputMap.value[lineId] ?? ''
-  const trimmedInput = rawInput.trim()
-  const currentDisplayed = (line.effectiveInvoiceDisplayName || line.materialName || '').trim()
-  const hasPendingRetry = Boolean(buyerTrackers.value[lineId]) || Boolean(lineActionErrors.value[lineId])
-
-  // Empty input: clear override if one existed or retry needed, otherwise no-op close
-  if (trimmedInput === '') {
-    if (line.buyerProposedInvoiceName === null && !hasPendingRetry) {
-      activeEditLineId.value = null
-      return
-    }
-    await executeBuyerOverride(line, null)
-    return
-  }
-
-  // Unchanged non-empty input without retry: no-op close
-  if (trimmedInput === currentDisplayed && !hasPendingRetry) {
-    activeEditLineId.value = null
-    return
-  }
-
-  // Changed content or retry: execute override
-  await executeBuyerOverride(line, trimmedInput)
-}
 
 const readOnlyNoticeMessage = computed(() => {
   if (!proposal.value) return ''
@@ -945,7 +551,7 @@ function statusBadgeClass(state: MaterialReviewState): string {
   }
 }
 
-async function loadProposal(silent = false, buyerCommand?: BuyerCommand, allowOrderRecovery = false): Promise<boolean> {
+async function loadProposal(silent = false, allowOrderRecovery = false): Promise<boolean> {
   const scope = captureParentScope()
   const recoveringDecision = decisionRefreshRejected.value
   const recoveringOrder = orderRefreshRejected.value && allowOrderRecovery
@@ -955,9 +561,6 @@ async function loadProposal(silent = false, buyerCommand?: BuyerCommand, allowOr
   }
   if (isDecisionBusy.value && !recoveringDecision) return false
   if ((isOrderBusy.value || orderRefreshRejected.value) && !recoveringOrder) return false
-  if (unresolvedBuyer.value &&
-      (unresolvedBuyer.value.phase === 'unknown' ||
-        buyerCommand?.idempotencyKey !== unresolvedBuyer.value.idempotencyKey)) return false
   const token = tracker.start(scope)
   if ((!silent && !proposal.value) || recoveringDecision || recoveringOrder) isLoading.value = true
   errorMessage.value = ''
@@ -969,18 +572,11 @@ async function loadProposal(silent = false, buyerCommand?: BuyerCommand, allowOr
     assertCanonicalProposal(data, scope)
     proposal.value = data
     if (recoveringDecision) {
-      buyerMutationTracker.invalidate()
-      resetBuyerState()
       decisionRefreshRejected.value = false
       isDecisionBusy.value = false
     } else if (recoveringOrder) {
-      buyerMutationTracker.invalidate()
-      resetBuyerState()
       orderRefreshRejected.value = false
       isOrderBusy.value = false
-    } else if (activeEditLineId.value) {
-      const line = data.lines.find(l => l.lineId === activeEditLineId.value)
-      if (!line || !isBuyerInvoiceNameEditable(line)) activeEditLineId.value = null
     }
     return true
   } catch (err: unknown) {
@@ -1014,12 +610,10 @@ watch([
 ], () => {
   contextEpoch.value++
   tracker.invalidate()
-  buyerMutationTracker.invalidate()
   isDecisionBusy.value = false
   decisionRefreshRejected.value = false
   isOrderBusy.value = false
   orderRefreshRejected.value = false
-  resetBuyerState()
   proposal.value = null
   errorMessage.value = ''
   shapeErrorMessage.value = ''
@@ -1034,8 +628,6 @@ onMounted(() => {
 onUnmounted(() => {
   isDisposed = true
   tracker.invalidate()
-  buyerMutationTracker.invalidate()
-  resetBuyerState()
   isDecisionBusy.value = false
   decisionRefreshRejected.value = false
   isOrderBusy.value = false

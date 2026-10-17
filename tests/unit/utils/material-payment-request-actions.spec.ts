@@ -14,9 +14,16 @@ describe('paymentRequestActions', () => {
   it('offers resubmit and cancel on returned requests to requesters', () => {
     expect(paymentRequestActions(r('returned'), 'u3', ['material.payment.request'])).toEqual(['resubmit', 'cancel'])
   })
-  it('offers record_payment on approved requests to an executor who did not submit', () => {
+  it('offers record_payment on approved requests to any executor, including the one who submitted', () => {
     expect(paymentRequestActions(r('approved'), 'u2', ['material.payment.execute'])).toEqual(['record_payment'])
-    expect(paymentRequestActions(r('approved'), 'u1', ['material.payment.execute'])).toEqual([])
+    expect(paymentRequestActions(r('approved'), 'u1', ['material.payment.execute'])).toEqual(['record_payment'])
+  })
+  it('lets an accountant who submitted a request also record its payment and cancel nothing else', () => {
+    expect(paymentRequestActions(r('approved'), 'u1', ['material.payment.request', 'material.payment.execute'])).toEqual(['record_payment'])
+  })
+  it('offers record_payment only with material.payment.execute', () => {
+    expect(paymentRequestActions(r('approved'), 'u2', ['material.payment.approve'])).toEqual(['cancel'])
+    expect(paymentRequestActions(r('approved'), 'u2', ['material.payment.request'])).toEqual([])
   })
   it('lets requesters cancel only submitted or returned requests, and approvers cancel approved ones', () => {
     expect(paymentRequestActions(r('submitted'), 'u1', ['material.payment.request'])).toEqual(['cancel'])
