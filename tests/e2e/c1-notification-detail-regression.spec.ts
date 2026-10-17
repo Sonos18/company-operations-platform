@@ -104,6 +104,16 @@ async function installRegression(page:Page,options:Options={}){
 }
 
 const detail='/costs/'+project+'/requests/'+requestId
+// Cost cards in the notification center mark the notification read and then open the approved snapshot.
+async function mockCostNotificationRead(page:Page){
+ const reads:string[]=[]
+ await page.route('**/api/companies/'+company+'/cost-notifications/*/read',route=>{
+  reads.push(new URL(route.request().url()).pathname)
+  return route.fulfill({json:{notificationId:newFileId,version:1,replayed:false}})
+ })
+ return reads
+}
+const openBell=(page:Page)=>page.getByRole('button',{name:/^Thông báo/}).click()
 type Kind='installment'|'contract_adjustment'|'refund'|'correction'
 const kinds:Kind[]=['installment','contract_adjustment','refund','correction']
 const labels={installment:'Chi tiết Đề nghị khoản chi',contract_adjustment:'Chi tiết Điều chỉnh hạn mức',refund:'Chi tiết Đề nghị hoàn tiền',correction:'Chi tiết Hiệu chỉnh tiền chi'}
@@ -124,6 +134,7 @@ async function installDetail(page:Page,kind:Kind,options:{mismatch?:boolean;hist
 for(const kind of kinds){
  test('notification opens exact '+kind+' submitted snapshot',async({page})=>{
   const mock=await installDetail(page,kind)
+  const reads=await mockCostNotificationRead(page)
   await page.route('**/api/companies/'+company+'/cost-notifications',route=>route.fulfill({json:[{id:newFileId,projectId:project,requestId,submittedVersionId:submittedVersion,kind,decisionId:refundId,recipientId:manager,deliveryState:'available',readAt:null,createdAt:'2026-10-05T00:00:00.000Z'}]}))
   await page.goto(detail+'?kind='+kind+'&submittedVersionId='+submittedVersion)
   await expect(page.getByRole('heading',{name:labels[kind],exact:true}).first()).toBeVisible()
@@ -137,11 +148,18 @@ for(const kind of kinds){
    await expect(page.getByRole('button',{name:'Ghi nhận thanh toán',exact:true})).toHaveCount(0)
    await expect(page.getByRole('button',{name:'Phê duyệt',exact:true})).toHaveCount(0)
   }
-  await page.getByRole('button',{name:'Thông báo phê duyệt khoản chi',exact:true}).click()
-  const link=page.getByRole('link',{name:'Xem hồ sơ đã duyệt',exact:true})
-  await expect(link).toBeVisible()
-  const href=await link.getAttribute('href'),url=new URL(href!,'http://localhost')
-  expect(url.pathname).toBe(detail);expect(url.searchParams.get('kind')).toBe(kind);expect(url.searchParams.get('submittedVersionId')).toBe(submittedVersion)
+  // Start on a different URL so the card click has to navigate to the exact snapshot by itself.
+  await page.goto(detail+'?kind='+kind+'&submittedVersionId='+newFileId)
+  await expect(page.getByText('Không tìm thấy đúng hồ sơ và phiên đã gửi trong liên kết.',{exact:true})).toBeVisible()
+  await openBell(page)
+  const card=page.getByTestId('cost-notification')
+  await expect(card).toHaveCount(1)
+  await card.click()
+  await expect(page).toHaveURL(detail+'?kind='+kind+'&submittedVersionId='+submittedVersion)
+  await expect(page.getByTestId('cost-notification')).toHaveCount(0)
+  await expect(page.getByRole('heading',{name:labels[kind],exact:true}).first()).toBeVisible()
+  await expect(page.getByText('Nội dung đang sửa',{exact:false})).toHaveCount(0)
+  expect(reads).toEqual(['/api/companies/'+company+'/cost-notifications/'+newFileId+'/read'])
   expect(mock.calls).toEqual([]);expect(mock.external).toEqual([])
  })
 }
@@ -168,8 +186,8 @@ test('query navigation clears a loaded adjustment before another kind loads',asy
  await page.route('**/api/companies/'+company+'/cost-notifications',route=>route.fulfill({json:[{id:newFileId,projectId:project,requestId,submittedVersionId:newFileId,kind:'correction',decisionId:refundId,recipientId:manager,deliveryState:'available',readAt:'2026-10-05T00:00:00.000Z',createdAt:'2026-10-05T00:00:00.000Z'}]}))
  await page.goto(detail+'?kind=refund&submittedVersionId='+submittedVersion)
  await expect(page.getByText('Lý do: Lý do phiên đã duyệt',{exact:true})).toBeVisible()
- await page.getByRole('button',{name:'Thông báo phê duyệt khoản chi',exact:true}).click()
- await page.getByRole('link',{name:'Xem hồ sơ đã duyệt',exact:true}).click()
+ await openBell(page)
+ await page.getByTestId('cost-notification').click()
  await expect(page).toHaveURL(new RegExp('kind=correction'))
  await expect(page.getByText('Không tìm thấy đúng hồ sơ và phiên đã gửi trong liên kết.',{exact:true})).toBeVisible()
  await expect(page.locator('[data-testid=cost-adjustment-detail]')).toHaveCount(0)
@@ -187,8 +205,8 @@ test('delayed old history cannot restore a snapshot after query-only navigation'
  await page.route('**/api/companies/'+company+'/cost-notifications',route=>route.fulfill({json:[{id:newFileId,projectId:project,requestId,submittedVersionId:newFileId,kind:'refund',decisionId:refundId,recipientId:manager,deliveryState:'available',readAt:'2026-10-05T00:00:00.000Z',createdAt:'2026-10-05T00:00:00.000Z'}]}))
  await page.goto(detail+'?kind=refund&submittedVersionId='+submittedVersion)
  await expect.poll(()=>held).toBe(true)
- await page.getByRole('button',{name:'Thông báo phê duyệt khoản chi',exact:true}).click()
- await page.getByRole('link',{name:'Xem hồ sơ đã duyệt',exact:true}).click()
+ await openBell(page)
+ await page.getByTestId('cost-notification').click()
  await expect(page.getByText('Không tìm thấy đúng hồ sơ và phiên đã gửi trong liên kết.',{exact:true})).toBeVisible()
  release()
  await page.waitForLoadState('networkidle')

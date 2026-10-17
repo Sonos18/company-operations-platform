@@ -41,6 +41,7 @@ export const materialSyntheticPrefixes = {
   'c1_material_flow_adjustments.test.sql': 'c134',
   'c1_material_proposal_codes.test.sql': 'c135',
   'c1_material_proposal_notifications.test.sql': 'c136',
+  'c1_notifications_read_all.test.sql': 'c137',
 }
 
 const materialAllowlist = Object.keys(materialSyntheticPrefixes)

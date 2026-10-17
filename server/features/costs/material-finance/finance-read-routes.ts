@@ -1,10 +1,11 @@
 import type { H3Event } from 'h3'
 import { getQuery } from 'h3'
 import { z } from 'zod'
+import { notificationReadAllInputSchema } from '../../../../shared/schemas/costs/material-finance'
 import { c1RequestContext } from '../../c1-master-data/context'
 import { SupabaseMaterialFinanceReadRepository } from './finance-read-repository'
 import { MaterialFinanceReadService } from './finance-read-service'
-import { invalid, key, param } from './routes'
+import { body, invalid, key, param } from './routes'
 
 export interface MaterialFinanceReadRouteDependencies {
   resolveContext(event: H3Event, companyId: string): ReturnType<typeof c1RequestContext>
@@ -51,6 +52,10 @@ export function createMaterialFinanceReadRoutes(dependencies: MaterialFinanceRea
     async readNotification(event: H3Event) {
       const value = await resolved(event)
       return value.service.readNotification(value.context, param(event, 'notificationId'), key(event))
+    },
+    async readAllNotifications(event: H3Event) {
+      const value = await resolved(event)
+      return value.service.readAllNotifications(value.context, await body(event, notificationReadAllInputSchema))
     },
   }
 }

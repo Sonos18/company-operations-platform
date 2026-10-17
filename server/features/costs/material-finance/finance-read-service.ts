@@ -3,11 +3,14 @@ import {
   appNotificationPageSchema,
   materialFinanceCommandResultSchema,
   materialFinanceInboxSchema,
+  notificationReadAllResultSchema,
   projectMaterialFinanceSummarySchema,
   supplierMaterialFinanceSchema,
   type AppNotificationPage,
   type MaterialFinanceCommandResult,
   type MaterialFinanceInbox,
+  type NotificationReadAllInput,
+  type NotificationReadAllResult,
   type ProjectMaterialFinanceSummary,
   type SupplierMaterialFinance,
 } from '../../../../shared/schemas/costs/material-finance'
@@ -50,6 +53,7 @@ export interface MaterialFinanceReadDataRepository {
   inboxFacts(context: MaterialFinanceContext, projectId: string | null): Promise<MaterialFinanceInboxFacts>
   listNotifications(context: MaterialFinanceContext, cursor: string | null): Promise<AppNotificationPage>
   readNotification(context: MaterialFinanceContext, id: string, key: string): Promise<MaterialFinanceCommandResult>
+  readAllNotifications(context: MaterialFinanceContext, input: NotificationReadAllInput): Promise<NotificationReadAllResult>
 }
 
 function contractRow(contract: MaterialFinanceContractFacts, today: string) {
@@ -122,6 +126,10 @@ export class MaterialFinanceReadService {
 
   readNotification(context: MaterialFinanceContext, id: string, key: string): Promise<MaterialFinanceCommandResult> {
     return this.repository.readNotification(context, id, key).then(result => parse(materialFinanceCommandResultSchema, result))
+  }
+
+  readAllNotifications(context: MaterialFinanceContext, input: NotificationReadAllInput): Promise<NotificationReadAllResult> {
+    return this.repository.readAllNotifications(context, input).then(result => parse(notificationReadAllResultSchema, result))
   }
 
   private async dueInstallments(context: MaterialFinanceContext, projectId: string | null): Promise<MaterialFinanceInbox['dueInstallments']> {

@@ -209,11 +209,11 @@ test.describe('Chuông thông báo gộp', () => {
     const reads = await mockNotifications(page)
 
     await page.goto('/materials')
-    const bell = page.getByRole('button', { name: 'Thông báo phê duyệt khoản chi', exact: true })
-    await expect(bell.locator('.badge')).toHaveText('3')
+    const bell = page.getByRole('button', { name: /^Thông báo/ })
+    await expect(bell.getByTestId('notification-unread-count')).toHaveText('3')
 
     await bell.click()
-    const items = page.getByRole('region', { name: 'Danh sách thông báo' }).locator('li')
+    const items = page.getByRole('dialog', { name: 'Thông báo' }).getByRole('listitem')
     await expect(items).toHaveCount(3)
     // Newest first across both sources: material (10-15), C1 (10-12), material (10-10).
     await expect(items.nth(0)).toContainText('Đơn mua mới chờ hợp đồng')
@@ -234,10 +234,10 @@ test.describe('Chuông thông báo gộp', () => {
     await mockNotifications(page, { materialStatus: 500 })
 
     await page.goto('/materials')
-    const bell = page.getByRole('button', { name: 'Thông báo phê duyệt khoản chi', exact: true })
-    await expect(bell.locator('.badge')).toHaveText('1')
+    const bell = page.getByRole('button', { name: /^Thông báo/ })
+    await expect(bell.getByTestId('notification-unread-count')).toHaveText('1')
     await bell.click()
-    await expect(page.getByRole('region', { name: 'Danh sách thông báo' }).locator('li')).toHaveCount(1)
+    await expect(page.getByRole('dialog', { name: 'Thông báo' }).getByRole('listitem')).toHaveCount(1)
   })
 
   test('nguồn thông báo C1 lỗi vẫn hiện thông báo vật tư', async ({ page }) => {
@@ -246,8 +246,8 @@ test.describe('Chuông thông báo gộp', () => {
     await mockNotifications(page, { costStatus: 500 })
 
     await page.goto('/materials')
-    const bell = page.getByRole('button', { name: 'Thông báo phê duyệt khoản chi', exact: true })
-    await expect(bell.locator('.badge')).toHaveText('2')
+    const bell = page.getByRole('button', { name: /^Thông báo/ })
+    await expect(bell.getByTestId('notification-unread-count')).toHaveText('2')
     await bell.click()
     await expect(page.getByTestId('material-notification')).toHaveCount(2)
   })

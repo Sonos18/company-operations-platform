@@ -7535,6 +7535,14 @@ export type Database = {
         Args: { target_company_id: string; target_project_id: string }
         Returns: Json
       }
+      c1_mark_notifications_read_all: {
+        Args: {
+          target_company_id: string
+          target_cost_up_to: string
+          target_material_up_to: string
+        }
+        Returns: Json
+      }
       c1_material_amend_contract: {
         Args: {
           target_company_id: string

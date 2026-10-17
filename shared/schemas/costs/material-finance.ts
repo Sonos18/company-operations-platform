@@ -368,6 +368,17 @@ export const appNotificationPageSchema = z.object({
   nextCursor: z.string().min(1).max(200).nullable(),
 }).strict()
 
+// Cut-offs are the newest createdAt the client has seen per source; null means "mark nothing" for that source.
+export const notificationReadAllInputSchema = z.object({
+  materialUpTo: z.string().datetime({ offset: true }).nullable(),
+  costUpTo: z.string().datetime({ offset: true }).nullable(),
+}).strict()
+
+export const notificationReadAllResultSchema = z.object({
+  material: z.number().int().min(0),
+  cost: z.number().int().min(0),
+}).strict()
+
 export const materialFinanceCommandResultSchema = z.object({
   resourceId: uuid,
   version,
@@ -394,6 +405,7 @@ export const materialFinanceEndpointManifest = {
   suppliers: { method: 'GET', path: '/api/companies/:companyId/material-finance/suppliers' },
   listNotifications: { method: 'GET', path: '/api/companies/:companyId/notifications' },
   readNotification: { method: 'POST', path: '/api/companies/:companyId/notifications/:notificationId/read' },
+  readAllNotifications: { method: 'POST', path: '/api/companies/:companyId/notifications/read-all' },
 } as const
 
 export type MaterialInstallmentInput = z.infer<typeof materialInstallmentInputSchema>
@@ -418,6 +430,8 @@ export type SupplierMaterialFinance = z.infer<typeof supplierMaterialFinanceSche
 export type MaterialFinanceInbox = z.infer<typeof materialFinanceInboxSchema>
 export type AppNotificationView = z.infer<typeof appNotificationViewSchema>
 export type AppNotificationPage = z.infer<typeof appNotificationPageSchema>
+export type NotificationReadAllInput = z.infer<typeof notificationReadAllInputSchema>
+export type NotificationReadAllResult = z.infer<typeof notificationReadAllResultSchema>
 export type MaterialFinanceCommandResult = z.infer<typeof materialFinanceCommandResultSchema>
 export interface MaterialFinanceCommand { idempotencyKey: string }
 
@@ -440,4 +454,5 @@ export interface MaterialFinanceRepository {
   suppliers(): Promise<SupplierMaterialFinance>
   listNotifications(cursor?: string): Promise<AppNotificationPage>
   readNotification(notificationId: string, command: MaterialFinanceCommand): Promise<MaterialFinanceCommandResult>
+  readAllNotifications(input: NotificationReadAllInput): Promise<NotificationReadAllResult>
 }
