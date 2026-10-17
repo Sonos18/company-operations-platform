@@ -66,3 +66,31 @@ export function relativeTimeText(iso: string, now: Date): string {
   if (elapsedMs < RELATIVE_DAY_LIMIT * DAY_MS) return `${Math.floor(elapsedMs / DAY_MS)} ngày trước`
   return localDateText(new Date(iso))
 }
+
+/** Sub-millisecond part of an ISO timestamp in microseconds (0 to 999), which Date.parse drops. */
+function subMillisecondMicros(iso: string): number {
+  const fraction = /\.(\d+)/.exec(iso)?.[1]
+  if (!fraction) return 0
+  return Number(fraction.padEnd(6, '0').slice(3, 6))
+}
+
+/** True when `candidate` is a later instant than `current`, down to microseconds. */
+function isLaterInstant(candidate: string, current: string): boolean {
+  const difference = Date.parse(candidate) - Date.parse(current)
+  if (difference !== 0) return difference > 0
+  return subMillisecondMicros(candidate) > subMillisecondMicros(current)
+}
+
+/**
+ * Cut-off for "mark all as read": the exact `createdAt` string of the newest loaded notification of one source.
+ * The API returns microsecond precision, so the raw string is returned (never re-serialised through Date, which
+ * would truncate to milliseconds and leave the newest notification unread). A source that failed to load or is
+ * empty has no cut-off: null, so the server marks nothing for it.
+ */
+export function readAllCutoff(items: readonly { createdAt: string }[]): string | null {
+  let newest: string | null = null
+  for (const { createdAt } of items) {
+    if (newest === null || isLaterInstant(createdAt, newest)) newest = createdAt
+  }
+  return newest
+}

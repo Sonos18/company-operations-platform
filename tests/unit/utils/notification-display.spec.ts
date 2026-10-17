@@ -3,6 +3,7 @@ import {
   costNotificationBadge,
   fullDateTimeText,
   materialNotificationBadge,
+  readAllCutoff,
   relativeTimeText,
 } from '../../../app/utils/notifications/notification-display'
 
@@ -81,5 +82,39 @@ describe('relativeTimeText', () => {
 describe('fullDateTimeText', () => {
   it('formats the local date and time as dd/MM/yyyy HH:mm', () => {
     expect(fullDateTimeText(new Date(2026, 8, 7, 9, 5).toISOString())).toBe('07/09/2026 09:05')
+  })
+})
+
+describe('readAllCutoff', () => {
+  it('returns the raw microsecond string of the newest item, not a millisecond re-serialisation', () => {
+    const newest = '2026-10-17T10:00:00.123456+00:00'
+    const items = [
+      { createdAt: '2026-10-17T09:59:59.999999+00:00' },
+      { createdAt: newest },
+      { createdAt: '2026-10-17T09:00:00.500000+00:00' },
+    ]
+    expect(readAllCutoff(items)).toBe(newest)
+    expect(readAllCutoff(items)).not.toBe(new Date(newest).toISOString())
+  })
+
+  it('compares instants across offsets', () => {
+    const items = [
+      { createdAt: '2026-10-17T15:00:00.000001+07:00' },
+      { createdAt: '2026-10-17T09:00:00.000002+00:00' },
+    ]
+    expect(readAllCutoff(items)).toBe('2026-10-17T09:00:00.000002+00:00')
+  })
+
+  it('breaks a millisecond tie with the microseconds', () => {
+    const items = [
+      { createdAt: '2026-10-17T10:00:00.123456+00:00' },
+      { createdAt: '2026-10-17T10:00:00.123789+00:00' },
+      { createdAt: '2026-10-17T10:00:00.123100+00:00' },
+    ]
+    expect(readAllCutoff(items)).toBe('2026-10-17T10:00:00.123789+00:00')
+  })
+
+  it('returns null for an empty or failed source', () => {
+    expect(readAllCutoff([])).toBeNull()
   })
 })
