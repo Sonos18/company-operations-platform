@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readAllCutoff } from '../../../app/utils/notifications/notification-display'
 import { createRealtimeReloadGate } from '../../../app/utils/notifications/realtime-reload-gate'
-import { showLoadingPlaceholder, sourceAfterLoad } from '../../../app/utils/notifications/notification-list-refresh'
+import { markAllCutoffFor, showLoadingPlaceholder, sourceAfterLoad, staleAfterLoad } from '../../../app/utils/notifications/notification-list-refresh'
 
 // The bell is a Nuxt SFC and the repo runs unit tests in a node environment, so the bell's deferral wiring lives in this
 // gate. The bell calls signal() from the realtime composable and settled() when its own load / mark-all ends.
@@ -88,6 +89,19 @@ describe('createRealtimeReloadGate', () => {
     expect(reload).toHaveBeenCalledTimes(1)
   })
 
+  it('needs settled() to run after the busy flags are cleared: a call while still busy opens no window', () => {
+    const { gate, reload, setBusy } = setup()
+    setBusy(true)
+    gate.signal()
+    gate.settled()
+    setBusy(false)
+    vi.advanceTimersByTime(10_000)
+    expect(reload).not.toHaveBeenCalled()
+    gate.settled()
+    vi.advanceTimersByTime(1500)
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
   it('drops a pending request and the window on clear()', () => {
     const { gate, reload, setBusy, finish } = setup()
     setBusy(true)
@@ -120,5 +134,32 @@ describe('background reload rendering', () => {
     expect(sourceAfterLoad(cards, failed, true, [])).toEqual(cards)
     expect(sourceAfterLoad(cards, failed, false, [])).toEqual([])
     expect(sourceAfterLoad(cards, fresh, true, [])).toEqual(['c'])
+  })
+})
+
+describe('stale sources and mark-all cut-offs', () => {
+  const rows = [{ createdAt: '2026-10-17T08:00:00.000Z' }, { createdAt: '2026-10-17T09:00:00.000Z' }]
+  const failed: PromiseRejectedResult = { status: 'rejected', reason: new Error('offline') }
+  const fresh: PromiseFulfilledResult<unknown[]> = { status: 'fulfilled', value: [] }
+
+  it('marks a source stale after a failed background read and sends no cut-off for it', () => {
+    const stale = staleAfterLoad(failed, true)
+    expect(stale).toBe(true)
+    expect(markAllCutoffFor(stale, rows, readAllCutoff)).toBeNull()
+  })
+
+  it('sends the newest cut-off for a source that is not stale', () => {
+    expect(markAllCutoffFor(false, rows, readAllCutoff)).toBe('2026-10-17T09:00:00.000Z')
+  })
+
+  it('clears stale on the next successful read of that source', () => {
+    expect(staleAfterLoad(failed, true)).toBe(true)
+    expect(staleAfterLoad(fresh, true)).toBe(false)
+    expect(staleAfterLoad(fresh, false)).toBe(false)
+  })
+
+  it('does not mark a source stale after a failed user-started load, which empties it instead', () => {
+    expect(staleAfterLoad(failed, false)).toBe(false)
+    expect(markAllCutoffFor(false, [], readAllCutoff)).toBeNull()
   })
 })

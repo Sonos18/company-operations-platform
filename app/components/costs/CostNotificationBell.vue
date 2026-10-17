@@ -108,7 +108,7 @@ import {
   readAllCutoff,
 } from '../../utils/notifications/notification-display'
 import { createRealtimeReloadGate } from '../../utils/notifications/realtime-reload-gate'
-import { showLoadingPlaceholder, sourceAfterLoad } from '../../utils/notifications/notification-list-refresh'
+import { markAllCutoffFor, showLoadingPlaceholder, sourceAfterLoad, staleAfterLoad } from '../../utils/notifications/notification-list-refresh'
 import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
 import { useNotificationRealtime } from '../../composables/useNotificationRealtime'
 import NotificationCard from '../notifications/NotificationCard.vue'
@@ -127,6 +127,9 @@ const isOpen = ref(false)
 const loading = ref(false)
 // Whether the load in flight came from a realtime signal; the placeholder never replaces cards for those.
 const loadIsBackground = ref(false)
+// A source whose background read failed keeps its old cards but is stale: mark-all sends no cut-off for it.
+const costStale = ref(false)
+const materialStale = ref(false)
 const loadingMore = ref(false)
 const loadMoreFailed = ref(false)
 const markingAll = ref(false)
@@ -206,6 +209,7 @@ function clear() {
   isOpen.value = false; loading.value = false; loadingMore.value = false; loadMoreFailed.value = false
   markingAll.value = false; markAllFailed.value = false
   reloadGate.clear()
+  costStale.value = false; materialStale.value = false
   ackKeys.clear(); acknowledging.value = null
   materialAckKeys.clear(); openingMaterial.value = null; openingCost.value = false
 }
@@ -238,6 +242,8 @@ async function loadNotifications(options: { background?: boolean } = {}) {
     ])
     if (!token.isCurrent() || getFingerprint() !== fp) return
     notifications.value = sourceAfterLoad(notifications.value, costResult, background, [])
+    costStale.value = staleAfterLoad(costResult, background)
+    materialStale.value = staleAfterLoad(materialResult, background)
     const materialPage = sourceAfterLoad(
       { items: materialNotifications.value, nextCursor: materialCursor.value },
       materialResult,
@@ -278,8 +284,9 @@ async function loadMoreMaterial() {
   }
 }
 
-// Each source gets its own cut-off. A source that failed to load or is empty has no items, so its cut-off is null
-// and the server marks nothing for it.
+// Each source gets its own cut-off. A source that failed to load or is empty has no items, and a stale source (its last
+// background read failed, so its cards may be older than the server) is not trusted: the cut-off is null and the server
+// marks nothing for it (spec section 6).
 async function markAllRead() {
   if (!canRead.value || markingAll.value || loading.value || unreadCount.value === 0) return
   const fp = getFingerprint()
@@ -288,8 +295,8 @@ async function markAllRead() {
   markAllFailed.value = false
   try {
     await materialRepo.readAllNotifications({
-      materialUpTo: canReadMaterial.value ? readAllCutoff(materialNotifications.value) : null,
-      costUpTo: canReadCost.value ? readAllCutoff(notifications.value) : null,
+      materialUpTo: canReadMaterial.value ? markAllCutoffFor(materialStale.value, materialNotifications.value, readAllCutoff) : null,
+      costUpTo: canReadCost.value ? markAllCutoffFor(costStale.value, notifications.value, readAllCutoff) : null,
     })
     if (!token.isCurrent() || getFingerprint() !== fp) return
     await loadNotifications()
