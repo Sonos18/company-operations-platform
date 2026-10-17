@@ -96,6 +96,9 @@ function buildContract(state: FlowState): MaterialContractView | null {
     id: contractId,
     orderId,
     projectId,
+    projectName: 'Công trình Tòa nhà VQH',
+    proposalNo: 7,
+    orderSeq: 1,
     supplierId,
     supplierName,
     currencyCode: 'VND',
@@ -147,6 +150,9 @@ function buildOrder(state: FlowState): MaterialOrderView {
   const contract = buildContract(state)
   return materialOrderViewSchema.parse({
     id: orderId,
+    proposalNo: 7,
+    orderSeq: 1,
+    summary: { names: ['Thép cuộn phi 8'], total: 1 },
     version: contract ? 2 : 1,
     orderState: 'active',
     proposalId,
@@ -184,7 +190,7 @@ function buildSummary(state: FlowState): ProjectMaterialFinanceSummary {
     currencyCode: 'VND',
     totals: contract.totals,
     contracts: [{
-      contractId, projectId, orderId, supplierId, supplierName, contractNo: contract.contractNo, totals: contract.totals,
+      contractId, projectId, projectName: 'Công trình Tòa nhà VQH', proposalNo: 7, orderSeq: 1, orderId, supplierId, supplierName, contractNo: contract.contractNo, totals: contract.totals,
     }],
   })
 }

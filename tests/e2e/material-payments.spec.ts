@@ -137,6 +137,9 @@ function buildContract(state: FinanceState): MaterialContractView {
     id: contractId,
     orderId,
     projectId,
+    projectName: 'Công trình Tòa nhà VQH',
+    proposalNo: 7,
+    orderSeq: 1,
     supplierId,
     supplierName: 'Công ty Thép Hòa Phát',
     currencyCode: 'VND',
@@ -178,6 +181,9 @@ function buildContract(state: FinanceState): MaterialContractView {
 function buildOrder(contract: MaterialContractView): MaterialOrderView {
   return materialOrderViewSchema.parse({
     id: orderId,
+    proposalNo: 7,
+    orderSeq: 1,
+    summary: { names: ['Thép cuộn phi 8'], total: 1 },
     version: 2,
     orderState: 'active',
     proposalId,
@@ -702,13 +708,13 @@ const projects: MaterialProjectOption[] = [
 
 const inbox: MaterialFinanceInbox = materialFinanceInboxSchema.parse({
   awaitingContract: [{
-    projectId, projectName: 'Công trình Tòa nhà VQH', orderId, supplierName: 'Công ty Thép Hòa Phát',
+    projectId, projectName: 'Công trình Tòa nhà VQH', proposalNo: 7, orderSeq: 1, orderId, supplierName: 'Công ty Thép Hòa Phát',
     orderSubtotal: '909.0909', createdAt: '2026-10-14T03:00:00.000Z',
   }],
   dueInstallments: [],
   returnedRequests: [],
   pendingApproval: [{
-    projectId, projectName: 'Công trình Tòa nhà VQH', orderId, supplierName: 'Công ty Thép Hòa Phát',
+    projectId, projectName: 'Công trình Tòa nhà VQH', proposalNo: 7, orderSeq: 1, orderId, supplierName: 'Công ty Thép Hòa Phát',
     contractId, requestId, amount: '400.0000', submittedBy: accountantId, submittedAt: '2026-10-14T03:00:00.000Z',
   }],
   approvedAwaitingPayment: [],
