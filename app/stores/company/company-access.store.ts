@@ -12,6 +12,7 @@ export interface CompanyAccessStoreOptions {
 export interface CompanyAccessStore {
   companies: CompanyAccess[]
   activeCompanyId: string | null
+  currentUserId: string | null
   activeCompany: CompanyAccess | null
   roles: string[]
   permissions: PermissionCode[]
@@ -84,6 +85,7 @@ export function createCompanyAccessStore(options: CompanyAccessStoreOptions) {
     return {
       companies,
       activeCompanyId,
+      currentUserId,
       activeCompany,
       roles,
       permissions,

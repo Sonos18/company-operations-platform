@@ -207,11 +207,37 @@ describe('appNotificationText', () => {
     it('adds the label and material summary to a new order notification', () => {
       expect(appNotificationText(n('material.order.created', { ...order, summaryName1: 'Thép D10', summaryName2: null, summaryTotal: 3 })))
         .toEqual({
-          title: 'Đơn mua mới chờ hợp đồng',
-          body: 'Eo Gió · ĐH 18-1 · Hòa Phát (Thép D10 và 2 vật tư khác) cần ghi nhận hợp đồng.',
+          title: 'Eo Gió · ĐH 18-1 – Chờ hợp đồng',
+          body: 'Mua hàng vừa tạo ĐH 18-1 · Hòa Phát (Thép D10 và 2 vật tư khác), cần bạn bổ sung hợp đồng và chứng từ.',
         })
       expect(appNotificationText(n('material.order.created', { ...order, summaryName1: null, summaryName2: null, summaryTotal: 0 })).body)
-        .toBe('Eo Gió · ĐH 18-1 · Hòa Phát cần ghi nhận hợp đồng.')
+        .toBe('Mua hàng vừa tạo ĐH 18-1 · Hòa Phát, cần bạn bổ sung hợp đồng và chứng từ.')
+    })
+    describe('new order notification with the purchaser and order code', () => {
+      const created = {
+        projectName: 'A1 Alpha Project', proposalNo: 10, orderSeq: 1, supplierName: 'Ngũ Kim Trung Nam',
+        actorName: 'Trần Thị B', summaryName1: 'Lục giác', summaryName2: null, summaryTotal: 1,
+      }
+      it('names the project and order code in the title and the purchaser in the body', () => {
+        expect(appNotificationText(n('material.order.created', created))).toEqual({
+          title: 'A1 Alpha Project · ĐH 10-1 – Chờ hợp đồng',
+          body: 'Trần Thị B vừa tạo ĐH 10-1 · Ngũ Kim Trung Nam (Lục giác), cần bạn bổ sung hợp đồng và chứng từ.',
+        })
+      })
+      it('calls the purchaser "Mua hàng" when the actor name is missing', () => {
+        expect(appNotificationText(n('material.order.created', { ...created, actorName: null })).body)
+          .toMatch(/^Mua hàng vừa tạo ĐH 10-1 · /)
+      })
+      it('leaves out the summary parenthesis when the total is 0', () => {
+        expect(appNotificationText(n('material.order.created', { ...created, summaryTotal: 0 })).body)
+          .toBe('Trần Thị B vừa tạo ĐH 10-1 · Ngũ Kim Trung Nam, cần bạn bổ sung hợp đồng và chứng từ.')
+      })
+      it('keeps the previous title and body for a payload with only the supplier name', () => {
+        expect(appNotificationText(n('material.order.created', { supplierName: 'Ngũ Kim Trung Nam' }))).toEqual({
+          title: 'Đơn mua mới chờ hợp đồng',
+          body: 'Đơn mua từ Ngũ Kim Trung Nam cần ghi nhận hợp đồng.',
+        })
+      })
     })
     it('keeps the order code when the project or supplier name is missing', () => {
       expect(appNotificationText(n('material.installment.due_soon', { proposalNo: 18, orderSeq: 1, installmentName: 'Đợt 2', dueOn: '2026-10-17' })).body)

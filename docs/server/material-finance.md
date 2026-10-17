@@ -27,6 +27,7 @@ Applied in order; each takes `pg_advisory_xact_lock(71842, N)` and ends with `no
 | `20261017090000_c1_material_proposal_codes` | 61 | Proposal numbers and order codes: `proposal_no` / `order_seq` columns, assignment, immutability and backfill; the five read functions renamed to `*_core` and wrapped (see Proposal numbers and order codes) |
 | `20261017090100_c1_material_proposal_notifications` | 62 | Proposal notifications (`material.proposal.submitted` / `approved` / `returned`, source type `material_proposal`), order label on order-side notifications, deferred `material.order.created` trigger |
 | `20261017100000_c1_notifications_read_all` | 63 | Notification center: `c1_mark_notifications_read_all` marks the caller's own notifications read in both sources up to a per-source cutoff (see Mark all notifications read) |
+| `20261017110000_c1_notifications_realtime` | 64 | Notification center realtime: `app_notifications` and `cost_workflow_notifications` join the `supabase_realtime` publication; `material.order.created` carries `actorName` (see Realtime notification refresh) |
 
 `shared/types/database.types.ts` is generated (`pnpm db:dev:types`) and is not edited by hand.
 
@@ -112,6 +113,52 @@ Migration 63 (`20261017100000_c1_notifications_read_all`, lock `71842, 63`) adds
 UI strings the notification center added beyond the plan: "Không thể đánh dấu đã đọc hết. Vui lòng thử lại." (read-all failed),
 "Không nạp được thêm thông báo." ("Xem thêm" failed), the screen-reader-only modal description "Danh sách thông báo mới nhất", and the
 unread dot label "Chưa đọc".
+
+## Realtime notification refresh
+
+Migration 64 (`20261017110000_c1_notifications_realtime`, lock `71842, 64`) lets the bell refresh as soon as a
+notification arrives instead of waiting for the user to open it.
+
+- Publication: the migration adds both `public.app_notifications` and `public.cost_workflow_notifications` to
+  `supabase_realtime`. A table that is already published is skipped, so a rerun is safe; a project without the
+  publication fails with `REALTIME_PUBLICATION_MISSING` instead of silently not publishing.
+- RLS applies per subscriber: Realtime evaluates each table's select policy for every connected user, so a user only
+  receives rows he can already read. The client also filters `recipient_id=eq.{currentUserId}` and listens to `INSERT`
+  and `UPDATE`.
+- Signal only: the composable `app/composables/useNotificationRealtime.ts` ignores the row payload. A signal
+  triggers the same reload through the existing APIs (`GET /notifications`, `GET /cost-notifications`), which stay the
+  only source of what the bell shows. The Realtime row payload does carry columns such as `tenant_id` and `source_id`,
+  but they are columns the recipient can already read under the same RLS, so nothing new is exposed.
+- Debounce: a trailing debounce of 1000 ms collects signals into one reload (ten signals within 200 ms load once), with a
+  max-wait of 3000 ms so a steady stream of signals still reloads at least every 3 s.
+- Background reloads: a reload caused by a signal never blanks the open list. The "Đang nạp thông báo..." placeholder is
+  shown only while there is nothing to show, the cards and the scroll position stay, a source that fails to load keeps its
+  cards, and a background reload does not clear the "mark all read" error (only a user-started load or retry does).
+- Deferral: a signal that arrives while a load or "Đánh dấu đã đọc hết" is running is remembered and served by one
+  background reload after the request finished, so the running request cannot overwrite newer data.
+- Echo suppression: for 1500 ms after a load or mark-all that the bell started finishes, signals are treated as echoes of
+  its own writes (`read_at` updates, cost notifications flipping from undelivered to available). They do not reload at once; if
+  any arrived, one background reload runs at the end of the window, so a real new notification is delayed by at most
+  1500 ms and never lost.
+- Loading: the bell also loads on mount and whenever the company or the permissions change (the pending request is
+  dropped on a change).
+- Reconnect: when a channel returns to `SUBSCRIBED` after `CHANNEL_ERROR` or `TIMED_OUT`, the bell reloads once to catch
+  up on what it missed. A channel closed by the server (`CLOSED`) is not re-subscribed until the key changes (company,
+  permissions or user). If Realtime cannot connect at all (for example the fake Supabase URL of the e2e build),
+  the bell still loads when the box is opened and nothing throws on the page.
+- Channels: the material channel is gated by `material.read` (`app_notifications`) and the cost channel by
+  `cost.notification.read` (`cost_workflow_notifications`); a user without one does not subscribe to its table. Changing company or
+  signing out removes the old channels, and none is left after the component unmounts.
+
+Other changes in the same migration and the app:
+
+- `material.order.created` now carries `actorName` (the display name of the order creator: employee name, else sign-in
+  email; the same rule as the proposal notifications). New text: title `{projectName} · ĐH {n}-{m} – Chờ hợp đồng`, body
+  `{actorName} vừa tạo ĐH {n}-{m} · {supplierName} ({summary}), cần bạn bổ sung hợp đồng và chứng từ.` A payload stored
+  before the migration has no `actorName`: the body uses "Mua hàng"; with no order code the old text is shown. Recipients,
+  link and dedupe key (`order:{id}`) are unchanged.
+- The badge "Cần xử lý" (tone `action`, violet) is shown for two events: `material.order.created` and
+  `material.payment.approved`. Both are tasks waiting for the reader, unlike the "Cần duyệt" and "Đã duyệt" labels.
 
 ## Tables
 
@@ -319,7 +366,7 @@ moved from the treasurer to the accountant). The fixture script `supabase/fixtur
 
 | Event | Recipients | Payload |
 |---|---|---|
-| `material.order.created` | `material.contract.record` holders | `supplierName`, `summaryName1`, `summaryName2`, `summaryTotal` |
+| `material.order.created` | `material.contract.record` holders | `supplierName`, `summaryName1`, `summaryName2`, `summaryTotal`, `projectName`, `proposalNo`, `orderSeq`, `actorName` |
 | `material.proposal.submitted` / `approved` / `returned` | readers who can decide the proposal (submitted); the `submitted_by` of the decided revision (approved, returned; today the proposal creator); recipients need `material.read`, the actor is never notified | `projectName`, `proposalNo`, `revisionNo`, `actorName`, `summaryName1`, `summaryName2`, `summaryTotal`; `reason` on returned |
 | `material.contract.recorded` / `material.contract.amended` | finance readers; buyer and proposal creator (by user id) | finance readers: `supplierName`, `contractNo`, `total`, `versionNo`; by user id: without `total`. The proposal creator's link opens the proposal, which lists `contractStatus` (order, contract number, signing date) |
 | `material.payment.submitted` | `material.payment.approve` holders | `supplierName`, `contractNo`, `amount` |

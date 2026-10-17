@@ -1,6 +1,6 @@
 import type { AppNotificationView } from '../../../shared/schemas/costs/material-finance'
 
-export type NotificationTone = 'warning' | 'success' | 'error' | 'reminder' | 'info'
+export type NotificationTone = 'warning' | 'success' | 'error' | 'reminder' | 'info' | 'action'
 
 export interface NotificationBadge {
   label: string
@@ -17,19 +17,20 @@ const approved: NotificationBadge = { label: 'Đã duyệt', tone: 'success' }
 const returned: NotificationBadge = { label: 'Bị trả lại', tone: 'error' }
 const reminder: NotificationBadge = { label: 'Nhắc hạn', tone: 'reminder' }
 const info: NotificationBadge = { label: 'Thông tin', tone: 'info' }
+const needsAction: NotificationBadge = { label: 'Cần xử lý', tone: 'action' }
 
 // A Map (not a plain object) so an unknown kind such as "constructor" never resolves to an inherited property.
 const materialBadgeByKind = new Map<string, NotificationBadge>([
   ['material.proposal.submitted', needsReview],
   ['material.payment.submitted', needsReview],
   ['material.proposal.approved', approved],
-  ['material.payment.approved', approved],
+  ['material.payment.approved', needsAction],
   ['material.payment.paid', approved],
   ['material.proposal.returned', returned],
   ['material.payment.returned', returned],
   ['material.installment.due_soon', reminder],
   ['material.installment.overdue', reminder],
-  ['material.order.created', info],
+  ['material.order.created', needsAction],
   ['material.contract.recorded', info],
   ['material.contract.amended', info],
 ])
