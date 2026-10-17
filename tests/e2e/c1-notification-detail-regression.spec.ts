@@ -148,14 +148,18 @@ for(const kind of kinds){
    await expect(page.getByRole('button',{name:'Ghi nhận thanh toán',exact:true})).toHaveCount(0)
    await expect(page.getByRole('button',{name:'Phê duyệt',exact:true})).toHaveCount(0)
   }
+  // Start on a different URL so the card click has to navigate to the exact snapshot by itself.
+  await page.goto(detail+'?kind='+kind+'&submittedVersionId='+newFileId)
+  await expect(page.getByText('Không tìm thấy đúng hồ sơ và phiên đã gửi trong liên kết.',{exact:true})).toBeVisible()
   await openBell(page)
   const card=page.getByTestId('cost-notification')
   await expect(card).toHaveCount(1)
   await card.click()
+  await expect(page).toHaveURL(detail+'?kind='+kind+'&submittedVersionId='+submittedVersion)
   await expect(page.getByTestId('cost-notification')).toHaveCount(0)
+  await expect(page.getByRole('heading',{name:labels[kind],exact:true}).first()).toBeVisible()
+  await expect(page.getByText('Nội dung đang sửa',{exact:false})).toHaveCount(0)
   expect(reads).toEqual(['/api/companies/'+company+'/cost-notifications/'+newFileId+'/read'])
-  const url=new URL(page.url())
-  expect(url.pathname).toBe(detail);expect(url.searchParams.get('kind')).toBe(kind);expect(url.searchParams.get('submittedVersionId')).toBe(submittedVersion)
   expect(mock.calls).toEqual([]);expect(mock.external).toEqual([])
  })
 }
