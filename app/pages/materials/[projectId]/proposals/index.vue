@@ -144,10 +144,18 @@
             </thead>
             <tbody>
               <tr v-for="prop in filteredProposals" :key="prop.id">
-                <td class="font-medium whitespace-nowrap">
-                  <NuxtLink :to="`/materials/${pId}/proposals/${prop.id}`" class="table-link">
-                    {{ prop.neededOn }}
-                  </NuxtLink>
+                <td class="font-medium">
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <NuxtLink :to="`/materials/${pId}/proposals/${prop.id}`" class="table-link">
+                        {{ proposalCodeLabel(prop.proposalNo) }}
+                      </NuxtLink>
+                      <span class="text-xs text-slate-500 font-normal whitespace-nowrap">{{ prop.neededOn }}</span>
+                    </div>
+                    <div v-if="prop.summary" class="text-xs text-slate-600 font-normal mt-0.5">
+                      {{ materialSummaryText(prop.summary.names, prop.summary.total) }}
+                    </div>
+                  </div>
                 </td>
                 <td>
                   <span class="delivery-address text-sm">{{ prop.deliveryAddress }}</span>
@@ -194,6 +202,7 @@ import type {
   MaterialProposalView,
 } from '../../../../../shared/schemas/costs/material-procurement'
 import { workflowUuidSchema } from '../../../../../shared/schemas/costs/cost-workflow'
+import { proposalCodeLabel, materialSummaryText } from '../../../../../shared/utils/material-codes'
 import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
 
 type MaterialReviewState = MaterialProposalView['reviewState']
