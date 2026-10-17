@@ -18,6 +18,7 @@ const context = { actorId, companyId, tenantId: '10000000-0000-4000-8000-0000000
 const input = { evidenceFileId: ids.unsignedQuotation, approvedRevisionId: ids.proposalRevision, expectedProposalVersion: 1 }
 const proposal = materialProposalViewSchema.parse({
   id: ids.proposal, projectId: ids.project, createdBy: ids.user, version: 1,
+  proposalNo: 18, revisionNo: 1, summary: { names: ['Steel'], total: 1 },
   reviewState: 'approved', returnReason: null, approvedRevisionId: ids.proposalRevision,
   currentRevisionId: ids.proposalRevision, neededOn: '2026-10-30', deliveryAddress: 'Site', notes: null,
   lines: [{ lineId: ids.proposalLine, materialId: ids.material, materialName: 'Steel', specification: 'D10',

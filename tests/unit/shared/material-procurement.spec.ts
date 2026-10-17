@@ -81,7 +81,8 @@ describe('material procurement contracts', () => {
 
   it('exposes the buyer return reason to engineers and rejects missing or blank reason fields', () => {
     const returned = {
-      id: ids.proposal, version: 3, reviewState: 'returned', returnReason: 'Kiem tra lai quy cach xi mang',
+      id: ids.proposal, version: 3, proposalNo: 18, revisionNo: 1, summary: { names: ['Xi mang'], total: 1 },
+      reviewState: 'returned', returnReason: 'Kiem tra lai quy cach xi mang',
       approvedRevisionId: null, currentRevisionId: ids.proposalRevision, projectId: ids.project, createdBy: ids.user,
       neededOn: validProposal.neededOn, deliveryAddress: validProposal.deliveryAddress, notes: null,
       lines: [{ ...validLine, materialName: 'Xi mang', specification: 'PCB40', unit: 'bao', notes: null,
@@ -103,7 +104,7 @@ describe('material procurement contracts', () => {
 
     // Optional, money-free contract status per order of the proposal (T8 I1).
     const approved = { ...returned, reviewState: 'approved', returnReason: null }
-    const status = { orderId: ids.order, contractNo: 'HD-01', signedOn: '2026-10-10' }
+    const status = { orderId: ids.order, orderSeq: 1, contractNo: 'HD-01', signedOn: '2026-10-10' }
     expect(materialProposalViewSchema.safeParse(approved).success).toBe(true)
     expect(materialProposalViewSchema.parse({ ...approved, contractStatus: [status] }).contractStatus).toEqual([{ ...status, documentation: 'contract' }])
     expect(materialProposalViewSchema.safeParse({ ...approved, contractStatus: [{ ...status, total: '110.0000' }] }).success).toBe(false)
@@ -111,6 +112,31 @@ describe('material procurement contracts', () => {
     expect(materialProposalViewSchema.parse({ ...approved, contractStatus: [status] }).contractStatus?.[0]?.documentation).toBe('contract')
     const noContract = { ...status, contractNo: null, documentation: 'quotation_only' }
     expect(materialProposalViewSchema.parse({ ...approved, contractStatus: [noContract] }).contractStatus).toEqual([noContract])
+    const { orderSeq: _orderSeq, ...statusWithoutSeq } = status
+    expect(materialProposalViewSchema.safeParse({ ...approved, contractStatus: [statusWithoutSeq] }).success).toBe(false)
+  })
+
+  it('requires the proposal number, revision number and a summary of at most two names', () => {
+    const proposal = {
+      id: ids.proposal, version: 3, proposalNo: 18, revisionNo: 2, summary: { names: ['Xi mang', 'Thep D10'], total: 5 },
+      reviewState: 'approved', returnReason: null, approvedRevisionId: ids.proposalRevision,
+      currentRevisionId: ids.proposalRevision, projectId: ids.project, createdBy: ids.user,
+      neededOn: validProposal.neededOn, deliveryAddress: validProposal.deliveryAddress, notes: null,
+      lines: [{ ...validLine, materialName: 'Xi mang', specification: 'PCB40', unit: 'bao', notes: null,
+        allocatedQuantity: '0.0000', signedQuantity: '0.0000', remainingQuantity: '20.0000' }],
+      orderProgress: { orderCount: 0, signedOrderCount: 0 },
+    }
+    expect(materialProposalViewSchema.safeParse(proposal).success).toBe(true)
+    // A proposal that was never submitted has no revision number.
+    expect(materialProposalViewSchema.safeParse({ ...proposal, revisionNo: null, reviewState: 'draft', approvedRevisionId: null, currentRevisionId: null }).success).toBe(true)
+    const { proposalNo: _proposalNo, ...withoutProposalNo } = proposal
+    expect(materialProposalViewSchema.safeParse(withoutProposalNo).success).toBe(false)
+    const { revisionNo: _revisionNo, ...withoutRevisionNo } = proposal
+    expect(materialProposalViewSchema.safeParse(withoutRevisionNo).success).toBe(false)
+    const { summary: _summary, ...withoutSummary } = proposal
+    expect(materialProposalViewSchema.safeParse(withoutSummary).success).toBe(false)
+    expect(materialProposalViewSchema.safeParse({ ...proposal, summary: { names: ['A', 'B', 'C'], total: 3 } }).success).toBe(false)
+    expect(materialProposalViewSchema.safeParse({ ...proposal, proposalNo: 0 }).success).toBe(false)
   })
 
   it('accepts a signed quotation as pdf or image but a signed contract only as pdf', () => {
@@ -161,6 +187,9 @@ describe('material procurement contracts', () => {
     expect(materialProposalViewSchema.safeParse({
       id: ids.proposal,
       version: 3,
+      proposalNo: 18,
+      revisionNo: 2,
+      summary: { names: ['Thep hop'], total: 1 },
       reviewState: 'approved',
       returnReason: null,
       approvedRevisionId: ids.proposalRevision,
@@ -186,6 +215,9 @@ describe('material procurement contracts', () => {
     const orderView = {
       id: ids.order,
       version: 2,
+      proposalNo: 18,
+      orderSeq: 1,
+      summary: { names: ['Thep hop'], total: 1 },
       orderState: 'active',
       proposalId: ids.proposal,
       approvedRevisionId: ids.proposalRevision,
@@ -222,6 +254,13 @@ describe('material procurement contracts', () => {
       cash: null,
     }).success).toBe(true)
     expect(materialOrderViewSchema.safeParse({ ...orderView, contract: null, cash: null }).success).toBe(true)
+    const { proposalNo: _proposalNo, ...withoutProposalNo } = orderView
+    expect(materialOrderViewSchema.safeParse(withoutProposalNo).success).toBe(false)
+    const { orderSeq: _orderSeq, ...withoutOrderSeq } = orderView
+    expect(materialOrderViewSchema.safeParse(withoutOrderSeq).success).toBe(false)
+    const { summary: _summary, ...withoutSummary } = orderView
+    expect(materialOrderViewSchema.safeParse(withoutSummary).success).toBe(false)
+    expect(materialOrderViewSchema.safeParse({ ...orderView, orderSeq: 0 }).success).toBe(false)
     expect(materialOrderViewSchema.safeParse({
       ...orderView,
       contract: { ...orderView.contract, signedValue: '100.0000' },

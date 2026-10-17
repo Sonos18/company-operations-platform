@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   amendMaterialContractInputSchema,
+  appNotificationEventKindSchema,
+  materialFinanceInboxSchema,
+  projectMaterialFinanceSummarySchema,
   decidePaymentRequestInputSchema,
   materialContractViewSchema,
   materialPaymentRequestViewSchema,
@@ -208,7 +211,8 @@ describe('material finance input schemas', () => {
       payment: { id: key1, paidOn: '2026-10-12', bankReference: 'UNC-1', proofFileId: file, paidBy: key1, recordedAt: '2026-10-12T01:00:00+00:00' },
     }
     const contract = {
-      id: key1, orderId: key2, projectId: key1, supplierId: key2, supplierName: 'NCC A', currencyCode: 'VND',
+      id: key1, orderId: key2, projectId: key1, projectName: 'Eo Gió', proposalNo: 18, orderSeq: 1,
+      supplierId: key2, supplierName: 'NCC A', currencyCode: 'VND',
       contractNo: 'HD-01', signedOn: '2026-10-10', currentVersionNo: 1, version: 1,
       versions: [{
         versionNo: 1, kind: 'original', subtotal: '100.0000', vatAmount: '10.0000', total: '110.0000',
@@ -235,6 +239,41 @@ describe('material finance input schemas', () => {
       })
       expect(view).toMatchObject({ documentation: 'quotation_only', contractNo: null })
       expect(view.versions[0]?.contractFileId).toBeNull()
+    })
+    it('requires the project name, proposal number and order sequence on a contract view', () => {
+      expect(materialContractViewSchema.parse(contract)).toMatchObject({ projectName: 'Eo Gió', proposalNo: 18, orderSeq: 1 })
+      for (const key of ['projectName', 'proposalNo', 'orderSeq'] as const) {
+        const { [key]: _removed, ...rest } = contract
+        expect(materialContractViewSchema.safeParse(rest).success).toBe(false)
+      }
+      expect(materialContractViewSchema.safeParse({ ...contract, orderSeq: 0 }).success).toBe(false)
+    })
+    it('requires the order code keys on summary rows and inbox rows', () => {
+      const row = {
+        contractId: key1, projectId: key1, projectName: 'Eo Gió', proposalNo: 18, orderSeq: 1, orderId: key2,
+        supplierId: key2, supplierName: 'NCC A', documentation: 'contract', contractNo: 'HD-01', totals: contract.totals,
+      }
+      const summary = { projectId: key1, currencyCode: 'VND', totals: contract.totals, contracts: [row] }
+      expect(projectMaterialFinanceSummarySchema.safeParse(summary).success).toBe(true)
+      const { proposalNo: _proposalNo, ...rowWithoutProposalNo } = row
+      expect(projectMaterialFinanceSummarySchema.safeParse({ ...summary, contracts: [rowWithoutProposalNo] }).success).toBe(false)
+
+      const inboxRow = { projectId: key1, projectName: 'Eo Gió', proposalNo: 18, orderSeq: 1, orderId: key2, supplierName: 'NCC A' }
+      const inbox = {
+        awaitingContract: [{ ...inboxRow, orderSubtotal: '100.0000', createdAt: '2026-10-10T01:00:00+00:00' }],
+        dueInstallments: [], returnedRequests: [], pendingApproval: [], approvedAwaitingPayment: [],
+      }
+      expect(materialFinanceInboxSchema.safeParse(inbox).success).toBe(true)
+      const { orderSeq: _orderSeq, ...inboxRowWithoutSeq } = inboxRow
+      expect(materialFinanceInboxSchema.safeParse({
+        ...inbox, awaitingContract: [{ ...inboxRowWithoutSeq, orderSubtotal: '100.0000', createdAt: '2026-10-10T01:00:00+00:00' }],
+      }).success).toBe(false)
+    })
+    it('accepts the proposal notification events', () => {
+      for (const kind of ['material.proposal.submitted', 'material.proposal.approved', 'material.proposal.returned']) {
+        expect(appNotificationEventKindSchema.safeParse(kind).success).toBe(true)
+      }
+      expect(appNotificationEventKindSchema.safeParse('material.proposal.deleted').success).toBe(false)
     })
     it('parses a cash payment with a null reference', () => {
       expect(materialPaymentRequestViewSchema.parse({ ...request, payment: { ...request.payment, method: 'cash', bankReference: null } }).payment)

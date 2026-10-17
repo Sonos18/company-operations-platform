@@ -28,6 +28,8 @@ export interface MaterialFinanceContractFacts extends MaterialContractFacts {
   contractId: string
   projectId: string
   projectName: string
+  proposalNo: number
+  orderSeq: number
   orderId: string
   supplierId: string
   supplierName: string
@@ -54,6 +56,9 @@ function contractRow(contract: MaterialFinanceContractFacts, today: string) {
   return {
     contractId: contract.contractId,
     projectId: contract.projectId,
+    projectName: contract.projectName,
+    proposalNo: contract.proposalNo,
+    orderSeq: contract.orderSeq,
     orderId: contract.orderId,
     supplierId: contract.supplierId,
     supplierName: contract.supplierName,
@@ -131,6 +136,8 @@ export class MaterialFinanceReadService {
         rows.push({
           projectId: contract.projectId,
           projectName: contract.projectName,
+          proposalNo: contract.proposalNo,
+          orderSeq: contract.orderSeq,
           orderId: contract.orderId,
           supplierName: contract.supplierName,
           contractId: contract.contractId,

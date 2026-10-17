@@ -220,6 +220,9 @@ export const materialContractViewSchema = z.object({
   id: uuid,
   orderId: uuid,
   projectId: uuid,
+  projectName: z.string().min(1),
+  proposalNo: z.number().int().positive(),
+  orderSeq: z.number().int().positive(),
   supplierId: uuid,
   supplierName: z.string().min(1),
   currencyCode: workflowCurrencySchema,
@@ -289,6 +292,9 @@ export const materialPaymentRequestViewSchema = z.object({
 const contractRow = z.object({
   contractId: uuid,
   projectId: uuid,
+  projectName: z.string().min(1),
+  proposalNo: z.number().int().positive(),
+  orderSeq: z.number().int().positive(),
   orderId: uuid,
   supplierId: uuid,
   supplierName: z.string().min(1),
@@ -312,7 +318,14 @@ export const supplierMaterialFinanceSchema = z.array(z.object({
   contracts: z.array(contractRow),
 }).strict())
 
-const inboxBase = { projectId: uuid, projectName: z.string().min(1), orderId: uuid, supplierName: z.string().min(1) }
+const inboxBase = {
+  projectId: uuid,
+  projectName: z.string().min(1),
+  proposalNo: z.number().int().positive(),
+  orderSeq: z.number().int().positive(),
+  orderId: uuid,
+  supplierName: z.string().min(1),
+}
 export const materialFinanceInboxSchema = z.object({
   awaitingContract: z.array(z.object({ ...inboxBase, orderSubtotal: workflowMoneySchema, createdAt: z.string().datetime({ offset: true }) }).strict()),
   dueInstallments: z.array(z.object({
@@ -335,6 +348,9 @@ export const appNotificationEventKindSchema = z.enum([
   'material.payment.returned',
   'material.payment.paid',
   'material.payment.approved',
+  'material.proposal.submitted',
+  'material.proposal.approved',
+  'material.proposal.returned',
 ])
 
 export const appNotificationViewSchema = z.object({

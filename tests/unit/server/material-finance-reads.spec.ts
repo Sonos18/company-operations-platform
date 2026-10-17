@@ -6,7 +6,7 @@ const s1 = '30000000-0000-4000-8000-000000000002'
 const s2 = '30000000-0000-4000-8000-000000000003'
 const k = (n: number) => `30000000-0000-4000-8000-0000000001${String(n).padStart(2, '0')}`
 const contractFacts = (n: number, supplierId: string, total: string, paid: string, dueOn: string) => ({
-  contractId: k(n), projectId: p1, projectName: 'Dự án 1', orderId: k(n + 50), supplierId,
+  contractId: k(n), projectId: p1, projectName: 'Dự án 1', proposalNo: 18, orderSeq: n, orderId: k(n + 50), supplierId,
   supplierName: supplierId === s1 ? 'NCC A' : 'NCC B', documentation: 'contract' as const, contractNo: 'HD-' + n as string | null, total, invoiced: '0.0000', draftInvoiced: '0.0000',
   installments: [{ installmentKey: k(n + 20), name: 'Đợt 1', amount: total, dueOn, paid, pending: '0.0000' }],
 })
@@ -63,6 +63,22 @@ describe('material finance read service', () => {
     expect(accountant.dueInstallments.map(i => [i.contractId, i.dueStatus])).toEqual([[k(1), 'overdue'], [k(2), 'due_soon']])
     const treasurer = await service.inbox(ctx(['material.read', 'material.payment.approve']))
     expect(treasurer.dueInstallments).toEqual([])
+  })
+
+  it('copies the project name, proposal number and order sequence onto summary rows and due installments', async () => {
+    const service = new MaterialFinanceReadService(repo(), now)
+    const permissions = ['material.read', 'material.finance.read', 'material.contract.record']
+    const code = (row: { projectName: string, proposalNo: number, orderSeq: number }) => [row.projectName, row.proposalNo, row.orderSeq]
+
+    const summary = await service.projectSummary(ctx(permissions), p1)
+    expect(summary.contracts.map(code)).toEqual([['Dự án 1', 18, 1], ['Dự án 1', 18, 2], ['Dự án 1', 18, 3]])
+
+    const suppliers = await service.suppliers(ctx(permissions))
+    expect(suppliers.flatMap(supplier => supplier.contracts).map(code))
+      .toEqual([['Dự án 1', 18, 1], ['Dự án 1', 18, 2], ['Dự án 1', 18, 3]])
+
+    const inbox = await service.inbox(ctx(permissions))
+    expect(inbox.dueInstallments.map(code)).toEqual([['Dự án 1', 18, 1], ['Dự án 1', 18, 2]])
   })
 
   it('passes the opaque notification cursor through and accepts an opaque next cursor', async () => {
