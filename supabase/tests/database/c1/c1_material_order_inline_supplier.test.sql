@@ -130,6 +130,10 @@ grant execute on function pg_temp.inline_order(int,jsonb,text), pg_temp.inline_c
 select is(private.c1_material_supplier_code('CÔNG TY TNHH SX-TM-XNK NGŨ KIM TRUNG NAM'),'congtytnhhsxtmxnkngukimtrungnam','code is the lower-case ASCII name without spaces or symbols');
 select is(private.c1_material_supplier_code(normalize('Ngũ Kim Đông Á',NFD)),'ngukimdonga','decomposed (NFD) input yields the same code');
 
+-- material_order_created_notify is deferred to commit (20261017090100); run it inside each
+-- create_order here, so the material.order.created checks below see it before the rollback.
+set constraints all immediate;
+
 -- Buyer without material.supplier.record.
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"c1300000-0000-4000-8000-000000000905","role":"authenticated"}',true);

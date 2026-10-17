@@ -199,6 +199,8 @@ from (values
 
 -- Creating an order notifies contract recorders, never the acting buyer.
 select set_config('request.jwt.claims','{"sub":"c1250000-0000-4000-8000-000000000902","role":"authenticated"}',true);
+-- material_order_created_notify is deferred to commit (20261017090100); run it at each insert here.
+set constraints all immediate;
 insert into public.material_orders(
   id,tenant_id,company_id,project_id,proposal_id,approved_revision_id,
   supplier_id,currency_code,unsigned_quotation_evidence_file_id,created_by

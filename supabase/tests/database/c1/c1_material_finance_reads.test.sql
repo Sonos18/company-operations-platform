@@ -102,6 +102,9 @@ from (values
 
 -- Orders: O1 and O2 get contracts, O3 stays without a contract. The buyer is the acting user.
 select set_config('request.jwt.claims','{"sub":"c1280000-0000-4000-8000-000000000902","role":"authenticated"}',true);
+-- material_order_created_notify is deferred to commit (20261017090100); run it at each insert here,
+-- so the order-created rows exist next to the material.order.created fixtures below, as before.
+set constraints all immediate;
 insert into public.material_orders(
   id,tenant_id,company_id,project_id,proposal_id,approved_revision_id,
   supplier_id,currency_code,unsigned_quotation_evidence_file_id,created_by

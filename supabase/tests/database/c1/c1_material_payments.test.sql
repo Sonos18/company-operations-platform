@@ -298,7 +298,8 @@ select is((
 ),array['c1270000-0000-4000-8000-000000000903'::uuid,'c1270000-0000-4000-8000-000000000904'::uuid],
 'case 2: approvers Q and KQ are notified of the submission');
 select is((
-  select payload from public.app_notifications
+  -- Order labels (projectName, proposalNo, orderSeq) are added on insert since 20261017090100.
+  select payload - array['projectName','proposalNo','orderSeq'] from public.app_notifications
   where recipient_id='c1270000-0000-4000-8000-000000000903'
     and dedupe_key='pr:'||(select body->>'resourceId' from t2_acks where name='R1')||':sub:1'
 ),'{"supplierName":"Payment supplier","contractNo":"HD-PAY-01","documentation":"contract","amount":"20.0000"}'::jsonb,
