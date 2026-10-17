@@ -271,9 +271,9 @@ select is((
   where notification.event_kind='material.order.created' and notification.recipient_id='c1360000-0000-4000-8000-000000000903'
     and notification.source_id='c1360000-0000-4000-8000-000000000351'
 ),jsonb_build_object(
-  'supplierName','Notify supplier','summaryName1','Bravo','summaryName2','Charlie','summaryTotal',2,
+  'actorName','Buyer Full Name','supplierName','Notify supplier','summaryName1','Bravo','summaryName2','Charlie','summaryTotal',2,
   'projectName','Notify project','proposalNo',1,'orderSeq',1),
-'order: the payload carries the summary of the order''s own lines and the order label');
+'order: the payload carries the creator name, the summary of the order''s own lines and the order label');
 
 -- Contract on order 351 (accountant) ----------------------------------------------------------
 insert into public.material_evidence_scopes(evidence_file_id,tenant_id,company_id,project_id,target_kind,order_id,evidence_role,created_by)
