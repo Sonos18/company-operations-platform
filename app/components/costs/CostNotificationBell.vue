@@ -108,6 +108,7 @@ import {
   readAllCutoff,
 } from '../../utils/notifications/notification-display'
 import { createAsyncRequestTracker } from '../../utils/costs/async-request-tracker'
+import { useNotificationRealtime } from '../../composables/useNotificationRealtime'
 import NotificationCard from '../notifications/NotificationCard.vue'
 
 type NotificationEntry =
@@ -117,7 +118,8 @@ type NotificationEntry =
 const repositories = useRepositories()
 const repo: CostWorkflowRepository = repositories.costWorkflow
 const materialRepo: MaterialFinanceRepository = repositories.materialFinance
-const store = useNuxtApp().$companyAccessStore
+const nuxtApp = useNuxtApp()
+const store = nuxtApp.$companyAccessStore
 
 const isOpen = ref(false)
 const loading = ref(false)
@@ -133,6 +135,10 @@ const materialCursor = ref<string | null>(null)
 const openingMaterial = ref<string | null>(null)
 const openingCost = ref(false)
 const materialAckKeys = new Map<string, string>()
+// A realtime signal that arrives while a load or "mark all read" is running is remembered and served once afterwards,
+// so the result of the running request cannot overwrite the newer data.
+let reloadRequested = false
+let stopRealtime: (() => void) | null = null
 
 const tracker = createAsyncRequestTracker<{ fp: string }>()
 const moreTracker = createAsyncRequestTracker<{ fp: string }>()
@@ -192,6 +198,7 @@ function clear() {
   notifications.value = []; materialNotifications.value = []; materialCursor.value = null
   isOpen.value = false; loading.value = false; loadingMore.value = false; loadMoreFailed.value = false
   markingAll.value = false; markAllFailed.value = false
+  reloadRequested = false
   ackKeys.clear(); acknowledging.value = null
   materialAckKeys.clear(); openingMaterial.value = null; openingCost.value = false
 }
@@ -322,11 +329,38 @@ async function openMaterial(n: AppNotificationView) {
   }
 }
 
+function handleRealtimeChange() {
+  if (!canRead.value) return
+  if (loading.value || markingAll.value) {
+    reloadRequested = true
+    return
+  }
+  void loadNotifications()
+}
+
+watch([loading, markingAll], ([isLoading, isMarkingAll]) => {
+  if (isLoading || isMarkingAll || !reloadRequested) return
+  reloadRequested = false
+  void loadNotifications()
+})
+
 onMounted(() => {
   if (canRead.value) loadNotifications()
+  // Client only: the channel opens after mount and is closed with the component's scope.
+  if (import.meta.client && nuxtApp.$supabaseClient) {
+    stopRealtime = useNotificationRealtime({
+      client: nuxtApp.$supabaseClient,
+      userId: () => store?.currentUserId ?? null,
+      sources: () => ({ material: canReadMaterial.value, cost: canReadCost.value }),
+      key: getFingerprint,
+      onChange: handleRealtimeChange,
+    }).stop
+  }
 })
 
 onUnmounted(() => {
+  stopRealtime?.()
+  stopRealtime = null
   tracker.invalidate()
   moreTracker.invalidate()
   markAllTracker.invalidate()
