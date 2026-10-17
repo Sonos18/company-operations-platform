@@ -222,6 +222,10 @@ test.describe('Trung tâm thông báo', () => {
   })
 
   test('Esc đóng hộp và trả tiêu điểm về nút mở', async ({ page }) => {
+    // The e2e build points at a fake Supabase host, so the realtime client cannot connect. That must stay
+    // silent: the bell keeps working through the API reads and nothing throws on the page.
+    const pageErrors: string[] = []
+    page.on('pageerror', error => pageErrors.push(error.message))
     await openMaterialsPage(page)
     await mockNotificationSources(page)
 
@@ -229,11 +233,43 @@ test.describe('Trung tâm thông báo', () => {
     const bell = bellButton(page)
     await bell.click()
     await expect(dialog(page)).toBeVisible()
+    await expect(dialog(page).getByTestId('material-notification')).toHaveCount(2)
 
     await page.keyboard.press('Escape')
 
     await expect(dialog(page)).toHaveCount(0)
     await expect(bell).toBeFocused()
+    expect(pageErrors).toEqual([])
+  })
+
+  test('đơn mua mới có mã ĐH hiện nhãn Cần xử lý và tiêu đề Chờ hợp đồng', async ({ page }) => {
+    await openMaterialsPage(page)
+    await mockNotificationSources(page)
+    // Registered after the shared mock, so this handler runs first and serves an order with codes.
+    await page.route(`**${base}/notifications**`, (route) => {
+      const url = new URL(route.request().url())
+      if (route.request().method() !== 'GET' || url.pathname.endsWith('/notifications/read-all')) return route.fallback()
+      const item = materialItem(idOf(9), 'material.order.created', '2026-10-16T05:00:00+00:00', null)
+      item.payload = {
+        projectName: 'Eo Gió',
+        proposalNo: 10,
+        orderSeq: 1,
+        actorName: 'Trần Thị Mua',
+        supplierName: 'NCC Thép Hòa Phát',
+        summaryName1: 'Thép D10',
+        summaryName2: null,
+        summaryTotal: 1,
+      }
+      return route.fulfill({ json: appNotificationPageSchema.parse({ items: [item], nextCursor: null }) })
+    })
+
+    await page.goto('/materials')
+    await bellButton(page).click()
+    const card = dialog(page).getByTestId('material-notification')
+    await expect(card).toHaveCount(1)
+    await expect(card.getByText('Cần xử lý', { exact: true })).toBeVisible()
+    await expect(card.getByText('Eo Gió · ĐH 10-1 – Chờ hợp đồng')).toBeVisible()
+    await expect(card.getByText(/Trần Thị Mua vừa tạo ĐH 10-1 · NCC Thép Hòa Phát/)).toBeVisible()
   })
 
   test('ở 375px không có cuộn ngang, cả khi hộp đang mở', async ({ page }) => {
