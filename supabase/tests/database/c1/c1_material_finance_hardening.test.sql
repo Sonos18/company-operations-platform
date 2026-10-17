@@ -244,7 +244,8 @@ select is((
   select state||':'||version::text from public.material_payment_requests where id=(select (body->>'resourceId')::uuid from t8_acks where name='R1')
 ),'paid:5','notifications: request is returned, resubmitted, approved and paid');
 select is((
-  select payload from public.app_notifications
+  -- Order labels (projectName, proposalNo, orderSeq) are added on insert since 20261017090100.
+  select payload - array['projectName','proposalNo','orderSeq'] from public.app_notifications
   where recipient_id='c1290000-0000-4000-8000-000000000901'
     and event_kind='material.payment.returned'
     and dedupe_key='pr:'||(select body->>'resourceId' from t8_acks where name='R1')||':ret:1'
@@ -256,7 +257,8 @@ select ok((
     and source_id=(select (body->>'resourceId')::uuid from t8_acks where name='R1')
 ),'notifications: returned payload has no amount key');
 select is((
-  select payload from public.app_notifications
+  -- Order labels (projectName, proposalNo, orderSeq) are added on insert since 20261017090100.
+  select payload - array['projectName','proposalNo','orderSeq'] from public.app_notifications
   where recipient_id='c1290000-0000-4000-8000-000000000902'
     and event_kind='material.payment.paid'
     and dedupe_key='pr:'||(select body->>'resourceId' from t8_acks where name='R1')||':paid'
