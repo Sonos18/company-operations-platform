@@ -7,7 +7,7 @@
         </NuxtLink>
         <div class="header-title-row">
           <h2>
-            Phiếu yêu cầu vật tư · {{ proposal ? `v${proposal.version}` : '' }}
+            {{ proposal ? `${proposalCodeLabel(proposal.proposalNo)}${revisionSuffix(proposal.revisionNo)} · Phiếu yêu cầu vật tư` : 'Phiếu yêu cầu vật tư' }}
           </h2>
           <span v-if="proposal" class="cockpit-badge" :class="statusBadgeClass(proposal.reviewState)">
             {{ statusText(proposal.reviewState) }}
@@ -16,8 +16,8 @@
             {{ proposal.orderProgress.orderCount }} đơn mua / {{ proposal.orderProgress.signedOrderCount }} đã ghi nhận
           </span>
         </div>
-        <p class="subtitle">
-          Mã định danh phiếu: <span class="font-mono text-sm">{{ propId }}</span>
+        <p v-if="proposal?.summary" class="subtitle">
+          {{ materialSummaryText(proposal.summary.names, proposal.summary.total) }}
         </p>
       </div>
     </div>
@@ -123,8 +123,8 @@
             <span class="info-label">Hợp đồng:</span>
             <ul class="info-value contract-status-list">
               <li v-for="item in proposal.contractStatus" :key="item.orderId">
-                <template v-if="item.documentation === 'quotation_only'">{{ materialContractLabel(item) }} (ghi nhận ngày {{ formatDate(item.signedOn) }})</template>
-                <template v-else>{{ materialContractLabel(item) }} ký ngày {{ formatDate(item.signedOn) }}</template>
+                <template v-if="item.documentation === 'quotation_only'">{{ orderCodeLabel(proposal.proposalNo, item.orderSeq) }} · {{ materialContractLabel(item) }} (ghi nhận ngày {{ formatDate(item.signedOn) }})</template>
+                <template v-else>{{ orderCodeLabel(proposal.proposalNo, item.orderSeq) }} · {{ materialContractLabel(item) }} ký ngày {{ formatDate(item.signedOn) }}</template>
               </li>
             </ul>
           </div>
@@ -214,6 +214,12 @@ import type {
   MaterialCommandResult,
 } from '../../../../../shared/schemas/costs/material-procurement'
 import { workflowUuidSchema } from '../../../../../shared/schemas/costs/cost-workflow'
+import {
+  proposalCodeLabel,
+  orderCodeLabel,
+  revisionSuffix,
+  materialSummaryText,
+} from '../../../../../shared/utils/material-codes'
 import { createAsyncRequestTracker } from '../../../../utils/costs/async-request-tracker'
 import { formatMaterialQuantity } from '../../../../utils/materials/quantity-display'
 import { formatDate } from '../../../../utils/materials/date-display'

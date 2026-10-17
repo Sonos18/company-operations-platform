@@ -8,7 +8,7 @@
           <div>
             <h3 class="panel-title text-base font-bold text-slate-900 m-0">Hóa đơn nhà cung cấp</h3>
             <p class="text-xs text-slate-500 m-0 mt-0.5">
-              Quản lý hóa đơn VAT từ nhà cung cấp cho {{ materialContractLabel(contract) }}.
+              Quản lý hóa đơn VAT từ nhà cung cấp cho {{ orderCodeLabel(contract.proposalNo, contract.orderSeq) }} · {{ materialContractLabel(contract) }}.
             </p>
           </div>
         </div>
@@ -289,6 +289,7 @@ import type {
 import { formatVnNumber } from '../../../utils/materials/vn-number'
 import { formatDate } from '../../../utils/materials/date-display'
 import { materialContractLabel } from '../../../utils/materials/contract-label'
+import { orderCodeLabel } from '../../../../shared/utils/material-codes'
 import {
   createScopedCommandKeys,
   financeErrorMessage,

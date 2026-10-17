@@ -632,11 +632,8 @@
           <tbody class="divide-y divide-slate-100 bg-white">
             <tr v-for="order in orders" :key="order.id" class="hover:bg-slate-50 transition-colors">
               <td class="p-2.5 font-mono text-slate-600 align-top">
-                <span :title="order.id">{{ order.id.slice(0, 8) }}...</span>
+                <span>{{ orderCodeLabel(order.proposalNo, order.orderSeq) }}</span>
                 <div class="text-[10px] text-slate-400">v{{ order.version }}</div>
-                <div v-if="order.approvedRevisionId" class="text-[10px] text-slate-400 font-mono">
-                  Đợt: {{ order.approvedRevisionId.slice(0, 8) }}...
-                </div>
               </td>
 
               <td class="p-2.5 font-medium text-slate-800 align-top">
@@ -738,7 +735,7 @@
       <div v-if="cancellingOrderId" class="cancel-dialog mt-4 p-4 bg-rose-50 border border-rose-200 rounded-lg">
         <div class="flex items-center gap-2 mb-2 text-rose-900 font-bold text-sm">
           <UIcon name="i-lucide-alert-triangle" class="text-rose-600 text-base" aria-hidden="true" />
-          <span>Xác nhận hủy đơn mua vật tư (Mã: {{ cancellingOrderId.slice(0, 8) }}...)</span>
+          <span>Xác nhận hủy đơn mua vật tư{{ cancellingOrder ? ` (${orderCodeLabel(cancellingOrder.proposalNo, cancellingOrder.orderSeq)})` : '' }}</span>
         </div>
         <p class="text-xs text-rose-800 mb-3">
           Sau khi hủy, hạn mức số lượng đã phân bổ sẽ được giải phóng và hoàn trả về số lượng còn lại của phiếu yêu cầu vật tư.
@@ -806,6 +803,7 @@ import type {
   MaterialQuotationAnalysisResult,
 } from '../../../shared/schemas/costs/material-quotation-analysis'
 import { workflowUuidSchema, workflowMoneySchema } from '../../../shared/schemas/costs/cost-workflow'
+import { orderCodeLabel } from '../../../shared/utils/material-codes'
 import { ClientError } from '../../errors/client-error'
 import { formatGroupedDecimal } from '../../utils/materials/quantity-display'
 import { supplierInputRejectionMessage } from '../../utils/materials/order-create-rejection'
@@ -2138,6 +2136,7 @@ interface CancelOrderCommand {
 }
 
 const cancellingOrderId = ref<string | null>(null)
+const cancellingOrder = computed(() => orders.value.find(o => o.id === cancellingOrderId.value) ?? null)
 const cancelReason = ref('')
 const cancelReasonError = ref('')
 const pendingCancelCommand = ref<CancelOrderCommand | null>(null)

@@ -56,7 +56,7 @@
             <tbody>
               <tr v-for="contract in summary.contracts" :key="contract.contractId">
                 <th scope="row" class="supplier-cell">{{ contract.supplierName }}</th>
-                <td class="font-mono">{{ materialContractNumberText(contract) }}</td>
+                <td class="font-mono">{{ orderCodeLabel(contract.proposalNo, contract.orderSeq) }} · {{ materialContractNumberText(contract) }}</td>
                 <td class="num">{{ formatVnNumber(contract.totals.committed) }}</td>
                 <td class="num">{{ formatVnNumber(contract.totals.paid) }}</td>
                 <td class="num">{{ formatVnNumber(contract.totals.remaining) }}</td>
@@ -82,6 +82,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import type { MaterialProjectOption } from '../../../../shared/schemas/costs/material-procurement'
 import type { ProjectMaterialFinanceSummary } from '../../../../shared/schemas/costs/material-finance'
 import { workflowUuidSchema } from '../../../../shared/schemas/costs/cost-workflow'
+import { orderCodeLabel } from '../../../../shared/utils/material-codes'
 import { createAsyncRequestTracker } from '../../../utils/costs/async-request-tracker'
 import { isDecimalGreaterThan } from '../../../utils/costs/finance-display'
 import { formatVnNumber } from '../../../utils/materials/vn-number'
