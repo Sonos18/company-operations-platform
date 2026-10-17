@@ -3462,6 +3462,7 @@ export type Database = {
           created_by: string
           currency_code: string
           id: string
+          order_seq: number
           project_id: string
           proposal_id: string
           state: string
@@ -3478,6 +3479,7 @@ export type Database = {
           created_by: string
           currency_code: string
           id?: string
+          order_seq: number
           project_id: string
           proposal_id: string
           state?: string
@@ -3494,6 +3496,7 @@ export type Database = {
           created_by?: string
           currency_code?: string
           id?: string
+          order_seq?: number
           project_id?: string
           proposal_id?: string
           state?: string
@@ -4160,6 +4163,7 @@ export type Database = {
           needed_on: string
           notes: string | null
           project_id: string
+          proposal_no: number
           review_state: string
           tenant_id: string
           updated_at: string
@@ -4176,6 +4180,7 @@ export type Database = {
           needed_on: string
           notes?: string | null
           project_id: string
+          proposal_no: number
           review_state?: string
           tenant_id: string
           updated_at?: string
@@ -4192,6 +4197,7 @@ export type Database = {
           needed_on?: string
           notes?: string | null
           project_id?: string
+          proposal_no?: number
           review_state?: string
           tenant_id?: string
           updated_at?: string
