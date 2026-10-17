@@ -26,6 +26,7 @@ Applied in order; each takes `pg_advisory_xact_lock(71842, N)` and ends with `no
 | `20261016100100_c1_material_finance_flow_adjustments` | 60 | C2-C4: VAT on `quotation_only`, invoice `stage` and `c1_material_officialize_invoice`, image invoices, the accountant records payments, `material.payment.approved`, `draftInvoiced` |
 | `20261017090000_c1_material_proposal_codes` | 61 | Proposal numbers and order codes: `proposal_no` / `order_seq` columns, assignment, immutability and backfill; the five read functions renamed to `*_core` and wrapped (see Proposal numbers and order codes) |
 | `20261017090100_c1_material_proposal_notifications` | 62 | Proposal notifications (`material.proposal.submitted` / `approved` / `returned`, source type `material_proposal`), order label on order-side notifications, deferred `material.order.created` trigger |
+| `20261017100000_c1_notifications_read_all` | 63 | Notification center: `c1_mark_notifications_read_all` marks the caller's own notifications read in both sources up to a per-source cutoff (see Mark all notifications read) |
 
 `shared/types/database.types.ts` is generated (`pnpm db:dev:types`) and is not edited by hand.
 
@@ -88,6 +89,29 @@ permission logic in them.
 - `material_order_created_notify` is now a deferred constraint trigger, so it runs after the order's
   allocations exist and can add the summary (`summaryName1`, `summaryName2`, `summaryTotal`) to
   `material.order.created`.
+
+## Mark all notifications read ("Đánh dấu đã đọc hết")
+
+Migration 63 (`20261017100000_c1_notifications_read_all`, lock `71842, 63`) adds the notification center command. The bell
+(`app/components/costs/CostNotificationBell.vue`) calls it from the "Đánh dấu đã đọc hết" button, then reloads the list.
+
+- RPC `public.c1_mark_notifications_read_all(target_company_id, target_material_up_to, target_cost_up_to)` wraps
+  `private.c1_mark_notifications_read_all` and returns `{"material": n, "cost": m}` (rows marked per source). Only
+  `authenticated` may execute the wrapper; the private function is revoked from everyone.
+- Route: `POST /api/companies/{companyId}/notifications/read-all`, body `{ materialUpTo: string | null, costUpTo: string | null }`
+  (ISO datetime with offset, strict), result `{ material: number, cost: number }` (strict). The client sends the raw
+  `createdAt` string of the newest loaded notification of each source (microsecond precision is kept), never a value re-serialised through `Date`.
+- Each source has its own cutoff. Only rows with `created_at <= cutoff` are marked, so a notification created after the list
+  was loaded stays unread. A `null` cutoff skips that source: the client sends it when the source failed to load or has nothing loaded.
+- Permission gates per source: `material.read` for `app_notifications`, `cost.notification.read` for `cost_workflow_notifications`.
+  A caller without the permission gets that source untouched (count 0), not an error.
+- Cost notifications are marked only when `delivery_state = 'available'`; `undelivered` rows were never shown.
+- Only the caller's own rows in the given company are updated. A caller who is not an active company member gets `P0001` / `PERMISSION_DENIED`.
+- No idempotency key and no command receipt: the `read_at is null` filter makes a repeat a no-op that returns `0`.
+
+UI strings the notification center added beyond the plan: "Không thể đánh dấu đã đọc hết. Vui lòng thử lại." (read-all failed),
+"Không nạp được thêm thông báo." ("Xem thêm" failed), the screen-reader-only modal description "Danh sách thông báo mới nhất", and the
+unread dot label "Chưa đọc".
 
 ## Tables
 
