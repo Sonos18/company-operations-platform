@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { workflowCurrencySchema, workflowMoneySchema, workflowUuidSchema } from '../../../../shared/schemas/costs/cost-workflow'
 import { materialContractDocumentationSchema } from '../../../../shared/schemas/costs/material-documentation'
-import { appNotificationPageSchema, materialFinanceCommandResultSchema, materialFinanceInboxSchema } from '../../../../shared/schemas/costs/material-finance'
+import { appNotificationPageSchema, materialFinanceCommandResultSchema, materialFinanceInboxSchema, notificationReadAllResultSchema, type NotificationReadAllInput } from '../../../../shared/schemas/costs/material-finance'
 import type { UserSupabaseClient } from '../../../utils/supabase-client'
 import { financeRead, rpcClient, type MaterialFinanceRpcClient } from './repository'
 import type {
@@ -73,5 +73,12 @@ export class SupabaseMaterialFinanceReadRepository implements MaterialFinanceRea
   // Marking a notification read is naturally idempotent, so the idempotency key is not forwarded.
   readNotification(context: MaterialFinanceContext, id: string, _key: string) {
     return financeRead(this.client, context, 'c1_read_app_notification', materialFinanceCommandResultSchema, { target_id: id })
+  }
+
+  readAllNotifications(context: MaterialFinanceContext, input: NotificationReadAllInput) {
+    return financeRead(this.client, context, 'c1_mark_notifications_read_all', notificationReadAllResultSchema, {
+      target_material_up_to: input.materialUpTo,
+      target_cost_up_to: input.costUpTo,
+    })
   }
 }

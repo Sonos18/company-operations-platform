@@ -11,6 +11,8 @@ import {
   materialFinanceInboxSchema,
   materialInvoiceViewSchema,
   materialPaymentRequestViewSchema,
+  notificationReadAllInputSchema,
+  notificationReadAllResultSchema,
   officializeMaterialInvoiceInputSchema,
   projectMaterialFinanceSummarySchema,
   recordMaterialContractInputSchema,
@@ -102,5 +104,12 @@ export function createHttpMaterialFinanceRepository(options: {
     ),
     readNotification: async (notificationId, cmd) =>
       command(base() + '/notifications/' + targetId(notificationId) + '/read', {}, emptyBodySchema, cmd),
+    // Marking everything up to a cut-off read is idempotent, so no idempotency key is sent.
+    readAllNotifications: async input => options.client.request({
+      url: base() + '/notifications/read-all',
+      method: 'POST',
+      body: notificationReadAllInputSchema.parse(input),
+      schema: notificationReadAllResultSchema,
+    }),
   }
 }
