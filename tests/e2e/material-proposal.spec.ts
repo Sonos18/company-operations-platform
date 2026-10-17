@@ -86,6 +86,9 @@ function createMockProposal(overrides: Partial<MaterialProposalView> = {}): Mate
   const base = {
     id: proposalId,
     version: 1,
+    proposalNo: 18,
+    revisionNo: 1,
+    summary: { names: ['Thép cuộn phi 8'], total: 1 },
     reviewState: 'draft' as const,
     returnReason: null,
     approvedRevisionId: null,
@@ -795,7 +798,8 @@ test.describe('AGY — T5 UI Kỹ sư yêu cầu vật tư (Đóng 8 finding rev
 
     // Finding 4: Persisted & signed line has locked material name (no select element)
     await expect(page.locator('select.line-select')).toHaveCount(0)
-    await expect(page.getByText('Thép cuộn phi 8')).toBeVisible()
+    // The header summary also names the material, so the line is matched by its code and name.
+    await expect(page.getByText('VT-THEP-08 - Thép cuộn phi 8')).toBeVisible()
     await expect(page.locator('.signed-badge')).toBeVisible()
 
     // Finding 4: Signed line has locked delete action (lock icon instead of delete button)

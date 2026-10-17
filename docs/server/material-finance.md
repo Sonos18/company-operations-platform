@@ -24,8 +24,65 @@ Applied in order; each takes `pg_advisory_xact_lock(71842, N)` and ends with `no
 | `20261016090100_c1_material_small_order_payments` | 58 | `method` on payments (`bank_transfer` / `cash`), nullable `bank_reference`, cash rule in `c1_material_record_payment`, `method` in the payment request view |
 | `20261016100000_c1_material_remove_proposal_invoice_names` | 59 | C1: drops the engineer and buyer invoice names (columns, override table, `c1_material_set_proposal_invoice_name`, helper) and their JSON keys; deletes the data |
 | `20261016100100_c1_material_finance_flow_adjustments` | 60 | C2-C4: VAT on `quotation_only`, invoice `stage` and `c1_material_officialize_invoice`, image invoices, the accountant records payments, `material.payment.approved`, `draftInvoiced` |
+| `20261017090000_c1_material_proposal_codes` | 61 | Proposal numbers and order codes: `proposal_no` / `order_seq` columns, assignment, immutability and backfill; the five read functions renamed to `*_core` and wrapped (see Proposal numbers and order codes) |
+| `20261017090100_c1_material_proposal_notifications` | 62 | Proposal notifications (`material.proposal.submitted` / `approved` / `returned`, source type `material_proposal`), order label on order-side notifications, deferred `material.order.created` trigger |
 
 `shared/types/database.types.ts` is generated (`pnpm db:dev:types`) and is not edited by hand.
+
+## Proposal numbers and order codes
+
+Spec: `docs/superpowers/plans/2026-10-17-materials-proposal-codes.md`. Every proposal has a per-project
+number ("Đơn 18") and every order a per-proposal sequence ("ĐH 18-1"); the UI builds the labels with
+`shared/utils/material-codes.ts`. The numbers are assigned by the database, never by the client.
+
+### Numbers (migration 61)
+
+- `material_proposals.proposal_no integer not null check (proposal_no > 0)`, `unique (project_id, proposal_no)`.
+- `material_orders.order_seq integer not null check (order_seq > 0)`, `unique (proposal_id, order_seq)`.
+- Trigger `material_proposal_no_assign` (before insert on `material_proposals`) takes the transaction advisory
+  lock `(71843, hashtext(project_id))` and sets `proposal_no` to the project's largest number + 1. A
+  `proposal_no` sent by the client is overwritten. Drafts are numbered too.
+- Trigger `material_order_seq_assign` (before insert on `material_orders`) locks the proposal row and sets
+  `order_seq` to the proposal's largest sequence + 1. A cancelled order keeps its sequence, so the next order
+  never fills the gap.
+- Trigger `material_codes_immutable` (before update on both tables) refuses any change of `proposal_no` or
+  `order_seq`.
+- Existing rows are numbered by creation order (`created_at`, then `id`). The backfill writes only the two new
+  columns: no version bump and no history rows.
+
+### Read functions are now `*_core` (edit those)
+
+Migration 61 renamed five read functions and put a wrapper with the same name and signature in front of each.
+The wrapper only attaches the new keys (`proposalNo`, `revisionNo`, `orderSeq`, `summary`, `projectName`,
+`contractStatus[].orderSeq`); every caller (list, read, public wrappers) keeps calling the old name.
+
+| Wrapper (unchanged name) | Function that holds the logic |
+|---|---|
+| `private.c1_material_proposal_json` | `private.c1_material_proposal_json_core` |
+| `private.c1_material_order_json` | `private.c1_material_order_json_core` |
+| `private.c1_material_read_contract` | `private.c1_material_read_contract_core` |
+| `private.c1_material_finance_facts` | `private.c1_material_finance_facts_core` |
+| `private.c1_material_finance_inbox_facts` | `private.c1_material_finance_inbox_facts_core` |
+
+From now on a change to what these views return goes into the `_core` function (a new migration that
+`create or replace`s it). Do not `create or replace` the wrapper name: that would replace the wrapper with a
+copy of the old logic and silently drop the new keys. The wrappers only add keys; do not put filtering or
+permission logic in them.
+
+### Notifications (migration 62)
+
+- `material_proposal_submitted_notify` (after insert on `material_proposal_revisions`) sends
+  `material.proposal.submitted` to the readers who can decide the proposal; `material_proposal_decided_notify` (after insert on
+  `material_proposal_decisions`) sends `material.proposal.approved` / `material.proposal.returned` to the
+  proposal creator. New source type `material_proposal`; dedupe keys `proposal:{id}:sub:{revision_no}`,
+  `proposal:{id}:appr:{revision_no}` and `proposal:{id}:ret:{revision_no}`; link `/materials/{projectId}/proposals/{proposalId}`.
+- `app_notifications_order_label` (before insert on `app_notifications`) adds `projectName`, `proposalNo` and
+  `orderSeq` to the payload of every notification whose source is `material_order`, `material_contract`,
+  `material_installment` or `material_payment_request`, only when the payload does not already carry them.
+  Notifications stored before this migration have no such keys and keep their old text.
+- `material_order_created_notify` is now a deferred constraint trigger, so it runs after the order's
+  allocations exist and can add the summary (`summaryName1`, `summaryName2`, `summaryTotal`) to
+  `material.order.created`.
 
 ## Tables
 
@@ -230,13 +287,17 @@ moved from the treasurer to the accountant). The fixture script `supabase/fixtur
 
 | Event | Recipients | Payload |
 |---|---|---|
-| `material.order.created` | `material.contract.record` holders | `supplierName` |
+| `material.order.created` | `material.contract.record` holders | `supplierName`, `summaryName1`, `summaryName2`, `summaryTotal` |
+| `material.proposal.submitted` / `approved` / `returned` | readers who can decide the proposal (submitted); the proposal creator (approved, returned); recipients need `material.read`, the actor is never notified | `projectName`, `proposalNo`, `revisionNo`, `actorName`, `summaryName1`, `summaryName2`, `summaryTotal`; `reason` on returned |
 | `material.contract.recorded` / `material.contract.amended` | finance readers; buyer and proposal creator (by user id) | finance readers: `supplierName`, `contractNo`, `total`, `versionNo`; by user id: without `total`. The proposal creator's link opens the proposal, which lists `contractStatus` (order, contract number, signing date) |
 | `material.payment.submitted` | `material.payment.approve` holders | `supplierName`, `contractNo`, `amount` |
 | `material.payment.approved` | the submitter of the request, i.e. the accountant (by user id) | `projectId`, `contractId`, `supplierName`, `contractNo`, `documentation` (no amount). Sent when the treasurer confirms the payment order; it tells the accountant to upload the receipt |
 | `material.payment.returned` | the submitter (by user id) | `supplierName`, `contractNo`, `reason` (no amount) |
 | `material.payment.paid` | the treasurer who last approved the request (`decided_by` of the latest `approve` decision, by user id) | `supplierName`, `contractNo` (no amount) |
 | `material.installment.due_soon` / `material.installment.overdue` | `material.contract.record` + `material.read` holders | `supplierName`, `contractNo`, `installmentName`, `dueOn`, `remaining` |
+
+Notifications with source `material_order`, `material_contract`, `material_installment` or `material_payment_request`
+also carry `projectName`, `proposalNo` and `orderSeq` (added by `app_notifications_order_label`).
 
 Recipients always need `material.read`; the acting user is never notified. Notifications sent by
 user id (not by a finance permission) never carry money. The bell renders them with
@@ -335,6 +396,17 @@ because the strict Zod schemas reject keys that were removed or added:
   proposals still read, edit and submit.
 - `material.payment.approved` is added to the `event_kind` CHECK by migration 60. `material.payment.paid` now goes to
   the treasurer who approved the request.
+
+### Proposal codes (`20261017090000`, `20261017090100`)
+
+Apply both migrations in this order and ship the app in the same window; then regenerate
+`shared/types/database.types.ts` with `pnpm db:dev:types`. The strict Zod schemas make the two halves depend on each other:
+
+- Old app with the new database: proposal, order, contract, finance and inbox JSON carry the new keys, which the old
+  strict schemas reject, and the three `material.proposal.*` event kinds are unknown to the old notification schema.
+- New app with the old database: the new schemas require `proposalNo`, `orderSeq`, `summary` and the other keys, so
+  proposal, order, contract and finance reads fail until migration 61 is applied.
+- Later changes to the five read views belong in the `*_core` functions (see Proposal numbers and order codes).
 
 ## Known follow-ups
 
